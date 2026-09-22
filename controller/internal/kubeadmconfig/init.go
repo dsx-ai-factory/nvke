@@ -121,13 +121,11 @@ func (config *InitConfig) Render() (*BootstrapArtifacts, error) {
 		},
 	}
 
-	if cfg.AuthenticationConfig != nil {
-		file, err := GenerateAPIServerAuthenticationConfig(cfg.AuthenticationConfig)
-		if err != nil {
-			return nil, fmt.Errorf("building AuthenticationConfig file: %w", err)
-		}
-		artifacts.Files = append(artifacts.Files, file)
+	file, err := GenerateAPIServerAuthenticationConfig(apiServerAuthenticationConfig(cfg.AuthenticationConfig))
+	if err != nil {
+		return nil, fmt.Errorf("building AuthenticationConfig file: %w", err)
 	}
+	artifacts.Files = append(artifacts.Files, file)
 
 	return artifacts, nil
 }
@@ -257,10 +255,11 @@ func clusterConfiguration(config *InitConfig) kubeadmv1beta3.ClusterConfiguratio
 		apiServer.ExtraArgs["encryption-provider-config-automatic-reload"] = reload
 		apiServer.ExtraVolumes = append(apiServer.ExtraVolumes, encryptionVolume())
 	}
-	if config.AuthenticationConfig != nil {
-		apiServer.ExtraArgs[AuthConfigFlagName] = defaultOIDCAuthConfigPath
-		apiServer.ExtraVolumes = append(apiServer.ExtraVolumes, authenticationConfigVolume())
-	}
+	// Unconditional: the AuthenticationConfiguration carries the anonymous-access
+	// restriction (CIS 1.2.1) whether or not OIDC is configured, so every cluster
+	// gets the flag and the volume.
+	apiServer.ExtraArgs[AuthConfigFlagName] = defaultOIDCAuthConfigPath
+	apiServer.ExtraVolumes = append(apiServer.ExtraVolumes, authenticationConfigVolume())
 
 	return kubeadmv1beta3.ClusterConfiguration{
 		TypeMeta: metav1.TypeMeta{

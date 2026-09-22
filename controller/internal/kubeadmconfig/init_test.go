@@ -31,6 +31,7 @@ func TestInitConfigRender_Golden(t *testing.T) {
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
 				apiServerAuditPolicyFixture(),
+				apiServerAuthConfigFixture("auth_config_anonymous_only.yaml"),
 			},
 		},
 		{
@@ -44,6 +45,7 @@ func TestInitConfigRender_Golden(t *testing.T) {
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
 				apiServerAuditPolicyFixture(),
+				apiServerAuthConfigFixture("auth_config_anonymous_only.yaml"),
 			},
 		},
 		{
@@ -57,6 +59,7 @@ func TestInitConfigRender_Golden(t *testing.T) {
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
 				apiServerAuditPolicyFixture(),
+				apiServerAuthConfigFixture("auth_config_anonymous_only.yaml"),
 			},
 		},
 		{
@@ -70,6 +73,7 @@ func TestInitConfigRender_Golden(t *testing.T) {
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
 				apiServerAuditPolicyFixture(),
+				apiServerAuthConfigFixture("auth_config_anonymous_only.yaml"),
 			},
 		},
 		{
@@ -83,6 +87,7 @@ func TestInitConfigRender_Golden(t *testing.T) {
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
 				apiServerAuditPolicyFixture(),
+				apiServerAuthConfigFixture("auth_config_anonymous_only.yaml"),
 			},
 		},
 		{
@@ -97,6 +102,7 @@ func TestInitConfigRender_Golden(t *testing.T) {
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
 				apiServerAuditPolicyFixture(),
+				apiServerAuthConfigFixture("auth_config_anonymous_only.yaml"),
 			},
 		},
 		{
@@ -111,6 +117,7 @@ func TestInitConfigRender_Golden(t *testing.T) {
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
 				apiServerAuditPolicyFixture(),
+				apiServerAuthConfigFixture("auth_config_anonymous_only.yaml"),
 			},
 		},
 		{
@@ -124,12 +131,7 @@ func TestInitConfigRender_Golden(t *testing.T) {
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
 				apiServerAuditPolicyFixture(),
-				{
-					path:           "/etc/kubernetes/oidc/auth-config.yaml",
-					goldenFilePath: "auth_config_simple.yaml",
-					mode:           0o600,
-					owner:          "root:root",
-				},
+				apiServerAuthConfigFixture("auth_config_simple.yaml"),
 			},
 		},
 		{
@@ -143,12 +145,7 @@ func TestInitConfigRender_Golden(t *testing.T) {
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
 				apiServerAuditPolicyFixture(),
-				{
-					path:           "/etc/kubernetes/oidc/auth-config.yaml",
-					goldenFilePath: "auth_config_multi_provider.yaml",
-					mode:           0o600,
-					owner:          "root:root",
-				},
+				apiServerAuthConfigFixture("auth_config_multi_provider.yaml"),
 			},
 		},
 		{
@@ -163,12 +160,7 @@ func TestInitConfigRender_Golden(t *testing.T) {
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
 				apiServerAuditPolicyFixture(),
-				{
-					path:           "/etc/kubernetes/oidc/auth-config.yaml",
-					goldenFilePath: "auth_config_simple.yaml",
-					mode:           0o600,
-					owner:          "root:root",
-				},
+				apiServerAuthConfigFixture("auth_config_simple.yaml"),
 			},
 		},
 	}
@@ -215,13 +207,16 @@ func TestInitConfigRenderGeneratesMissingToken(t *testing.T) {
 
 	normalized := got[:matchIndices[4]] + "abcdef.0123456789abcdef" + got[matchIndices[5]:]
 	assertGolden(t, "init_base.yaml", normalized)
-	require.Len(t, artifacts.Files, 3)
+	require.Len(t, artifacts.Files, 4)
 	assert.Equal(t, kubeletConfigurationPatchFixture("kubelet_configuration_patch.yaml").path, artifacts.Files[0].Path)
 	assertGolden(t, "kubelet_configuration_patch.yaml", string(artifacts.Files[0].Content))
 	assert.Equal(t, apiServerTerminationGracePatchFixture().path, artifacts.Files[1].Path)
 	assertGolden(t, apiServerTerminationGracePatchFixture().goldenFilePath, string(artifacts.Files[1].Content))
 	assert.Equal(t, apiServerAuditPolicyFixture().path, artifacts.Files[2].Path)
 	assertGolden(t, apiServerAuditPolicyFixture().goldenFilePath, string(artifacts.Files[2].Content))
+	authConfig := apiServerAuthConfigFixture("auth_config_anonymous_only.yaml")
+	assert.Equal(t, authConfig.path, artifacts.Files[3].Path)
+	assertGolden(t, authConfig.goldenFilePath, string(artifacts.Files[3].Content))
 }
 
 func TestInitConfigRenderReturnsInvalidTokenError(t *testing.T) {

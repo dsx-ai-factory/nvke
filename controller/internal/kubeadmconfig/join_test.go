@@ -32,6 +32,7 @@ func TestJoinConfigRender_Golden(t *testing.T) {
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
 				apiServerAuditPolicyFixture(),
+				apiServerAuthConfigFixture("auth_config_anonymous_only.yaml"),
 			},
 		},
 		{
@@ -45,12 +46,7 @@ func TestJoinConfigRender_Golden(t *testing.T) {
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
 				apiServerAuditPolicyFixture(),
-				{
-					path:           "/etc/kubernetes/oidc/auth-config.yaml",
-					goldenFilePath: "auth_config_simple.yaml",
-					mode:           0o600,
-					owner:          "root:root",
-				},
+				apiServerAuthConfigFixture("auth_config_simple.yaml"),
 			},
 		},
 		{
@@ -64,12 +60,7 @@ func TestJoinConfigRender_Golden(t *testing.T) {
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
 				apiServerAuditPolicyFixture(),
-				{
-					path:           "/etc/kubernetes/oidc/auth-config.yaml",
-					goldenFilePath: "auth_config_multi_provider.yaml",
-					mode:           0o600,
-					owner:          "root:root",
-				},
+				apiServerAuthConfigFixture("auth_config_multi_provider.yaml"),
 			},
 		},
 		{

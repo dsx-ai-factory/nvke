@@ -62,6 +62,18 @@ func apiServerAuditPolicyFixture() fileFromFixture {
 	}
 }
 
+// apiServerAuthConfigFixture is expected on every control-plane node now, not
+// just the OIDC ones: the AuthenticationConfiguration carries the anonymous
+// access restriction as well as any JWT providers.
+func apiServerAuthConfigFixture(goldenFile string) fileFromFixture {
+	return fileFromFixture{
+		path:           "/etc/kubernetes/oidc/auth-config.yaml",
+		goldenFilePath: goldenFile,
+		mode:           0o600,
+		owner:          "root:root",
+	}
+}
+
 func kubeletConfigurationPatchFixture(goldenFile string) fileFromFixture {
 	return fileFromFixture{
 		path:           "/etc/kubernetes/patches/kubeletconfiguration0+merge.yaml",

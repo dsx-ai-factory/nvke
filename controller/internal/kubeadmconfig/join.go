@@ -167,8 +167,8 @@ func (config *JoinConfig) Render() (*BootstrapArtifacts, error) {
 			apiServerAuditPolicyFile(),
 		)
 	}
-	if config.ControlPlane && config.AuthenticationConfig != nil {
-		file, fileErr := GenerateAPIServerAuthenticationConfig(config.AuthenticationConfig)
+	if config.ControlPlane {
+		file, fileErr := GenerateAPIServerAuthenticationConfig(apiServerAuthenticationConfig(config.AuthenticationConfig))
 		if fileErr != nil {
 			return nil, fmt.Errorf("building AuthenticationConfig file: %w", fileErr)
 		}

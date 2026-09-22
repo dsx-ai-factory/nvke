@@ -28,6 +28,7 @@ apiServer:
     audit-log-maxsize: "100"
     audit-log-path: /var/log/kubernetes_audit/audit.log
     audit-policy-file: /etc/kubernetes/policies/audit-policy.yaml
+    authentication-config: /etc/kubernetes/oidc/auth-config.yaml
     bind-address: 0.0.0.0
     enable-admission-plugins: NodeRestriction,DenyServiceExternalIPs,OwnerReferencesPermissionEnforcement,PodNodeSelector,PodTolerationRestriction
     encryption-provider-config: /etc/kubernetes/kube-api-encryption/encryption-config.yaml
@@ -53,6 +54,11 @@ apiServer:
   - hostPath: /etc/kubernetes/kube-api-encryption
     mountPath: /etc/kubernetes/kube-api-encryption
     name: enc
+    pathType: DirectoryOrCreate
+    readOnly: true
+  - hostPath: /etc/kubernetes/oidc
+    mountPath: /etc/kubernetes/oidc
+    name: oidc-auth-config
     pathType: DirectoryOrCreate
     readOnly: true
   timeoutForControlPlane: 4m0s

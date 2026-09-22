@@ -1,0 +1,9 @@
+anonymous:
+  conditions:
+  - path: /livez
+  - path: /readyz
+  - path: /healthz
+  enabled: true
+apiVersion: apiserver.config.k8s.io/v1
+jwt: []
+kind: AuthenticationConfiguration

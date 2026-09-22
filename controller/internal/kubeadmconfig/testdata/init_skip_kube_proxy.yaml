@@ -30,6 +30,7 @@ apiServer:
     audit-log-maxsize: "100"
     audit-log-path: /var/log/kubernetes_audit/audit.log
     audit-policy-file: /etc/kubernetes/policies/audit-policy.yaml
+    authentication-config: /etc/kubernetes/oidc/auth-config.yaml
     bind-address: 0.0.0.0
     enable-admission-plugins: NodeRestriction,DenyServiceExternalIPs,OwnerReferencesPermissionEnforcement,PodNodeSelector,PodTolerationRestriction
     feature-gates: ImageVolume=true
@@ -48,6 +49,11 @@ apiServer:
   - hostPath: /etc/kubernetes/policies
     mountPath: /etc/kubernetes/policies
     name: audit-policies
+    pathType: DirectoryOrCreate
+    readOnly: true
+  - hostPath: /etc/kubernetes/oidc
+    mountPath: /etc/kubernetes/oidc
+    name: oidc-auth-config
     pathType: DirectoryOrCreate
     readOnly: true
   timeoutForControlPlane: 4m0s
