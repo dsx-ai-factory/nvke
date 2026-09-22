@@ -1,12 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Namespace for all namespaced NKTP resources. Created by the chart when
-# create is true. CRDs and other cluster-scoped resources are unaffected.
-namespace:
-  name: nktp
-  create: true
-
 # Collector image used by all OTel workloads, in the same form as
 # OpenTelemetryCollector spec.image (repo:tag or repo@digest).
 otelcol_image: otel/opentelemetry-collector-k8s:0.159.0

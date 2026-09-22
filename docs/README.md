@@ -82,6 +82,7 @@ Deeper module documentation:
 | [../controller/test/e2e/README.md](../controller/test/e2e/README.md) | The end to end suite |
 | [../controller/integration-test/README.md](../controller/integration-test/README.md) | The integration tests |
 | [../controller/nico-sim/docs/e2e-testing.md](../controller/nico-sim/docs/e2e-testing.md) | End-to-end testing for nico-sim's VM backend |
+| [nktp/kind-validation.md](nktp/kind-validation.md) | Ad hoc validation of the NKTP chart's default values on a Kind cluster |
 
 ## Project and process
 
