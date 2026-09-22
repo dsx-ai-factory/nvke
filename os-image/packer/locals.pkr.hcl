@@ -16,13 +16,13 @@ locals {
   ]
   installer_record   = local.installer_records[0]
   image_input_record = local.image_input_records[0]
-  admitted_architectures = {
+  material_bound_architectures = {
     for candidate in ["amd64", "arm64"] : candidate => candidate
     if local.installer_record.architecture == candidate && local.image_input_record.architecture == candidate
   }
-  # Indexing the admitted set makes Packer validation fail closed when the
+  # Indexing the material-bound set makes Packer validation fail closed when the
   # requested architecture does not match both authenticated material records.
-  architecture        = local.admitted_architectures[var.architecture]
+  architecture        = local.material_bound_architectures[var.architecture]
   installer_iso       = "${local.material_root}/${local.installer_record.path}"
   installer_checksum  = local.installer_record.digest
   image_inputs        = "${local.material_root}/${local.image_input_record.path}"

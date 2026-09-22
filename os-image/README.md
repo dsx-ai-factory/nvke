@@ -141,6 +141,17 @@ firmware, or guest packages. Its sibling `materials/` directory must contain:
 - `image-inputs`, a tar archive whose root contains the same prepared files that Make
   stages in `packer/artifacts/`.
 
+The explicit `architecture` is the caller's requested build intent, while the
+two manifest records are the independently authenticated material facts. Packer
+requires all three values to agree before architecture-specific configuration
+is selected. This is a breaking interface change for direct Packer callers:
+invocations that previously relied on architecture being derived from the
+manifest must now pass `-var architecture=<amd64|arm64>`. The existing Make
+targets already supply it. Packer 1.14 does not support cross-variable custom
+validation, so a mismatch is reported as an `Invalid index` diagnostic for
+`local.material_bound_architectures`; that diagnostic means the requested
+architecture does not match both material records.
+
 The Make targets accept `SSH_PRIVATE_KEY_FILE` and `SSH_PUBLIC_KEY_FILE` as an
 optional pair. When both are set, they must be absolute paths. Make verifies
 that they are regular files and that the public key matches the private key,

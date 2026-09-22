@@ -12,16 +12,8 @@ override PACKER_PROJECT := $(PACKER_ROOT)
 SSH_DIR     := $(CURDIR)/.ssh
 SSH_PRIVATE_KEY_FILE ?=
 SSH_PUBLIC_KEY_FILE ?=
-ifneq ($(strip $(SSH_PRIVATE_KEY_FILE)),)
-  ifeq ($(strip $(SSH_PUBLIC_KEY_FILE)),)
-    $(error SSH_PUBLIC_KEY_FILE is required when SSH_PRIVATE_KEY_FILE is set)
-  endif
-else ifneq ($(strip $(SSH_PUBLIC_KEY_FILE)),)
-  $(error SSH_PRIVATE_KEY_FILE is required when SSH_PUBLIC_KEY_FILE is set)
-endif
 override PACKER_SSH_PRIVATE_KEY_FILE := $(if $(strip $(SSH_PRIVATE_KEY_FILE)),$(SSH_PRIVATE_KEY_FILE),$(SSH_DIR)/id_ed25519)
 override PACKER_SSH_PUBLIC_KEY_FILE := $(if $(strip $(SSH_PUBLIC_KEY_FILE)),$(SSH_PUBLIC_KEY_FILE),$(SSH_DIR)/id_ed25519.pub)
-override SSH_KEY_PREREQUISITE := $(if $(strip $(SSH_PRIVATE_KEY_FILE)),,$(SSH_DIR)/id_ed25519)
 # Make stages source-built packages here before adapting them into Packer's
 # explicit material layout. Keep the mutable scratch path Make-owned because
 # prepare-artifacts replaces it and clean removes it.
@@ -153,10 +145,24 @@ CPUS ?= 4
 # nke-node-fde.pkr.hcl.
 BOOT_WAIT ?= $(if $(filter kvm,$(ACCELERATOR)),10s,30s)
 
-.PHONY: os-image-fde os-image-non-fde _os-image-fde _os-image-non-fde preflight init-packer init-fde init-non-fde validate-packer ssh-key prepare-installer-iso prepare-artifacts prepare-packer-inputs clean clean-packer-scratch clean-fde-output clean-non-fde-output check-deps check-source collect-qcow2-fde collect-qcow2-non-fde
+.PHONY: os-image-fde os-image-non-fde _os-image-fde _os-image-non-fde preflight init-packer init-fde init-non-fde validate-packer ssh-key prepare-ssh-key prepare-image-build prepare-installer-iso prepare-artifacts prepare-packer-inputs clean clean-packer-scratch clean-fde-output clean-non-fde-output check-deps check-source collect-qcow2-fde collect-qcow2-non-fde
 
-ssh-key: preflight $(SSH_KEY_PREREQUISITE)
+prepare-ssh-key:
+	@command -v ssh-keygen >/dev/null 2>&1 || { \
+		echo "ssh-keygen is required to prepare the Packer SSH key pair" >&2; \
+		exit 1; \
+	}
 	@set -eu; \
+	private_supplied=$(if $(strip $(SSH_PRIVATE_KEY_FILE)),1,0); \
+	public_supplied=$(if $(strip $(SSH_PUBLIC_KEY_FILE)),1,0); \
+	if [ "$$private_supplied" -eq 1 ] && [ "$$public_supplied" -eq 0 ]; then \
+		echo "SSH_PUBLIC_KEY_FILE is required when SSH_PRIVATE_KEY_FILE is set" >&2; \
+		exit 1; \
+	fi; \
+	if [ "$$private_supplied" -eq 0 ] && [ "$$public_supplied" -eq 1 ]; then \
+		echo "SSH_PRIVATE_KEY_FILE is required when SSH_PUBLIC_KEY_FILE is set" >&2; \
+		exit 1; \
+	fi; \
 	private="$(PACKER_SSH_PRIVATE_KEY_FILE)"; \
 	public="$(PACKER_SSH_PUBLIC_KEY_FILE)"; \
 	case "$$private" in /*) ;; *) \
@@ -167,6 +173,20 @@ ssh-key: preflight $(SSH_KEY_PREREQUISITE)
 		echo "SSH public key path must be absolute: $$public" >&2; \
 		exit 1; \
 	esac; \
+	if [ "$$private_supplied" -eq 0 ]; then \
+		private_exists=0; \
+		public_exists=0; \
+		if [ -e "$$private" ] || [ -L "$$private" ]; then private_exists=1; fi; \
+		if [ -e "$$public" ] || [ -L "$$public" ]; then public_exists=1; fi; \
+		if [ "$$private_exists" -ne "$$public_exists" ]; then \
+			echo "generated SSH key state is incomplete: $(SSH_DIR)" >&2; \
+			exit 1; \
+		fi; \
+		if [ "$$private_exists" -eq 0 ]; then \
+			mkdir -p "$(SSH_DIR)"; \
+			ssh-keygen -t ed25519 -N '' -f "$$private"; \
+		fi; \
+	fi; \
 	if [ ! -f "$$private" ] || [ -L "$$private" ]; then \
 		echo "SSH private key is not a regular file: $$private" >&2; \
 		exit 1; \
@@ -175,7 +195,10 @@ ssh-key: preflight $(SSH_KEY_PREREQUISITE)
 		echo "SSH public key is not a regular file: $$public" >&2; \
 		exit 1; \
 	fi; \
-	derived="$$(ssh-keygen -y -f "$$private")"; \
+	if ! derived="$$(ssh-keygen -y -f "$$private" </dev/null)"; then \
+		echo "SSH private key must be readable and unencrypted: $$private" >&2; \
+		exit 1; \
+	fi; \
 	derived="$$(printf '%s\n' "$$derived" | awk 'NF >= 2 { print $$1 " " $$2; exit }')"; \
 	supplied="$$(awk 'NF >= 2 { print $$1 " " $$2; exit }' "$$public")"; \
 	if [ -z "$$derived" ] || [ -z "$$supplied" ] || [ "$$derived" != "$$supplied" ]; then \
@@ -183,13 +206,15 @@ ssh-key: preflight $(SSH_KEY_PREREQUISITE)
 		exit 1; \
 	fi
 
-$(SSH_DIR)/id_ed25519: | preflight
-	@if [ -e "$(SSH_DIR)/id_ed25519.pub" ] || [ -L "$(SSH_DIR)/id_ed25519.pub" ]; then \
-		echo "generated SSH key state is incomplete: $(SSH_DIR)" >&2; \
-		exit 1; \
-	fi
-	mkdir -p $(SSH_DIR)
-	ssh-keygen -t ed25519 -N '' -f $(SSH_DIR)/id_ed25519
+# Preserve the existing direct target contract: explicit key preparation also
+# checks the source and complete toolchain before it succeeds.
+ssh-key: preflight prepare-ssh-key
+
+# Keep SSH input validation ahead of every source, dependency, artifact, and
+# Packer action, including under parallel Make. Once the key contract is valid,
+# the nested Make may initialize Packer and prepare materials concurrently.
+prepare-image-build: prepare-ssh-key
+	@$(MAKE) --no-print-directory --file "$(PACKER_MAKEFILE)" init-packer prepare-packer-inputs
 
 check-source:
 	@set -eu; \
@@ -209,7 +234,7 @@ check-source:
 preflight: check-source check-deps
 
 init-packer: preflight
-	$(PACKER) init $(PACKER_PROJECT)
+	$(PACKER) init "$(PACKER_PROJECT)"
 
 init-fde init-non-fde: init-packer
 
@@ -433,7 +458,7 @@ os-image-fde:
 	fi
 	@$(MAKE) --no-print-directory --file "$(PACKER_MAKEFILE)" _os-image-fde
 
-_os-image-fde: ssh-key init-fde prepare-packer-inputs
+_os-image-fde: prepare-image-build
 	mkdir -p "$(BUILD_LOGS)" "$(PACKER_OUTPUT_DIRECTORY_FDE)"
 	@if [ "$(ACCELERATOR)" = "tcg" ]; then \
 		echo "no usable /dev/kvm: building with software emulation, which is far slower"; \
@@ -441,19 +466,19 @@ _os-image-fde: ssh-key init-fde prepare-packer-inputs
 	PKR_VAR_luks_passphrase=$(LUKS_PASSPHRASE) \
 	$(PACKER) build \
 		-only=$(PACKER_BUILD_FDE) \
-		-var architecture=$(ARCH) \
-		-var material_manifest=$(MATERIAL_MANIFEST) \
-		-var output_directory=$(PACKER_OUTPUT_DIRECTORY_FDE) \
-		-var build_log_directory=$(BUILD_LOGS) \
+		-var "architecture=$(ARCH)" \
+		-var "material_manifest=$(MATERIAL_MANIFEST)" \
+		-var "output_directory=$(PACKER_OUTPUT_DIRECTORY_FDE)" \
+		-var "build_log_directory=$(BUILD_LOGS)" \
 		-var "ssh_private_key_file=$(PACKER_SSH_PRIVATE_KEY_FILE)" \
 		-var "ssh_public_key_file=$(PACKER_SSH_PUBLIC_KEY_FILE)" \
-		-var accelerator=$(ACCELERATOR) \
-		-var cpu_model=$(CPU_MODEL) \
-		-var cpus=$(CPUS) \
-		-var ssh_timeout=$(SSH_TIMEOUT) \
-		-var boot_wait=$(BOOT_WAIT) \
-		-var root_fs_label=$(ROOT_FS_LABEL) \
-		$(PACKER_PROJECT)
+		-var "accelerator=$(ACCELERATOR)" \
+		-var "cpu_model=$(CPU_MODEL)" \
+		-var "cpus=$(CPUS)" \
+		-var "ssh_timeout=$(SSH_TIMEOUT)" \
+		-var "boot_wait=$(BOOT_WAIT)" \
+		-var "root_fs_label=$(ROOT_FS_LABEL)" \
+		"$(PACKER_PROJECT)"
 	mkdir "$(CURDIR)/output-fde"
 	mv "$(PACKER_OUTPUT_DIRECTORY_FDE)/fde/nke-node.qcow2" \
 		"$(CURDIR)/output-fde/nke-node-fde-ubuntu-$(UBUNTU_VERSION)-$(ARCH).qcow2"
@@ -472,26 +497,26 @@ os-image-non-fde:
 	fi
 	@$(MAKE) --no-print-directory --file "$(PACKER_MAKEFILE)" _os-image-non-fde
 
-_os-image-non-fde: ssh-key init-non-fde prepare-packer-inputs
+_os-image-non-fde: prepare-image-build
 	mkdir -p "$(BUILD_LOGS)" "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)"
 	@if [ "$(ACCELERATOR)" = "tcg" ]; then \
 		echo "no usable /dev/kvm: building with software emulation, which is far slower"; \
 	fi
 	$(PACKER) build \
 		-only=$(PACKER_BUILD_NON_FDE) \
-		-var architecture=$(ARCH) \
-		-var material_manifest=$(MATERIAL_MANIFEST) \
-		-var output_directory=$(PACKER_OUTPUT_DIRECTORY_NON_FDE) \
-		-var build_log_directory=$(BUILD_LOGS) \
+		-var "architecture=$(ARCH)" \
+		-var "material_manifest=$(MATERIAL_MANIFEST)" \
+		-var "output_directory=$(PACKER_OUTPUT_DIRECTORY_NON_FDE)" \
+		-var "build_log_directory=$(BUILD_LOGS)" \
 		-var "ssh_private_key_file=$(PACKER_SSH_PRIVATE_KEY_FILE)" \
 		-var "ssh_public_key_file=$(PACKER_SSH_PUBLIC_KEY_FILE)" \
-		-var accelerator=$(ACCELERATOR) \
-		-var cpu_model=$(CPU_MODEL) \
-		-var cpus=$(CPUS) \
-		-var ssh_timeout=$(SSH_TIMEOUT) \
-		-var boot_wait=$(BOOT_WAIT) \
-		-var root_fs_label=$(ROOT_FS_LABEL) \
-		$(PACKER_PROJECT)
+		-var "accelerator=$(ACCELERATOR)" \
+		-var "cpu_model=$(CPU_MODEL)" \
+		-var "cpus=$(CPUS)" \
+		-var "ssh_timeout=$(SSH_TIMEOUT)" \
+		-var "boot_wait=$(BOOT_WAIT)" \
+		-var "root_fs_label=$(ROOT_FS_LABEL)" \
+		"$(PACKER_PROJECT)"
 	mkdir "$(CURDIR)/output-non-fde"
 	mv "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)/non-fde/nke-node.qcow2" \
 		"$(CURDIR)/output-non-fde/nke-node-non-fde-ubuntu-$(UBUNTU_VERSION)-$(ARCH).qcow2"

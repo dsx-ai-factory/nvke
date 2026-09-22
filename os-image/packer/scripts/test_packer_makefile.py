@@ -213,6 +213,9 @@ if [ "${1-}" = "-y" ]; then
   shift
   test "${1-}" = "-f"
   key="${2:?}"
+  if grep -q '^ENCRYPTED$' "${key}"; then
+    exit 1
+  fi
   key_data="$(sed -n 's/^KEY://p' "${key}")"
   test -n "${key_data}"
   printf '%s generated-comment\n' "${key_data}"
@@ -271,14 +274,28 @@ printf '%s\n' 'ssh-ed25519 generated-key generated' > "${key}.pub"
         preexisting_other_scratch=False,
         ssh_key_files=None,
         generate_ssh_key=False,
+        generated_key_state=None,
     ):
         workspace, source, tools, packer, events, artifacts = (
             self.create_image_build_fixture(
                 root, unsafe_artifacts=unsafe_artifacts
             )
         )
-        if generate_ssh_key:
+        if generate_ssh_key or generated_key_state is not None:
             shutil.rmtree(workspace / ".ssh")
+        if generated_key_state is not None:
+            ssh_dir = workspace / ".ssh"
+            ssh_dir.mkdir()
+            if generated_key_state == "private-only":
+                (ssh_dir / "id_ed25519").write_text(
+                    "KEY:ssh-ed25519 generated-key\n", encoding="utf-8"
+                )
+            elif generated_key_state == "public-only":
+                (ssh_dir / "id_ed25519.pub").write_text(
+                    "ssh-ed25519 generated-key generated\n", encoding="utf-8"
+                )
+            else:
+                raise ValueError(f"unknown generated key state: {generated_key_state}")
         if preexisting_output:
             variant = "fde" if target == "os-image-fde" else "non-fde"
             output = workspace / f"output-{variant}"
@@ -579,6 +596,34 @@ exec "${REAL_MV:?}" "$@"
             result.stdout,
         )
 
+    def test_unrelated_target_ignores_incomplete_ssh_key_environment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.run_make(
+                "clean",
+                cwd=Path(tmp),
+                make_options=("--dry-run",),
+                extra_env={"SSH_PRIVATE_KEY_FILE": "/caller/private-key"},
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_check_deps_rejects_missing_ssh_keygen(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            empty_path = Path(tmp) / "empty-bin"
+            empty_path.mkdir()
+            result = self.run_make(
+                "check-deps",
+                cwd=PACKER_DIR,
+                variables=(f"PYTHON={sys.executable}",),
+                extra_env={"PATH": str(empty_path)},
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "ssh-keygen is required to prepare the Packer SSH key pair",
+                result.stderr,
+            )
+
     def test_source_preflight_runs_before_any_packer_command(self):
         cases = (
             ("os-image-fde", "nke-node-fde.qemu.nke-fde"),
@@ -779,7 +824,18 @@ exec "${REAL_MV:?}" "$@"
             self.assertIn(f"-var ssh_public_key_file={public_key}", build)
 
     def test_make_rejects_invalid_ssh_key_inputs(self):
-        cases = ("private-only", "public-only", "relative", "mismatched")
+        cases = (
+            "private-only",
+            "public-only",
+            "relative",
+            "mismatched",
+            "symlink-private",
+            "symlink-public",
+            "missing-public",
+            "non-regular-private",
+            "malformed-public",
+            "encrypted-private",
+        )
         for case in cases:
             with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
@@ -791,11 +847,43 @@ exec "${REAL_MV:?}" "$@"
                 public_key.write_text(
                     "ssh-ed25519 other-key caller\n", encoding="utf-8"
                 )
+                if case == "symlink-private":
+                    real_private_key = root / "real-caller-key"
+                    private_key.rename(real_private_key)
+                    private_key.symlink_to(real_private_key)
+                    public_key.write_text(
+                        "ssh-ed25519 supplied-key caller\n", encoding="utf-8"
+                    )
+                elif case == "symlink-public":
+                    real_public_key = root / "real-caller-key.pub"
+                    public_key.write_text(
+                        "ssh-ed25519 supplied-key caller\n", encoding="utf-8"
+                    )
+                    public_key.rename(real_public_key)
+                    public_key.symlink_to(real_public_key)
+                elif case == "missing-public":
+                    public_key.unlink()
+                elif case == "non-regular-private":
+                    private_key.unlink()
+                    private_key.mkdir()
+                elif case == "malformed-public":
+                    public_key.write_text("ssh-ed25519\n", encoding="utf-8")
+                elif case == "encrypted-private":
+                    private_key.write_text("ENCRYPTED\n", encoding="utf-8")
+                    public_key.write_text(
+                        "ssh-ed25519 supplied-key caller\n", encoding="utf-8"
+                    )
                 key_files = {
                     "private-only": (private_key, None),
                     "public-only": (None, public_key),
                     "relative": (Path("caller-key"), Path("caller-key.pub")),
                     "mismatched": (private_key, public_key),
+                    "symlink-private": (private_key, public_key),
+                    "symlink-public": (private_key, public_key),
+                    "missing-public": (private_key, public_key),
+                    "non-regular-private": (private_key, public_key),
+                    "malformed-public": (private_key, public_key),
+                    "encrypted-private": (private_key, public_key),
                 }[case]
 
                 result, events, _, _ = self.run_image_build(
@@ -815,10 +903,36 @@ exec "${REAL_MV:?}" "$@"
                     self.assertIn("SSH_PRIVATE_KEY_FILE is required", result.stderr)
                 elif case == "relative":
                     self.assertIn("SSH private key path must be absolute", result.stderr)
+                elif case in ("symlink-private", "non-regular-private"):
+                    self.assertIn("SSH private key is not a regular file", result.stderr)
+                elif case in ("symlink-public", "missing-public"):
+                    self.assertIn("SSH public key is not a regular file", result.stderr)
+                elif case == "encrypted-private":
+                    self.assertIn(
+                        "SSH private key must be readable and unencrypted",
+                        result.stderr,
+                    )
                 else:
                     self.assertIn(
                         "SSH public key does not match private key", result.stderr
                     )
+
+    def test_make_rejects_incomplete_generated_ssh_key_state(self):
+        for state in ("private-only", "public-only"):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as tmp:
+                result, events, _, _ = self.run_image_build(
+                    "os-image-non-fde",
+                    "amd64",
+                    Path(tmp),
+                    generated_key_state=state,
+                )
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("generated SSH key state is incomplete", result.stderr)
+                self.assertFalse(
+                    any(event.startswith("packer:") for event in events)
+                )
+                self.assertFalse(any(event.startswith("fetch|") for event in events))
 
     def test_failed_artifact_promotion_restores_previous_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1220,7 +1334,7 @@ exec "${REAL_MV:?}" "$@"
             )
         self.assertRegex(
             project,
-            r"architecture\s*=\s*local\.admitted_architectures\[var\.architecture\]",
+            r"architecture\s*=\s*local\.material_bound_architectures\[var\.architecture\]",
         )
 
         self.assertRegex(project, r'required_version\s*=\s*"= 1\.14\.2"')

@@ -9,6 +9,7 @@ packer_bin="${PACKER:-packer}"
 work="$(mktemp -d)"
 trap 'chmod -R u+w "${work}" 2>/dev/null || true; rm -rf -- "${work}"' EXIT
 
+export PACKER_PLUGIN_PATH="${work}/plugins"
 "${packer_bin}" init "${project_root}"
 
 ssh-keygen -q -t ed25519 -N '' -f "${work}/id_ed25519"
@@ -53,7 +54,7 @@ if output="$("${packer_bin}" validate \
   echo "Packer accepted a requested architecture that does not match its materials" >&2
   exit 1
 fi
-grep -F "local.admitted_architectures" <<<"${output}" >/dev/null || {
+grep -F "Invalid index" <<<"${output}" >/dev/null || {
   printf '%s\n' "${output}" >&2
   echo "Packer rejected the requested architecture without the material-binding guard" >&2
   exit 1
@@ -62,9 +63,21 @@ grep -F "local.admitted_architectures" <<<"${output}" >/dev/null || {
 # Direct runners supply an authenticated plugin closure and must be able to
 # validate the project without packer init or any write beneath the source.
 readonly_source="${work}/read-only-source"
-cp -R "$(dirname "${project_root}")" "${readonly_source}"
+mkdir -p "${readonly_source}"
+tar -C "$(dirname "${project_root}")" \
+  --exclude='packer/.packer-inputs' \
+  --exclude='packer/.packer-output*' \
+  --exclude='packer/.packer_cache' \
+  --exclude='packer/.ssh' \
+  --exclude='packer/artifacts' \
+  --exclude='packer/bin' \
+  --exclude='packer/build-logs' \
+  --exclude='packer/iso-cache' \
+  --exclude='packer/output-*' \
+  -cf - packer files | tar -C "${readonly_source}" -xf -
 readonly_project="${readonly_source}/packer"
 chmod -R a-w "${readonly_source}"
+chmod -R a-w "${PACKER_PLUGIN_PATH}"
 "${packer_bin}" validate \
   -only=nke-node-non-fde.qemu.nke-non-fde \
   -var "architecture=amd64" \
