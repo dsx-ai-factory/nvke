@@ -111,6 +111,7 @@ For example, for a local invocation after installing the pinned plugin with
 cd packer
 packer build \
   -only=nke-node-non-fde.qemu.nke-non-fde \
+  -var architecture=amd64 \
   -var material_manifest=/run/nke-image/inputs/material-manifest.json \
   -var output_directory=/run/nke-image/output \
   -var ssh_private_key_file=/run/nke-image/state/id_ed25519 \
@@ -118,19 +119,34 @@ packer build \
   .
 ```
 
+The existing Make targets run `packer init` before validation or build, so the
+developer and NKE CI workflow retain their current plugin-installation path.
+Hermetic external runners instead provide the exact Packer executable and the
+QEMU plugin version pinned by `packer/versions.pkr.hcl`, expose the authenticated
+plugin tree through `PACKER_PLUGIN_PATH`, and run `packer validate` followed by
+`packer build`. They do not run `packer init` during the build. A missing or
+incompatible plugin therefore fails validation before QEMU starts rather than
+falling back to plugin discovery or download.
+
 The `-only` selector is required. Omitting it is unsupported because Packer
 runs both directory-project builds, including the FDE build, by default.
 
-Both builds require the `material_manifest`, `output_directory`,
+Both builds require the `architecture`, `material_manifest`, `output_directory`,
 `ssh_private_key_file`, and `ssh_public_key_file` variables. The manifest must
-be an absolute file path. It is the authenticated source of the target
-architecture, so there is no separate architecture variable that can drift
-from the staged ISO or package archive. Its sibling `materials/` directory must
-contain:
+be an absolute file path. The requested architecture must be `amd64` or
+`arm64`, and both manifest records must match it before Packer selects QEMU,
+firmware, or guest packages. Its sibling `materials/` directory must contain:
 
 - `installer-iso`, the prepared installer ISO;
 - `image-inputs`, a tar archive whose root contains the same prepared files that Make
   stages in `packer/artifacts/`.
+
+The Make targets accept `SSH_PRIVATE_KEY_FILE` and `SSH_PUBLIC_KEY_FILE` as an
+optional pair. When both are set, Make verifies that they are regular files and
+that the public key matches the private key, then passes their absolute paths to
+Packer. When neither is set, Make generates or reuses
+`packer/.ssh/id_ed25519` and `packer/.ssh/id_ed25519.pub`. Setting only one path
+is rejected before artifact preparation or Packer execution.
 
 The manifest contract is:
 
@@ -186,9 +202,9 @@ bootable SSH handoff. `provision.sh` removes the authorized build key before the
 image is finalized.
 
 The Make targets remain the normal developer and CI entry point. They prepare
-the same material layout, pass the existing generated SSH key explicitly, run
-one exact selector, and move the byte-identical finalized QCOW2 to the existing
-versioned output filename.
+the same material layout, use the supplied key pair when both key variables are
+set or generate the Make-owned pair otherwise, run one exact selector, and move
+the byte-identical finalized QCOW2 to the existing versioned output filename.
 
 After an interrupted build, `make clean-packer-scratch` removes only transient
 Packer inputs and output state while preserving the downloaded ISO and prepared

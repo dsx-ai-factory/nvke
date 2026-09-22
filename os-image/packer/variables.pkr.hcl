@@ -1,6 +1,16 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+variable "architecture" {
+  type        = string
+  description = "Target guest architecture selected by the external build plan."
+
+  validation {
+    condition     = contains(["amd64", "arm64"], var.architecture)
+    error_message = "The architecture value must be amd64 or arm64."
+  }
+}
+
 variable "material_manifest" {
   type        = string
   description = "Absolute path to the caller-authenticated material manifest. Materials are staged in its sibling materials directory."

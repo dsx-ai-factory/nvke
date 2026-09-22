@@ -7,7 +7,7 @@ set -euo pipefail
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 packer_bin="${PACKER:-packer}"
 work="$(mktemp -d)"
-trap 'rm -rf -- "${work}"' EXIT
+trap 'chmod -R u+w "${work}" 2>/dev/null || true; rm -rf -- "${work}"' EXIT
 
 "${packer_bin}" init "${project_root}"
 
@@ -31,6 +31,7 @@ for architecture in amd64 arm64; do
     nke-node-non-fde.qemu.nke-non-fde; do
     "${packer_bin}" validate \
       -only="${selector}" \
+      -var "architecture=${architecture}" \
       -var "material_manifest=${fixture}/material-manifest.json" \
       -var "output_directory=${fixture}/output" \
       -var "build_log_directory=${fixture}/logs" \
@@ -40,11 +41,46 @@ for architecture in amd64 arm64; do
   done
 done
 
+if output="$("${packer_bin}" validate \
+  -only=nke-node-non-fde.qemu.nke-non-fde \
+  -var "architecture=arm64" \
+  -var "material_manifest=${work}/amd64/material-manifest.json" \
+  -var "output_directory=${work}/amd64/output" \
+  -var "build_log_directory=${work}/amd64/logs" \
+  -var "ssh_private_key_file=${work}/id_ed25519" \
+  -var "ssh_public_key_file=${work}/id_ed25519.pub" \
+  "${project_root}" 2>&1)"; then
+  echo "Packer accepted a requested architecture that does not match its materials" >&2
+  exit 1
+fi
+grep -F "local.admitted_architectures" <<<"${output}" >/dev/null || {
+  printf '%s\n' "${output}" >&2
+  echo "Packer rejected the requested architecture without the material-binding guard" >&2
+  exit 1
+}
+
+# Direct runners supply an authenticated plugin closure and must be able to
+# validate the project without packer init or any write beneath the source.
+readonly_source="${work}/read-only-source"
+cp -R "$(dirname "${project_root}")" "${readonly_source}"
+readonly_project="${readonly_source}/packer"
+chmod -R a-w "${readonly_source}"
+"${packer_bin}" validate \
+  -only=nke-node-non-fde.qemu.nke-non-fde \
+  -var "architecture=amd64" \
+  -var "material_manifest=${work}/amd64/material-manifest.json" \
+  -var "output_directory=${work}/amd64/output" \
+  -var "build_log_directory=${work}/amd64/logs" \
+  -var "ssh_private_key_file=${work}/id_ed25519" \
+  -var "ssh_public_key_file=${work}/id_ed25519.pub" \
+  "${readonly_project}"
+
 invalid_manifest="${work}/amd64/material-manifest-invalid.json"
 sed 's#nke.dev/os-image-materials/v1#nke.dev/os-image-materials/invalid#' \
   "${work}/amd64/material-manifest.json" >"${invalid_manifest}"
 if output="$("${packer_bin}" validate \
   -only=nke-node-non-fde.qemu.nke-non-fde \
+  -var "architecture=amd64" \
   -var "material_manifest=${invalid_manifest}" \
   -var "output_directory=${work}/amd64/output" \
   -var "build_log_directory=${work}/amd64/logs" \
@@ -73,6 +109,7 @@ with open(sys.argv[2], "w", encoding="utf-8") as destination:
 PY
 if output="$("${packer_bin}" validate \
   -only=nke-node-non-fde.qemu.nke-non-fde \
+  -var "architecture=amd64" \
   -var "material_manifest=${missing_digest_manifest}" \
   -var "output_directory=${work}/amd64/output" \
   -var "build_log_directory=${work}/amd64/logs" \
@@ -90,6 +127,7 @@ grep -F "lowercase sha256 digests" <<<"${output}" >/dev/null || {
 
 if output="$("${packer_bin}" validate \
   -only=nke-node-non-fde.qemu.nke-non-fde \
+  -var "architecture=amd64" \
   -var "material_manifest=${work}/amd64/material-manifest.json" \
   -var "output_directory=${work}/amd64/output/../escaped" \
   -var "build_log_directory=${work}/amd64/logs" \
@@ -118,6 +156,7 @@ with open(sys.argv[2], "w", encoding="utf-8") as destination:
 PY
 if output="$("${packer_bin}" validate \
   -only=nke-node-non-fde.qemu.nke-non-fde \
+  -var "architecture=amd64" \
   -var "material_manifest=${mismatched_manifest}" \
   -var "output_directory=${work}/amd64/output" \
   -var "build_log_directory=${work}/amd64/logs" \
@@ -149,6 +188,7 @@ with open(sys.argv[2], "w", encoding="utf-8") as destination:
 PY
 if output="$("${packer_bin}" validate \
   -only=nke-node-non-fde.qemu.nke-non-fde \
+  -var "architecture=amd64" \
   -var "material_manifest=${duplicate_manifest}" \
   -var "output_directory=${work}/amd64/output" \
   -var "build_log_directory=${work}/amd64/logs" \

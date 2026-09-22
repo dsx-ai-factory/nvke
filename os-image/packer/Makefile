@@ -10,6 +10,18 @@ override PACKER_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
 override PACKER_ROOT := $(abspath $(dir $(PACKER_MAKEFILE)))
 override PACKER_PROJECT := $(PACKER_ROOT)
 SSH_DIR     := $(CURDIR)/.ssh
+SSH_PRIVATE_KEY_FILE ?=
+SSH_PUBLIC_KEY_FILE ?=
+ifneq ($(strip $(SSH_PRIVATE_KEY_FILE)),)
+  ifeq ($(strip $(SSH_PUBLIC_KEY_FILE)),)
+    $(error SSH_PUBLIC_KEY_FILE is required when SSH_PRIVATE_KEY_FILE is set)
+  endif
+else ifneq ($(strip $(SSH_PUBLIC_KEY_FILE)),)
+  $(error SSH_PRIVATE_KEY_FILE is required when SSH_PUBLIC_KEY_FILE is set)
+endif
+override PACKER_SSH_PRIVATE_KEY_FILE := $(if $(strip $(SSH_PRIVATE_KEY_FILE)),$(abspath $(SSH_PRIVATE_KEY_FILE)),$(SSH_DIR)/id_ed25519)
+override PACKER_SSH_PUBLIC_KEY_FILE := $(if $(strip $(SSH_PUBLIC_KEY_FILE)),$(abspath $(SSH_PUBLIC_KEY_FILE)),$(SSH_DIR)/id_ed25519.pub)
+override SSH_KEY_PREREQUISITE := $(if $(strip $(SSH_PRIVATE_KEY_FILE)),,$(SSH_DIR)/id_ed25519)
 # Make stages source-built packages here before adapting them into Packer's
 # explicit material layout. Keep the mutable scratch path Make-owned because
 # prepare-artifacts replaces it and clean removes it.
@@ -143,9 +155,30 @@ BOOT_WAIT ?= $(if $(filter kvm,$(ACCELERATOR)),10s,30s)
 
 .PHONY: os-image-fde os-image-non-fde _os-image-fde _os-image-non-fde preflight init-packer init-fde init-non-fde validate-packer ssh-key prepare-installer-iso prepare-artifacts prepare-packer-inputs clean clean-packer-scratch clean-fde-output clean-non-fde-output check-deps check-source collect-qcow2-fde collect-qcow2-non-fde
 
-ssh-key: preflight $(SSH_DIR)/id_ed25519
+ssh-key: preflight $(SSH_KEY_PREREQUISITE)
+	@set -eu; \
+	private="$(PACKER_SSH_PRIVATE_KEY_FILE)"; \
+	public="$(PACKER_SSH_PUBLIC_KEY_FILE)"; \
+	if [ ! -f "$$private" ] || [ -L "$$private" ]; then \
+		echo "SSH private key is not a regular file: $$private" >&2; \
+		exit 1; \
+	fi; \
+	if [ ! -f "$$public" ] || [ -L "$$public" ]; then \
+		echo "SSH public key is not a regular file: $$public" >&2; \
+		exit 1; \
+	fi; \
+	derived="$$(ssh-keygen -y -f "$$private")"; \
+	supplied="$$(awk 'NF >= 2 { print $$1 " " $$2; exit }' "$$public")"; \
+	if [ -z "$$supplied" ] || [ "$$derived" != "$$supplied" ]; then \
+		echo "SSH public key does not match private key: $$public" >&2; \
+		exit 1; \
+	fi
 
 $(SSH_DIR)/id_ed25519: | preflight
+	@if [ -e "$(SSH_DIR)/id_ed25519.pub" ] || [ -L "$(SSH_DIR)/id_ed25519.pub" ]; then \
+		echo "generated SSH key state is incomplete: $(SSH_DIR)" >&2; \
+		exit 1; \
+	fi
 	mkdir -p $(SSH_DIR)
 	ssh-keygen -t ed25519 -N '' -f $(SSH_DIR)/id_ed25519
 
@@ -273,6 +306,10 @@ prepare-packer-inputs: prepare-installer-iso prepare-artifacts
 	trap - 0 1 2 15
 
 check-deps:
+	@command -v ssh-keygen >/dev/null 2>&1 || { \
+		echo "ssh-keygen is required to prepare the Packer SSH key pair" >&2; \
+		exit 1; \
+	}
 	@command -v go >/dev/null 2>&1 || { \
 		echo "go is required to build nke-agent and the pinned nfpm" >&2; \
 		exit 1; \
@@ -395,11 +432,12 @@ _os-image-fde: ssh-key init-fde prepare-packer-inputs
 	PKR_VAR_luks_passphrase=$(LUKS_PASSPHRASE) \
 	$(PACKER) build \
 		-only=$(PACKER_BUILD_FDE) \
+		-var architecture=$(ARCH) \
 		-var material_manifest=$(MATERIAL_MANIFEST) \
 		-var output_directory=$(PACKER_OUTPUT_DIRECTORY_FDE) \
 		-var build_log_directory=$(BUILD_LOGS) \
-		-var ssh_private_key_file=$(SSH_DIR)/id_ed25519 \
-		-var ssh_public_key_file=$(SSH_DIR)/id_ed25519.pub \
+		-var ssh_private_key_file=$(PACKER_SSH_PRIVATE_KEY_FILE) \
+		-var ssh_public_key_file=$(PACKER_SSH_PUBLIC_KEY_FILE) \
 		-var accelerator=$(ACCELERATOR) \
 		-var cpu_model=$(CPU_MODEL) \
 		-var cpus=$(CPUS) \
@@ -432,11 +470,12 @@ _os-image-non-fde: ssh-key init-non-fde prepare-packer-inputs
 	fi
 	$(PACKER) build \
 		-only=$(PACKER_BUILD_NON_FDE) \
+		-var architecture=$(ARCH) \
 		-var material_manifest=$(MATERIAL_MANIFEST) \
 		-var output_directory=$(PACKER_OUTPUT_DIRECTORY_NON_FDE) \
 		-var build_log_directory=$(BUILD_LOGS) \
-		-var ssh_private_key_file=$(SSH_DIR)/id_ed25519 \
-		-var ssh_public_key_file=$(SSH_DIR)/id_ed25519.pub \
+		-var ssh_private_key_file=$(PACKER_SSH_PRIVATE_KEY_FILE) \
+		-var ssh_public_key_file=$(PACKER_SSH_PUBLIC_KEY_FILE) \
 		-var accelerator=$(ACCELERATOR) \
 		-var cpu_model=$(CPU_MODEL) \
 		-var cpus=$(CPUS) \

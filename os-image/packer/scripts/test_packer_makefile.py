@@ -205,10 +205,37 @@ fi
         )
         self.write_executable(tools / "go", "#!/bin/sh\nexit 0\n")
         self.write_executable(tools / "qemu-img", "#!/bin/sh\nexit 0\n")
+        self.write_executable(
+            tools / "ssh-keygen",
+            """#!/bin/sh
+set -eu
+if [ "${1-}" = "-y" ]; then
+  shift
+  test "${1-}" = "-f"
+  key="${2:?}"
+  sed -n 's/^KEY://p' "${key}"
+  exit 0
+fi
+key=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-f" ]; then
+    shift
+    key="${1:?}"
+  fi
+  shift
+done
+test -n "${key}"
+mkdir -p "${key%/*}"
+printf '%s\n' 'KEY:ssh-ed25519 generated-key' > "${key}"
+printf '%s\n' 'ssh-ed25519 generated-key generated' > "${key}.pub"
+""",
+        )
 
         ssh_dir = workspace / ".ssh"
         ssh_dir.mkdir()
-        (ssh_dir / "id_ed25519").write_text("test key\n", encoding="utf-8")
+        (ssh_dir / "id_ed25519").write_text(
+            "KEY:ssh-ed25519 test-key\n", encoding="utf-8"
+        )
         (ssh_dir / "id_ed25519.pub").write_text(
             "ssh-ed25519 test-key packer-test\n", encoding="utf-8"
         )
@@ -240,12 +267,16 @@ fi
         preexisting_output=False,
         preexisting_scratch=False,
         preexisting_other_scratch=False,
+        ssh_key_files=None,
+        generate_ssh_key=False,
     ):
         workspace, source, tools, packer, events, artifacts = (
             self.create_image_build_fixture(
                 root, unsafe_artifacts=unsafe_artifacts
             )
         )
+        if generate_ssh_key:
+            shutil.rmtree(workspace / ".ssh")
         if preexisting_output:
             variant = "fde" if target == "os-image-fde" else "non-fde"
             output = workspace / f"output-{variant}"
@@ -280,6 +311,12 @@ fi
             variables.extend(f"{name}={value}" for name, value in material_inputs)
         if artifacts_override is not None:
             variables.append(f"ARTIFACTS={artifacts_override}")
+        if ssh_key_files is not None:
+            private_key, public_key = ssh_key_files
+            if private_key is not None:
+                variables.append(f"SSH_PRIVATE_KEY_FILE={private_key}")
+            if public_key is not None:
+                variables.append(f"SSH_PUBLIC_KEY_FILE={public_key}")
 
         real_mv = shutil.which("mv")
         if real_mv is None:
@@ -606,7 +643,7 @@ exec "${REAL_MV:?}" "$@"
                 build = build_events[0]
                 variant = "fde" if target == "os-image-fde" else "non-fde"
                 self.assertIn(f"-only={selector}", build)
-                self.assertNotIn("-var architecture=", build)
+                self.assertIn(f"-var architecture={arch}", build)
                 self.assertIn(
                     f"-var material_manifest={artifacts.parent}/.packer-inputs/material-manifest.json",
                     build,
@@ -683,6 +720,100 @@ exec "${REAL_MV:?}" "$@"
                 self.assertFalse((artifacts / "partial").exists())
                 self.assertFalse(stage.exists())
                 self.assertEqual(list(artifacts.parent.glob(".artifacts.tmp.*")), [])
+
+    def test_make_uses_supplied_matching_ssh_key_pair(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "caller-state"
+            state.mkdir()
+            private_key = state / "build-key"
+            public_key = state / "build-key.pub"
+            private_key.write_text(
+                "KEY:ssh-ed25519 supplied-key\n", encoding="utf-8"
+            )
+            public_key.write_text(
+                "ssh-ed25519 supplied-key caller\n", encoding="utf-8"
+            )
+
+            result, events, _, _ = self.run_image_build(
+                "os-image-non-fde",
+                "amd64",
+                root,
+                ssh_key_files=(private_key, public_key),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            build = next(
+                event for event in events if event.startswith("packer-args|build ")
+            )
+            self.assertIn(f"-var ssh_private_key_file={private_key}", build)
+            self.assertIn(f"-var ssh_public_key_file={public_key}", build)
+
+    def test_make_generates_ssh_key_pair_when_none_is_supplied(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result, events, artifacts, _ = self.run_image_build(
+                "os-image-non-fde",
+                "amd64",
+                root,
+                generate_ssh_key=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            private_key = artifacts.parent / ".ssh/id_ed25519"
+            public_key = artifacts.parent / ".ssh/id_ed25519.pub"
+            self.assertEqual(
+                private_key.read_text(encoding="utf-8"),
+                "KEY:ssh-ed25519 generated-key\n",
+            )
+            self.assertEqual(
+                public_key.read_text(encoding="utf-8"),
+                "ssh-ed25519 generated-key generated\n",
+            )
+            build = next(
+                event for event in events if event.startswith("packer-args|build ")
+            )
+            self.assertIn(f"-var ssh_private_key_file={private_key}", build)
+            self.assertIn(f"-var ssh_public_key_file={public_key}", build)
+
+    def test_make_rejects_incomplete_or_mismatched_ssh_key_inputs(self):
+        cases = ("private-only", "public-only", "mismatched")
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                private_key = root / "caller-key"
+                public_key = root / "caller-key.pub"
+                private_key.write_text(
+                    "KEY:ssh-ed25519 supplied-key\n", encoding="utf-8"
+                )
+                public_key.write_text(
+                    "ssh-ed25519 other-key caller\n", encoding="utf-8"
+                )
+                key_files = {
+                    "private-only": (private_key, None),
+                    "public-only": (None, public_key),
+                    "mismatched": (private_key, public_key),
+                }[case]
+
+                result, events, _, _ = self.run_image_build(
+                    "os-image-non-fde",
+                    "amd64",
+                    root,
+                    ssh_key_files=key_files,
+                )
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(
+                    any(event.startswith("packer-args|build ") for event in events)
+                )
+                if case == "private-only":
+                    self.assertIn("SSH_PUBLIC_KEY_FILE is required", result.stderr)
+                elif case == "public-only":
+                    self.assertIn("SSH_PRIVATE_KEY_FILE is required", result.stderr)
+                else:
+                    self.assertIn(
+                        "SSH public key does not match private key", result.stderr
+                    )
 
     def test_failed_artifact_promotion_restores_previous_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1071,6 +1202,7 @@ exec "${REAL_MV:?}" "$@"
 
         self.assertEqual(project.count("packer {"), 1)
         for variable in (
+            "architecture",
             "material_manifest",
             "output_directory",
             "ssh_private_key_file",
@@ -1081,10 +1213,9 @@ exec "${REAL_MV:?}" "$@"
                 1,
                 f"{variable} must be declared once in the directory project",
             )
-        self.assertNotIn('variable "architecture"', project)
         self.assertRegex(
             project,
-            r"architecture\s*=\s*local\.installer_record\.architecture",
+            r"architecture\s*=\s*local\.admitted_architectures\[var\.architecture\]",
         )
 
         self.assertRegex(project, r'required_version\s*=\s*"= 1\.14\.2"')
