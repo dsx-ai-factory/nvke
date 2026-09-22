@@ -155,7 +155,7 @@ func realMain(args []string) int {
 	var exitcode int
 	// Supporting Unicode version 12.0.0 is annoying since arm64 support
 	// is lacking on Go 1.15 and below.
-	for _, version := range []string{"13.0.0", "15.0.0"} {
+	for _, version := range []string{"13.0.0", "15.0.0", "17.0.0"} {
 		code := genCmd(append([]string{"-unicode", version}, args...)...)
 		if exitcode == 0 {
 			exitcode = code

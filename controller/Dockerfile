@@ -7,10 +7,10 @@
 # tag until now.
 #
 # Internal builds override these rather than BASE_REGISTRY, for example
-#   docker build --build-arg GOLANG_IMAGE=dockerhub.nvidia.com/golang:1.26.8@sha256:... .
+#   docker build --build-arg GOLANG_IMAGE=dockerhub.nvidia.com/golang:1.27.1@sha256:... .
 # A digest is content-addressed, so a mirror serving the same content answers
 # to the same digest.
-ARG GOLANG_IMAGE=docker.io/golang:1.26.8@sha256:6c2a5538f964f1c82f97ad14988bf05de100d922d159d0e398b54c7b0ca0c6c9
+ARG GOLANG_IMAGE=docker.io/golang:1.27.1@sha256:3680233e3204827fbdc66088528ae6d4b3d034f51d03a99d454f6de034888244
 ARG ALPINE_IMAGE=docker.io/alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 FROM ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:0.3.0@sha256:6402624276b66ef7a733e126488397c9cf33c6706ee1f52a9c7ffad2a540aa7c AS spiffe-jwt-exec-auth

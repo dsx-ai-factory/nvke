@@ -21,7 +21,7 @@ cd nke
 
 | Tool | Needed for | Notes |
 |---|---|---|
-| [Go](https://go.dev/dl/) 1.26.8+ | all | `go.work` pins it. An older Go fetches the right toolchain unless `GOTOOLCHAIN=local` |
+| [Go](https://go.dev/dl/) 1.27.1+ | all | `go.work` pins it. An older Go fetches the right toolchain unless `GOTOOLCHAIN=local` |
 | [Docker](https://docs.docker.com/get-docker/) 24+ | A and B | Not supported for path C bootstrapping |
 | [nerdctl](https://github.com/containerd/nerdctl) with containerd | C | The bootstrap drives kind and pulls images through it; no Docker daemon |
 | GNU Make 4.0+ | all | macOS ships 3.81; `brew install make` gives `gmake` |

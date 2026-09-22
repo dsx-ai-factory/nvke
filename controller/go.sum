@@ -442,8 +442,8 @@ github.com/cespare/xxhash/v2 v2.1.2/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XL
 github.com/cespare/xxhash/v2 v2.2.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
-github.com/charlievieth/strcase v0.0.5 h1:gV4iXVyD6eI5KdfOV+/vIVCKXZwtCWOmDMcu7Uy00Rs=
-github.com/charlievieth/strcase v0.0.5/go.mod h1:FIOYY1aDBMSIOFqmVomHBpoK+bteGlESRsgsdWjrhx8=
+github.com/charlievieth/strcase v0.0.6 h1:bOjyq1IDIa677BYv8Maqs5/hFMgvO8aM5HX/lHpwTRo=
+github.com/charlievieth/strcase v0.0.6/go.mod h1:BfLERwCrfmGJfELajGNncQWv5MCR0CCjgB8hXKhCtns=
 github.com/chzyer/logex v1.1.10/go.mod h1:+Ywpsq7O8HXn0nuIou7OrIPyXbp3wmkHB+jjWRnGsAI=
 github.com/chzyer/logex v1.2.0/go.mod h1:9+9sk7u7pGNWYMkh0hdiL++6OeibzJccyQU4p4MedaY=
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5PlCu98SY8svDHJxuZscDgtXS6KTTbou5AhLI=

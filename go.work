@@ -7,7 +7,7 @@
 // public. Re-running `go work vendor` (dependency bumps) needs access to that
 // repository; everything else an outside contributor can do gets the same
 // result as CI. See docs/go-workspace.md.
-go 1.26.8
+go 1.27.1
 
 use (
 	./agent

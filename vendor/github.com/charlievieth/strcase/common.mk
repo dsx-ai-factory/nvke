@@ -29,7 +29,7 @@ GREP_COMMENTS  ?= --line-number --extended-regexp --recursive \
 xgrep          := $(GREP) $(GREP_COLOR)
 
 # Arguments for `golangci-lint run`
-GOLANGCI_VERSION       ?= v1.61.0
+GOLANGCI_VERSION       ?= v1.64.5
 GOLANGCI_SORT          ?= --sort-results
 GOLANGCI_COLOR         ?= --color=always
 GOLANGCI_CONFIG        ?= --config=$(MAKEFILE_DIR)/.golangci.yaml

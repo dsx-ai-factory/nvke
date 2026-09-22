@@ -539,7 +539,8 @@ func TestEnsureImageAvailableDiagnosesMissingNerdctl(t *testing.T) {
 	engine := bootstrapengine.New(runnerFunc(
 		func(_ context.Context, _ map[string]string, _ string, _ ...string) (string, error) {
 			return "", fmt.Errorf("exec %q: %w", bootstrapengine.RuntimeCLI, exec.ErrNotFound)
-		}), nil)
+		},
+	), nil)
 
 	err := ensureImageAvailable(context.Background(), engine,
 		&bootstrapengine.Cluster{Name: "c"}, "nvcr.io/org/controller:edge", slog.New(slog.DiscardHandler))

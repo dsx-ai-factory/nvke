@@ -239,7 +239,8 @@ func TestTenantKubeconfigRetriesUntilPublished(t *testing.T) {
 		{output: base64.StdEncoding.EncodeToString([]byte("apiVersion: v1\nkind: Config\n"))},
 	}}
 	got, err := New(runner, nil).TenantKubeconfig(
-		context.Background(), "/tmp/kubeconfig", "nke-site", time.Second)
+		context.Background(), "/tmp/kubeconfig", "nke-site", time.Second,
+	)
 	if err != nil {
 		t.Fatalf("TenantKubeconfig returned error: %v", err)
 	}
@@ -261,7 +262,8 @@ func TestTenantKubeconfigTimesOutWithLastError(t *testing.T) {
 		err:    errors.New("exit status 1"),
 	}}}
 	_, err := New(runner, nil).TenantKubeconfig(
-		context.Background(), "/tmp/kubeconfig", "nke-site", 5*time.Millisecond)
+		context.Background(), "/tmp/kubeconfig", "nke-site", 5*time.Millisecond,
+	)
 	if err == nil {
 		t.Fatal("TenantKubeconfig did not time out")
 	}
@@ -713,7 +715,8 @@ func TestTPMAttestorArgs(t *testing.T) {
 	// Reaching the server from outside is the bundle's external-service
 	// manifest, not a chart value, so nothing here should touch the Service.
 	if strings.Contains(joinArgs(tpmAttestorArgs(
-		Config{TPMEKFingerprints: []string{"aaa"}}, "spire-server")), "service.type") {
+		Config{TPMEKFingerprints: []string{"aaa"}}, "spire-server",
+	)), "service.type") {
 		t.Error("tpmAttestorArgs should not change the chart's Service")
 	}
 
@@ -724,7 +727,8 @@ func TestTPMAttestorArgs(t *testing.T) {
 	}
 
 	got := joinArgs(tpmAttestorArgs(
-		Config{TPMEKFingerprints: []string{"aaa", "bbb"}}, "spire.spire-server"))
+		Config{TPMEKFingerprints: []string{"aaa", "bbb"}}, "spire.spire-server",
+	))
 	for _, want := range []string{
 		"spire.spire-server.nodeAttestor.tpmDirect.enabled=true",
 		"spire.spire-server.nodeAttestor.tpmDirect.hashes[0]=aaa",

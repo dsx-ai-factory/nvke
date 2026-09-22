@@ -10,7 +10,7 @@
 # choice of binary is shared. Include after GOBIN is set.
 GO                    ?= go
 GOLANGCI_LINT_REPO    ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint
-GOLANGCI_LINT_VERSION ?= v2.12.2
+GOLANGCI_LINT_VERSION ?= v2.13.2
 GOLANGCI_LINT_EXE     ?= golangci-lint
 
 # Where golangci-lint keeps its issue cache.

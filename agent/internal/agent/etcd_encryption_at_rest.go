@@ -66,8 +66,8 @@ type (
 
 var (
 	objectsToEncrypt = []string{
-		"secrets",    //nolint:goconst // resource plural listed once; the literal table is clearer
-		"configmaps", //nolint:goconst // resource plural listed once; the literal table is clearer
+		"secrets",
+		"configmaps",
 		"persistentvolumeclaims",
 		"persistentvolumes",
 		"serviceaccounts",
@@ -472,7 +472,7 @@ func (n *NodeAgentServer) RestartAPIPods(
 		"kubectl",
 		[]string{
 			"get",
-			"pods", //nolint:goconst // kubectl argv fragment; naming each CLI flag reads worse than the literal
+			"pods",
 			"--no-headers",
 			"-o", //nolint:goconst // kubectl argv fragment; naming each CLI flag reads worse than the literal
 			"custom-columns=:metadata.name",

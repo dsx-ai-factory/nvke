@@ -59,7 +59,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/beevik/etree v1.6.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
-	github.com/charlievieth/strcase v0.0.5 // indirect
+	github.com/charlievieth/strcase v0.0.6 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect

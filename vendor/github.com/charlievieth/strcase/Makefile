@@ -158,5 +158,5 @@ env:
 clean:
 	@rm -f cpu*.out mem*.out
 	@rm -rf DATA bin
-	@$(GO) -i ./...
+	@$(GO) clean -i ./...
 	@cd $(MAKEFILE_DIR)/internal/gen && $(MAKE) --quiet clean

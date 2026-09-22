@@ -255,7 +255,8 @@ func TestWaitControlPlaneJoined_ReturnsWhenEveryNodeIsProvisioned(t *testing.T) 
 	}}
 
 	if err := WaitControlPlaneJoined(
-		context.Background(), client, uuid.New(), 3, time.Minute, quietLogger()); err != nil {
+		context.Background(), client, uuid.New(), 3, time.Minute, quietLogger(),
+	); err != nil {
 		t.Fatalf("WaitControlPlaneJoined returned error: %v", err)
 	}
 	if client.lists != 3 {
@@ -272,7 +273,8 @@ func TestWaitControlPlaneJoined_DoesNotReturnOnTheFirstNodeAlone(t *testing.T) {
 	client := &fakeClusterAPI{nodeStates: [][]api.Node{nodesProvisioned(3, 1)}}
 
 	err := WaitControlPlaneJoined(
-		context.Background(), client, uuid.New(), 3, 5*time.Millisecond, quietLogger())
+		context.Background(), client, uuid.New(), 3, 5*time.Millisecond, quietLogger(),
+	)
 	if err == nil {
 		t.Fatal("returned with only 1 of 3 control plane nodes provisioned")
 	}
@@ -294,7 +296,8 @@ func TestWaitControlPlaneJoined_WaitsForNodesCWEHasNotCreatedYet(t *testing.T) {
 	client := &fakeClusterAPI{nodeStates: [][]api.Node{nodesProvisioned(1, 1)}}
 
 	err := WaitControlPlaneJoined(
-		context.Background(), client, uuid.New(), 3, 5*time.Millisecond, quietLogger())
+		context.Background(), client, uuid.New(), 3, 5*time.Millisecond, quietLogger(),
+	)
 	if err == nil {
 		t.Fatal("returned with 2 of 3 control plane nodes not yet created")
 	}
@@ -313,7 +316,8 @@ func TestWaitControlPlaneJoined_SurvivesAFailedRead(t *testing.T) {
 	}
 
 	if err := WaitControlPlaneJoined(
-		context.Background(), client, uuid.New(), 1, time.Minute, quietLogger()); err != nil {
+		context.Background(), client, uuid.New(), 1, time.Minute, quietLogger(),
+	); err != nil {
 		t.Fatalf("WaitControlPlaneJoined gave up on a transient read failure: %v", err)
 	}
 }
@@ -326,7 +330,8 @@ func TestWaitControlPlaneJoined_TimeoutReportsTheReadFailure(t *testing.T) {
 	client := &fakeClusterAPI{listErrs: []error{errors.New("connection refused")}}
 
 	err := WaitControlPlaneJoined(
-		context.Background(), client, uuid.New(), 3, 5*time.Millisecond, quietLogger())
+		context.Background(), client, uuid.New(), 3, 5*time.Millisecond, quietLogger(),
+	)
 	if err == nil {
 		t.Fatal("expected WaitControlPlaneJoined to time out")
 	}
@@ -342,7 +347,8 @@ func TestWaitControlPlaneJoined_NothingToWaitFor(t *testing.T) {
 	client := &fakeClusterAPI{}
 
 	if err := WaitControlPlaneJoined(
-		context.Background(), client, uuid.New(), 0, time.Minute, quietLogger()); err != nil {
+		context.Background(), client, uuid.New(), 0, time.Minute, quietLogger(),
+	); err != nil {
 		t.Fatalf("WaitControlPlaneJoined returned error: %v", err)
 	}
 	if client.lists != 0 {
@@ -362,7 +368,8 @@ func TestWaitControlPlaneJoined_TimeoutForgetsARecoveredReadFailure(t *testing.T
 	}
 
 	err := WaitControlPlaneJoined(
-		context.Background(), client, uuid.New(), 3, 5*time.Millisecond, quietLogger())
+		context.Background(), client, uuid.New(), 3, 5*time.Millisecond, quietLogger(),
+	)
 	if err == nil {
 		t.Fatal("expected WaitControlPlaneJoined to time out")
 	}
@@ -384,7 +391,8 @@ func TestWaitControlPlaneJoined_SpentBudgetDoesNotStartAFreshWait(t *testing.T) 
 
 		start := time.Now()
 		err := WaitControlPlaneJoined(
-			context.Background(), client, uuid.New(), 3, timeout, quietLogger())
+			context.Background(), client, uuid.New(), 3, timeout, quietLogger(),
+		)
 		if err == nil {
 			t.Fatalf("timeout %s: waited on a spent budget instead of failing", timeout)
 		}

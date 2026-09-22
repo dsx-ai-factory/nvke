@@ -105,7 +105,7 @@ const (
 // isLocalDev reports whether the agent is running under the local development
 // harness, where some kubeadm SystemVerification checks cannot succeed.
 func isLocalDev() bool {
-	return os.Getenv(localDevEnvVar) == "true" //nolint:goconst // env-var value, not a shared domain term
+	return os.Getenv(localDevEnvVar) == "true"
 }
 
 var DefaultTigeraVersion *semver.Version = semver.MustParse("3.30.1")
@@ -691,7 +691,7 @@ func (s *NodeAgentServer) ExecuteKubeadmInit(
 		}
 
 		args = []string{
-			"init", //nolint:goconst // kubeadm argv; kept literal so the arg list reads as the command line
+			"init",
 			fmt.Sprintf("--pod-network-cidr=%s", kubeadmPodNetworkCIDR(req.PodNetworkCidr)),
 			fmt.Sprintf("--control-plane-endpoint=%s", req.ControlPlaneEndpoint),
 			"--upload-certs", //nolint:goconst // kubeadm argv fragment; naming each CLI flag reads worse than the literal

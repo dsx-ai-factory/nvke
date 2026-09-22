@@ -1,23 +1,40 @@
----
+version: "2"
 linters:
   enable:
-    - gofmt
-    - goimports
+    - gocheckcompilerdirectives
     - mirror
     - misspell
     - unconvert
     - wastedassign
-    - gocheckcompilerdirectives
-output:
-  sort-results: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - gen/gen
+      - gen/ucd
+      - ^gen$
+      - ^ucd$
+      - third_party$
+      - builtin$
+      - examples$
 issues:
   max-issues-per-linter: 100
   max-same-issues: 100
-  # We need to exclude each dir twice since we run golangci-lint
-  # with the --path-prefix option in CI, which changes how paths
-  # are matched.
-  exclude-dirs:
-    - 'gen/gen'
-    - 'gen/ucd'
-    - '^gen$'
-    - '^ucd$'
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - gen/gen
+      - gen/ucd
+      - ^gen$
+      - ^ucd$
+      - third_party$
+      - builtin$
+      - examples$

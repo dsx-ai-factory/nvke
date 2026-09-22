@@ -25,7 +25,7 @@ notices-check` verifies it is up to date.
 | `github.com/caarlos0/env/v11` | MIT | `github.com/caarlos0/env/v11@v11.4.1` | Unknown |
 | `github.com/cenkalti/backoff/v5` | MIT | `github.com/cenkalti/backoff/v5@v5.0.3` | Unknown |
 | `github.com/cespare/xxhash/v2` | MIT | `github.com/cespare/xxhash/v2@v2.3.0` | Unknown |
-| `github.com/charlievieth/strcase` | MIT | `github.com/charlievieth/strcase@v0.0.5` | Unknown |
+| `github.com/charlievieth/strcase` | MIT | `github.com/charlievieth/strcase@v0.0.6` | Unknown |
 | `github.com/coreos/go-semver/semver` | Apache-2.0 | `github.com/coreos/go-semver@v0.3.1` | Unknown |
 | `github.com/davecgh/go-spew/spew` | ISC | `github.com/davecgh/go-spew@v1.1.2-0.20180830191138-d8f796af33cc` | Unknown |
 | `github.com/emicklei/go-restful/v3` | MIT | `github.com/emicklei/go-restful/v3@v3.13.0` | Unknown |
@@ -438,7 +438,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ### github.com/charlievieth/strcase
 
-_MIT — github.com/charlievieth/strcase@v0.0.5_
+_MIT — github.com/charlievieth/strcase@v0.0.6_
 
 #### LICENSE
 
