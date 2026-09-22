@@ -59,8 +59,6 @@ func TestReadFailureDomains(t *testing.T) {
 	t.Run("ready cluster filters eligible domains and active control plane machines", func(t *testing.T) {
 		t.Parallel()
 
-		mockDB := &testutil.MockDB{}
-		mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, Name: clusterName}, nil).Once()
 		now := metav1.Now()
 		objects := []client.Object{
 			&clusterv1.Cluster{
@@ -80,15 +78,12 @@ func TestReadFailureDomains(t *testing.T) {
 			failureDomainMachine(clusterName, "deleting", "fd-deleting", "", true, &now),
 		}
 		k8sClient := &listCountingClient{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()}
-		controller := NewController(
-			config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-			slog.Default(),
-			dbwrapper.New(mockDB, slog.Default()),
-			nil,
-			k8sClient,
-		)
+		r := &reconciler{
+			cfg:       config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+			k8sClient: k8sClient,
+		}
 
-		domains, err := controller.readFailureDomains(context.Background(), clusterID)
+		domains, err := r.readFailureDomains(context.Background(), db.Cluster{ID: clusterID, Name: clusterName})
 
 		require.NoError(t, err)
 		require.NotNil(t, domains)
@@ -98,14 +93,11 @@ func TestReadFailureDomains(t *testing.T) {
 			"cp-spec":   "fd-spec",
 		}, domains.observedByNodeName)
 		assert.Equal(t, 1, k8sClient.listCalls)
-		mockDB.AssertExpectations(t)
 	})
 
 	t.Run("ready cluster without eligible domains skips machine listing", func(t *testing.T) {
 		t.Parallel()
 
-		mockDB := &testutil.MockDB{}
-		mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, Name: clusterName}, nil).Once()
 		k8sClient := &listCountingClient{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 			&clusterv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{Name: clusterName, Namespace: constants.NamespaceNKESystem},
@@ -114,21 +106,17 @@ func TestReadFailureDomains(t *testing.T) {
 				},
 			},
 		).Build()}
-		controller := NewController(
-			config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-			slog.Default(),
-			dbwrapper.New(mockDB, slog.Default()),
-			nil,
-			k8sClient,
-		)
+		r := &reconciler{
+			cfg:       config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+			k8sClient: k8sClient,
+		}
 
-		domains, err := controller.readFailureDomains(context.Background(), clusterID)
+		domains, err := r.readFailureDomains(context.Background(), db.Cluster{ID: clusterID, Name: clusterName})
 
 		require.NoError(t, err)
 		require.NotNil(t, domains)
 		assert.Empty(t, domains.eligible)
 		assert.Zero(t, k8sClient.listCalls)
-		mockDB.AssertExpectations(t)
 	})
 }
 
@@ -148,49 +136,27 @@ func TestReadFailureDomainsWithoutAPlacementView(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		cfg        config.Config
-		cluster    db.Cluster
-		clusterErr error
-		k8sClient  func() client.Client
-		wantErr    string
+		cfg       config.Config
+		k8sClient func() client.Client
+		wantErr   string
 	}{
 		"controller does not own the control plane": {
 			cfg: config.Config{},
 		},
-		"cluster row is gone": {
-			cfg:        config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-			clusterErr: db.ErrNotFound,
-		},
-		"cluster is being deleted": {
-			cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-			cluster: db.Cluster{
-				ID:         clusterID,
-				Name:       clusterName,
-				Conditions: db.ClusterConditions{Deleting: db.NewCondition(true, "deleting")},
-			},
-		},
-		"cluster read fails": {
-			cfg:        config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-			clusterErr: errors.New("connection refused"),
-			wantErr:    "get cluster for failure-domain discovery",
-		},
 		"kubernetes client is not configured": {
 			cfg:       config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-			cluster:   db.Cluster{ID: clusterID, Name: clusterName},
 			k8sClient: func() client.Client { return nil },
 			wantErr:   "kubernetes client is not configured",
 		},
 		"capi cluster is missing": {
-			cfg:     config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-			cluster: db.Cluster{ID: clusterID, Name: clusterName},
+			cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
 			k8sClient: func() client.Client {
 				return fake.NewClientBuilder().WithScheme(scheme).Build()
 			},
 			wantErr: "get CAPI cluster for failure-domain discovery",
 		},
 		"machine listing fails": {
-			cfg:     config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-			cluster: db.Cluster{ID: clusterID, Name: clusterName},
+			cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
 			k8sClient: func() client.Client {
 				return &listErrorClient{
 					Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(readyCluster).Build(),
@@ -205,17 +171,13 @@ func TestReadFailureDomainsWithoutAPlacementView(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			mockDB := &testutil.MockDB{}
-			if tc.cfg.ProvisionControlPlaneWithControlPlaneController {
-				mockDB.On("GetCluster", mock.Anything, clusterID).Return(tc.cluster, tc.clusterErr).Once()
-			}
 			var k8sClient client.Client
 			if tc.k8sClient != nil {
 				k8sClient = tc.k8sClient()
 			}
-			controller := NewController(tc.cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()), nil, k8sClient)
+			r := &reconciler{cfg: tc.cfg, k8sClient: k8sClient}
 
-			domains, err := controller.readFailureDomains(context.Background(), clusterID)
+			domains, err := r.readFailureDomains(context.Background(), db.Cluster{ID: clusterID, Name: clusterName})
 
 			if tc.wantErr == "" {
 				require.NoError(t, err)
@@ -225,7 +187,6 @@ func TestReadFailureDomainsWithoutAPlacementView(t *testing.T) {
 				require.ErrorContains(t, err, tc.wantErr)
 				assert.Nil(t, domains)
 			}
-			mockDB.AssertExpectations(t)
 		})
 	}
 }
@@ -265,10 +226,9 @@ func TestControllerRequeuesWhileClusterInfrastructureIsNotReady(t *testing.T) {
 	}
 	mockTx := &testutil.MockTx{}
 	mockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(cluster, nil).Once()
-	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Twice()
+	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
 	mockTx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Twice()
 	mockDB := &testutil.MockDB{MockTx: mockTx}
-	mockDB.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
 
 	scheme := runtime.NewScheme()
@@ -384,12 +344,25 @@ func TestReconcilePlacesTheNodesItCreatedInTheSamePass(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, database.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		scheme := runtime.NewScheme()
+		require.NoError(t, clusterv1.AddToScheme(scheme))
+		k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(&clusterv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{Name: cluster.Name, Namespace: constants.NamespaceNKESystem},
+			Status: clusterv1.ClusterStatus{
+				Initialization: infrastructureProvisionedStatus(),
+				FailureDomains: []clusterv1.FailureDomain{
+					{Name: "fd-c", ControlPlane: new(true)},
+					{Name: "fd-a", ControlPlane: new(true)},
+					{Name: "fd-b", ControlPlane: new(true)},
+				},
+			},
+		}).Build()
 		r := newReconciler(
 			config.Config{ProvisionControlPlaneWithControlPlaneController: true},
 			slog.New(slog.DiscardHandler),
 			tx,
 			nil,
-			&failureDomains{eligible: []string{"fd-c", "fd-a", "fd-b"}},
+			k8sClient,
 		)
 		result, err := r.reconcile(ctx, cluster)
 		require.NoError(t, err)

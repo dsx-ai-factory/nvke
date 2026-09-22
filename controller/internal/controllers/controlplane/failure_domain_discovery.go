@@ -6,11 +6,9 @@ package controlplane
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,31 +33,19 @@ type failureDomains struct {
 // readFailureDomains returns a complete snapshot of the control-plane-eligible
 // failure domains of a cluster and the domain CAPI already reports for each of
 // its active control-plane Machines. A discovery error is returned with a nil
-// snapshot.
-//
-// Call it outside the reconcile transaction so the cluster row lock is not held
-// across the Kubernetes reads.
-func (c *Controller) readFailureDomains(ctx context.Context, clusterID uuid.UUID) (*failureDomains, error) {
-	if !c.cfg.UseControlPlaneControllerForControlPlane() {
+// snapshot. It runs inside the serialized control-plane reconcile so discovery,
+// legacy backfill, and new placement stay together.
+func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster) (*failureDomains, error) {
+	if !r.cfg.UseControlPlaneControllerForControlPlane() {
 		return &failureDomains{}, nil
 	}
 
-	cluster, err := c.db.GetCluster(ctx, clusterID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			return &failureDomains{}, nil
-		}
-		return nil, fmt.Errorf("get cluster for failure-domain discovery: %w", err)
-	}
-	if cluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
-		return &failureDomains{}, nil
-	}
-	if c.k8sClient == nil {
+	if r.k8sClient == nil {
 		return nil, fmt.Errorf("kubernetes client is not configured")
 	}
 
 	capiCluster := &clusterv1.Cluster{}
-	if err := c.k8sClient.Get(ctx, client.ObjectKey{
+	if err := r.k8sClient.Get(ctx, client.ObjectKey{
 		Name:      cluster.Name,
 		Namespace: constants.NamespaceNKESystem,
 	}, capiCluster); err != nil {
@@ -83,7 +69,7 @@ func (c *Controller) readFailureDomains(ctx context.Context, clusterID uuid.UUID
 	}
 
 	machines := &clusterv1.MachineList{}
-	if err := c.k8sClient.List(ctx, machines,
+	if err := r.k8sClient.List(ctx, machines,
 		client.InNamespace(constants.NamespaceNKESystem),
 		client.MatchingLabels{clusterv1.ClusterNameLabel: cluster.Name},
 	); err != nil {
@@ -99,6 +85,8 @@ func (c *Controller) readFailureDomains(ctx context.Context, clusterID uuid.UUID
 		if !machine.DeletionTimestamp.IsZero() {
 			continue
 		}
+		// Status is the observed placement, but it is optional and can lag spec
+		// while the infrastructure provider is reconciling an older Machine.
 		if domain := cmp.Or(machine.Status.FailureDomain, machine.Spec.FailureDomain); domain != "" {
 			discovered.observedByNodeName[machine.Name] = domain
 		}

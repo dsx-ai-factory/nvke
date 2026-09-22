@@ -79,13 +79,6 @@ func nodeClusterKeys(_ context.Context, node db.Node) ([]dbreconcile.Key, error)
 
 // Reconcile reconciles one cluster's control plane from a ClusterID root key.
 func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconcile.Result, error) {
-	discoveredFailureDomains, discoveryErr := c.readFailureDomains(ctx, key.ID)
-	if discoveryErr != nil {
-		c.logger.Info("failure-domain discovery failed; placement will be deferred if a node is waiting for a placement decision",
-			"clusterID", key.ID,
-			"err", discoveryErr,
-		)
-	}
 	result := reconcile.Result{}
 	err := c.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		// Re-read under a row lock: the cluster may have been enqueued from a stale
@@ -104,7 +97,7 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 			return nil
 		}
 
-		reconciler := newReconciler(c.cfg, c.logger, tx, c.cweTemporalClient, discoveredFailureDomains)
+		reconciler := newReconciler(c.cfg, c.logger, tx, c.cweTemporalClient, c.k8sClient)
 		result, err = reconciler.reconcile(ctx, lockedCluster)
 		return err
 	})

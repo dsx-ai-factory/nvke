@@ -21,17 +21,23 @@ const (
 )
 
 // scaleUp creates pending control-plane nodes and returns the number created.
-// Nodes are created with a zero-value InstanceTypeID, no failure domain, and a
-// pinned ControlPlaneConfigurationID: the control plane node scheduler picks the
-// Forge instance type from the pinned InstanceTypePreference at schedule time,
-// and assignFailureDomains records placement later in the same reconcile.
+// A non-nil placement gives every new node a failure-domain decision in its
+// initial row. A nil placement preserves the legacy node-pool surge path, which
+// does not use control-plane-controller placement. Instance-type selection
+// remains the control plane node scheduler's responsibility.
 func (r *reconciler) scaleUp(
 	ctx context.Context,
 	cluster db.Cluster,
 	count int,
 	reason string,
+	placement *failureDomainPlacement,
 ) (int, error) {
 	if count <= 0 {
+		return 0, nil
+	}
+
+	if placement != nil && placement.allocator == nil {
+		placement.markDeferred()
 		return 0, nil
 	}
 
@@ -42,7 +48,11 @@ func (r *reconciler) scaleUp(
 
 	created := 0
 	for range count {
-		createdNode, err := r.createPendingNode(ctx, cluster, existingNodeNames)
+		var failureDomain *string
+		if placement != nil {
+			failureDomain = placement.take()
+		}
+		createdNode, err := r.createPendingNode(ctx, cluster, existingNodeNames, failureDomain)
 		if err != nil {
 			return created, err
 		}
@@ -65,6 +75,7 @@ func (r *reconciler) createPendingNode(
 	ctx context.Context,
 	cluster db.Cluster,
 	existingNodeNames []string,
+	failureDomain *string,
 ) (db.Node, error) {
 	if cluster.ControlPlaneConfig.ConfigurationID == uuid.Nil {
 		return db.Node{}, fmt.Errorf("missing control plane configuration ID for pending control-plane node")
@@ -75,6 +86,7 @@ func (r *reconciler) createPendingNode(
 		ControlPlane:                true,
 		ControlPlaneConfigurationID: cluster.ControlPlaneConfig.ConfigurationID,
 		Name:                        generateControlPlaneNodeName(existingNodeNames, cluster.Name, defaultControlPlaneNodePrefix),
+		FailureDomain:               failureDomain,
 		Conditions: db.NodeConditions{
 			Pending:                 db.NewCondition(true, "Pending control-plane node provisioning"),
 			Provisioning:            db.NewCondition(false, "Not yet provisioning"),

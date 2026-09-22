@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/google/uuid"
-
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
@@ -37,8 +35,35 @@ func leastUsedFailureDomainSelection(counts map[string]int) string {
 // An allocator built from no domains hands out "", the placement for an
 // infrastructure provider that does not advertise them.
 type domainAllocator struct {
-	counts    map[string]int
-	selection failureDomainSelectionAlgorithm
+	machinesPerDomain map[string]int
+	selection         failureDomainSelectionAlgorithm
+}
+
+// failureDomainPlacement owns the allocator shared by node-creation paths in a
+// reconcile and records when one of those paths had to wait for domain data.
+// An available allocator with no domains is valid: it hands out "" for a
+// provider that does not advertise failure-domain support.
+type failureDomainPlacement struct {
+	allocator *domainAllocator
+	deferred  bool
+}
+
+func newFailureDomainPlacement(allocator *domainAllocator) *failureDomainPlacement {
+	return &failureDomainPlacement{allocator: allocator}
+}
+
+// take returns the next placement decision. Callers must first ensure that the
+// allocator is available.
+func (p *failureDomainPlacement) take() *string {
+	return new(p.allocator.take())
+}
+
+func (p *failureDomainPlacement) markDeferred() {
+	p.deferred = true
+}
+
+func (p *failureDomainPlacement) wasDeferred() bool {
+	return p.deferred
 }
 
 // newDomainAllocator builds an allocator over the eligible domains. Unnamed domains are
@@ -51,63 +76,73 @@ func newDomainAllocator(selection failureDomainSelectionAlgorithm, eligible []st
 			counts[domain] = 0
 		}
 	}
-	return &domainAllocator{counts: counts, selection: selection}
+	return &domainAllocator{machinesPerDomain: counts, selection: selection}
 }
 
 // record counts a placement that already exists. Domains that are no longer
 // eligible are ignored, so a retired domain cannot skew new placements.
 func (a *domainAllocator) record(domain string) {
-	if _, eligible := a.counts[domain]; eligible {
-		a.counts[domain]++
+	if _, eligible := a.machinesPerDomain[domain]; eligible {
+		a.machinesPerDomain[domain]++
 	}
 }
 
 // take returns the next placement and counts it.
 func (a *domainAllocator) take() string {
-	if len(a.counts) == 0 {
+	if len(a.machinesPerDomain) == 0 {
 		return ""
 	}
-	selected := a.selection(a.counts)
-	a.counts[selected]++
+	selected := a.selection(a.machinesPerDomain)
+	a.machinesPerDomain[selected]++
 	return selected
 }
 
-// assignFailureDomains records a failure domain on every control-plane node that
-// does not have one.
-//
-// It returns true when the reconciler needs a requeue due to a failed discovery
-// or a node whose infrastructure exists but whose placement CAPI has not reported.
-func (r *reconciler) assignFailureDomains(ctx context.Context, clusterID uuid.UUID) (bool, error) {
+// prepareFailureDomainPlacement backfills decisions for nodes that already
+// exist when failure-domain support is first deployed and seeds the allocator
+// used by new nodes. The backfill paths can be removed once every control-plane
+// node is guaranteed to have a non-nil failure_domain.
+func (r *reconciler) prepareFailureDomainPlacement(
+	ctx context.Context,
+	nodes []db.Node,
+	failureDomains *failureDomains,
+) (*failureDomainPlacement, error) {
+	placement := newFailureDomainPlacement(nil)
 	if !r.cfg.UseControlPlaneControllerForControlPlane() {
-		return false, nil
+		return placement, nil
 	}
 
-	nodes, err := r.getControlPlaneNodes(ctx, clusterID)
-	if err != nil {
-		return false, err
-	}
-
-	// No snapshot means discovery failed, but we only defer when a node is actually
-	// waiting for a placement decision (existing infrastructure is not eligible).
-	if r.failureDomains == nil {
+	// Discovery must succeed before new nodes can be placed. The scan is a
+	// first-deployment backfill case: rows created before failure-domain support
+	// may still be pending without a decision and need a timed retry.
+	if failureDomains == nil {
 		for i := range nodes {
 			node := &nodes[i]
 			if !node.IsMarkedForDeletion() && !node.HasInfrastructureProvisioningStarted() && !node.HasFailureDomainDecision() {
-				return true, nil
+				// Mark deferred only if discovery failed and a node needs placement.
+				placement.markDeferred()
+				break
 			}
 		}
-		return false, nil
+		return placement, nil
 	}
 
-	// Provider advertises no domains, so there's nothing to assign.
-	if len(r.failureDomains.eligible) == 0 {
-		return false, r.recordNoFailureDomain(ctx, nodes)
+	allocator := newDomainAllocator(leastUsedFailureDomainSelection, failureDomains.eligible)
+	placement.allocator = allocator
+
+	// An empty allocator remains available and hands out "" to new nodes.
+	// Existing undecided rows only need this update during the initial backfill.
+	if len(failureDomains.eligible) == 0 {
+		if err := r.recordNoFailureDomain(ctx, nodes); err != nil {
+			return nil, err
+		}
+		return placement, nil
 	}
 
-	allocator := newDomainAllocator(leastUsedFailureDomainSelection, r.failureDomains.eligible)
-
-	// Both lack a recorded placement: unplaced nodes can still take one,
-	// unobserved nodes already have infrastructure but the domain is unknown.
+	// Persisted decisions are steady-state input to the allocator. The other
+	// branches are a backfill for migration 20260915120000, which adds
+	// failure_domain as nullable: adopt placements already reported by CAPI, wait
+	// when infrastructure exists but its placement is unknown, and place pending,
+	// unclaimed nodes directly.
 	var unplaced []*db.Node
 	var hasUnobserved bool
 
@@ -121,51 +156,51 @@ func (r *reconciler) assignFailureDomains(ctx context.Context, clusterID uuid.UU
 			// it's interpreted as belonging to a provider without
 			// failure domain support.
 			allocator.record(node.GetFailureDomain())
-		case r.failureDomains.observedByNodeName[node.Name] != "":
+		case failureDomains.observedByNodeName[node.Name] != "":
 			// Node record in db does not yet have a placement decision,
 			// but its CAPI CR does have a failure domain set in the
 			// status or spec (its "observed placement"),
 			// so we update the node record in the db accordingly.
-			node.FailureDomain = new(r.failureDomains.observedByNodeName[node.Name])
+			node.FailureDomain = new(failureDomains.observedByNodeName[node.Name])
 			allocator.record(*node.FailureDomain)
 			if _, err := r.db.UpdateNode(ctx, node); err != nil {
-				return false, fmt.Errorf("adopting observed failure domain for node %s: %w", node.ID, err)
+				return nil, fmt.Errorf("adopting observed failure domain for node %s: %w", node.ID, err)
 			}
 		case node.HasInfrastructureProvisioningStarted():
-			// Nodes should not normally reach this state: the
-			// scheduler starts ProvisionNode only after a failure-domain decision
-			// has been persisted. This branch handles nodes that were already provisioning
-			// when failure-domain assignment support was introduced.
+			// The scheduler now starts ProvisionNode only after a decision is
+			// persisted. This branch handles nodes whose infrastructure already
+			// existed or was underway when this feature was deployed.
 			hasUnobserved = true
 		default:
 			unplaced = append(unplaced, node)
 		}
 	}
 
-	if len(unplaced) == 0 {
-		return false, nil
-	}
-
 	// In order to ensure a balanced topology, we can't proceed
-	// until unobserved, existing nodes get a placement decision. Return true here
-	// to signal a requeue to the caller.
+	// until unobserved, existing nodes get a placement decision. The allocator is
+	// unavailable even when no existing node is waiting, because a node created
+	// later in this pass would otherwise be placed from incomplete counts.
 	if hasUnobserved {
-		return true, nil
+		placement.allocator = nil
+		if len(unplaced) > 0 {
+			placement.markDeferred()
+		}
+		return placement, nil
 	}
 
-	// We have what we need to assign a failure domain to
-	// all pending nodes.
+	// Nodes that were pending and unclaimed when this feature was deployed are
+	// still safe to place before the scheduler claims them.
 	for _, node := range unplaced {
 		node.FailureDomain = new(allocator.take())
 		if _, err := r.db.UpdateNode(ctx, node); err != nil {
-			return false, fmt.Errorf("persisting failure domain for node %s: %w", node.ID, err)
+			return nil, fmt.Errorf("persisting failure domain for node %s: %w", node.ID, err)
 		}
 	}
-	return false, nil
+	return placement, nil
 }
 
-// recordNoFailureDomain marks every undecided node at "", the placement for a
-// provider that advertises no domains.
+// recordNoFailureDomain backfills every undecided node with "", the placement
+// for a provider that advertises no domains.
 func (r *reconciler) recordNoFailureDomain(ctx context.Context, nodes []db.Node) error {
 	for i := range nodes {
 		node := &nodes[i]

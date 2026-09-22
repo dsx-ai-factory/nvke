@@ -114,9 +114,15 @@ func (s *ControlPlaneNodeScheduler) listManagedControlPlanePending(ctx context.C
 
 	managed := make([]db.Node, 0, len(pendingNodes))
 	for _, node := range pendingNodes {
-		if node.IsManagedByControlPlaneController() && node.HasFailureDomainDecision() {
-			managed = append(managed, node)
+		if !node.IsManagedByControlPlaneController() {
+			continue
 		}
+		// New nodes receive their decision at creation. This guard remains for
+		// pre-existing rows while their nil failure domains are being backfilled.
+		if !node.HasFailureDomainDecision() {
+			continue
+		}
+		managed = append(managed, node)
 	}
 	return managed, nil
 }

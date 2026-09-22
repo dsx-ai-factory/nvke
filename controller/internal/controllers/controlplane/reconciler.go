@@ -9,7 +9,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"go.temporal.io/sdk/client"
+	temporalclient "go.temporal.io/sdk/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
@@ -22,25 +23,23 @@ type reconciler struct {
 	cfg               config.Config
 	logger            *slog.Logger
 	db                db.Tx
-	cweTemporalClient client.Client
-
-	// failureDomains is nil when discovery failed
-	failureDomains *failureDomains
+	cweTemporalClient temporalclient.Client
+	k8sClient         ctrlclient.Client
 }
 
 func newReconciler(
 	cfg config.Config,
 	logger *slog.Logger,
 	db db.Tx,
-	cweTemporalClient client.Client,
-	failureDomains *failureDomains,
+	cweTemporalClient temporalclient.Client,
+	k8sClient ctrlclient.Client,
 ) *reconciler {
 	return &reconciler{
 		cfg:               cfg,
 		logger:            logger,
 		db:                db,
 		cweTemporalClient: cweTemporalClient,
-		failureDomains:    failureDomains,
+		k8sClient:         k8sClient,
 	}
 }
 
@@ -65,9 +64,22 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) (reconci
 		return reconcile.Result{}, fmt.Errorf("reconciling control plane rollout-required conditions: %w", err)
 	}
 
+	failureDomains, discoveryErr := r.readFailureDomains(ctx, cluster)
+	if discoveryErr != nil {
+		r.logger.Info("failure-domain discovery failed; node creation or placement will be deferred if reconciliation requires a failure-domain decision",
+			"clusterID", cluster.ID,
+			"err", discoveryErr,
+		)
+	}
+
+	placement, err := r.prepareFailureDomainPlacement(ctx, controlPlane.nodes, failureDomains)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("preparing control-plane failure-domain placement: %w", err)
+	}
+
 	// Host creation only. A pending or in-flight delete must not stall it: the
 	// replacement host is exactly what lets the control plane shrink safely.
-	if err := r.reconcileControlPlaneScaleUp(ctx, cluster, controlPlane); err != nil {
+	if err := r.reconcileControlPlaneScaleUp(ctx, cluster, controlPlane, placement); err != nil {
 		return reconcile.Result{}, fmt.Errorf("reconciling control plane scale-up: %w", err)
 	}
 
@@ -84,19 +96,13 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) (reconci
 	// FIXME: https://github.com/dsx-ai-factory/nke/issues/784 - reconcileNodesNeedingRollout
 	// still tears a node down directly instead of recording intent and letting the
 	// promotion below start it, so rollout teardowns bypass the serialized path.
-	if err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane); err != nil {
+	if err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane, placement); err != nil {
 		return reconcile.Result{}, fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
 	}
 
-	// Runs after the last step that can create a node, so a node created above is
-	// placed in this same pass rather than waiting for the next one.
 	result := reconcile.Result{}
-	deferred, err := r.assignFailureDomains(ctx, cluster.ID)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("assigning control-plane failure domains: %w", err)
-	}
-	if deferred {
-		r.logger.Info("deferring control-plane failure-domain placement", "clusterID", cluster.ID)
+	if placement.wasDeferred() {
+		r.logger.Info("deferring control-plane node creation or placement until failure-domain information is available", "clusterID", cluster.ID)
 		result.RequeueAfter = failureDomainRetryInterval
 	}
 
@@ -164,6 +170,7 @@ func (r *reconciler) reconcileControlPlaneScaleUp(
 	ctx context.Context,
 	cluster db.Cluster,
 	controlPlane *controlPlane,
+	placement *failureDomainPlacement,
 ) error {
 	if !r.cfg.UseControlPlaneControllerForControlPlane() {
 		return nil
@@ -178,9 +185,12 @@ func (r *reconciler) reconcileControlPlaneScaleUp(
 	// selection and Forge capacity checks are the control plane node scheduler's job: it picks
 	// each node's Forge instance type from the pinned InstanceTypePreference at
 	// schedule time and persists it back onto the node row.
-	created, err := r.scaleUp(ctx, cluster, deficit, "control-plane scale-up")
+	created, err := r.scaleUp(ctx, cluster, deficit, "control-plane scale-up", placement)
 	if err != nil {
 		return fmt.Errorf("scaling up control-plane nodes: %w", err)
+	}
+	if created == 0 {
+		return nil
 	}
 
 	r.logger.Info(

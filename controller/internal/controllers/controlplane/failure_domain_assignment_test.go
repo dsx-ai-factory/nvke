@@ -156,7 +156,7 @@ func TestDomainAllocatorCollapsesDuplicateEligibleDomains(t *testing.T) {
 	assert.Equal(t, []string{"fd-a", "fd-b", "fd-a", "fd-b"}, got)
 }
 
-func TestAssignFailureDomainsBackfillsAndSpreadsUnplacedNodes(t *testing.T) {
+func TestPrepareFailureDomainPlacementBackfillsAndSpreadsUnplacedNodes(t *testing.T) {
 	t.Parallel()
 
 	clusterID := uuid.New()
@@ -191,7 +191,6 @@ func TestAssignFailureDomainsBackfillsAndSpreadsUnplacedNodes(t *testing.T) {
 	}
 
 	mockTx := &testutil.MockTx{}
-	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
 	for nodeName, domain := range map[string]string{
 		"cp-a": "fd-a",
 		"cp-b": "fd-b",
@@ -205,20 +204,22 @@ func TestAssignFailureDomainsBackfillsAndSpreadsUnplacedNodes(t *testing.T) {
 	r := &reconciler{
 		cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
 		db:  mockTx,
-		failureDomains: &failureDomains{
-			eligible:           []string{"fd-c", "fd-b", "fd-a"},
-			observedByNodeName: map[string]string{"cp-a": "fd-a"},
-		},
+	}
+	domains := &failureDomains{
+		eligible:           []string{"fd-c", "fd-b", "fd-a"},
+		observedByNodeName: map[string]string{"cp-a": "fd-a"},
 	}
 
-	requeue, err := r.assignFailureDomains(context.Background(), clusterID)
+	placement, err := r.prepareFailureDomainPlacement(context.Background(), nodes, domains)
 
 	require.NoError(t, err)
-	assert.False(t, requeue)
+	require.NotNil(t, placement)
+	require.NotNil(t, placement.allocator)
+	assert.False(t, placement.wasDeferred())
 	mockTx.AssertExpectations(t)
 }
 
-func TestAssignFailureDomainsDefersUntilExistingPlacementIsObserved(t *testing.T) {
+func TestPrepareFailureDomainPlacementDefersUntilExistingPlacementIsObserved(t *testing.T) {
 	t.Parallel()
 
 	clusterID := uuid.New()
@@ -245,17 +246,18 @@ func TestAssignFailureDomainsDefersUntilExistingPlacementIsObserved(t *testing.T
 	}
 
 	mockTx := &testutil.MockTx{}
-	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
 	r := &reconciler{
-		cfg:            config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:             mockTx,
-		failureDomains: &failureDomains{eligible: []string{"fd-a", "fd-b"}},
+		cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		db:  mockTx,
 	}
+	domains := &failureDomains{eligible: []string{"fd-a", "fd-b"}}
 
-	requeue, err := r.assignFailureDomains(context.Background(), clusterID)
+	placement, err := r.prepareFailureDomainPlacement(context.Background(), nodes, domains)
 
 	require.NoError(t, err)
-	assert.True(t, requeue)
+	require.NotNil(t, placement)
+	assert.Nil(t, placement.allocator)
+	assert.True(t, placement.wasDeferred())
 	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 	mockTx.AssertExpectations(t)
 
@@ -267,17 +269,18 @@ func TestAssignFailureDomainsDefersUntilExistingPlacementIsObserved(t *testing.T
 	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
 		return node.Name == "cp-pending" && ptr.Deref(node.FailureDomain, "") == "fd-b"
 	})).Return(db.Node{}, nil).Once()
-	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
-	r.failureDomains.observedByNodeName = map[string]string{"cp-claimed": "fd-a"}
+	domains.observedByNodeName = map[string]string{"cp-claimed": "fd-a"}
 
-	requeue, err = r.assignFailureDomains(context.Background(), clusterID)
+	placement, err = r.prepareFailureDomainPlacement(context.Background(), nodes, domains)
 
 	require.NoError(t, err)
-	assert.False(t, requeue)
+	require.NotNil(t, placement)
+	require.NotNil(t, placement.allocator)
+	assert.False(t, placement.wasDeferred())
 	mockTx.AssertExpectations(t)
 }
 
-func TestAssignFailureDomainsDefersWhenDiscoveryFailed(t *testing.T) {
+func TestPrepareFailureDomainPlacementDiscoveryFailureDefersUnplacedNode(t *testing.T) {
 	t.Parallel()
 
 	clusterID := uuid.New()
@@ -292,21 +295,22 @@ func TestAssignFailureDomainsDefersWhenDiscoveryFailed(t *testing.T) {
 	}}
 
 	mockTx := &testutil.MockTx{}
-	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
 	r := &reconciler{
 		cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
 		db:  mockTx,
 	}
 
-	requeue, err := r.assignFailureDomains(context.Background(), clusterID)
+	placement, err := r.prepareFailureDomainPlacement(context.Background(), nodes, nil)
 
 	require.NoError(t, err)
-	assert.True(t, requeue)
+	require.NotNil(t, placement)
+	assert.Nil(t, placement.allocator)
+	assert.True(t, placement.wasDeferred())
 	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 	mockTx.AssertExpectations(t)
 }
 
-func TestAssignFailureDomainsWithNothingToPlaceDoesNotRequeue(t *testing.T) {
+func TestPrepareFailureDomainPlacementDiscoveryFailureDoesNotDeferWithoutUnplacedNode(t *testing.T) {
 	t.Parallel()
 
 	clusterID := uuid.New()
@@ -322,21 +326,22 @@ func TestAssignFailureDomainsWithNothingToPlaceDoesNotRequeue(t *testing.T) {
 	}}
 
 	mockTx := &testutil.MockTx{}
-	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
 	r := &reconciler{
 		cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
 		db:  mockTx,
 	}
 
-	requeue, err := r.assignFailureDomains(context.Background(), clusterID)
+	placement, err := r.prepareFailureDomainPlacement(context.Background(), nodes, nil)
 
 	require.NoError(t, err)
-	assert.False(t, requeue)
+	require.NotNil(t, placement)
+	assert.Nil(t, placement.allocator)
+	assert.False(t, placement.wasDeferred())
 	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 	mockTx.AssertExpectations(t)
 }
 
-func TestAssignFailureDomainsMarksUnsupportedProviderComplete(t *testing.T) {
+func TestPrepareFailureDomainPlacementMarksUnsupportedProviderComplete(t *testing.T) {
 	t.Parallel()
 
 	clusterID := uuid.New()
@@ -351,24 +356,24 @@ func TestAssignFailureDomainsMarksUnsupportedProviderComplete(t *testing.T) {
 	}}
 
 	mockTx := &testutil.MockTx{}
-	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
 	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
 		return node.Name == "cp-pending" && node.FailureDomain != nil && *node.FailureDomain == ""
 	})).Return(db.Node{}, nil).Once()
 	r := &reconciler{
-		cfg:            config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:             mockTx,
-		failureDomains: &failureDomains{},
+		cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		db:  mockTx,
 	}
 
-	requeue, err := r.assignFailureDomains(context.Background(), clusterID)
+	placement, err := r.prepareFailureDomainPlacement(context.Background(), nodes, &failureDomains{})
 
 	require.NoError(t, err)
-	assert.False(t, requeue)
+	require.NotNil(t, placement)
+	require.NotNil(t, placement.allocator)
+	assert.False(t, placement.wasDeferred())
 	mockTx.AssertExpectations(t)
 }
 
-func TestAssignFailureDomainsSkipsNodesMarkedForDeletion(t *testing.T) {
+func TestPrepareFailureDomainPlacementSkipsNodesMarkedForDeletion(t *testing.T) {
 	t.Parallel()
 
 	clusterID := uuid.New()
@@ -404,24 +409,28 @@ func TestAssignFailureDomainsSkipsNodesMarkedForDeletion(t *testing.T) {
 	}
 
 	mockTx := &testutil.MockTx{}
-	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
 	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
 		return node.Name == "cp-pending" && ptr.Deref(node.FailureDomain, "") == "fd-b"
 	})).Return(db.Node{}, nil).Once()
 	r := &reconciler{
-		cfg:            config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:             mockTx,
-		failureDomains: &failureDomains{eligible: []string{"fd-a", "fd-b"}},
+		cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		db:  mockTx,
 	}
 
-	requeue, err := r.assignFailureDomains(context.Background(), clusterID)
+	placement, err := r.prepareFailureDomainPlacement(
+		context.Background(),
+		nodes,
+		&failureDomains{eligible: []string{"fd-a", "fd-b"}},
+	)
 
 	require.NoError(t, err)
-	assert.False(t, requeue)
+	require.NotNil(t, placement)
+	require.NotNil(t, placement.allocator)
+	assert.False(t, placement.wasDeferred())
 	mockTx.AssertExpectations(t)
 }
 
-func TestAssignFailureDomainsSurfacesDatabaseErrors(t *testing.T) {
+func TestPrepareFailureDomainPlacementSurfacesDatabaseErrors(t *testing.T) {
 	t.Parallel()
 
 	clusterID := uuid.New()
@@ -448,13 +457,8 @@ func TestAssignFailureDomainsSurfacesDatabaseErrors(t *testing.T) {
 	tests := map[string]struct {
 		nodes    []db.Node
 		observed map[string]string
-		listErr  error
 		wantErr  string
 	}{
-		"listing control-plane nodes fails": {
-			listErr: errors.New("connection refused"),
-			wantErr: "failed to list control plane nodes",
-		},
 		"adopting an observed placement fails": {
 			nodes:    []db.Node{claimed},
 			observed: map[string]string{"cp-claimed": "fd-a"},
@@ -471,43 +475,41 @@ func TestAssignFailureDomainsSurfacesDatabaseErrors(t *testing.T) {
 			t.Parallel()
 
 			mockTx := &testutil.MockTx{}
-			mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(tc.nodes, tc.listErr).Once()
-			if tc.listErr == nil {
-				mockTx.On("UpdateNode", mock.Anything, mock.Anything).
-					Return(db.Node{}, errors.New("deadlock detected")).Once()
-			}
+			mockTx.On("UpdateNode", mock.Anything, mock.Anything).
+				Return(db.Node{}, errors.New("deadlock detected")).Once()
 			r := &reconciler{
 				cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
 				db:  mockTx,
-				failureDomains: &failureDomains{
-					eligible:           []string{"fd-a", "fd-b"},
-					observedByNodeName: tc.observed,
-				},
+			}
+			domains := &failureDomains{
+				eligible:           []string{"fd-a", "fd-b"},
+				observedByNodeName: tc.observed,
 			}
 
-			requeue, err := r.assignFailureDomains(context.Background(), clusterID)
+			placement, err := r.prepareFailureDomainPlacement(context.Background(), tc.nodes, domains)
 
 			require.ErrorContains(t, err, tc.wantErr)
-			assert.False(t, requeue)
+			assert.Nil(t, placement)
 			mockTx.AssertExpectations(t)
 		})
 	}
 }
 
-func TestAssignFailureDomainsSkippedWhenControllerDoesNotOwnTheControlPlane(t *testing.T) {
+func TestPrepareFailureDomainPlacementSkippedWhenControllerDoesNotOwnTheControlPlane(t *testing.T) {
 	t.Parallel()
 
 	mockTx := &testutil.MockTx{}
 	r := &reconciler{cfg: config.Config{}, db: mockTx}
 
-	requeue, err := r.assignFailureDomains(context.Background(), uuid.New())
+	placement, err := r.prepareFailureDomainPlacement(context.Background(), nil, nil)
 
 	require.NoError(t, err)
-	assert.False(t, requeue)
+	require.NotNil(t, placement)
+	assert.False(t, placement.wasDeferred())
 	mockTx.AssertNotCalled(t, "ListNodes", mock.Anything, mock.Anything)
 }
 
-func TestAssignFailureDomainsReconcilesNodesOnAProviderWithoutDomains(t *testing.T) {
+func TestPrepareFailureDomainPlacementReconcilesNodesOnAProviderWithoutDomains(t *testing.T) {
 	t.Parallel()
 
 	clusterID := uuid.New()
@@ -532,26 +534,26 @@ func TestAssignFailureDomainsReconcilesNodesOnAProviderWithoutDomains(t *testing
 	}
 
 	mockTx := &testutil.MockTx{}
-	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
 	for _, name := range []string{"cp-provisioned", "cp-pending"} {
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
 			return node.Name == name && node.FailureDomain != nil && *node.FailureDomain == ""
 		})).Return(db.Node{}, nil).Once()
 	}
 	r := &reconciler{
-		cfg:            config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:             mockTx,
-		failureDomains: &failureDomains{},
+		cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		db:  mockTx,
 	}
 
-	requeue, err := r.assignFailureDomains(context.Background(), clusterID)
+	placement, err := r.prepareFailureDomainPlacement(context.Background(), nodes, &failureDomains{})
 
 	require.NoError(t, err)
-	assert.False(t, requeue, "a provider without domains must not wait for an observation")
+	require.NotNil(t, placement)
+	require.NotNil(t, placement.allocator)
+	assert.False(t, placement.wasDeferred(), "a provider without domains must not wait for an observation")
 	mockTx.AssertExpectations(t)
 }
 
-func TestAssignFailureDomainsSurfacesErrorsRecordingAbsentDomains(t *testing.T) {
+func TestPrepareFailureDomainPlacementSurfacesErrorsRecordingAbsentDomains(t *testing.T) {
 	t.Parallel()
 
 	clusterID := uuid.New()
@@ -561,18 +563,16 @@ func TestAssignFailureDomainsSurfacesErrorsRecordingAbsentDomains(t *testing.T) 
 	}}
 
 	mockTx := &testutil.MockTx{}
-	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
 	mockTx.On("UpdateNode", mock.Anything, mock.Anything).
 		Return(db.Node{}, errors.New("deadlock detected")).Once()
 	r := &reconciler{
-		cfg:            config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:             mockTx,
-		failureDomains: &failureDomains{},
+		cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		db:  mockTx,
 	}
 
-	requeue, err := r.assignFailureDomains(context.Background(), clusterID)
+	placement, err := r.prepareFailureDomainPlacement(context.Background(), nodes, &failureDomains{})
 
 	require.ErrorContains(t, err, "recording absent failure domain for node")
-	assert.False(t, requeue)
+	assert.Nil(t, placement)
 	mockTx.AssertExpectations(t)
 }
