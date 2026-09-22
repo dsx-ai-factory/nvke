@@ -213,7 +213,9 @@ if [ "${1-}" = "-y" ]; then
   shift
   test "${1-}" = "-f"
   key="${2:?}"
-  sed -n 's/^KEY://p' "${key}"
+  key_data="$(sed -n 's/^KEY://p' "${key}")"
+  test -n "${key_data}"
+  printf '%s generated-comment\n' "${key_data}"
   exit 0
 fi
 key=""

@@ -176,8 +176,9 @@ ssh-key: preflight $(SSH_KEY_PREREQUISITE)
 		exit 1; \
 	fi; \
 	derived="$$(ssh-keygen -y -f "$$private")"; \
+	derived="$$(printf '%s\n' "$$derived" | awk 'NF >= 2 { print $$1 " " $$2; exit }')"; \
 	supplied="$$(awk 'NF >= 2 { print $$1 " " $$2; exit }' "$$public")"; \
-	if [ -z "$$supplied" ] || [ "$$derived" != "$$supplied" ]; then \
+	if [ -z "$$derived" ] || [ -z "$$supplied" ] || [ "$$derived" != "$$supplied" ]; then \
 		echo "SSH public key does not match private key: $$public" >&2; \
 		exit 1; \
 	fi
