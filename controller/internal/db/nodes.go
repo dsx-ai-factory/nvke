@@ -29,10 +29,9 @@ type Node struct {
 	ClusterID    uuid.UUID `bun:"type:uuid,notnull"`
 	ControlPlane bool      `bun:"type:boolean,notnull,default:false"`
 	Name         string    `bun:"type:text,notnull"`
-	// FailureDomain is the requested placement for this node. A non-empty value
-	// requests a specific domain. Nil (on existing or otherwise unset rows) and
-	// a pointer to an empty string both request no specific domain.
-	FailureDomain                *string                `bun:"type:text"`
+	// FailureDomain is the requested placement for this node. An empty string
+	// requests no specific domain.
+	FailureDomain                string                 `bun:"type:text,notnull,default:''"`
 	IP                           string                 `bun:"type:text,notnull"`
 	SpiffeEnabled                bool                   `bun:"type:boolean,notnull,default:false"`
 	SpireAttestationMethod       SpireAttestationMethod `bun:"type:text,notnull"`
@@ -88,15 +87,6 @@ func (n Node) IsManagedByControlPlaneController() bool {
 // Example: spiffe://nke-site-forge-az24-dev7.nke.nvidia.com/host/<node-id>
 func (n *Node) GetSpiffeID(trustDomain string) string {
 	return fmt.Sprintf("spiffe://%s/host/%s", trustDomain, n.ID.String())
-}
-
-// GetFailureDomain returns the persisted failure domain, or an empty string
-// when no non-empty domain is recorded.
-func (n Node) GetFailureDomain() string {
-	if n.FailureDomain != nil {
-		return *n.FailureDomain
-	}
-	return ""
 }
 
 type NodeConditions struct {

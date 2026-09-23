@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
@@ -72,7 +71,7 @@ func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
 			node: db.Node{
 				ID:            controlPlaneNodeID,
 				Name:          "cp-0",
-				FailureDomain: ptr.To("fd-a"),
+				FailureDomain: "fd-a",
 			},
 			nodeSet: db.NodeSet{
 				ID: controlPlaneNodeSetID,

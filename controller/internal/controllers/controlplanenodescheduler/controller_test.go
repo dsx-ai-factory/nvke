@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/client"
-	"k8s.io/utils/ptr"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
@@ -69,8 +68,8 @@ func TestUnit_ControlPlaneNodeSchedulerReconcileCAPIStartsManagedPendingNodeWork
 		Pending:      &pending,
 		Deleting:     &deleting,
 	}).Return([]db.Node{
-		{ID: managedNodeID, ClusterID: clusterID, ControlPlane: true, FailureDomain: ptr.To("fd-a")},
-		{ID: unsupportedNodeID, ClusterID: clusterID, ControlPlane: true, FailureDomain: ptr.To("")},
+		{ID: managedNodeID, ClusterID: clusterID, ControlPlane: true, FailureDomain: "fd-a"},
+		{ID: unsupportedNodeID, ClusterID: clusterID, ControlPlane: true, FailureDomain: ""},
 		{ID: unassignedNodeID, ClusterID: clusterID, ControlPlane: true},
 		{ID: legacyNodeID, ClusterID: clusterID, ControlPlane: true, NodePoolID: legacyNodePoolID},
 	}, nil).Once()

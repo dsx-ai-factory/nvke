@@ -9,7 +9,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
@@ -61,7 +60,7 @@ func buildCAPIMachineForNode(node db.Node, nodeSet db.NodeSet, nodePool db.NodeP
 		},
 		Spec: clusterv1.MachineSpec{
 			ClusterName:   cluster.Name,
-			FailureDomain: ptr.Deref(node.FailureDomain, ""),
+			FailureDomain: node.FailureDomain,
 			Version:       machineVersion,
 			Bootstrap: clusterv1.Bootstrap{
 				DataSecretName: &bootstrapSecretName,

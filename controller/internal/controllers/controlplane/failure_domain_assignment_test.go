@@ -157,26 +157,26 @@ func TestNewControlPlaneDomainAllocator(t *testing.T) {
 			wantNext: "fd-b",
 		},
 		"CAPI observation overrides the stored request and is counted once": {
-			nodes:    []db.Node{{Name: "cp-0", FailureDomain: new("fd-a")}},
+			nodes:    []db.Node{{Name: "cp-0", FailureDomain: "fd-a"}},
 			observed: map[string]string{"cp-0": "fd-b"},
 			eligible: []string{"fd-a", "fd-b"},
 			counts:   map[string]int{"fd-a": 0, "fd-b": 1},
 			wantNext: "fd-a",
 		},
 		"stored decision counts before a new Machine exists": {
-			nodes:    []db.Node{{Name: "cp-new", FailureDomain: new("fd-a")}},
+			nodes:    []db.Node{{Name: "cp-new", FailureDomain: "fd-a"}},
 			eligible: []string{"fd-a", "fd-b"},
 			counts:   map[string]int{"fd-a": 1, "fd-b": 0},
 			wantNext: "fd-b",
 		},
 		"unobserved legacy node is omitted without blocking placement": {
-			nodes:    []db.Node{{Name: "cp-old"}, {Name: "cp-placed", FailureDomain: new("fd-a")}},
+			nodes:    []db.Node{{Name: "cp-old"}, {Name: "cp-placed", FailureDomain: "fd-a"}},
 			eligible: []string{"fd-a", "fd-b"},
 			counts:   map[string]int{"fd-a": 1, "fd-b": 0},
 			wantNext: "fd-b",
 		},
 		"node marked for deletion is not counted": {
-			nodes: []db.Node{{Name: "cp-deleting", FailureDomain: new("fd-a"), Conditions: db.NodeConditions{
+			nodes: []db.Node{{Name: "cp-deleting", FailureDomain: "fd-a", Conditions: db.NodeConditions{
 				Deleting: db.NewCondition(true, "deleting"),
 			}}},
 			observed: map[string]string{"cp-deleting": "fd-a"},
@@ -218,6 +218,6 @@ func TestNewControlPlaneDomainAllocatorDoesNotBackfillExistingNode(t *testing.T)
 		eligible:           []string{"fd-a", "fd-b"},
 		observedByNodeName: map[string]string{"cp-old": "fd-a"},
 	})
-	assert.Nil(t, nodes[0].FailureDomain)
+	assert.Empty(t, nodes[0].FailureDomain)
 	assert.Equal(t, "fd-b", allocator.take())
 }

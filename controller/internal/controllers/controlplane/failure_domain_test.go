@@ -208,7 +208,7 @@ func TestControllerReturnsErrorWhileClusterInfrastructureIsNotReady(t *testing.T
 			ClusterID:     clusterID,
 			ControlPlane:  true,
 			Name:          "cp-existing",
-			FailureDomain: new("fd-a"),
+			FailureDomain: "fd-a",
 			Conditions: db.NodeConditions{
 				Provisioned:     db.NewCondition(true, "provisioned"),
 				KubernetesReady: db.NewCondition(true, "ready"),
@@ -219,7 +219,7 @@ func TestControllerReturnsErrorWhileClusterInfrastructureIsNotReady(t *testing.T
 			ClusterID:     clusterID,
 			ControlPlane:  true,
 			Name:          "cp-pending",
-			FailureDomain: new("fd-b"),
+			FailureDomain: "fd-b",
 			Conditions: db.NodeConditions{
 				Pending: db.NewCondition(true, "pending"),
 			},
@@ -296,7 +296,7 @@ func assertControlPlaneNodesPlaced(ctx context.Context, t *testing.T, database d
 	require.NotEmpty(t, nodes, "expected control-plane nodes")
 
 	for _, node := range nodes {
-		assert.NotNil(t, node.FailureDomain, "node %s was left unplaced by reconcile", node.Name)
+		assert.NotEmpty(t, node.FailureDomain, "node %s was left unplaced by reconcile", node.Name)
 	}
 	return nodes
 }
@@ -368,7 +368,7 @@ func TestReconcilePlacesTheNodesItCreatedInTheSamePass(t *testing.T) {
 	require.Len(t, nodes, 3)
 	placed := make([]string, 0, len(nodes))
 	for _, node := range nodes {
-		placed = append(placed, node.GetFailureDomain())
+		placed = append(placed, node.FailureDomain)
 	}
 	assert.ElementsMatch(t, []string{"fd-a", "fd-b", "fd-c"}, placed,
 		"scale-up in the same pass should spread across the eligible domains")

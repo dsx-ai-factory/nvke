@@ -43,7 +43,7 @@ func (r *reconciler) scaleUp(
 
 	created := 0
 	for range count {
-		failureDomain := new(allocator.take())
+		failureDomain := allocator.take()
 		createdNode, err := r.createPendingNode(ctx, cluster, existingNodeNames, failureDomain)
 		if err != nil {
 			return created, err
@@ -67,7 +67,7 @@ func (r *reconciler) createPendingNode(
 	ctx context.Context,
 	cluster db.Cluster,
 	existingNodeNames []string,
-	failureDomain *string,
+	failureDomain string,
 ) (db.Node, error) {
 	if cluster.ControlPlaneConfig.ConfigurationID == uuid.Nil {
 		return db.Node{}, fmt.Errorf("missing control plane configuration ID for pending control-plane node")

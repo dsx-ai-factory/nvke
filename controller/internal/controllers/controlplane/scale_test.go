@@ -120,7 +120,7 @@ func TestCreatePendingNode_RequiresControlPlaneConfigurationID(t *testing.T) {
 		},
 	}
 
-	_, err := r.createPendingNode(context.Background(), cluster, nil, nil)
+	_, err := r.createPendingNode(context.Background(), cluster, nil, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing control plane configuration ID")
 	mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
@@ -144,7 +144,7 @@ func TestCreatePendingNodeSetsFailureDomainButLeavesInstanceTypeUnset(t *testing
 			node.NodeSetID == uuid.Nil &&
 			node.NicoInstanceTypeID() == uuid.Nil &&
 			node.ControlPlaneConfigurationID == controlPlaneConfigID &&
-			node.FailureDomain != nil && *node.FailureDomain == failureDomain
+			node.FailureDomain == failureDomain
 	})).Return(db.Node{}, nil).Once()
 
 	r := &reconciler{db: mockTx, logger: slog.Default()}
@@ -156,7 +156,7 @@ func TestCreatePendingNodeSetsFailureDomainButLeavesInstanceTypeUnset(t *testing
 		},
 	}
 
-	_, err := r.createPendingNode(context.Background(), cluster, nil, &failureDomain)
+	_, err := r.createPendingNode(context.Background(), cluster, nil, failureDomain)
 	require.NoError(t, err)
 	mockTx.AssertExpectations(t)
 }
@@ -202,7 +202,7 @@ func TestCreatePendingNode_ProviderPayload(t *testing.T) {
 				},
 			}
 
-			_, err := r.createPendingNode(context.Background(), cluster, nil, nil)
+			_, err := r.createPendingNode(context.Background(), cluster, nil, "")
 			require.NoError(t, err)
 			mockTx.AssertExpectations(t)
 		})
@@ -275,7 +275,7 @@ func TestReconcileControlPlaneScaleUp_FeatureFlagEnabled(t *testing.T) {
 			// the control plane node scheduler selects it at schedule time.
 			node.NicoInstanceTypeID() == uuid.Nil &&
 			node.ControlPlaneConfigurationID == controlPlaneConfigID &&
-			node.FailureDomain != nil
+			node.FailureDomain != ""
 	})).Return(db.Node{}, nil).Twice()
 
 	r := &reconciler{
@@ -323,7 +323,7 @@ func TestScaleUpSharesFailureDomainAllocatorAcrossCreationSites(t *testing.T) {
 	var placed []string
 	mockTx.On("CreateNode", mock.Anything, mock.AnythingOfType("*db.Node")).Run(func(args mock.Arguments) {
 		node := args.Get(1).(*db.Node)
-		placed = append(placed, node.GetFailureDomain())
+		placed = append(placed, node.FailureDomain)
 	}).Return(db.Node{}, nil).Times(3)
 
 	r := &reconciler{db: mockTx, logger: slog.Default()}
@@ -345,18 +345,18 @@ func TestScaleUpUsesAllocatorDecision(t *testing.T) {
 
 	tests := map[string]struct {
 		allocator domainAllocator
-		want      *string
+		want      string
 	}{
 		"legacy node-pool mode requests no specific domain": {
-			want: new(""),
+			want: "",
 		},
 		"allocator without eligible domains requests no specific domain": {
 			allocator: newDomainAllocator(leastUsedFailureDomainSelection, nil),
-			want:      new(""),
+			want:      "",
 		},
 		"eligible domain is assigned": {
 			allocator: newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a"}),
-			want:      new("fd-a"),
+			want:      "fd-a",
 		},
 	}
 
@@ -371,7 +371,7 @@ func TestScaleUpUsesAllocatorDecision(t *testing.T) {
 			}
 			mockTx := &testutil.MockTx{}
 			mockTx.On("ListClusterNodeNames", mock.Anything, cluster.ID).Return([]string{}, nil).Once()
-			var placement *string
+			var placement string
 			mockTx.On("CreateNode", mock.Anything, mock.AnythingOfType("*db.Node")).Run(func(args mock.Arguments) {
 				placement = args.Get(1).(*db.Node).FailureDomain
 			}).Return(db.Node{}, nil).Once()

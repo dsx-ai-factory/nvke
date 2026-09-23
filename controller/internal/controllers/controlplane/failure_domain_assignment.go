@@ -79,7 +79,7 @@ func newControlPlaneDomainAllocator(nodes []db.Node, failureDomains *failureDoma
 		}
 		domain := failureDomains.observedByNodeName[node.Name]
 		if domain == "" {
-			domain = node.GetFailureDomain()
+			domain = node.FailureDomain
 		}
 		allocator.record(domain)
 	}
