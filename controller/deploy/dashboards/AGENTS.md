@@ -15,6 +15,7 @@ Operators: import steps and a short description of each file are in [README.md](
 | `nke-cnpg-per-cluster-reference.json` | CloudNativePG (optional HA Postgres) | `cnpg_*` |
 | `nke-ovn-kubernetes-controller-reference.json` | Tenant (or site) OVN-Kubernetes | kube-state-metrics; optional `ovnkube_controller_*` |
 | `nke-provisioning-duration-reference.json` | Node provision/teardown duration and outcomes | controller `/metrics` (`cwe_*` or `nke_controller_*`) |
+| `nke-cluster-upgrade-overview-reference.json` | GPU-cluster upgrade progress | kube-state-metrics; optional controller inventory metrics |
 
 Each dashboard has a **Requirements and scope** markdown panel. Keep that panel truthful when you change queries.
 
