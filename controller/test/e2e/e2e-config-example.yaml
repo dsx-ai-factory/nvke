@@ -19,3 +19,31 @@
 #   skipDelete: false         # leave the tenant cluster running after the suite
 #   preserveOnFailure: false  # keep the cluster only when a spec fails
 #   reuseCluster: ""          # non-empty -> verify this existing cluster, skip create
+
+# The site lane builds a site controller on a Forge node (-e2e.site-stage=
+# provision|bootstrap|full). `gmake site-inputs SITE_CONTROLLER_VERSION=...`
+# builds nkectl and the image archives below. Secrets come only from the
+# environment: FORGE_API_KEY, and GHCR_USERNAME/GHCR_TOKEN for the full stage.
+# The os-image URLs and controller version are -e2e.versions keys
+# (os-image-bootloader, os-image, controller).
+# site:
+#   name: ""            # "" -> nke-e2e-site-<random>
+#   repo: ""            # "" -> the clone the suite runs from
+#   deployPathRef: ""   # "" -> the pinned deploy path commit
+#   nkectl: ""          # "" -> cli/dist/nkectl-linux-<arch>
+#   images:
+#     - ~/.cache/nke-e2e/site/controller.tar   # relative paths resolve against repo
+#     - ~/.cache/nke-e2e/site/capi-provisioned.tar
+#     - ~/.cache/nke-e2e/site/profiles.tar
+#   bootstrapEnv:
+#     NKECTL_CWE_IMAGE: ghcr.io/dsx-ai-factory/nke/nke-controller:v0.1.1-rc.8
+#     NKECTL_CAPI_PROVISIONED_IMAGE: ghcr.io/dsx-ai-factory/nke/cluster-api-provider-provisioned:v0.1.0-rc.1
+#   profilesImage: nke-e2e-profiles:local
+#   cni: ovn-kubernetes
+#   disableMTLS: false
+#   controllerRepository: ghcr.io/dsx-ai-factory/nke/nke-controller
+#   registryServer: ghcr.io
+#   jumpHost: ""               # required: the Teleport node the site's machines sit behind
+#   teleportLogin: ""          # "" -> tsh's default
+#   teleportIdentityFile: ""   # "" -> $TELEPORT_IDENTITY_FILE, else the runner's tsh profile
+#   (the Teleport proxy comes from $TELEPORT_PROXY or the tsh login profile)

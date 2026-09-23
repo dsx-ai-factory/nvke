@@ -27,6 +27,56 @@ type Config struct {
 		PreserveOnFailure bool   `json:"preserveOnFailure"`
 		ReuseCluster      string `json:"reuseCluster"` // non-empty -> skip create, verify this cluster
 	} `json:"lifecycle"`
+	// Site configures the lane that builds its own site controller. It holds
+	// identifiers and paths only: the Forge API key and the registry token
+	// are read from the environment and never written to a file.
+	Site Site `json:"site"`
+}
+
+// Site is what a site controller is built from.
+type Site struct {
+	// Name is the site's cluster name and its node's hostname. Empty
+	// generates one per run.
+	Name string `json:"name"`
+
+	// Repo is the clone the deploy path is exported from and that relative
+	// paths below resolve against. Empty is the clone the suite runs from.
+	Repo string `json:"repo"`
+	// DeployPathRef is the commit the deploy path is exported from. Empty is
+	// the pinned one the suite knows.
+	DeployPathRef string `json:"deployPathRef"`
+
+	// Nkectl is a linux nkectl for the node. Empty is what
+	// `gmake -C cli build-cross` writes for the node's architecture.
+	Nkectl string `json:"nkectl"`
+	// Images are image archives imported into the node's containerd.
+	Images []string `json:"images"`
+	// BootstrapEnv is passed to nkectl bootstrap site; {assets} expands to
+	// where the deploy path was unpacked on the node.
+	BootstrapEnv map[string]string `json:"bootstrapEnv"`
+
+	CNI         string `json:"cni"`         // default "ovn-kubernetes"
+	DisableMTLS bool   `json:"disableMTLS"` // node agent and bootstrap without SPIFFE
+
+	// ControllerRepository is the CWE image repository; the tag is the
+	// controller version under qualification.
+	ControllerRepository string `json:"controllerRepository"`
+	// ProfilesImage is repository:tag. The controller chart requires one.
+	ProfilesImage string `json:"profilesImage"`
+	// RegistryServer is where private images are pulled from, with the
+	// credential in GHCR_USERNAME and GHCR_TOKEN.
+	RegistryServer string `json:"registryServer"`
+
+	// JumpHost is the Teleport node the Forge site's machines are reached
+	// through. The Teleport proxy is not configured here: tsh takes it from
+	// $TELEPORT_PROXY or the logged-in profile.
+	JumpHost string `json:"jumpHost"`
+	// TeleportLogin is the jump host login; empty is tsh's default.
+	TeleportLogin string `json:"teleportLogin"`
+	// TeleportIdentityFile is a tsh identity file, as a CI bot has instead of
+	// a login session. Empty leaves it to tsh: $TELEPORT_IDENTITY_FILE, else
+	// the runner's tsh profile.
+	TeleportIdentityFile string `json:"teleportIdentityFile"`
 }
 
 // Load reads the config file at path and applies defaults. A missing file is
@@ -51,6 +101,9 @@ func Load(path string) (Config, error) {
 
 func (c *Config) applyDefaults() {
 	setDefault(&c.Cluster.CAPDNodeImage, "cwe-capd-kindest-node:local")
+	setDefault(&c.Site.CNI, "ovn-kubernetes")
+	setDefault(&c.Site.ControllerRepository, "ghcr.io/dsx-ai-factory/nke/nke-controller")
+	setDefault(&c.Site.RegistryServer, "ghcr.io")
 }
 
 func setDefault(field *string, def string) {

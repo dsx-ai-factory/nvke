@@ -393,3 +393,35 @@ on the tenant-access controller having published the SPIRE exec-auth kubeconfig 
 trust bundle (`nke-system/<cluster>-kubeconfig` and the trust-bundle Secret); the
 verifier pod fetches the `k8s-spiffe-workload-jwt-exec-auth` plugin itself, so no
 plugin needs to be present in the test image.
+
+## Site controller lane
+
+`site_controller_test.go` (label `site-controller`) builds its own site controller
+on a Forge node and runs the `nico-forge` tenant against it, instead of using the
+management cluster in the kube context. `-e2e.site-stage` picks how far it goes;
+without it the lane is skipped:
+
+- `provision`: provision the node over the site's jump host and check its egress.
+- `bootstrap`: also run `nkectl bootstrap site` and wait for the API server.
+- `full`: also deploy the SBOM stack, wait for CWE, then create and delete a tenant.
+
+The node is torn down afterwards (tenants are deleted first). `-e2e.keep-site`, or
+`lifecycle.preserveOnFailure` with a failed spec, keeps it.
+
+Prerequisites: a `tsh login` to the Teleport cluster the site's jump host is
+enrolled in (or `TELEPORT_PROXY` and `TELEPORT_IDENTITY_FILE` in CI), the jump
+host in `site.jumpHost`, `FORGE_API_KEY`, and for `full` `GHCR_USERNAME` and
+`GHCR_TOKEN`. Neither the proxy nor the jump host is checked in; secrets are
+read only from the environment. Build the inputs, then fill in the `site:`
+block of `e2e-config-example.yaml`:
+
+```bash
+gmake site-inputs SITE_CONTROLLER_VERSION=v0.1.1-rc.8
+go test -timeout 5h . -args \
+  -ginkgo.label-filter=site-controller -ginkgo.v \
+  -e2e.config=e2e-config.yaml -e2e.environment=forge -e2e.site-stage=full \
+  -e2e.versions=controller=v0.1.1-rc.8,os-image-bootloader=<url>,os-image=<url>
+```
+
+The deploy path is exported from a pinned commit (`site.DeployPathRef`) until it
+merges; `site-inputs` fetches it.

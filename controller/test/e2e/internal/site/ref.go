@@ -25,13 +25,18 @@ const (
 	// DeployPathFetchRef is where DeployPathRef can be fetched from when the
 	// runner's clone does not have it.
 	DeployPathFetchRef = "refs/pull/812/head"
+
+	// scriptsDir holds the install script and its helpers, deployDir the
+	// deploy paths and the charts they install by relative path, and hackDir
+	// the post-install script.
+	scriptsDir = "build"
+	deployDir  = "controller/deploy"
+	hackDir    = "controller/hack"
 )
 
-// DeployAssetPaths are what the SBOM deployer runs from: the install script
-// and its helpers, the deploy path with the chart it installs by relative
-// path, and the post-install script.
+// DeployAssetPaths are what the SBOM deployer runs from.
 func DeployAssetPaths() []string {
-	return []string{"build", "controller/deploy", "controller/hack"}
+	return []string{scriptsDir, deployDir, hackDir}
 }
 
 // ExportRef writes paths as they are at ref in the repository at repo into a

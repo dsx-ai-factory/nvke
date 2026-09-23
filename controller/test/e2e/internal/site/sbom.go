@@ -33,7 +33,20 @@ const (
 
 	nodeAgentPort         = "15005"
 	spireServerAPIAddress = "spire-server.spire-server.svc.cluster.local:443"
+
+	defaultNicoAPIName = "forge"
 )
+
+// The deploy path's releases. Each gets a values file named after it, passed
+// with --values-for <release>=<file>.
+const (
+	releaseController = "controller"
+	releaseSpire      = "spire"
+	releasePostgreSQL = "postgresql"
+	releaseTemporal   = "temporal"
+)
+
+func valuesFile(release string) string { return release + ".yaml" }
 
 // tpmServerChecksum is the SHA-256 of the TPM attestor plugin binary the
 // SPIRE server loads, per node architecture.
@@ -134,8 +147,8 @@ func (d SBOM) Deploy(ctx context.Context, s infra.Session, t DeployTarget) error
 		d.DatabasePassword = password
 	}
 
-	deployDir := path.Join(t.Assets, "controller", "deploy")
-	overlay, err := s.Fetch(ctx, path.Join(deployDir, d.Target, "spire", "overlay.yaml"))
+	sbomDir := path.Join(t.Assets, deployDir)
+	overlay, err := s.Fetch(ctx, path.Join(sbomDir, d.Target, releaseSpire, "overlay.yaml"))
 	if err != nil {
 		return fmt.Errorf("read the deploy path's SPIRE overlay: %w", err)
 	}
@@ -154,7 +167,7 @@ func (d SBOM) Deploy(ctx context.Context, s infra.Session, t DeployTarget) error
 		_, _ = s.Run(context.WithoutCancel(ctx), asRoot("rm -rf "+shellQuote(valuesDir)))
 	}()
 
-	for _, step := range d.commands(t, deployDir, valuesDir) {
+	for _, step := range d.commands(t, sbomDir, valuesDir) {
 		if out, err := s.Run(ctx, asRoot(step.cmd)); err != nil {
 			return fmt.Errorf("%s: %w\n%s", step.name, err, tail(out))
 		}
@@ -173,7 +186,7 @@ func (d SBOM) withDefaults() SBOM {
 		}
 	}
 	if d.Nico.APIName == "" {
-		d.Nico.APIName = "forge"
+		d.Nico.APIName = defaultNicoAPIName
 	}
 	return d
 }
@@ -209,11 +222,11 @@ type step struct {
 // commands are the install and what the deploy path's README says surrounds
 // it: untaint and clusterctl init and a default StorageClass before, the CAPI
 // SPIFFE patch after.
-func (d SBOM) commands(t DeployTarget, deployDir, valuesDir string) []step {
+func (d SBOM) commands(t DeployTarget, sbomDir, valuesDir string) []step {
 	kc := shellQuote(t.Kubeconfig)
 	env := "KUBECONFIG=" + kc + " "
-	values := func(item string) string {
-		return "--values-for " + shellQuote(item+"="+path.Join(valuesDir, item+".yaml"))
+	values := func(release string) string {
+		return "--values-for " + shellQuote(release+"="+path.Join(valuesDir, valuesFile(release)))
 	}
 	defaultClass := `{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}`
 	return []step{
@@ -221,21 +234,23 @@ func (d SBOM) commands(t DeployTarget, deployDir, valuesDir string) []step {
 		{"clusterctl init", env + "clusterctl init --wait-providers"},
 		{"default storage class", env + "kubectl apply -f " + shellQuote(d.StorageClassManifest) +
 			" && " + env + "kubectl patch storageclass " + shellQuote(d.StorageClassName) + " -p " + shellQuote(defaultClass)},
-		{"install " + d.Target, env + "bash " + shellQuote(path.Join(t.Assets, "build", "use-nke-sbom.sh")) + " install" +
-			" --sbom " + shellQuote(deployDir) +
+		{"install " + d.Target, env + "bash " + shellQuote(path.Join(t.Assets, scriptsDir, "use-nke-sbom.sh")) + " install" +
+			" --sbom " + shellQuote(sbomDir) +
 			" --target " + shellQuote(d.Target) +
 			" --config " + shellQuote(path.Join(valuesDir, "bootstrap-config.json")) +
-			" " + values("controller") +
-			" " + values("spire") +
-			" " + values("postgresql") +
-			" " + values("temporal") +
+			" " + values(releaseController) +
+			" " + values(releaseSpire) +
+			" " + values(releasePostgreSQL) +
+			" " + values(releaseTemporal) +
 			" --kubeconfig " + kc},
-		{"CAPI SPIFFE exec auth", env + "bash " + shellQuote(path.Join(t.Assets, "controller", "hack", "apply-capi-spiffe-exec-auth.sh"))},
+		{"CAPI SPIFFE exec auth", env + "bash " + shellQuote(path.Join(t.Assets, hackDir, "apply-capi-spiffe-exec-auth.sh"))},
 	}
 }
 
 // render produces the per-site values files and the BootstrapConfig the
 // deploy path's template items render against.
+//
+//nolint:goconst // the keys are each chart's values schema, repeated because the charts repeat them
 func (d SBOM) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, error) {
 	vip := t.Node.IP
 	domains, err := oidcDomains(spireOverlay, vip)
@@ -257,7 +272,7 @@ func (d SBOM) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, er
 	password := map[string]any{"password": d.DatabasePassword}
 
 	docs := map[string]any{
-		"controller.yaml": map[string]any{
+		valuesFile(releaseController): map[string]any{
 			"image":       map[string]any{"repository": d.Controller.Repository, "tag": d.Controller.Tag},
 			"appDb":       map[string]any{"postgresPassword": d.DatabasePassword},
 			"nkeOIDCAuth": map[string]any{"discoveryURL": fmt.Sprintf("https://%s:%d/.well-known/openid-configuration", vip, oidcPort)},
@@ -266,7 +281,7 @@ func (d SBOM) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, er
 			"profiles":    map[string]any{"image": map[string]any{"repository": d.Profiles.Repository, "tag": d.Profiles.Tag}},
 			"env":         env,
 		},
-		"spire.yaml": map[string]any{
+		valuesFile(releaseSpire): map[string]any{
 			"global": map[string]any{"spire": map[string]any{"trustDomain": t.TrustDomain, "clusterName": t.SiteName}},
 			"spire-server": map[string]any{
 				"adminIDs":     []string{"spiffe://" + t.TrustDomain + spireAdminPath},
@@ -280,8 +295,8 @@ func (d SBOM) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, er
 				"tls": map[string]any{"certManager": map[string]any{"certificate": map[string]any{"ipAddresses": []string{vip}}}},
 			},
 		},
-		"postgresql.yaml": map[string]any{"auth": password},
-		"temporal.yaml": map[string]any{
+		valuesFile(releasePostgreSQL): map[string]any{"auth": password},
+		valuesFile(releaseTemporal): map[string]any{
 			"server": map[string]any{"config": map[string]any{"persistence": map[string]any{
 				"default":    map[string]any{"sql": password},
 				"visibility": map[string]any{"sql": password},

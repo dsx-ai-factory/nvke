@@ -114,10 +114,10 @@ func (d *Dialer) Dial(ctx context.Context, target Target) (*Client, error) {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
-	fail := func(err error) (*Client, error) {
+	fail := func(err error) error {
 		_ = stream.Close()
 		<-done
-		return nil, fmt.Errorf("teleport: ssh to %s@%s through %s: %w%s", target.User, target.Address, target.JumpHost, err, relayDiagnostics(stream))
+		return fmt.Errorf("teleport: ssh to %s@%s through %s: %w%s", target.User, target.Address, target.JumpHost, err, relayDiagnostics(stream))
 	}
 	select {
 	case hs := <-done:
@@ -127,9 +127,9 @@ func (d *Dialer) Dial(ctx context.Context, target Target) (*Client, error) {
 		}
 		return &Client{ssh: ssh.NewClient(hs.conn, hs.chans, hs.reqs), stream: stream}, nil
 	case <-ctx.Done():
-		return fail(ctx.Err())
+		return nil, fail(ctx.Err())
 	case <-timer.C:
-		return fail(fmt.Errorf("no handshake after %s", timeout))
+		return nil, fail(fmt.Errorf("no handshake after %s", timeout))
 	}
 }
 

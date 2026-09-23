@@ -30,7 +30,8 @@ func relayCommand(address string) string {
 }
 
 func (d *Dialer) tshArgs(jumpHost, command string) []string {
-	args := []string{"ssh"}
+	const subcommand = "ssh"
+	args := []string{subcommand}
 	if d.Proxy != "" {
 		args = append(args, "--proxy", d.Proxy)
 	}

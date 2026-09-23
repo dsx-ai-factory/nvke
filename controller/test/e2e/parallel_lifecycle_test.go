@@ -57,7 +57,7 @@ var _ = Describe("Parallel tenant cluster lifecycle", Ordered, ContinueOnFailure
 		)
 
 		BeforeAll(func(ctx context.Context) {
-			test = expectSucceed(setupTenantTest(ctx, timeouts))
+			test = expectSucceed(setupTenantTest(ctx, expectSucceed(configuredManagement()), timeouts))
 		})
 
 		AfterAll(func(ctx context.Context) {

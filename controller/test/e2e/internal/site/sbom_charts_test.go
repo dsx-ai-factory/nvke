@@ -1,0 +1,291 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package site
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+
+	"sigs.k8s.io/yaml"
+
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+)
+
+// These tests run what SBOM renders through the deploy path's own scripts and
+// charts, as exported from DeployPathRef. The unit tests pin what is rendered;
+// these catch a value the charts do not read, which on a live site fails
+// silently or an hour in.
+//
+// They need bash, python3 and helm, and DeployPathRef in the local clone.
+// The SPIRE chart is fetched from its repository and is skipped offline.
+
+// deployPath exports the pinned deploy path, or skips.
+func deployPath(t *testing.T) string {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("renders charts with helm")
+	}
+	for _, tool := range []string{"git", "bash", "python3", "helm"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skipf("%s is not installed", tool)
+		}
+	}
+	top, err := exec.CommandContext(context.Background(), "git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		t.Skipf("not in a git clone: %v", err)
+	}
+	repo := strings.TrimSpace(string(top))
+	if exec.CommandContext(context.Background(), "git", "-C", repo, "cat-file", "-e", DeployPathRef+"^{commit}").Run() != nil {
+		t.Skipf("%s is not in this clone; fetch %s", DeployPathRef, DeployPathFetchRef)
+	}
+	dir, err := ExportRef(context.Background(), repo, DeployPathRef, DeployAssetPaths())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
+// renderValues writes what SBOM renders for sbomTarget into a directory.
+func renderValues(t *testing.T, assets string) string {
+	t.Helper()
+	overlay, err := os.ReadFile(filepath.Join(assets, "controller", "deploy", "nke-sbom", "spire", "overlay.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := testSBOM().withDefaults()
+	d.DatabasePassword = "db-secret"
+	files, err := d.render(sbomTarget, overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	for name, data := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+func runTool(t *testing.T, name string, args ...string) (string, error) {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(context.Background(), name, args...)
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	if err != nil {
+		return stdout.String(), errors.New(err.Error() + ": " + stderr.String())
+	}
+	return stdout.String(), nil
+}
+
+// helmInstalls maps each release to the argv use-nke-sbom.sh would run for
+// it, as the bash-quoted line --dry-run prints.
+func helmInstalls(t *testing.T, dryRun string) map[string]string {
+	t.Helper()
+	release := regexp.MustCompile(`^helm upgrade --install (\S+) `)
+	installs := map[string]string{}
+	for _, line := range strings.Split(dryRun, "\n") {
+		if m := release.FindStringSubmatch(line); m != nil {
+			installs[m[1]] = line
+		}
+	}
+	return installs
+}
+
+// helmTemplate replays an install as helm template, so the chart renders from
+// exactly the files, in exactly the order, the install would use.
+func helmTemplate(t *testing.T, install string) (string, error) {
+	t.Helper()
+	cmd := strings.Replace(strings.TrimSpace(install), "helm upgrade --install ", "helm template ", 1)
+	home := t.TempDir()
+	for _, v := range []string{"HELM_CACHE_HOME", "HELM_CONFIG_HOME", "HELM_DATA_HOME"} {
+		t.Setenv(v, filepath.Join(home, v))
+	}
+	return runTool(t, "bash", "-c", cmd)
+}
+
+func documents(t *testing.T, manifest string) []map[string]any {
+	t.Helper()
+	var docs []map[string]any
+	for _, raw := range strings.Split(manifest, "\n---") {
+		var doc map[string]any
+		if err := yaml.Unmarshal([]byte(raw), &doc); err != nil {
+			t.Fatalf("parse rendered manifest: %v", err)
+		}
+		if doc != nil {
+			docs = append(docs, doc)
+		}
+	}
+	return docs
+}
+
+func find(t *testing.T, docs []map[string]any, kind, name string) map[string]any {
+	t.Helper()
+	for _, doc := range docs {
+		if doc["kind"] == kind && dig(t, doc, "metadata", "name") == name {
+			return doc
+		}
+	}
+	t.Fatalf("no %s %s rendered", kind, name)
+	return nil
+}
+
+func TestSBOMAgainstDeployPath(t *testing.T) {
+	assets := deployPath(t)
+	values := renderValues(t, assets)
+	deploy := filepath.Join(assets, "controller", "deploy")
+
+	dryRun, err := runTool(t, "bash", filepath.Join(assets, "build", "use-nke-sbom.sh"), "install",
+		"--sbom", deploy,
+		"--target", "nke-sbom",
+		"--config", filepath.Join(values, "bootstrap-config.json"),
+		"--values-for", "controller="+filepath.Join(values, "controller.yaml"),
+		"--values-for", "spire="+filepath.Join(values, "spire.yaml"),
+		"--values-for", "postgresql="+filepath.Join(values, "postgresql.yaml"),
+		"--values-for", "temporal="+filepath.Join(values, "temporal.yaml"),
+		"--dry-run")
+	if err != nil {
+		t.Fatalf("use-nke-sbom.sh --dry-run: %v\n%s", err, dryRun)
+	}
+	installs := helmInstalls(t, dryRun)
+	for release, file := range map[string]string{
+		"controller": "controller.yaml",
+		"spire":      "spire.yaml",
+		"postgres":   "postgresql.yaml",
+		"temporal":   "temporal.yaml",
+	} {
+		install, ok := installs[release]
+		if !ok {
+			t.Errorf("no helm install for release %s in:\n%s", release, dryRun)
+			continue
+		}
+		if !strings.HasSuffix(strings.TrimSpace(install), "--values "+filepath.Join(values, file)) {
+			t.Errorf("release %s does not take %s last, so the deploy path's values would win:\n%s", release, file, install)
+		}
+	}
+
+	t.Run("controller chart", func(t *testing.T) {
+		install, ok := installs["controller"]
+		if !ok {
+			t.Skip("no controller install")
+		}
+		manifest, err := helmTemplate(t, install)
+		if err != nil {
+			t.Fatal(err)
+		}
+		docs := documents(t, manifest)
+
+		svc := find(t, docs, "Service", cwe.ServiceName)
+		if ns := dig(t, svc, "metadata", "namespace"); ns != cwe.ServiceNamespace {
+			t.Errorf("CWE Service namespace = %v, want %s: the health probe would miss it", ns, cwe.ServiceNamespace)
+		}
+
+		deployment := find(t, docs, "Deployment", cwe.DeploymentName)
+		containers, _ := dig(t, deployment, "spec", "template", "spec", "containers").([]any)
+		if len(containers) == 0 {
+			t.Fatal("CWE Deployment has no containers")
+		}
+		container, _ := containers[0].(map[string]any)
+		if got := container["image"]; got != "nvcr.io/nke/cwe:v1.2.3" {
+			t.Errorf("CWE image = %v", got)
+		}
+		env := map[string]any{}
+		for _, e := range container["env"].([]any) {
+			entry, _ := e.(map[string]any)
+			if name, ok := entry["name"].(string); ok {
+				env[name] = entry["value"]
+			}
+		}
+		for name, want := range map[string]string{
+			"NODE_AGENT_PORT":          nodeAgentPort,
+			"SPIRE_SERVER_API_ADDRESS": spireServerAPIAddress,
+		} {
+			if env[name] != want {
+				t.Errorf("CWE env %s = %v, want %s", name, env[name], want)
+			}
+		}
+
+		for _, want := range []string{
+			"nvcr.io/nke/profiles:run-42",
+			"https://10.0.0.5:30443/.well-known/openid-configuration",
+			"e2e-site.nke.local",
+			"clusters/finalizers",
+			"dgxc-tenant-credentials",
+		} {
+			if !strings.Contains(manifest, want) {
+				t.Errorf("controller chart does not render %s", want)
+			}
+		}
+	})
+
+	t.Run("spire chart", func(t *testing.T) {
+		install, ok := installs["spire"]
+		if !ok {
+			t.Skip("no spire install")
+		}
+		manifest, err := helmTemplate(t, install)
+		if err != nil {
+			if strings.Contains(err.Error(), "dial tcp") || strings.Contains(err.Error(), "no such host") ||
+				strings.Contains(err.Error(), "cannot be reached") {
+				t.Skipf("SPIRE chart unreachable: %v", err)
+			}
+			t.Fatal(err)
+		}
+		for _, want := range []string{
+			"nke.site-controller.internal",
+			"10.0.0.5",
+			"https://10.0.0.5:30443/keys",
+			mustChecksum(t, "arm64"),
+			"spiffe://e2e-site.nke.local/nke-service/cloud-workflow-engine",
+		} {
+			if !strings.Contains(manifest, want) {
+				t.Errorf("SPIRE chart does not render %s", want)
+			}
+		}
+	})
+
+	t.Run("credential templates", func(t *testing.T) {
+		out := t.TempDir()
+		if _, err := runTool(t, "python3", filepath.Join(assets, "build", "render-template.py"),
+			filepath.Join(values, "bootstrap-config.json"),
+			filepath.Join(deploy, "nke-sbom", "nke-base-config"), out); err != nil {
+			t.Fatal(err)
+		}
+		rendered := map[string]string{}
+		entries, err := os.ReadDir(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			data, err := os.ReadFile(filepath.Join(out, e.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(data), "{{") {
+				t.Errorf("%s has an unrendered field:\n%s", e.Name(), data)
+			}
+			rendered[e.Name()] = string(data)
+		}
+		for file, wants := range map[string][]string{
+			"20-nico-credentials.yaml":        {"https://forge.example", "org", "tok", "forge"},
+			"30-ghcr-imagepull.yaml":          {`"ghcr.io"`, `"username":"u"`, `"password":"r"`},
+			"35-dgxc-tenant-credentials.yaml": {`user: "admin"`, `password: "p"`},
+		} {
+			for _, want := range wants {
+				if !strings.Contains(rendered[file], want) {
+					t.Errorf("%s lacks %s:\n%s", file, want, rendered[file])
+				}
+			}
+		}
+	})
+}
