@@ -16,6 +16,7 @@ import (
 
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/environment"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra/teleport"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 )
 
@@ -101,10 +102,10 @@ func (c *fakeConn) Close() error {
 type fakeDialer struct {
 	refusals int
 	conn     *fakeConn
-	targets  []Target
+	targets  []teleport.Target
 }
 
-func (d *fakeDialer) Dial(_ context.Context, target Target) (Conn, error) {
+func (d *fakeDialer) Dial(_ context.Context, target teleport.Target) (Conn, error) {
 	d.targets = append(d.targets, target)
 	if len(d.targets) <= d.refusals {
 		return nil, errors.New("connection refused")

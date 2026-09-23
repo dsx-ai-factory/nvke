@@ -52,10 +52,12 @@ type Session interface {
 	// with what the node said.
 	Run(ctx context.Context, cmd string) (string, error)
 
-	// Put writes data to path on the node with the given mode.
+	// Put writes data to path on the node with the given mode, as root:
+	// what bootstrap stages goes into system paths.
 	Put(ctx context.Context, path string, data []byte, mode uint32) error
 
-	// Fetch reads path from the node.
+	// Fetch reads path from the node as root, since the kubeconfig bootstrap
+	// writes is readable by nobody else.
 	Fetch(ctx context.Context, path string) ([]byte, error)
 
 	// Forward forwards remotePort on the node to a local listener and returns

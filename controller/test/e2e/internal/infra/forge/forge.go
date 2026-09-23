@@ -20,6 +20,7 @@ import (
 
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/environment"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra/teleport"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 )
 
@@ -47,15 +48,6 @@ const (
 // plain HTTPS, since iPXE cannot pull an OCI artifact.
 type Images func(nodeVersion string) (bootLoaderURL, imageURL string, err error)
 
-// Target is where a Dialer connects: a node address, reached through a jump
-// host, as a user authenticating with a key.
-type Target struct {
-	JumpHost string
-	Address  string
-	User     string
-	Signer   ssh.Signer
-}
-
 // Conn is a connection to a node. It is everything a Session does except
 // release the machine, which is the provider's.
 type Conn interface {
@@ -70,7 +62,21 @@ type Conn interface {
 // that fails because the node is not answering yet is retried by the
 // provider, so a Dialer makes one attempt and reports what happened.
 type Dialer interface {
-	Dial(ctx context.Context, target Target) (Conn, error)
+	Dial(ctx context.Context, target teleport.Target) (Conn, error)
+}
+
+// Teleport is the Dialer a real run uses.
+func Teleport(d *teleport.Dialer) Dialer { return teleportDialer{d} }
+
+type teleportDialer struct{ d *teleport.Dialer }
+
+func (t teleportDialer) Dial(ctx context.Context, target teleport.Target) (Conn, error) {
+	c, err := t.d.Dial(ctx, target)
+	if err != nil {
+		// Not c: a nil *Client in a Conn is a non-nil Conn.
+		return nil, err
+	}
+	return c, nil
 }
 
 // Options configures a Provider.
@@ -253,7 +259,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	if err != nil {
 		return fail(err)
 	}
-	conn, err := p.waitReachable(ctx, Target{JumpHost: p.opts.JumpHost, Address: address, User: nodeUser, Signer: signer})
+	conn, err := p.waitReachable(ctx, teleport.Target{JumpHost: p.opts.JumpHost, Address: address, User: nodeUser, Signer: signer})
 	if err != nil {
 		return fail(err)
 	}
@@ -378,7 +384,7 @@ func (p *Provider) waitReady(ctx context.Context, id string) (string, error) {
 // waitReachable dials until the node answers. Ready and reachable are
 // different signals: an instance reports Ready once Forge has handed it over,
 // long before the image is written, booted and running sshd.
-func (p *Provider) waitReachable(ctx context.Context, target Target) (Conn, error) {
+func (p *Provider) waitReachable(ctx context.Context, target teleport.Target) (Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, p.opts.ReachTimeout)
 	defer cancel()
 
