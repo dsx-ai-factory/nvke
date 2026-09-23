@@ -79,17 +79,25 @@ The prefix is the module's directory because Go requires it: the module
 `.github/workflows/release.yml` reads the directory back off the tag and checks
 it against `go.work`, so a prefix naming no module fails the run.
 
-Two prefixes skip that workflow's GitHub Release job and cut the release
+Some prefixes skip that workflow's GitHub Release job and cut the release
 themselves, after they have built and verified the real artifacts:
 
 | Tag | Workflow | What ships |
 |---|---|---|
 | `agent/vX.Y.Z` | `agent-deb-publish.yml` (+ `agent-artifact.yml`) | `.deb`s, GitHub Release assets, GHCR binary, NVCR binary + `.deb`, S3/CloudFront `.deb` |
 | `os-image/vX.Y.Z` | `os-image-artifact.yml` | qcow2 on GHCR, NVCR, and S3/CloudFront; `nke-os-image-check` on the GitHub Release |
+| `nktp/vX.Y.Z` | `nktp-chart-publish.yml` | Helm chart on GHCR and the GitHub Release |
 | `cli/vX.Y.Z` | `release.yml` (+ `cli-artifact.yml`, `cli-artifact-nvcr.yml`, `cli-s3-publish.yml`) | binaries on GitHub Release, GHCR, NVCR, S3/CloudFront |
 
 An `os-image/` tag that fails Packer or the boot-smoke test never publishes the
 OCI artifact and never promotes the GitHub Release out of draft.
+
+An `nktp/` tag releases the NKTP Helm chart. Its version is `version:` in
+`nktp/deploy/charts/nktp/Chart.yaml`, and the tag must equal it, so bump it in
+a pull request before tagging. For a release candidate, set
+`version: X.Y.Z-rc.1` and tag `nktp/vX.Y.Z-rc.1`. The workflow pushes
+`oci://ghcr.io/dsx-ai-factory/nke/charts/nktp:<version>` and writes the release
+body itself, because git-cliff has no section for a component tag.
 
 A `controller/vX.Y.Z` tag goes through `release.yml` like any other component and
 additionally publishes the controller image and Helm chart:
@@ -150,7 +158,8 @@ successfully (node OS-image bake, chart publish, etc.). For `os-image/v*`, that 
 the **OS Image Artifact** check: Packer, boot-smoke, then `oras` to
 `ghcr.io/dsx-ai-factory/nke/os-image`. For `controller/v*`, confirm the **Image
 NVCR** and **Chart Publish** checks, then that the promoted image is present at
-`ghcr.io/dsx-ai-factory/nke/nke-controller:<version>`.
+`ghcr.io/dsx-ai-factory/nke/nke-controller:<version>`. For `nktp/v*`, confirm the
+**NKTP Chart Publish** check.
 
 ## Verifying a release
 
@@ -203,7 +212,7 @@ the artifact was built by some GitHub workflow somewhere. Use
 
 | Artifact | Attested subject | Where the attestation lives |
 |---|---|---|
-| Release assets (`nkectl`, agent `.deb`s, `nke-os-image-check`) | `checksums.txt`, which names each by digest | GitHub, plus the attached bundle |
+| Release assets (`nkectl`, agent `.deb`s, `nke-os-image-check`, the NKTP chart archive) | `checksums.txt`, which names each by digest | GitHub, plus the attached bundle |
 | `os-image` qcow2 OCI artifacts | the same `checksums.txt` | GitHub, plus the attached bundle |
 | `nke-controller`, `cluster-api-provider-provisioned` on GHCR | the multi-arch index digest | attached to the image in GHCR as an OCI referrer |
 
@@ -245,8 +254,9 @@ NGC or a second mechanism for those registries.
 
 The other artifacts nke publishes to GHCR — the Helm charts, the `agent` and
 `cli` OCI artifacts, `agent-deb`, and the `os-image-*` repositories — are not
-attested individually yet. The `os-image` disks are covered transitively
-through `checksums.txt`; the rest are follow-up work along the pattern in
+attested individually yet. The `os-image` disks and the NKTP chart are covered
+transitively through `checksums.txt`, which names the chart archive whose
+digest is the chart layer on GHCR; the rest are follow-up work along the pattern in
 `image-nvcr.yml`.
 
 ## Hotfix releases
