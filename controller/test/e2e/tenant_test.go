@@ -22,6 +22,7 @@ import (
 
 	"github.com/dsx-ai-factory/nke/controller/api"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/environment"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nkectl"
@@ -573,6 +574,31 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		options:  nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{cpRotation: true},
 	}),
+	// The only entry that runs on hardware, and so the only one needing
+	// -e2e.environment. Opt-in via the "nico-forge" label: everything above
+	// runs against a simulator on the runner, while this one creates real
+	// instances in a real Forge site and costs real money.
+	//
+	// Node counts are the smallest that still prove a control plane and a
+	// worker, and the pools name no instance type: the environment file's
+	// declarations answer -e2e.capabilities instead, so the machine is chosen
+	// by what the run needs rather than pinned in the table.
+	//
+	// provisioningOnly to start with. Create, node readiness and delete are
+	// what a first run on Forge has to get through before any deeper
+	// assertion is worth attempting.
+	Entry("nico-forge", Ordered, ContinueOnFailure, Label("nico-forge", "happy-path"), testSpec{
+		buildSpec: nicoForgeSpec,
+		shape: clusterShape{
+			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+		},
+		// Generous next to the simulator lanes: these timeouts cover a bare
+		// machine booting an OS image over the network and installing packages,
+		// none of which a container does.
+		options:  nke.Options{Provision: 90 * time.Minute, Delete: 30 * time.Minute, Poll: 30 * time.Second},
+		validate: validations{provisioningOnly: true},
+	}),
 )...)
 
 func withNicoVMSOSProfileEntries(args ...any) []any {
@@ -782,8 +808,10 @@ func (t *tenantTest) initCluster(ctx context.Context, b testSpec) {
 		return
 	}
 
-	if t.spec.ControlPlane.ControlPlaneVIP == "" {
-		vip, err := t.availableControlPlaneVIP(ctx, preferredControlPlaneVIP(t.spec.Backend))
+	// A backend with no preferred VIP wants none: CWE reads an empty one as
+	// "do not configure kube-vip", which is how a real site runs.
+	if preferred := preferredControlPlaneVIP(t.spec.Backend); preferred != "" && t.spec.ControlPlane.ControlPlaneVIP == "" {
+		vip, err := t.availableControlPlaneVIP(ctx, preferred)
 		Expect(err).NotTo(HaveOccurred(), "should select an unused control-plane VIP")
 		t.spec.ControlPlane.ControlPlaneVIP = vip
 	}
@@ -853,6 +881,12 @@ func preferredControlPlaneVIP(backend nke.Backend) string {
 		return nicoControlPlaneVIP
 	case nke.BackendNicoVMS:
 		return nicoVMSControlPlaneVIP
+	case nke.BackendNicoForge:
+		// None. A real site owns its address space, so there is no private
+		// range to pick an unused address out of, and CWE reads an empty VIP
+		// as "do not configure kube-vip". initCluster skips the search when
+		// the preference is empty.
+		return ""
 	default:
 		panic(fmt.Sprintf("no preferred control-plane VIP for backend %q", backend))
 	}
@@ -1020,6 +1054,104 @@ func nicoSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec 
 		},
 		Workers: nicoNodePoolSpecs(shape.workerPools, "worker", "w"),
 	}
+}
+
+// Dependency versions pinned by controller/hack/create-forge-nico-cluster.sh,
+// the known-good pairing for this site. Defaults rather than required inputs:
+// they are not what a nico-forge run qualifies, and a resolved combination
+// from the qualify tool will supply them once the run verb exists.
+const (
+	forgeDefaultCNIVersion   = "1.4.0"
+	forgeDefaultSpireVersion = "1.14.1+tpm1.9.0"
+)
+
+// nicoForgeSpec builds a CAPNico topology on real Forge. The manifests are the
+// ones nicoSpec already builds, since CAPNico reconciles both, so what this
+// adds is identifiers of infrastructure that exists and the two payloads a
+// machine that really boots needs.
+//
+// It fails the spec rather than returning an error, like every other builder
+// in this table. Each thing it can fail on is an input the run was supposed to
+// supply, so naming which one is the useful part.
+func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec {
+	GinkgoHelper()
+
+	forge, err := forgeEnvironment()
+	Expect(err).NotTo(HaveOccurred(), "should load the environment named by -e2e.environment")
+	site, err := forge.Site("")
+	Expect(err).NotTo(HaveOccurred(), "should resolve a site in the environment")
+	capabilities, err := runCapabilities()
+	Expect(err).NotTo(HaveOccurred(), "should parse -e2e.capabilities")
+	instanceType, err := site.MatchInstanceType(capabilities)
+	Expect(err).NotTo(HaveOccurred(), "should find an instance type providing the requested capabilities")
+
+	kubernetesVersion := defaultString(optionalVersion("kube"),
+		defaultString(shape.kubernetesVersion, defaultKubernetesVersion))
+
+	// The OS image is the component under qualification, so it is required and
+	// has no default: a run that did not name one has not said what it is
+	// qualifying. The imager is versioned separately and cannot be derived.
+	bootLoaderURL, err := requireVersion("os-image-bootloader")
+	Expect(err).NotTo(HaveOccurred(), "should be told which qcow imager to boot")
+	imageURL, err := requireVersion("os-image")
+	Expect(err).NotTo(HaveOccurred(), "should be told which OS image to qualify")
+
+	payloads, err := nke.BuildForgeNodePayloads(nke.ForgeNodeInputs{
+		BootLoaderURL:     bootLoaderURL,
+		ImageURL:          imageURL,
+		KubernetesVersion: kubernetesVersion,
+		CNIVersion:        defaultString(optionalVersion("nke-cni-ovn"), forgeDefaultCNIVersion),
+		SpireVersion:      defaultString(optionalVersion("spire-agent"), forgeDefaultSpireVersion),
+	})
+	Expect(err).NotTo(HaveOccurred(), "should render the Forge node payloads")
+
+	return nke.ClusterSpec{
+		Name:              name,
+		Backend:           nke.BackendNicoForge,
+		KubernetesVersion: kubernetesVersion,
+		// OVN, matching the nke-cni-ovn-images package the pre-kubeadm
+		// commands install. Calico here would install one CNI and run another.
+		CNIPlugin:    defaultString(shape.cniPlugin, CNIPluginOVN),
+		OrgID:        forge.Org.ID,
+		SiteID:       site.ID,
+		VpcID:        site.VpcID,
+		NodePayloads: &payloads,
+		ControlPlane: nke.ControlPlane{
+			Pools:         forgeNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", site, instanceType),
+			EtcdEncrypted: shape.etcdEncrypted,
+			// Empty unless an entry asks for one, which CWE reads as "do not
+			// configure kube-vip". That is what create-forge-nico-cluster.sh
+			// does: it sends no VIP. The simulator backends advertise theirs
+			// through a BGP speaker the runner hosts, and a real site has no
+			// equivalent to borrow an address from.
+			ControlPlaneVIP: shape.controlPlaneVIP,
+		},
+		Workers: forgeNodePoolSpecs(shape.workerPools, "worker", "w", site, instanceType),
+	}
+}
+
+// forgeNodePoolSpecs fills each pool from the environment. A pool naming its
+// own instance type keeps it, which is how a table entry asks for a shape the
+// capability match would not have chosen.
+func forgeNodePoolSpecs(
+	pools []nke.NodePoolSpec,
+	defaultName, defaultNodeNamePrefix string,
+	site environment.ForgeSite,
+	instanceType environment.ForgeInstanceType,
+) []nke.NodePoolSpec {
+	out := make([]nke.NodePoolSpec, 0, len(pools))
+	for _, pool := range pools {
+		out = append(out, nke.NodePoolSpec{
+			Name:                 defaultString(pool.Name, defaultName),
+			NodeNamePrefix:       defaultString(pool.NodeNamePrefix, defaultNodeNamePrefix),
+			DesiredNodeCount:     pool.DesiredNodeCount,
+			SystemReservedMemory: defaultString(pool.SystemReservedMemory, "16Gi"),
+			InstanceTypeID:       defaultString(pool.InstanceTypeID, instanceType.ID),
+			SubnetIDs:            defaultStrings(pool.SubnetIDs, site.SubnetID),
+			SSHKeyGroupIDs:       defaultStrings(pool.SSHKeyGroupIDs, site.SSHKeyGroupID),
+		})
+	}
+	return out
 }
 
 func nicoNodePoolSpecs(pools []nke.NodePoolSpec, defaultName, defaultNodeNamePrefix string) []nke.NodePoolSpec {

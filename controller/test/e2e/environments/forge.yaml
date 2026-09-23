@@ -1,0 +1,61 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Real Forge infrastructure the nico-forge backend runs against, selected with
+# `-e2e.environment forge`. Identifiers only: the Forge API key and the Teleport
+# join are workflow secrets and are deliberately absent here.
+#
+# The values come from controller/hack/create-forge-nico-cluster.sh, the one
+# path in this repository known to have created a cluster on real Forge, and are
+# corroborated by controller/integration-test/testdata/default.
+#
+# This file changes when the hardware does. A run needing a different Kubernetes
+# or a different OS image touches nothing here: neither is an infrastructure
+# input.
+
+provider: forge
+
+# Opaque to the loader. Every key below is Forge's vocabulary, decoded by the
+# forge provider alone, so a second provider describes its infrastructure in its
+# own terms without a shared schema to satisfy.
+infrastructure:
+  org:
+    id: novxwn552ssc
+
+  sites:
+    # Keyed by role rather than by location: this site's human-facing name is
+    # not recorded anywhere in the repository, and the UUID is what the API
+    # takes. Rename it once someone confirms what Forge calls it.
+    default:
+      id: e85ae455-2962-4742-b885-4b9ae22769c8
+      vpcID: b64210af-8f8e-4e37-ad0a-8cf7c6babf28
+      subnetID: 53c42b79-3dbf-40e8-9363-75228d7b6e1b
+      sshKeyGroupID: 5057cbb3-51ba-4568-b9ad-531cdd626d97
+
+      # From `ngc forge instance-type list --site e85ae455-2962-4742-b885-4b9ae22769c8
+      # --org novxwn552ssc`. Declared cheapest first: where several types satisfy
+      # a request the first listed wins.
+      #
+      # `provides` is matched against the capabilities a run asks for, so
+      # requesting {machineType: cpu} cannot be answered by a GPU machine. Every
+      # type here is amd64, which is why the site boots an x86_64 image.
+      #
+      # Note for qualification: this site offers no GB200, so a stream asking
+      # for {gpu: gb200} has nothing here to run on and will fail rather than
+      # fall back to an L40.
+      instanceTypes:
+        - name: cpu.t1
+          id: d1a6401c-6b19-4261-92c3-79555cb56462
+          provides: {machineType: cpu, arch: amd64}
+        - name: stor.1920gb.32x.t1
+          id: a955d89b-8680-4285-8bbf-8338b3874463
+          provides: {machineType: storage, arch: amd64}
+        - name: gpu.l40x8.ovx.t1
+          id: 7c168e39-8e3b-480f-a3c1-f9b90517bfc9
+          provides: {machineType: gpu, arch: amd64, gpu: l40}
+        - name: gpu.l40x8.ovx.t1.ib
+          id: 3b7bc0c3-9fd4-49b9-8c08-357d84cdb456
+          provides: {machineType: gpu, arch: amd64, gpu: l40}
+        - name: gpu.l40x8.ovx.t1.ibx2
+          id: 81873aa9-dbc4-4e7b-95b4-024625c79dad
+          provides: {machineType: gpu, arch: amd64, gpu: l40}

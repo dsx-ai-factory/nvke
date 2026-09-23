@@ -25,6 +25,11 @@ const (
 	BackendNicoContainers Backend = "nico-containers"
 	// BackendNicoVMS is the local nico-vms Forge emulator backend.
 	BackendNicoVMS Backend = "nico-vms"
+	// BackendNicoForge is CAPNico against real Forge infrastructure. It builds
+	// the same CAPI manifests as nico-containers, since CAPNico reconciles
+	// both, and differs in the identifiers it names and in the two payloads
+	// that turn a provisioned machine into an NKE node.
+	BackendNicoForge Backend = "nico-forge"
 
 	capiSpecKey          = "spec"
 	nodeRoleWorker       = "worker"
@@ -107,6 +112,22 @@ type ClusterSpec struct {
 	OrgID  string
 	SiteID string
 	VpcID  string
+
+	// NodePayloads is required by nico-forge and ignored by everything else.
+	NodePayloads *NodePayloads
+}
+
+// NodePayloads are the two things that turn a bare machine into an NKE node:
+// the iPXE script that boots the OS image, and the commands that install the
+// NKE packages before kubeadm runs.
+//
+// The simulator backends stub both, because a container boots no image and a
+// seeded emulator needs no packages. Real hardware needs both to be right, and
+// both name component versions, which is why a nico-forge run has to be told
+// what it is qualifying.
+type NodePayloads struct {
+	IPXEScript         string
+	PreKubeadmCommands []string
 }
 
 var (
@@ -138,6 +159,8 @@ func BuildCreateRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 		return buildNicoRequest(spec)
 	case BackendNicoVMS:
 		return buildNicoVMSRequest(spec)
+	case BackendNicoForge:
+		return buildNicoForgeRequest(spec)
 	default:
 		return api.CreateClusterRequest{}, fmt.Errorf("unsupported backend %q", spec.Backend)
 	}
@@ -147,6 +170,55 @@ func BuildCreateRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 // consumed by CAPNico. The fixed mock identifiers are supplied by the caller
 // through spec so this builder remains independent of a particular test seed.
 func buildNicoRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
+	return buildCAPNicoRequest(spec, containerNodePayloads)
+}
+
+// buildNicoForgeRequest builds the same CAPI request against real Forge. The
+// manifests are identical to nico-containers, which is the point: CAPNico is
+// what reconciles them either way, so running on hardware exercises the same
+// request path rather than a parallel one.
+//
+// What differs is that the payloads have to be real. A container reaches
+// kubeadm whatever the iPXE script says; a Forge instance boots the script it
+// is given and comes up with only the packages it was told to install.
+func buildNicoForgeRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
+	if spec.NodePayloads == nil {
+		return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires node payloads: a real machine boots an image and installs packages")
+	}
+	payloads := *spec.NodePayloads
+	if payloads.IPXEScript == "" {
+		return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires an iPXE script: without one the instance boots nothing")
+	}
+	if len(payloads.PreKubeadmCommands) == 0 {
+		return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires pre-kubeadm commands: without them the node has no nke-agent")
+	}
+
+	// Both roles boot the same image and install the same packages, so unlike
+	// the container stub the payloads do not vary by role.
+	return buildCAPNicoRequest(spec, func(bool) NodePayloads { return payloads })
+}
+
+// containerNodePayloads stubs both payloads for the container backend. The
+// iPXE script is never booted and the marker file is what stands in for an
+// agent that a container does not run.
+func containerNodePayloads(controlPlane bool) NodePayloads {
+	return NodePayloads{
+		IPXEScript:         fmt.Sprintf("#!ipxe\necho local-nico-%s\n", nodeRole(controlPlane)),
+		PreKubeadmCommands: containerCAPIReadyCommands(),
+	}
+}
+
+func nodeRole(controlPlane bool) string {
+	if controlPlane {
+		return nodeRoleControlPlane
+	}
+	return nodeRoleWorker
+}
+
+// buildCAPNicoRequest is the CAPNico request both Nico CAPI backends build.
+// payloads is a function of the node's role because the container stub names
+// the role in its iPXE line; a real backend ignores the argument.
+func buildCAPNicoRequest(spec ClusterSpec, payloads func(controlPlane bool) NodePayloads) (api.CreateClusterRequest, error) {
 	siteID, err := uuid.Parse(spec.SiteID)
 	if err != nil {
 		return api.CreateClusterRequest{}, fmt.Errorf("parsing Nico site ID %q: %w", spec.SiteID, err)
@@ -179,7 +251,7 @@ func buildNicoRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	applyNetworkConfig(&req, spec.Network)
 
 	for _, ps := range orderedPools(spec) {
-		pool, err := buildNicoNodePool(req.Name, vpcID, ps)
+		pool, err := buildNicoNodePool(req.Name, vpcID, ps, payloads(ps.ControlPlane))
 		if err != nil {
 			return api.CreateClusterRequest{}, fmt.Errorf("building Nico node pool %q: %w", ps.Name, err)
 		}
@@ -190,7 +262,7 @@ func buildNicoRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	}
 
 	if spec.ControlPlane.Config != nil {
-		cfg, err := buildNicoControlPlaneConfig(req.Name, vpcID, spec)
+		cfg, err := buildNicoControlPlaneConfig(req.Name, vpcID, spec, payloads(true))
 		if err != nil {
 			return api.CreateClusterRequest{}, fmt.Errorf("building control plane config: %w", err)
 		}
@@ -204,7 +276,7 @@ func buildNicoRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 // control-plane-controller provisioning, where the control plane has no owning
 // node pool. A NICo control-plane node is shaped exactly like a NICo pool node,
 // so this borrows buildNicoNodePool's machine template rather than repeating it.
-func buildNicoControlPlaneConfig(clusterName string, vpcID uuid.UUID, spec ClusterSpec) (*api.CreateClusterControlPlaneConfig, error) {
+func buildNicoControlPlaneConfig(clusterName string, vpcID uuid.UUID, spec ClusterSpec, payloads NodePayloads) (*api.CreateClusterControlPlaneConfig, error) {
 	cp := spec.ControlPlane.Config
 	pool, err := buildNicoNodePool(clusterName, vpcID, NodePoolSpec{
 		Name:                 nodeRoleControlPlane,
@@ -215,7 +287,7 @@ func buildNicoControlPlaneConfig(clusterName string, vpcID uuid.UUID, spec Clust
 		InstanceTypeID:       cp.InstanceTypeID,
 		SubnetIDs:            cp.SubnetIDs,
 		SSHKeyGroupIDs:       cp.SSHKeyGroupIDs,
-	})
+	}, payloads)
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +303,7 @@ func buildNicoControlPlaneConfig(clusterName string, vpcID uuid.UUID, spec Clust
 	}, nil
 }
 
-func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec) (api.NodePoolCreateConfig, error) {
+func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec, payloads NodePayloads) (api.NodePoolCreateConfig, error) {
 	instanceTypeID, err := uuid.Parse(spec.InstanceTypeID)
 	if err != nil {
 		return api.NodePoolCreateConfig{}, fmt.Errorf("parsing instance type ID %q: %w", spec.InstanceTypeID, err)
@@ -256,11 +328,6 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec) (
 	for _, sshKeyGroupID := range sshKeyGroupIDs {
 		sshKeyGroups = append(sshKeyGroups, sshKeyGroupID.String())
 	}
-	role := nodeRoleWorker
-	if spec.ControlPlane {
-		role = nodeRoleControlPlane
-	}
-
 	pool := api.NodePoolCreateConfig{
 		Name:                 spec.Name,
 		NodeNamePrefix:       spec.NodeNamePrefix,
@@ -268,7 +335,7 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec) (
 		DesiredNodeCount:     spec.DesiredNodeCount,
 		SystemReservedMemory: spec.SystemReservedMemory,
 		Infra: &api.InfraNodePoolProvider{
-			PreKubeadmCommands: containerCAPIReadyCommands(),
+			PreKubeadmCommands: payloads.PreKubeadmCommands,
 			MachineTemplate: map[string]any{
 				"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
 				"kind":       "NicoMachineTemplate",
@@ -281,7 +348,7 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec) (
 							"vpcID":                   vpcID.String(),
 							"instanceTypeID":          instanceTypeID.String(),
 							"cloudInitInjectHostname": true,
-							"ipxeScript":              fmt.Sprintf("#!ipxe\necho local-nico-%s\n", role),
+							"ipxeScript":              payloads.IPXEScript,
 							"sshKeyGroupIDs":          sshKeyGroups,
 							"interfaces":              interfaces,
 						},
@@ -558,7 +625,7 @@ func NicoNodePoolRequest(clusterID uuid.UUID, clusterName, vpcID string, spec No
 	if err != nil {
 		return api.CreateNodePoolRequest{}, fmt.Errorf("parsing VPC ID %q: %w", vpcID, err)
 	}
-	pool, err := buildNicoNodePool(clusterName, vpc, spec)
+	pool, err := buildNicoNodePool(clusterName, vpc, spec, containerNodePayloads(spec.ControlPlane))
 	if err != nil {
 		return api.CreateNodePoolRequest{}, err
 	}
