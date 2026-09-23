@@ -35,6 +35,8 @@ const (
 	// The set of hosts only changes when an operator edits the inventory or a
 	// machine acquires a host, so a short retry would only add load.
 	retryAfter = 30 * time.Second
+	// retryNow retries after a conflict or a stale read, which should clear at once.
+	retryNow = time.Second
 
 	provisionedClusterKind = "ProvisionedCluster"
 	machineFinalizer       = "provisionedmachine.infrastructure.cluster.x-k8s.io"
@@ -124,7 +126,7 @@ func (r *MachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		if err := r.client.Patch(ctx, machine, patch); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to add the ProvisionedMachine finalizer: %w", err)
 		}
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{RequeueAfter: retryNow}, nil
 	}
 
 	ownerMachine, err := capiutil.GetOwnerMachine(ctx, r.client, machine.ObjectMeta)
@@ -313,7 +315,7 @@ func (r *MachineReconciler) allocateHost(
 			// view rather than force this selection. The claim is already owned
 			// by this machine, so the next reconcile can reuse it.
 			logger.Info("Conflict while claiming a host, retrying", "host", host.Hostname)
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: retryNow}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to claim host %s: %w", host.Hostname, err)
 	}
@@ -466,7 +468,7 @@ func (r *MachineReconciler) reconcileNodeProviderID(
 	if err := tenantClient.Patch(tenantCtx, node, patch); err != nil {
 		if apierrors.IsConflict(err) {
 			logger.Info("Tenant Node changed while setting its provider ID; retrying", "node", node.Name)
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: retryNow}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to patch tenant Node provider ID: %w", err)
 	}

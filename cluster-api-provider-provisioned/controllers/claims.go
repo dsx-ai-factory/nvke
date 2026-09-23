@@ -101,7 +101,7 @@ func (r *MachineReconciler) claimIPAddress(
 	existing := &infrav1.ProvisionedHostClaim{}
 	if getErr := r.apiReader.Get(ctx, client.ObjectKey{Name: claim.Name}, existing); getErr != nil {
 		if apierrors.IsNotFound(getErr) {
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: retryNow}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to read the existing claim for IP address %q: %w", ipAddress, getErr)
 	}
