@@ -446,15 +446,7 @@ func (a *Activities) renderUserData(
 		return "", fmt.Errorf("failed to execute userData template: %w", err)
 	}
 
-	userData, err := injectNodeAgentTLSJWTBootstrap(
-		userDataByteBuffer.String(),
-		a.nodeAgentTLSJWTBootstrapCommands(),
-	)
-	if err != nil {
-		return "", err
-	}
-
-	return userData, nil
+	return userDataByteBuffer.String(), nil
 }
 
 func (a *Activities) validateDgxcTenantCredentials() error {

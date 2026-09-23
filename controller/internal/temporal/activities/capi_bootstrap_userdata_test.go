@@ -105,11 +105,43 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 			},
 		},
 		"TLS JWT renders the agent arguments": {
-			config: config.Config{NodeAgentTLSJWTEnabled: true, NodeAgentPort: "15005"},
+			config:   config.Config{NodeAgentTLSJWTEnabled: true, NodeAgentPort: "15005", NodeAgentTLSJWTDSXIdentityExchangeURL: "https://identity.example.test/v1/exchange"},
+			provider: customBootstrap,
 			verify: func(t *testing.T, userData string) {
 				t.Helper()
-				assert.Contains(t, userData, "--grpc-auth-mode=tls-jwt")
-				assert.Contains(t, userData, "systemctl restart nke-agent.service")
+				var rendered capiCloudInitConfig
+				require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
+				var agentFiles int
+				for _, file := range rendered.WriteFiles {
+					if file.Path == config.NodeAgentConfigPath {
+						agentFiles++
+						assert.Equal(t, "AGENT_ARGS=\"--secure-server-port 15005 --grpc-auth-mode=tls-jwt --dsx-identity-exchange-url=https://identity.example.test/v1/exchange\"\n", file.Content)
+					}
+				}
+				assert.Equal(t, 1, agentFiles)
+				assert.Equal(t, []string{"echo before kubeadm", "systemctl restart nke-agent.service"}, rendered.RunCmd)
+				assert.NotContains(t, userData, "sed -E")
+			},
+		},
+		"existing agent restart is followed by the final restart": {
+			config: config.Config{NodeAgentTLSJWTEnabled: true, NodeAgentPort: "15005"},
+			provider: db.CAPINodePoolProvider{
+				PreKubeadmCommands: []string{"echo prepare agent", "systemctl restart nke-agent"},
+			},
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				var rendered capiCloudInitConfig
+				require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
+				assert.Equal(t, []string{"echo prepare agent", "systemctl restart nke-agent", "systemctl restart nke-agent.service"}, rendered.RunCmd)
+			},
+		},
+		"agent restarts without caller commands": {
+			config: config.Config{NodeAgentPort: "15005"},
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				var rendered capiCloudInitConfig
+				require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
+				assert.Equal(t, []string{"systemctl restart nke-agent.service"}, rendered.RunCmd)
 			},
 		},
 	}
@@ -195,7 +227,7 @@ func TestRenderCAPIBootstrapUserData_ExternalMTLS(t *testing.T) {
 	assert.Equal(t, "0644", agentConfigFile.Permissions)
 	assert.Empty(t, agentConfigFile.Encoding)
 	assert.Equal(t, "AGENT_ARGS=\"--secure-server-port 15005 --controller-client-ca-bundle=/etc/nke/controller-ca.crt\"\n", agentConfigFile.Content)
-	assert.NotContains(t, userData, "systemctl restart nke-agent.service")
+	assert.Equal(t, []string{"systemctl restart nke-agent.service"}, cloudConfig.RunCmd)
 	assert.NotContains(t, userData, "--grpc-auth-mode")
 	assert.NotContains(t, userData, "PRIVATE KEY")
 }
@@ -209,4 +241,43 @@ func TestRenderCAPIBootstrapUserData_ExternalMTLSRequiresCA(t *testing.T) {
 	nodeSet.SetCapi(db.CAPINodePoolProvider{SpireAttestationMethod: db.SpireAttestationMethodTPM})
 	_, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeSet, "")
 	require.ErrorContains(t, err, "controller client CA bundle is required")
+}
+
+func TestUnit_RenderCAPIBootstrapUserData_AllowsFileOverride(t *testing.T) {
+	t.Parallel()
+
+	type parameters struct {
+		path         string
+		externalMTLS bool
+	}
+	tests := map[string]parameters{
+		"agent environment":       {path: config.NodeAgentConfigPath},
+		"agent environment alias": {path: "/etc/default/../default/nke-agent"},
+		"active controller CA":    {path: config.NodeAgentControllerCAPath, externalMTLS: true},
+	}
+
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			activities := &Activities{
+				cfg: config.Config{
+					NodeAgentPort:                "15005",
+					NodeAgentExternalMTLSEnabled: params.externalMTLS,
+				},
+				controllerClientCABundle: "public-ca",
+			}
+			var nodeSet db.NodeSet
+			nodeSet.SetCapi(db.CAPINodePoolProvider{
+				BootstrapFiles: []db.CloudInitFile{{Path: params.path, Content: "caller content"}},
+			})
+			userData, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeSet, "")
+			require.NoError(t, err)
+			var rendered capiCloudInitConfig
+			require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
+			require.GreaterOrEqual(t, len(rendered.WriteFiles), 2)
+			assert.Equal(t, params.path, rendered.WriteFiles[0].Path)
+			assert.Equal(t, "caller content", rendered.WriteFiles[0].Content)
+			assert.Equal(t, config.NodeAgentConfigPath, rendered.WriteFiles[len(rendered.WriteFiles)-1].Path)
+		})
+	}
 }

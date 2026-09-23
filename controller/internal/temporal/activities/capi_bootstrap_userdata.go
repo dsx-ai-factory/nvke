@@ -77,7 +77,6 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	if err != nil {
 		return "", err
 	}
-
 	if a.cfg.NodeAgentSpireAttestationMethod == config.SpireAttestationMethodJoinToken && spireJoinToken == "" {
 		return "", fmt.Errorf("spire join token is required when SPIRE attestation method is joinToken")
 	}
@@ -137,7 +136,7 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	}
 
 	runCommands := append([]string(nil), capiNodeSetProvider.PreKubeadmCommands...)
-	runCommands = append(runCommands, a.nodeAgentTLSJWTBootstrapCommands()...)
+	runCommands = append(runCommands, "systemctl restart nke-agent.service")
 
 	userData := capiCloudInitConfig{
 		WriteFiles: files,

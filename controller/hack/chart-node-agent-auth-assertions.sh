@@ -50,13 +50,16 @@ absent "no JWT issuer configuration" 'NODE_AGENT_TLS_JWT_ISSUER' "${out}"
 absent "no JWT key-source configuration" 'NODE_AGENT_TLS_JWT_JWKS_URI' "${out}"
 
 echo "node-agent TLS/JWT enabled:"
-out="$(helm template cwe "${CHART}" \
-  --set spiffe.enabled=true \
-  --set nodeAgent.tlsJwt.enabled=true \
-  --set nodeAgent.tlsJwt.issuer=https://identity.example.test \
-  --set nodeAgent.tlsJwt.jwksURI=https://identity.example.test/.well-known/jwks.json \
-  --set 'nodeAgent.tlsJwt.algorithms={RS256,ES256}' \
-  --set nodeAgent.tlsJwt.subjectTrustDomain=identity.example.test)"
+tls_jwt_values=(
+  --set spiffe.enabled=true
+  --set nodeAgent.tlsJwt.enabled=true
+  --set nodeAgent.tlsJwt.issuer=https://identity.example.test
+  --set nodeAgent.tlsJwt.jwksURI=https://identity.example.test/.well-known/jwks.json
+  --set 'nodeAgent.tlsJwt.algorithms={RS256,ES256}'
+  --set nodeAgent.tlsJwt.subjectTrustDomain=identity.example.test
+  --set nodeAgent.tlsJwt.dsxIdentityExchangeURL=https://identity.example.test/exchange
+)
+out="$(helm template cwe "${CHART}" "${tls_jwt_values[@]}")"
 want_env_value "capability is true" NODE_AGENT_TLS_JWT_ENABLED true "${out}"
 absent "no token configuration ConfigMap" 'name: nke-node-agent-auth' "${out}"
 absent "no client identity Secret" 'secretName: nke-controller-agent-client-tls' "${out}"
@@ -65,6 +68,14 @@ want_env_value "JWT issuer comes from controller config" NODE_AGENT_TLS_JWT_ISSU
 want_env_value "JWT key source comes from controller config" NODE_AGENT_TLS_JWT_JWKS_URI https://identity.example.test/.well-known/jwks.json "${out}"
 want_env_value "JWT algorithms come from controller config" NODE_AGENT_TLS_JWT_ALGORITHMS RS256,ES256 "${out}"
 want_env_value "JWT subject trust domain comes from controller config" NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN identity.example.test "${out}"
+want_env_value "identity exchange URL comes from controller config" NODE_AGENT_TLS_JWT_DSX_IDENTITY_EXCHANGE_URL https://identity.example.test/exchange "${out}"
+if whitespace_out="$(helm template cwe "${CHART}" "${tls_jwt_values[@]}" \
+  --set-string nodeAgent.tlsJwt.dsxIdentityExchangeURL='   ' 2>&1)"; then
+  printf '  FAIL  whitespace-only identity exchange URL was accepted\n' >&2
+  failures=$((failures + 1))
+else
+  want "whitespace-only identity exchange URL is rejected" 'nodeAgent.tlsJwt.dsxIdentityExchangeURL is required' "${whitespace_out}"
+fi
 absent "no certificate Secret reload" 'secret.reloader.stakater.com/reload: "nke-controller-agent-client-tls"' "${out}"
 absent "no certificate mount" 'mountPath: /etc/nke/node-agent-tls' "${out}"
 

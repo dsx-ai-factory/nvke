@@ -364,10 +364,12 @@ func TestUnit_RenderUserData(t *testing.T) {
 	}
 	tlsJWTConfig := baseConfig
 	tlsJWTConfig.NodeAgentTLSJWTEnabled = true
+	tlsJWTConfig.NodeAgentTLSJWTDSXIdentityExchangeURL = "https://identity.example.test/v1/exchange"
 	externalMTLSConfig := baseConfig
 	externalMTLSConfig.NodeAgentExternalMTLSEnabled = true
 	combinedConfig := externalMTLSConfig
 	combinedConfig.NodeAgentTLSJWTEnabled = true
+	combinedConfig.NodeAgentTLSJWTDSXIdentityExchangeURL = "https://identity.example.test/v1/exchange"
 
 	type parameters struct {
 		config                config.Config
@@ -445,7 +447,7 @@ func TestUnit_RenderUserData(t *testing.T) {
 				assert.Equal(t, "images=nke-cni-ovn-images-1.4.1\ncharts=nke-cni-ovn-charts-1.4.1\n", userData)
 			},
 		},
-		"injects TLS JWT bootstrap into Nico user data": {
+		"renders TLS JWT agent file in Nico user data": {
 			config: tlsJWTConfig,
 			template: `#cloud-config
 autoinstall:
@@ -477,10 +479,20 @@ autoinstall:
 				}
 				require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
 				require.Len(t, rendered.Autoinstall.UserData.WriteFiles, 1)
-				assert.Equal(t, "AGENT_ARGS=\"--secure-server-port 15005\"\n", rendered.Autoinstall.UserData.WriteFiles[0].Content)
-				assert.Contains(t, userData, "--grpc-auth-mode=tls-jwt")
-				assert.Contains(t, userData, "s/--disable-mtls")
-				assert.Contains(t, userData, testRestartAgentCmd)
+				assert.Equal(t, "AGENT_ARGS=\"--secure-server-port 15005 --grpc-auth-mode=tls-jwt --dsx-identity-exchange-url=https://identity.example.test/v1/exchange\"\n", rendered.Autoinstall.UserData.WriteFiles[0].Content)
+				assert.Equal(t, []string{"systemctl restart nke-agent"}, rendered.Autoinstall.UserData.RunCmd)
+				assert.NotContains(t, userData, "sed -E")
+			},
+		},
+		"allows Nico profile without TLS JWT agent file": {
+			config:            tlsJWTConfig,
+			template:          "#cloud-config\nwrite_files: []\n",
+			node:              db.Node{Name: "test-node"},
+			kubernetesVersion: "1.33.0",
+			cluster:           db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assert.Equal(t, "#cloud-config\nwrite_files: []\n", userData)
 			},
 		},
 		"renders external mTLS CA through generic files": {
@@ -555,6 +567,7 @@ autoinstall:
 			verify: func(t *testing.T, userData string) {
 				t.Helper()
 				assert.Contains(t, userData, "--grpc-auth-mode=tls-jwt")
+				assert.Contains(t, userData, "--dsx-identity-exchange-url=https://identity.example.test/v1/exchange")
 				assert.Contains(t, userData, config.NodeAgentControllerCAPath)
 				assert.Contains(t, userData, base64.StdEncoding.EncodeToString([]byte(testControllerClientCA)))
 				assert.Contains(t, userData, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)

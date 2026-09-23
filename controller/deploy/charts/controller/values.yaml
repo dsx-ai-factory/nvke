@@ -102,6 +102,9 @@ nodeAgent:
       - RS256
     # -- Exact SPIFFE trust domain accepted in node-agent JWT subjects.
     subjectTrustDomain: ""
+    # -- DSX Identity token-exchange endpoint injected into node-agent bootstrap
+    # arguments when TLS/JWT is enabled.
+    dsxIdentityExchangeURL: ""
   externalMTLS:
     # -- Present an externally managed client certificate instead of the
     # controller SPIRE X509-SVID.

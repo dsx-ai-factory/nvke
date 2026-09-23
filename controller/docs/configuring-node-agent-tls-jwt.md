@@ -19,6 +19,7 @@ nodeAgent:
     algorithms:
       - RS256
     subjectTrustDomain: nke.example-site.node-agent.nvid.id
+    dsxIdentityExchangeURL: https://identity.example.com/v1/exchange
 ```
 
 The default is `false`, which preserves the existing node-agent transport and
@@ -26,25 +27,27 @@ does not add TLS/JWT configuration to the controller pod.
 
 ## Transport requirements
 
-TLS/JWT authentication wraps the controller's existing secure node-agent
-transport. The current secure base transport is SPIFFE mTLS, so both the
-controller deployment and the managed nodes must already have SPIFFE enabled.
-The controller reuses its workload X.509 source for the TLS connection and then
+TLS/JWT authentication wraps a secure node-agent transport. The controller
+uses external mTLS when configured, or SPIFFE mTLS for SPIFFE-enabled nodes.
+At least one of those secure base transports must be enabled. The controller
 validates the JWT sent by the agent before gRPC starts.
 
-The chart supplies the issuer, JWKS URI, algorithm allow-list, and subject trust
-domain directly as controller configuration. It does not create or mount an
+The chart supplies the issuer, JWKS URI, algorithm allow-list, subject trust
+domain, and DSX Identity exchange URL directly as controller configuration.
+It does not create or mount an
 additional Secret or ConfigMap for this feature. The controller always requires
 the JWT audience `nke-controller`.
 
 ## Node bootstrap and authentication
 
 When enabled, controller-generated generic CAPI bootstrap data and rendered
-Nico OS-profile user data:
-
-- remove `--disable-mtls` and any existing `--grpc-auth-mode` value;
-- add `--grpc-auth-mode=tls-jwt` to the node-agent arguments; and
-- restarts `nke-agent.service` after applying the setting.
+Nico OS-profile user data write a complete `/etc/default/nke-agent` file with
+`--grpc-auth-mode=tls-jwt`, `--dsx-identity-exchange-url`, the secure server port, and the external mTLS CA
+bundle flag when configured. CAPI bootstrap always restarts the agent after
+writing its configuration file and running pre-kubeadm commands. Nico OS
+profiles can render the controller-supplied file from `.Files` and must activate
+the agent after it is written. The controller leaves the rendered profile data
+unchanged when a profile omits or overrides the file.
 
 The pre-gRPC authentication exchange has a fixed 15-second deadline, shortened
 when the caller's context expires sooner. Successful handshakes clear that

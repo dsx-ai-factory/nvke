@@ -73,6 +73,7 @@ A Helm chart to deploy the NKE controller service
 | nodeAgent.externalMTLS.secret.privateKeyKey | string | `"tls.key"` | Secret key containing the PEM-encoded client private key. |
 | nodeAgent.spireAttestationMethod | string | `"tpm"` | SPIRE node attestation method used by every cluster managed by this controller deployment. Set this value once when the environment is first deployed. Changing it in an existing environment is unsupported and requires a separately coordinated migration. |
 | nodeAgent.tlsJwt.algorithms | list | `["RS256"]` | Asymmetric JWT signing algorithms accepted from the issuer. |
+| nodeAgent.tlsJwt.dsxIdentityExchangeURL | string | `""` | DSX Identity token-exchange endpoint injected into node-agent bootstrap arguments when TLS/JWT is enabled. |
 | nodeAgent.tlsJwt.enabled | bool | `false` | Add JWT node authentication to the existing secure node-agent transport for every node agent managed by this controller. Requires either spiffe.enabled or nodeAgent.externalMTLS.enabled. |
 | nodeAgent.tlsJwt.issuer | string | `""` | Identity issuer expected in node-agent JWTs. |
 | nodeAgent.tlsJwt.jwksURI | string | `""` | HTTPS endpoint serving the issuer's JSON Web Key Set. |

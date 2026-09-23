@@ -247,6 +247,10 @@ type Config struct {
 	// in the verified node-agent JWT subject.
 	NodeAgentTLSJWTSubjectTrustDomain string `env:"NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN"`
 
+	// NodeAgentTLSJWTDSXIdentityExchangeURL is the token-exchange endpoint
+	// injected into TLS/JWT node-agent bootstrap arguments.
+	NodeAgentTLSJWTDSXIdentityExchangeURL string `env:"NODE_AGENT_TLS_JWT_DSX_IDENTITY_EXCHANGE_URL"`
+
 	// NodeAgentSpireAttestationMethod selects the SPIRE attestation method used by
 	// every cluster managed by this controller deployment.
 	NodeAgentSpireAttestationMethod SpireAttestationMethod `env:"NODE_AGENT_SPIRE_ATTESTATION_METHOD" default:"tpm"`
@@ -510,6 +514,9 @@ func (c *Config) Validate() error {
 		}
 		if strings.TrimSpace(c.NodeAgentTLSJWTSubjectTrustDomain) == "" {
 			return fmt.Errorf("NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN is required when NODE_AGENT_TLS_JWT_ENABLED=true")
+		}
+		if strings.TrimSpace(c.NodeAgentTLSJWTDSXIdentityExchangeURL) == "" {
+			return fmt.Errorf("NODE_AGENT_TLS_JWT_DSX_IDENTITY_EXCHANGE_URL is required when NODE_AGENT_TLS_JWT_ENABLED=true")
 		}
 	}
 

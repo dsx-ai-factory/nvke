@@ -157,6 +157,7 @@ func TestUnit_ConfigValidateNodeAgentTLSJWT(t *testing.T) {
 	enabled.NodeAgentTLSJWTJWKSURI = "https://identity.example.test/jwks"
 	enabled.NodeAgentTLSJWTAlgorithms = []string{"RS256"}
 	enabled.NodeAgentTLSJWTSubjectTrustDomain = "identity.example.test"
+	enabled.NodeAgentTLSJWTDSXIdentityExchangeURL = "https://identity.example.test/v1/exchange"
 	enabled.SupportedInfraProviders = []string{config.InfraProviderInfra}
 
 	missingIssuer := enabled
@@ -167,6 +168,8 @@ func TestUnit_ConfigValidateNodeAgentTLSJWT(t *testing.T) {
 	missingAlgorithms.NodeAgentTLSJWTAlgorithms = nil
 	missingSubjectTrustDomain := enabled
 	missingSubjectTrustDomain.NodeAgentTLSJWTSubjectTrustDomain = ""
+	missingExchangeURL := enabled
+	missingExchangeURL.NodeAgentTLSJWTDSXIdentityExchangeURL = ""
 	missingSpiffe := enabled
 	missingSpiffe.SpiffeEnabled = false
 	externalMTLS := missingSpiffe
@@ -209,6 +212,10 @@ func TestUnit_ConfigValidateNodeAgentTLSJWT(t *testing.T) {
 		"enabled rejects a missing subject trust domain": {
 			config:  missingSubjectTrustDomain,
 			wantErr: "NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN is required when NODE_AGENT_TLS_JWT_ENABLED=true",
+		},
+		"enabled rejects a missing DSX Identity exchange URL": {
+			config:  missingExchangeURL,
+			wantErr: "NODE_AGENT_TLS_JWT_DSX_IDENTITY_EXCHANGE_URL is required when NODE_AGENT_TLS_JWT_ENABLED=true",
 		},
 		"enabled accepts Nico": {
 			config: nicoProvider,

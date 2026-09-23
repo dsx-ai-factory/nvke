@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -53,34 +54,30 @@ func NewActivities(
 
 func (a *Activities) nodeAgentBootstrapFiles() ([]db.CloudInitFile, error) {
 	var files []db.CloudInitFile
+	args := []string{"--secure-server-port", a.cfg.NodeAgentPort}
 	if a.cfg.NodeAgentExternalMTLSEnabled {
 		if a.controllerClientCABundle == "" {
 			return nil, errors.New("controller client CA bundle is required when external node-agent mTLS is enabled")
 		}
 
-		files = []db.CloudInitFile{
-			{
-				Path:        config.NodeAgentControllerCAPath,
-				Owner:       "root:root",
-				Permissions: "0644",
-				Encoding:    "b64",
-				Content:     base64.StdEncoding.EncodeToString([]byte(a.controllerClientCABundle)),
-			},
-			{
-				Path:        config.NodeAgentConfigPath,
-				Owner:       "root:root",
-				Permissions: "0644",
-				Content:     fmt.Sprintf("AGENT_ARGS=\"--secure-server-port %s --controller-client-ca-bundle=%s\"\n", a.cfg.NodeAgentPort, config.NodeAgentControllerCAPath),
-			},
-		}
-	} else {
-		files = []db.CloudInitFile{{
-			Path:        config.NodeAgentConfigPath,
+		files = append(files, db.CloudInitFile{
+			Path:        config.NodeAgentControllerCAPath,
 			Owner:       "root:root",
 			Permissions: "0644",
-			Content:     fmt.Sprintf("AGENT_ARGS=\"--secure-server-port %s\"\n", a.cfg.NodeAgentPort),
-		}}
+			Encoding:    "b64",
+			Content:     base64.StdEncoding.EncodeToString([]byte(a.controllerClientCABundle)),
+		})
+		args = append(args, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
 	}
+	if a.cfg.NodeAgentTLSJWTEnabled {
+		args = append(args, "--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url="+a.cfg.NodeAgentTLSJWTDSXIdentityExchangeURL)
+	}
+	files = append(files, db.CloudInitFile{
+		Path:        config.NodeAgentConfigPath,
+		Owner:       "root:root",
+		Permissions: "0644",
+		Content:     fmt.Sprintf("AGENT_ARGS=%q\n", strings.Join(args, " ")),
+	})
 
 	return files, nil
 }
