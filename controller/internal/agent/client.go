@@ -5,24 +5,15 @@ package agent
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"log/slog"
-	"net"
 
-	"github.com/spiffe/go-spiffe/v2/spiffegrpc/grpccredentials"
-	"github.com/spiffe/go-spiffe/v2/spiffeid"
-	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
-	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
 	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/auth"
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
@@ -63,164 +54,34 @@ type Client interface {
 }
 
 type NodeAgentClient struct {
-	cfg                       config.Config
-	trustDomain               string
-	tlsJWTVerifier            *auth.Verifier
-	logger                    *slog.Logger
-	externalClientCertificate *tls.Certificate
+	transport *Transport
 }
 
+// NewClient builds a node-agent client with its own transport. Callers that
+// also need the transport directly, such as the rollout subsystem, should build
+// one with NewTransport and use NewClientWithTransport so a deployment has a
+// single dial path.
 func NewClient(
 	ctx context.Context,
 	cfg config.Config,
 	trustDomain string,
 	logger *slog.Logger,
 ) (*NodeAgentClient, error) {
-	if logger == nil {
-		logger = slog.Default()
+	transport, err := NewTransport(ctx, cfg, trustDomain, logger)
+	if err != nil {
+		return nil, err
 	}
+	return NewClientWithTransport(transport), nil
+}
 
-	var tlsJWTVerifier *auth.Verifier
-	var tlsJWTLogger *slog.Logger
-	if cfg.NodeAgent.TLSJWT.Enabled {
-		tlsJWTLogger = logger.With("logger", "node-agent-auth")
-		verifier, err := auth.SetupTokenVerifier(ctx, &auth.Config{
-			Audiences: []string{auth.NodeAgentAudience},
-			Issuers: []auth.Issuer{{
-				Name:       auth.NodeAgentIssuerName,
-				Issuer:     cfg.NodeAgent.TLSJWT.Issuer,
-				JWKS:       &auth.JWKSKeys{URI: cfg.NodeAgent.TLSJWT.JWKSURI},
-				Algorithms: cfg.NodeAgent.TLSJWT.Algorithms,
-			}},
-		}, tlsJWTLogger)
-		if err != nil {
-			return nil, fmt.Errorf("setting up node-agent token verification: %w", err)
-		}
-		tlsJWTVerifier = verifier
-	}
-
-	var externalClientCertificate *tls.Certificate
-	if cfg.NodeAgentExternalMTLSEnabled {
-		certificate, err := tls.LoadX509KeyPair(
-			config.NodeAgentExternalTLSCertPath,
-			config.NodeAgentExternalTLSKeyPath,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("loading external node-agent client identity: %w", err)
-		}
-		externalClientCertificate = &certificate
-	}
-
-	return &NodeAgentClient{
-		cfg:                       cfg,
-		trustDomain:               trustDomain,
-		tlsJWTVerifier:            tlsJWTVerifier,
-		logger:                    tlsJWTLogger,
-		externalClientCertificate: externalClientCertificate,
-	}, nil
+// NewClientWithTransport wraps an existing transport, so the client and every
+// other node-agent caller share one authenticated dial path.
+func NewClientWithTransport(transport *Transport) *NodeAgentClient {
+	return &NodeAgentClient{transport: transport}
 }
 
 func (c *NodeAgentClient) getGRPCConnection(ctx context.Context, node db.Node) (*grpc.ClientConn, func(), error) {
-	endpoint := net.JoinHostPort(node.IP, c.cfg.NodeAgent.Port)
-
-	var closeFuncs []func() error
-	cleanup := func() {
-		for _, f := range closeFuncs {
-			_ = f()
-		}
-	}
-
-	// Select the connection's base TLS independently from the optional pre-gRPC
-	// JWT exchange. External mTLS is deployment-wide and takes precedence over
-	// the node's legacy SPIFFE bit.
-	var baseTransportCredentials credentials.TransportCredentials
-	baseSupportsTLSJWT := false
-	switch {
-	case c.externalClientCertificate != nil:
-		baseTransportCredentials = credentials.NewTLS(c.externalTLSConfig())
-		baseSupportsTLSJWT = true
-	case !node.SpiffeEnabled:
-		baseTransportCredentials = insecure.NewCredentials()
-	default:
-		spiffeCredentials, spiffeCloseFuncs, err := c.spiffeTransportCredentials(ctx, node)
-		if err != nil {
-			return nil, nil, err
-		}
-		closeFuncs = append(closeFuncs, spiffeCloseFuncs...)
-		baseTransportCredentials = spiffeCredentials
-		baseSupportsTLSJWT = true
-	}
-
-	transportCredentials := baseTransportCredentials
-	if c.tlsJWTVerifier != nil {
-		if !baseSupportsTLSJWT {
-			cleanup()
-			return nil, nil, fmt.Errorf("node-agent base transport does not support TLS/JWT authentication")
-		}
-		var err error
-		transportCredentials, err = newTLSJWTTransportCredentials(
-			baseTransportCredentials,
-			c.tlsJWTVerifier,
-			c.cfg.NodeAgent.TLSJWT.SubjectTrustDomain,
-			node,
-			c.logger,
-		)
-		if err != nil {
-			cleanup()
-			return nil, nil, fmt.Errorf("setting up node-agent TLS/JWT transport: %w", err)
-		}
-	}
-
-	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(transportCredentials))
-	if err != nil {
-		cleanup()
-		return nil, nil, fmt.Errorf("failed to connect to node agent: %w", err)
-	}
-	closeFuncs = append(closeFuncs, conn.Close)
-
-	return conn, cleanup, nil
-}
-
-func (c *NodeAgentClient) externalTLSConfig() *tls.Config {
-	return &tls.Config{
-		MinVersion:         tls.VersionTLS12,
-		Certificates:       []tls.Certificate{*c.externalClientCertificate},
-		InsecureSkipVerify: true, //nolint:gosec // The agent presents an intentionally unverified self-signed server certificate.
-	}
-}
-
-func (c *NodeAgentClient) spiffeTransportCredentials(
-	ctx context.Context,
-	node db.Node,
-) (credentials.TransportCredentials, []func() error, error) {
-	if c.trustDomain == "" {
-		return nil, nil, fmt.Errorf("trust domain is required for SPIFFE authentication")
-	}
-
-	expectedID, err := spiffeid.FromString(node.GetSpiffeID(c.trustDomain))
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse node SPIFFE ID: %w", err)
-	}
-
-	workloadClient, err := workloadapi.New(ctx, workloadapi.WithAddr(c.cfg.SpiffeEndpointSocket))
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create SPIFFE workload API client: %w", err)
-	}
-	closeFuncs := make([]func() error, 0, 2)
-	closeFuncs = append(closeFuncs, workloadClient.Close)
-
-	x509Source, err := workloadapi.NewX509Source(ctx, workloadapi.WithClient(workloadClient))
-	if err != nil {
-		_ = workloadClient.Close()
-		return nil, nil, fmt.Errorf("failed to create SPIFFE X509 source: %w", err)
-	}
-	closeFuncs = append(closeFuncs, x509Source.Close)
-
-	return grpccredentials.MTLSClientCredentials(
-		x509Source,
-		x509Source,
-		tlsconfig.AuthorizeID(expectedID),
-	), closeFuncs, nil
+	return c.transport.Dial(ctx, node)
 }
 
 func (c *NodeAgentClient) GetKubeconfig(ctx context.Context, node db.Node) (string, error) {

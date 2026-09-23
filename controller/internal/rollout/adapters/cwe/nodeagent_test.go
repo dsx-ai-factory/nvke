@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/cwe"
@@ -70,41 +71,60 @@ func TestNewNodeResolverDistinguishesNodesWithSameIP(t *testing.T) {
 	assert.Equal(t, second.ID, got.ID)
 }
 
-// TestNewSPIFFEDialer_NilResolverFailsClosed verifies the constructor refuses a
-// nil resolver so a worker-startup wiring bug surfaces immediately rather than
-// at first dispatch.
-func TestNewSPIFFEDialer_NilResolverFailsClosed(t *testing.T) {
+// newTestTransport builds the transport the adapters dial through. The default
+// config enables neither external mTLS nor TLS/JWT, so it needs no certificates
+// or issuer to construct.
+func newTestTransport(t *testing.T) *agent.Transport {
+	t.Helper()
+
+	transport, err := agent.NewTransport(t.Context(), config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}}, "example.org", nil)
+	require.NoError(t, err)
+	return transport
+}
+
+// TestNewSPIFFEDialer_NilDependenciesFailClosed verifies the constructor refuses
+// a nil transport or resolver so a worker-startup wiring bug surfaces
+// immediately rather than at first dispatch.
+func TestNewSPIFFEDialer_NilDependenciesFailClosed(t *testing.T) {
 	t.Parallel()
 
-	d, err := cwe.NewSPIFFEDialer(config.Config{}, "example.org", nil)
+	d, err := cwe.NewSPIFFEDialer(newTestTransport(t), nil)
 	assert.Nil(t, d)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "NewSPIFFEDialer")
+
+	d, err = cwe.NewSPIFFEDialer(nil, cwe.NewNodeResolver(nil))
+	assert.Nil(t, d)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "transport must be non-nil")
 }
 
 func TestNewSPIFFEDialer_ValidResolver(t *testing.T) {
 	t.Parallel()
 
-	resolve := cwe.NewNodeResolver(nil)
-	d, err := cwe.NewSPIFFEDialer(config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}}, "example.org", resolve)
+	d, err := cwe.NewSPIFFEDialer(newTestTransport(t), cwe.NewNodeResolver(nil))
 	require.NoError(t, err)
 	assert.NotNil(t, d)
 }
 
-func TestNewMethodSupportChecker_NilResolverFailsClosed(t *testing.T) {
+func TestNewMethodSupportChecker_NilDependenciesFailClosed(t *testing.T) {
 	t.Parallel()
 
-	c, err := cwe.NewMethodSupportChecker(config.Config{}, "example.org", nil)
+	c, err := cwe.NewMethodSupportChecker(newTestTransport(t), nil)
 	assert.Nil(t, c)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "NewMethodSupportChecker")
+
+	c, err = cwe.NewMethodSupportChecker(nil, cwe.NewNodeResolver(nil))
+	assert.Nil(t, c)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "transport must be non-nil")
 }
 
 func TestNewMethodSupportChecker_ValidResolver(t *testing.T) {
 	t.Parallel()
 
-	resolve := cwe.NewNodeResolver(nil)
-	c, err := cwe.NewMethodSupportChecker(config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}}, "example.org", resolve)
+	c, err := cwe.NewMethodSupportChecker(newTestTransport(t), cwe.NewNodeResolver(nil))
 	require.NoError(t, err)
 	assert.NotNil(t, c)
 }
