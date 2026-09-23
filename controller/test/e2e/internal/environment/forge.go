@@ -41,9 +41,18 @@ type ForgeSite struct {
 	// can report which site answered without threading the name alongside.
 	Key string `json:"-"`
 
-	ID            string `json:"id"`
-	VpcID         string `json:"vpcID"`
-	SubnetID      string `json:"subnetID"`
+	ID       string `json:"id"`
+	VpcID    string `json:"vpcID"`
+	SubnetID string `json:"subnetID"`
+
+	// SSHKeyGroupID is attached to the nodes Forge creates. It governs
+	// Serial-over-LAN console access rather than the OS account's
+	// authorized_keys, so attaching one grants no shell on a node -- that
+	// comes from the account baked into the image, or from an authorized_keys
+	// written by cloud-init. Nothing here logs into a tenant node, so this is
+	// carried for parity with what a Forge node normally gets rather than
+	// because a test uses it. SADD 3.5.3 invites the opposite reading by
+	// passing the same field to CreateInstance beside a wait-for-SSH step.
 	SSHKeyGroupID string `json:"sshKeyGroupID"`
 
 	// No control-plane VIP. CWE treats an empty one as "do not configure

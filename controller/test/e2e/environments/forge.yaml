@@ -30,6 +30,10 @@ infrastructure:
       id: e85ae455-2962-4742-b885-4b9ae22769c8
       vpcID: b64210af-8f8e-4e37-ad0a-8cf7c6babf28
       subnetID: 53c42b79-3dbf-40e8-9363-75228d7b6e1b
+
+      # Attached to the nodes Forge creates. A key group governs
+      # Serial-over-LAN console access, not authorized_keys, so this grants no
+      # shell on a node.
       sshKeyGroupID: 5057cbb3-51ba-4568-b9ad-531cdd626d97
 
       # From `ngc forge instance-type list --site e85ae455-2962-4742-b885-4b9ae22769c8
