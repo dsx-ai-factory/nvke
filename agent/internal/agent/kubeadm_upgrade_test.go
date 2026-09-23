@@ -16,8 +16,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/NVIDIA/nke/agent/pkg/utils"
+	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
 )
 
 func TestKubeadmUpgradeApplyValidatesRequest(t *testing.T) {

@@ -16,7 +16,7 @@ import (
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/NVIDIA/nke/controller/internal/temporal/activities"
+	"github.com/dsx-ai-factory/nke/controller/internal/temporal/activities"
 )
 
 func TestRebootCAPINode_SoftRebootSucceeds_NoHardFallback(t *testing.T) {

@@ -15,9 +15,9 @@ import (
 
 	"github.com/lmittmann/tint"
 
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/app"
-	nvmconfig "github.com/NVIDIA/nke/controller/nico-sim/internal/config"
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/seed"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/app"
+	nvmconfig "github.com/dsx-ai-factory/nke/controller/nico-sim/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/seed"
 )
 
 func main() {

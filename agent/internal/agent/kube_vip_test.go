@@ -28,8 +28,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/yaml"
 
-	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/NVIDIA/nke/agent/pkg/utils"
+	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
 )
 
 func TestReconcileKubeVipValidatesRequest(t *testing.T) {

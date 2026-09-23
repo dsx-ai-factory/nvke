@@ -13,7 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
 )
 
 const (

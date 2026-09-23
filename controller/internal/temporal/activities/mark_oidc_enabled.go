@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/temporal"
 
-	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 // MarkOIDCEnabledInput identifies the cluster whose oidc_auth_enabled flag is

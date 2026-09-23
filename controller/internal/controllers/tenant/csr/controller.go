@@ -28,8 +28,8 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/NVIDIA/nke/controller/internal/controllers/tenant"
-	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllers/tenant"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 const (

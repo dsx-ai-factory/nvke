@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/NVIDIA/nke/controller/internal/rollout"
-	cwepreflights "github.com/NVIDIA/nke/controller/internal/rollout/preflights"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
+	cwepreflights "github.com/dsx-ai-factory/nke/controller/internal/rollout/preflights"
 )
 
 // minimalOp is the smallest possible Operation for factory tests.

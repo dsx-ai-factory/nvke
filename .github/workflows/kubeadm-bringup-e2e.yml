@@ -55,8 +55,17 @@ jobs:
             runner: linux-amd64-gpu-l4-latest-1
           # Scale set on the self-hosted fleet; the name is the size,
           # 8 vCPU and 16 GiB. linux-arm64-cpu16 has no /dev/kvm.
+          #
+          # Back off the arc-arm64-kvm-8c16g class #838 moved this to: every
+          # run there fails at `virsh define` with "Unable to find 'efi'
+          # firmware that is compatible with the current configuration", and
+          # nico-vms-e2e boots the same guests on this fleet.
           - arch: arm64
-            runner: nke-arm64-8c16g
+            # Back on the ARC fleet. The failure in #863 was /dev/kvm being
+            # reset to root:kvm 0660 by the QEMU package install, which
+            # setup-ci-host.sh now re-asserts; nothing about libvirt itself
+            # was wrong.
+            runner: arc-arm64-kvm-8c16g
     runs-on: ${{ matrix.runner }}
     if: github.repository == 'dsx-ai-factory/nke'
     # Still sized for the emulated path, so a fall back to TCG cannot time out.
@@ -93,7 +102,7 @@ jobs:
 
       # Not a gate. nico-vms picks its domain type from a bare os.Stat("/dev/kvm")
       # and logs nothing, so this is the only place a run says which it got.
-      # FIXME: https://github.com/NVIDIA/nke/issues/219 -- move to bare metal.
+      # FIXME: https://github.com/dsx-ai-factory/nke/issues/219 -- move to bare metal.
       - name: Report the accelerator
         run: |
           set -euo pipefail
@@ -200,7 +209,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: kubeadm-bringup-${{ github.run_id }}-${{ github.run_attempt }}
+          # The arch too: GitHub keeps two same-named artifacts, so without it
+          # a download cannot tell the legs apart.
+          name: kubeadm-bringup-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
           # The smoke test generates a throwaway SSH keypair for VMs that no
           # longer exist by upload time, but a private key still has no business
           # in a downloadable artifact.

@@ -15,7 +15,7 @@
 # Deliberately NOT path-filtered, unlike most workflows here. A filtered check
 # does not report on a pull request that misses the filter, and a required check
 # that never reports leaves that pull request waiting forever -- so filtering
-# would make this unrequirable. See docs/branch-protection-settings.md. That is
+# would make this unrequirable. See .github/workflows/README.md. That is
 # not theoretical: a red run merged to main once and, because every branch
 # inherits the workflow file, the failure then reported on every open pull
 # request as though that pull request had caused it.
@@ -83,9 +83,11 @@ jobs:
           tmp="$(mktemp -d)"
 
           curl -fsSL -o "${tmp}/${tar}" "${base}/${tar}"
-          curl -fsSL -o "${tmp}/checksums.txt" "${base}/actionlint_${ACTIONLINT_VERSION}_checksums.txt"
+          # A committed digest, not the release's checksums.txt: that file comes
+          # from the host that serves the artifact, so it proves transport, not
+          # provenance. make/tool-versions.mk carries it beside the version.
+          expected="$(make --no-print-directory print-ACTIONLINT_SHA256_AMD64)"
 
-          expected="$(awk -v t="${tar}" '$2 == t {print $1}' "${tmp}/checksums.txt")"
           if [ -z "${expected}" ]; then
             echo "::error::no checksum entry for ${tar}"
             exit 1

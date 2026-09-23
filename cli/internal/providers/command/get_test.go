@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NVIDIA/nke/cli/internal/config"
+	"github.com/dsx-ai-factory/nke/cli/internal/config"
 )
 
 // scriptedRunner answers kubectl calls by matching on the arguments, so a test

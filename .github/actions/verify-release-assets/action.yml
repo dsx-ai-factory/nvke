@@ -1,0 +1,160 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Read a release's assets back from GitHub and hash them against the checksums
+# file the build produced, before anything publishes the release.
+#
+# Publishing seals a release, so every check has to happen first. Counting
+# assets is not enough: an asset reports state 'uploaded' with a non-zero size
+# even when the upload was truncated, so the bytes have to be read back and
+# hashed. release.yml did exactly this and the other two publish paths did not
+# -- agent-deb-publish.yml counted .deb files, os-image-artifact.yml checked
+# names and sizes. One implementation, so they cannot drift apart again.
+
+name: Verify release assets
+description: Hash a release's uploaded assets against a local sha256sum file.
+
+inputs:
+  release-id:
+    description: The release whose assets are read back.
+    required: true
+  checksums:
+    description: Path to a sha256sum-format file naming the assets that must match.
+    required: true
+  expected-count:
+    description: How many assets the build produced. Empty skips the count check.
+    required: false
+    default: ""
+  require-all:
+    description: >-
+      Fail when the checksums file names a file the release does not carry.
+      Set false where the same file also covers artifacts published elsewhere,
+      as os-image does: its checksums.txt lists four qcow2s that ship as OCI
+      artifacts because they are too large to attach.
+    required: false
+    default: "true"
+  github-token:
+    description: Token with contents:read on this repository.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Verify the uploaded assets
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        RELEASE_ID: ${{ inputs.release-id }}
+        CHECKSUMS: ${{ inputs.checksums }}
+        EXPECTED: ${{ inputs.expected-count }}
+        REQUIRE_ALL: ${{ inputs.require-all }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        # Retries cover a server error or a dropped connection. Without them a
+        # flake would leave the release unpublished.
+        retries: 3
+        script: |
+          const fs = require('fs');
+          const crypto = require('crypto');
+
+          const release_id = Number(process.env.RELEASE_ID);
+          if (!Number.isInteger(release_id) || release_id <= 0) {
+            core.setFailed(`release-id is '${process.env.RELEASE_ID}', which is not a release.`);
+            return;
+          }
+
+          // Tested as a string. Number('') is 0 and Number.isInteger(0) is
+          // true, so an unset count would read as "built nothing" and pass
+          // whatever happened to be there.
+          const raw = process.env.EXPECTED;
+          const expected = raw === '' ? null : Number(raw);
+          if (raw !== '' && !/^\d+$/.test(raw)) {
+            core.setFailed(`expected-count is '${raw}', which is not a number.`);
+            return;
+          }
+
+          // The asset list can lag behind an upload that has already
+          // succeeded, so a short list is read again before it is treated as a
+          // failure.
+          let got = [];
+          for (let attempt = 0; attempt < 3; attempt++) {
+            if (attempt > 0) {
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+            const { data: rel } = await github.rest.repos.getRelease({
+              ...context.repo, release_id,
+            });
+            got = rel.assets
+              .filter(a => a.state === 'uploaded' && a.size > 0)
+              .map(a => a.name)
+              .sort();
+            if (expected === null || got.length >= expected) {
+              break;
+            }
+          }
+
+          if (expected !== null && got.length < expected) {
+            core.setFailed(
+              `Release ${release_id} carries ${got.length} uploaded assets ` +
+              `[${got.join(', ') || 'nothing'}], and this job built ${expected}. ` +
+              `It is left as an unpublished draft.`);
+            return;
+          }
+
+          const path = process.env.CHECKSUMS;
+          if (!fs.existsSync(path)) {
+            core.setFailed(`${path} does not exist, so nothing verifies the uploaded bytes.`);
+            return;
+          }
+
+          // The checksums file does not list itself: the shell expanded * before
+          // creating it.
+          const want = new Map();
+          for (const line of fs.readFileSync(path, 'utf8').split('\n')) {
+            const m = line.match(/^([0-9a-f]{64}) [ *](.+)$/);
+            if (m) { want.set(m[2], m[1]); }
+          }
+          if (want.size === 0) {
+            core.setFailed(`${path} has no readable sha256 lines. Left as a draft.`);
+            return;
+          }
+          const total = want.size;
+
+          const { data: rel } = await github.rest.repos.getRelease({
+            ...context.repo, release_id,
+          });
+          for (const asset of rel.assets) {
+            const expectedSum = want.get(asset.name);
+            if (!expectedSum) { continue; }
+            const res = await github.request(
+              'GET /repos/{owner}/{repo}/releases/assets/{asset_id}',
+              { ...context.repo, asset_id: asset.id,
+                headers: { accept: 'application/octet-stream' } });
+            const actual = crypto.createHash('sha256')
+              .update(Buffer.from(res.data)).digest('hex');
+            if (actual !== expectedSum) {
+              core.setFailed(
+                `${asset.name} on the release hashes to ${actual}, and ` +
+                `${path} says ${expectedSum}. Left as a draft.`);
+              return;
+            }
+            want.delete(asset.name);
+          }
+
+          if (want.size > 0) {
+            const missing = [...want.keys()].join(', ');
+            if (process.env.REQUIRE_ALL !== 'false') {
+              core.setFailed(
+                `${path} lists [${missing}], which the release does not carry. ` +
+                `Left as a draft.`);
+              return;
+            }
+            core.info(`${path} also covers [${missing}], published elsewhere`);
+          }
+
+          if (want.size === total) {
+            core.setFailed(
+              `${path} names none of the assets on release ${release_id}, so ` +
+              `nothing was verified. Left as a draft.`);
+            return;
+          }
+          core.info(`every file in ${path} that the release carries matches`);

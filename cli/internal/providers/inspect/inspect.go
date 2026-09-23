@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NVIDIA/nke/cli/internal/providers"
+	"github.com/dsx-ai-factory/nke/cli/internal/providers"
 )
 
 // defaultTimeout bounds the whole inspection. Without it an unreachable API

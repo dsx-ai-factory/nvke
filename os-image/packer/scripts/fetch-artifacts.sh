@@ -10,10 +10,10 @@
 set -euo pipefail
 
 ARTIFACTS_DIR="${ARTIFACTS_DIR:?ARTIFACTS_DIR is required}"
-# Set by the shell-local provisioner from local.arch (nke-node-fde.pkr.hcl /
-# nke-node-non-fde.pkr.hcl), which is itself derived from the ISO filename --
-# so this always matches the guest actually being built, not the host.
-ARCH="${ARCH:-amd64}"
+# Set explicitly by the Packer Makefile from the requested image architecture,
+# so this always matches the guest being built rather than the host.
+ARCH="${ARCH:?ARCH is required}"
+SOURCE_ROOT="${SOURCE_ROOT:?SOURCE_ROOT is required}"
 
 case "${ARCH}" in
   amd64|arm64) ;;
@@ -23,6 +23,17 @@ case "${ARCH}" in
     ;;
 esac
 
+script_repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
+if [[ ! "${SOURCE_ROOT}" -ef "${script_repo_root}" ]]; then
+  echo "SOURCE_ROOT ${SOURCE_ROOT} does not own ${BASH_SOURCE[0]}" >&2
+  exit 1
+fi
+repo_root="${script_repo_root}"
+
+if [[ "${NKE_BUILD_IN_PLACE:-0}" != 1 ]]; then
+  exec bash "$(dirname "${BASH_SOURCE[0]}")/package-builder.sh"
+fi
+
 mkdir -p "${ARTIFACTS_DIR}"
 
 if ! command -v go >/dev/null 2>&1; then
@@ -30,8 +41,6 @@ if ! command -v go >/dev/null 2>&1; then
   echo "https://go.dev/dl/" >&2
   exit 1
 fi
-
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 # Use the package target so dpkg owns the agent, updater, and their units.
 # An exact output path avoids selecting a stale version from agent/bin.
@@ -57,21 +66,12 @@ if [[ -n "${CALICO_VERSIONS:-}" ]]; then
 fi
 make -C "${repo_root}/os-image/packages/cni-calico" debs "${cni_calico_args[@]}"
 
-# OVN's chart and images need an NGC key for nv-ngn; CI has none, so opt-in.
-# amd64 only: nothing has locked the arm64 image set, which differs in
-# membership rather than just in digests.
-if [[ "${ARCH}" == amd64 && -n "${NGC_API_KEY:-}" ]]; then
-  echo "building nke-cni-ovn debs (${repo_root}/os-image/packages/cni-ovn)"
-  cni_ovn_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}")
-  if [[ -n "${OVN_STREAMS:-}" ]]; then
-    cni_ovn_args+=(OVN_STREAMS="${OVN_STREAMS}")
-  fi
-  make -C "${repo_root}/os-image/packages/cni-ovn" debs "${cni_ovn_args[@]}"
-elif [[ "${ARCH}" == amd64 ]]; then
-  echo "NGC_API_KEY is unset; skipping the nke-cni-ovn debs (this image cannot install OVN offline)"
-else
-  echo "skipping the nke-cni-ovn debs: no arm64 lock (this image cannot install OVN offline)"
+echo "building nke-cni-ovn debs (${repo_root}/os-image/packages/cni-ovn)"
+cni_ovn_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}")
+if [[ -n "${OVN_STREAMS:-}" ]]; then
+  cni_ovn_args+=(OVN_STREAMS="${OVN_STREAMS}")
 fi
+make -C "${repo_root}/os-image/packages/cni-ovn" debs "${cni_ovn_args[@]}"
 
 # The spire-agent deb: the upstream SPIRE agent and the TPM node attestor
 # plugin, plus the units that run them. Its lock pins both architectures.

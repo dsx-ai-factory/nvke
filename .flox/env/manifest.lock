@@ -47,6 +47,9 @@
         "pkg-group": "helm",
         "version": "4.2.4"
       },
+      "nix": {
+        "pkg-path": "nix"
+      },
       "oapi-codegen": {
         "pkg-path": "oapi-codegen",
         "pkg-group": "oapi-codegen",
@@ -1350,6 +1353,105 @@
       ],
       "outputs": {
         "out": "/nix/store/2809nqqmnz6525g0glhxi324b67dkl5m-ko-0.19.1"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nix",
+      "broken": false,
+      "derivation": "/nix/store/5lm4snwdh6riijlrfjl9ri6ay5vaccvz-nix-2.34.8.drv",
+      "description": "Nix package manager",
+      "install_id": "nix",
+      "license": "LGPL-2.1-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=56c02bc00adcf003215cc4bd996d6efaf4cff188",
+      "name": "nix-2.34.8",
+      "pname": "nix",
+      "rev": "56c02bc00adcf003215cc4bd996d6efaf4cff188",
+      "rev_count": 1060451,
+      "rev_date": "2026-08-23T15:22:48Z",
+      "scrape_date": "2026-08-25T04:57:01.165681Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.34.8",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/q67lagjlaiixka0rfwaz2gfb3grqcisf-nix-2.34.8-dev",
+        "doc": "/nix/store/x0546z5x570znk924i43570x87am3mdh-nix-2.34.8-doc",
+        "man": "/nix/store/rmg5z73shfzygd4rylbg2flggck8bp9s-nix-2.34.8-man",
+        "out": "/nix/store/m5yg7cqycrpx932l6xhngavd0mz2s8ig-nix-2.34.8"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nix",
+      "broken": false,
+      "derivation": "/nix/store/sc138zjjjsyqzy3p223y5ww7z06zrz7n-nix-2.34.8.drv",
+      "description": "Nix package manager",
+      "install_id": "nix",
+      "license": "LGPL-2.1-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=56c02bc00adcf003215cc4bd996d6efaf4cff188",
+      "name": "nix-2.34.8",
+      "pname": "nix",
+      "rev": "56c02bc00adcf003215cc4bd996d6efaf4cff188",
+      "rev_count": 1060451,
+      "rev_date": "2026-08-23T15:22:48Z",
+      "scrape_date": "2026-08-25T05:27:59.581481Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.34.8",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/spxbkwjhc8935m0qld0waz3rr3pzgqcp-nix-2.34.8-dev",
+        "doc": "/nix/store/r9dzkdnjwsspgs5qngc4azp9zkghw37z-nix-2.34.8-doc",
+        "man": "/nix/store/bvvaxzmywsj8r29sfdl4pw5vdbiqfrr1-nix-2.34.8-man",
+        "out": "/nix/store/c7yzcw6484sgpdfsii4ppjp87djdgh6y-nix-2.34.8"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nix",
+      "broken": false,
+      "derivation": "/nix/store/nj7m461lmbm0flp4c8q04za9rs0571s0-nix-2.34.8.drv",
+      "description": "Nix package manager",
+      "install_id": "nix",
+      "license": "LGPL-2.1-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=56c02bc00adcf003215cc4bd996d6efaf4cff188",
+      "name": "nix-2.34.8",
+      "pname": "nix",
+      "rev": "56c02bc00adcf003215cc4bd996d6efaf4cff188",
+      "rev_count": 1060451,
+      "rev_date": "2026-08-23T15:22:48Z",
+      "scrape_date": "2026-08-25T06:01:17.343859Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.34.8",
+      "outputs_to_install": [
+        "man",
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/y2ra837iphc9g3gv9k46fw7xqmj180zf-nix-2.34.8-dev",
+        "doc": "/nix/store/il1i3s9d0m2f2dmyp9pggb897nixyn9w-nix-2.34.8-doc",
+        "man": "/nix/store/acrh632ydiiy2yq4jcgn8y7l98n78xw1-nix-2.34.8-man",
+        "out": "/nix/store/j02vvifyzjw52xqrvyj1bhd8s45yn1fl-nix-2.34.8"
       },
       "system": "x86_64-linux",
       "group": "toplevel",

@@ -26,10 +26,10 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/NVIDIA/nke/controller/internal/config"
-	"github.com/NVIDIA/nke/controller/internal/constants"
-	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
 )
 
 func TestFirstInfrastructureRefIPAddress_NicoMachine(t *testing.T) {
@@ -907,7 +907,10 @@ func TestCreateCAPISpireJoinTokenSkippedWhenSpiffeDisabled(t *testing.T) {
 		node:    db.Node{ID: uuid.New()},
 	}
 
-	a := &Activities{cfg: config.Config{SpiffeEnabled: false}}
+	a := &Activities{cfg: config.Config{
+		SpiffeEnabled:                   false,
+		NodeAgentSpireAttestationMethod: config.SpireAttestationMethodJoinToken,
+	}}
 	token, path, err := a.createCAPISpireJoinToken(context.Background(), createCtx)
 	require.NoError(t, err, "must not reach SPIRE when SPIFFE is off")
 	assert.Empty(t, token)

@@ -1,0 +1,221 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: CLI Artifact NVCR
+
+# Publishes nkectl binaries to nvcr.io as OCI artifacts -- for NGC cluster
+# consumers that hold NGC pull credentials but not GHCR credentials. Same
+# login/push structure as agent-artifact-nvcr.yml, but tags are OS/ARCH-
+# suffixed only, same as cli-artifact.yml -- no manifest-index step, so
+# there is no bare `:version` tag to pull with `--platform`.
+#
+# The destination is not written here. It is built from the `nvcr`
+# environment, so no registry identifier lands in a tracked file of a
+# repository that is released publicly:
+#
+#   NKE_NGC_ORG             variable  NGC org that owns the artifact
+#   NGC_REGISTRY_TOKEN_NKE  secret    NGC API key with write access on that org
+#   DSX_NGC_ORG_TEAM        variable  DSX NGC org/team path
+#   NGC_REGISTRY_TOKEN_DSX  secret    NGC API key with write access on DSX
+#
+# The repository is nvcr.io/<org>/nkectl -- named after the actual binary
+# (nkectl), not a generic "nke-cli", matching how nke-agent and nke-controller
+# are both named after their real binaries. An NKE-org path has no team
+# segment; the DSX path carries one, which is why DSX_NGC_ORG_TEAM holds the
+# whole org/team prefix rather than an org alone.
+#
+# Published to both orgs, one matrix leg each. A DSX cluster holds an NGC
+# credential for its own org and none for the NKE org, so publishing only to
+# NKE leaves the binary unreachable to exactly the consumers this workflow was
+# added for.
+#
+# No GHCR pair beyond the separate cli-artifact.yml is missing here on
+# purpose -- this file only concerns the NVCR destination.
+
+# Called by release.yml after its build, so a cli/v* tag produces one set of
+# binaries rather than four independent ones, and this runs behind the licence
+# gate release.yml already enforces. The tag trigger is gone for that reason.
+#
+# workflow_dispatch still works and still builds: dist_artifact is empty there,
+# so the build step below runs instead of the download.
+on:
+  workflow_call:
+    inputs:
+      dist_artifact:
+        description: Artifact holding the binaries release.yml built. Empty means build here.
+        type: string
+        required: false
+        default: ""
+    secrets:
+      NGC_REGISTRY_TOKEN_NKE:
+        description: NGC API key with write access on the NKE org, for the nvcr push.
+        required: true
+      NGC_REGISTRY_TOKEN_DSX:
+        description: NGC API key with write access on the DSX org/team, for the nvcr push.
+        required: true
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: CLI Artifact NVCR-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'dsx-ai-factory/nke'
+    name: Publish binaries (${{ matrix.destination }})
+    runs-on: ubuntu-latest
+    environment: nvcr
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write  # the malware scan uploads SARIF
+    # Both orgs get the same bytes. DSX clusters hold an NGC credential for
+    # their own org and none for the NKE org, so an artifact published only to
+    # NKE is unreachable to them -- the reason this workflow exists in the
+    # first place. Publishing twice rather than promoting matches
+    # chart-publish-nvcr.yml: `oras push` is idempotent for identical content,
+    # so a second destination costs one more push, not an OCI-layout
+    # round-trip through crane the way the image workflows need.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - destination: nke
+            org_var: NKE_NGC_ORG
+            token_secret_var_name: NGC_REGISTRY_TOKEN_NKE
+          - destination: dsx
+            org_var: DSX_NGC_ORG_TEAM
+            token_secret_var_name: NGC_REGISTRY_TOKEN_DSX
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      - name: Read pinned tool versions
+        id: versions
+        run: |
+          echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+        with:
+          version: ${{ steps.versions.outputs.oras_version }}
+
+      - name: Resolve version and tags
+        id: meta
+        shell: bash
+        env:
+          NGC_ORG: ${{ vars[matrix.org_var] }}
+          ORG_VAR: ${{ matrix.org_var }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NGC_ORG}" ]]; then
+            echo "::error::${ORG_VAR} is not set in the nvcr environment"
+            exit 1
+          fi
+          repo="nvcr.io/${NGC_ORG}/nkectl"
+
+          version="$(git describe --match 'cli/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          version="${version#cli/}"
+
+          aliases=("sha-${GITHUB_SHA}")
+          if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+            aliases+=("edge")
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            aliases+=("${GITHUB_REF_NAME#cli/}")
+          fi
+
+          {
+            echo "repo=${repo}"
+            echo "version=${version}"
+            echo "aliases=${aliases[*]}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Publishing ${repo} ${version} as: ${aliases[*]}"
+
+      # One build per release. release.yml builds and checksums; this consumes
+      # exactly those bytes, so checksums.txt describes what ships here too.
+      - name: Download the release build
+        if: inputs.dist_artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ inputs.dist_artifact }}
+          path: dist
+
+      - name: Build binaries
+        if: inputs.dist_artifact == ''
+        run: make -C cli build-cross DIST="${GITHUB_WORKSPACE}/dist"
+
+      - name: Malware scan
+        uses: ./.github/actions/malware-scan
+        with:
+          scan_path: 'dist'
+          category: 'clamav-cli-artifact-nvcr'
+          output_file: 'clamav-cli-artifact-nvcr.sarif'
+
+      # `$oauthtoken` is NGC's literal username, not a shell variable.
+      - name: Log in to NVCR
+        shell: bash
+        env:
+          NGC_TOKEN: ${{ secrets[matrix.token_secret_var_name] }}
+          TOKEN_SECRET_VAR_NAME: ${{ matrix.token_secret_var_name }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NGC_TOKEN}" ]]; then
+            echo "::error::${TOKEN_SECRET_VAR_NAME} is not set in the nvcr environment"
+            exit 1
+          fi
+          # shellcheck disable=SC2016
+          echo "${NGC_TOKEN}" | oras login nvcr.io \
+            --username '$oauthtoken' --password-stdin
+
+      - name: Push per-platform artifacts
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          ALIASES: ${{ steps.meta.outputs.aliases }}
+          REPO: ${{ steps.meta.outputs.repo }}
+        run: |
+          set -euo pipefail
+          read -ra aliases <<< "${ALIASES}"
+
+          for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os="${platform%/*}"
+            arch="${platform#*/}"
+            bin="nkectl-${os}-${arch}"
+
+            tags=""
+            for alias in "${aliases[@]}"; do
+              tags="${tags:+${tags},}${alias}-${os}-${arch}"
+            done
+
+            ( cd dist && oras push "${REPO}:${tags}" \
+                --artifact-type application/vnd.nvidia.nke.cli.v1 \
+                --artifact-platform "${platform}" \
+                --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+                --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+                --annotation "org.opencontainers.image.version=${VERSION}" \
+                --annotation "org.opencontainers.image.licenses=Apache-2.0" \
+                --annotation "org.opencontainers.image.title=nkectl" \
+                "${bin}:application/octet-stream" )
+          done
+
+      - name: Show published artifact
+        shell: bash
+        env:
+          REPO: ${{ steps.meta.outputs.repo }}
+        run: |
+          set -euo pipefail
+          oras manifest fetch --pretty "${REPO}:sha-${GITHUB_SHA}-linux-amd64"

@@ -11,9 +11,9 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 
-	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/metrics"
-	"github.com/NVIDIA/nke/controller/internal/runbook"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/metrics"
+	"github.com/dsx-ai-factory/nke/controller/internal/runbook"
 )
 
 const (

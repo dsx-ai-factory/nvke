@@ -26,9 +26,9 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/NVIDIA/nke/agent/internal/k8s"
-	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/NVIDIA/nke/agent/pkg/utils"
+	"github.com/dsx-ai-factory/nke/agent/internal/k8s"
+	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
 )
 
 var initOutput = `Your Kubernetes control-plane has initialized successfully!
@@ -1684,4 +1684,121 @@ func TestExecuteKubeadmInitWithoutConfigRemovesStaleInitConfig(t *testing.T) {
 			require.Equal(t, ReadyStatus, server.NodeStatus.Status)
 		})
 	}
+}
+
+// fileMode returns a pointer to m, so a table case can distinguish "create
+// this file with this mode" from "do not create it at all".
+func fileMode(m os.FileMode) *os.FileMode { return &m }
+
+func TestHardenKubeletFileModes(t *testing.T) {
+	// writeAt creates rel under root with mode, making parents as needed.
+	writeAt := func(t *testing.T, root, rel string, mode os.FileMode) string {
+		t.Helper()
+		path := filepath.Join(root, rel)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte("x"), mode))
+		// WriteFile is subject to umask, so set the mode explicitly.
+		require.NoError(t, os.Chmod(path, mode))
+		return path
+	}
+
+	tests := []struct {
+		name    string
+		dropIn  *os.FileMode
+		config  *os.FileMode
+		wantErr bool
+	}{
+		{name: "tightens both when kubeadm left them 0644", dropIn: fileMode(0o644), config: fileMode(0o644)},
+		{name: "idempotent when both already 0600", dropIn: fileMode(0o600), config: fileMode(0o600)},
+		{name: "tightens the config alone on a worker-shaped tree", config: fileMode(0o644)},
+		{name: "no files yet, before init or join, is not an error"},
+		{name: "tightens a mode looser than 0644", dropIn: fileMode(0o666), config: fileMode(0o640)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			paths := make([]string, 0, 2)
+			if tt.dropIn != nil {
+				paths = append(paths, writeAt(t, tmp, kubeletKubeadmDropInPath, *tt.dropIn))
+			}
+			if tt.config != nil {
+				paths = append(paths, writeAt(t, tmp, kubeletConfigPath, *tt.config))
+			}
+
+			server := &NodeAgentServer{RootPath: tmp}
+
+			require.NoError(t, server.hardenKubeletFileModes())
+
+			for _, p := range paths {
+				info, err := os.Stat(p)
+				require.NoError(t, err)
+				assert.Equal(t, os.FileMode(kubeletHardenedFileMode), info.Mode().Perm(), "mode of %s", p)
+			}
+
+			// Re-running must not change anything or fail: the startup call
+			// site invokes this on every agent restart.
+			require.NoError(t, server.hardenKubeletFileModes())
+			for _, p := range paths {
+				info, err := os.Stat(p)
+				require.NoError(t, err)
+				assert.Equal(t, os.FileMode(kubeletHardenedFileMode), info.Mode().Perm(), "mode of %s after re-run", p)
+			}
+		})
+	}
+
+	t.Run("reports the error when a file cannot be chmodded", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root bypasses the directory permissions this case relies on")
+		}
+		tmp := t.TempDir()
+		writeAt(t, tmp, kubeletConfigPath, 0o644)
+
+		// Make the parent directory non-writable and non-executable so the
+		// chmod inside it fails.
+		dir := filepath.Dir(filepath.Join(tmp, kubeletConfigPath))
+		require.NoError(t, os.Chmod(dir, 0o000))
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+		err := (&NodeAgentServer{RootPath: tmp}).hardenKubeletFileModes()
+		require.Error(t, err)
+	})
+}
+
+// TestHardenKubeletFileModesAfterConfigRewrite pins the ordering requirement
+// between disableKubeletSelfRegistration and hardenKubeletFileModes.
+//
+// disableKubeletSelfRegistration rewrites /var/lib/kubelet/config.yaml with
+// mode 0644. If hardening ran before it, the rewrite would immediately undo the
+// mode and the node would sit at 0644 with nothing reporting it. This asserts
+// the recovery direction: whatever leaves the file 0644, a subsequent harden
+// brings it back to 0600.
+func TestHardenKubeletFileModesAfterConfigRewrite(t *testing.T) {
+	const kubeletConfigYAML = `apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+registerNode: false
+`
+
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, kubeletConfigPath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
+	require.NoError(t, os.WriteFile(configPath, []byte(kubeletConfigYAML), 0o600))
+	require.NoError(t, os.Chmod(configPath, 0o600))
+
+	server := &NodeAgentServer{RootPath: tmp}
+
+	// Stand in for the 0644 rewrite disableKubeletSelfRegistration performs.
+	require.NoError(t, os.WriteFile(configPath, []byte(kubeletConfigYAML), 0o644))
+	require.NoError(t, os.Chmod(configPath, 0o644))
+
+	info, err := os.Stat(configPath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o644), info.Mode().Perm(), "precondition: the rewrite loosened the mode")
+
+	require.NoError(t, server.hardenKubeletFileModes())
+
+	info, err = os.Stat(configPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(kubeletHardenedFileMode), info.Mode().Perm(),
+		"hardening must run after the config rewrite, not before")
 }

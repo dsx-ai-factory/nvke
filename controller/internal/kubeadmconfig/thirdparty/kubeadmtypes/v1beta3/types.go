@@ -15,7 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	bootstraptokenv1 "github.com/NVIDIA/nke/controller/internal/kubeadmconfig/thirdparty/bootstraptoken/v1"
+	bootstraptokenv1 "github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig/thirdparty/bootstraptoken/v1"
 )
 
 const (

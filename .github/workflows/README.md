@@ -69,6 +69,10 @@ First confirm that the job belongs in the required gate:
 
 If any answer is no, add an advisory workflow instead.
 
+`nkectl-bootstrap-e2e.yml` is the worked example of a no, and its header
+records which answers fail and what would have to change first. Read that
+before proposing it, or any other e2e lane, as a member again.
+
 ### 1. Make the workflow reusable
 
 A typical required member owns `main` directly and is called for pull requests:
@@ -266,5 +270,5 @@ copy runs from the PR or mirror branch, and the final `gate` context reports.
 For an advisory workflow, confirm its expected trigger actually produced a
 check; an absent advisory check does not look like a failure.
 
-See [the branch-protection guide](../../docs/branch-protection-settings.md) for
-what `main` requires of a pull request.
+What `main` requires of a pull request is a repository setting. Read it with
+`gh api repos/dsx-ai-factory/nke/rules/branches/main --jq '[.[].type]'`.

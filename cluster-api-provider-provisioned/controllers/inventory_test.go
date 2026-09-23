@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
-	infrav1 "github.com/NVIDIA/nke/cluster-api-provider-provisioned/api/v1alpha1"
+	infrav1 "github.com/dsx-ai-factory/nke/cluster-api-provider-provisioned/api/v1alpha1"
 )
 
 func host(hostname, ipAddress string, labels map[string]string) infrav1.ProvisionedHost {

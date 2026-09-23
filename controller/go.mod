@@ -1,14 +1,14 @@
-module github.com/NVIDIA/nke/controller
+module github.com/dsx-ai-factory/nke/controller
 
 go 1.26.6
 
 require (
 	github.com/GehirnInc/crypt v0.0.0-20230320061759-8cc1b52080c5
-	github.com/NVIDIA/nke/agent v0.0.0-00010101000000-000000000000
-	github.com/NVIDIA/nke/controller/api v0.0.0-00010101000000-000000000000
 	github.com/blang/semver/v4 v4.0.0
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/dsx-ai-factory/cluster-api-provider-nico v0.0.45
+	github.com/dsx-ai-factory/nke/agent v0.0.0-00010101000000-000000000000
+	github.com/dsx-ai-factory/nke/controller/api v0.0.0-00010101000000-000000000000
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/getkin/kin-openapi v0.149.0
 	github.com/go-jose/go-jose/v4 v4.1.5
@@ -34,8 +34,8 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.46.0
 	go.opentelemetry.io/otel/sdk v1.46.0
-	go.temporal.io/api v1.63.5
-	go.temporal.io/sdk v1.48.0
+	go.temporal.io/api v1.63.6
+	go.temporal.io/sdk v1.49.0
 	go.temporal.io/sdk/contrib/opentelemetry v0.8.1
 	go.uber.org/automaxprocs v1.6.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
@@ -46,11 +46,11 @@ require (
 	k8s.io/apimachinery v0.37.0
 	k8s.io/apiserver v0.37.0
 	k8s.io/component-base v0.37.0
-	k8s.io/kube-proxy v0.35.3
-	k8s.io/kubelet v0.35.3
+	k8s.io/kube-proxy v0.37.0
+	k8s.io/kubelet v0.37.0
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd
-	sigs.k8s.io/cluster-api v1.13.4
-	sigs.k8s.io/controller-runtime v0.25.0
+	sigs.k8s.io/cluster-api v1.13.6
+	sigs.k8s.io/controller-runtime v0.25.1
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730
 	sigs.k8s.io/yaml v1.6.0
 )
@@ -91,8 +91,8 @@ require (
 	github.com/nexus-rpc/nexus-proto-annotations v0.1.1-0.20260629224650-76486e7cc189 // indirect
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
-	github.com/onsi/ginkgo/v2 v2.32.2 // indirect
-	github.com/onsi/gomega v1.43.0 // indirect
+	github.com/onsi/ginkgo/v2 v2.33.0 // indirect
+	github.com/onsi/gomega v1.43.1 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
 	github.com/russellhaering/gosaml2 v0.11.0 // indirect
 	github.com/russellhaering/goxmldsig v1.6.0 // indirect
@@ -172,8 +172,8 @@ require (
 )
 
 replace (
-	github.com/NVIDIA/nke/agent => ../agent
-	github.com/NVIDIA/nke/controller/api => ./api
+	github.com/dsx-ai-factory/nke/agent => ../agent
+	github.com/dsx-ai-factory/nke/controller/api => ./api
 )
 
 // go.temporal.io/sdk/contrib/tally (latest release) still requires an ancient

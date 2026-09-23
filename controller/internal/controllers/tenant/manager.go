@@ -15,7 +15,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/NVIDIA/nke/controller/internal/kube"
+	"github.com/dsx-ai-factory/nke/controller/internal/kube"
 )
 
 const (

@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/NVIDIA/nke/controller/internal/metrics"
+	"github.com/dsx-ai-factory/nke/controller/internal/metrics"
 )
 
 // JoinNodeInput starts kubeadm join and post-join for a host that is already ReadyToJoin.

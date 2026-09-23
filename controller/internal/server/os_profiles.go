@@ -10,8 +10,8 @@ import (
 	"os"
 	"path"
 
-	"github.com/NVIDIA/nke/controller/api"
-	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
 )
 
 type osProfileService struct {

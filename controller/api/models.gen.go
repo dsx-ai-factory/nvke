@@ -35,18 +35,6 @@ const (
 	DiskSelectionStrategyCreateSmallest DiskSelectionStrategyCreate = "smallest"
 )
 
-// Defines values for SpireAttestationMethod.
-const (
-	SpireAttestationMethodJoinToken SpireAttestationMethod = "joinToken"
-	SpireAttestationMethodTpm       SpireAttestationMethod = "tpm"
-)
-
-// Defines values for SpireAttestationMethodCreate.
-const (
-	SpireAttestationMethodCreateJoinToken SpireAttestationMethodCreate = "joinToken"
-	SpireAttestationMethodCreateTpm       SpireAttestationMethodCreate = "tpm"
-)
-
 // Defines values for UpdateInProgressType.
 const (
 	UpdateInProgressTypeCpNodesRecycling UpdateInProgressType = "cp_nodes_recycling"
@@ -317,9 +305,17 @@ type ControlPlaneStatus struct {
 	ReadyNodeCount int `json:"readyNodeCount"`
 
 	// KubernetesVersion The current control-plane Kubernetes version.
-	KubernetesVersion     string    `json:"kubernetesVersion"`
+	KubernetesVersion string `json:"kubernetesVersion"`
+
+	// DeletingNodeCount Number of control-plane nodes whose teardown is in flight. Control-plane
+	// deletes are serialized, so this is at most 1.
+	DeletingNodeCount     int       `json:"deletingNodeCount"`
 	ControlPlaneUpgrading Condition `json:"controlPlaneUpgrading"`
 	CpNodesRecycling      Condition `json:"cpNodesRecycling"`
+
+	// DeleteRequestedNodeCount Number of control-plane nodes with an accepted delete whose teardown has
+	// not started yet, because it is queued behind the in-flight one.
+	DeleteRequestedNodeCount int `json:"deleteRequestedNodeCount"`
 
 	// Rollout Cluster-level rollout rollup for a control-plane-controller-managed control plane: how many managed control-plane nodes are up to date, still pending, and currently rolling out, whether a rollout is in progress, and whether pending drift will be reconciled automatically. The three node counts are mutually exclusive and sum to managedNodeCount. Present only for clusters whose control plane is managed by the control-plane controller.
 	Rollout *ControlPlaneRolloutSummary `json:"rollout,omitempty"`
@@ -504,9 +500,6 @@ type InfraControlPlaneProvider struct {
 
 	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed control plane nodes
 	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
-
-	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	SpireAttestationMethod SpireAttestationMethodCreate `json:"spireAttestationMethod,omitempty"`
 }
 
 // InfraControlPlaneProviderUpdate The mutable infra provider control plane fields. Every field carries three states: omitted
@@ -520,9 +513,6 @@ type InfraControlPlaneProviderUpdate struct {
 
 	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed control plane nodes
 	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
-
-	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	SpireAttestationMethod *SpireAttestationMethod `json:"spireAttestationMethod,omitempty"`
 }
 
 // InfraNodePoolProvider Infra provider fields for a node pool. Mutually exclusive with `nico`.
@@ -535,9 +525,6 @@ type InfraNodePoolProvider struct {
 
 	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
 	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
-
-	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	SpireAttestationMethod SpireAttestationMethodCreate `json:"spireAttestationMethod,omitempty"`
 }
 
 // InfraNodePoolProviderUpdate The mutable infra provider node pool fields. Every field carries three states: omitted
@@ -551,9 +538,6 @@ type InfraNodePoolProviderUpdate struct {
 
 	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
 	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
-
-	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	SpireAttestationMethod *SpireAttestationMethod `json:"spireAttestationMethod,omitempty"`
 }
 
 // InfraNodeSetProvider Infra provider fields for a node set (read-only snapshot).
@@ -566,9 +550,6 @@ type InfraNodeSetProvider struct {
 
 	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
 	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
-
-	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	SpireAttestationMethod SpireAttestationMethodCreate `json:"spireAttestationMethod,omitempty"`
 }
 
 // ListCNIPluginsResponse defines model for ListCNIPluginsResponse.
@@ -828,6 +809,7 @@ type Node struct {
 // NodeConditions Conditions representing various aspects of the node's state
 type NodeConditions struct {
 	ControlPlaneRolloutRequired *Condition `json:"controlPlaneRolloutRequired,omitempty"`
+	DeleteRequested             Condition  `json:"deleteRequested"`
 	Deleting                    Condition  `json:"deleting"`
 	Joined                      Condition  `json:"joined"`
 	KubernetesReady             Condition  `json:"kubernetesReady"`
@@ -1085,12 +1067,6 @@ type OSProfile struct {
 	// Name The name of the OS profile
 	Name string `json:"name"`
 }
-
-// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-type SpireAttestationMethod string
-
-// SpireAttestationMethodCreate How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-type SpireAttestationMethodCreate string
 
 // UpdateClusterControlPlaneConfig `nico` and `infra` are mutually exclusive: supply at most one of them (both
 // may be omitted). A request carrying both is rejected with 400, as is a

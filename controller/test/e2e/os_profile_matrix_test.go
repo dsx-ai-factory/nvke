@@ -17,7 +17,7 @@ import (
 	"github.com/onsi/ginkgo/v2"
 	"sigs.k8s.io/yaml"
 
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/nke"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 )
 
 // errOSProfileMetadataUnavailable is returned when fleet OS profile metadata

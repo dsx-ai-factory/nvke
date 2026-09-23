@@ -13,9 +13,9 @@ import (
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	"github.com/NVIDIA/nke/cli/internal/clusterstate"
-	"github.com/NVIDIA/nke/cli/internal/sitespec"
-	api "github.com/NVIDIA/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/cli/internal/clusterstate"
+	"github.com/dsx-ai-factory/nke/cli/internal/sitespec"
+	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 
 // pollInterval is how often WaitProvisioned asks CWE where it has got to. A

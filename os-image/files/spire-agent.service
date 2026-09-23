@@ -3,7 +3,7 @@
 
 [Unit]
 Description=SPIRE Agent
-Documentation=https://github.com/NVIDIA/nke/blob/main/os-image/SPEC.md
+Documentation=https://github.com/dsx-ai-factory/nke/blob/main/os-image/SPEC.md
 After=network-online.target nke-spire-configure.service
 Wants=network-online.target
 Requires=nke-spire-configure.service

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/NVIDIA/nke/agent/pkg/utils"
+	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -595,7 +595,7 @@ func TestOVNHelmArgsConstruction(t *testing.T) {
 	chartDir := t.TempDir() // no values-*.yaml; optional -f flags omitted
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			args := buildOvnKubernetesHelmInstallArgs(chartDir, tc.apiServer, tc.podNetworkCidr, tc.serviceCidr, "", tc.cniConfig)
+			args := buildOvnKubernetesHelmInstallArgs(chartDir, tc.apiServer, tc.podNetworkCidr, tc.serviceCidr, "", "", tc.cniConfig)
 			assert.GreaterOrEqual(t, len(args), tc.expectedArgs)
 			assert.Contains(t, args, "--set-string")
 			assert.Contains(t, args, tc.wantPodNetwork)
@@ -609,30 +609,63 @@ func TestOVNHelmArgsImageRegistry(t *testing.T) {
 	const podCIDR = "10.244.0.0/16"
 	const svcCIDR = "10.96.0.0/12"
 
-	t.Run("image registry injected as global.registry", func(t *testing.T) {
-		args := buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podCIDR, svcCIDR, "my-mirror.example.com", nil)
+	const upstream = "ghcr.io/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu"
+
+	t.Run("image registry replaces the upstream host, keeps the path", func(t *testing.T) {
+		args := buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podCIDR, svcCIDR, "my-mirror.example.com/nke/", upstream, nil)
 		joined := strings.Join(args, " ")
-		assert.Contains(t, joined, "--set global.registry=my-mirror.example.com")
+		assert.Contains(t, joined, "--set global.image.repository=my-mirror.example.com/nke/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu")
+		assert.Equal(t, "m.example.com/a/b", ovnImageRepository("m.example.com", "quay.io/a/b"))
 	})
 
-	t.Run("empty image registry produces no global.registry arg", func(t *testing.T) {
-		args := buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podCIDR, svcCIDR, "", nil)
+	t.Run("empty image registry produces no global.image.repository arg", func(t *testing.T) {
+		args := buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podCIDR, svcCIDR, "", "", nil)
 		joined := strings.Join(args, " ")
-		assert.NotContains(t, joined, "global.registry")
+		assert.NotContains(t, joined, "global.image.repository")
 	})
 
 	t.Run("CniConfig global.registry overrides server-level registry", func(t *testing.T) {
-		// Both the server flag and per-request CniConfig set global.registry.
-		// Helm applies --set flags left-to-right; the last value wins.
-		// The server-level value is added first so CniConfig takes precedence.
-		args := buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podCIDR, svcCIDR, "server-mirror.example.com",
+		// Helm applies --set left-to-right, last wins: the per-request value must come after the server-level one.
+		args := buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podCIDR, svcCIDR, "server-mirror.example.com", upstream,
 			map[string]string{"global.registry": "request-mirror.example.com"})
 		joined := strings.Join(args, " ")
-		// Both appear; request-mirror comes last (CniConfig loop runs after imageRegistry injection).
-		serverIdx := strings.Index(joined, "server-mirror.example.com")
-		requestIdx := strings.Index(joined, "request-mirror.example.com")
+		assert.NotContains(t, joined, "global.registry=", "the wire key must not reach helm untranslated")
+		serverIdx := strings.Index(joined, "server-mirror.example.com/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu")
+		requestIdx := strings.Index(joined, "request-mirror.example.com/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu")
+		require.GreaterOrEqual(t, serverIdx, 0)
+		require.GreaterOrEqual(t, requestIdx, 0)
 		assert.Greater(t, requestIdx, serverIdx, "per-request registry must appear after server-level registry so it takes precedence")
 	})
+}
+
+// The upstream chart's defaults are values-single-node-zone.yaml (it ships no values.yaml today);
+// values-nke.yaml must come last so its pinned tag beats the "master" tag there, and a values.yaml
+// upstream might add later must not land between them and reset the subchart tags.
+func TestHelmValuesFileArgs(t *testing.T) {
+	chartDir := t.TempDir()
+	for _, name := range []string{"Chart.yaml", "values.yaml", "values-single-node-zone.yaml", "values-single-node-zone-dpu.yaml", "values-nke.yaml"} {
+		require.NoError(t, os.WriteFile(filepath.Join(chartDir, name), []byte("{}\n"), 0o644))
+	}
+	assert.Equal(t, []string{
+		"-f", filepath.Join(chartDir, "values.yaml"),
+		"-f", filepath.Join(chartDir, "values-single-node-zone.yaml"),
+		"-f", filepath.Join(chartDir, "values-nke.yaml"),
+	}, helmValuesFileArgs(chartDir))
+}
+
+func TestOvnStagedImageRepository(t *testing.T) {
+	chartDir := t.TempDir()
+	write := func(body string) {
+		require.NoError(t, os.WriteFile(filepath.Join(chartDir, "values-nke.yaml"), []byte(body), 0o644))
+	}
+	write("tags:\n  ovs-node: false\nglobal:\n  image:\n    repository: ghcr.io/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu\n    tag: release-1.4\n")
+	repo, err := ovnStagedImageRepository(chartDir)
+	require.NoError(t, err)
+	assert.Equal(t, "ghcr.io/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu", repo)
+
+	write("global:\n  image:\n    repository: nohost\n")
+	_, err = ovnStagedImageRepository(chartDir)
+	assert.Error(t, err)
 }
 
 func TestKubeadmPodNetworkCIDR(t *testing.T) {
@@ -735,7 +768,7 @@ func TestCNIHelmArgsAreIdempotent(t *testing.T) {
 	chartDir := t.TempDir()
 
 	t.Run("ovn", func(t *testing.T) {
-		args := buildOvnKubernetesHelmInstallArgs(chartDir, "https://10.0.0.1:6443", "10.244.0.0/16", "10.96.0.0/12", "", nil)
+		args := buildOvnKubernetesHelmInstallArgs(chartDir, "https://10.0.0.1:6443", "10.244.0.0/16", "10.96.0.0/12", "", "", nil)
 		assert.Equal(t, []string{"upgrade", "--install", "ovn-kubernetes", chartDir}, args[:4])
 	})
 

@@ -11,8 +11,8 @@ import (
 
 	"go.temporal.io/sdk/activity"
 
-	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/kubeadmconfig"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig"
 )
 
 const (

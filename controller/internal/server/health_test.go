@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/nke/controller/internal/config"
-	"github.com/NVIDIA/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
 )
 
 func TestHealthzAlwaysHealthyWithoutDependencyChecks(t *testing.T) {

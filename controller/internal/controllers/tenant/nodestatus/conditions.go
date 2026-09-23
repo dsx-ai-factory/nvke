@@ -8,8 +8,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/NVIDIA/nke/controller/internal/constants"
-	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 func applyKubernetesNodeHealth(cweNode *db.Node, kubeNode *corev1.Node) {
@@ -26,6 +26,28 @@ func applyKubernetesNodeHealth(cweNode *db.Node, kubeNode *corev1.Node) {
 	}
 }
 
+// describeConditionChanges summarizes what differs between two condition sets,
+// one short string per changed condition. This is what the update log line
+// carries: a node has sixteen conditions, and rendering both sets in full to
+// report that one of them moved costs kilobytes per line and still leaves the
+// reader diffing two near-identical blobs by eye.
+func describeConditionChanges(previous, current db.NodeConditions) []string {
+	was, now := previous.All(), current.All()
+
+	var changes []string
+	for i := range now {
+		switch {
+		case was[i].Condition.Equal(now[i].Condition):
+			continue
+		case was[i].Condition.Status != now[i].Condition.Status:
+			changes = append(changes, fmt.Sprintf("%s: %s -> %s", now[i].Name, was[i].Condition.Status, now[i].Condition.Status))
+		default:
+			changes = append(changes, fmt.Sprintf("%s: %s unchanged, message or transition time updated", now[i].Name, now[i].Condition.Status))
+		}
+	}
+	return changes
+}
+
 func fromKubeCondition(existing db.Condition, kubeNode *corev1.Node, conditionType string) db.Condition {
 	if kubeNode == nil {
 		return updatedCondition(existing, db.ConditionStatusUnknown, "Node data not available")
@@ -34,9 +56,11 @@ func fromKubeCondition(existing db.Condition, kubeNode *corev1.Node, conditionTy
 	for _, condition := range kubeNode.Status.Conditions {
 		if string(condition.Type) == conditionType {
 			return db.Condition{
-				Status:             dbStatusFromKubeStatus(condition.Status),
-				Message:            condition.Message,
-				LastTransitionTime: condition.LastTransitionTime.Time,
+				Status:  dbStatusFromKubeStatus(condition.Status),
+				Message: condition.Message,
+				// metav1.Time decodes into the local zone, so normalize to keep
+				// what is persisted to JSONB in the same shape it is read back in.
+				LastTransitionTime: condition.LastTransitionTime.Time.UTC(),
 			}
 		}
 	}

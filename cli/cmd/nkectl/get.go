@@ -6,12 +6,12 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/NVIDIA/nke/cli/internal/cwe/clusters"
-	"github.com/NVIDIA/nke/cli/internal/cwe/nodepools"
-	"github.com/NVIDIA/nke/cli/internal/cwedeploy"
-	"github.com/NVIDIA/nke/cli/internal/mgmtcluster"
-	mgmtcommand "github.com/NVIDIA/nke/cli/internal/mgmtcluster/command"
-	providercmd "github.com/NVIDIA/nke/cli/internal/providers/command"
+	"github.com/dsx-ai-factory/nke/cli/internal/cwe/clusters"
+	"github.com/dsx-ai-factory/nke/cli/internal/cwe/nodepools"
+	"github.com/dsx-ai-factory/nke/cli/internal/cwedeploy"
+	"github.com/dsx-ai-factory/nke/cli/internal/mgmtcluster"
+	mgmtcommand "github.com/dsx-ai-factory/nke/cli/internal/mgmtcluster/command"
+	providercmd "github.com/dsx-ai-factory/nke/cli/internal/providers/command"
 )
 
 func newGetCmd() *cobra.Command {

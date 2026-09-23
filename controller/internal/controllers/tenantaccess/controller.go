@@ -27,14 +27,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/NVIDIA/nke/controller/internal/agent"
-	"github.com/NVIDIA/nke/controller/internal/capi"
-	"github.com/NVIDIA/nke/controller/internal/config"
-	"github.com/NVIDIA/nke/controller/internal/constants"
-	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
-	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
-	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/kube"
+	"github.com/dsx-ai-factory/nke/controller/internal/agent"
+	"github.com/dsx-ai-factory/nke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/dbwrapper"
+	dbfilters "github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/filters"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/kube"
 )
 
 const (

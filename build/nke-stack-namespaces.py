@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 """List the namespaces nke-stack places resources into, read from values.yaml.
 
 helm --create-namespace creates only the release namespace, so every namespace

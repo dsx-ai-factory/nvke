@@ -1,9 +1,9 @@
-module github.com/NVIDIA/nke/os-image
+module github.com/dsx-ai-factory/nke/os-image
 
 go 1.26.5
 
 require (
-	github.com/NVIDIA/nke/agent v0.0.0-00010101000000-000000000000
+	github.com/dsx-ai-factory/nke/agent v0.0.0-00010101000000-000000000000
 	github.com/spiffe/go-spiffe/v2 v2.8.1
 	github.com/stretchr/testify v1.12.1
 	google.golang.org/grpc v1.83.2
@@ -23,4 +23,4 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 )
 
-replace github.com/NVIDIA/nke/agent => ../agent
+replace github.com/dsx-ai-factory/nke/agent => ../agent

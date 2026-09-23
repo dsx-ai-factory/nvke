@@ -116,7 +116,6 @@ BODY=$(cat <<EOF
             }
           }
         },
-        "spireAttestationMethod": "joinToken",
         "preKubeadmCommands": [
           "mkdir -p /run/cluster-api",
           "echo success > /run/cluster-api/bootstrap-success.complete"
@@ -150,7 +149,6 @@ BODY=$(cat <<EOF
             }
           }
         },
-        "spireAttestationMethod": "joinToken",
         "preKubeadmCommands": [
           "mkdir -p /run/cluster-api",
           "echo success > /run/cluster-api/bootstrap-success.complete"

@@ -12,11 +12,11 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/rollout"
-	rolloutetcd "github.com/NVIDIA/nke/controller/internal/rollout/operations/etcd"
-	rollouttemporal "github.com/NVIDIA/nke/controller/internal/rollout/temporal"
-	"github.com/NVIDIA/nke/controller/internal/temporal/activities"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
+	rolloutetcd "github.com/dsx-ai-factory/nke/controller/internal/rollout/operations/etcd"
+	rollouttemporal "github.com/dsx-ai-factory/nke/controller/internal/rollout/temporal"
+	"github.com/dsx-ai-factory/nke/controller/internal/temporal/activities"
 )
 
 func TestRotateEtcdEncryptionKeyWorkflow_CompletesThroughUnguardedRolloutExecutor(t *testing.T) {

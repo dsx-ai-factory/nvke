@@ -24,12 +24,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	crsource "sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/NVIDIA/nke/controller/internal/controllers/controllertest"
-	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
-	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
-	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
-	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllers/controllertest"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/dbwrapper"
+	dbfilters "github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/filters"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
 )
 
 const testClusterSecretNamespace = "nke-system"

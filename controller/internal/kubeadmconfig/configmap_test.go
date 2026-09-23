@@ -11,7 +11,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	kubeadmv1beta3 "github.com/NVIDIA/nke/controller/internal/kubeadmconfig/thirdparty/kubeadmtypes/v1beta3"
+	kubeadmv1beta3 "github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig/thirdparty/kubeadmtypes/v1beta3"
 )
 
 // realisticV1beta3ClusterConfig is a production-shaped kubeadm ClusterConfiguration

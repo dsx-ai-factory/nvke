@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NVIDIA/nke/controller/test/kubeadm/internal/cluster"
+	"github.com/dsx-ai-factory/nke/controller/test/kubeadm/internal/cluster"
 )
 
 // The GitLab original was a CLI (`cluster-bringup full …`) and took these as

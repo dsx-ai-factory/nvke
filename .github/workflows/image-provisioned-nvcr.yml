@@ -105,7 +105,7 @@ jobs:
           fi
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           buildkitd-config: ${{ steps.buildkit.outputs.config }}
 
@@ -168,6 +168,16 @@ jobs:
             BUILD_VERSION="${VERSION}" \
             BUILDX_EXTRA_ARGS="--label org.opencontainers.image.revision=${GITHUB_SHA}"
 
+      # The digest of what this leg pushed. Every job after this one used to
+      # re-resolve a mutable tag, so a later push could move what they read.
+      - name: Publish the pushed digest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: provisioned-image-digest-${{ matrix.arch }}
+          path: cluster-api-provider-provisioned/bin/image-digest-${{ matrix.arch }}.txt
+          if-no-files-found: error
+          retention-days: 1
+
   manifest:
     if: github.repository == 'dsx-ai-factory/nke'
     name: Manifest
@@ -177,6 +187,9 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      index_digest: ${{ steps.create.outputs.index_digest }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -201,7 +214,7 @@ jobs:
           fi
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           buildkitd-config: ${{ steps.buildkit.outputs.config }}
 
@@ -228,24 +241,42 @@ jobs:
           echo "image=nvcr.io/${NKE_NGC_ORG}/cluster-api-provider-provisioned" >> "${GITHUB_OUTPUT}"
           echo "push_tags=${tags[*]}" >> "${GITHUB_OUTPUT}"
 
+      - name: Download each leg's digest
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: provisioned-image-digest-*
+          merge-multiple: true
+          path: digests
+
+      # Built from the digests the two build legs recorded, not from
+      # <tag>-amd64 and <tag>-arm64. The tags are mutable, so a second run on
+      # the same commit could have moved one of them between the push and here.
       - name: Create multi-arch manifests
+        id: create
         shell: bash
         env:
           IMAGE: ${{ steps.meta.outputs.image }}
           PUSH_TAGS: ${{ steps.meta.outputs.push_tags }}
         run: |
           set -euo pipefail
+          amd64="$(cat digests/image-digest-amd64.txt)"
+          arm64="$(cat digests/image-digest-arm64.txt)"
           make -C cluster-api-provider-provisioned docker-manifest \
             IMG_REPO="${IMAGE}" \
-            PUSH_TAGS="${PUSH_TAGS}"
+            PUSH_TAGS="${PUSH_TAGS}" \
+            ARCH_DIGESTS="${amd64} ${arm64}"
+          index="$(cat cluster-api-provider-provisioned/bin/image-digest-index.txt)"
+          echo "index_digest=${index}" >> "${GITHUB_OUTPUT}"
+          echo "- \`${IMAGE}\` index is \`${index}\`" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Show published manifest
         shell: bash
         env:
           IMAGE: ${{ steps.meta.outputs.image }}
+          INDEX_DIGEST: ${{ steps.create.outputs.index_digest }}
         run: |
           set -euo pipefail
-          docker buildx imagetools inspect "${IMAGE}:sha-${GITHUB_SHA}"
+          docker buildx imagetools inspect "${IMAGE}@${INDEX_DIGEST}"
 
   # NVCR needs an NGC account to pull from, so this image is not reachable by
   # anyone outside NVIDIA. A release tag copies it to GHCR, which is public once
@@ -258,7 +289,7 @@ jobs:
   # versions rather than every commit.
   #
   # The destination is ghcr.io/dsx-ai-factory/nke/cluster-api-provider-provisioned,
-  # alongside ghcr.io/dsx-ai-factory/nke/controller and separate from
+  # alongside ghcr.io/dsx-ai-factory/nke/nke-controller and separate from
   # ghcr.io/dsx-ai-factory/nke/charts, which is what keeps a chart and an image from
   # sharing one OCI repository.
   promote-ghcr:
@@ -297,8 +328,6 @@ jobs:
       # the tag is real, which is what broke this job. See setup-crane/action.yml.
       - name: Set up crane
         uses: ./.github/actions/setup-crane
-        with:
-          crane_version: v0.21.9
 
       # crane copies the whole index, so the per-architecture manifests come
       # with it and the digest is preserved. What GHCR serves is the image NVCR
@@ -307,6 +336,7 @@ jobs:
         shell: bash
         env:
           NKE_NGC_ORG: ${{ vars.NKE_NGC_ORG }}
+          INDEX_DIGEST: ${{ needs.manifest.outputs.index_digest }}
         run: |
           set -euo pipefail
 
@@ -315,14 +345,17 @@ jobs:
             exit 1
           fi
 
-          version="${GITHUB_REF_NAME#cluster-api-provider-provisioned/}"
-          src="nvcr.io/${NKE_NGC_ORG}/cluster-api-provider-provisioned:${version}"
-          dst="ghcr.io/${GITHUB_REPOSITORY,,}/cluster-api-provider-provisioned"
-
-          if ! digest="$(crane digest "${src}")"; then
-            echo "::error::${src} does not exist. The manifest job should have pushed it."
+          if [[ -z "${INDEX_DIGEST}" ]]; then
+            echo "::error::the manifest job produced no index digest"
             exit 1
           fi
+
+          version="${GITHUB_REF_NAME#cluster-api-provider-provisioned/}"
+          # By digest, so this copies the index the manifest job just created
+          # rather than whatever the version tag resolves to now.
+          digest="${INDEX_DIGEST}"
+          src="nvcr.io/${NKE_NGC_ORG}/cluster-api-provider-provisioned@${digest}"
+          dst="ghcr.io/${GITHUB_REPOSITORY,,}/cluster-api-provider-provisioned"
 
           crane copy "${src}" "${dst}:${version}"
           crane tag "${dst}:${version}" "sha-${GITHUB_SHA}"
@@ -353,8 +386,6 @@ jobs:
       # the tag is real, which is what broke this job. See setup-crane/action.yml.
       - name: Set up crane
         uses: ./.github/actions/setup-crane
-        with:
-          crane_version: v0.21.9
 
       - name: Promote image
         shell: bash
@@ -363,6 +394,7 @@ jobs:
           DSX_NGC_ORG_TEAM: ${{ vars.DSX_NGC_ORG_TEAM }}
           NKE_NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NKE }}
           DSX_NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_DSX }}
+          INDEX_DIGEST: ${{ needs.manifest.outputs.index_digest }}
         run: |
           set -euo pipefail
 
@@ -383,20 +415,23 @@ jobs:
             exit 1
           fi
 
+          if [[ -z "${INDEX_DIGEST}" ]]; then
+            echo "::error::the manifest job produced no index digest"
+            exit 1
+          fi
+
           image_version="$(git describe --match 'cluster-api-provider-provisioned/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           image_version="${image_version#cluster-api-provider-provisioned/}"
-          src="nvcr.io/${NKE_NGC_ORG}/cluster-api-provider-provisioned:${image_version}"
+          # By digest, so this promotes the index the manifest job just created
+          # rather than whatever the version tag resolves to now.
+          source_digest="${INDEX_DIGEST}"
+          src="nvcr.io/${NKE_NGC_ORG}/cluster-api-provider-provisioned@${source_digest}"
           dst="nvcr.io/${DSX_NGC_ORG_TEAM}/cluster-api-provider-provisioned"
           layout="${RUNNER_TEMP}/cluster-api-provider-provisioned-image.oci"
 
           # shellcheck disable=SC2016
           echo "${NKE_NGC_TOKEN}" | crane auth login nvcr.io \
             -u '$oauthtoken' --password-stdin
-
-          if ! source_digest="$(crane digest "${src}")"; then
-            echo "::error::${src} does not exist. The manifest job should have pushed it."
-            exit 1
-          fi
 
           mkdir -p "${layout}"
           crane pull --format=oci "${src}" "${layout}"
@@ -459,7 +494,7 @@ jobs:
     if: github.repository == 'dsx-ai-factory/nke'
     name: SBOM (${{ matrix.arch }})
     runs-on: linux-amd64-cpu8
-    needs: [manifest]
+    needs: [build, manifest]
     environment: nvcr
     timeout-minutes: 15
     permissions:
@@ -477,13 +512,32 @@ jobs:
           username: "$oauthtoken"
           password: ${{ secrets.NGC_REGISTRY_TOKEN_NKE }}
 
-      # Uses the per-arch tags docker-push-arch already pushes, so no digest has
-      # to come out of the build job. An arm64 image scans fine on an amd64
-      # runner: the scanner reads layers, it does not run them.
+      - name: Download this leg's digest
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: provisioned-image-digest-${{ matrix.arch }}
+
+      # By digest, not by the sha-<commit>-<arch> tag this used to re-pull. The
+      # tag is mutable, so a re-run on the same commit could move it between
+      # the push and this scan, and the SBOM would then describe an image the
+      # run never built.
+      - name: Resolve the scanned image
+        id: target
+        shell: bash
+        env:
+          NKE_NGC_ORG: ${{ vars.NKE_NGC_ORG }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          digest="$(cat "image-digest-${ARCH}.txt")"
+          echo "ref=nvcr.io/${NKE_NGC_ORG}/cluster-api-provider-provisioned@${digest}" >> "${GITHUB_OUTPUT}"
+
+      # An arm64 image scans fine on an amd64 runner: the scanner reads layers,
+      # it does not run them.
       - name: Generate SPDX SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
-          image: nvcr.io/${{ vars.NKE_NGC_ORG }}/cluster-api-provider-provisioned:sha-${{ github.sha }}-${{ matrix.arch }}
+          image: ${{ steps.target.outputs.ref }}
           format: spdx-json
           artifact-name: cluster-api-provider-provisioned-sbom-linux-${{ matrix.arch }}.spdx.json
           upload-artifact: true

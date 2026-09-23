@@ -204,7 +204,6 @@ contents:
     expand: true
 
 deb:
-  # gzip over xz/zstd: every dpkg/apt on the Ubuntu image this ships into can
-  # read it without a newer libarchive, and it decompresses deterministically.
-  # The ~1 GB of binaries and container images dominates the size anyway.
-  compression: gzip
+  # Compared with bare zstd, level 3 produced similarly sized packages with
+  # faster compression in local testing. Keep that build-speed tradeoff explicit.
+  compression: zstd:3

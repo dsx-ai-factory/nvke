@@ -67,7 +67,7 @@ BUF_VERSION := v1.65.0
 GIT_HOOKS_DIR := $(shell git rev-parse --git-path hooks 2>/dev/null || echo .git/hooks)
 
 BIN_DIR ?= $(CURDIR)/bin
-NFPM_BIN ?= $(BIN_DIR)/nfpm
+NFPM_BIN ?= $(BIN_DIR)/nfpm-v$(NFPM_VERSION)/nfpm
 AGENT_PACKAGING_DIR := $(abspath ../os-image/packages/nke-agent/packaging)
 # Optional exact output path for consumers such as the Packer image build.
 DEB_OUTPUT ?=
@@ -147,6 +147,12 @@ buf: ## Install buf if not present or wrong version
 	@$(GOBIN)/buf version 2>/dev/null | grep -q $(BUF_VERSION) || \
 		go install github.com/bufbuild/buf/cmd/buf@$(BUF_VERSION)
 
+# One definition of where the generated Go lands. PROTO_GEN_FILES expands when
+# this file is parsed, so check-protos sees the committed set before
+# clean-proto removes it.
+PROTO_DIR       := pkg/agent/proto
+PROTO_GEN_FILES := $(wildcard $(PROTO_DIR)/*.pb.go)
+
 .PHONY: protos
 protos: buf clean-proto ## Generate proto files using buf
 	$(GOBIN)/buf generate
@@ -156,14 +162,33 @@ proto-fmt: buf ## Format proto files using buf
 	$(GOBIN)/buf format -w
 
 .PHONY: check-protos
-check-protos: buf ## Check if proto files need formatting or regeneration
+check-protos: buf ## Check proto formatting, and that *.pb.go matches the .proto
 	@$(GOBIN)/buf format --diff --exit-code \
  || \
 		(echo "❌ Proto files need formatting. Run 'make proto-fmt' to fix." && false)
+	@# Regenerate and diff, the shape controller/Makefile:126-134 uses for the
+	@# OpenAPI output. Without it this target only ever checked its own
+	@# formatter, so a .proto change committed without `make protos` reached
+	@# main unseen. Expects a clean working directory.
+	@# git diff reports nothing for an untracked path, so a new generated file
+	@# would pass silently -- check tracking first, as notices-check does.
+	@for f in $(PROTO_GEN_FILES); do \
+		git ls-files --error-unmatch "$$f" >/dev/null 2>&1 \
+			|| { echo "❌ $$f is not tracked. Run 'make protos' and commit it."; exit 1; }; \
+	done
+	@$(MAKE) --no-print-directory protos
+	@git diff --exit-code -- $(PROTO_DIR) \
+		|| { echo "❌ *.pb.go is stale. Run 'make protos' and commit the result."; exit 1; }
+	@# git diff says nothing about a path git is not tracking, so a newly
+	@# generated file would otherwise pass while never being committed. Same
+	@# guard as Makefile's licences-check.
+	@untracked=$$(git ls-files --others --exclude-standard -- $(PROTO_DIR)); \
+	 [ -z "$$untracked" ] \
+		|| { echo "❌ generated proto files are not tracked. Run 'make protos' and commit them:"; printf '%s\n' "$$untracked" | sed 's/^/    /'; exit 1; }
 
 .PHONY: clean-proto
 clean-proto: ## Remove generated proto files
-	rm -f pkg/agent/proto/*.pb.go
+	rm -f $(PROTO_DIR)/*.pb.go
 
 ##@ Code quality
 .PHONY: fmt vet lint test

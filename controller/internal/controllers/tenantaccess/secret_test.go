@@ -21,9 +21,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/NVIDIA/nke/controller/internal/capi"
-	"github.com/NVIDIA/nke/controller/internal/constants"
-	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 func TestUpsertOwnedSecretUpdatesMatchingTypeInPlace(t *testing.T) {

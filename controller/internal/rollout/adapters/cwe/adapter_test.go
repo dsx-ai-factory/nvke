@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/rollout"
-	"github.com/NVIDIA/nke/controller/internal/rollout/adapters/cwe"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/cwe"
 )
 
 func TestNodeAdapter_RoleFromControlPlaneFlag(t *testing.T) {

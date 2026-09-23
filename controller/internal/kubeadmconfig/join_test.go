@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/nke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 )
 
 func TestJoinConfigRender_Golden(t *testing.T) {

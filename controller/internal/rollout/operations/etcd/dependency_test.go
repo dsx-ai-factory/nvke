@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/NVIDIA/nke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 )
 
 func TestKubernetesEncryptionKeyReaderRotationRequiresPendingKey(t *testing.T) {

@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
-	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
+	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 )
 
 type NodeAgentCall struct {

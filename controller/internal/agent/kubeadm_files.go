@@ -15,9 +15,9 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
-	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
+	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 
-	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 // SupportsKubeadmFiles reports whether the node agent accepts staged files on

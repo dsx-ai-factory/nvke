@@ -17,8 +17,8 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/sdk/client"
 
-	"github.com/NVIDIA/nke/controller/e2e/framework"
-	"github.com/NVIDIA/nke/controller/internal/temporal/workflows"
+	"github.com/dsx-ai-factory/nke/controller/e2e/framework"
+	"github.com/dsx-ai-factory/nke/controller/internal/temporal/workflows"
 )
 
 // drainActivityName is the first activity TeardownNode reaches after the

@@ -292,12 +292,6 @@ func JoinBundleURL(base, rel string) string {
 	return base + rel
 }
 
-// GetBundleURL is retained for compatibility; prefer GetBundleIndexPath + JoinBundleURL.
-// Deprecated: returns a relative index path, not an absolute URL.
-func GetBundleURL() (string, error) {
-	return GetBundleIndexPath()
-}
-
 func DropLastURLDir(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -601,8 +595,7 @@ func FetchBundleFromOCIRegistry(ctx context.Context, ociRegistryURL, name string
 	return bundle, nil
 }
 
-// FetchIndex will fetch the index file from the specified bundle URL
-// FIXME:  We won't use GetBundleURL any more, we've baked it into startup and set it the server as well as node status
+// FetchIndex will fetch the index file from the specified bundle URL.
 func FetchIndex(ctx context.Context, indexFileURL string) (Index, error) {
 	var index Index
 	slog.Info("fetching index file", "INDEX_FILE_URL", indexFileURL)
@@ -619,29 +612,4 @@ func ExtractVersion(filename string) (string, error) {
 		return "", fmt.Errorf("no version found in filename: %s", filename)
 	}
 	return matches[1], nil
-}
-
-// VerifyBundles will check against the staging and release index to
-// ensure the specified bundle and version exist.
-// TODO:  deref, pointer etc?
-func VerifyBundles(ctx context.Context, bundles []Bundle) error {
-	// TODO: Implement
-	/*
-				stagingIndex, err := FetchIndex(ctx, NKE_BUNDLE_STAGING_URI)
-				if err != nil {
-				}
-
-				releaseIndex, err := FetchIndex(ctx, NKE_BUNDLE_URI)
-				if err != nil {
-				}
-
-				// Get index check if specified bundle is present
-				for _, b := range bundles {
-		      if b.Version == "" or b.Version == "latest" {
-		        // Get the latest version from index and continue
-		        continue
-		      }
-				}
-	*/
-	return nil
 }

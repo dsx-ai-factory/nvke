@@ -11,7 +11,7 @@ It is a Go-based gRPC server (systemd service) that runs on Kubernetes nodes and
 - Kubernetes API/etcd secrets encryption
 - mTLS via SPIFFE (SPIRE workload API)
 
-**Module path:** `github.com/NVIDIA/nke/agent`
+**Module path:** `github.com/dsx-ai-factory/nke/agent`
 
 ## Consumer configuration
 
@@ -48,7 +48,7 @@ The `agent/` prefix is stripped for the binary ldflag and `.deb` version
 Go module consumers pin the same tag shape:
 
 ```bash
-go get github.com/NVIDIA/nke/agent@agent/v0.1.30
+go get github.com/dsx-ai-factory/nke/agent@agent/v0.1.30
 ```
 
 ## Build Commands

@@ -15,9 +15,9 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/NVIDIA/nke/cli/internal/auth"
-	"github.com/NVIDIA/nke/cli/internal/config"
-	api "github.com/NVIDIA/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/cli/internal/auth"
+	"github.com/dsx-ai-factory/nke/cli/internal/config"
+	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 
 // CWEClient is a high-level client for the CWE REST API.

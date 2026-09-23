@@ -12,9 +12,8 @@
 # this into another lane would slow every job there for setup none of them use.
 #
 # Called from merge-gate.yml and listed in the gate's `needs`, so a red run
-# blocks a merge. It takes about six minutes against a gate whose wall clock is
-# about nine, set by golangci-lint (controller), so it does not extend the
-# critical path.
+# blocks a merge. Both legs run about ten minutes, close enough to the gate's
+# other long jobs that either can set the critical path.
 #
 # It is the only gate member that needs a database, and the only one that runs a
 # built binary rather than a package, so it is the most likely to fail for
@@ -58,9 +57,19 @@ concurrency:
 
 jobs:
   gofail:
-    name: Gofail E2E
-    runs-on: ubuntu-latest
+    name: Gofail E2E (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     if: github.repository == 'dsx-ai-factory/nke'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Both hosted: no internal mirror, no secret. deb.yml already builds
+          # on ubuntu-24.04-arm.
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     # The two scenarios took 158s and 188s when measured, and both wait on real
     # heartbeat timeouts, so the budget is deliberately loose.
     timeout-minutes: 25
@@ -107,10 +116,11 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: gofail-go-${{ runner.os }}-${{ hashFiles('go.work.sum', '**/go.sum') }}-${{ github.run_id }}
+          # runner.arch too: runner.os is Linux on both legs.
+          key: gofail-go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.work.sum', '**/go.sum') }}-${{ github.run_id }}
           restore-keys: |
-            gofail-go-${{ runner.os }}-${{ hashFiles('go.work.sum', '**/go.sum') }}-
-            gofail-go-${{ runner.os }}-
+            gofail-go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.work.sum', '**/go.sum') }}-
+            gofail-go-${{ runner.os }}-${{ runner.arch }}-
 
       # 160 MB of etcd, kube-apiserver and kubectl. The Makefile pins the store
       # to controller/.go/envtest with --bin-dir, so this path is exact rather
@@ -120,8 +130,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: controller/.go/envtest
-          key: envtest-${{ runner.os }}-${{ hashFiles('controller/Makefile') }}
-          restore-keys: envtest-${{ runner.os }}-
+          key: envtest-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('controller/Makefile') }}
+          restore-keys: envtest-${{ runner.os }}-${{ runner.arch }}-
 
       # The runner image already ships PostgreSQL, so start that rather than
       # pull a service container. Same approach as NVIDIA/infra-controller.
@@ -157,7 +167,9 @@ jobs:
       # where forks have no token. github.event_name is the caller's event, so
       # this is skipped when merge-gate.yml calls this workflow.
       - name: Verify the CAPNICo CRD fixture is current
-        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
+        # amd64 only: the fixture is architecture-independent, so the second
+        # leg would just double the gh api calls and the chance of a flake.
+        if: matrix.arch == 'amd64' && github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
         env:
           GH_TOKEN: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
         run: |

@@ -12,7 +12,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/NVIDIA/nke/agent/pkg/agentupgrade"
+	"github.com/dsx-ai-factory/nke/agent/pkg/agentupgrade"
 )
 
 const defaultOperationRoot = "/var/lib/nke/agent-upgrades"

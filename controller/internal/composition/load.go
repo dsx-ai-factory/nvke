@@ -77,6 +77,11 @@ func (r *Recipe) validate(file string) error {
 		if selected[ref.Name] {
 			return fmt.Errorf("%s: component %q selected twice", file, ref.Name)
 		}
+		if r.byName[ref.Name].Helm.DefaultChart == "" {
+			// EmitChart resolves the dependency by this name. Empty emits a
+			// nameless dependency that helm rejects only at install time.
+			return fmt.Errorf("%s: component %q has no helm.defaultChart", file, ref.Name)
+		}
 		selected[ref.Name] = true
 	}
 

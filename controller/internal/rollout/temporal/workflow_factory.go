@@ -14,9 +14,9 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/rollout"
-	adaptercwe "github.com/NVIDIA/nke/controller/internal/rollout/adapters/cwe"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
+	adaptercwe "github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/cwe"
 )
 
 // WorkflowConfig is the input to RegisterRolloutWorkflow. The factory

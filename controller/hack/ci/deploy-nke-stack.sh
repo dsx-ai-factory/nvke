@@ -38,6 +38,7 @@ set -euo pipefail
 # green against the old templates. capd-e2e.yml triggers on controller/**, which
 # includes exactly those files.
 CWE_IMAGE="${1:?usage: $0 <cwe-image>}"
+: "${NODE_AGENT_SPIRE_ATTESTATION_METHOD:?NODE_AGENT_SPIRE_ATTESTATION_METHOD is required}"
 # Optional, from the workflow inputs of the same name. Set together to install a
 # published artifact; leave empty to build.
 CHART="${NKE_E2E_STACK_CHART:-}"
@@ -331,6 +332,7 @@ run_install() {
       --set-string "controller.nkeOIDCAuth.discoveryURL=https://${MANAGEMENT_VIP}:30443/.well-known/openid-configuration" \
       --set-string "controller.spiffe.trustDomain=${TRUST_DOMAIN}" \
       --set-string "controller.spiffe.spire.serverAddress=${MANAGEMENT_VIP}" \
+      --set-string "controller.nodeAgent.spireAttestationMethod=${NODE_AGENT_SPIRE_ATTESTATION_METHOD}" \
       --set-string "global.spire.trustDomain=${TRUST_DOMAIN}" \
       --set-string "global.spire.clusterName=${KIND_CLUSTER_NAME}" \
       --set-string "spire.spiffe-oidc-discovery-provider.config.jwksUri=https://${MANAGEMENT_VIP}:30443/keys" \

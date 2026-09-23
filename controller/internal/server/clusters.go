@@ -16,12 +16,12 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	"github.com/NVIDIA/nke/controller/api"
-	"github.com/NVIDIA/nke/controller/internal/capi"
-	"github.com/NVIDIA/nke/controller/internal/config"
-	"github.com/NVIDIA/nke/controller/internal/constants"
-	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/naming"
+	"github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/naming"
 )
 
 const (
@@ -894,9 +894,6 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 		capi, err := spec.CAPIProvider()
 		if err != nil {
 			return err
-		}
-		if req.Infra.SpireAttestationMethod != nil {
-			capi.SpireAttestationMethod = db.SpireAttestationMethod(*req.Infra.SpireAttestationMethod)
 		}
 		if req.Infra.BootstrapFiles != nil {
 			capi.BootstrapFiles = dbCloudInitFilesFromAPI(req.Infra.BootstrapFiles)

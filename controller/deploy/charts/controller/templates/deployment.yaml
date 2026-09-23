@@ -1,3 +1,10 @@
+{{- $spireAttestationMethod := required "nodeAgent.spireAttestationMethod is required" .Values.nodeAgent.spireAttestationMethod }}
+{{- if not (has $spireAttestationMethod (list "tpm" "joinToken")) }}
+{{- fail (printf "nodeAgent.spireAttestationMethod must be one of tpm or joinToken, got %q" $spireAttestationMethod) }}
+{{- end }}
+{{- if and (eq $spireAttestationMethod "joinToken") (not .Values.spiffe.enabled) }}
+{{- fail "spiffe.enabled must be true when nodeAgent.spireAttestationMethod is joinToken" }}
+{{- end }}
 {{- include "controller.apiAuth.validate" . }}
 apiVersion: apps/v1
 kind: Deployment
@@ -111,7 +118,7 @@ spec:
         {{- end }}
       {{- end }}
       containers:
-        {{- /* The name helper, not .Chart.Name: the chart is named `controller`
+        {{- /* The name helper, not .Chart.Name: the chart is named `nke-controller`
         for its OCI path, and a bare .Chart.Name would rename this container on
         upgrade, breaking every `kubectl logs -c` and log/metric selector keyed
         on it. */}}
@@ -215,6 +222,18 @@ spec:
               value: {{ .Values.cni.installAfterInit | quote }}
             - name: TENANT_ACCESS_ENABLED
               value: {{ .Values.tenantAccess.enabled | quote }}
+            - name: NODE_AGENT_TLS_JWT_ENABLED
+              value: {{ .Values.nodeAgent.tlsJwt.enabled | quote }}
+            {{- if .Values.nodeAgent.tlsJwt.enabled }}
+            - name: NODE_AGENT_TLS_JWT_ISSUER
+              value: {{ required "nodeAgent.tlsJwt.issuer is required when TLS/JWT is enabled" .Values.nodeAgent.tlsJwt.issuer | quote }}
+            - name: NODE_AGENT_TLS_JWT_JWKS_URI
+              value: {{ required "nodeAgent.tlsJwt.jwksURI is required when TLS/JWT is enabled" .Values.nodeAgent.tlsJwt.jwksURI | quote }}
+            - name: NODE_AGENT_TLS_JWT_ALGORITHMS
+              value: {{ required "nodeAgent.tlsJwt.algorithms must contain at least one algorithm when TLS/JWT is enabled" (join "," .Values.nodeAgent.tlsJwt.algorithms) | quote }}
+            - name: NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN
+              value: {{ required "nodeAgent.tlsJwt.subjectTrustDomain is required when TLS/JWT is enabled" .Values.nodeAgent.tlsJwt.subjectTrustDomain | quote }}
+            {{- end }}
             - name: NKE_OIDC_AUTH_ENABLED
               value: {{ .Values.nkeOIDCAuth.enabled | quote }}
             {{- if .Values.nkeOIDCAuth.issuerURL }}
@@ -301,6 +320,8 @@ spec:
               value: {{ .Values.spiffe.spire.serverPort | quote }}
             - name: SPIRE_JOIN_TOKEN_TTL
               value: {{ .Values.spiffe.spire.joinTokenTTL | quote }}
+            - name: NODE_AGENT_SPIRE_ATTESTATION_METHOD
+              value: {{ $spireAttestationMethod | quote }}
             # Teleport config
             {{- if .Values.teleport.enabled }}
             - name: TELEPORT_ENABLED

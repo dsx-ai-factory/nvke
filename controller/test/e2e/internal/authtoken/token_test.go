@@ -23,7 +23,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
 )
 
 // fakeClock crosses the refresh boundary without sleeping through a lifetime.

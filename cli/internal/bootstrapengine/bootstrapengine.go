@@ -359,7 +359,7 @@ func saveImageArchive(ctx context.Context, runner CommandRunner, image string) (
 // Pulls the platform manifest by digest before retagging (see the comment on
 // that call below) -- without it, `tag` fails with "not found" for a digest
 // `image inspect` just resolved, confirmed against a real nerdctl-provider
-// CI run: https://github.com/NVIDIA/nke/actions/runs/33088745329.
+// CI run: https://github.com/dsx-ai-factory/nke/actions/runs/33088745329.
 func flattenToHostPlatform(ctx context.Context, runner CommandRunner, cli, image string) error {
 	repo, ok := repoOfTaggedRef(image)
 	if !ok {

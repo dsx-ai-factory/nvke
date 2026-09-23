@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/NVIDIA/nke/controller/internal/utils"
+	"github.com/dsx-ai-factory/nke/controller/internal/utils"
 )
 
 func TestGetKubernetesVersionFromOSProfileOrDefault(t *testing.T) {

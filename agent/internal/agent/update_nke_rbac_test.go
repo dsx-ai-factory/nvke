@@ -26,7 +26,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	ktesting "k8s.io/client-go/testing"
 
-	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
+	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 )
 
 // Fixture names match the ClusterRole / Role object names still deployed by

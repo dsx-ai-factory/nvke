@@ -24,11 +24,11 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/authtoken"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/config"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/cwe"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/kube"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/nke"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/authtoken"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 )
 
 // The negative cases, and the only thing in the suite that would notice if NKE

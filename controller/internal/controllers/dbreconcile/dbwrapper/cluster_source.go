@@ -16,9 +16,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	crsource "sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
-	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
-	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile"
+	dbfilters "github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/filters"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 // ClusterEventSource is a controller-runtime source for DB cluster changes.

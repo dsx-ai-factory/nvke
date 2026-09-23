@@ -14,8 +14,8 @@ package sitecluster
 import (
 	"fmt"
 
-	"github.com/NVIDIA/nke/cli/internal/sitespec"
-	api "github.com/NVIDIA/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/cli/internal/sitespec"
+	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 
 const (
@@ -25,15 +25,6 @@ const (
 
 	provisionedClusterKind         = "ProvisionedCluster"
 	provisionedMachineTemplateKind = "ProvisionedMachineTemplate"
-
-	// controlPlanePoolName/controlPlaneNodeNamePrefix name the single node pool
-	// a site cluster has. Every site spec node is a control-plane node, so there
-	// is one pool and it is the control plane.
-	//
-	// The prefix is short because CWE builds node names as
-	// <cluster>-<prefix>-<4 digits> and holds the result to 63 characters.
-	controlPlanePoolName       = "control-plane"
-	controlPlaneNodeNamePrefix = "cp"
 )
 
 // ClusterRequest builds the CWE CreateCluster request that turns inv's
@@ -46,7 +37,9 @@ const (
 //   - infra.cluster is a ProvisionedCluster whose site spec is the hosts
 //     from the file. The provider hands one host to each machine; it creates
 //     nothing.
-//   - the node pool's infra.machineTemplate is a ProvisionedMachineTemplate
+//   - the control plane is a cluster-level controlPlaneConfig, one node per
+//     host.
+//   - controlPlaneConfig.infra.machineTemplate is a ProvisionedMachineTemplate
 //     with an empty spec. Everything a machine needs is already in the
 //     ProvisionedCluster's site spec, so there is nothing to say per machine.
 func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, error) {
@@ -63,21 +56,16 @@ func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, e
 		Name:                          inv.ClusterName,
 		ControlPlaneKubernetesVersion: inv.Cluster.K8sVersion,
 		CniPlugin:                     inv.Cluster.CniName,
-		EtcdEncrypted:                 false,
-		NodePools: &[]api.NodePoolCreateConfig{{
-			Name:                 controlPlanePoolName,
-			NodeNamePrefix:       controlPlaneNodeNamePrefix,
-			DesiredNodeCount:     len(hosts),
-			ControlPlane:         true,
+		EtcdEncrypted:                 inv.Cluster.EtcdEncryptionEnabled(),
+		// A plain string with omitempty: an unset VIP is left out of the body.
+		ControlPlaneVIP: inv.Cluster.ControlPlaneVIP,
+		ControlPlaneConfig: &api.CreateClusterControlPlaneConfig{
+			DesiredCount:         len(hosts),
 			SystemReservedMemory: inv.Cluster.KubeletConfig.SystemReservedMemory,
-			Infra: &api.InfraNodePoolProvider{
-				// The provisioned provider copies the allocated host's TPM identity
-				// to the CAPI Machine. CWE uses it as the parent of the node-agent
-				// workload entry; no bootstrap join token is needed.
-				SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
-				MachineTemplate:        provisionedMachineTemplate(),
+			Infra: &api.InfraControlPlaneProvider{
+				MachineTemplate: provisionedMachineTemplate(),
 			},
-		}},
+		},
 		Infra: &api.InfraClusterProvider{
 			Cluster: provisionedCluster(inv.ClusterName, hosts),
 		},
@@ -127,9 +115,8 @@ func provisionedHosts(inv *sitespec.SiteSpec) ([]map[string]interface{}, error) 
 	return hosts, nil
 }
 
-// provisionedCluster is the infrastructure side of the CAPI Cluster: the
-// site spec, and nothing else. The provider owns no endpoint — CWE owns the
-// control-plane VIP through its own API.
+// provisionedCluster builds the infrastructure resource from the site hosts.
+// CWE receives the VIP separately in the create request.
 func provisionedCluster(name string, hosts []map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"apiVersion": provisionedAPIVersion,

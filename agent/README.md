@@ -12,7 +12,7 @@ related node-local operations — without interactive SSH.
 | [pkg/agent/proto/node_agent.proto](pkg/agent/proto/node_agent.proto) | Canonical RPC definitions |
 | [config.env.example](config.env.example) | Build/runtime artifact endpoint knobs |
 
-**Module:** `github.com/NVIDIA/nke/agent`
+**Module:** `github.com/dsx-ai-factory/nke/agent`
 
 ## Quick start
 

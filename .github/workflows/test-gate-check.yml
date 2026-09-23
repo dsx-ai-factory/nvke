@@ -1,0 +1,216 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Labels open pull requests that nothing is testing, for either of the two
+# reasons that leave no red check behind.
+#
+# needs-ok-to-test         copy-pr-bot has not copied this head to
+#                          pull-request/<N>, so every check that runs off the
+#                          mirror branch is missing. A vetter comments
+#                          `/ok to test <SHA>`.
+# needs-workflow-approval  GitHub is holding this head's pull_request workflows
+#                          for a first-time contributor or outside
+#                          collaborator. A maintainer clicks "Approve and run".
+#
+# The two are independent: #812 sat in both states at once, with its author on
+# the copy-pr-bot trustee list and GitHub blocking it anyway. Same remedy for
+# neither, so two labels rather than one.
+#
+# Advisory, like needs-rebase and needs-ci-fix. Neither state is red on the pull
+# request: the blocked checks are simply absent, and AGENTS.md already warns
+# that absence does not look like failure. This makes both findable with
+# `label:needs-ok-to-test` and `label:needs-workflow-approval`.
+#
+# WHY A SWEEP ADDS AND EVENTS ONLY CLEAR
+#
+# copy-pr-bot mirrors a trusted head seconds after the push, so evaluating on
+# `synchronize` would label almost every trusted push and clear it again on the
+# next run. The sweep reads settled state instead. Latency does not matter for a
+# label nobody blocks on. Same reasoning as ci-failure-check.yml.
+
+name: PR Test Gate Check
+
+on:
+  schedule:
+    # Ten past and twenty to, clear of the :15/:45 CI-failure sweep and of the
+    # daily E2E crons on the hour.
+    - cron: '10,40 * * * *'
+  # The mirror landing is worth a recheck immediately: that is the event that
+  # clears needs-ok-to-test for a pull request someone just vetted.
+  push:
+    branches:
+      - "pull-request/[0-9]+"
+  # A new head invalidates both verdicts. No checkout here, so the write token
+  # never meets fork code. Do not add a checkout.
+  pull_request_target:
+    types: [synchronize]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  OK_TO_TEST_LABEL: needs-ok-to-test
+  APPROVAL_LABEL: needs-workflow-approval
+
+jobs:
+  clear-on-head:
+    name: Clear the labels on a new head
+    if: github.repository == 'dsx-ai-factory/nke' && github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    timeout-minutes: 5
+    steps:
+      - name: Remove both labels
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          OK_TO_TEST_LABEL: ${{ env.OK_TO_TEST_LABEL }}
+          APPROVAL_LABEL: ${{ env.APPROVAL_LABEL }}
+        with:
+          script: |
+            for (const name of [process.env.OK_TO_TEST_LABEL, process.env.APPROVAL_LABEL]) {
+              try {
+                await github.rest.issues.removeLabel({
+                  ...context.repo,
+                  issue_number: context.payload.pull_request.number,
+                  name,
+                });
+              } catch (error) {
+                // 404 means the label was not on the pull request.
+                if (error.status !== 404) {
+                  throw error;
+                }
+              }
+            }
+
+  check:
+    name: Check open PRs for test gates
+    if: github.repository == 'dsx-ai-factory/nke' && github.event_name != 'pull_request_target'
+    runs-on: ubuntu-latest
+    permissions:
+      # git/ref read for the mirror branch. conflict-check.yml carries this for
+      # the same reason; ci-failure-check.yml's `permissions: {}` works only
+      # because it never reads a ref.
+      contents: read
+      pull-requests: write
+      # The workflow-runs query behind needs-workflow-approval.
+      actions: read
+    timeout-minutes: 10
+    steps:
+      - name: Label pull requests nothing is testing
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          OK_TO_TEST_LABEL: ${{ env.OK_TO_TEST_LABEL }}
+          APPROVAL_LABEL: ${{ env.APPROVAL_LABEL }}
+        with:
+          script: |
+            // Both labels exist already; recreate as #e11d21 if either is ever
+            // deleted, since addLabels would otherwise invent a colour.
+            const OK_TO_TEST = process.env.OK_TO_TEST_LABEL;
+            const APPROVAL = process.env.APPROVAL_LABEL;
+
+            // A push to pull-request/<N> says a mirror landed. It does not say
+            // it landed for the head the pull request has now: two pushes in
+            // quick succession put the first SHA's event after the head moved.
+            // So resolve the number and re-read the current head rather than
+            // trusting the event. conflict-check.yml does the same.
+            //
+            // Keyed on the event, not just the ref shape: a workflow_dispatch
+            // aimed at a pull-request/<N> ref matches the same pattern, and
+            // would silently check one pull request when a sweep was asked for.
+            const mirrored = context.eventName === 'push'
+              ? context.ref.match(/^refs\/heads\/pull-request\/([0-9]+)$/)
+              : null;
+            const open = mirrored
+              ? [await github.rest.pulls.get({ ...context.repo, pull_number: Number(mirrored[1]) })
+                  .then((r) => r.data, (e) => { if (e.status === 404) return null; throw e; })]
+                  .filter((pr) => pr !== null && pr.state === 'open')
+              : await github.paginate(github.rest.pulls.list, {
+                  ...context.repo,
+                  state: 'open',
+                  per_page: 100,
+                });
+
+            // Has copy-pr-bot copied this exact head to the mirror branch?
+            async function mirrorMatchesHead(pr) {
+              try {
+                const { data } = await github.rest.git.getRef({
+                  ...context.repo,
+                  ref: `heads/pull-request/${pr.number}`,
+                });
+                return data.object.sha === pr.head.sha;
+              } catch (error) {
+                // No mirror branch at all: never vetted, or deleted on close.
+                if (error.status === 404) {
+                  return false;
+                }
+                throw error;
+              }
+            }
+
+            // Scoped by head_sha on the server. The endpoint also returns runs
+            // for superseded heads, so a repo-wide query would label pull
+            // requests that were approved days ago -- and would need paging.
+            async function blockedWorkflows(pr) {
+              const { data } = await github.rest.actions.listWorkflowRunsForRepo({
+                ...context.repo,
+                status: 'action_required',
+                head_sha: pr.head.sha,
+                per_page: 100,
+              });
+              return [...new Set(data.workflow_runs.map((r) => r.name))];
+            }
+
+            async function reconcile(pr, name, wanted) {
+              const has = pr.labels.some((l) => l.name === name);
+              if (wanted && !has) {
+                await github.rest.issues.addLabels({
+                  ...context.repo,
+                  issue_number: pr.number,
+                  labels: [name],
+                });
+                return 'added';
+              }
+              if (!wanted && has) {
+                try {
+                  await github.rest.issues.removeLabel({
+                    ...context.repo,
+                    issue_number: pr.number,
+                    name,
+                  });
+                } catch (error) {
+                  // 404 means someone removed it by hand first.
+                  if (error.status !== 404) {
+                    throw error;
+                  }
+                }
+                return 'cleared';
+              }
+              return 'unchanged';
+            }
+
+            // Both pulls.list and pulls.get carry head.sha and labels, so no
+            // per-pull-request refetch is needed on either path.
+            const tally = { added: 0, cleared: 0, unchanged: 0 };
+            for (const pr of open) {
+              const needsOkToTest = !(await mirrorMatchesHead(pr));
+              const blocked = await blockedWorkflows(pr);
+
+              for (const [name, wanted] of [[OK_TO_TEST, needsOkToTest], [APPROVAL, blocked.length > 0]]) {
+                tally[await reconcile(pr, name, wanted)] += 1;
+              }
+
+              if (needsOkToTest || blocked.length > 0) {
+                core.info(
+                  `#${pr.number} @ ${pr.head.sha.slice(0, 12)}: ` +
+                  `${needsOkToTest ? 'no mirror for this head' : 'mirrored'}` +
+                  `${blocked.length ? `, awaiting approval: ${blocked.join(', ')}` : ''}`,
+                );
+              }
+            }
+
+            core.info(`${open.length} checked: ${tally.added} added, ${tally.cleared} cleared, ${tally.unchanged} unchanged`);

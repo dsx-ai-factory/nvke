@@ -11,7 +11,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/NVIDIA/nke/controller
+        - github.com/dsx-ai-factory/nke/controller
     gofumpt:
       extra-rules: true
 
@@ -190,7 +190,7 @@ linters:
     goimports:
       # Might need customization per project
       local-prefixes:
-        - github.com/NVIDIA/nke/controller
+        - github.com/dsx-ai-factory/nke/controller
     govet:
       enable-all: true
       disable:

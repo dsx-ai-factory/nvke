@@ -37,7 +37,9 @@ on:
       - "cli/internal/clients/**"
       - "cli/internal/clusterstate/**"
       - "cli/internal/cwe/**"
+      - "cli/internal/providers/**"
       - "cli/internal/sitecluster/**"
+      - "cli/internal/util/**"
   # Also twice a day, so a break the paths above filtered out, or one a flake
   # hid, still surfaces within twelve hours. A schedule ignores those paths, so
   # these runs always exercise the whole suite.

@@ -10,9 +10,6 @@ name: Package reproducibility
 # Not a merge gate: it downloads every upstream artifact and builds twice, so
 # it costs minutes rather than seconds. It runs when the packaging changes,
 # weekly otherwise, because the inputs it pins can move underneath us.
-#
-# cni-ovn is not covered: its charts and images need an NGC key CI does not
-# have.
 on:
   push:
     branches:
@@ -43,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [kubeadm-distro, cni-calico]
+        package: [kubeadm-distro, cni-calico, cni-ovn]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

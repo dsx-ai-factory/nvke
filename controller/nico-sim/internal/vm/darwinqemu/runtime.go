@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/vm"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/vm"
 )
 
 // New returns a vm.Runtime backed by QEMU on macOS with vmnet-client networking.

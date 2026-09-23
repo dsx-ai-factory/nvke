@@ -20,7 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
 
-	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
+	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 )
 
 const (

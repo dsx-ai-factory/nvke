@@ -12,7 +12,7 @@ the attribution those licenses require.
 ## Scope
 
 Generated from the import closure of `./cmd/...` in module
-`github.com/NVIDIA/nke/agent`, for linux/amd64 linux/arm64.
+`github.com/dsx-ai-factory/nke/agent`, for linux/amd64 linux/arm64.
 
 The Go standard library is excluded, as are packages belonging to this module.
 Test-only and build-time dependencies that are not reachable from the released

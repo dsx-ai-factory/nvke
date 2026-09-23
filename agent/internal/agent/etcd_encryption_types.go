@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
+	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 )
 
 // ---------------------------------------------------------------------------

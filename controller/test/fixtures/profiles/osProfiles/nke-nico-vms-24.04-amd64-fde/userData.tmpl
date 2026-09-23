@@ -11,7 +11,7 @@ write_files:
     owner: root:root
     permissions: '0644'
     content: |
-      AGENT_ARGS="--secure-server-port {{ .NodeAgentPort }} --bundle-server-url https://d3mq564cn7sth7.cloudfront.net/"
+      AGENT_ARGS="--secure-server-port {{ .NodeAgentPort }}"
       KUBE_RESERVED_CPU="500m"
       KUBE_RESERVED_MEM="250Mi"
 {{- if .TeleportEnabled }}

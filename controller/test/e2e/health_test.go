@@ -13,9 +13,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/config"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/cwe"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
 )
 
 type healthConfig struct {

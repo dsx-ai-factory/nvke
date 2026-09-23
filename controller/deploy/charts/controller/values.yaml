@@ -7,6 +7,7 @@
 # https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
 replicaCount: 1
 
+# -- Annotations on the Deployment `metadata` (evaluated with `tpl`)
 deploymentAnnotations: {}
 
 # This sets the container image.
@@ -23,13 +24,20 @@ deploymentAnnotations: {}
 # the package public in its own settings. So this removes the NGC dependency; it
 # does not by itself make the chart installable by the public.
 image:
-  repository: ghcr.io/dsx-ai-factory/nke/controller
+  # -- Repository, including registry, for the nke-controller image (the CWE
+  # service) that this chart deploys. Override to pull it from a different
+  # registry (e.g. a private mirror); pair any change with a matching
+  # `imagePullSecrets` entry. Not to be confused with
+  # `profiles.image.repository` below, a separate optional content image.
+  repository: ghcr.io/dsx-ai-factory/nke/nke-controller
   # -- This sets the pull policy for images.
   pullPolicy: IfNotPresent
-  # -- Overrides the image tag whose default is the chart appVersion.
+  # -- Overrides the tag for the nke-controller image; default is the chart
+  # appVersion.
   tag: ""
-  # -- Optional image digest (sha256:...). When set, the pod pulls by digest
-  # and the tag becomes informational only. Use this to pin an immutable image.
+  # -- Optional digest (sha256:...) for the nke-controller image. When set,
+  # the pod pulls by digest and the tag becomes informational only. Use this
+  # to pin an immutable image.
   digest: ""
 
 # This is for the secrets for pulling an image from a private repository.
@@ -52,15 +60,18 @@ image:
 #     --docker-server=ghcr.io --docker-username=<user> --docker-password=<token>
 #
 #   --set imagePullSecrets[0].name=ghcr-imagepull
+# -- Must match image.repository, which defaults to ghcr.io. The
+# NVCR-published chart gets the NGC secret put back at package time. Supply
+# your own for a private GHCR package.
 imagePullSecrets: []
 # This is to override the chart name.
 #
 # Pinned to cloud-workflow-engine rather than left empty: the chart is named
-# `controller` so it publishes to <registry>/nke/charts/controller, but the
-# name helper feeds app.kubernetes.io/name, every resource name derived from
-# the fullname template, and the serviceMonitor.matchLabels selector below.
-# Letting it follow .Chart.Name would rename every object this chart owns and
-# break that selector on upgrade of an existing release.
+# `nke-controller` so it publishes to <registry>/nke/charts/nke-controller, but
+# the name helper feeds app.kubernetes.io/name, every resource name derived
+# from the fullname template, and the serviceMonitor.matchLabels selector
+# below. Letting it follow .Chart.Name would rename every object this chart
+# owns and break that selector on upgrade of an existing release.
 nameOverride: "cloud-workflow-engine"
 fullnameOverride: ""
 # -- Deploy into this namespace instead of the release namespace (umbrella use).
@@ -70,6 +81,27 @@ controllers:
   nico:
     # -- Run controllers that watch NICo infrastructure resources.
     enabled: true
+
+nodeAgent:
+  # -- SPIRE node attestation method used by every cluster managed by this
+  # controller deployment. Set this value once when the environment is first
+  # deployed. Changing it in an existing environment is unsupported and
+  # requires a separately coordinated migration.
+  spireAttestationMethod: "tpm"
+  tlsJwt:
+    # -- Add JWT node authentication to the existing secure node-agent transport
+    # for every node agent managed by this controller. Requires spiffe.enabled
+    # until another TLS-capable base transport is available.
+    enabled: false
+    # -- Identity issuer expected in node-agent JWTs.
+    issuer: ""
+    # -- HTTPS endpoint serving the issuer's JSON Web Key Set.
+    jwksURI: ""
+    # -- Asymmetric JWT signing algorithms accepted from the issuer.
+    algorithms:
+      - RS256
+    # -- Exact SPIFFE trust domain accepted in node-agent JWT subjects.
+    subjectTrustDomain: ""
 
 nkeSystemNamespace:
   # -- Create the shared nke-system namespace. The object always carries
@@ -342,7 +374,7 @@ apiAuth:
     # listed here, rather than leaving NKE to crash-loop on a missing file.
     #
     # extraFiles:
-    #   spire-ca.crt: |
+    #   spire-ca.crt: \|
     #     -----BEGIN CERTIFICATE-----
     #     ...
     #     -----END CERTIFICATE-----
@@ -421,9 +453,11 @@ temporal:
   port: 7233
   publicTemporalHostPort: ""
   mtls:
+    # -- Enable mTLS when connecting to Temporal.
     enabled: false
     # -- Secret containing ca.crt, tls.crt, and tls.key for the Temporal client.
     secretName: ""
+    # -- Mount path for the Temporal client certificate secret.
     mountPath: /var/secrets/temporal/certs/client
     caCertFile: ca.crt
     clientCertFile: tls.crt
@@ -438,6 +472,7 @@ profiles:
   # scripts from its runbooks/ child (RUNBOOKS_DIR).
   # When image.enabled is true, an initContainer copies /profiles from the
   # profiles content image into an emptyDir mounted at this path.
+  # -- Directory mounted/read as PROFILES_DIR
   path: ""
   image:
     # Materialize fleet profiles from an external OCI content image. Prefer
@@ -455,9 +490,16 @@ profiles:
     # ImagePullBackOff:
     #
     #   --set imagePullSecrets[0].name=svc-nke-ngc-imagepull
+    # -- Copy `/profiles` from a content image into profiles.path
     enabled: false
+    # -- Repository, including registry, for the fleet profiles content image
+    # (not the nke-controller image above). Override to pull it from a
+    # different registry (e.g. a private mirror); pair any change with a
+    # matching `imagePullSecrets` entry.
     repository: nvcr.io/j7sbcjl3qgta/cwe-profiles
+    # -- Tag for the profiles content image (used when digest is empty)
     tag: ""
+    # -- Digest pin for the profiles content image (preferred; e.g. `sha256:…`)
     digest: ""
 
 spiffe:

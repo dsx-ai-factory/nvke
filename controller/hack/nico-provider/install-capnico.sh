@@ -41,6 +41,7 @@ install_released_chart() {
     "${CAPNICO_HELM_REPO}/${CAPNICO_RELEASE}" \
     --version "${CAPNICO_CHART_VERSION}" \
     --namespace "${CAPNICO_NAMESPACE}" \
+    --server-side=false \
     --reset-values \
     --set 'imagePullSecrets[0].name=nvcr-creds' \
     --wait --timeout 5m
@@ -73,6 +74,7 @@ install_source_chart() {
 
   helm upgrade --install "${CAPNICO_RELEASE}" "${CAPNICO_STAGED_CHART_DIR}" \
     --namespace "${CAPNICO_NAMESPACE}" \
+    --server-side=false \
     --reset-values \
     --set-string "manager.image.repository=${CAPNICO_IMAGE%:*}" \
     --set-string "manager.image.tag=${CAPNICO_IMAGE##*:}" \

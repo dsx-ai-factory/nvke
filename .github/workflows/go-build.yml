@@ -8,7 +8,7 @@
 # compile could merge and only fail later in a release or an image build.
 #
 # Runs on ubuntu-latest with `pull_request`, deliberately. Every module in
-# go.work — all nine, including controller, nico-sim, os-image, and nkectl — resolves
+# go.work — all ten, including controller, nico-sim, os-image, and nkectl — resolves
 # its dependencies from the committed vendor/ tree, so this needs no NVIDIA
 # runner and no credentials -- which means it also runs on fork pull requests
 # and on Dependabot's, where the repository currently has almost no coverage.
@@ -93,11 +93,31 @@ jobs:
       #
       # The checkout above is shallow and has no tags, so `git describe --tags`
       # finds nothing and the version falls back to the commit. That passes.
+      # go.work owns the Go version; the Dockerfiles and the Flox manifest
+      # cannot derive it, so this is what notices when a hand-kept copy drifts.
+      # Reads files only, so it is safe for a fork pull request.
+      - name: Check the Go version copies agree with go.work
+        run: make go-version-check
+
       - name: Build
         run: make version-check
 
+      # -race like controller-test.yml:133-135. The provisioned provider is a
+      # controller-runtime reconciler, so it is concurrent by construction.
       - name: Test OS-image checker
+        env:
+          CGO_ENABLED: "1"
+          GO_TEST_FLAGS: -race
         run: make -C os-image test
 
       - name: Test provisioned infrastructure provider
+        env:
+          CGO_ENABLED: "1"
+          GO_TEST_FLAGS: -race
         run: make -C cluster-api-provider-provisioned test
+
+      # The management engine's only unit-test lane: it has no *-test.yml of its
+      # own, and lint.yml covers only linting. No -race, unlike the two above --
+      # the CRD schema and CEL validators these tests drive are single-threaded.
+      - name: Test management engine API
+        run: make -C management-engine test

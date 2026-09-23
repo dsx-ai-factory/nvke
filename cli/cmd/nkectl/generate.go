@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/NVIDIA/nke/cli/internal/sitespec"
+	"github.com/dsx-ai-factory/nke/cli/internal/sitespec"
 )
 
 // newGenerateCmd is the "generate" command group. Site spec is the only

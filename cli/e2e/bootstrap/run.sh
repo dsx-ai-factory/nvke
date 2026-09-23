@@ -18,6 +18,8 @@
 #      leaves every agent locked out.
 #   4. Every site spec node reports Ready through the kubeconfig the command
 #      wrote -- the cluster an operator gets, not the bootstrap cluster.
+#      Check the API endpoint, BGP next-hops and readiness through the VIP.
+#      Set NKECTL_E2E_CONTROL_PLANE_VIP="" to disable VIP coverage.
 #   5. Traefik serves a whoami Deployment on that cluster: hosts that already
 #      existed now serve traffic like any other cluster.
 #
@@ -29,9 +31,11 @@
 # check-no-docker` keeps true. It needs on the host: nerdctl and a containerd
 # for kind to drive (nkectl sets KIND_EXPERIMENTAL_PROVIDER=nerdctl
 # unconditionally; kind states 1.7.0 as its minimum), buildkitd for `nerdctl
-# build` to reach, and root or sudo to install two iptables FORWARD rules and
+# build` to reach, and root or sudo to install iptables FORWARD rules and
 # the SPIRE VIP. `cli/hack/bootstrap-e2e-host.sh install-runtime` sets up the
 # first two the way CI does.
+#
+# jq is required for BGP route checks when the control-plane VIP is enabled.
 #
 # NKECTL_CWE_IMAGE must already be in containerd's image store: nkectl saves it
 # from there and loads it into the kind cluster rather than pulling from inside
@@ -70,17 +74,32 @@ SPIRE_VIP="${NKECTL_E2E_SPIRE_SERVER_ADDRESS:-172.26.0.2}"
 # attestation fails.
 SPIRE_TRUST_DOMAIN="${NKECTL_E2E_SPIRE_TRUST_DOMAIN:-nkectl-e2e.example.test}"
 export NKECTL_E2E_SPIRE_TRUST_DOMAIN="${SPIRE_TRUST_DOMAIN}"
-# The init node, which is also where the finished cluster's API server ends up:
-# no controlPlaneVIP is set, so kubeadm uses the first control-plane node's IP.
-# It matches the first row of the generated node CSV, and it is the address
-# stages 4 and 5 use.
+# First CSV node, used for Traefik access. CWE may initialize another node.
 INIT_NODE_IP="${NKECTL_E2E_INIT_NODE_IP:-172.26.0.10}"
 # Where Traefik is published on the new cluster, and where stage 5 asks for the
 # page. In the NodePort range, and clear of the SPIRE server's 30081.
 TRAEFIK_NODE_PORT="${NKECTL_E2E_TRAEFIK_NODE_PORT:-30082}"
-# Where `bootstrap site` writes the finished cluster's kubeconfig.
+# Where `bootstrap site` writes the finished cluster's kubeconfig, and the key
+# that encrypts its etcd data.
 TENANT_KUBECONFIG="${SCRIPT_DIR}/.tenant.kubeconfig"
+ETCD_KEY_FILE="${SCRIPT_DIR}/.etcd-encryption-key.json"
 BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap.log"
+
+# Keep the VIP outside the node subnet so nodes route through the host's
+# BGP-learned /32 instead of ARPing for another node's loopback address.
+# An explicit empty value disables the VIP; an unset variable uses the default.
+CONTROL_PLANE_VIP="${NKECTL_E2E_CONTROL_PLANE_VIP-172.26.1.1}"
+if [ -n "${CONTROL_PLANE_VIP}" ] && ! command -v jq >/dev/null 2>&1; then
+  printf 'FAIL: jq is required for the control-plane VIP checks\n' >&2
+  exit 1
+fi
+# FRR learns the VIP /32 from kube-vip and installs it in the host routing table.
+BGP_CONTAINER="nkectl-e2e-bgp"
+FRR_IMAGE="${NKECTL_E2E_FRR_IMAGE:-quay.io/frrouting/frr:9.1.0}"
+REPO_ROOT="$(dirname "${CLI_DIR}")"
+BGP_FILES_DIR="${REPO_ROOT}/controller/hack/bgp-containers"
+# Scratch dir for the rendered FRR config, bind-mounted into the container.
+BGP_RENDER_DIR="${SCRIPT_DIR}/.bgp"
 : "${NKECTL_CWE_IMAGE:?NKECTL_CWE_IMAGE must name the CWE image to deploy, already present in containerd (see comment above)}"
 export NKECTL_CWE_IMAGE
 
@@ -149,8 +168,8 @@ cleanup() {
     chown -R "${SUDO_UID}:${SUDO_GID:-${SUDO_UID}}" "${DIAGNOSTICS_DIR}" || true
   fi
 
-  rm -f "${TENANT_KUBECONFIG}" "${BOOTSTRAP_LOG}"
-  rm -rf "${KUBECONFIG_DIR}" "${CNI_BUNDLE_DIR}"
+  rm -f "${TENANT_KUBECONFIG}" "${ETCD_KEY_FILE}" "${BOOTSTRAP_LOG}"
+  rm -rf "${KUBECONFIG_DIR}" "${CNI_BUNDLE_DIR}" "${BGP_RENDER_DIR}"
 }
 nodes_started=false
 trap cleanup EXIT
@@ -197,6 +216,43 @@ remove_spire_vip() {
   ip address del "${SPIRE_VIP}/32" dev "$1" 2>/dev/null || true
 }
 
+remove_vip_forward_rule() {
+  iptables -D FORWARD -i "$1" -o "$1" -j ACCEPT 2>/dev/null || true
+}
+teardown_bgp_speaker() {
+  # Let zebra withdraw its routes before removing the container.
+  log "stopping the FRR BGP speaker ${BGP_CONTAINER}"
+  nerdctl stop --time 10 "${BGP_CONTAINER}" >/dev/null 2>&1 || true
+  nerdctl rm -f "${BGP_CONTAINER}" >/dev/null 2>&1 || true
+  # Remove routes left behind if FRR could not withdraw them.
+  ip route del "${CONTROL_PLANE_VIP}/32" 2>/dev/null || true
+}
+
+# check_api_server accepts a VIP, server URL, and whitespace-separated node IPs.
+# Without a VIP, any control-plane node may be the API endpoint.
+check_api_server() {
+  local vip="$1" server="$2" cp_node_ips="$3" ip
+  if [ -n "${vip}" ]; then
+    [ "${server}" = "https://${vip}:6443" ]
+    return $?
+  fi
+
+  for ip in ${cp_node_ips}; do
+    if [ "${server}" = "https://${ip}:6443" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# bgp_vip_nexthops prints sorted, unique next-hop IPs for the VIP /32.
+bgp_vip_nexthops() {
+  local out
+  out="$(nerdctl exec "${BGP_CONTAINER}" vtysh -c \
+    "show bgp ipv4 unicast ${CONTROL_PLANE_VIP}/32 json" 2>/dev/null)" || return 0
+  printf '%s' "${out}" | jq -r '.paths[]?.nexthops[]?.ip // empty' 2>/dev/null | sort -u || true
+}
+
 # Which registry each side's pulls resolve to. A pull that falls through to
 # upstream is the difference between a 30 second install and a helm timeout,
 # so a slow run that still passes wants this too.
@@ -222,6 +278,14 @@ collect_diagnostics() {
     echo "### iptables -t nat -S CNI-HOSTPORT-DNAT"; iptables -t nat -S CNI-HOSTPORT-DNAT
     echo "### nerdctl network inspect"; nerdctl network inspect kind "${NODE_NETWORK}"
     registry_routing
+    if [ -n "${CONTROL_PLANE_VIP}" ]; then
+      echo "### ip route show ${CONTROL_PLANE_VIP}/32"; ip route show "${CONTROL_PLANE_VIP}/32" || true
+      echo "### nerdctl logs ${BGP_CONTAINER} (tail 100)"; nerdctl logs "${BGP_CONTAINER}" --tail 100 || true
+      echo "### vtysh show bgp summary"; nerdctl exec "${BGP_CONTAINER}" vtysh -c 'show bgp summary' || true
+      echo "### node1 lo addresses"; nerdctl exec "${NODE1}" ip -4 addr show lo || true
+      echo "### node1 kube-vip manifest"; nerdctl exec "${NODE1}" cat /etc/kubernetes/manifests/kube-vip.yaml || true
+      echo "### node1 vip containers"; nerdctl exec "${NODE1}" sh -c 'crictl ps -a | grep -i vip' || true
+    fi
   } > "${DIAGNOSTICS_DIR}/host-network.txt" 2>&1 || true
 
   log "collecting kubelet, containerd, nke-agent and spire-agent diagnostics from ${NODE_COUNT} fake node(s)"
@@ -341,6 +405,12 @@ if [[ -n "${NKECTL_E2E_SPIRE_CA_CERT:-}" && -n "${NKECTL_E2E_SPIRE_CA_KEY:-}" ]]
              --set "spire.caKeyFile=${NKECTL_E2E_SPIRE_CA_KEY}")
 fi
 
+# Omit the VIP field when disabled.
+vip_set=()
+if [ -n "${CONTROL_PLANE_VIP}" ]; then
+  vip_set=(--set "cluster.controlPlaneVIP=${CONTROL_PLANE_VIP}")
+fi
+
 log "generating the site spec: nkectl generate sitespec ${E2E_CLUSTER_NAME} --nodes ${NKECTL_E2E_HOSTS_CSV}"
 RENDERED_SITESPEC="${SCRIPT_DIR}/.sitespec.rendered.yaml"
 "${NKECTL}" generate sitespec "${E2E_CLUSTER_NAME}" \
@@ -353,6 +423,7 @@ RENDERED_SITESPEC="${SCRIPT_DIR}/.sitespec.rendered.yaml"
   --set cluster.kubeletConfig.systemReservedMemory=512Mi \
   --set "spire.trustDomain=${SPIRE_TRUST_DOMAIN}" \
   "${spire_set[@]}" \
+  "${vip_set[@]}" \
   > "${RENDERED_SITESPEC}"
 
 # One thumbprint per node, init node included; stage 4 expects that many nodes.
@@ -367,11 +438,80 @@ fi
 grep -qE "^[[:space:]]*trustDomain:[[:space:]]*['\"]?${SPIRE_TRUST_DOMAIN}['\"]?[[:space:]]*$" \
   "${RENDERED_SITESPEC}" ||
   fail "SPIRE trust domain ${SPIRE_TRUST_DOMAIN} did not reach ${RENDERED_SITESPEC}"
+if [ -n "${CONTROL_PLANE_VIP}" ]; then
+  # Quoted or unquoted, either is valid YAML for a string scalar.
+  grep -qE "^[[:space:]]*controlPlaneVIP:[[:space:]]*\"?${CONTROL_PLANE_VIP}\"?[[:space:]]*$" "${RENDERED_SITESPEC}" ||
+    { log "FAIL: controlPlaneVIP ${CONTROL_PLANE_VIP} did not reach ${RENDERED_SITESPEC}"; exit 1; }
+  log "control-plane VIP set to ${CONTROL_PLANE_VIP} in the site spec"
+fi
 log "allowlisting ${expected_nodes} EK thumbprint(s)"
+
+# Start before bootstrap so joining nodes can reach the VIP through BGP.
+start_bgp_speaker() {
+  local router_id listen_range
+
+  # kube-vip peers with the default gateway. Read it and the node subnet from
+  # the live network, skipping IPv6 entries that may have no gateway.
+  router_id="$(nerdctl network inspect "${NODE_NETWORK}" \
+    --format '{{range .IPAM.Config}}{{.Gateway}} {{end}}' \
+    | awk '{for (i=1;i<=NF;i++) if ($i ~ /^[0-9]+(\.[0-9]+){3}$/) {print $i; exit}}')"
+  listen_range="$(nerdctl network inspect "${NODE_NETWORK}" \
+    --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' \
+    | awk '{for (i=1;i<=NF;i++) if ($i ~ /^[0-9]+(\.[0-9]+){3}\/[0-9]+$/) {print $i; exit}}')"
+  [ -n "${router_id}" ] || { log "FAIL: could not read the ${NODE_NETWORK} gateway for the FRR router-id"; return 1; }
+  [ -n "${listen_range}" ] || { log "FAIL: could not read the ${NODE_NETWORK} subnet for the FRR listen range"; return 1; }
+  log "FRR router-id=${router_id} listen-range=${listen_range} (node network ${NODE_NETWORK})"
+
+  # Reuse the controller's FRR fixture with this network's addresses.
+  rm -rf "${BGP_RENDER_DIR}"
+  mkdir -p "${BGP_RENDER_DIR}"
+  # Called as `start_bgp_speaker || exit 1`, so errexit is off for this body
+  # and each step reports its own failure. FRR starts on an empty frr.conf.
+  sed -e "s|@ROUTER_ID@|${router_id}|g" \
+      -e "s|@LISTEN_RANGE@|${listen_range}|g" \
+      "${BGP_FILES_DIR}/frr.conf.tmpl" > "${BGP_RENDER_DIR}/frr.conf" ||
+    { log "FAIL: could not render frr.conf from ${BGP_FILES_DIR}/frr.conf.tmpl"; return 1; }
+  [ -s "${BGP_RENDER_DIR}/frr.conf" ] ||
+    { log "FAIL: rendered frr.conf is empty"; return 1; }
+  cp "${BGP_FILES_DIR}/vtysh.conf" "${BGP_RENDER_DIR}/vtysh.conf" ||
+    { log "FAIL: could not copy vtysh.conf from ${BGP_FILES_DIR}"; return 1; }
+  cp "${BGP_FILES_DIR}/daemons" "${BGP_RENDER_DIR}/daemons" ||
+    { log "FAIL: could not copy daemons from ${BGP_FILES_DIR}"; return 1; }
+
+  # A leftover container from an aborted run would make `run` fail on the name.
+  nerdctl rm -f "${BGP_CONTAINER}" >/dev/null 2>&1 || true
+
+  # Host networking lets zebra install routes used by both nerdctl bridges.
+  # Capabilities match controller/hack/bgp-containers/up.sh.
+  defer teardown_bgp_speaker
+  nerdctl run -d --name "${BGP_CONTAINER}" \
+    --net host \
+    --cap-add NET_ADMIN --cap-add SYS_ADMIN --cap-add NET_BIND_SERVICE \
+    -v "${BGP_RENDER_DIR}/frr.conf:/etc/frr/frr.conf" \
+    -v "${BGP_RENDER_DIR}/vtysh.conf:/etc/frr/vtysh.conf" \
+    -v "${BGP_RENDER_DIR}/daemons:/etc/frr/daemons" \
+    "${FRR_IMAGE}" >/dev/null || { log "FAIL: could not start the FRR BGP speaker"; return 1; }
+
+  if ! wait_until 30 1 nerdctl exec "${BGP_CONTAINER}" vtysh -c 'show version' >/dev/null 2>&1; then
+    log "FAIL: FRR (${BGP_CONTAINER}) did not become ready within 30s"
+    nerdctl logs "${BGP_CONTAINER}" 2>&1 | sed 's/^/  /' || true
+    return 1
+  fi
+  log "PASS: FRR BGP speaker ${BGP_CONTAINER} is up (image ${FRR_IMAGE}, pulled from quay.io)"
+}
+
+if [ -n "${CONTROL_PLANE_VIP}" ]; then
+  log "starting the FRR BGP speaker for control-plane VIP ${CONTROL_PLANE_VIP}"
+  start_bgp_speaker || exit 1
+fi
 
 # No chart is named here. What gets installed is pinned in
 # cli/internal/cwedeploy, which is the thing under test: the SPIFFE project's
 # public hardened charts, needing no registry credential of their own.
+# The command never overwrites a key file and refuses to start over one, so a
+# leftover from an interrupted run has to go first.
+rm -f "${ETCD_KEY_FILE}"
+
 log "running: nkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 15m" \
   "(NKECTL_CWE_IMAGE=${NKECTL_CWE_IMAGE}," \
   "NKECTL_CAPI_PROVISIONED_IMAGE=${NKECTL_CAPI_PROVISIONED_IMAGE})"
@@ -387,7 +527,8 @@ defer teardown_bootstrap_cluster
 # kind, nerdctl and helm it drives as one group; nkectl does not forward
 # signals to its children.
 setsid "${NKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" --keep-bootstrap-cluster \
-  --timeout 15m --kubeconfig-out "${TENANT_KUBECONFIG}" >"${BOOTSTRAP_LOG}" 2>&1 &
+  --timeout 15m --kubeconfig-out "${TENANT_KUBECONFIG}" \
+  --encryption-key-out "${ETCD_KEY_FILE}" >"${BOOTSTRAP_LOG}" 2>&1 &
 bootstrap_pid=$!
 
 # abort_bootstrap stops the background `bootstrap site` and its children before
@@ -474,6 +615,11 @@ attach_bootstrap_to_node_network() {
   defer "remove_forward_rules ${kind_bridge} ${node_bridge}"
   iptables -I FORWARD 1 -i "${kind_bridge}" -o "${node_bridge}" -j ACCEPT || return 1
   iptables -I FORWARD 1 -i "${node_bridge}" -o "${kind_bridge}" -j ACCEPT || return 1
+  # VIP traffic enters and leaves the same node bridge.
+  if [ -n "${CONTROL_PLANE_VIP}" ]; then
+    defer "remove_vip_forward_rule ${node_bridge}"
+    iptables -I FORWARD 1 -i "${node_bridge}" -o "${node_bridge}" -j ACCEPT || return 1
+  fi
   defer "remove_spire_vip ${node_bridge}"
   ip address replace "${SPIRE_VIP}/32" dev "${node_bridge}" || return 1
 }
@@ -560,6 +706,127 @@ if ! wait_until "${NKECTL_E2E_NODE_READY_TIMEOUT_SECONDS:-1200}" 5 all_nodes_rea
   fail "${ready_nodes} of ${expected_nodes} site spec nodes became Ready (${total_nodes} exist)"
 fi
 log "PASS: all ${ready_nodes} pre-provisioned hosts are Ready nodes"
+
+# ── Stage 4a: control-plane VIP ───────────────────────────
+#
+# Node IPs are the expected BGP next-hops and valid endpoints without a VIP.
+# An unreachable API and a node without an InternalIP are different failures,
+# so the lookup and the filter are checked apart. kubectl keeps its stderr to
+# name the first; grep exits non-zero on no match, which is the second.
+if ! node_addresses="$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes \
+  -o 'jsonpath={range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}')"; then
+  log "FAIL: could not list nodes for the API-server and BGP checks"
+  exit 1
+fi
+cp_node_ips="$(printf '%s\n' "${node_addresses}" | grep -E '^[0-9]' | sort -u || true)"
+if [ -z "${cp_node_ips}" ]; then
+  log "FAIL: no node reports an InternalIP for the API-server and BGP checks"
+  exit 1
+fi
+
+kubeconfig_server="$(grep -E '^[[:space:]]*server:' "${TENANT_KUBECONFIG}" | head -n1 | awk '{print $2}')"
+if ! check_api_server "${CONTROL_PLANE_VIP}" "${kubeconfig_server}" "${cp_node_ips}"; then
+  log "FAIL: unexpected kubeconfig API server ${kubeconfig_server}"
+  log "  VIP: ${CONTROL_PLANE_VIP:-disabled}; control-plane IPs: $(echo "${cp_node_ips}" | tr '\n' ' ')"
+  exit 1
+fi
+log "PASS: the written kubeconfig's API server is ${kubeconfig_server}"
+
+if [ -z "${CONTROL_PLANE_VIP}" ]; then
+  log "control-plane VIP disabled; skipping the BGP and VIP-reachability checks"
+else
+  # Wait for FRR to learn a next-hop for every control-plane node.
+  expected_hops="${cp_node_ips}"
+  log "waiting for FRR to learn ${CONTROL_PLANE_VIP}/32 with next-hops: $(echo "${expected_hops}" | tr '\n' ' ')"
+  hops_deadline=$((SECONDS + ${NKECTL_E2E_VIP_BGP_TIMEOUT_SECONDS:-180}))
+  learned_hops=""
+  while [ "${SECONDS}" -lt "${hops_deadline}" ]; do
+    learned_hops="$(bgp_vip_nexthops)"
+    if [ "${learned_hops}" = "${expected_hops}" ]; then
+      break
+    fi
+    sleep 3
+  done
+  if [ "${learned_hops}" != "${expected_hops}" ]; then
+    log "FAIL: FRR next-hops for ${CONTROL_PLANE_VIP}/32 did not converge to the node set"
+    log "  expected: $(echo "${expected_hops}" | tr '\n' ' ')"
+    log "  learned:  $(echo "${learned_hops}" | tr '\n' ' ')"
+    nerdctl exec "${BGP_CONTAINER}" vtysh -c "show bgp ipv4 unicast ${CONTROL_PLANE_VIP}/32" 2>&1 | sed 's/^/  /' || true
+    nerdctl exec "${BGP_CONTAINER}" vtysh -c 'show bgp summary' 2>&1 | sed 's/^/  /' || true
+    exit 1
+  fi
+  log "host kernel route for the VIP:"
+  ip route show "${CONTROL_PLANE_VIP}/32" | sed 's/^/  /' || true
+  log "PASS: FRR learned ${CONTROL_PLANE_VIP}/32 with one next-hop per control-plane node"
+
+  # Check API readiness through the VIP.
+  if kubectl --kubeconfig "${TENANT_KUBECONFIG}" --server "https://${CONTROL_PLANE_VIP}:6443" \
+      get --raw /readyz >/dev/null 2>&1; then
+    log "PASS: the API server answered /readyz through the VIP https://${CONTROL_PLANE_VIP}:6443"
+  else
+    log "FAIL: the API server did not answer /readyz through the VIP https://${CONTROL_PLANE_VIP}:6443"
+    kubectl --kubeconfig "${TENANT_KUBECONFIG}" --server "https://${CONTROL_PLANE_VIP}:6443" get --raw /readyz || true
+    exit 1
+  fi
+fi
+
+# ── Stage 4b: etcd data is encrypted, and the saved key is the nodes' key ──
+#
+# Two checks. The first reads a Secret straight out of etcd and looks at the
+# bytes: secretbox envelope present, plaintext absent. It is the only way to
+# tell "encryption configured" from "data encrypted". The second compares the
+# key `bootstrap site` saved with the one each control-plane node runs on, by
+# digest: the file is what an operator keeps, and it has to be the right key.
+# Neither check prints key material or ciphertext.
+log "checking that etcd data is encrypted at rest"
+[ -f "${ETCD_KEY_FILE}" ] || fail "bootstrap site did not write ${ETCD_KEY_FILE}"
+key_mode=$(stat -c '%a' "${ETCD_KEY_FILE}")
+[ "${key_mode}" = "600" ] || fail "${ETCD_KEY_FILE} has mode ${key_mode}, want 600"
+
+probe_name="nkectl-e2e-encryption-probe"
+plaintext_marker="nkectl-e2e-plaintext-marker-$(date +%s)"
+kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n default create secret generic "${probe_name}" \
+  --from-literal=probe="${plaintext_marker}" >/dev/null
+etcd_pod=$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n kube-system get pods -l component=etcd \
+  -o jsonpath='{.items[0].metadata.name}')
+[ -n "${etcd_pod}" ] || fail "no etcd pod found in kube-system"
+# The raw value goes to a file, not a variable, so its bytes never reach the
+# log. Removed on exit like everything else this suite creates.
+raw_value=$(mktemp)
+defer rm -f "${raw_value}"
+kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n kube-system exec "${etcd_pod}" -c etcd -- \
+  etcdctl --endpoints=https://127.0.0.1:2379 \
+    --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+    --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt \
+    --key=/etc/kubernetes/pki/etcd/healthcheck-client.key \
+    get "/registry/secrets/default/${probe_name}" --print-value-only >"${raw_value}" 2>/dev/null ||
+  fail "could not read the probe Secret out of etcd"
+# Positive control first: an empty read would pass the plaintext check for the
+# wrong reason.
+[ -s "${raw_value}" ] || fail "the probe Secret's etcd value is empty"
+! grep -a -F -q "${plaintext_marker}" "${raw_value}" ||
+  fail "the probe Secret is stored in etcd as plaintext"
+grep -a -q 'k8s:enc:secretbox:v1:' "${raw_value}" ||
+  fail "the probe Secret's etcd value does not carry the secretbox envelope"
+rm -f "${raw_value}"
+kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n default delete secret "${probe_name}" >/dev/null
+log "PASS: Secrets are stored in etcd under the secretbox envelope"
+
+log "checking that the saved key is the key every control-plane node runs on"
+# The manifest is what `bootstrap site` wrote, so its shape is known: the key
+# is the base64 "active" field. Digests are compared, never values.
+saved_active=$(sed -n 's/.*"active": "\([^"]*\)".*/\1/p' "${ETCD_KEY_FILE}" | head -1)
+[ -n "${saved_active}" ] || fail "${ETCD_KEY_FILE} carries no active key"
+saved_digest=$(printf '%s' "${saved_active}" | base64 -d | sha256sum | cut -d' ' -f1)
+for ((i = 1; i <= NODE_COUNT; i++)); do
+  node="nkectl-e2e-${NODE_PREFIX}${i}"
+  node_digest=$(nerdctl exec "${node}" \
+    awk '/secret:/ {printf "%s", $2; exit}' /etc/kubernetes/kube-api-encryption/encryption-config.yaml \
+    | sha256sum | cut -d' ' -f1)
+  [ "${node_digest}" = "${saved_digest}" ] ||
+    fail "${node} runs a different etcd encryption key than ${ETCD_KEY_FILE} holds"
+done
+log "PASS: the saved etcd encryption key matches all ${NODE_COUNT} control-plane nodes"
 
 # hello_world_served is the stage 5 condition. whoami answers with the request
 # it received, so "Hostname:" in the body is the pod talking, not Traefik's own

@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/test/bufconn"
 
-	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
+	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 )
 
 func TestNormalizeEndpoint(t *testing.T) {

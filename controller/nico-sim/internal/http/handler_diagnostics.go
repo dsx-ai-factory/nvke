@@ -8,7 +8,7 @@ import (
 
 	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/sshexec"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/sshexec"
 )
 
 // CatalogItem defines a retrievable diagnostic item from a VM.

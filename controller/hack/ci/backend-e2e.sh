@@ -43,8 +43,10 @@ case "${BACKEND}" in
   nico) BACKEND_LABEL=nico-containers ;;
   *) BACKEND_LABEL="${BACKEND}" ;;
 esac
-# Run the nkectl checks in hack/ci/nkectl-smoke.sh once the suite passes.
+# Run the nkectl checks in hack/ci/nkectl-smoke.sh once the suite passes. This
+# lane has an inner runner, so the smoke drives the CLI inside it.
 NKECTL_SMOKE="${NKE_E2E_NKECTL_SMOKE:-false}"
+NKECTL_SMOKE_RUNNER="${RUNNER_NAME}"
 if [[ "${SINGLE_RUNNER_CONTROL_PLANE_MODES}" == "true" ]]; then
   PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true
 fi
@@ -73,6 +75,7 @@ STATE_VOLUME_OWNED=false
 BUNDLE_VOLUME_OWNED=false
 CAPD_NODE_IMAGE_OWNED=false
 STATE_MONITOR_PID=""
+CWE_LOG_PID=""
 
 if [[ "${RUNNER_DOCKER_HOST}" == "unix:///var/run/docker.sock" ]]; then
   [[ -S /var/run/docker.sock ]] || {
@@ -94,6 +97,7 @@ case "$(uname -m)" in
     exit 1
     ;;
 esac
+CAPD_SPIRE_ATTESTATION_METHOD="$(e2e_attestation_method)"
 
 log() {
   printf '[%s-e2e] %s\n' "${BACKEND}" "$*"
@@ -123,6 +127,18 @@ require_command() {
     exit 1
   }
 }
+
+# Every other long-running call here is bounded by the tool's own flag: kubectl
+# --timeout, kind --wait, curl --connect-timeout, ginkgo --timeout. Docker has
+# no equivalent, so the three calls that reach a registry use coreutils
+# `timeout` instead. It is absent from a stock macOS, where this script is also
+# run by hand, so fall back to running unbounded rather than failing outright.
+: "${DOCKER_PULL_TIMEOUT:=10m}"
+if command -v timeout >/dev/null 2>&1; then
+  bounded() { timeout "$@"; }
+else
+  bounded() { shift; "$@"; }
+fi
 
 redact_diagnostics() {
   local file_list="${TMP_DIR}/diagnostic-files"
@@ -319,9 +335,34 @@ start_state_monitor() {
     done
   ) >"${STATE_DIR}/capi-state-timeline.log" 2>&1 &
   STATE_MONITOR_PID=$!
+  start_cwe_log_follower
+}
+
+# CWE is the one deployment this run rolls: redeploy_cwe flips the
+# control-plane-controller flag between the legs, and it rolls again near the
+# end. `kubectl logs deployment/...` at teardown only reaches the pod that
+# survived, so every line before the last roll is gone. Run 35364887944
+# shipped a 20-line cwe.log starting 50 minutes after the first spec failed,
+# which is why that failure was never root-caused. Follow the deployment for
+# the whole run instead and re-attach after each roll; --prefix names the pod
+# per line so the seams stay readable.
+start_cwe_log_follower() {
+  (
+    while true; do
+      runner_exec kubectl -n cloud-workflow-engine logs -f deployment/cloud-workflow-engine \
+        --all-containers --prefix --tail=-1 --pod-running-timeout=1m || true
+      sleep 5
+    done
+  ) >"${STATE_DIR}/cwe-follow.log" 2>&1 &
+  CWE_LOG_PID=$!
 }
 
 stop_state_monitor() {
+  if [[ -n "${CWE_LOG_PID}" ]]; then
+    kill "${CWE_LOG_PID}" >/dev/null 2>&1 || true
+    wait "${CWE_LOG_PID}" >/dev/null 2>&1 || true
+    CWE_LOG_PID=""
+  fi
   if [[ -z "${STATE_MONITOR_PID}" ]]; then
     return
   fi
@@ -444,6 +485,26 @@ collect_diagnostics() {
           >"${STATE_DIR}/nodes/${node_name}-crictl-images.txt" 2>&1
         docker exec "${node_name}" crictl info \
           >"${STATE_DIR}/nodes/${node_name}-crictl-info.json" 2>&1
+        # Static control-plane container logs. crictl ps -a already records
+        # that, say, kube-apiserver is on its third attempt, but without the
+        # containers' own stderr a crashloop is only diagnosable by inference:
+        # every other signal (kubelet unable to reach :6443, SPIFFE identity
+        # never issued, CNI uninitialised) is downstream of it. -a covers the
+        # exited attempts, which are the ones carrying the failure.
+        docker exec "${node_name}" sh -c '
+          for comp in kube-apiserver etcd kube-controller-manager kube-scheduler; do
+            echo "===== ${comp} ====="
+            ids=$(crictl ps -a --label io.kubernetes.container.name="${comp}" -q 2>/dev/null)
+            if [ -z "${ids}" ]; then
+              echo "(no container)"
+              continue
+            fi
+            for id in ${ids}; do
+              echo "--- ${comp} ${id} ---"
+              crictl logs "${id}" 2>&1 || echo "(logs unavailable)"
+            done
+          done' \
+          >"${STATE_DIR}/nodes/${node_name}-control-plane-containers.log" 2>&1
         docker exec "${node_name}" cat /etc/containerd/certs.d/docker.io/hosts.toml \
           >"${STATE_DIR}/nodes/${node_name}-dockerhub-hosts.toml" 2>&1
         docker exec "${node_name}" sh -c 'ip -brief address; ip route show; ip -6 route show' \
@@ -769,13 +830,13 @@ if [[ "${NKECTL_SMOKE}" == "true" ]]; then
 fi
 
 log "building CAPD node image with agent source ${NODE_AGENT_VERSION}"
-log "SPIRE node attestation: $(e2e_attestation_method)"
+log "SPIRE node attestation: ${CAPD_SPIRE_ATTESTATION_METHOD}"
 CAPD_NODE_AGENT_LOCAL_BUILD=true \
 NODE_AGENT_VERSION="${NODE_AGENT_VERSION}" \
 NODE_AGENT_REPO_PATH="${WORKSPACE_ROOT}/agent" \
 SPIRE_AGENT_BUNDLE_PATH="${BUNDLE_DIR}/spire-agent.tgz" \
 CAPD_CNI_MANIFESTS_DEB_PATH="${CALICO_MANIFESTS_DEB}" \
-CAPD_SPIRE_ATTESTATION_METHOD="$(e2e_attestation_method)" \
+CAPD_SPIRE_ATTESTATION_METHOD="${CAPD_SPIRE_ATTESTATION_METHOD}" \
 BUNDLE_SERVER_URL="http://${BUNDLE_MIRROR_NAME}/" \
 INDEX_FILE_URL="http://${BUNDLE_MIRROR_NAME}/index.json" \
 CAPD_KINDEST_NODE_IMAGE="${CAPD_NODE_IMAGE}" \
@@ -832,19 +893,19 @@ log "starting the CAPD bundle mirror on the Kind Docker network"
 docker volume create "${BUNDLE_VOLUME}" >/dev/null
 BUNDLE_VOLUME_OWNED=true
 BUNDLE_LOADER_OWNED=true
-docker create --name "${BUNDLE_LOADER_NAME}" -v "${BUNDLE_VOLUME}:/bundle" alpine:3.22 true >/dev/null
+bounded "${DOCKER_PULL_TIMEOUT}" docker create --name "${BUNDLE_LOADER_NAME}" -v "${BUNDLE_VOLUME}:/bundle" alpine:3.22 true >/dev/null
 docker cp "${BUNDLE_DIR}/." "${BUNDLE_LOADER_NAME}:/bundle/"
 docker rm "${BUNDLE_LOADER_NAME}" >/dev/null
 BUNDLE_LOADER_OWNED=false
 BUNDLE_MIRROR_OWNED=true
-docker run -d \
+bounded "${DOCKER_PULL_TIMEOUT}" docker run -d \
   --name "${BUNDLE_MIRROR_NAME}" \
   --network kind \
   -v "${BUNDLE_VOLUME}:/usr/share/nginx/html:ro" \
   nginx:alpine >/dev/null
 
 log "starting inner runner on the Kind Docker network"
-docker pull "${RUNNER_IMAGE}"
+bounded "${DOCKER_PULL_TIMEOUT}" docker pull "${RUNNER_IMAGE}"
 docker volume create "${STATE_VOLUME}" >/dev/null
 STATE_VOLUME_OWNED=true
 RUNNER_OWNED=true
@@ -1063,6 +1124,7 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
     CNPG_CLOUD_PASSWORD=example-password \
     CNPG_TEMPORAL_PASSWORD=example-password \
     PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" \
+    NODE_AGENT_SPIRE_ATTESTATION_METHOD="${CAPD_SPIRE_ATTESTATION_METHOD}" \
     SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM="${SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM:-}" \
     NKE_E2E_STACK_CHART="${NKE_E2E_STACK_CHART}" \
     NKE_E2E_STACK_VERSION="${NKE_E2E_STACK_VERSION:-}" \
@@ -1101,6 +1163,7 @@ fi
   INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}" \
   PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" \
   NODE_REBOOT_SOFT_REBOOT_ENABLED="${NODE_REBOOT_SOFT_REBOOT_ENABLED:-}" \
+  NODE_AGENT_SPIRE_ATTESTATION_METHOD="${CAPD_SPIRE_ATTESTATION_METHOD}" \
   TILT_DISABLE_ANALYTICS=1 \
   bash -lc '
     set -euo pipefail

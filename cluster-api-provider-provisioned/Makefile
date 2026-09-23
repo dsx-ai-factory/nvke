@@ -39,7 +39,7 @@ help: ## Show the available targets.
 	@echo
 
 test: ## Run unit tests.
-	go test ./...
+	go test $(GO_TEST_FLAGS) ./...
 
 lint: ## Run golangci-lint.
 	@$(GOLANGCI_LINT_RUN) run --timeout 10m ./...
@@ -65,6 +65,12 @@ manifests: controller-gen ## Generate CRDs and controller RBAC.
 
 generate-check: generate manifests ## Verify generated code, CRDs, and RBAC are current.
 	@git diff --exit-code -- api/v1alpha1/zz_generated.deepcopy.go config/crd config/rbac/role.yaml
+	@# git diff says nothing about a path git is not tracking, so a newly
+	@# generated file would otherwise pass while never being committed. Same
+	@# guard as Makefile's licences-check.
+	@untracked=$$(git ls-files --others --exclude-standard -- api/v1alpha1/zz_generated.deepcopy.go config/crd config/rbac/role.yaml); \
+	 [ -z "$$untracked" ] \
+		|| { echo "ERROR: generated files are not tracked. Run 'make generate manifests' and commit them:"; printf '%s\n' "$$untracked" | sed 's/^/    /'; exit 1; }
 
 docker-build: ## Build AMD64 and ARM64 images into a local OCI archive.
 	@mkdir -p "$(dir $(OCI_ARCHIVE))"
@@ -97,11 +103,22 @@ PUSH_TAGS ?=
 ARCH ?= amd64
 BUILDX_EXTRA_ARGS ?=
 
+# Every stage after the push used to re-resolve a mutable tag. These files
+# carry the digest forward instead. Under bin/, which is already gitignored.
+DIGEST_FILE       ?= $(CURDIR)/bin/image-digest-$(ARCH).txt
+INDEX_DIGEST_FILE ?= $(CURDIR)/bin/image-digest-index.txt
+
+# The per-arch sources docker-manifest stitches. Empty means the mutable
+# per-arch tags, which is what a local run wants. CI passes the digests
+# docker-push-arch recorded, so the index holds exactly what this run pushed.
+ARCH_DIGESTS ?=
+
 check-img-repo:
 	@test -n "$(IMG_REPO)" || { echo "ERROR: IMG_REPO must be set explicitly"; exit 1; }
 	@test -n "$(PUSH_TAGS)" || { echo "ERROR: PUSH_TAGS must be set"; exit 1; }
 
 docker-push-arch: check-img-repo ## Build+push one arch to IMG_REPO, tagged <t>-$(ARCH).
+	@mkdir -p $(dir $(DIGEST_FILE))
 	@# --provenance=false: the default provenance turns a single-arch push into
 	@# an OCI index, which breaks docker-manifest's imagetools create below and
 	@# renders wrongly in the NGC UI.
@@ -118,11 +135,27 @@ docker-push-arch: check-img-repo ## Build+push one arch to IMG_REPO, tagged <t>-
 		$(foreach t,$(PUSH_TAGS),--tag "$(IMG_REPO):$(t)-$(ARCH)") \
 		--build-arg "BUILD_VERSION=$(BUILD_VERSION)" \
 		$(BUILDX_EXTRA_ARGS) \
+		--metadata-file "$(DIGEST_FILE).json" \
 		--progress plain \
 		"$(REPO_ROOT)"
+	@# containerimage.digest is the manifest buildx just pushed. Read with sed
+	@# rather than jq, which the self-hosted runners do not all carry.
+	@sed -n 's/.*"containerimage\.digest": *"\([^"]*\)".*/\1/p' "$(DIGEST_FILE).json" > "$(DIGEST_FILE)"
+	@test -s "$(DIGEST_FILE)" || { echo "ERROR: no containerimage.digest in $(DIGEST_FILE).json"; exit 1; }
+	@echo "pushed $(IMG_REPO)@$$(cat "$(DIGEST_FILE)")"
 
 docker-manifest: check-img-repo ## Stitch <t>-amd64 and <t>-arm64 into <t> under IMG_REPO.
+	@mkdir -p $(dir $(INDEX_DIGEST_FILE))
 	@set -e; for t in $(PUSH_TAGS); do \
-		docker buildx imagetools create -t "$(IMG_REPO):$$t" \
-			"$(IMG_REPO):$$t-amd64" "$(IMG_REPO):$$t-arm64"; \
+		if [ -n "$(ARCH_DIGESTS)" ]; then \
+			srcs=""; for d in $(ARCH_DIGESTS); do srcs="$$srcs $(IMG_REPO)@$$d"; done; \
+		else \
+			srcs="$(IMG_REPO):$$t-amd64 $(IMG_REPO):$$t-arm64"; \
+		fi; \
+		docker buildx imagetools create -t "$(IMG_REPO):$$t" $$srcs; \
 	done
+	@# One inspect, not one per stage: every tag above points at the same index,
+	@# and everything downstream reads this digest rather than a tag.
+	@docker buildx imagetools inspect "$(IMG_REPO):$(firstword $(PUSH_TAGS))" \
+		--format '{{.Manifest.Digest}}' > "$(INDEX_DIGEST_FILE)"
+	@echo "index $(IMG_REPO)@$$(cat "$(INDEX_DIGEST_FILE)")"

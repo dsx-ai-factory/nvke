@@ -21,7 +21,7 @@ cd nke
 
 | Tool | Needed for | Notes |
 |---|---|---|
-| [Go](https://go.dev/dl/) 1.26.6+ | all | `go.work` pins it. An older Go fetches the right toolchain unless `GOTOOLCHAIN=local` |
+| [Go](https://go.dev/dl/) 1.26.8+ | all | `go.work` pins it. An older Go fetches the right toolchain unless `GOTOOLCHAIN=local` |
 | [Docker](https://docs.docker.com/get-docker/) 24+ | A and B | Not supported for path C bootstrapping |
 | [nerdctl](https://github.com/containerd/nerdctl) with containerd | C | The bootstrap drives kind and pulls images through it; no Docker daemon |
 | GNU Make 4.0+ | all | macOS ships 3.81; `brew install make` gives `gmake` |
@@ -276,9 +276,10 @@ leaves nothing schedulable and the node never reaches `Ready`.
 
 ### 3. Point at your images
 
-Both are required and the bootstrap fails without them. Outside a checkout you
-also need `NKECTL_CWE_CHART_PATH` and `NKECTL_CAPI_PROVISIONED_PATH`, and those
-two are not checked up front — a mistake surfaces after the seed cluster exists.
+Both are required and the bootstrap fails without them. Nothing else has to be
+pointed at: `nkectl` installs the CWE chart and the provisioned provider's
+manifests from the copies embedded in the binary, of the commit it was built
+from, so a released binary needs no checkout.
 
 ```bash
 export NKECTL_CWE_IMAGE=<cwe-controller image>
@@ -294,12 +295,13 @@ REGISTRY_API_KEY=<key> nkectl bootstrap site -f sitespec.yaml
 The key can come from the environment, from `--registry-api-key`, or from
 `registry.apiKey` in the spec; the flag wins.
 
-Where Docker Hub is slow or blocked, point the seed cluster at a mirror:
-`NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` and `NKECTL_CWE_POSTGRES_CHART`. The Postgres
-chart pull is the step that times out. The Temporal and SPIRE charts have the
-same knob — `NKECTL_CWE_TEMPORAL_CHART`, `NKECTL_CWE_SPIRE_CHART` and
-`NKECTL_CWE_SPIRE_CRDS_CHART`, each an OCI reference or a local path — so every
-Helm chart the bootstrap installs can come from a mirror or from disk.
+Where Docker Hub is slow or blocked, point the seed cluster at a mirror with
+`NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR`. The Postgres and controller charts are
+carried in the `nkectl` binary and are never pulled. The Temporal and SPIRE
+charts are, and each has a knob — `NKECTL_CWE_TEMPORAL_CHART`,
+`NKECTL_CWE_SPIRE_CHART` and `NKECTL_CWE_SPIRE_CRDS_CHART`, an OCI reference or
+a local path — so every Helm chart the bootstrap pulls can come from a mirror
+or from disk.
 `clusterctl init` still fetches Cluster API and cert-manager from `github.com`.
 For the full set of third-party images
 the bootstrap pulls — Postgres, Temporal, and the SPIRE stack — and to mirror
@@ -322,30 +324,32 @@ created it, so a bare `kind delete cluster` looks for the seed cluster in
 Docker, does not find it, and exits 0 without deleting anything — leaving the
 name clash this step exists to prevent.
 
-### 5. Install the site controller
+### 5. Install an infrastructure provider
+
+Install Cluster API and CAPNICo onto the site cluster **before** the site
+controller. CWE reads the `Machine` and `NicoMachine` CRDs once, at process
+start, and silently skips three of its controllers when they are absent — so
+installing it first means restarting it afterward, or losing them until you do.
+
+Untaint the control-plane nodes first or every `--wait` hangs:
+`kubectl taint nodes --all node-role.kubernetes.io/control-plane-`. Full steps,
+both a Helm and a `clusterctl` route, and how to verify the result with
+`kubectl`: [Infrastructure Providers](site-bootstrap/infrastructure-providers.md).
+
+### 6. Install the site controller
 
 The bootstrap leaves you a plain Kubernetes cluster. Installing CWE onto it is a
 separate job, and the largest step here — `nkectl` has no command for it.
 
-A plain kubeadm cluster is barer than a kind one, in two ways that stop the
-install before it starts:
-
-- **The nodes are all control plane**, so nothing schedules until you untaint
-  them or give every workload a toleration:
-  `kubectl taint nodes --all node-role.kubernetes.io/control-plane-`
-- **There is no storage class.** The database and SPIRE both want a volume and
-  sit `Pending` on `no persistent volumes available for this claim and no
-  storage class is set`. Install a provisioner, or run them without persistence.
-
-`nkectl get providers` is the quickest check that what you installed is wired
-up — it names the missing piece rather than making you infer it.
+**There is no storage class.** CWE's database and SPIRE both want a volume and
+sit `Pending` on `no persistent volumes available for this claim and no storage
+class is set`. Install a provisioner, or run them without persistence.
 
 Use the chart in
 [`controller/deploy/charts/controller`](../controller/deploy/charts/controller).
 It installs **CWE alone**, against a database and a Temporal you provide, and
 defaults to a ClusterIP service with ingress off, so nothing reaches the API
-until you change that. Install and configure the infrastructure provider
-separately; the bootstrap does not carry its credentials over.
+until you change that.
 
 ```bash
 nkectl config set-site --name my-site --url https://<cwe-url> \
@@ -359,14 +363,8 @@ account, admit it, and grant the kubeconfig identity the permissions in
 [Configuring NKE API Authentication](../controller/docs/configuring-api-authentication.md).
 Without them, `get clusters` fails at minting or CWE returns 403.
 
-### 6. Install CAPNICo
-
-Tenant clusters need it. Install the provider onto the site cluster with a
-`nico-credentials` Secret in `capnico-system` holding the endpoint, org and
-**one** authentication mode. Prefer client credentials: a password-grant token
-stops provisioning when it expires.
-[CAPNICo's guide](https://github.com/dsx-ai-factory/cluster-api-provider-nico/blob/main/docs/getting-started.md)
-is the reference.
+With the site registered, `nkectl` can report on the provider you installed in
+step 5:
 
 ```bash
 nkectl get providers      # nico must read CONFIGURED before you create anything
@@ -385,6 +383,38 @@ returns 500 rather than a validation error. The OS and config profiles it names
 must exist on your site controller; profile content is maintained outside this
 repository.
 
+### Decommissioning
+
+`nkectl delete cluster <name>` starts an asynchronous teardown. There is no
+confirmation prompt and no wait flag, so follow it with `nkectl get clusters`.
+
+Teardown removes the node pools, the nodes, the Cluster API and infrastructure
+objects, and NKE's own records, then asks the infrastructure provider to release
+each machine. What happens to the hardware after that release is the provider's
+decision, not NKE's.
+
+**Teardown does not clean the hosts.** The only action NKE takes on a node is a
+best-effort `kubeadm reset -f`, and a failure there does not stop the teardown.
+The node agent, the SPIRE agent, kubeadm, kubelet and containerd all stay
+installed, so reclaiming a host for something else is manual:
+
+```bash
+apt-get purge nke-agent spire-agent
+```
+
+A purge still leaves `/var/lib/nke/state.json` and the two agent logs on disk.
+
+**No command tears down a site cluster.** `nkectl delete` covers tenant clusters
+and node pools only. Reversing `nkectl bootstrap site` is manual.
+
+**Clusters built on pre-provisioned hosts are not released.** The provisioned
+provider refuses to delete a bound machine, because it cannot make the host safe
+for reuse. Destroy the bootstrap management cluster instead.
+
+Once a cluster is marked Deleting, a later node or node-pool delete returns 202
+and does nothing, and a failed teardown leaves that mark in place. A stuck
+teardown cannot be helped along through the API.
+
 ### Rough edges
 
 - The site controller does not manage itself: no upgrade, node cycling or
@@ -397,5 +427,5 @@ repository.
 - [architecture.md](architecture.md) — how CWE, the agent and CAPI fit together
 - [../cli/docs/sitespec.md](../cli/docs/sitespec.md) — every site spec field
 - [../cli/docs/user-flow.md](../cli/docs/user-flow.md) — the command reference
-- [CAPNICo getting started](https://github.com/dsx-ai-factory/cluster-api-provider-nico/blob/main/docs/getting-started.md)
-  — the infrastructure provider every real site runs
+- [site-bootstrap/infrastructure-providers.md](site-bootstrap/infrastructure-providers.md)
+  — the full CAPNICo install: order, both routes, and what stalls it

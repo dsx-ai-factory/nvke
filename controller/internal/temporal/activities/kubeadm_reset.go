@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
+	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 )
 
 type KubeadmResetInput struct {

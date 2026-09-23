@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NVIDIA/nke/controller/test/kubeadm/internal/nicovms"
+	"github.com/dsx-ai-factory/nke/controller/test/kubeadm/internal/nicovms"
 )
 
 // TestNicoVMSSmoke answers one question on its own: does nico-vms work on this

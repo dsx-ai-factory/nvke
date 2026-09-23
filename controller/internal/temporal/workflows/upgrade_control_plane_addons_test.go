@@ -15,7 +15,7 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/testsuite"
 
-	"github.com/NVIDIA/nke/controller/internal/temporal/activities"
+	"github.com/dsx-ai-factory/nke/controller/internal/temporal/activities"
 )
 
 func TestUpgradeControlPlaneAddonsUsesKubeadmUpgradeActivity(t *testing.T) {

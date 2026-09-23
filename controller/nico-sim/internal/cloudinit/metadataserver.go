@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/state"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/state"
 )
 
 // InstanceLookup is the subset of state.Store needed by MetadataServer.

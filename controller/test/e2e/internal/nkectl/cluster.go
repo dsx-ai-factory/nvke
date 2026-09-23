@@ -18,8 +18,8 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	"github.com/NVIDIA/nke/controller/api"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/nke"
+	"github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 )
 
 var (

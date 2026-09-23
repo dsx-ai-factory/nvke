@@ -15,10 +15,10 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
 
-	"github.com/NVIDIA/nke/controller/internal/constants"
-	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/temporal/workflows"
-	"github.com/NVIDIA/nke/controller/internal/utils"
+	"github.com/dsx-ai-factory/nke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/temporal/workflows"
+	"github.com/dsx-ai-factory/nke/controller/internal/utils"
 )
 
 const (
@@ -134,7 +134,8 @@ func (r *reconciler) startK8sUpgrade(
 
 // isK8sVersionUpgradeNeeded checks if a cluster needs a Kubernetes version upgrade by examining
 // the current NodePool versions in all control plane node pools.
-// FIXME: Get k8s version with periodic health checks instead of relying on OSProfile version
+// FIXME: https://github.com/dsx-ai-factory/nke/issues/937 - get k8s version with periodic
+// health checks instead of relying on the OSProfile version.
 func (r *reconciler) isK8sVersionUpgradeNeeded(
 	cluster db.Cluster,
 	cp *controlPlane,

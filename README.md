@@ -13,8 +13,8 @@ bare metal and want to hand out production Kubernetes clusters on it, and
 engineers integrating against that control plane.
 
 > **Status: early.** This repository is being prepared for open source. Layout,
-> interfaces, and build inputs are still changing, and there are no releases yet.
-> Expect breaking changes.
+> interfaces, and build inputs are still changing, and every product line is
+> still on pre-releases. Expect breaking changes.
 
 ## Overview
 
@@ -57,7 +57,7 @@ What distinguishes it from a generic CAPI distribution:
 | `docs/` | Architecture, getting started, and admin guides. |
 | `os-image/` | Reference Ubuntu node OS image (spec + Packer) and `nke-os-image-check`. |
 
-**Nine Go modules**, tied together by a workspace at the repository root, each
+**Eleven Go modules**, tied together by a workspace at the repository root, each
 independently buildable. `make build` links six binaries: `agent`, `updater`,
 `controller`, `nkectl`, `capd-reboot-controller` and
 `nke-os-image-check`.
@@ -163,7 +163,6 @@ publish OS images; it publishes the recipes for building them.
 | [docs/first-cluster.md](docs/first-cluster.md) | Three paths to a running cluster, driven by `nkectl` |
 | [docs/architecture.md](docs/architecture.md) | System overview — modules, data flows, deployment model |
 | [docs/getting-started.md](docs/getting-started.md) | Local development setup for the controller and the agent |
-| [docs/branch-protection-settings.md](docs/branch-protection-settings.md) | What `main` requires of a pull request, and which checks block a merge |
 
 Module-specific documentation lives alongside the code, in `controller/docs/`,
 `agent/docs/` and the `AGENTS.md` files.

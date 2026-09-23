@@ -29,7 +29,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
+	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 )
 
 // Plaintext default — VMs run nke-agent with AGENT_ARGS=--disable-mtls per

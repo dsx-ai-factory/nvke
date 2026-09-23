@@ -1,4 +1,4 @@
-module github.com/NVIDIA/nke/controller/api
+module github.com/dsx-ai-factory/nke/controller/api
 
 go 1.26.5
 

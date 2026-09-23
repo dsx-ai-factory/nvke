@@ -10,7 +10,7 @@ import (
 
 var runbookExecutionCounter = prometheus.NewCounterVec(
 	prometheus.CounterOpts{
-		Name: "cwe_runbook_execution_total",
+		Name: "nke_controller_runbook_execution_total",
 		Help: "Total number of runbook executions by runbook, target cluster/node, and result (success/failure).",
 	},
 	[]string{"runbook_name", tenantClusterLabel, nodeNameLabel, resultLabel},

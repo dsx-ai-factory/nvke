@@ -2,12 +2,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Stages the ovn-kubernetes chart and images for the nke-cni-ovn-<stream> debs.
+# Stages the upstream ovn-kubernetes chart and image for the nke-cni-ovn-<stream>
+# debs.
 #
 # Usage: bundle.sh --version 1.4.0 --dist DIR --lock-dir DIR --crane PATH
 #                  [--arch amd64] [--write-lock]
 #
-# NGC_API_KEY must be set: the chart and the images live in NGC's nv-ngn org.
 # The lock and image handling is ../cni-common/bundle-lib.sh.
 
 set -euo pipefail
@@ -18,40 +18,57 @@ CNI=cni-ovn
 source "$(dirname "${BASH_SOURCE[0]}")/../cni-common/bundle-lib.sh"
 
 parse_bundle_args "$@"
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
-  die "--version must be a bare chart version such as 1.4.0, got ${VERSION}"
-[[ -n "${NGC_API_KEY:-}" ]] || die "NGC_API_KEY is required (an NGC key with access to the nv-ngn org)"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.0$ ]] ||
+  die "--version must be a bare chart version with patch 0, such as 1.4.0, got ${VERSION}"
 
-# Overridable so a test can point both at a local server and a fake crane.
-HELM_BASE="${NGC_HELM_URL:-https://helm.ngc.nvidia.com/nv-ngn/sdn/charts}"
-CHART=ovn-kubernetes
-CHART_TGZ="${CHART}-${VERSION}.tgz"
+REPO="${OVN_KUBERNETES_REPO:-ovn-kubernetes/ovn-kubernetes}"
+CHART_TAG="v${VERSION}"
 
-# The key never goes on a command line: curl reads it from a config on stdin,
-# crane from a throwaway DOCKER_CONFIG that is removed on exit.
-CURL_CONFIG="user = \"\$oauthtoken:${NGC_API_KEY}\""
-AUTH_DIR="$(mktemp -d)"
-trap 'rm -rf "$AUTH_DIR"' EXIT
-export DOCKER_CONFIG="$AUTH_DIR"
-"$CRANE" auth login "${NGC_REGISTRY:-nvcr.io}" --username '$oauthtoken' --password-stdin <<<"$NGC_API_KEY" >/dev/null ||
-  die "crane auth login failed"
+# values-nke.yaml must name the ref stage_images imports, so read it from the
+# lock stage_images reads: amd64's when locking another arch.
+image_lock="$LOCK"
+if [[ "$WRITE_LOCK" == true && "$ARCH" != amd64 ]]; then
+  image_lock="${LOCK_DIR}/amd64/${VERSION}.lock"
+fi
+image_ref="$(awk '$1 == "image" { print $2; exit }' "$image_lock" 2>/dev/null || true)"
+[[ "${image_ref##*:}" == "release-${VERSION%.0}" ]] ||
+  die "${image_lock} must list 'image <repo>:release-${VERSION%.0}', got '${image_ref}'"
+
+# Upstream publishes no chart repository; the chart is a directory in the source tree.
+SRC_TGZ="ovn-kubernetes-src-${CHART_TAG}.tar.gz"
+SRC_URL="https://github.com/${REPO}/archive/refs/tags/${CHART_TAG}.tar.gz"
+fetch "$SRC_URL" "${WORK}/${SRC_TGZ}"
+verify_artifact "$SRC_TGZ" "${WORK}/${SRC_TGZ}" "$SRC_URL"
+tar_paths_safe "${WORK}/${SRC_TGZ}"
+
+mkdir -p "${WORK}/src"
+tar -xzf "${WORK}/${SRC_TGZ}" --no-same-owner -C "${WORK}/src"
+# The archive's top-level directory name is GitHub's, not part of the contract.
+chart_src="$(find "${WORK}/src" -mindepth 2 -maxdepth 4 -type d -path '*/helm/ovn-kubernetes' -print -quit)"
+[[ -n "$chart_src" && -f "${chart_src}/Chart.yaml" ]] ||
+  die "${SRC_TGZ} has no helm/ovn-kubernetes/Chart.yaml"
+grep -qx "version: ${VERSION}" "${chart_src}/Chart.yaml" ||
+  die "${SRC_TGZ} is not chart version ${VERSION}"
 
 mkdir -p "${STAGE}/charts"
-fetch "${HELM_BASE}/${CHART_TGZ}" "${WORK}/${CHART_TGZ}"
-verify_artifact "$CHART_TGZ" "${WORK}/${CHART_TGZ}" "${HELM_BASE}/${CHART_TGZ}"
-tar_paths_safe "${WORK}/${CHART_TGZ}"
-tar -xzf "${WORK}/${CHART_TGZ}" --no-same-owner -C "${STAGE}/charts"
-[[ -f "${STAGE}/charts/${CHART}/Chart.yaml" ]] || die "${CHART_TGZ} did not unpack to ${CHART}/Chart.yaml"
-grep -qx "version: ${VERSION}" "${STAGE}/charts/${CHART}/Chart.yaml" ||
-  die "${CHART_TGZ} is not chart version ${VERSION}"
-# ovnHelmChartStaged in agent/internal/agent/cni.go keys on this file.
-[[ -f "${STAGE}/charts/${CHART}/values-nke.yaml" ]] || die "${CHART_TGZ} has no values-nke.yaml"
+cp -R "$chart_src" "${STAGE}/charts/ovn-kubernetes"
+
+# NKE's overrides, not upstream's; ovnHelmChartStaged in agent/internal/agent/cni.go
+# keys on this file. OVS runs on the host (checkHostOpenVSwitchReady), so the
+# ovs-node subchart is tagged off.
+cat >"${STAGE}/charts/ovn-kubernetes/values-nke.yaml" <<EOF
+tags:
+  ovs-node: false
+global:
+  image:
+    repository: ${image_ref%:*}
+    tag: ${image_ref##*:}
+EOF
+
 # nfpm's `type: tree` copies modes and mtimes from the source files.
 find "${STAGE}/charts" -type d -exec chmod 0755 {} +
 find "${STAGE}/charts" -type f -exec chmod 0644 {} +
 find "${STAGE}/charts" -exec touch -d '2026-01-01 00:00:00Z' {} +
 
-# With values-nke.yaml the chart runs only ovnkube-control-plane and
-# ovnkube-single-node-zone, so ovn-c and ovnkube-c are all the lock lists.
 stage_images
 finish_bundle

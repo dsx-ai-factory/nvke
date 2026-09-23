@@ -89,9 +89,17 @@ jobs:
         run: |
           set -euo pipefail
           ver="$(make --no-print-directory print-KUBECONFORM_VERSION)"
-          curl -sSfL --retry 3 \
-            "https://github.com/yannh/kubeconform/releases/download/${ver}/kubeconform-linux-amd64.tar.gz" \
-            | tar -xz -C "${RUNNER_TEMP}" kubeconform
+          want="$(make --no-print-directory print-KUBECONFORM_SHA256_AMD64)"
+          # Downloaded, checked, then unpacked. Piping curl into tar leaves no
+          # artifact to verify, and this is a merge-gate member, so it runs on
+          # every pull request. The digest is committed beside the version in
+          # make/tool-versions.mk rather than fetched from the release, which
+          # would share the artifact's compromise boundary.
+          tar="${RUNNER_TEMP}/kubeconform.tar.gz"
+          curl -sSfL --retry 3 -o "${tar}" \
+            "https://github.com/yannh/kubeconform/releases/download/${ver}/kubeconform-linux-amd64.tar.gz"
+          echo "${want}  ${tar}" | sha256sum -c -
+          tar -xzf "${tar}" -C "${RUNNER_TEMP}" kubeconform
           echo "${RUNNER_TEMP}" >> "${GITHUB_PATH}"
 
       # One entry point covers linting, rendered-manifest validation, apiAuth,

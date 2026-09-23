@@ -18,15 +18,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/cloudinit"
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/config"
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/ipxe"
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/netutil"
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/state"
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/vm"
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/vm/artifacts"
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/vm/darwinqemu"
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/vm/libvirt"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/cloudinit"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/ipxe"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/netutil"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/state"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/vm"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/vm/artifacts"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/vm/darwinqemu"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/vm/libvirt"
 )
 
 type Engine struct {
@@ -581,7 +581,7 @@ func (e *Engine) reconcileRunning(ctx context.Context, instance state.Instance, 
 		})
 	}
 
-	if e.cfg.ReadinessTimeout > 0 && e.storeAge(instance) > e.cfg.ReadinessTimeout {
+	if e.cfg.ReadinessTimeout > 0 && e.readinessAge(instance) > e.cfg.ReadinessTimeout {
 		log.Info("Readiness timeout reached before tcp probe succeeded, marking instance as errored")
 		return e.markError(ctx, instance.ID, fmt.Errorf("readiness timeout reached before tcp probe succeeded"))
 	}
@@ -676,8 +676,8 @@ func (e *Engine) markError(ctx context.Context, instanceID string, reconcileErr 
 	return reconcileErr
 }
 
-func (e *Engine) storeAge(instance state.Instance) time.Duration {
-	return e.storeNow().Sub(instance.CreatedAt)
+func (e *Engine) readinessAge(instance state.Instance) time.Duration {
+	return e.storeNow().Sub(instance.UpdatedAt)
 }
 
 func (e *Engine) storeNow() time.Time {

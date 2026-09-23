@@ -15,7 +15,7 @@ version: "0.0.0"
 appVersion: "0.0.0"
 dependencies:
   - {name: cert-manager, version: "v1.20.2", repository: "https://charts.jetstack.io", condition: cert-manager.enabled}
-  - {name: controller, version: "0.0.0", repository: "oci://ghcr.io/dsx-ai-factory/nke/charts", condition: controller.enabled}
+  - {name: nke-controller, version: "0.0.0", repository: "oci://ghcr.io/dsx-ai-factory/nke/charts", condition: controller.enabled, alias: controller}
   - {name: kube-prometheus-stack, version: "84.4.0", repository: "https://prometheus-community.github.io/helm-charts", condition: kube-prometheus-stack.enabled}
   - {name: postgresql, version: "0.1.0", repository: "file://../../controller/deploy/charts/postgresql", condition: postgresql.enabled}
   - {name: prometheus-operator-crds, version: "28.0.1", repository: "https://prometheus-community.github.io/helm-charts", condition: prometheus-operator-crds.enabled}

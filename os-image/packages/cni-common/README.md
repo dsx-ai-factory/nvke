@@ -28,3 +28,10 @@ runs a downloaded binary, so an arm64 build works on an amd64 host.
 The images debs `Provides` and `Conflicts` with their unversioned name, so a
 node holds one stream per CNI. They depend on `containerd | nke-kubeadm-distro`:
 the distro package ships its own containerd and conflicts with Ubuntu's.
+
+Set `CNI_DOCKERHUB_MIRROR` to a registry host when Docker Hub reads must use a
+pull-through mirror. The mirror changes only Crane's transport reference. The
+committed lock and the image names imported on the node remain `docker.io/...`.
+Digest resolution and image transfer try the configured mirror first, then
+fall back to the canonical `docker.io` reference if the mirror misses or is
+unavailable. Every successful route must still match the committed digest.

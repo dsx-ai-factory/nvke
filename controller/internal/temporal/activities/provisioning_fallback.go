@@ -8,8 +8,8 @@ import (
 
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
-	"github.com/NVIDIA/nke/controller/internal/capi"
-	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 // provisioningFallback advances a stuck CAPI Machine (one with no IP yet) to the

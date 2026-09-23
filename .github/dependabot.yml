@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 version: 2
 updates:
   # Go modules anywhere in the tree. This is a nested multi-module monorepo
@@ -39,7 +41,7 @@ updates:
       #
       #   k8s.io/api | dependency_file_not_resolvable
       #     go: finding module for package k8s.io/api/autoscaling/v2beta1
-      #     github.com/NVIDIA/nke/controller/test/e2e/internal/kube imports
+      #     github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube imports
       #       k8s.io/client-go/kubernetes/scheme imports
       #       k8s.io/api/autoscaling/v2beta1
       kubernetes:
@@ -53,7 +55,8 @@ updates:
           - "k8s.io/*"
           - "sigs.k8s.io/*"
     ignore:
-      # sigs.k8s.io/cluster-api/test v1.14.0 and later cannot be consumed. Its
+      # sigs.k8s.io/cluster-api and sigs.k8s.io/cluster-api/test both go
+      # unresolvable at v1.14.0 and later: from that version on, each one's
       # go.mod carries local replaces:
       #
       #   replace (
@@ -66,13 +69,30 @@ updates:
       # behind, which does not exist. Requiring the real api module instead
       # gives an ambiguous import, because api/ was split out of
       # sigs.k8s.io/cluster-api between v1.12 and v1.14 and both still provide
-      # the same packages while the parent stays at v1.12.
+      # the same packages while the parent stays at v1.13. Dependabot hit this
+      # on the bare module too, grouped in with a controller-runtime bump --
+      # #901.
       #
-      # Taking it needs a deliberate cluster-api 1.12 -> 1.14 migration of
+      # Taking it needs a deliberate cluster-api 1.13 -> 1.14 migration of
+      # controller, cluster-api-provider-provisioned and
       # controller/hack/capd-reboot-controller, moving the parent and the new
-      # api module together. Drop this entry when that happens. See #88.
+      # api module together. Drop these two entries when that happens. See #88.
+      - dependency-name: "sigs.k8s.io/cluster-api"
+        versions: [">=1.14.0"]
       - dependency-name: "sigs.k8s.io/cluster-api/test"
         versions: [">=1.14.0"]
+
+      # A submodule of a repository whose root module is +incompatible:
+      # resolution walks up to the root, lands on v4.3.10, and finds no api/
+      # there. Nothing here requires the root module. Bump it by hand.
+      - dependency-name: "github.com/gravitational/teleport/api"
+
+      # Nothing above the pinned v1.3.0 resolves. v1.4.x requires its own
+      # sdk/standard submodule at v0.0.0-00010101000000-000000000000, the
+      # placeholder a local replace leaves behind; v1.5.0 renamed the module
+      # path to github.com/NVIDIA/infra-controller-rest, which then needs the
+      # import in nico-sim rewritten rather than go.mod edited.
+      - dependency-name: "github.com/NVIDIA/ncx-infra-controller-rest"
 
   # Dockerfiles anywhere in the tree (controller/, controller/hack/*, agent/, ...).
   - package-ecosystem: docker
@@ -110,10 +130,14 @@ updates:
     # Close any RC-bump PRs manually; they resolve on their own once the stable
     # release is available and Dependabot replaces them.
 
-  # Shared GitHub Actions workflows (repo root). Inert until workflows land on
-  # the default branch; kept here so updates start automatically once they do.
+  # Workflows and the composite actions they call. "/" covers
+  # .github/workflows/ only; it does not recurse into .github/actions/. That
+  # gap already drifted: malware-scan/action.yml sat on upload-sarif v4.37.8
+  # while all four workflow references were on v4.38.0.
   - package-ecosystem: github-actions
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: weekly
     commit-message:

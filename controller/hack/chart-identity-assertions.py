@@ -4,7 +4,7 @@
 
 """Assert that the chart still renders the deployed identities it always has.
 
-The chart package is named `controller`, but every name it renders stays
+The chart package is named `nke-controller`, but every name it renders stays
 `cloud-workflow-engine`, pinned by `nameOverride` in values.yaml. That split is
 deliberate and permanent, not a migration step: existing sites keep the legacy
 runtime naming indefinitely, and only new site installs opt into `controller`

@@ -16,9 +16,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/NVIDIA/nke/cli/internal/config"
-	"github.com/NVIDIA/nke/cli/internal/providers/inspect"
-	"github.com/NVIDIA/nke/cli/internal/util"
+	"github.com/dsx-ai-factory/nke/cli/internal/config"
+	"github.com/dsx-ai-factory/nke/cli/internal/providers/inspect"
+	"github.com/dsx-ai-factory/nke/cli/internal/util"
 )
 
 // SiteFn is a factory that resolves the active site's configuration.

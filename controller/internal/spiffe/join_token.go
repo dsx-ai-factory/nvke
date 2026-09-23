@@ -17,7 +17,7 @@ import (
 	typesv1 "github.com/spiffe/spire-api-sdk/proto/spire/api/types"
 	"google.golang.org/grpc"
 
-	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
 )
 
 func CreateJoinToken(ctx context.Context, cfg config.Config, agentAlternateID string) (string, error) {

@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/NVIDIA/nke/agent/internal/k8s"
+	"github.com/dsx-ai-factory/nke/agent/internal/k8s"
 )
 
 func nodeWithLabels(name string, labels map[string]string) *v1.Node {

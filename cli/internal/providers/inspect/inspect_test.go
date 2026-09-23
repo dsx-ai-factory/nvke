@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NVIDIA/nke/cli/internal/providers"
+	"github.com/dsx-ai-factory/nke/cli/internal/providers"
 )
 
 // fakeRunner answers kubectl calls by matching on the arguments, not on the

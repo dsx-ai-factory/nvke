@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
 )
 
 // MockClient is a mock implementation of the Client interface for testing.

@@ -18,10 +18,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/authtoken"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/cwe"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/kube"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/nke"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/authtoken"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 )
 
 // Permissive mode answers 200 to everything, so the counter is the only evidence

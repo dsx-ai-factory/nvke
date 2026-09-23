@@ -50,9 +50,11 @@ func TestBuildRoundTrip(t *testing.T) {
 		"cluster.k8sVersion=1.33.1",
 		"cluster.cniName=calico",
 		"cluster.cniVersion=3.31.4",
+		"cluster.controlPlaneVIP=10.0.0.5",
 		"cluster.podCidr=10.100.0.0/16",
 		"cluster.serviceCidr=10.200.0.0/16",
 		"cluster.nodeAgentPort=50051",
+		"cluster.etcdEncryption=false",
 		"cluster.kubeletConfig.systemReservedMemory=8Gi",
 		"registry.bootstrapRepo=nvcr.io/example/cwe",
 		"registry.bootstrapChart=cloud-workflow-engine",
@@ -124,7 +126,7 @@ func TestRenderOmitsUnsetOptionalFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
-	for _, unwanted := range []string{"cniVersion", "caCertFile", "caKeyFile", "apiKey"} {
+	for _, unwanted := range []string{"cniVersion", "controlPlaneVIP", "etcdEncryption", "caCertFile", "caKeyFile", "apiKey"} {
 		if line := uncommentedLineFor(string(rendered), unwanted); line != "" {
 			t.Errorf("rendered site spec sets %s as %q; an unset optional field should stay a comment:\n%s",
 				unwanted, line, rendered)
@@ -321,6 +323,7 @@ func TestParseNodesCSV(t *testing.T) {
 func TestRenderPlacesOptionalFieldsInPosition(t *testing.T) {
 	built, err := Build("my-tier0-site", threeNodes(), []string{
 		"cluster.cniVersion=3.30.1",
+		"cluster.controlPlaneVIP=10.0.0.5",
 		"cluster.nodeAgentPort=50051",
 		"spire.trustDomain=site.example.com",
 		"spire.caCertFile=/etc/nke/ca.crt",
@@ -339,7 +342,8 @@ func TestRenderPlacesOptionalFieldsInPosition(t *testing.T) {
 	for _, order := range [][2]string{
 		{"cniName:", "cniVersion:"},
 		{"cniVersion:", "podCidr:"},
-		{"serviceCidr:", "nodeAgentPort:"},
+		{"serviceCidr:", "controlPlaneVIP:"},
+		{"controlPlaneVIP:", "nodeAgentPort:"},
 		{"nodeAgentPort:", "kubeletConfig:"},
 		{"cluster:", "spire:"},
 		{"spire:", "registry:"},
@@ -363,9 +367,48 @@ func TestRenderPlacesOptionalFieldsInPosition(t *testing.T) {
 	}
 
 	// The example is replaced, not duplicated.
-	for _, key := range []string{"cniVersion", "nodeAgentPort", "trustDomain", "caCertFile"} {
+	for _, key := range []string{"cniVersion", "controlPlaneVIP", "nodeAgentPort", "trustDomain", "caCertFile"} {
 		if strings.Contains(out, "# "+key+":") {
 			t.Errorf("the commented-out example of %s survived alongside the real value:\n%s", key, out)
 		}
+	}
+}
+
+// TestRenderEtcdEncryptionIsABool: the field is a YAML bool, and the rendered
+// file has to say `false`, not `"false"`. A quoted string does not decode into
+// the struct, so a wrong style here is a generated file that does not load.
+func TestRenderEtcdEncryptionIsABool(t *testing.T) {
+	built, err := Build("my-tier0-site", threeNodes(), []string{"cluster.etcdEncryption=false"})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if built.Cluster.EtcdEncryptionEnabled() {
+		t.Fatal("--set cluster.etcdEncryption=false left encryption enabled")
+	}
+	rendered, err := built.Render()
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if line := uncommentedLineFor(string(rendered), "etcdEncryption"); line != "etcdEncryption: false" {
+		t.Errorf("rendered line = %q, want %q:\n%s", line, "etcdEncryption: false", rendered)
+	}
+
+	// Explicitly on is the default, so it stays a comment like any other
+	// optional field left at its default.
+	built, err = Build("my-tier0-site", threeNodes(), []string{"cluster.etcdEncryption=true"})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	rendered, err = built.Render()
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if line := uncommentedLineFor(string(rendered), "etcdEncryption"); line != "" {
+		t.Errorf("explicit true rendered as %q; the default should stay a comment", line)
+	}
+
+	_, err = Build("my-tier0-site", threeNodes(), []string{"cluster.etcdEncryption=maybe"})
+	if err == nil || !strings.Contains(err.Error(), "cluster.etcdEncryption") || !strings.Contains(err.Error(), "maybe") {
+		t.Errorf("Build with a non-boolean value: err = %v, want one naming the path and the value", err)
 	}
 }

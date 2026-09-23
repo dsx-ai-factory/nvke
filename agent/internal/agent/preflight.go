@@ -12,10 +12,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
+	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 )
 
-const defaultCloudInitStatusCheckName = "cloud-init-status"
+const (
+	defaultCloudInitStatusCheckName = "cloud-init-status"
+	dsxCIDATAConsumedPath           = "/var/lib/dsxos/.cidata-consumed"
+)
 
 // cloudInitStatusRecoverableExitCode is the exit code `cloud-init status` uses
 // to report recoverable errors, which it reports as a "degraded" status. It
@@ -93,6 +96,23 @@ func hasExecuteNodePreflightWork(req *pb.ExecuteNodePreflightRequest) bool {
 }
 
 func (s *NodeAgentServer) runCloudInitStatusPreflightCheck() (*pb.NodePreflightResult, error) {
+	markerPath, err := s.resolveNodeAbsolutePath(dsxCIDATAConsumedPath)
+	if err != nil {
+		return nil, fmt.Errorf("check_cloud_init_status: resolve DSX CIDATA completion marker: %w", err)
+	}
+	if info, err := os.Lstat(markerPath); err == nil && info.Mode().IsRegular() {
+		return &pb.NodePreflightResult{
+			Name:    defaultCloudInitStatusCheckName,
+			Passed:  true,
+			Message: fmt.Sprintf("DSX CIDATA configuration complete: %s", dsxCIDATAConsumedPath),
+		}, nil
+	} else if !os.IsNotExist(err) {
+		if err == nil {
+			return nil, fmt.Errorf("check_cloud_init_status: DSX CIDATA completion marker is not a regular file: %s", dsxCIDATAConsumedPath)
+		}
+		return nil, fmt.Errorf("check_cloud_init_status: stat DSX CIDATA completion marker: %w", err)
+	}
+
 	if s.Runner == nil {
 		return nil, fmt.Errorf("check_cloud_init_status: command runner not configured")
 	}

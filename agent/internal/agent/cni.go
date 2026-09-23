@@ -16,8 +16,8 @@ import (
 	"time"
 
 	semver "github.com/Masterminds/semver/v3"
-	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/NVIDIA/nke/agent/pkg/utils"
+	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
 	yaml "gopkg.in/yaml.v2"
 )
 
@@ -56,7 +56,7 @@ var errOvnRequiresHostOpenVSwitch = errors.New(
 const (
 	ovnKubernetesHelmChartDir = "/etc/dgx/ovn-kubernetes"
 	// defaultOvnCniChartStream is the OVN Kubernetes chart stream baked into Debian package names
-	// when InstallCNIRequest.version is empty. Sync with OVN_STREAM in cni-packages debs/ovn/BUILD.
+	// when InstallCNIRequest.version is empty. Sync with OVN_STREAMS in os-image/packages/cni-ovn/Makefile.
 	defaultOvnCniChartStream = "1.4.0"
 	// defaultCalicoCniStream is the Calico patch stream in Debian package names when version is empty.
 	// Sync with CALICO_STREAM in cni-packages debs/calico/BUILD.
@@ -180,9 +180,10 @@ func (s *NodeAgentServer) installCalico(version *semver.Version, operatorManifes
 }
 
 // helmValuesFileArgs appends -f flags for standard value files present under chartDir.
+// Later files win, so the chart's defaults go first and NKE's override last.
 func helmValuesFileArgs(chartDir string) []string {
 	var args []string
-	for _, name := range []string{"values-nke.yaml", "values-images.yaml", "values.yaml", "values-production.yaml"} {
+	for _, name := range []string{"values.yaml", "values-images.yaml", "values-production.yaml", "values-single-node-zone.yaml", "values-nke.yaml"} {
 		p := filepath.Join(chartDir, name)
 		if st, err := os.Stat(p); err == nil && !st.IsDir() {
 			args = append(args, "-f", p)
@@ -191,13 +192,44 @@ func helmValuesFileArgs(chartDir string) []string {
 	return args
 }
 
+// ovnRegistryHelmValue is the controller's registry-override CniConfig key (shared with Calico);
+// the upstream OVN chart has no global.registry, so it is rewritten to global.image.repository.
+const ovnRegistryHelmValue = "global.registry"
+
+// ovnStagedImageRepository reads global.image.repository from the values-nke.yaml bundle.sh wrote,
+// the one place the packaged image's name lives.
+func ovnStagedImageRepository(chartDir string) (string, error) {
+	raw, err := os.ReadFile(filepath.Join(chartDir, "values-nke.yaml"))
+	if err != nil {
+		return "", err
+	}
+	var v struct {
+		Global struct {
+			Image struct{ Repository string }
+		}
+	}
+	if err := yaml.Unmarshal(raw, &v); err != nil {
+		return "", fmt.Errorf("parsing values-nke.yaml: %w", err)
+	}
+	if !strings.Contains(v.Global.Image.Repository, "/") {
+		return "", fmt.Errorf("values-nke.yaml global.image.repository %q has no registry host", v.Global.Image.Repository)
+	}
+	return v.Global.Image.Repository, nil
+}
+
+// ovnImageRepository swaps the registry host of upstreamRepo for a mirror prefix, keeping the path.
+func ovnImageRepository(registry, upstreamRepo string) string {
+	_, path, _ := strings.Cut(upstreamRepo, "/")
+	return strings.TrimRight(registry, "/") + "/" + path
+}
+
 // buildOvnKubernetesHelmInstallArgs returns argv for `helm upgrade --install` for an OVN chart
-// directory. imageRegistry, when non-empty, is injected as --set global.registry=<value> before
-// cniConfig entries so that per-request CniConfig values take precedence over the site-wide default.
+// directory. imageRegistry is set before cniConfig so a per-request registry wins; upstreamRepo
+// is only read when one of them is set.
 //
 // `upgrade --install` and not `install`: this runs from a Temporal activity that retries, and
 // `install` fails once the release exists, so the second attempt could never succeed.
-func buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podNetworkCidr, serviceCidr, imageRegistry string, cniConfig map[string]string) []string {
+func buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podNetworkCidr, serviceCidr, imageRegistry, upstreamRepo string, cniConfig map[string]string) []string {
 	args := []string{
 		"upgrade", "--install", //nolint:goconst // helm argv fragment; naming each CLI flag reads worse than the literal
 		"ovn-kubernetes",
@@ -210,11 +242,15 @@ func buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podNetworkCidr, serv
 		"--set", "serviceNetwork="+serviceCidr,
 	)
 	if imageRegistry != "" {
-		args = append(args, "--set", "global.registry="+imageRegistry)
+		args = append(args, "--set", "global.image.repository="+ovnImageRepository(imageRegistry, upstreamRepo))
 	}
 	for key, value := range cniConfig {
 		if key == "" {
 			continue
+		}
+		if key == ovnRegistryHelmValue {
+			key = "global.image.repository"
+			value = ovnImageRepository(value, upstreamRepo)
 		}
 		if value == "" {
 			value = "\"\""
@@ -274,7 +310,13 @@ func (s *NodeAgentServer) runOvnKubernetesHelmInstallFromDir(chartDir, podNetwor
 			err,
 		)
 	}
-	args := buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podNetworkCidr, serviceCidr, s.CniImageRegistry, cniConfig)
+	var upstreamRepo string
+	if s.CniImageRegistry != "" || cniConfig[ovnRegistryHelmValue] != "" {
+		if upstreamRepo, err = ovnStagedImageRepository(chartDir); err != nil {
+			return fmt.Errorf("resolving the OVN image repository for the registry override: %w", err)
+		}
+	}
+	args := buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podNetworkCidr, serviceCidr, s.CniImageRegistry, upstreamRepo, cniConfig)
 	stdout, err := s.Runner.Run("helm", args, &nkeutils.CommandOptions{
 		Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
 	})

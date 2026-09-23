@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/NVIDIA/nke/cli/internal/util"
-	api "github.com/NVIDIA/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/cli/internal/util"
+	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 
 // NewCreateCmd returns the "nkectl create nodepool" subcommand.

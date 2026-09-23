@@ -6,8 +6,8 @@ package etcd
 import (
 	"context"
 
-	"github.com/NVIDIA/nke/controller/internal/rollout"
-	"github.com/NVIDIA/nke/controller/internal/rollout/nodeagent"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
 )
 
 type Option func(*EncryptionOperation)

@@ -58,7 +58,12 @@ jobs:
             runner: linux-amd64-gpu-l4-latest-1
             target: build-efi-x86
           - arch: aarch64
-            runner: nke-arm64-8c16g
+            # ARC scale set on the RelEng EKS cluster, same size class as the
+            # nke-arm64-8c16g it replaces. This leg does not need /dev/kvm --
+            # mkosi builds a Unified Kernel Image -- so none of the libvirt
+            # limits in #863 apply to it. Verified: 5m34s here against 5m on
+            # the self-hosted fleet.
+            runner: arc-arm64-kvm-8c16g
             target: build-efi-arm64
     # Neither leg needs /dev/kvm -- mkosi builds a Unified Kernel Image and
     # boots nothing. Both need the host shape: mkosi wants unprivileged user

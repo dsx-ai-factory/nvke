@@ -23,7 +23,7 @@ const (
 var (
 	provisionDurationHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name: "cwe_node_provision_duration_seconds",
+			Name: "nke_controller_node_provision_duration_seconds",
 			Help: "End-to-end node provisioning duration by result (success/failure). " +
 				"Query by result label to compare happy/unhappy paths, or omit it to see combined.",
 			Buckets: []float64{30, 60, 120, 300, 600, 900, 1200, 1800, 2700, 3600, 5400, 7200},
@@ -33,7 +33,7 @@ var (
 
 	provisionPhaseDurationHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "cwe_node_provision_phase_duration_seconds",
+			Name:    "nke_controller_node_provision_phase_duration_seconds",
 			Help:    "Duration of individual phases within node provisioning",
 			Buckets: []float64{30, 60, 120, 300, 600, 900, 1200, 1800, 2700, 3600},
 		},
@@ -42,7 +42,7 @@ var (
 
 	provisionResultCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "cwe_node_provision_total",
+			Name: "nke_controller_node_provision_total",
 			Help: "Total number of node provision workflow completions",
 		},
 		[]string{tenantClusterLabel, nodeTypeLabel, resultLabel},
@@ -50,7 +50,7 @@ var (
 
 	teardownDurationHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name: "cwe_node_teardown_duration_seconds",
+			Name: "nke_controller_node_teardown_duration_seconds",
 			Help: "End-to-end node teardown duration by result (success/failure). " +
 				"Query by result label to compare happy/unhappy paths, or omit it to see combined.",
 			Buckets: []float64{30, 60, 120, 300, 600, 900, 1200, 1800, 2700},
@@ -60,7 +60,7 @@ var (
 
 	teardownPhaseDurationHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "cwe_node_teardown_phase_duration_seconds",
+			Name:    "nke_controller_node_teardown_phase_duration_seconds",
 			Help:    "Duration of individual phases within node teardown",
 			Buckets: []float64{15, 30, 60, 120, 300, 600, 900, 1200},
 		},
@@ -69,7 +69,7 @@ var (
 
 	teardownResultCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "cwe_node_teardown_total",
+			Name: "nke_controller_node_teardown_total",
 			Help: "Total number of node teardown workflow completions",
 		},
 		[]string{tenantClusterLabel, nodeTypeLabel, resultLabel},

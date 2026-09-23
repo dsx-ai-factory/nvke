@@ -17,10 +17,10 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"k8s.io/client-go/rest"
 
-	"github.com/NVIDIA/nke/controller/api"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/authtoken"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/cwe"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/authtoken"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
 )
 
 // Default waiter timeouts when Options fields are zero.

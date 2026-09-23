@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/NVIDIA/nke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
 )
 
 // DryRunOperation implements every optional capability but mutates nothing

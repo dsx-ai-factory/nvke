@@ -16,11 +16,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/NVIDIA/nke/controller/internal/config"
-	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
-	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
-	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
-	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/dbwrapper"
+	dbfilters "github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/filters"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 // Controller manages keyed control plane reconciliation for clusters.

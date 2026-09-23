@@ -9,10 +9,9 @@
 # though, where only the person merging sees it. This puts the same verdict on
 # the pull request, for the author, while the title is cheap to fix.
 #
-# `types` and `scopes` restate the rule's pattern, which
-# docs/branch-protection-settings.md quotes. Read the live rule with:
+# `types` and `scopes` restate the rule's pattern. Read the live rule with:
 #
-#   gh api repos/NVIDIA/nke/rules/branches/main \
+#   gh api repos/dsx-ai-factory/nke/rules/branches/main \
 #     --jq '.[] | select(.type=="commit_message_pattern").parameters.pattern'
 #
 # Keep the two in step. The action anchors each entry with ^...$, so `scopes`

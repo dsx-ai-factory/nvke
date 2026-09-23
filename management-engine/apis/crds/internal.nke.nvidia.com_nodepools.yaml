@@ -1,0 +1,364 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: nodepools.internal.nke.nvidia.com
+spec:
+  group: internal.nke.nvidia.com
+  names:
+    kind: NodePool
+    listKind: NodePoolList
+    plural: nodepools
+    singular: nodepool
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.clusterName
+      name: Cluster
+      type: string
+    - jsonPath: .spec.replicas
+      name: Desired
+      type: integer
+    - jsonPath: .status.readyReplicas
+      name: Ready
+      type: integer
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: NodePool is the internal representation of a workload cluster's
+          worker pool.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: NodePoolSpec describes workers managed through an upstream
+              MachineDeployment.
+            properties:
+              clusterName:
+                description: ClusterName is resolved only within this NodePool's namespace.
+                maxLength: 253
+                minLength: 1
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                type: string
+                x-kubernetes-validations:
+                - message: clusterName is immutable
+                  rule: self == oldSelf
+              instanceType:
+                description: InstanceType names an operator offering, not a provider-specific
+                  ID.
+                maxLength: 253
+                minLength: 1
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                type: string
+                x-kubernetes-validations:
+                - message: instanceType is immutable
+                  rule: self == oldSelf
+              release:
+                description: |-
+                  ReleaseReference identifies an operator-published release and its version.
+                  Resolution and compatibility checks belong to the configuration reconciler.
+                properties:
+                  name:
+                    description: ResourceName is a Kubernetes DNS subdomain name,
+                      not a provider identifier.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                  version:
+                    maxLength: 128
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - version
+                type: object
+              replicas:
+                description: |-
+                  Replicas is required. Zero explicitly requests no workers; omission is
+                  invalid. A pointer preserves this distinction in Go and future projections.
+                format: int32
+                minimum: 0
+                type: integer
+              rollout:
+                default:
+                  strategy:
+                    rollingUpdate:
+                      maxSurge: 1
+                    type: RollingUpdate
+                description: NodePoolRollout configures release replacement through
+                  upstream CAPI.
+                properties:
+                  strategy:
+                    description: NodePoolRolloutStrategy initially supports only rolling
+                      replacement.
+                    properties:
+                      rollingUpdate:
+                        description: RollingUpdateStrategy bounds temporary capacity
+                          above the desired count.
+                        properties:
+                          maxSurge:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            description: |-
+                              MaxSurge accepts an int32 count or a percentage with an int32 numerator.
+                              This bounds representation, not the operational capacity of a NodePool.
+                            x-kubernetes-int-or-string: true
+                            x-kubernetes-validations:
+                            - message: must be an integer or percentage between 0
+                                and 2147483647
+                              rule: 'type(self) == int ? self >= 0 && self <= 2147483647
+                                : self.matches(''^(0|[1-9][0-9]{0,9})%$'') && int(self.substring(0,
+                                self.size() - 1)) <= 2147483647'
+                        required:
+                        - maxSurge
+                        type: object
+                      type:
+                        enum:
+                        - RollingUpdate
+                        type: string
+                    required:
+                    - rollingUpdate
+                    - type
+                    type: object
+                required:
+                - strategy
+                type: object
+              template:
+                description: Template changes update labels and taints in place.
+                properties:
+                  metadata:
+                    description: NodeTemplateMetadata is a limited template, not a
+                      full Kubernetes ObjectMeta.
+                    properties:
+                      labels:
+                        additionalProperties:
+                          description: LabelValue follows Kubernetes label value syntax.
+                          maxLength: 63
+                          pattern: ^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$
+                          type: string
+                        description: |-
+                          Labels are propagated to existing workers without recycling Machines.
+                          Platform domains and their subdomains are reserved.
+                        maxProperties: 128
+                        type: object
+                        x-kubernetes-validations:
+                        - message: label keys must be Kubernetes qualified names
+                          rule: 'self.all(k, k.size() <= 317 && k.matches(''^([a-z0-9]([-a-z0-9]*[a-z0-9])?([.][a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$'')
+                            && (k.split(''/'').size() == 1 ? k.size() <= 63 : k.split(''/'')[0].size()
+                            <= 253 && k.split(''/'')[1].size() <= 63))'
+                        - message: platform label prefixes are reserved
+                          rule: self.all(k, !k.matches('(^|[.])(nke[.]nvidia[.]com|kubernetes[.]io|k8s[.]io)/'))
+                    type: object
+                  spec:
+                    description: NodeTemplateSpec holds tenant-controlled scheduling
+                      properties.
+                    properties:
+                      taints:
+                        items:
+                          description: NodeTaint uses Kubernetes' conventions
+                          properties:
+                            effect:
+                              enum:
+                              - NoSchedule
+                              - PreferNoSchedule
+                              - NoExecute
+                              type: string
+                            key:
+                              description: QualifiedName is a Kubernetes label or
+                                taint key, with an optional DNS prefix.
+                              maxLength: 317
+                              minLength: 1
+                              pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
+                              type: string
+                              x-kubernetes-validations:
+                              - message: key name must be at most 63 characters and
+                                  its DNS prefix at most 253
+                                rule: 'self.split(''/'').size() == 1 ? self.size()
+                                  <= 63 : self.split(''/'')[0].size() <= 253 && self.split(''/'')[1].size()
+                                  <= 63'
+                            value:
+                              description: LabelValue follows Kubernetes label value
+                                syntax.
+                              maxLength: 63
+                              pattern: ^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$
+                              type: string
+                          required:
+                          - effect
+                          - key
+                          type: object
+                        maxItems: 64
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - key
+                        - effect
+                        x-kubernetes-list-type: map
+                    type: object
+                type: object
+            required:
+            - clusterName
+            - instanceType
+            - release
+            - replicas
+            type: object
+          status:
+            description: NodePoolStatus reports observed Machines and the immutable
+              cluster binding.
+            properties:
+              clusterRef:
+                description: |-
+                  ClusterRef is controller-owned. Once resolved, a different UID under the
+                  same name must be reported as a stale reference, never adopted.
+                properties:
+                  name:
+                    description: ResourceName is a Kubernetes DNS subdomain name,
+                      not a provider identifier.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                  uid:
+                    description: |-
+                      UID is a type that holds unique ID values, including UUIDs.  Because we
+                      don't ONLY use UUIDs, this is an alias to string.  Being a type captures
+                      intent and helps make sure that UIDs and names do not get conflated.
+                    maxLength: 128
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - uid
+                type: object
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                maxItems: 32
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                format: int64
+                minimum: 0
+                type: integer
+              readyReplicas:
+                format: int32
+                minimum: 0
+                type: integer
+              replicas:
+                description: Replicas is the observed Machine count; absent means
+                  not yet observed.
+                format: int32
+                minimum: 0
+                type: integer
+              resolvedRelease:
+                description: |-
+                  ReleaseReference identifies an operator-published release and its version.
+                  Resolution and compatibility checks belong to the configuration reconciler.
+                properties:
+                  name:
+                    description: ResourceName is a Kubernetes DNS subdomain name,
+                      not a provider identifier.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                  version:
+                    maxLength: 128
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - version
+                type: object
+              updatedReplicas:
+                format: int32
+                minimum: 0
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: clusterRef cannot be changed or removed once bound
+          rule: '!has(oldSelf.status) || !has(oldSelf.status.clusterRef) || (has(self.status)
+            && has(self.status.clusterRef) && self.status.clusterRef == oldSelf.status.clusterRef)'
+        - message: clusterRef must match spec.clusterName
+          rule: '!has(self.status) || !has(self.status.clusterRef) || self.status.clusterRef.name
+            == self.spec.clusterName'
+    served: true
+    storage: true
+    subresources:
+      status: {}

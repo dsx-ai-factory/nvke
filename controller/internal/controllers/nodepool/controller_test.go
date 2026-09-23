@@ -16,12 +16,12 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/nke/controller/internal/config"
-	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
-	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
-	"github.com/NVIDIA/nke/controller/internal/controllers/nodepool"
-	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/dbwrapper"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllers/nodepool"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
 )
 
 func TestUnit_NewController(t *testing.T) {

@@ -6,8 +6,8 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/NVIDIA/nke/cli/internal/cwe/clusters"
-	"github.com/NVIDIA/nke/cli/internal/cwe/nodepools"
+	"github.com/dsx-ai-factory/nke/cli/internal/cwe/clusters"
+	"github.com/dsx-ai-factory/nke/cli/internal/cwe/nodepools"
 )
 
 func newPatchCmd() *cobra.Command {

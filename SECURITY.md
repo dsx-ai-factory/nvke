@@ -75,8 +75,10 @@ advisory is published.
 
 ## Supported versions
 
-nke has published pre-releases only (`*-rc.N` tags), no stable release. Until a
-stable release exists, `main` is the only branch that receives security fixes.
+nke has no stable release. Every product line is still on pre-releases
+(`*-rc.N`), except the `controller/api` Go module, which publishes `v0.0.x` so
+consumers can pin. Until a stable release exists, `main` is the only branch
+that receives security fixes.
 
 | Version | Supported |
 |---|---|

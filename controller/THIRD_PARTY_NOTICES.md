@@ -81,7 +81,7 @@ notices-check` verifies it is up to date.
 | `github.com/oapi-codegen/runtime` | Apache-2.0 | `github.com/oapi-codegen/runtime@v1.7.0` | Unknown |
 | `github.com/oasdiff/yaml` | BSD-3-Clause / MIT | `github.com/oasdiff/yaml@v0.1.1` | Unknown |
 | `github.com/oasdiff/yaml3` | MIT | `github.com/oasdiff/yaml3@v0.0.14` | Unknown |
-| `github.com/onsi/gomega` | MIT | `github.com/onsi/gomega@v1.43.0` | Unknown |
+| `github.com/onsi/gomega` | MIT | `github.com/onsi/gomega@v1.43.1` | Unknown |
 | `github.com/pkg/errors` | BSD-2-Clause | `github.com/pkg/errors@v0.9.1` | Unknown |
 | `github.com/pmezard/go-difflib/difflib` | BSD-3-Clause | `github.com/pmezard/go-difflib@v1.0.1-0.20181226105442-5d4384ee4fb2` | Unknown |
 | `github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil` | BSD-3-Clause | `github.com/prometheus/client_golang@v1.24.1` | Unknown |
@@ -127,9 +127,9 @@ notices-check` verifies it is up to date.
 | `go.opentelemetry.io/otel/sdk` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/sdk@v1.46.0` | Unknown |
 | `go.opentelemetry.io/otel/trace` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/trace@v1.46.0` | Unknown |
 | `go.opentelemetry.io/proto/otlp` | Apache-2.0 | `go.opentelemetry.io/proto/otlp@v1.11.0` | Unknown |
-| `go.temporal.io/api` | MIT | `go.temporal.io/api@v1.63.5` | Unknown |
-| `go.temporal.io/api/internal/protojson` | BSD-3-Clause | `go.temporal.io/api@v1.63.5` | Unknown |
-| `go.temporal.io/sdk` | MIT | `go.temporal.io/sdk@v1.48.0` | Unknown |
+| `go.temporal.io/api` | MIT | `go.temporal.io/api@v1.63.6` | Unknown |
+| `go.temporal.io/api/internal/protojson` | BSD-3-Clause | `go.temporal.io/api@v1.63.6` | Unknown |
+| `go.temporal.io/sdk` | MIT | `go.temporal.io/sdk@v1.49.0` | Unknown |
 | `go.temporal.io/sdk/contrib/opentelemetry` | MIT | `go.temporal.io/sdk/contrib/opentelemetry@v0.8.1` | Unknown |
 | `go.temporal.io/sdk/contrib/tally` | MIT | `go.temporal.io/sdk/contrib/tally@v0.2.0` | Unknown |
 | `go.uber.org/atomic` | MIT | `go.uber.org/atomic@v1.11.0` | Unknown |
@@ -165,14 +165,14 @@ notices-check` verifies it is up to date.
 | `k8s.io/kube-openapi/pkg` | Apache-2.0 | `k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad` | Unknown |
 | `k8s.io/kube-openapi/pkg/internal/third_party/go-json-experiment/json` | BSD-3-Clause | `k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad` | Unknown |
 | `k8s.io/kube-openapi/pkg/validation/spec` | Apache-2.0 | `k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad` | Unknown |
-| `k8s.io/kube-proxy/config/v1alpha1` | Apache-2.0 | `k8s.io/kube-proxy@v0.35.3` | Unknown |
-| `k8s.io/kubelet/config/v1beta1` | Apache-2.0 | `k8s.io/kubelet@v0.35.3` | Unknown |
+| `k8s.io/kube-proxy/config/v1alpha1` | Apache-2.0 | `k8s.io/kube-proxy@v0.37.0` | Unknown |
+| `k8s.io/kubelet/config/v1beta1` | Apache-2.0 | `k8s.io/kubelet@v0.37.0` | Unknown |
 | `k8s.io/utils` | Apache-2.0 | `k8s.io/utils@v0.0.0-20260626114624-be93311217bd` | Unknown |
 | `k8s.io/utils/internal/third_party/forked/golang` | BSD-3-Clause | `k8s.io/utils@v0.0.0-20260626114624-be93311217bd` | Unknown |
 | `k8s.io/utils/third_party/forked/golang/btree` | Apache-2.0 | `k8s.io/utils@v0.0.0-20260626114624-be93311217bd` | Unknown |
 | `mellium.im/sasl` | BSD-2-Clause | `mellium.im/sasl@v0.3.2` | Unknown |
-| `sigs.k8s.io/cluster-api` | Apache-2.0 | `sigs.k8s.io/cluster-api@v1.13.4` | Unknown |
-| `sigs.k8s.io/controller-runtime` | Apache-2.0 | `sigs.k8s.io/controller-runtime@v0.25.0` | Unknown |
+| `sigs.k8s.io/cluster-api` | Apache-2.0 | `sigs.k8s.io/cluster-api@v1.13.6` | Unknown |
+| `sigs.k8s.io/controller-runtime` | Apache-2.0 | `sigs.k8s.io/controller-runtime@v0.25.1` | Unknown |
 | `sigs.k8s.io/json` | Apache-2.0 / BSD-3-Clause | `sigs.k8s.io/json@v0.0.0-20250730193827-2d320260d730` | Unknown |
 | `sigs.k8s.io/randfill` | Apache-2.0 | `sigs.k8s.io/randfill@v1.0.0` | Unknown |
 | `sigs.k8s.io/structured-merge-diff/v6` | Apache-2.0 | `sigs.k8s.io/structured-merge-diff/v6@v6.4.2` | Unknown |
@@ -7629,7 +7629,7 @@ limitations under the License.
 
 ### github.com/onsi/gomega
 
-_MIT — github.com/onsi/gomega@v1.43.0_
+_MIT — github.com/onsi/gomega@v1.43.1_
 
 #### LICENSE
 
@@ -13516,7 +13516,7 @@ _Apache-2.0 — go.opentelemetry.io/proto/otlp@v1.11.0_
 
 ### go.temporal.io/api
 
-_MIT — go.temporal.io/api@v1.63.5_
+_MIT — go.temporal.io/api@v1.63.6_
 
 #### LICENSE
 
@@ -13546,7 +13546,7 @@ THE SOFTWARE.
 
 ### go.temporal.io/api/internal/protojson
 
-_BSD-3-Clause — go.temporal.io/api@v1.63.5_
+_BSD-3-Clause — go.temporal.io/api@v1.63.6_
 
 #### LICENSE
 
@@ -13583,7 +13583,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### go.temporal.io/sdk
 
-_MIT — go.temporal.io/sdk@v1.48.0_
+_MIT — go.temporal.io/sdk@v1.49.0_
 
 #### LICENSE
 
@@ -17837,7 +17837,7 @@ _Apache-2.0 — k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad_
 
 ### k8s.io/kube-proxy/config/v1alpha1
 
-_Apache-2.0 — k8s.io/kube-proxy@v0.35.3_
+_Apache-2.0 — k8s.io/kube-proxy@v0.37.0_
 
 #### LICENSE
 
@@ -18049,7 +18049,7 @@ _Apache-2.0 — k8s.io/kube-proxy@v0.35.3_
 
 ### k8s.io/kubelet/config/v1beta1
 
-_Apache-2.0 — k8s.io/kubelet@v0.35.3_
+_Apache-2.0 — k8s.io/kubelet@v0.37.0_
 
 #### LICENSE
 
@@ -18754,7 +18754,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### sigs.k8s.io/cluster-api
 
-_Apache-2.0 — sigs.k8s.io/cluster-api@v1.13.4_
+_Apache-2.0 — sigs.k8s.io/cluster-api@v1.13.6_
 
 #### LICENSE
 
@@ -18965,7 +18965,7 @@ _Apache-2.0 — sigs.k8s.io/cluster-api@v1.13.4_
 
 ### sigs.k8s.io/controller-runtime
 
-_Apache-2.0 — sigs.k8s.io/controller-runtime@v0.25.0_
+_Apache-2.0 — sigs.k8s.io/controller-runtime@v0.25.1_
 
 #### LICENSE
 

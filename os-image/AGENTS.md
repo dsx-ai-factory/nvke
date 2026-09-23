@@ -3,7 +3,7 @@
 Reference node OS image (spec + Packer recipe) and the `nke-os-image-check`
 connectivity binary.
 
-**Module path:** `github.com/NVIDIA/nke/os-image`
+**Module path:** `github.com/dsx-ai-factory/nke/os-image`
 
 The directory is `os-image/` on purpose. `image.yml` / `image-nvcr.yml` already
 publish **container** images; this module is the Ubuntu qcow2 a node boots.
@@ -67,9 +67,16 @@ repository's `bin/`, and `make version-check` runs it with `--version`.
   regenerate the lock with `make lock` rather than hand-editing it.
   `TPM_PLUGIN_VERSION` also pins the server-side attestor in `controller/` and
   `cli/`; move both halves together.
-- Do not hard-require `/dev/kvm`. `packer/Makefile` and `boot-smoke.sh` probe
-  for it and fall back to `tcg`, because the CI runners are containers without
-  it (https://github.com/dsx-ai-factory/nke/issues/219).
+- Keep the generic image target's TCG development path. `image-native` requires
+  usable native KVM; CI uses matching Linux KVM runners for both architectures.
+  Package builds execute Linux kubeadm; matching Linux hosts build locally,
+  while Linux and Apple Silicon macOS hosts otherwise use the separate NixOS
+  package-builder VM (`package-builder.sh` rejects Intel macOS). The shared
+  QEMU helper also supports HVF for boot tools on macOS.
+- Preserve `packages/spire-agent/` installation and the current package builders.
+  `flake.nix` and `nix/` define the NixOS package-builder fallback; see `nix/README.md` for the integration status and Ubuntu-linkage checks.
+- Run `make test-qemu` for QEMU selection and build-entrypoint changes; the
+  module's `make test` also runs these tests.
 - `nke-agent` is built as a Debian package from this checkout's `agent/` source
   at bake time (`make -C agent deb-<arch>` in `fetch-artifacts.sh`) and installed
   by dpkg with `NKE_AGENT_SKIP_START=1`. No prebuilt artifact is pulled. Its

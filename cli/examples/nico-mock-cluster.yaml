@@ -43,7 +43,6 @@ nodePools:
     controlPlane: true
     systemReservedMemory: "1Gi"
     infra:
-      spireAttestationMethod: joinToken
       preKubeadmCommands:
         - "mkdir -p /run/cluster-api"
         - "echo success > /run/cluster-api/bootstrap-success.complete"
@@ -72,7 +71,6 @@ nodePools:
     controlPlane: false
     systemReservedMemory: "1Gi"
     infra:
-      spireAttestationMethod: joinToken
       preKubeadmCommands:
         - "mkdir -p /run/cluster-api"
         - "echo success > /run/cluster-api/bootstrap-success.complete"

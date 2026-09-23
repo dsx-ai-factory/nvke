@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	rollouttemporal "github.com/NVIDIA/nke/controller/internal/rollout/temporal"
-	"github.com/NVIDIA/nke/controller/internal/temporal/activities"
+	rollouttemporal "github.com/dsx-ai-factory/nke/controller/internal/rollout/temporal"
+	"github.com/dsx-ai-factory/nke/controller/internal/temporal/activities"
 )
 
 func TestLegacyAndRolloutActivityMethodNamesDoNotCollide(t *testing.T) {

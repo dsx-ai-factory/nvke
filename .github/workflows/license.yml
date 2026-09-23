@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 ---
 # Checks dependency licenses, source headers and shipped license copies.
 # Dependency checks use the same module list and command as local checks.

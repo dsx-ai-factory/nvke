@@ -4,27 +4,55 @@
 # Canonical tool versions. This file contains values only so module Makefiles
 # can include it without adding root targets to their help output.
 
-GOVULNCHECK_GO_VERSION ?= 1.26.6
+# Derived, not duplicated: go.work owns the Go version.
+GOVULNCHECK_GO_VERSION ?= $(shell awk '/^go /{print $$2; exit}' $(dir $(lastword $(MAKEFILE_LIST)))../go.work)
 GOVULNCHECK_VERSION    ?= v1.6.0
-GOVULNCHECK_WAIVED_MODULES ?= controller/nico-sim
+# Waived govulncheck findings, as <module>=<OSV-id>[,<OSV-id>...]. Scoped to
+# the advisory, not the module, so an unrelated reachable vulnerability in the
+# same module still fails the gate. Empty: nothing is waived. A waived advisory
+# that stops being called fails the gate, so an entry cannot outlive its reason.
+GOVULNCHECK_WAIVED ?=
+# Set both with any waiver. Name a person as the owner, not a team.
+GOVULNCHECK_WAIVER_OWNER  ?=
+GOVULNCHECK_WAIVER_REVIEW ?=
 
+# Committed digests, not fetched from the release. A checksum served by the
+# same host as the artifact shares its compromise boundary; a committed one
+# does not. One line per tool per platform, updated with the version above it.
 ACTIONLINT_VERSION ?= 1.7.12
+ACTIONLINT_SHA256_AMD64 ?= 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
 SHELLCHECK_VERSION ?= 0.11.0
+# Next to the version so a bump cannot change one without the other.
+# linux.x86_64 tarball for the version above.
+SHELLCHECK_SHA256  ?= 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
 GITLEAKS_VERSION   ?= 8.30.1
+GITLEAKS_SHA256_AMD64 ?= 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
 
 KUBECONFORM_VERSION ?= v0.7.0
+# chart.yml runs on ubuntu-latest, so amd64 is the only platform needed.
+KUBECONFORM_SHA256_AMD64 ?= c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3
 HELM_VERSION         ?= v4.2.4
 
 # crane and nfpm build the CNI debs under os-image/packages/.
 CRANE_VERSION ?= 0.21.9
+CRANE_SHA256_AMD64 ?= 5c16d8ddb971cb1d5e6ed8b1e743da8224414eeba2c2762d8f1a61b2f095699e
+CRANE_SHA256_ARM64 ?= 1f4c647b7bb260ab5435661df5b526cf59950ebf95201790db7183ac189cbcbd
 NFPM_VERSION  ?= 2.47.0
 
 KIND_VERSION    ?= v0.32.0
+KIND_SHA256_AMD64 ?= 50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9463721b0f54
+KIND_SHA256_ARM64 ?= b92cd615e97585de8ddade28ed5cd7feb4248d717c233eea5b03c37298900f5d
 KUBECTL_VERSION ?= v1.36.0
+KUBECTL_SHA256_AMD64 ?= 123d8c8844f46b1244c547fffb3c17180c0c26dac9890589fe7e67763298748e
+KUBECTL_SHA256_ARM64 ?= 9f9d9c44a7b5264515ac9da5991584e2395bd50662e651132337e7b4d0c56f8f
 # clusterctl and the CAPI core/kubeadm providers ship as one release, so one
 # pin covers the binary and everything `clusterctl init` installs.
 CAPI_VERSION    ?= v1.12.3
 
 ORAS_VERSION        ?= 1.3.3
-PACKER_VERSION      ?= 1.14.2
+ORAS_SHA256_AMD64   ?= 9ce999f8d2de03fc03968b29d743077a58783e545e5eaa53917ca177352d0e59
+PACKER_VERSION      ?= 1.15.4
+# packer_<version>_linux_{amd64,arm64}.zip, from HashiCorp's SHA256SUMS.
+PACKER_SHA256_AMD64 ?= 15f97a6a99645c7d5308c609973b5280837b38e112beac413ccbce80da927cf1
+PACKER_SHA256_ARM64 ?= 23e6d2e596dd9e2527e0f7bea9aedd26059729375a0d17c462c2621f1b97b82d
 GO_LICENSES_VERSION ?= v2.0.2-0.20260709180300-7e73597a45d1

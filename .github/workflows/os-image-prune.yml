@@ -38,6 +38,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
+      # The checkout below needs this. Without it the job reads an internal
+      # repository unauthenticated, and GitHub answers 404 rather than 403, so
+      # the log says "repository not found" instead of naming the permission.
+      contents: read
       # Deleting a version needs write on the package, which is linked to this
       # repository.
       packages: write

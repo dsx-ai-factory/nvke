@@ -6,7 +6,7 @@ package server
 import (
 	"fmt"
 
-	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
 )
 
 type providerSupport struct {

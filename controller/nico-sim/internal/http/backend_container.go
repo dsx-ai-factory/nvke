@@ -11,8 +11,8 @@ import (
 
 	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/apierr"
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/state"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/apierr"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/state"
 )
 
 // containerBackend keeps database records in sync with Docker containers.

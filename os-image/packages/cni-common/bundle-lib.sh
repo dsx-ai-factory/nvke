@@ -48,17 +48,62 @@ parse_bundle_args() {
 
 # fetch <url> <out>. CURL_CONFIG, when set, is fed to curl as a config file, so
 # a credential never appears on a command line.
+# No --retry-delay: it replaces curl's exponential backoff with a flat wait.
 fetch() {
   local url="$1" out="$2"
   curl --fail --silent --show-error --location \
     --connect-timeout 10 --max-time 300 \
-    --retry 3 --retry-all-errors --retry-delay 5 --retry-connrefused \
+    --retry 8 --retry-all-errors --retry-connrefused \
     --config - -o "$out" "$url" <<<"${CURL_CONFIG:-}" ||
     die "fetch ${url} failed"
 }
 
+# try_retry <what> <cmd...> retries a command but lets the caller choose a
+# fallback after the final failure.
+try_retry() {
+  local what="$1"; shift
+  local attempt
+  for attempt in 1 2 3; do
+    if "$@"; then
+      return 0
+    fi
+    if [[ "$attempt" -lt 3 ]]; then
+      echo "${CNI}: ${what} failed, attempt ${attempt} of 3; retrying in $((attempt * 5))s" >&2
+      sleep $((attempt * 5))
+    fi
+  done
+  return 1
+}
+
+# retry <what> <cmd...>. Commands without their own retry use three attempts.
+# A reset mid-transfer used to fail the whole OS-image build after package
+# preparation had already completed.
+retry() {
+  local what="$1"; shift
+  try_retry "$what" "$@" || die "${what} failed after 3 attempts"
+}
+
 sha_of() {
   sha256sum "$1" | cut -d' ' -f1
+}
+
+# pull_images <out> <ref...>. One attempt, starting from a clean output file.
+pull_images() {
+  local out="$1"; shift
+  rm -f "$out"
+  "$CRANE" pull --platform "linux/${ARCH}" "$@" "$out"
+}
+
+# image_transport_ref keeps the locked and installed image identity unchanged
+# while allowing CI or another caller to route Docker Hub reads through a
+# pull-through registry mirror. Other registries are never rewritten.
+image_transport_ref() {
+  local ref="$1"
+  if [[ -n "${CNI_DOCKERHUB_MIRROR:-}" && "$ref" == docker.io/* ]]; then
+    printf '%s/%s\n' "${CNI_DOCKERHUB_MIRROR%/}" "${ref#docker.io/}"
+    return
+  fi
+  printf '%s\n' "$ref"
 }
 
 # lock_value <kind> <key> prints the pinned value, or nothing when absent.
@@ -93,8 +138,9 @@ tar_paths_safe() {
 # docker-archive, ${STAGE}/images.tgz, repacked so two builds of the same lock
 # are byte-identical, plus a sha256sum sidecar naming the installed file.
 stage_images() {
-  local -a refs pinned=()
-  local ref digest want repo placeholder manifest leftover ref_src
+  local -a refs pinned=() fallback_pinned=() transport_refs=()
+  local ref mirror_ref transport_ref digest want repo placeholder manifest leftover ref_src i
+  local using_mirror=false
   IMAGE_LINES=()
   # amd64's lock decides which images ship; other arches pin their own digests
   # for the same refs. Reading refs from amd64 keeps the sets in step.
@@ -108,10 +154,25 @@ stage_images() {
   [[ ${#refs[@]} -gt 0 ]] || die "${ref_src} lists no images; seed it with 'image <ref>' lines"
 
   for ref in "${refs[@]}"; do
-    digest="$("$CRANE" digest --platform "linux/${ARCH}" "$ref")" ||
-      die "crane digest ${ref} failed"
+    mirror_ref="$(image_transport_ref "$ref")"
+    transport_ref="$ref"
+    digest=""
+    if [[ "$mirror_ref" != "$ref" ]]; then
+      if digest="$(try_retry "crane digest ${mirror_ref} for ${ref}" "$CRANE" digest --platform "linux/${ARCH}" "$mirror_ref")" &&
+        [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+        transport_ref="$mirror_ref"
+        using_mirror=true
+      else
+        echo "${CNI}: mirror ${mirror_ref} unavailable for ${ref}; falling back to ${ref}" >&2
+        digest=""
+      fi
+    fi
+    if [[ -z "$digest" ]]; then
+      digest="$(retry "crane digest ${ref}" "$CRANE" digest --platform "linux/${ARCH}" "$ref")"
+    fi
+    transport_refs+=("$transport_ref")
     [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
-      die "crane digest ${ref} returned ${digest}"
+      die "crane digest ${transport_ref} for ${ref} returned ${digest}"
     if [[ "$WRITE_LOCK" == false ]]; then
       want="$(lock_value image "$ref")"
       [[ -n "$want" ]] || die "${LOCK} has no digest for ${ref}; run 'make lock' first"
@@ -120,11 +181,21 @@ stage_images() {
     fi
     IMAGE_LINES+=("image ${ref} ${digest}")
     # Pull by digest so the archive cannot drift from what was verified.
-    pinned+=("${ref%:*}@${digest}")
+    pinned+=("${transport_ref%:*}@${digest}")
+    fallback_pinned+=("${ref%:*}@${digest}")
   done
 
-  "$CRANE" pull --platform "linux/${ARCH}" "${pinned[@]}" "${WORK}/images.tar" ||
-    die "crane pull failed"
+  # A partial tarball from a failed attempt would otherwise be re-read as a
+  # complete one, so each attempt starts from nothing.
+  if [[ "$using_mirror" == true ]]; then
+    if ! try_retry "crane pull through configured mirror" pull_images "${WORK}/images.tar" "${pinned[@]}"; then
+      echo "${CNI}: mirrored image transfer failed; falling back to canonical registry references" >&2
+      retry "crane pull from canonical registry references" pull_images "${WORK}/images.tar" "${fallback_pinned[@]}"
+      transport_refs=("${refs[@]}")
+    fi
+  else
+    retry "crane pull" pull_images "${WORK}/images.tar" "${pinned[@]}"
+  fi
   tar_paths_safe "${WORK}/images.tar"
   mkdir -p "${WORK}/unpacked"
   tar -xf "${WORK}/images.tar" --no-same-owner -C "${WORK}/unpacked"
@@ -133,8 +204,10 @@ stage_images() {
   # the tag the pods ask containerd for.
   manifest="${WORK}/unpacked/manifest.json"
   [[ -f "$manifest" ]] || die "crane archive has no manifest.json"
-  for ref in "${refs[@]}"; do
-    repo="${ref%:*}"
+  for i in "${!refs[@]}"; do
+    ref="${refs[$i]}"
+    transport_ref="${transport_refs[$i]}"
+    repo="${transport_ref%:*}"
     placeholder="${repo}:i-was-a-digest"
     grep -q -- "$placeholder" "$manifest" ||
       die "crane did not name ${ref} as expected; it would import under the wrong name"

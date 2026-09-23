@@ -85,6 +85,15 @@ jobs:
             go.work.sum
             **/go.sum
 
+      # agent/.golangci.yml disables govet, so without this the privileged node
+      # daemon gets no vet anywhere in CI. Plain `go vet` is not the same check:
+      # golangci's govet runs `shadow` under enable-all, which is where the 41
+      # findings in that disable comment come from. This restores the standard
+      # analyzers now; re-enabling the linter still needs those triaged.
+      - name: Vet
+        working-directory: agent
+        run: make vet
+
       # Same command as `make test`, with the race detector switched on through
       # GO_TEST_FLAGS so the workflow does not have to restate what "the tests"
       # are. This is the explicit follow-up the previous comment asked for.
