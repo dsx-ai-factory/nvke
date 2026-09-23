@@ -42,7 +42,8 @@ func (p *Planner) Plan(component, version, scope string) (*Plan, error) {
 	if !slices.Contains(p.Policy.Spec.Components, component) {
 		return nil, fmt.Errorf(
 			"%q is not a component in the qualification policy, which lists %s",
-			component, strings.Join(p.Policy.Spec.Components, ", "))
+			component, strings.Join(p.Policy.Spec.Components, ", "),
+		)
 	}
 
 	selector, ok := p.Policy.Spec.Scopes[scope]
@@ -122,7 +123,8 @@ func (p *Planner) streams(scope policy.Scope, spec *policy.Component) ([]string,
 	if len(narrowed) == 0 {
 		return nil, fmt.Errorf(
 			"%s narrows to streams the scope does not select, so there is nowhere to run",
-			spec.Spec.Component)
+			spec.Spec.Component,
+		)
 	}
 	return narrowed, nil
 }
@@ -141,7 +143,8 @@ func (p *Planner) checkCandidate(component, version string) (string, error) {
 	if !semver.IsValid(v) {
 		return "", fmt.Errorf(
 			"%q is not a version: expected vX.Y.Z or vX.Y.Z-rc.N, and the dot in -rc.N is required",
-			version)
+			version,
+		)
 	}
 
 	known, err := p.versions(component)

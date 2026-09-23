@@ -213,7 +213,8 @@ func (p *Policy) validate(path string) error {
 			if !known[k] {
 				return fmt.Errorf(
 					"%s: scope %q selects on capability %q, which no stream declares",
-					path, name, k)
+					path, name, k,
+				)
 			}
 		}
 	}

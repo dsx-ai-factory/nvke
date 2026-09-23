@@ -67,7 +67,8 @@ func matchConstraint(versions []string, constraint string) ([]string, error) {
 	}
 	if op == "" {
 		return nil, fmt.Errorf(
-			"versionConstraint %q does not start with one of >=, <=, >, <, =", constraint)
+			"versionConstraint %q does not start with one of >=, <=, >, <, =", constraint,
+		)
 	}
 	if !semver.IsValid(bound) {
 		return nil, fmt.Errorf("versionConstraint %q names %q, which is not a semantic version",
