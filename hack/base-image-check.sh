@@ -32,6 +32,8 @@ EXEMPT=(
 	cli/e2e/bootstrap/substrate/node/Dockerfile        # e2e substrate, built and discarded per run
 	controller/hack/Dockerfile.cwe.tilt                # Tilt inner loop, local only
 	controller/hack/capd-kindest-node/Dockerfile       # CAPD node image, tag selected per k8s version
+	controller/hack/dsx-imds-attestation/Dockerfile.mock # Tilt-only IMDS fixture
+	controller/hack/dsx-imds-attestation/Dockerfile.server # Tilt-only SPIRE plugin fixture
 	controller/hack/dsx-identity-exchange-mock/Dockerfile # e2e mock identity service
 	controller/profiles/example/Dockerfile             # documentation example, never built by CI
 	controller/test/fixtures/Dockerfile                # unit/e2e test fixture

@@ -1,0 +1,202 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+DSX_IMDS_AGENT_PLUGIN_RESOURCE = "dsx-imds-agent-plugin"
+DSX_IMDS_SERVER_PLUGIN_RESOURCE = "dsx-imds-server-plugin-image"
+DSX_IMDS_SERVER_IMAGE = "docker.local/dsx-imds-node-attestor-server:tilt"
+DSX_IMDS_MOCK_IMAGE = "docker.local/dsx-imds-attestation-mock:tilt"
+DSX_IMDS_ISSUER = "https://ds9.dsx.nvid.id"
+DSX_IMDS_MOCK_JWKS_URL = (
+    "http://dsx-imds-attestation-mock.spire-server.svc.cluster.local:8080/.well-known/jwks.json"
+)
+DSX_IMDS_NODE_PORT = 30445
+
+def register(ctx):
+    source_dir = ctx.cfg.get("dsx_imds_attestation_source_dir", "")
+    if source_dir == "":
+        fail("dsx-imds-attestation requires tilt_config.json field dsx_imds_attestation_source_dir")
+    if not source_dir.startswith("/"):
+        source_dir = os.path.abspath(os.path.join(ctx.main_dir, source_dir))
+    if not os.path.exists(os.path.join(source_dir, "go.mod")):
+        fail("dsx_imds_attestation_source_dir does not contain a dsx-identity checkout: %s" % source_dir)
+
+    fixture_dir = ctx.provider_dir
+    output_dir = os.path.join(ctx.main_dir, ".local", "dsx-imds-attestation")
+    agent_plugin = os.path.join(output_dir, "dsx-imds-node-attestor-agent")
+    plugin_source_deps = [
+        os.path.join(source_dir, "go.mod"),
+        os.path.join(source_dir, "go.sum"),
+        os.path.join(source_dir, "cmd", "dsx-imds-node-attestor-agent"),
+        os.path.join(source_dir, "cmd", "dsx-imds-node-attestor-server"),
+        os.path.join(source_dir, "internal"),
+    ]
+
+    local_resource(
+        DSX_IMDS_AGENT_PLUGIN_RESOURCE,
+        labels=["0-build"],
+        cmd=["bash", "-c", """
+          set -euo pipefail
+          mkdir -p "%s"
+          cd "%s"
+          CGO_ENABLED=0 GOOS=linux GOARCH=%s go build -o "%s" ./cmd/dsx-imds-node-attestor-agent
+        """ % (output_dir, source_dir, _docker_goarch(), agent_plugin)],
+        deps=plugin_source_deps,
+        allow_parallel=True,
+    )
+
+    local_resource(
+        DSX_IMDS_SERVER_PLUGIN_RESOURCE,
+        labels=["0-build"],
+        cmd=["bash", "-c", """
+          set -euo pipefail
+          if [ "$(uname -s)" = "Darwin" ] && [ -z "${DOCKER_HOST:-}" ]; then
+            export DOCKER_HOST="${COLIMA_DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
+          fi
+          docker build --platform linux/%s --tag %s -f "%s" "%s"
+          kind load docker-image --name %s %s
+        """ % (
+            _docker_goarch(),
+            DSX_IMDS_SERVER_IMAGE,
+            os.path.join(fixture_dir, "Dockerfile.server"),
+            source_dir,
+            ctx.kind_cluster_name,
+            DSX_IMDS_SERVER_IMAGE,
+        )],
+        deps=plugin_source_deps + [
+            os.path.join(fixture_dir, "Dockerfile.server"),
+        ],
+        allow_parallel=True,
+    )
+
+    nke_repo_root = os.path.abspath(os.path.join(ctx.main_dir, ".."))
+    custom_build(
+        ref=DSX_IMDS_MOCK_IMAGE,
+        command=["bash", "-c", """
+          set -euo pipefail
+          if [ "$(uname -s)" = "Darwin" ] && [ -z "${DOCKER_HOST:-}" ]; then
+            export DOCKER_HOST="${COLIMA_DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
+          fi
+          docker build --platform linux/%s --tag "$EXPECTED_REF" -f "%s" "%s"
+          kind load docker-image --name %s "$EXPECTED_REF"
+        """ % (
+            _docker_goarch(),
+            os.path.join(fixture_dir, "Dockerfile.mock"),
+            nke_repo_root,
+            ctx.kind_cluster_name,
+        )],
+        deps=[
+            os.path.join(fixture_dir, "mock"),
+            os.path.join(fixture_dir, "Dockerfile.mock"),
+            os.path.join(ctx.main_dir, "go.mod"),
+            os.path.join(nke_repo_root, "go.work"),
+            os.path.join(nke_repo_root, "vendor"),
+        ],
+    )
+
+    mock_yaml = str(read_file(os.path.join(fixture_dir, "deploy.yaml")))
+    mock_yaml = mock_yaml.replace("__IMAGE__", DSX_IMDS_MOCK_IMAGE)
+    mock_yaml = mock_yaml.replace("__MANAGEMENT_NODE__", "%s-control-plane" % ctx.kind_cluster_name)
+    k8s_yaml(blob(mock_yaml))
+    k8s_resource(
+        workload="dsx-imds-attestation-mock",
+        new_name="dsx-imds-attestation-mock",
+        labels=["1-infra"],
+        resource_deps=["spire-server"],
+    )
+
+    audience = "spiffe://%s/spire/server" % ctx.spire_trust_domain
+    server_plugin = {
+        "image": {
+            "registry": "docker.local",
+            "repository": "dsx-imds-node-attestor-server",
+            "tag": "tilt",
+            "pullPolicy": "IfNotPresent",
+        },
+        "plugin_cmd": "/opt/spire/plugins/dsx-imds-node-attestor-server",
+        "plugin_checksum": "",
+        "plugin_data": {
+            "jwks_url": DSX_IMDS_MOCK_JWKS_URL,
+            "issuer": DSX_IMDS_ISSUER,
+            "audience": audience,
+        },
+    }
+
+    node_endpoint = "http://%s:%d" % (ctx.site_controller_vip, DSX_IMDS_NODE_PORT)
+    cwe_resource_deps = ["dsx-imds-attestation-mock"]
+    cwe_chart_flags = [
+        "--set-string", "nodeAgent.spireAttestationMethod=dsxImds",
+        "--set-string", "nodeAgent.dsxImds.operatorTenant=operator-1",
+        "--set-string", "nodeAgent.dsxImds.endpoint=%s" % node_endpoint,
+    ]
+    if "dsx-identity-exchange" in ctx.provider_names:
+        site_address = ctx.cfg.get("site_controller_vip", "")
+        if site_address == "":
+            fail("DSX IMDS node-agent TLS/JWT requires tilt_config.json field site_controller_vip")
+        identity_url = "https://%s:30444" % site_address
+        cwe_chart_flags += [
+            "--set", "nodeAgent.tlsJwt.enabled=true",
+            "--set-string", "nodeAgent.tlsJwt.issuer=https://capd.dsx.nvid.id",
+            "--set-string", "nodeAgent.tlsJwt.jwksURI=%s/.well-known/jwks.json" % identity_url,
+            "--set-json", 'nodeAgent.tlsJwt.algorithms=["ES256"]',
+            "--set-string", "nodeAgent.tlsJwt.subjectTrustDomain=nke.capd.node-agent.nvid.id",
+            "--set-string", "nodeAgent.tlsJwt.dsxIdentityExchangeURL=%s/v1/exchange" % identity_url,
+        ]
+    if ctx.cfg.get("dsx_imds_external_mtls", False):
+        if "dsx-identity-exchange" not in ctx.provider_names:
+            fail("dsx_imds_external_mtls requires the dsx-identity-exchange provider")
+        k8s_yaml(read_file(os.path.join(ctx.main_dir, "hack/node-agent-external-mtls/controller-client-certificate.yaml")))
+        k8s_resource(
+            objects=[
+                "dsx-controller-client-bootstrap:issuer:cloud-workflow-engine",
+                "dsx-controller-client-ca:certificate:cloud-workflow-engine",
+                "dsx-controller-client-ca:issuer:cloud-workflow-engine",
+                "dsx-controller-client:certificate:cloud-workflow-engine",
+            ],
+            new_name="dsx-controller-client-certificate",
+            labels=["1-infra"],
+            resource_deps=["cert-manager", "nke-auth-dev"],
+        )
+        local_resource(
+            "dsx-controller-client-ready",
+            labels=["1-infra"],
+            cmd=["bash", "-c", """
+              set -euo pipefail
+              kubectl -n cloud-workflow-engine wait \
+                --for=condition=Ready certificate/dsx-controller-client --timeout=180s
+              kubectl -n cloud-workflow-engine get secret dsx-controller-client -o json |
+                jq -e '.data["tls.crt"] and .data["tls.key"] and .data["ca.crt"]' >/dev/null
+            """],
+            resource_deps=["dsx-controller-client-certificate"],
+        )
+        cwe_resource_deps.append("dsx-controller-client-ready")
+        cwe_chart_flags += [
+            "--set", "nodeAgent.externalMTLS.enabled=true",
+            "--set-string", "nodeAgent.externalMTLS.secret.name=dsx-controller-client",
+        ]
+    return struct(
+        cwe_resource_deps=cwe_resource_deps,
+        cwe_env_overrides={},
+        cwe_chart_flags=cwe_chart_flags,
+        spire_chart_flags=[
+            "--set-json",
+            "spire-server.customPlugins.nodeAttestor.dsx_imds=%s" % encode_json(server_plugin),
+        ],
+        spire_resource_deps=[DSX_IMDS_SERVER_PLUGIN_RESOURCE],
+    )
+
+def _docker_goarch():
+    arch = str(local(
+        """
+        if [ "$(uname -s)" = "Darwin" ] && [ -z "${DOCKER_HOST:-}" ]; then
+          export DOCKER_HOST="${COLIMA_DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
+        fi
+        docker version --format '{{.Server.Arch}}'
+        """,
+        quiet=True,
+        echo_off=True,
+    )).strip()
+    if arch in ["amd64", "x86_64"]:
+        return "amd64"
+    if arch in ["arm64", "aarch64"]:
+        return "arm64"
+    fail("unsupported Docker architecture for DSX IMDS plugins: %s" % arch)

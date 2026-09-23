@@ -16,6 +16,7 @@ load("ext://uibutton", "cmd_button", "text_input")
 #   "capd-reboot-controller"  -- CAPD reboot dev controller provider
 #   "capi-syscmp"             -- CAPI system component addon provider
 #   "dsx-identity-exchange"   -- DSX-compatible JWT exchange test double
+#   "dsx-imds-attestation"    -- local DSX IMDS node-attestation fixture
 #   {"my-provider": "/path/to/folder"} -- external, Tiltfile at <folder>/Tiltfile
 # Default: ["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]
 
@@ -32,7 +33,11 @@ load("ext://uibutton", "cmd_button", "text_input")
 #   ctx.main_dir      (string)  Root directory of the main Tiltfile (config.main_dir).
 #   ctx.cfg           (dict)    Parsed tilt_config.json contents.
 #   ctx.tilt_env      (dict)    Parsed .env.tilt contents, falling back to .env.tilt.example.
+#   ctx.provider_names (list[string]) Enabled provider names, normalized from strings and dicts.
 #   ctx.kind_host_ip  (string)  IP reachable from inside Kind pods (e.g. Kind gateway).
+#   ctx.kind_cluster_name (string) Name of the active Kind management cluster.
+#   ctx.spire_trust_domain (string) Trust domain configured for the local SPIRE server.
+#   ctx.site_controller_vip (string) Address reachable from local tenant nodes.
 #   ctx.provider_dir  (string)  Absolute path to the provider's root directory.
 #
 # Output — returned struct with:
@@ -40,6 +45,8 @@ load("ext://uibutton", "cmd_button", "text_input")
 #                                               Appended to the CWE k8s_resource resource_deps.
 #   cwe_env_overrides  (dict[string, string])   Env vars injected into CWE's chart values.
 #   cwe_chart_flags    (list[string], optional) Additional Helm flags for CWE.
+#   spire_chart_flags  (list[string], optional) Additional Helm flags for SPIRE.
+#   spire_resource_deps (list[string], optional) Tilt resources SPIRE should depend on.
 #   preflight_script   (string, optional)       Bash fragment appended to the
 #                                               check-management-cluster preflight script.
 #                                               Use to assert provider-required tooling or
@@ -57,6 +64,7 @@ _builtin_provider_dirs = {
     "capd-reboot-controller": os.path.join(config.main_dir, "hack/capd-reboot-controller"),
     "capi-syscmp": os.path.join(config.main_dir, "hack/capi-syscmp-provider"),
     "dsx-identity-exchange": os.path.join(config.main_dir, "hack/dsx-identity-exchange-mock"),
+    "dsx-imds-attestation": os.path.join(config.main_dir, "hack/dsx-imds-attestation"),
 }
 
 _tilt_config = read_json("tilt_config.json", default={})
@@ -349,6 +357,8 @@ _all_cwe_env_overrides = {
 }
 _all_preflight_fragments = []
 _all_cwe_chart_flags = []
+_all_spire_chart_flags = []
+_all_spire_resource_deps = []
 
 for _entry in _provider_entries:
     if type(_entry) == "string":
@@ -375,12 +385,18 @@ for _entry in _provider_entries:
         main_dir     = config.main_dir,
         cfg          = cfg,
         tilt_env     = _tilt_env,
+        provider_names = _provider_names,
         kind_host_ip = _kind_host_ip,
+        kind_cluster_name = KIND_CLUSTER_NAME_VALUE,
+        spire_trust_domain = SPIRE_TRUST_DOMAIN,
+        site_controller_vip = _kind_site_controller_vip,
         provider_dir = _provider_dir,
     ))
     _all_cwe_resource_deps += _result.cwe_resource_deps
     _all_cwe_env_overrides.update(_result.cwe_env_overrides)
     _all_cwe_chart_flags += getattr(_result, "cwe_chart_flags", [])
+    _all_spire_chart_flags += getattr(_result, "spire_chart_flags", [])
+    _all_spire_resource_deps += getattr(_result, "spire_resource_deps", [])
     if getattr(_result, "preflight_script", ""):
         _all_preflight_fragments.append(_result.preflight_script)
 
@@ -737,12 +753,12 @@ helm_resource(
       "--set-string", "spire-server.adminIDs[0]=spiffe://%s%s" % (SPIRE_TRUST_DOMAIN, SPIRE_CWE_ADMIN_PATH),
       "--set-string", "spire-server.nodeAttestor.tpmDirect.checksum=%s" % SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM,
       "--set-string", "spiffe-oidc-discovery-provider.config.jwksUri=https://%s:30443/keys" % _kind_site_controller_vip,
-    ] + _spire_set_string_flags + [
+    ] + _spire_set_string_flags + _all_spire_chart_flags + [
       "--wait",
       "--timeout", "15m",
     ],
     # spire-chart-upstream: chart source must exist before helm install.
-    resource_deps=["spire-chart-upstream", "spire-crds", "cert-manager", "oidc-upstream-ca-issuer", "oidc-upstream-ca-ready"],
+    resource_deps=["spire-chart-upstream", "spire-crds", "cert-manager", "oidc-upstream-ca-issuer", "oidc-upstream-ca-ready"] + _all_spire_resource_deps,
 )
 
 k8s_yaml([
@@ -1006,11 +1022,12 @@ for _name in _required_cred_names:
 # AUTH_CONFIG_PATH and PERMISSIVE_MODE come from the apiAuth values below, not
 # from this env list: the chart owns the mount they point at.
 
-# INSTALL_CNI_AFTER_INIT comes from the process environment (with the .env.tilt
-# value as a fallback) so an E2E lane can toggle the CNI install path per run.
+# Local node images include the CNI manifests package, so install CNI after
+# kubeadm init without a bundle server. E2E lanes can still select the legacy
+# in-init path explicitly through the process environment or .env.tilt.
 _cwe_install_cni_after_init = os.getenv(
     "INSTALL_CNI_AFTER_INIT",
-    _tilt_env.get("INSTALL_CNI_AFTER_INIT", "false"))
+    _tilt_env.get("INSTALL_CNI_AFTER_INIT", "true"))
 
 # Keep the chart default when this is unset. E2E sets it explicitly so the
 # deployment-wide method matches the attestor baked into its CAPD node image.

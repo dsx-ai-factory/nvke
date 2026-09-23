@@ -614,8 +614,11 @@ capd-upgrade: ## Rebuild CAPD node image for TARGET_VERSION and PATCH the cluste
 capd-kubeconfig: ## Write CAPD workload kubeconfig for kubectl on this host (CLUSTER_NAME=capd OUTPUT=path ./hack/fetch-capd-kubeconfig.sh)
 	@cd "$(CURDIR)" && DOCKER_HOST="$(COLIMA_DOCKER_HOST)" ./hack/fetch-capd-kubeconfig.sh "$(or $(CLUSTER_NAME),capd)" $(if $(OUTPUT),"$(OUTPUT)",)
 
-# INSTALL_CNI_AFTER_INIT=true bakes no bundle flags into the node image, so the
-# mirror would serve nobody. Everything else still needs it.
+# Local nodes install CNI from the packaged manifests after kubeadm init.
+# Explicit legacy runs can still select the in-init bundle path.
+INSTALL_CNI_AFTER_INIT ?= true
+# Keep the package name in sync with hack/ci/prepare-calico-assets.sh.
+CAPD_CNI_MANIFESTS_DEB := $(CURDIR)/.local/cni/nke-cni-calico-manifests-3.30.1_3.30.1_all.deb
 ifeq ($(INSTALL_CNI_AFTER_INIT),true)
 CAPD_IMAGE_DEPS :=
 else
@@ -623,11 +626,21 @@ CAPD_IMAGE_DEPS := bundle-mirror
 endif
 
 .PHONY: capd-image
-# Falls back to the local bundle-mirror address when the caller sets no bundle
-# server. The E2E entrypoints export their own and keep it.
 capd-image: $(CAPD_IMAGE_DEPS) ## Build the custom CAPD node image for DockerMachine (hack/capd-kindest-node/Dockerfile; same Docker host as CAPD)
 	@cd "$(CURDIR)" && \
-		if [ "$(INSTALL_CNI_AFTER_INIT)" != "true" ]; then \
+		if [ "$(INSTALL_CNI_AFTER_INIT)" = "true" ]; then \
+			if [ -z "$${CAPD_CNI_MANIFESTS_DEB_PATH:-}" ]; then \
+				if [ ! -f "$(CAPD_CNI_MANIFESTS_DEB)" ] || \
+				   [ ./hack/ci/prepare-calico-assets.sh -nt "$(CAPD_CNI_MANIFESTS_DEB)" ] || \
+				   [ ./hack/ci/assets/calico-install.py -nt "$(CAPD_CNI_MANIFESTS_DEB)" ]; then \
+					mkdir -p "$(CURDIR)/.local/cni"; \
+					bash ./hack/ci/prepare-calico-assets.sh "$(CURDIR)/.local/cni"; \
+				fi; \
+				CAPD_CNI_MANIFESTS_DEB_PATH="$(CAPD_CNI_MANIFESTS_DEB)"; \
+			fi; \
+			test -f "$${CAPD_CNI_MANIFESTS_DEB_PATH}" || { echo "missing CNI package: $${CAPD_CNI_MANIFESTS_DEB_PATH}" >&2; exit 1; }; \
+			BUNDLE_SERVER_URL=""; INDEX_FILE_URL=""; \
+		else \
 			BUNDLE_MIRROR_IP="$$($(kind-docker-host) docker inspect $(BUNDLE_MIRROR_NAME) --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}')"; \
 			BUNDLE_SERVER_URL="$${BUNDLE_SERVER_URL:-http://$${BUNDLE_MIRROR_IP}/}"; \
 			INDEX_FILE_URL="$${INDEX_FILE_URL:-http://$${BUNDLE_MIRROR_IP}/index.json}"; \
@@ -639,6 +652,7 @@ capd-image: $(CAPD_IMAGE_DEPS) ## Build the custom CAPD node image for DockerMac
 		NODE_AGENT_REPO_PATH="$(NODE_AGENT_REPO_PATH)" \
 		CAPD_KINDEST_NODE_PLATFORM="$(CAPD_KINDEST_NODE_PLATFORM)" \
 		COLIMA_DOCKER_HOST="$(COLIMA_DOCKER_HOST)" \
+		CAPD_CNI_MANIFESTS_DEB_PATH="$${CAPD_CNI_MANIFESTS_DEB_PATH:-}" \
 		BUNDLE_SERVER_URL="$${BUNDLE_SERVER_URL:-}" \
 		INDEX_FILE_URL="$${INDEX_FILE_URL:-}" \
 		bash ./hack/capd-kindest-node/build-image.sh

@@ -46,7 +46,36 @@ def _nico_config(ctx):
     )
 
 def _register_node_image(ctx, labels):
-    agent_dir = os.path.join(ctx.main_dir, "..", "agent")
+    configured_agent_dir = ctx.cfg.get("node_agent_source_dir", "")
+    agent_dir = configured_agent_dir or os.path.join(ctx.main_dir, "..", "agent")
+    if not agent_dir.startswith("/"):
+        agent_dir = os.path.abspath(os.path.join(ctx.main_dir, agent_dir))
+    local_agent_available = os.path.exists(os.path.join(agent_dir, "Makefile"))
+    if configured_agent_dir and not local_agent_available:
+        fail("node_agent_source_dir does not contain an NKE agent checkout: %s" % agent_dir)
+    dsx_imds_enabled = "dsx-imds-attestation" in ctx.provider_names
+    dsx_imds_agent_plugin = os.path.join(
+        ctx.main_dir,
+        ".local",
+        "dsx-imds-attestation",
+        "dsx-imds-node-attestor-agent",
+    )
+    install_cni_after_init = "true" if os.getenv(
+        "INSTALL_CNI_AFTER_INIT", ctx.tilt_env.get("INSTALL_CNI_AFTER_INIT", "true")) == "true" else "false"
+    build_environment = {"INSTALL_CNI_AFTER_INIT": install_cni_after_init}
+    resource_deps = ["check-management-cluster"]
+    if dsx_imds_enabled:
+        build_environment["CAPD_SPIRE_ATTESTATION_METHOD"] = "dsxImds"
+        build_environment["DSX_IMDS_AGENT_PLUGIN_PATH"] = dsx_imds_agent_plugin
+        resource_deps.append("dsx-imds-agent-plugin")
+    if dsx_imds_enabled and "dsx-identity-exchange" in ctx.provider_names:
+        ca_bundle = os.path.join(ctx.main_dir, ".local/dsx-identity-exchange/ca.crt")
+        build_environment["DSX_IDENTITY_CA_BUNDLE_PATH"] = ca_bundle
+        resource_deps.append("dsx-identity-exchange-ca")
+    if configured_agent_dir:
+        build_environment["CAPD_NODE_AGENT_LOCAL_BUILD"] = "true"
+        build_environment["NODE_AGENT_REPO_PATH"] = agent_dir
+
     script = """
           set -euo pipefail
           if [ "${CAPD_KINDEST_NODE_IMAGE_PREBUILT:-false}" = "true" ]; then
@@ -56,15 +85,13 @@ def _register_node_image(ctx, labels):
           fi
     """ % ctx.main_dir
 
-    local_resource(
-        NICO_KIND_NODE_IMAGE_RESOURCE,
-        labels=labels,
-        cmd=["bash", "-c", script],
-        resource_deps=["check-management-cluster"],
-        deps=[
-            os.path.join(ctx.main_dir, "Makefile"),
-            os.path.join(ctx.main_dir, "Makefile.dev"),
-            os.path.join(ctx.main_dir, "hack", "capd-kindest-node"),
+    image_deps = [
+        os.path.join(ctx.main_dir, "Makefile"),
+        os.path.join(ctx.main_dir, "Makefile.dev"),
+        os.path.join(ctx.main_dir, "hack", "capd-kindest-node"),
+    ]
+    if local_agent_available:
+        image_deps += [
             os.path.join(agent_dir, "Makefile"),
             os.path.join(agent_dir, "go.mod"),
             os.path.join(agent_dir, "go.sum"),
@@ -72,7 +99,15 @@ def _register_node_image(ctx, labels):
             os.path.join(agent_dir, "internal"),
             os.path.join(agent_dir, "pkg"),
             os.path.join(agent_dir, "scripts"),
-        ],
+        ]
+
+    local_resource(
+        NICO_KIND_NODE_IMAGE_RESOURCE,
+        labels=labels,
+        cmd=["bash", "-c", script],
+        env=build_environment,
+        resource_deps=resource_deps,
+        deps=image_deps,
         allow_parallel=True,
     )
 

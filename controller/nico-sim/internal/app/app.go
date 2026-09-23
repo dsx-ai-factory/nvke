@@ -80,6 +80,7 @@ func Setup(ctx context.Context, cfg config.Config, seedDoc seed.Document, logger
 			VPCID: containerSite.VPCID, SubnetID: containerSite.SubnetID, SSHKeyGroupID: containerSite.SSHKeyGroupID,
 			InstanceTypeID: containerSite.InstanceTypeID, NodeNetwork: cfg.ContainerNodeNetwork,
 			NodeImage: cfg.ContainerNodeImage, DockerBinary: cfg.ContainerDockerBinary,
+			SpireAttestationMethod: cfg.ContainerSpireAttestationMethod,
 		}, logger)
 		if serviceErr != nil {
 			store.Close()

@@ -47,48 +47,49 @@ func envOrDefaultDuration(key, defaultVal string) (time.Duration, error) {
 }
 
 type Config struct {
-	ListenAddr             string
-	DBPath                 string
-	VMBackend              string
-	LibvirtURI             string
-	LibvirtNetwork         string
-	QEMUSystemPath         string
-	BridgeName             string
-	BridgeCIDR             string
-	BaseImage              string
-	ReadinessProbeInterval time.Duration
-	ReadinessTimeout       time.Duration
-	QEMUImgPath            string
-	CloudLocalDSPath       string
-	SeedPath               string
-	VMVCPUs                int
-	VMMemoryMiB            int
-	VMDiskGiB              int
-	ReconcileWorkers       int
-	ReconcileInterval      time.Duration
-	LogRequestMethods      []string
-	DHCPHostsDir           string
-	DHCPLeaseFile          string
-	LogFormat              string
-	ConsoleSSHPort         int
-	CleanupOrphanedVMs     bool
-	BGPEnabled             bool
-	BGPListenPort          int
-	BGPLocalASN            uint32
-	BGPPeerASN             uint32
-	BGPHoldTime            int
-	BGPKeepalive           int
-	BGPAllowedVIPCIDRs     []string
-	PromtailTargetsFile    string
-	PromtailLogPathPrefix  string
-	DiagSSHEnabled         bool
-	DiagSSHUser            string
-	DiagSSHPassword        string
-	ContainerEnabled       bool
-	ContainerNodeNetwork   string
-	ContainerNodeImage     string
-	ContainerDockerBinary  string
-	ContainerRequireHealth bool
+	ListenAddr                      string
+	DBPath                          string
+	VMBackend                       string
+	LibvirtURI                      string
+	LibvirtNetwork                  string
+	QEMUSystemPath                  string
+	BridgeName                      string
+	BridgeCIDR                      string
+	BaseImage                       string
+	ReadinessProbeInterval          time.Duration
+	ReadinessTimeout                time.Duration
+	QEMUImgPath                     string
+	CloudLocalDSPath                string
+	SeedPath                        string
+	VMVCPUs                         int
+	VMMemoryMiB                     int
+	VMDiskGiB                       int
+	ReconcileWorkers                int
+	ReconcileInterval               time.Duration
+	LogRequestMethods               []string
+	DHCPHostsDir                    string
+	DHCPLeaseFile                   string
+	LogFormat                       string
+	ConsoleSSHPort                  int
+	CleanupOrphanedVMs              bool
+	BGPEnabled                      bool
+	BGPListenPort                   int
+	BGPLocalASN                     uint32
+	BGPPeerASN                      uint32
+	BGPHoldTime                     int
+	BGPKeepalive                    int
+	BGPAllowedVIPCIDRs              []string
+	PromtailTargetsFile             string
+	PromtailLogPathPrefix           string
+	DiagSSHEnabled                  bool
+	DiagSSHUser                     string
+	DiagSSHPassword                 string
+	ContainerEnabled                bool
+	ContainerNodeNetwork            string
+	ContainerNodeImage              string
+	ContainerSpireAttestationMethod string
+	ContainerDockerBinary           string
+	ContainerRequireHealth          bool
 }
 
 // UseLibvirtNetwork reports whether VMs should attach to a pre-existing
@@ -159,48 +160,49 @@ func Parse(logger *slog.Logger) (Config, error) {
 	bgpVIPCIDRs := parseCommaSeparated(os.Getenv("NICO_VMS_BGP_VIP_CIDRS"))
 
 	cfg := Config{
-		ListenAddr:             envOrDefault("NICO_SIM_LISTEN_ADDR", ":18080"),
-		DBPath:                 envOrDefault("NICO_SIM_DB_PATH", "./var/nico-sim.db"),
-		VMBackend:              envOrDefault("NICO_VMS_VM_BACKEND", "auto"),
-		LibvirtURI:             envOrDefault("NICO_VMS_LIBVIRT_URI", "qemu:///session"),
-		LibvirtNetwork:         os.Getenv("NICO_VMS_LIBVIRT_NETWORK"),
-		QEMUSystemPath:         os.Getenv("NICO_VMS_QEMU_SYSTEM_PATH"),
-		BridgeName:             envOrDefault("NICO_VMS_BRIDGE_NAME", "cwebr0"),
-		BridgeCIDR:             os.Getenv("NICO_VMS_BRIDGE_CIDR"),
-		BaseImage:              envOrDefault("NICO_VMS_BASE_IMAGE", "images/ubuntu-cloud.qcow2"),
-		ReadinessProbeInterval: readinessProbeInterval,
-		ReadinessTimeout:       readinessTimeout,
-		QEMUImgPath:            envOrDefault("NICO_VMS_QEMU_IMG_PATH", "qemu-img"),
-		CloudLocalDSPath:       envOrDefault("NICO_VMS_CLOUD_LOCALDS_PATH", "cloud-localds"),
-		SeedPath:               envOrDefault("NICO_SIM_SEED_PATH", "./internal/seed/default-seed.yaml"),
-		VMVCPUs:                vmVCPUs,
-		VMMemoryMiB:            vmMemoryMiB,
-		VMDiskGiB:              vmDiskGiB,
-		ReconcileWorkers:       reconcileWorkers,
-		ReconcileInterval:      reconcileInterval,
-		LogRequestMethods:      parseLogRequestMethods(envOrDefault("NICO_SIM_LOG_REQUEST_METHODS", LogPresetWrite)),
-		DHCPHostsDir:           envOrDefault("NICO_VMS_DHCP_HOSTS_DIR", "/var/lib/nico-vms/dhcp-hosts"),
-		DHCPLeaseFile:          envOrDefault("NICO_VMS_DHCP_LEASE_FILE", "/var/run/nico-vms-dnsmasq.leases"),
-		LogFormat:              ParseLogFormat(),
-		ConsoleSSHPort:         consoleSSHPort,
-		CleanupOrphanedVMs:     strings.ToLower(envOrDefault("NICO_VMS_CLEANUP_ORPHANED_VMS", "false")) == "true",
-		BGPEnabled:             bgpEnabled,
-		BGPListenPort:          bgpListenPort,
-		BGPLocalASN:            uint32(bgpLocalASN),
-		BGPPeerASN:             uint32(bgpPeerASN),
-		BGPHoldTime:            bgpHoldTime,
-		BGPKeepalive:           bgpKeepalive,
-		BGPAllowedVIPCIDRs:     bgpVIPCIDRs,
-		PromtailTargetsFile:    os.Getenv("NICO_VMS_PROMTAIL_TARGETS_FILE"),
-		PromtailLogPathPrefix:  os.Getenv("NICO_VMS_PROMTAIL_LOG_PATH_PREFIX"),
-		DiagSSHEnabled:         strings.ToLower(envOrDefault("NICO_VMS_DIAG_SSH_ENABLED", "true")) == "true",
-		DiagSSHUser:            envOrDefault("NICO_VMS_DIAG_SSH_USER", "nico-diag"),
-		DiagSSHPassword:        envOrDefault("NICO_VMS_DIAG_SSH_PASSWORD", "nico-diag"),
-		ContainerEnabled:       strings.EqualFold(envOrDefault("NICO_CONTAINERS_ENABLED", "true"), "true"),
-		ContainerNodeNetwork:   envOrDefault("NICO_CONTAINERS_NODE_NETWORK", "kind"),
-		ContainerNodeImage:     envOrDefault("NICO_CONTAINERS_NODE_IMAGE", "cwe-capd-kindest-node:local"),
-		ContainerDockerBinary:  envOrDefault("NICO_CONTAINERS_DOCKER_BINARY", "docker"),
-		ContainerRequireHealth: strings.EqualFold(envOrDefault("NICO_CONTAINERS_REQUIRE_HEALTHY", "false"), "true"),
+		ListenAddr:                      envOrDefault("NICO_SIM_LISTEN_ADDR", ":18080"),
+		DBPath:                          envOrDefault("NICO_SIM_DB_PATH", "./var/nico-sim.db"),
+		VMBackend:                       envOrDefault("NICO_VMS_VM_BACKEND", "auto"),
+		LibvirtURI:                      envOrDefault("NICO_VMS_LIBVIRT_URI", "qemu:///session"),
+		LibvirtNetwork:                  os.Getenv("NICO_VMS_LIBVIRT_NETWORK"),
+		QEMUSystemPath:                  os.Getenv("NICO_VMS_QEMU_SYSTEM_PATH"),
+		BridgeName:                      envOrDefault("NICO_VMS_BRIDGE_NAME", "cwebr0"),
+		BridgeCIDR:                      os.Getenv("NICO_VMS_BRIDGE_CIDR"),
+		BaseImage:                       envOrDefault("NICO_VMS_BASE_IMAGE", "images/ubuntu-cloud.qcow2"),
+		ReadinessProbeInterval:          readinessProbeInterval,
+		ReadinessTimeout:                readinessTimeout,
+		QEMUImgPath:                     envOrDefault("NICO_VMS_QEMU_IMG_PATH", "qemu-img"),
+		CloudLocalDSPath:                envOrDefault("NICO_VMS_CLOUD_LOCALDS_PATH", "cloud-localds"),
+		SeedPath:                        envOrDefault("NICO_SIM_SEED_PATH", "./internal/seed/default-seed.yaml"),
+		VMVCPUs:                         vmVCPUs,
+		VMMemoryMiB:                     vmMemoryMiB,
+		VMDiskGiB:                       vmDiskGiB,
+		ReconcileWorkers:                reconcileWorkers,
+		ReconcileInterval:               reconcileInterval,
+		LogRequestMethods:               parseLogRequestMethods(envOrDefault("NICO_SIM_LOG_REQUEST_METHODS", LogPresetWrite)),
+		DHCPHostsDir:                    envOrDefault("NICO_VMS_DHCP_HOSTS_DIR", "/var/lib/nico-vms/dhcp-hosts"),
+		DHCPLeaseFile:                   envOrDefault("NICO_VMS_DHCP_LEASE_FILE", "/var/run/nico-vms-dnsmasq.leases"),
+		LogFormat:                       ParseLogFormat(),
+		ConsoleSSHPort:                  consoleSSHPort,
+		CleanupOrphanedVMs:              strings.ToLower(envOrDefault("NICO_VMS_CLEANUP_ORPHANED_VMS", "false")) == "true",
+		BGPEnabled:                      bgpEnabled,
+		BGPListenPort:                   bgpListenPort,
+		BGPLocalASN:                     uint32(bgpLocalASN),
+		BGPPeerASN:                      uint32(bgpPeerASN),
+		BGPHoldTime:                     bgpHoldTime,
+		BGPKeepalive:                    bgpKeepalive,
+		BGPAllowedVIPCIDRs:              bgpVIPCIDRs,
+		PromtailTargetsFile:             os.Getenv("NICO_VMS_PROMTAIL_TARGETS_FILE"),
+		PromtailLogPathPrefix:           os.Getenv("NICO_VMS_PROMTAIL_LOG_PATH_PREFIX"),
+		DiagSSHEnabled:                  strings.ToLower(envOrDefault("NICO_VMS_DIAG_SSH_ENABLED", "true")) == "true",
+		DiagSSHUser:                     envOrDefault("NICO_VMS_DIAG_SSH_USER", "nico-diag"),
+		DiagSSHPassword:                 envOrDefault("NICO_VMS_DIAG_SSH_PASSWORD", "nico-diag"),
+		ContainerEnabled:                strings.EqualFold(envOrDefault("NICO_CONTAINERS_ENABLED", "true"), "true"),
+		ContainerNodeNetwork:            envOrDefault("NICO_CONTAINERS_NODE_NETWORK", "kind"),
+		ContainerNodeImage:              envOrDefault("NICO_CONTAINERS_NODE_IMAGE", "cwe-capd-kindest-node:local"),
+		ContainerSpireAttestationMethod: envOrDefault("NICO_CONTAINERS_SPIRE_ATTESTATION_METHOD", "tpm"),
+		ContainerDockerBinary:           envOrDefault("NICO_CONTAINERS_DOCKER_BINARY", "docker"),
+		ContainerRequireHealth:          strings.EqualFold(envOrDefault("NICO_CONTAINERS_REQUIRE_HEALTHY", "false"), "true"),
 	}
 
 	if err := cfg.normalize(logger); err != nil {

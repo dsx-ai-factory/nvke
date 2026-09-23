@@ -60,16 +60,17 @@ exec /usr/local/bin/entrypoint /sbin/init`
 )
 
 type Config struct {
-	OrgID          string
-	TenantID       string
-	SiteID         string
-	VPCID          string
-	SubnetID       string
-	SSHKeyGroupID  string
-	InstanceTypeID string
-	NodeNetwork    string
-	NodeImage      string
-	DockerBinary   string
+	OrgID                  string
+	TenantID               string
+	SiteID                 string
+	VPCID                  string
+	SubnetID               string
+	SSHKeyGroupID          string
+	InstanceTypeID         string
+	NodeNetwork            string
+	NodeImage              string
+	SpireAttestationMethod string
+	DockerBinary           string
 }
 
 func (c Config) withDefaults() Config {
@@ -79,6 +80,10 @@ func (c Config) withDefaults() Config {
 	if strings.TrimSpace(c.NodeImage) == "" {
 		c.NodeImage = defaultNodeImage
 	}
+	c.SpireAttestationMethod = strings.TrimSpace(c.SpireAttestationMethod)
+	if c.SpireAttestationMethod == "" {
+		c.SpireAttestationMethod = "tpm"
+	}
 	if strings.TrimSpace(c.DockerBinary) == "" {
 		c.DockerBinary = defaultDocker
 	}
@@ -86,6 +91,9 @@ func (c Config) withDefaults() Config {
 }
 
 func (c Config) validate() error {
+	if c.SpireAttestationMethod != "tpm" && c.SpireAttestationMethod != "joinToken" && c.SpireAttestationMethod != "dsxImds" {
+		return fmt.Errorf("container backend unsupported SPIRE attestation method %q", c.SpireAttestationMethod)
+	}
 	for key, value := range map[string]string{
 		"org": c.OrgID, "tenant": c.TenantID, "site": c.SiteID, "vpc": c.VPCID,
 		"subnet": c.SubnetID, "ssh key group": c.SSHKeyGroupID,
