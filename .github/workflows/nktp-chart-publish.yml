@@ -76,13 +76,9 @@ jobs:
         run: make nktp-chart-check
 
       - name: Package
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           helm package "${CHART}" --destination dist
-          ( cd dist && sha256sum -- "nktp-${VERSION}.tgz" > checksums.txt )
-          cat dist/checksums.txt
 
       - name: Malware scan the release artifacts
         uses: ./.github/actions/malware-scan
@@ -91,6 +87,10 @@ jobs:
           category: 'clamav-nktp-release'
           output_file: 'clamav-nktp-release.sarif'
 
+      # A GHCR tag is mutable and `helm package` is not byte-reproducible, so a
+      # rerun would replace the published chart with different bytes than the
+      # release attests. As image-nvcr.yml does for images: reuse a published
+      # version whose contents match, fail on one that does not.
       - name: Push to GHCR
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -98,10 +98,28 @@ jobs:
           ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
+          ref=oci://ghcr.io/dsx-ai-factory/nke/charts/nktp
+          archive="dist/nktp-${VERSION}.tgz"
           echo "${GHCR_TOKEN}" | helm registry login ghcr.io --username "${ACTOR}" --password-stdin
-          helm push "dist/nktp-${VERSION}.tgz" oci://ghcr.io/dsx-ai-factory/nke/charts
-          # Read back what the registry now serves.
-          helm show chart oci://ghcr.io/dsx-ai-factory/nke/charts/nktp --version "${VERSION}"
+          mkdir -p published
+          if helm pull "${ref}" --version "${VERSION}" --destination published 2>pull.err; then
+            mkdir -p ours theirs
+            tar -xzf "${archive}" -C ours
+            tar -xzf "published/nktp-${VERSION}.tgz" -C theirs
+            if ! diff -r ours theirs; then
+              echo "::error::${ref}:${VERSION} is already published with different contents."
+              exit 1
+            fi
+            echo "${ref}:${VERSION} is already published with the same contents; reusing it."
+            cp "published/nktp-${VERSION}.tgz" "${archive}"
+          elif grep -q 'not found' pull.err; then
+            helm push "${archive}" oci://ghcr.io/dsx-ai-factory/nke/charts
+          else
+            cat pull.err >&2
+            exit 1
+          fi
+          ( cd dist && sha256sum -- "nktp-${VERSION}.tgz" > checksums.txt )
+          cat dist/checksums.txt
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -157,9 +175,10 @@ jobs:
             The NKTP Helm chart, version ${{ needs.publish.outputs.version }}.
 
             ```
+            kubectl create namespace nktp
+            kubectl label namespace nktp pod-security.kubernetes.io/enforce=privileged
             helm install nktp oci://ghcr.io/dsx-ai-factory/nke/charts/nktp \
-              --version ${{ needs.publish.outputs.version }} \
-              --namespace nktp --create-namespace
+              --version ${{ needs.publish.outputs.version }} --namespace nktp
             ```
 
             `checksums.txt.sigstore.json` is the build-provenance attestation
