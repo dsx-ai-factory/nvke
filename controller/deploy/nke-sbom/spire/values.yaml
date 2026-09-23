@@ -59,6 +59,20 @@ spire-agent:
     # no server Service exists -- the agent then fails attestation with
     # "no children to pick from" and the DaemonSet never becomes Available.
     namespaceOverride: spire-server
+  workloadAttestors:
+    k8s:
+      # Every site controller node is a control-plane node and the taint is
+      # removed before anything installs, so management workloads land on
+      # nodes that run Kata. A Kata workload runs inside a VM, where the agent
+      # cannot walk the caller's cgroup back to a container ID: the
+      # container-scoped selectors come back empty and the workload gets no
+      # SVID at all. Pod-scoped selectors still resolve, and the controller
+      # manager registers the ClusterSPIFFEIDs below on pod UID, so those
+      # identities are unaffected.
+      #
+      # The cost is granularity -- two containers in one pod become
+      # indistinguishable to SPIRE. Nothing here registers that finely.
+      disableContainerSelectors: true
 spire-server:
   namespaceOverride: spire-server
   # The bundle ConfigMap the agent mounts must land where the agent runs, or
