@@ -19,6 +19,7 @@ instructions.
   - [agent/AGENTS.md](agent/AGENTS.md) — proto generation, packaging, gRPC conventions
   - [cli/AGENTS.md](cli/AGENTS.md) — nkectl, verification, doc-comment conventions
   - [os-image/AGENTS.md](os-image/AGENTS.md) — reference node OS image spec, Packer, connectivity checker
+  - [nktp/AGENTS.md](nktp/AGENTS.md) — NKTP Helm chart: versioning, dependency pins
   - [controller/nico-sim/AGENTS.md](controller/nico-sim/AGENTS.md) — local NICo simulator with VM and container backends
   - [controller/deploy/dashboards/AGENTS.md](controller/deploy/dashboards/AGENTS.md) — Grafana reference JSON (import-only, not nke-stack); operators: [README.md](controller/deploy/dashboards/README.md)
 
@@ -93,6 +94,7 @@ build pass. Removing those dependencies is tracked work with its own design.
 | `agent/pkg/agent/proto/*.pb.go` | buf/protoc output | **No — regenerate** |
 | `agent/THIRD_PARTY_NOTICES.md` | go-licenses output | **No — regenerate** |
 | `controller/deploy/charts/` | Helm charts | Yes, but bump the chart version |
+| `nktp/deploy/charts/` | NKTP telemetry Helm chart | Yes, but bump the chart version. Read `nktp/AGENTS.md` |
 | `controller/deploy/dashboards/` | Grafana reference dashboards (JSON import) | Yes — read that directory's `AGENTS.md`. Do not bump the Helm chart for dashboard-only edits |
 
 ## What agents may do
@@ -276,6 +278,12 @@ In `cluster-api-provider-provisioned/`:
 ```bash
 make generate-check
 go test ./...
+```
+
+For the NKTP chart, from the repository root:
+
+```bash
+make nktp-chart-check
 ```
 
 `make lint` in `agent/` is the check CI runs on every push, so treat a failure

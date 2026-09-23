@@ -5,6 +5,7 @@
 # missing one reports which tool and two ways to get it.
 
 CHART ?= controller/deploy/charts/controller
+NKTP_CHART ?= nktp/deploy/charts/nktp
 
 define require_command
 command -v $(1) >/dev/null 2>&1 || { \
@@ -102,6 +103,37 @@ chart-identity-check: ## Assert the chart still renders the deployed identities 
 
 chart-check: lint-chart chart-rbac-check chart-package-check chart-identity-check ## Run every chart check enforced by CI.
 
+.PHONY: nktp-chart-deps nktp-chart-lint nktp-chart-check
+
+# The dependency archives are downloaded, never committed; the chart's own
+# .gitignore keeps them out. `helm dependency build` refuses to run until every
+# repository in Chart.yaml has been added, so they are added here, read from
+# Chart.yaml rather than listed a second time. They go into a throwaway Helm
+# config, so your `helm repo list` is left alone. The build also fails when
+# Chart.lock no longer matches Chart.yaml.
+nktp-chart-deps: ## Download the NKTP chart's dependencies into its charts/ directory.
+	@$(call require_tool,helm,$(HELM_VERSION))
+	@set -eu; \
+	 dir=$$(mktemp -d); \
+	 trap 'rm -rf "$$dir"' EXIT HUP INT TERM; \
+	 export HELM_REPOSITORY_CONFIG="$$dir/repositories.yaml" HELM_REPOSITORY_CACHE="$$dir/cache"; \
+	 n=0; \
+	 for url in $$(awk '$$1 == "repository:" { print $$2 }' $(NKTP_CHART)/Chart.yaml | sort -u); do \
+		n=$$((n + 1)); \
+		helm repo add "nktp-dep-$$n" "$$url" >/dev/null; \
+	 done; \
+	 helm dependency build $(NKTP_CHART) --skip-refresh
+
+# Custom resources are validated against the CRDs this chart installs; see
+# nktp/hack/chart-validate.sh.
+nktp-chart-lint: nktp-chart-deps ## Lint and render the NKTP chart, then validate it.
+	@$(call require_tool,kubeconform,$(KUBECONFORM_VERSION))
+	@$(call require_command,yq)
+	@helm lint --strict $(NKTP_CHART)
+	@NKTP_CHART="$(NKTP_CHART)" ./nktp/hack/chart-validate.sh
+
+nktp-chart-check: nktp-chart-lint ## Run every NKTP chart check enforced by CI. (run by the merge gate)
+
 # Use the same tool, Go version, offline scan, waiver, and stale-waiver guard as
 # CI. The helper returns 3 for an unwaived finding and preserves tool failures.
 vulncheck: ## Report vulnerabilities reachable from each module. (run by the merge gate)
@@ -186,6 +218,7 @@ gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory lint-shell
 	@$(MAKE) --no-print-directory docs-check
 	@$(MAKE) --no-print-directory chart-check
+	@$(MAKE) --no-print-directory nktp-chart-check
 	@$(MAKE) --no-print-directory -C controller generate-check
 	@$(MAKE) --no-print-directory -C cli provider-manifest-check
 	@$(MAKE) --no-print-directory vulncheck

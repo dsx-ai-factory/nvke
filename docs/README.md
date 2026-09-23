@@ -102,7 +102,8 @@ Deeper module documentation:
 `AGENTS.md` files carry instructions for AI coding agents, not for people. There
 is one at the repository root, and one in
 [../agent/AGENTS.md](../agent/AGENTS.md),
-[../controller/AGENTS.md](../controller/AGENTS.md) and
+[../controller/AGENTS.md](../controller/AGENTS.md),
+[../nktp/AGENTS.md](../nktp/AGENTS.md) and
 [../os-image/AGENTS.md](../os-image/AGENTS.md).
 
 ## Not indexed here

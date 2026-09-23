@@ -16,6 +16,10 @@ the full topology.
 The chart version is `version:` in [Chart.yaml](Chart.yaml). A release tag
 `nktp/vX.Y.Z` has to equal it; see [RELEASE.md](../../../../RELEASE.md).
 
+`make nktp-chart-check`, from the repository root, downloads the dependencies,
+lints and renders the chart, and validates the rendered manifests with
+kubeconform. The merge gate runs it on every pull request.
+
 ## What it deploys
 
 Every Collector below is an `OpenTelemetryCollector` resource that the bundled

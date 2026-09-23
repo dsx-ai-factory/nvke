@@ -29,7 +29,8 @@ GITLEAKS_VERSION   ?= 8.30.1
 GITLEAKS_SHA256_AMD64 ?= 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
 
 KUBECONFORM_VERSION ?= v0.7.0
-# chart.yml runs on ubuntu-latest, so amd64 is the only platform needed.
+# .github/actions/setup-kubeconform installs it for chart.yml and nktp-chart.yml,
+# both on ubuntu-latest, so amd64 is the only platform needed.
 KUBECONFORM_SHA256_AMD64 ?= c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3
 HELM_VERSION         ?= v4.2.4
 

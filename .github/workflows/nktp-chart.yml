@@ -1,0 +1,63 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Lints, renders and validates the NKTP Helm chart.
+#
+# `make nktp-chart-check` downloads the
+# chart's dependencies from the repositories Chart.yaml names, then runs
+# `helm lint`, `helm template` with a resource count, and kubeconform on the
+# rendered output. Custom resources are checked against schemas built from the
+# CRDs the chart installs, with yq.
+
+name: NKTP Chart
+
+# merge-gate.yml calls this for pull requests, so there is no `pull_request:`
+# trigger here, and the `paths:` filter below applies only to `push`.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'nktp/deploy/charts/**'
+      - 'nktp/hack/chart-*.sh'
+      - 'make/checks.mk'
+      - 'make/versions.mk'
+      - 'make/tool-versions.mk'
+      - 'Makefile'
+      - '.github/actions/setup-kubeconform/**'
+      - '.github/workflows/nktp-chart.yml'
+  workflow_call:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: NKTP Chart-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  nktp-chart:
+    name: lint and render
+    runs-on: ubuntu-latest
+    if: github.repository == 'dsx-ai-factory/nke'
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned tool versions
+        id: versions
+        run: |
+          echo "helm_version=$(make --no-print-directory print-HELM_VERSION)" >> "$GITHUB_OUTPUT"
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ steps.versions.outputs.helm_version }}
+
+      - name: Set up kubeconform
+        uses: ./.github/actions/setup-kubeconform
+
+      - name: Check the chart
+        run: make nktp-chart-check
