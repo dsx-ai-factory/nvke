@@ -75,7 +75,7 @@ build: ## Build nke-os-image-check into bin/.
 compile: ## Type-check every package, including the ones with no binary.
 	$(GO) build ./...
 
-test: ## Run this module's tests. (run by the merge gate)
+test: test-qemu ## Run this module's tests. (run by the merge gate)
 	$(GO) test $(GO_TEST_FLAGS) ./...
 
 fmt: ## Format the source with golangci-lint's formatters.
@@ -133,3 +133,18 @@ notices-check: ## Verify THIRD_PARTY_NOTICES.md is up to date. (advisory; not in
 		git diff --name-only -- THIRD_PARTY_NOTICES.md; \
 		exit 1; \
 	fi
+
+.PHONY: image image-native test-qemu
+ARCH ?= amd64
+VARIANT ?= non-fde
+
+image: ## Bake with native or NixOS VM package builds (ARCH=amd64|arm64, VARIANT=fde|non-fde).
+	@case "$(VARIANT)" in fde|non-fde) ;; *) echo "VARIANT must be fde or non-fde" >&2; exit 1 ;; esac
+	$(MAKE) -C packer os-image-$(VARIANT) ARCH=$(ARCH)
+
+image-native: ## Bake with native Linux KVM; fail if acceleration is unavailable.
+	$(MAKE) image REQUIRE_ACCELERATION=1
+
+test-qemu: ## Test QEMU architecture, firmware, and accelerator selection without a VM.
+	bash ./packer/scripts/qemu-arch-test.sh
+	python3 ./packer/scripts/test_build_entrypoint.py

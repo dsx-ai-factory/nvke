@@ -24,7 +24,7 @@ set -euo pipefail
 
 : "${LUKS_PASSPHRASE:?LUKS_PASSPHRASE must be set (passed via the shell provisioner environment_vars in nke-node-fde.pkr.hcl)}"
 
-SRC=/tmp/nke-image/luks
+SRC=/var/tmp/nke-image/luks
 
 echo "Detecting LUKS devices..."
 LUKS_DEVICES=$(sudo lsblk -ln -o NAME,FSTYPE | grep crypto_LUKS | awk '{print "/dev/" $1}' || true)

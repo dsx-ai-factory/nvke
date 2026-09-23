@@ -207,8 +207,8 @@ func searchDirs(explicit string) []string {
 // consoleLogNames are the known console log file names produced by each backend.
 var consoleLogNames = []string{
 	"console.log",          // darwin-qemu
-	"disk.qcow2.ttyS1.log", // libvirt serial 1 (preferred)
-	"disk.qcow2.ttyS0.log", // libvirt serial 0 (fallback)
+	"disk.qcow2.ttyS0.log", // libvirt serial 0
+	"disk.qcow2.ttyS1.log", // libvirt serial 1
 }
 
 // discoverConsoleLogs walks all search directories and returns every
@@ -228,22 +228,20 @@ func discoverConsoleLogs(explicit string) []vmConsoleLog {
 			}
 			instanceID := entry.Name()
 			instanceDir := filepath.Join(dir, instanceID)
-			for _, logName := range consoleLogNames {
-				logPath := filepath.Join(instanceDir, logName)
-				if info, err := os.Stat(logPath); err == nil && info.Size() > 0 {
-					if seen[logPath] {
-						continue
-					}
-					seen[logPath] = true
-					results = append(results, vmConsoleLog{
-						InstanceID: instanceID,
-						Name:       readInstanceName(instanceDir),
-						LogFile:    logPath,
-						ParentDir:  dir,
-					})
-					break // prefer first match per instance
-				}
+			logPath := newestConsoleLog(instanceDir)
+			if logPath == "" {
+				continue
 			}
+			if seen[logPath] {
+				continue
+			}
+			seen[logPath] = true
+			results = append(results, vmConsoleLog{
+				InstanceID: instanceID,
+				Name:       readInstanceName(instanceDir),
+				LogFile:    logPath,
+				ParentDir:  dir,
+			})
 		}
 	}
 
@@ -255,6 +253,21 @@ func discoverConsoleLogs(explicit string) []vmConsoleLog {
 	})
 
 	return results
+}
+
+func newestConsoleLog(instanceDir string) string {
+	var bestPath string
+	var bestModTime time.Time
+	for _, logName := range consoleLogNames {
+		logPath := filepath.Join(instanceDir, logName)
+		if info, err := os.Stat(logPath); err == nil && info.Size() > 0 {
+			if bestPath == "" || info.ModTime().After(bestModTime) {
+				bestPath = logPath
+				bestModTime = info.ModTime()
+			}
+		}
+	}
+	return bestPath
 }
 
 func modTime(path string) time.Time {

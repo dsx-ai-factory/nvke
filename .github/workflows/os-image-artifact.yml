@@ -503,7 +503,9 @@ jobs:
               OVMF_CODE=/usr/share/AAVMF/AAVMF_CODE.fd \
               OVMF_VARS_TEMPLATE=/usr/share/AAVMF/AAVMF_VARS.fd
           else
-            make -C os-image boot-smoke ARCH=amd64 OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
+            make -C os-image boot-smoke ARCH=amd64 \
+              OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd \
+              OVMF_VARS_TEMPLATE=/usr/share/OVMF/OVMF_VARS_4M.fd
           fi
 
       # Runs regardless of outcome: this runner has no VNC/monitor access to

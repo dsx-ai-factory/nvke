@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -191,6 +192,26 @@ func runDockerCommand(ctx context.Context, args ...string) error {
 		return commandError(command, err, output)
 	}
 	return nil
+}
+
+// nodeContainerName resolves the Docker container that backs a node. CAPD names
+// the container after the node; nico-sim appends the first eight characters of
+// the instance ID (controller/nico-sim/internal/container/service.go), so the
+// node name is a prefix there rather than the whole name.
+func nodeContainerName(ctx context.Context, nodeName string) (string, error) {
+	command := exec.CommandContext(ctx,
+		"docker", "ps", "--format", "{{.Names}}",
+		"--filter", "name=^"+regexp.QuoteMeta(nodeName)+"(-[0-9a-f]{8})?$",
+	)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return "", commandError(command, err, output)
+	}
+	names := strings.Fields(string(output))
+	if len(names) != 1 {
+		return "", fmt.Errorf("expected one running container for node %s, found %v", nodeName, names)
+	}
+	return names[0], nil
 }
 
 func commandError(command *exec.Cmd, err error, output []byte) error {

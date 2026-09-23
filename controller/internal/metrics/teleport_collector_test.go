@@ -372,11 +372,11 @@ func TestTeleportCollector(t *testing.T) {
 			}
 		}
 
-		assert.InDelta(t, 1, metricMap["cwe_teleport_cluster_enabled"], 0.001)
-		assert.InDelta(t, 1, metricMap["cwe_teleport_node_pool_enabled"], 0.001)
-		assert.InDelta(t, 3, metricMap["cwe_teleport_nodes_eligible"], 0.001)
-		assert.InDelta(t, 1, metricMap["cwe_teleport_nodes_registered"], 0.001)
-		assert.InDelta(t, 2, metricMap["cwe_teleport_nodes_pending"], 0.001)
+		assert.InDelta(t, 1, metricMap["nke_controller_teleport_cluster_enabled"], 0.001)
+		assert.InDelta(t, 1, metricMap["nke_controller_teleport_node_pool_enabled"], 0.001)
+		assert.InDelta(t, 3, metricMap["nke_controller_teleport_nodes_eligible"], 0.001)
+		assert.InDelta(t, 1, metricMap["nke_controller_teleport_nodes_registered"], 0.001)
+		assert.InDelta(t, 2, metricMap["nke_controller_teleport_nodes_pending"], 0.001)
 	})
 
 	t.Run("deduplicates cluster metrics across node pools", func(t *testing.T) {
@@ -396,9 +396,9 @@ func TestTeleportCollector(t *testing.T) {
 		var nodePoolEnabledCount int
 		for _, f := range families {
 			switch f.GetName() {
-			case "cwe_teleport_cluster_enabled":
+			case "nke_controller_teleport_cluster_enabled":
 				clusterEnabledCount = len(f.GetMetric())
-			case "cwe_teleport_node_pool_enabled":
+			case "nke_controller_teleport_node_pool_enabled":
 				nodePoolEnabledCount = len(f.GetMetric())
 			}
 		}
@@ -429,14 +429,14 @@ func TestTeleportCollector(t *testing.T) {
 				assert.Equal(t, te.siteID.String(), labelMap["site_id"], "metric %s should have site_id", f.GetName())
 
 				switch f.GetName() {
-				case "cwe_teleport_cluster_enabled":
+				case "nke_controller_teleport_cluster_enabled":
 					assert.Equal(t, cluster.ID.String(), labelMap["cluster_id"])
 					assert.Equal(t, "label-test", labelMap["cluster_name"])
-				case "cwe_teleport_node_pool_enabled":
+				case "nke_controller_teleport_node_pool_enabled":
 					assert.Equal(t, cluster.ID.String(), labelMap["cluster_id"])
 					assert.Equal(t, np.ID.String(), labelMap["node_pool_id"])
 					assert.Equal(t, "label-pool", labelMap["node_pool_name"])
-				case "cwe_teleport_nodes_eligible", "cwe_teleport_nodes_registered", "cwe_teleport_nodes_pending":
+				case "nke_controller_teleport_nodes_eligible", "nke_controller_teleport_nodes_registered", "nke_controller_teleport_nodes_pending":
 					assert.Equal(t, cluster.ID.String(), labelMap["cluster_id"])
 					assert.Equal(t, np.ID.String(), labelMap["node_pool_id"])
 				}
@@ -460,7 +460,7 @@ func TestTeleportCollector(t *testing.T) {
 		require.NoError(t, err)
 
 		for _, f := range families {
-			if f.GetName() == "cwe_teleport_cluster_enabled" {
+			if f.GetName() == "nke_controller_teleport_cluster_enabled" {
 				for _, m := range f.GetMetric() {
 					labelMap := make(map[string]string)
 					for _, lp := range m.GetLabel() {

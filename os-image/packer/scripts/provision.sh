@@ -2,11 +2,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Guest provisioner. Artifacts are already in /tmp/nke-image.
+# Guest provisioner. Artifacts are already in /var/tmp/nke-image.
 
 set -euo pipefail
 
-SRC=/tmp/nke-image
+SRC=/var/tmp/nke-image
 ROOT_FS_LABEL="${ROOT_FS_LABEL:?ROOT_FS_LABEL is required}"
 
 sudo install -d -m 0755 /usr/lib/nke /etc/nke /var/lib/nke /usr/local/bin
@@ -225,7 +225,7 @@ if [[ -f /etc/apt/sources.list.d/nke-local.list ]]; then
 fi
 
 # The uploaded artifacts (gigabytes of debs) must not stay in the qcow2.
-sudo rm -rf /tmp/nke-image
+sudo rm -rf /var/tmp/nke-image
 
 sudo fstrim -av || true
 

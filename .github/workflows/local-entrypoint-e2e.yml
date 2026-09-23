@@ -47,7 +47,8 @@ permissions: {}
 
 concurrency:
   # The sha keeps main runs apart. Sharing one group, and main never cancels,
-  # means a second main run waits out the first.
+  # means a second main run waits out the first. Only the second: GitHub keeps
+  # one pending run per group, so a third arrival evicts the queued second.
   group: Local entrypoint E2E-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 

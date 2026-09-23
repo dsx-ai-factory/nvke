@@ -29,9 +29,20 @@ func joinedCPNode(id uuid.UUID) db.Node {
 		ControlPlane: true,
 		Name:         "cp-" + id.String()[:8],
 		Conditions: db.NodeConditions{
-			Joined: db.NewCondition(true, "Joined"),
+			Joined:          db.NewCondition(true, "Joined"),
+			KubernetesReady: db.NewCondition(true, "Ready"),
+			NodeAgentReady:  db.NewCondition(true, "Ready"),
 		},
 	}
+}
+
+// unreachableCPNode is a joined control-plane node that has stopped reporting
+// healthy: kubelet and agent are gone, so its etcd member is not answering.
+func unreachableCPNode(id uuid.UUID) db.Node {
+	node := joinedCPNode(id)
+	node.Conditions.KubernetesReady = db.NewCondition(false, "Node is not ready")
+	node.Conditions.NodeAgentReady = db.NewCondition(false, "Agent is not responding")
+	return node
 }
 
 // cpNodeIDs returns n distinct control-plane node IDs, deterministic per index
@@ -62,7 +73,6 @@ func TestControlPlaneQuorumFloor(t *testing.T) {
 		name       string
 		cpNodes    func() []db.Node
 		target     int
-		opts       []nodes.DeleteOpt
 		wantRefuse bool
 		wantSurviv int
 	}{
@@ -77,6 +87,38 @@ func TestControlPlaneQuorumFloor(t *testing.T) {
 			name: "three joined control-plane nodes: delete leaves two, refused",
 			cpNodes: func() []db.Node {
 				return []db.Node{joinedCPNode(ids[0]), joinedCPNode(ids[1]), joinedCPNode(ids[2])}
+			},
+			target:     0,
+			wantRefuse: true,
+			wantSurviv: 2,
+		},
+		{
+			name: "three joined control-plane nodes, target unreachable: accepted",
+			cpNodes: func() []db.Node {
+				return []db.Node{unreachableCPNode(ids[0]), joinedCPNode(ids[1]), joinedCPNode(ids[2])}
+			},
+			target: 0,
+		},
+		{
+			name: "two joined control-plane nodes, target unreachable: accepted",
+			cpNodes: func() []db.Node {
+				return []db.Node{unreachableCPNode(ids[0]), joinedCPNode(ids[1])}
+			},
+			target: 0,
+		},
+		{
+			name: "two joined control-plane nodes, target healthy: refused",
+			cpNodes: func() []db.Node {
+				return []db.Node{joinedCPNode(ids[0]), joinedCPNode(ids[1])}
+			},
+			target:     0,
+			wantRefuse: true,
+			wantSurviv: 1,
+		},
+		{
+			name: "an unreachable survivor does not exempt a healthy target",
+			cpNodes: func() []db.Node {
+				return []db.Node{joinedCPNode(ids[0]), joinedCPNode(ids[1]), unreachableCPNode(ids[2])}
 			},
 			target:     0,
 			wantRefuse: true,
@@ -142,11 +184,10 @@ func TestControlPlaneQuorumFloor(t *testing.T) {
 				mockTx.On("UpdateNode", mock.Anything, mock.Anything).Return(target, nil)
 			}
 
-			opts := append([]nodes.DeleteOpt{
+			err := nodes.DeleteWithTx(ctx, mockTx, target.ID,
 				nodes.WithSkipLiveDeleteGuard(),
 				nodes.WithControlPlaneControllerDelete(true),
-			}, tt.opts...)
-			err := nodes.DeleteWithTx(ctx, mockTx, target.ID, opts...)
+			)
 
 			if !tt.wantRefuse {
 				require.NoError(t, err)
@@ -217,6 +258,44 @@ func TestControlPlaneDeleteRecordsIntentWithoutStartingTeardown(t *testing.T) {
 
 	mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry",
 		mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	mockTx.AssertExpectations(t)
+}
+
+// TestUnhealthyControlPlaneDeleteRecordsForceUnreachable pairs the floor
+// exemption with the teardown it hands off to: the node the floor waived as
+// unhealthy must be torn down as unreachable, or the accepted delete stalls on a
+// drain that can never finish.
+func TestUnhealthyControlPlaneDeleteRecordsForceUnreachable(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	ids := cpNodeIDs(3)
+	cpNodes := []db.Node{unreachableCPNode(ids[0]), joinedCPNode(ids[1]), joinedCPNode(ids[2])}
+	target := cpNodes[0]
+
+	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil)
+	expectControlPlaneCensus(mockTx, cpNodes)
+
+	var written db.Node
+	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(updated *db.Node) bool {
+		written = *updated
+		return updated.ID == target.ID
+	})).Return(target, nil)
+
+	require.NoError(t, nodes.DeleteWithTx(ctx, mockTx, target.ID,
+		nodes.WithSkipLiveDeleteGuard(),
+		nodes.WithControlPlaneControllerDelete(true),
+		nodes.WithReason("API"),
+		nodes.WithAllowCPNode(true),
+	))
+
+	var recorded struct {
+		ForceUnreachable bool `json:"forceUnreachable"`
+	}
+	require.NoError(t, json.Unmarshal(written.DeleteRequest, &recorded))
+	require.True(t, recorded.ForceUnreachable,
+		"a delete the floor waived as unhealthy must tear the node down as unreachable")
 	mockTx.AssertExpectations(t)
 }
 

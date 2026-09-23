@@ -30,6 +30,10 @@ if [[ ! "${SOURCE_ROOT}" -ef "${script_repo_root}" ]]; then
 fi
 repo_root="${script_repo_root}"
 
+if [[ "${NKE_BUILD_IN_PLACE:-0}" != 1 ]]; then
+  exec bash "$(dirname "${BASH_SOURCE[0]}")/package-builder.sh"
+fi
+
 mkdir -p "${ARTIFACTS_DIR}"
 
 if ! command -v go >/dev/null 2>&1; then

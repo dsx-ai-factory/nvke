@@ -10,14 +10,17 @@
 # QCOW defaults to the single *.qcow2 under output-non-fde/ (its filename
 # encodes the Ubuntu version/arch, e.g. nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2
 # -- see vm_name in nke-node-non-fde.pkr.hcl). This variant is UEFI-installed,
-# so OVMF_CODE (and optionally OVMF_VARS_TEMPLATE) is required:
-#   OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./boot-smoke.sh
+# firmware is discovered automatically; override both paths together when necessary:
+#   OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd \
+#     OVMF_VARS_TEMPLATE=/usr/share/OVMF/OVMF_VARS_4M.fd ./boot-smoke.sh
 # The FDE variant needs its own passphrase/TPM handling instead of this
 # script -- see ../../demo-fde.sh.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=qemu-arch.sh
+source "${ROOT}/scripts/qemu-arch.sh"
 QCOW="${QCOW:-}"
 if [[ -z "${QCOW}" ]]; then
   shopt -s nullglob
@@ -32,49 +35,14 @@ if [[ -z "${QCOW}" ]]; then
 fi
 SSH_KEY="${SSH_KEY:-${ROOT}/.ssh/id_ed25519}"
 SSH_PORT="${SSH_PORT:-2222}"
-OVMF_CODE="${OVMF_CODE:-}"
-OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
-# amd64 or arm64. Must match the qcow2 being smoke-tested -- see the same
-# ARCH-vs-host-arch reasoning in packer/Makefile's ACCELERATOR probe.
-ARCH="${ARCH:-amd64}"
+nke_qemu_env "$(nke_arch_from_qcow "${QCOW}")"
+OVMF_CODE="${OVMF_CODE:-${EFI_CODE_DEFAULT}}"
+OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-${EFI_VARS_DEFAULT}}"
 ROOT_FS_LABEL="${ROOT_FS_LABEL:-cloudimg-rootfs}"
 TARGET_DISK_SIZE="${TARGET_DISK_SIZE:-20G}"
-
-case "${ARCH}" in
-  amd64)
-    QEMU_BIN=qemu-system-x86_64
-    ARCH_UNAME=x86_64
-    MACHINE_ARGS=()
-    ;;
-  arm64)
-    QEMU_BIN=qemu-system-aarch64
-    ARCH_UNAME=aarch64
-    # Unlike x86 (which defaults to a sane "pc" machine), QEMU has no
-    # default machine type for aarch64 -- it must be named explicitly.
-    MACHINE_ARGS=(-machine virt)
-    ;;
-  *)
-    echo "boot-smoke: unsupported ARCH=${ARCH} (expected amd64 or arm64)" >&2
-    exit 1
-    ;;
-esac
-
-# Same probe as packer/Makefile, and for the same reason: KVM only
-# accelerates a guest matching the host's own architecture, and the CI
-# runners have no /dev/kvm at all, so -enable-kvm would make QEMU exit
-# instead of booting rather than silently emulating. Emulated boot is
-# minutes rather than seconds, so the timeout moves with the accelerator.
-if [[ "$(uname -m)" == "${ARCH_UNAME}" && -c /dev/kvm && -w /dev/kvm ]]; then
-  ACCEL_ARGS=(-enable-kvm -cpu host)
+if [[ "${NKE_ACCELERATED}" -eq 1 ]]; then
   BOOT_TIMEOUT="${BOOT_TIMEOUT:-180}"
 else
-  echo "boot-smoke: no usable same-arch /dev/kvm, booting under software emulation (slower)" >&2
-  # Same knob as packer/Makefile: on an arm64 host "max" turns on pointer auth
-  # with QARMA5, which tcg emulates far too slowly; impdef keeps it cheap.
-  CPU_MODEL=max
-  [[ "${ARCH}" == "arm64" ]] && CPU_MODEL="max,pauth-impdef=on"
-  ACCEL_ARGS=(-accel tcg -cpu "${CPU_MODEL}")
-  # About 2 min under KVM; tcg runs at roughly 10x that.
   BOOT_TIMEOUT="${BOOT_TIMEOUT:-2400}"
 fi
 
@@ -122,23 +90,18 @@ local-hostname: nke-boot-smoke" >"${WORKDIR}/meta-data"
 
 cloud-localds "${SEED}" "${WORKDIR}/user-data" "${WORKDIR}/meta-data"
 
-EFI_ARGS=()
-if [[ -n "${OVMF_CODE}" ]]; then
-  EFIVARS="${WORKDIR}/OVMF_VARS.fd"
-  cp "${OVMF_VARS_TEMPLATE}" "${EFIVARS}"
-  EFI_ARGS=(
-    -drive "if=pflash,format=raw,readonly=on,file=${OVMF_CODE}"
-    -drive "if=pflash,format=raw,file=${EFIVARS}"
-  )
-fi
+EFIVARS="${WORKDIR}/OVMF_VARS.fd"
+install -m 0600 "${OVMF_VARS_TEMPLATE}" "${EFIVARS}"
 
 echo "boot-smoke: starting VM (ssh on 127.0.0.1:${SSH_PORT})"
 "${QEMU_BIN}" \
   -m 2048 -smp 2 \
-  "${MACHINE_ARGS[@]}" \
+  -machine "type=${QEMU_MACHINE}" \
+  -cpu "${QEMU_CPU}" \
   "${ACCEL_ARGS[@]}" \
   -nographic \
-  "${EFI_ARGS[@]}" \
+  -drive "if=pflash,format=raw,readonly=on,file=${OVMF_CODE}" \
+  -drive "if=pflash,format=raw,file=${EFIVARS}" \
   -drive if=virtio,file="${DISK}",format=qcow2 \
   -drive if=virtio,file="${SEED}",format=raw \
   -netdev user,id=net0,hostfwd=tcp::"${SSH_PORT}"-:22 \
@@ -182,6 +145,10 @@ systemctl is-enabled spire-agent.service
 systemctl is-enabled nke-spire-configure.service
 test -x /usr/local/bin/nke-agent
 test -x /usr/local/bin/nke-agent-updater
+# The mode bits say nothing about whether the binary runs: -version exits 0
+# only if it matches the image's architecture and resolves its libraries.
+/usr/local/bin/nke-agent -version
+/usr/local/bin/nke-agent-updater -version
 dpkg-query -W -f='${Status}\n' nke-agent | grep -Fxq 'install ok installed'
 for path in /usr/local/bin/nke-agent /usr/local/bin/nke-agent-updater \
   /etc/systemd/system/nke-agent.service /etc/systemd/system/nke-agent-updater@.service; do
@@ -207,6 +174,8 @@ id -u spire >/dev/null
 test "$(. /etc/spire-agent/spire-agent.env; echo "${TPM_PLUGIN_CHECKSUM}")" \
     = "$(sha256sum /usr/local/lib/spire-agent/tpm_attestor_agent | cut -d' ' -f1)"
 grep -Fq -- -expandEnv /lib/systemd/system/spire-agent.service
+# Persistent upload scratch must not remain in the golden image.
+test ! -e /var/tmp/nke-image
 
 # The local apt repo has to offer what a node installs at cluster create.
 # These are staged rather than installed, so nothing above would notice them

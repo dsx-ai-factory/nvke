@@ -1,6 +1,16 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+variable "architecture" {
+  type        = string
+  description = "Target guest architecture selected by the external build plan."
+
+  validation {
+    condition     = contains(["amd64", "arm64"], var.architecture)
+    error_message = "The architecture value must be amd64 or arm64."
+  }
+}
+
 variable "material_manifest" {
   type        = string
   description = "Absolute path to the caller-authenticated material manifest. Materials are staged in its sibling materials directory."
@@ -152,4 +162,25 @@ variable "luks_passphrase" {
   default     = "changeit"
   sensitive   = true
   description = "FDE-only bootstrap passphrase used during encrypted image construction; ignored by the non-FDE build."
+}
+
+# Make supplies the discovered pair. Direct Packer callers provide both paths.
+variable "efi_firmware_code" {
+  type        = string
+  description = "UEFI firmware code blob."
+
+  validation {
+    condition     = length(var.efi_firmware_code) > 0
+    error_message = "The firmware code path must not be empty."
+  }
+}
+
+variable "efi_firmware_vars" {
+  type        = string
+  description = "Matching UEFI firmware variables template."
+
+  validation {
+    condition     = length(var.efi_firmware_vars) > 0
+    error_message = "The firmware variables path must not be empty."
+  }
 }

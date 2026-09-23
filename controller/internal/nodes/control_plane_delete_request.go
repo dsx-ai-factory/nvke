@@ -64,6 +64,16 @@ func (e *ControlPlaneQuorumFloorError) Error() string {
 	)
 }
 
+// isHealthyControlPlaneNode reports whether a joined control-plane node is still
+// serving: its Kubernetes components are up and its agent is answering. It
+// mirrors the health the control-plane controller uses to decide whether a node
+// can be remediated, so an operator delete and a controller replacement judge the
+// same node the same way.
+func isHealthyControlPlaneNode(node db.Node) bool {
+	return node.Conditions.KubernetesReady.Status == db.ConditionStatusTrue &&
+		node.Conditions.NodeAgentReady.Status == db.ConditionStatusTrue
+}
+
 // IsDeleteRequested reports whether a delete has been accepted for the node but
 // its teardown has not started yet.
 func IsDeleteRequested(node db.Node) bool {
@@ -91,21 +101,28 @@ func recordControlPlaneDeleteRequest(ctx context.Context, tx db.Tx, node db.Node
 		return ErrDeleteAlreadyRequested
 	}
 
-	// The floor has no override: the etcd safety overrides it used to defer to
-	// were removed from the API. Shrinking a control plane below the
-	// fault-tolerant size now goes through the replacement-first path or through
-	// cluster delete. Controllers that replace the node opt out, because the
-	// floor would otherwise refuse the very remediation a three-node control
-	// plane needs.
+	// SkipQuorumFloor exempts controllers that replace the node; they run their
+	// own etcd-quorum precondition. The floor itself exempts a node that has
+	// already stopped reporting healthy, since it is not providing fault
+	// tolerance and refusing to remove it preserves a three-node control plane in
+	// name only. The teardown-time etcd guard remains the last word on live
+	// membership.
 	if !options.SkipQuorumFloor {
 		if err := ensureControlPlaneQuorumFloor(ctx, tx, node); err != nil {
 			return err
 		}
 	}
 
+	// The floor waives a node that stopped reporting healthy, so the teardown has
+	// to judge it the same way. Without this the accepted delete takes the healthy
+	// path against a node whose kubelet is gone: the drain times out, the workflow
+	// fails with no retry, and the row stays Deleting forever, which blocks every
+	// later control-plane join, delete and remediation on the cluster.
+	forceUnreachable := options.ForceUnreachable || !isHealthyControlPlaneNode(node)
+
 	recorded, err := json.Marshal(deleteRequestRecord{
 		Reason:             options.Reason,
-		ForceUnreachable:   options.ForceUnreachable,
+		ForceUnreachable:   forceUnreachable,
 		MachineHealthIssue: options.MachineHealthIssue,
 	})
 	if err != nil {
@@ -138,6 +155,16 @@ func ensureControlPlaneQuorumFloor(ctx context.Context, tx db.Tx, node db.Node) 
 	// ordinary case of clearing a stuck pending node while the control plane is
 	// still coming up.
 	if node.Conditions.Joined.Status != db.ConditionStatusTrue {
+		return nil
+	}
+
+	// Nor does the floor apply to a node that has stopped reporting healthy. Its
+	// etcd member is already not answering, so the fault tolerance the floor
+	// exists to preserve is gone whether or not the row stays; refusing here would
+	// only keep a dead member in the cluster, and removing it is the first step of
+	// replacing it. The floor still refuses a healthy node, which is the
+	// accidental shrink it was built for.
+	if !isHealthyControlPlaneNode(node) {
 		return nil
 	}
 

@@ -23,8 +23,8 @@ source "qemu" "nke-non-fde" {
   # the runner-storage cost of every package-install fsync.
   disk_cache = "unsafe"
 
-  efi_firmware_code = local.efi_firmware_code
-  efi_firmware_vars = local.efi_firmware_vars
+  efi_firmware_code = var.efi_firmware_code
+  efi_firmware_vars = var.efi_firmware_vars
   # The per-build variable store is execution state, not a published artifact.
   efi_drop_efivars = true
   efi_boot         = true
@@ -89,12 +89,12 @@ build {
   }
 
   provisioner "shell" {
-    inline = ["mkdir -p /tmp/nke-image/lvm"]
+    inline = ["mkdir -p /var/tmp/nke-image/lvm"]
   }
 
   provisioner "file" {
     source      = "${local.staged_image_inputs.non_fde}/"
-    destination = "/tmp/nke-image/"
+    destination = "/var/tmp/nke-image/"
     generated   = true
   }
 
@@ -108,7 +108,7 @@ build {
 
   provisioner "file" {
     source      = "${local.project_root}/../files/lvm/"
-    destination = "/tmp/nke-image/lvm/"
+    destination = "/var/tmp/nke-image/lvm/"
   }
 
   provisioner "shell" {

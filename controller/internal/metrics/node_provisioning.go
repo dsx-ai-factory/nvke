@@ -10,7 +10,7 @@ import (
 
 var nodeProvisioningGiveups = prometheus.NewCounterVec(
 	prometheus.CounterOpts{
-		Name: "cwe_node_provisioning_giveups_total",
+		Name: "nke_controller_node_provisioning_giveups_total",
 		Help: "Total number of nodes recycled after provisioning exceeded the configured timeout",
 	},
 	[]string{siteIDLabel, clusterIDLabel, nodePoolIDLabel, "cluster_name", "node_pool_name"},

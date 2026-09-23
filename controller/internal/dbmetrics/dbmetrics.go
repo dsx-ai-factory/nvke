@@ -75,7 +75,7 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 		logger: logger,
 		db:     db,
 		nodeConditionDesc: prometheus.NewDesc(
-			"cwe_node_condition",
+			"nke_controller_node_condition",
 			"Status of a node condition",
 			[]string{
 				// "tenant_cluster" instead of "cluster" to avoid label collision with the site controller cluster where we're running
@@ -87,7 +87,7 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			nil, // no const labels
 		),
 		nodePoolDesiredCountDesc: prometheus.NewDesc(
-			"cwe_node_pool_desired_count",
+			"nke_controller_node_pool_desired_count",
 			"Desired count of nodes in the node pool",
 			[]string{
 				// "tenant_cluster" instead of "cluster" to avoid label collision with the site controller cluster where we're running
@@ -98,7 +98,7 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			nil,
 		),
 		nodePoolActualCountDesc: prometheus.NewDesc(
-			"cwe_node_pool_actual_count",
+			"nke_controller_node_pool_actual_count",
 			"Actual count of nodes in the node pool",
 			[]string{
 				// "tenant_cluster" instead of "cluster" to avoid label collision with the site controller cluster where we're running
@@ -109,7 +109,7 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			nil,
 		),
 		nodePoolPendingCountDesc: prometheus.NewDesc(
-			"cwe_node_pool_pending_count",
+			"nke_controller_node_pool_pending_count",
 			"Count of pending nodes in the node pool",
 			[]string{
 				// "tenant_cluster" instead of "cluster" to avoid label collision with the site controller cluster where we're running
@@ -120,7 +120,7 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			nil,
 		),
 		nodeSetDeprecatedCountDesc: prometheus.NewDesc(
-			"cwe_node_pool_deprecated_count",
+			"nke_controller_node_pool_deprecated_count",
 			"Count of nodes in deprecated node sets",
 			[]string{
 				labelTenantCluster,
@@ -130,7 +130,7 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			nil,
 		),
 		nodeInfoDesc: prometheus.NewDesc(
-			"cwe_node_info",
+			"nke_controller_node_info",
 			"Information about a node",
 			[]string{
 				labelTenantCluster,
@@ -147,7 +147,7 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			nil,
 		),
 		clusterInfoDesc: prometheus.NewDesc(
-			"cwe_cluster_info",
+			"nke_controller_cluster_info",
 			"Information about a cluster",
 			[]string{
 				"name",
@@ -167,7 +167,7 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			nil,
 		),
 		nodePoolInfoDesc: prometheus.NewDesc(
-			"cwe_nodepool_info",
+			"nke_controller_nodepool_info",
 			"Information about a node pool",
 			[]string{
 				"id",
@@ -208,7 +208,7 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			nil,
 		),
 		nodeSetInfoDesc: prometheus.NewDesc(
-			"cwe_nodeset_info",
+			"nke_controller_nodeset_info",
 			"Information about a node set",
 			[]string{
 				// "tenant_cluster" instead of "cluster" to avoid label collision with the site controller cluster where we're running
@@ -232,7 +232,7 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			nil,
 		),
 		nodeLifecycleElapsedSecsDesc: prometheus.NewDesc(
-			"cwe_node_lifecycle_elapsed_seconds",
+			"nke_controller_node_lifecycle_elapsed_seconds",
 			"Seconds elapsed since a node entered its current lifecycle state (pending, provisioning, deleting, or markedForRecycling)",
 			[]string{
 				labelTenantCluster,

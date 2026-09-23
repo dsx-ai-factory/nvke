@@ -96,8 +96,8 @@ being silently ignored.
 - Node names and IPs must be unique across all nodes.
 - `podCidr` / `serviceCidr` are parsed as CIDRs; `podCidr` also accepts a
   comma-separated list and validates each entry.
-- `controlPlaneVIP`, when set, must parse as an IPv4 address, must not equal a
-  node IP, and must not fall inside `podCidr` or `serviceCidr`.
+- `controlPlaneVIP`, when set, must parse as a routable unicast IPv4 address,
+  must not equal a node IP, and must not fall inside `podCidr` or `serviceCidr`.
 
 ## Environment variable overrides
 
@@ -215,9 +215,12 @@ advertises it with local AS 65100 to each node's default gateway, peer AS
 route. Without BGP routing to the initializing node, the other control-plane
 nodes cannot reach the VIP to join.
 
-The address must sit outside `podCidr` and `serviceCidr` and must not be a node
-IP, or it collides with the cluster's own networks or a node. The load rejects a
-VIP that breaks any of these rules.
+The address must be a routable unicast IPv4 address: the unspecified, loopback,
+multicast, link-local and broadcast forms are refused, because the other
+control-plane nodes have to dial it to join. It must also sit outside `podCidr`
+and `serviceCidr` and must not be a node IP, or it collides with the cluster's
+own networks or a node. Loading the site spec rejects a VIP that breaks any of
+these rules.
 
 ## Relationship to the tier-0 bootstrap template
 

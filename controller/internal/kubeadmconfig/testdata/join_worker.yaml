@@ -28,6 +28,7 @@ apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
 maxParallelImagePulls: 4
 podPidsLimit: 16384
+seccompDefault: true
 serializeImagePulls: false
 serverTLSBootstrap: true
 tlsCipherSuites:

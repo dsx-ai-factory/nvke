@@ -52,6 +52,8 @@ jq.pkg-path = "jq"
 kubeconform = { pkg-path = "kubeconform", version = "0.7.0", pkg-group = "kubeconform" }
 python3 = { pkg-path = "python313", pkg-group = "python" }
 pyyaml = { pkg-path = "python313Packages.pyyaml", pkg-group = "python" }
+# Nix CLI for OS-image package-builder VMs.
+nix.pkg-path = "nix"
 
 
 ## Environment Variables ---------------------------------------------

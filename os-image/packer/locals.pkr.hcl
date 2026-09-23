@@ -14,9 +14,15 @@ locals {
   image_input_records = [for material in local.material_description.materials : material
     if material.binding == "image-inputs" && material.path == "materials/image-inputs"
   ]
-  installer_record    = local.installer_records[0]
-  image_input_record  = local.image_input_records[0]
-  architecture        = local.installer_record.architecture
+  installer_record   = local.installer_records[0]
+  image_input_record = local.image_input_records[0]
+  material_bound_architectures = {
+    for candidate in ["amd64", "arm64"] : candidate => candidate
+    if local.installer_record.architecture == candidate && local.image_input_record.architecture == candidate
+  }
+  # Indexing the material-bound set makes Packer validation fail closed when the
+  # requested architecture does not match both authenticated material records.
+  architecture        = local.material_bound_architectures[var.architecture]
   installer_iso       = "${local.material_root}/${local.installer_record.path}"
   installer_checksum  = local.installer_record.digest
   image_inputs        = "${local.material_root}/${local.image_input_record.path}"
@@ -28,17 +34,14 @@ locals {
   ssh_public_key      = trimspace(file(var.ssh_public_key_file))
   build_log_directory = var.build_log_directory == "" ? var.output_directory : var.build_log_directory
 
-  # Architecture comes from the authenticated installer material instead of a
-  # second caller-controlled variable, so the ISO, QEMU binary, machine and
-  # firmware cannot drift apart. ARM uses virt, AAVMF, the PL011 serial
-  # console, and the NVIDIA 64K-page kernel. AMD64 uses q35, OVMF, ttyS0, and
-  # linux-nvidia.
+  # The requested architecture is validated against the authenticated material
+  # manifest before it selects QEMU, firmware, console, and guest packages.
+  # ARM uses virt, AAVMF, the PL011 serial console, and the NVIDIA 64K-page
+  # kernel. AMD64 uses q35, OVMF, ttyS0, and linux-nvidia.
   nvidia_kernel_package = local.architecture == "arm64" ? "linux-nvidia-64k" : "linux-nvidia"
   serial_console        = local.architecture == "arm64" ? "ttyAMA0" : "ttyS0"
   qemu_binary           = local.architecture == "arm64" ? "qemu-system-aarch64" : "qemu-system-x86_64"
   machine_type          = local.architecture == "arm64" ? "virt" : "q35"
-  efi_firmware_code     = local.architecture == "arm64" ? "/usr/share/AAVMF/AAVMF_CODE.fd" : "/usr/share/OVMF/OVMF_CODE_4M.fd"
-  efi_firmware_vars     = local.architecture == "arm64" ? "/usr/share/AAVMF/AAVMF_VARS.fd" : "/usr/share/OVMF/OVMF_VARS_4M.fd"
 
   # ARM has no fixed cd0 alias, so GRUB locates the installer by content.
   # Under TCG, BIOS and GRUB timing varies widely. The source-owned ISO

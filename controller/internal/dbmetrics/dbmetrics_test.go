@@ -118,8 +118,8 @@ func labelsAsMap(m *io_prometheus_client.Metric) map[string]string {
 	return out
 }
 
-// TestUnit_Collector_ClusterNodePoolNodeSetInfo tests the cwe_cluster_info, cwe_nodepool_info,
-// and cwe_nodeset_info metrics introduced for the combined cluster/node pool/node set info collector.
+// TestUnit_Collector_ClusterNodePoolNodeSetInfo tests the nke_controller_cluster_info, nke_controller_nodepool_info,
+// and nke_controller_nodeset_info metrics introduced for the combined cluster/node pool/node set info collector.
 func TestUnit_Collector_ClusterNodePoolNodeSetInfo(t *testing.T) {
 	ctx := context.Background()
 
@@ -133,16 +133,16 @@ func TestUnit_Collector_ClusterNodePoolNodeSetInfo(t *testing.T) {
 		families, err := reg.Gather()
 		require.NoError(t, err)
 
-		clusterInfo := findMetricFamily(families, "cwe_cluster_info")
-		nodePoolInfo := findMetricFamily(families, "cwe_nodepool_info")
-		nodeSetInfo := findMetricFamily(families, "cwe_nodeset_info")
+		clusterInfo := findMetricFamily(families, "nke_controller_cluster_info")
+		nodePoolInfo := findMetricFamily(families, "nke_controller_nodepool_info")
+		nodeSetInfo := findMetricFamily(families, "nke_controller_nodeset_info")
 
-		assert.Nil(t, clusterInfo, "no clusters so no cwe_cluster_info")
-		assert.Nil(t, nodePoolInfo, "no node pools so no cwe_nodepool_info")
-		assert.Nil(t, nodeSetInfo, "no node sets so no cwe_nodeset_info")
+		assert.Nil(t, clusterInfo, "no clusters so no nke_controller_cluster_info")
+		assert.Nil(t, nodePoolInfo, "no node pools so no nke_controller_nodepool_info")
+		assert.Nil(t, nodeSetInfo, "no node sets so no nke_controller_nodeset_info")
 	})
 
-	t.Run("emits one cwe_cluster_info per cluster with expected labels", func(t *testing.T) {
+	t.Run("emits one nke_controller_cluster_info per cluster with expected labels", func(t *testing.T) {
 		te := setupCollectorTestEnv(ctx, t)
 		cluster := te.createCluster(ctx, t, "info-cluster")
 
@@ -153,7 +153,7 @@ func TestUnit_Collector_ClusterNodePoolNodeSetInfo(t *testing.T) {
 		families, err := reg.Gather()
 		require.NoError(t, err)
 
-		f := findMetricFamily(families, "cwe_cluster_info")
+		f := findMetricFamily(families, "nke_controller_cluster_info")
 		require.NotNil(t, f)
 		require.Len(t, f.GetMetric(), 1)
 
@@ -166,7 +166,7 @@ func TestUnit_Collector_ClusterNodePoolNodeSetInfo(t *testing.T) {
 		assert.Equal(t, nicoProvider.VpcID.String(), labels["vpc_id"])
 	})
 
-	t.Run("emits one cwe_nodepool_info per node pool with cluster and pool labels", func(t *testing.T) {
+	t.Run("emits one nke_controller_nodepool_info per node pool with cluster and pool labels", func(t *testing.T) {
 		te := setupCollectorTestEnv(ctx, t)
 		cluster := te.createCluster(ctx, t, "np-cluster")
 		np := te.createNodePool(ctx, t, cluster, "pool-a")
@@ -178,7 +178,7 @@ func TestUnit_Collector_ClusterNodePoolNodeSetInfo(t *testing.T) {
 		families, err := reg.Gather()
 		require.NoError(t, err)
 
-		f := findMetricFamily(families, "cwe_nodepool_info")
+		f := findMetricFamily(families, "nke_controller_nodepool_info")
 		require.NotNil(t, f)
 		require.Len(t, f.GetMetric(), 1)
 
@@ -195,7 +195,7 @@ func TestUnit_Collector_ClusterNodePoolNodeSetInfo(t *testing.T) {
 		assert.Equal(t, "250Mi", labels["kube_reserved_memory"])
 	})
 
-	t.Run("emits one cwe_nodeset_info per node set with cluster and node pool names", func(t *testing.T) {
+	t.Run("emits one nke_controller_nodeset_info per node set with cluster and node pool names", func(t *testing.T) {
 		te := setupCollectorTestEnv(ctx, t)
 		cluster := te.createCluster(ctx, t, "ns-cluster")
 		np := te.createNodePool(ctx, t, cluster, "ns-pool")
@@ -208,7 +208,7 @@ func TestUnit_Collector_ClusterNodePoolNodeSetInfo(t *testing.T) {
 		families, err := reg.Gather()
 		require.NoError(t, err)
 
-		f := findMetricFamily(families, "cwe_nodeset_info")
+		f := findMetricFamily(families, "nke_controller_nodeset_info")
 		require.NotNil(t, f)
 		require.Len(t, f.GetMetric(), 1)
 
@@ -238,9 +238,9 @@ func TestUnit_Collector_ClusterNodePoolNodeSetInfo(t *testing.T) {
 		families, err := reg.Gather()
 		require.NoError(t, err)
 
-		clusterF := findMetricFamily(families, "cwe_cluster_info")
-		nodePoolF := findMetricFamily(families, "cwe_nodepool_info")
-		nodeSetF := findMetricFamily(families, "cwe_nodeset_info")
+		clusterF := findMetricFamily(families, "nke_controller_cluster_info")
+		nodePoolF := findMetricFamily(families, "nke_controller_nodepool_info")
+		nodeSetF := findMetricFamily(families, "nke_controller_nodeset_info")
 
 		require.NotNil(t, clusterF)
 		require.NotNil(t, nodePoolF)
@@ -279,7 +279,7 @@ func newMockCollector(t *testing.T, rows []db.NodeLifecycleElapsed, queryErr err
 }
 
 func findLifecycleMetric(families []*io_prometheus_client.MetricFamily, clusterName, state string) *io_prometheus_client.Metric {
-	f := findMetricFamily(families, "cwe_node_lifecycle_elapsed_seconds")
+	f := findMetricFamily(families, "nke_controller_node_lifecycle_elapsed_seconds")
 	if f == nil {
 		return nil
 	}
@@ -292,7 +292,7 @@ func findLifecycleMetric(families []*io_prometheus_client.MetricFamily, clusterN
 	return nil
 }
 
-// TestUnit_Collector_NodeLifecycleElapsed tests cwe_node_lifecycle_elapsed_seconds.
+// TestUnit_Collector_NodeLifecycleElapsed tests nke_controller_node_lifecycle_elapsed_seconds.
 // It uses a MockDB so results are independent of the SQLite-incompatible PostgreSQL
 // JSONB/EXTRACT query used in production.
 func TestUnit_Collector_NodeLifecycleElapsed(t *testing.T) {
@@ -300,14 +300,14 @@ func TestUnit_Collector_NodeLifecycleElapsed(t *testing.T) {
 		reg := newMockCollector(t, []db.NodeLifecycleElapsed{}, nil)
 		families, err := reg.Gather()
 		require.NoError(t, err)
-		assert.Nil(t, findMetricFamily(families, "cwe_node_lifecycle_elapsed_seconds"))
+		assert.Nil(t, findMetricFamily(families, "nke_controller_node_lifecycle_elapsed_seconds"))
 	})
 
 	t.Run("emits no series when query errors", func(t *testing.T) {
 		reg := newMockCollector(t, nil, errors.New("db unavailable"))
 		families, err := reg.Gather()
 		require.NoError(t, err) // Collect errors are logged, not propagated
-		assert.Nil(t, findMetricFamily(families, "cwe_node_lifecycle_elapsed_seconds"))
+		assert.Nil(t, findMetricFamily(families, "nke_controller_node_lifecycle_elapsed_seconds"))
 	})
 
 	t.Run("emits correct labels for a pending worker node", func(t *testing.T) {
@@ -381,7 +381,7 @@ func TestUnit_Collector_NodeLifecycleElapsed(t *testing.T) {
 		families, err := reg.Gather()
 		require.NoError(t, err)
 
-		f := findMetricFamily(families, "cwe_node_lifecycle_elapsed_seconds")
+		f := findMetricFamily(families, "nke_controller_node_lifecycle_elapsed_seconds")
 		require.NotNil(t, f)
 		assert.Len(t, f.GetMetric(), 3, "one series per row")
 	})

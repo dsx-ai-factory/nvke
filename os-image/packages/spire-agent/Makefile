@@ -38,6 +38,7 @@ BUNDLE_VERSION := $(SPIRE_VERSION)+tpm$(TPM_PLUGIN_VERSION)
 # Downloaded upstream artifacts, reused across runs when they still verify.
 DIST_DIR ?= $(CURDIR)/dist
 BIN_DIR ?= $(CURDIR)/bin
+NFPM_BIN := $(BIN_DIR)/nfpm-v$(NFPM_VERSION)/nfpm
 
 # The committed lock. The build refuses to run without it.
 LOCK_DIR ?= $(CURDIR)/lock
@@ -53,7 +54,7 @@ debs: check-host check-deb-tools bundle ## Build spire-agent_<version>_$(ARCH).d
 	@# would be indexed here alongside the current one.
 	rm -f "$(OUT_DIR)"/spire-agent_*_$(ARCH).deb
 	SPIRE_VERSION="$(SPIRE_VERSION)" TPM_PLUGIN_VERSION="$(TPM_PLUGIN_VERSION)" \
-	DEB_REVISION="$(DEB_REVISION)" NFPM_BIN="$(BIN_DIR)/nfpm" \
+	DEB_REVISION="$(DEB_REVISION)" NFPM_BIN="$(NFPM_BIN)" \
 		./packaging/build-deb.sh "$(ARCH)" "$(DIST_DIR)/$(BUNDLE_VERSION)/$(ARCH)" "$(OUT_DIR)"
 	@# Index everything in OUT_DIR: the other node packages share it.
 	@cd "$(OUT_DIR)" && dpkg-scanpackages . /dev/null >Packages
@@ -93,10 +94,10 @@ repro-check: ## Build `debs` twice into throwaway OUT_DIRs and diff every output
 	echo "spire-agent: reproducible: every .deb matched byte-for-byte"
 
 .PHONY: nfpm
-nfpm: $(BIN_DIR)/nfpm ## Build the pinned nfpm (goreleaser) into ./bin.
+nfpm: $(NFPM_BIN) ## Build the pinned nfpm (goreleaser) into ./bin.
 
-$(BIN_DIR)/nfpm:
-	@GOBIN=$(BIN_DIR) $(GO) install github.com/goreleaser/nfpm/v2/cmd/nfpm@v$(NFPM_VERSION)
+$(NFPM_BIN):
+	@GOBIN=$(dir $(NFPM_BIN)) $(GO) install github.com/goreleaser/nfpm/v2/cmd/nfpm@v$(NFPM_VERSION)
 
 ##@ Checks
 
@@ -120,7 +121,7 @@ check-host: ## Fail early when this host cannot run the bundle step.
 	fi
 
 .PHONY: check-deb-tools
-check-deb-tools: $(BIN_DIR)/nfpm ## Fail early when the Debian packaging tools are missing.
+check-deb-tools: $(NFPM_BIN) ## Fail early when the Debian packaging tools are missing.
 	@set -eu; \
 	if [ "$$(uname -s)" != "Linux" ]; then \
 		echo "spire-agent: packages are built on a Linux host only; this is $$(uname -s)." >&2; \

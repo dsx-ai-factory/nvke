@@ -20,6 +20,7 @@ instructions.
   - [cli/AGENTS.md](cli/AGENTS.md) — nkectl, verification, doc-comment conventions
   - [os-image/AGENTS.md](os-image/AGENTS.md) — reference node OS image spec, Packer, connectivity checker
   - [controller/nico-sim/AGENTS.md](controller/nico-sim/AGENTS.md) — local NICo simulator with VM and container backends
+  - [controller/deploy/dashboards/AGENTS.md](controller/deploy/dashboards/AGENTS.md) — Grafana reference JSON (import-only, not nke-stack); operators: [README.md](controller/deploy/dashboards/README.md)
 
 ## Read if needed
 
@@ -92,6 +93,7 @@ build pass. Removing those dependencies is tracked work with its own design.
 | `agent/pkg/agent/proto/*.pb.go` | buf/protoc output | **No — regenerate** |
 | `agent/THIRD_PARTY_NOTICES.md` | go-licenses output | **No — regenerate** |
 | `controller/deploy/charts/` | Helm charts | Yes, but bump the chart version |
+| `controller/deploy/dashboards/` | Grafana reference dashboards (JSON import) | Yes — read that directory's `AGENTS.md`. Do not bump the Helm chart for dashboard-only edits |
 
 ## What agents may do
 

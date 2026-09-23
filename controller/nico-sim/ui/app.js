@@ -1009,6 +1009,7 @@ function openConsoleLog(instanceId, name) {
     activeTab = '';
     document.getElementById('console-title').textContent = name;
     document.getElementById('console-follow').checked = false;
+    document.getElementById('console-source').value = 'auto';
     document.getElementById('console-modal').hidden = false;
     document.getElementById('console-output').hidden = true;
     document.getElementById('file-output').hidden = true;
@@ -1039,8 +1040,10 @@ function startFollow() {
     backfillController = new AbortController();
     var instanceId = currentConsoleInstanceId;
     var baseUrl = '/v2/org/' + ORG_ID + '/forge/instance/' + instanceId + '/console-log';
+    var source = document.getElementById('console-source').value || 'auto';
+    var sourceParam = '&source=' + encodeURIComponent(source);
 
-    fetch(baseUrl + '?follow=true&tail=500', {
+    fetch(baseUrl + '?follow=true&tail=500' + sourceParam, {
         headers: apiHeaders(),
         signal: followController.signal
     }).then(function(r) {
@@ -1053,7 +1056,7 @@ function startFollow() {
         // Background backfill.
         var tailOffset = r.headers.get('X-Tail-Offset');
         if (tailOffset && parseInt(tailOffset, 10) > 0) {
-            fetch(baseUrl + '?end=' + tailOffset, {
+            fetch(baseUrl + '?end=' + tailOffset + sourceParam, {
                 headers: apiHeaders(),
                 signal: backfillController.signal
             }).then(function(br) {
@@ -1393,6 +1396,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Live search as you type
     document.getElementById('console-search-input').addEventListener('input', function() {
         consoleSearchNext();
+    });
+
+    document.getElementById('console-source').addEventListener('change', function() {
+        if (activeTab === 'console') refreshConsoleLog();
     });
 
     // Close modal on backdrop click

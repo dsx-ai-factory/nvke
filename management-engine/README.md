@@ -5,7 +5,7 @@ schema tests. Reconciliation and public API servers are subsequent work.
 
 ```text
 management-engine/
-├── api/
+├── apis/
 │   ├── v1alpha1/            # Internal types, generated deepcopy code and tests
 │   ├── crds/                # Generated, installable CRD manifests
 │   ├── boilerplate.go.txt   # Header used by the deepcopy generator
@@ -136,5 +136,5 @@ make preflight MODULES=management-engine
 Install the generated definitions into an explicitly chosen development cluster:
 
 ```sh
-kubectl --context <development-context> apply -f management-engine/api/crds/
+kubectl --context <development-context> apply -f management-engine/apis/crds/
 ```

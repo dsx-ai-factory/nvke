@@ -226,6 +226,13 @@ func initKubeletConfiguration(containerMode bool, kubernetesVersion string) kube
 		MaxParallelImagePulls: ptr.To[int32](defaultMaxParallelImagePulls),
 		TLSCipherSuites:       kubeletTLSCipherSuites(),
 		PodPidsLimit:          ptr.To[int64](defaultPodPidsLimit),
+		// RuntimeDefault seccomp for every workload that does not name a
+		// profile of its own (CIS 4.2.14). Without this the kubelet runs
+		// unconfined by default, so a pod gets the container runtime's full
+		// syscall surface unless its author opted in. Pods that genuinely need
+		// a wider surface can still say so explicitly in their securityContext;
+		// this only changes what happens when nothing is specified.
+		SeccompDefault: ptr.To(true),
 		KubeReserved: map[string]string{
 			"cpu":               "1000m",
 			memoryKey:           defaultKubeReservedMemory,
@@ -270,6 +277,7 @@ func joinKubeletConfiguration(kubernetesVersion string) kubeletconfigv1beta1.Kub
 		MaxParallelImagePulls: ptr.To[int32](defaultMaxParallelImagePulls),
 		TLSCipherSuites:       kubeletTLSCipherSuites(),
 		PodPidsLimit:          ptr.To[int64](defaultPodPidsLimit),
+		SeccompDefault:        ptr.To(true),
 		FeatureGates:          imageVolumeKubeletFeatureGates(kubernetesVersion),
 	}
 }

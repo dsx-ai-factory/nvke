@@ -69,7 +69,8 @@ concurrency:
   # A literal name, never ${{ github.workflow }} -- in a called workflow that is
   # the caller's name and cancels its siblings. See merge-gate.yml:79-82.
   # The sha keeps main runs apart. Sharing one group, and main never cancels,
-  # means a second main run waits out the first.
+  # means a second main run waits out the first. Only the second: GitHub keeps
+  # one pending run per group, so a third arrival evicts the queued second.
   group: NICo VMs E2E-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 

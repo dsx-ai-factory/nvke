@@ -10,6 +10,10 @@ override PACKER_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
 override PACKER_ROOT := $(abspath $(dir $(PACKER_MAKEFILE)))
 override PACKER_PROJECT := $(PACKER_ROOT)
 SSH_DIR     := $(CURDIR)/.ssh
+SSH_PRIVATE_KEY_FILE ?=
+SSH_PUBLIC_KEY_FILE ?=
+override PACKER_SSH_PRIVATE_KEY_FILE := $(if $(strip $(SSH_PRIVATE_KEY_FILE)),$(SSH_PRIVATE_KEY_FILE),$(SSH_DIR)/id_ed25519)
+override PACKER_SSH_PUBLIC_KEY_FILE := $(if $(strip $(SSH_PUBLIC_KEY_FILE)),$(SSH_PUBLIC_KEY_FILE),$(SSH_DIR)/id_ed25519.pub)
 # Make stages source-built packages here before adapting them into Packer's
 # explicit material layout. Keep the mutable scratch path Make-owned because
 # prepare-artifacts replaces it and clean removes it.
@@ -47,6 +51,8 @@ EXPECTED_SOURCE_COMMIT ?=
 export SOURCE_ROOT EXPECTED_SOURCE_COMMIT PYTHON
 
 LUKS_PASSPHRASE ?= changeit
+REQUIRE_ACCELERATION ?= 0
+export NKE_PACKAGE_BUILDER ?= auto
 # Label applied to the root filesystem. Cloud-image importers can use this
 # stable identifier instead of depending on a partition or device path.
 ROOT_FS_LABEL ?= cloudimg-rootfs
@@ -86,6 +92,8 @@ override UBUNTU_VERSION := $(patsubst ubuntu-%-live-server-$(ARCH).iso,%,$(notdi
 # vice versa) always falls back to tcg software emulation, which the CI
 # workflow's own comments clock at roughly 10x slower than KVM for a
 # same-arch build; cross-arch tcg is not expected to be faster.
+# macOS spells it arm64, never aarch64, so it never matches here -- which costs
+# nothing: this probe also requires /dev/kvm, which macOS does not have.
 ifeq ($(ARCH),amd64)
   ARCH_UNAME := x86_64
 else ifeq ($(ARCH),arm64)
@@ -141,13 +149,87 @@ CPUS ?= 4
 # nke-node-fde.pkr.hcl.
 BOOT_WAIT ?= $(if $(filter kvm,$(ACCELERATOR)),10s,30s)
 
-.PHONY: os-image-fde os-image-non-fde _os-image-fde _os-image-non-fde preflight init-packer init-fde init-non-fde validate-packer ssh-key prepare-installer-iso prepare-artifacts prepare-packer-inputs clean clean-packer-scratch clean-fde-output clean-non-fde-output check-deps check-source collect-qcow2-fde collect-qcow2-non-fde
+# Firmware and acceleration checks share the boot harness selection, including
+# QEMU's firmware directory on hosts without /usr/share/OVMF or AAVMF. The
+# wrapper receives the whole `packer build ... TEMPLATE` command and inserts the
+# firmware -var flags in front of the template, which Packer requires last.
+PACKER_BUILD = ARCH=$(ARCH) ACCELERATOR=$(ACCELERATOR) REQUIRE_ACCELERATION=$(REQUIRE_ACCELERATION) \
+	bash -ec '. ./scripts/qemu-arch.sh; nke_qemu_env "$$ARCH"; \
+	template=$${@: -1}; set -- "$${@:1:$$\#-1}"; \
+	exec "$$@" -var "efi_firmware_code=$${OVMF_CODE:-$$EFI_CODE_DEFAULT}" \
+	-var "efi_firmware_vars=$${OVMF_VARS_TEMPLATE:-$$EFI_VARS_DEFAULT}" "$$template"' \
+	bash $(PACKER) build
 
-ssh-key: preflight $(SSH_DIR)/id_ed25519
+.PHONY: os-image-fde os-image-non-fde _os-image-fde _os-image-non-fde preflight init-packer init-fde init-non-fde validate-packer ssh-key prepare-ssh-key prepare-image-build prepare-installer-iso prepare-artifacts prepare-packer-inputs clean clean-packer-scratch clean-fde-output clean-non-fde-output check-deps check-source collect-qcow2-fde collect-qcow2-non-fde check-acceleration
 
-$(SSH_DIR)/id_ed25519: | preflight
-	mkdir -p $(SSH_DIR)
-	ssh-keygen -t ed25519 -N '' -f $(SSH_DIR)/id_ed25519
+prepare-ssh-key:
+	@command -v ssh-keygen >/dev/null 2>&1 || { \
+		echo "ssh-keygen is required to prepare the Packer SSH key pair" >&2; \
+		exit 1; \
+	}
+	@set -eu; \
+	private_supplied=$(if $(strip $(SSH_PRIVATE_KEY_FILE)),1,0); \
+	public_supplied=$(if $(strip $(SSH_PUBLIC_KEY_FILE)),1,0); \
+	if [ "$$private_supplied" -eq 1 ] && [ "$$public_supplied" -eq 0 ]; then \
+		echo "SSH_PUBLIC_KEY_FILE is required when SSH_PRIVATE_KEY_FILE is set" >&2; \
+		exit 1; \
+	fi; \
+	if [ "$$private_supplied" -eq 0 ] && [ "$$public_supplied" -eq 1 ]; then \
+		echo "SSH_PRIVATE_KEY_FILE is required when SSH_PUBLIC_KEY_FILE is set" >&2; \
+		exit 1; \
+	fi; \
+	private="$(PACKER_SSH_PRIVATE_KEY_FILE)"; \
+	public="$(PACKER_SSH_PUBLIC_KEY_FILE)"; \
+	case "$$private" in /*) ;; *) \
+		echo "SSH private key path must be absolute: $$private" >&2; \
+		exit 1; \
+	esac; \
+	case "$$public" in /*) ;; *) \
+		echo "SSH public key path must be absolute: $$public" >&2; \
+		exit 1; \
+	esac; \
+	if [ "$$private_supplied" -eq 0 ]; then \
+		private_exists=0; \
+		public_exists=0; \
+		if [ -e "$$private" ] || [ -L "$$private" ]; then private_exists=1; fi; \
+		if [ -e "$$public" ] || [ -L "$$public" ]; then public_exists=1; fi; \
+		if [ "$$private_exists" -ne "$$public_exists" ]; then \
+			echo "generated SSH key state is incomplete: $(SSH_DIR)" >&2; \
+			exit 1; \
+		fi; \
+		if [ "$$private_exists" -eq 0 ]; then \
+			mkdir -p "$(SSH_DIR)"; \
+			ssh-keygen -t ed25519 -N '' -f "$$private"; \
+		fi; \
+	fi; \
+	if [ ! -f "$$private" ] || [ -L "$$private" ]; then \
+		echo "SSH private key is not a regular file: $$private" >&2; \
+		exit 1; \
+	fi; \
+	if [ ! -f "$$public" ] || [ -L "$$public" ]; then \
+		echo "SSH public key is not a regular file: $$public" >&2; \
+		exit 1; \
+	fi; \
+	if ! derived="$$(ssh-keygen -y -f "$$private" </dev/null)"; then \
+		echo "SSH private key must be readable and unencrypted: $$private" >&2; \
+		exit 1; \
+	fi; \
+	derived="$$(printf '%s\n' "$$derived" | awk 'NF >= 2 { print $$1 " " $$2; exit }')"; \
+	supplied="$$(awk 'NF >= 2 { print $$1 " " $$2; exit }' "$$public")"; \
+	if [ -z "$$derived" ] || [ -z "$$supplied" ] || [ "$$derived" != "$$supplied" ]; then \
+		echo "SSH public key does not match private key: $$public" >&2; \
+		exit 1; \
+	fi
+
+# Preserve the existing direct target contract: explicit key preparation also
+# checks the source and complete toolchain before it succeeds.
+ssh-key: preflight prepare-ssh-key
+
+# Keep SSH input validation ahead of every source, dependency, artifact, and
+# Packer action, including under parallel Make. Once the key contract is valid,
+# the nested Make may initialize Packer and prepare materials concurrently.
+prepare-image-build: prepare-ssh-key
+	@$(MAKE) --no-print-directory --file "$(PACKER_MAKEFILE)" init-packer prepare-packer-inputs
 
 check-source:
 	@set -eu; \
@@ -164,10 +246,10 @@ check-source:
 		exit 1; \
 	fi
 
-preflight: check-source check-deps
+preflight: check-source check-deps check-acceleration
 
 init-packer: preflight
-	$(PACKER) init $(PACKER_PROJECT)
+	$(PACKER) init "$(PACKER_PROJECT)"
 
 init-fde init-non-fde: init-packer
 
@@ -189,6 +271,29 @@ prepare-installer-iso: preflight
 	esac
 	mkdir -p $(ISO_CACHE)
 	ISO_URL=$(ISO_URL) ISO_CHECKSUM=$(ISO_CHECKSUM) OUT_DIR=$(ISO_CACHE) ./scripts/prepare-installer-iso.sh
+
+# Image builds run the Ubuntu installer, so they need kvm or tcg. The shared
+# boot harness also knows about hvf, but that is for run-vm/boot-smoke on
+# macOS; check-deps picks the host or VM package builder separately.
+# Make writes ARCH into the material manifest, so require the acquired ISO
+# filename to agree with the architecture Packer will read from that manifest.
+check-acceleration:
+	@case "$(ACCELERATOR)" in \
+		kvm|tcg) ;; \
+		*) echo "ACCELERATOR=$(ACCELERATOR) is not supported for image builds: they run under kvm or tcg. hvf is for run-vm/boot-smoke only." >&2; exit 1 ;; \
+	esac
+	@ARCH=$(ARCH) ISO_URL=$(ISO_URL) bash -ec '\
+		if [[ "$$ISO_URL" =~ ubuntu-[0-9.]+-live-server-(amd64|arm64)\.iso$$ ]]; then \
+			iso_arch="$${BASH_REMATCH[1]}"; \
+		else \
+			iso_arch=unrecognised; \
+		fi; \
+		if [[ "$$iso_arch" != "$$ARCH" ]]; then \
+			echo "ISO_URL architecture ($$iso_arch) does not match ARCH=$$ARCH: $$ISO_URL" >&2; \
+			exit 1; \
+		fi'
+	@ARCH=$(ARCH) ACCELERATOR=$(ACCELERATOR) REQUIRE_ACCELERATION=$(REQUIRE_ACCELERATION) bash -ec '\
+		. ./scripts/qemu-arch.sh; nke_qemu_env "$$ARCH"'
 
 # Stage the source-built packages before Packer starts the VM. Keeping this in
 # Make preserves the current workflow and leaves Packer responsible only for
@@ -273,10 +378,11 @@ prepare-packer-inputs: prepare-installer-iso prepare-artifacts
 	trap - 0 1 2 15
 
 check-deps:
-	@command -v go >/dev/null 2>&1 || { \
-		echo "go is required to build nke-agent and the pinned nfpm" >&2; \
+	@command -v ssh-keygen >/dev/null 2>&1 || { \
+		echo "ssh-keygen is required to prepare the Packer SSH key pair" >&2; \
 		exit 1; \
 	}
+	@ARCH=$(ARCH) bash ./scripts/package-builder.sh --check
 	@command -v $(PYTHON) >/dev/null 2>&1 || { \
 		echo "Python 3.10 or newer is required to validate the compressed QCOW2" >&2; \
 		exit 1; \
@@ -387,26 +493,27 @@ os-image-fde:
 	fi
 	@$(MAKE) --no-print-directory --file "$(PACKER_MAKEFILE)" _os-image-fde
 
-_os-image-fde: ssh-key init-fde prepare-packer-inputs
+_os-image-fde: prepare-image-build
 	mkdir -p "$(BUILD_LOGS)" "$(PACKER_OUTPUT_DIRECTORY_FDE)"
 	@if [ "$(ACCELERATOR)" = "tcg" ]; then \
 		echo "no usable /dev/kvm: building with software emulation, which is far slower"; \
 	fi
 	PKR_VAR_luks_passphrase=$(LUKS_PASSPHRASE) \
-	$(PACKER) build \
+	$(PACKER_BUILD) \
 		-only=$(PACKER_BUILD_FDE) \
-		-var material_manifest=$(MATERIAL_MANIFEST) \
-		-var output_directory=$(PACKER_OUTPUT_DIRECTORY_FDE) \
-		-var build_log_directory=$(BUILD_LOGS) \
-		-var ssh_private_key_file=$(SSH_DIR)/id_ed25519 \
-		-var ssh_public_key_file=$(SSH_DIR)/id_ed25519.pub \
-		-var accelerator=$(ACCELERATOR) \
-		-var cpu_model=$(CPU_MODEL) \
-		-var cpus=$(CPUS) \
-		-var ssh_timeout=$(SSH_TIMEOUT) \
-		-var boot_wait=$(BOOT_WAIT) \
-		-var root_fs_label=$(ROOT_FS_LABEL) \
-		$(PACKER_PROJECT)
+		-var "architecture=$(ARCH)" \
+		-var "material_manifest=$(MATERIAL_MANIFEST)" \
+		-var "output_directory=$(PACKER_OUTPUT_DIRECTORY_FDE)" \
+		-var "build_log_directory=$(BUILD_LOGS)" \
+		-var "ssh_private_key_file=$(PACKER_SSH_PRIVATE_KEY_FILE)" \
+		-var "ssh_public_key_file=$(PACKER_SSH_PUBLIC_KEY_FILE)" \
+		-var "accelerator=$(ACCELERATOR)" \
+		-var "cpu_model=$(CPU_MODEL)" \
+		-var "cpus=$(CPUS)" \
+		-var "ssh_timeout=$(SSH_TIMEOUT)" \
+		-var "boot_wait=$(BOOT_WAIT)" \
+		-var "root_fs_label=$(ROOT_FS_LABEL)" \
+		"$(PACKER_PROJECT)"
 	mkdir "$(CURDIR)/output-fde"
 	mv "$(PACKER_OUTPUT_DIRECTORY_FDE)/fde/nke-node.qcow2" \
 		"$(CURDIR)/output-fde/nke-node-fde-ubuntu-$(UBUNTU_VERSION)-$(ARCH).qcow2"
@@ -425,25 +532,26 @@ os-image-non-fde:
 	fi
 	@$(MAKE) --no-print-directory --file "$(PACKER_MAKEFILE)" _os-image-non-fde
 
-_os-image-non-fde: ssh-key init-non-fde prepare-packer-inputs
+_os-image-non-fde: prepare-image-build
 	mkdir -p "$(BUILD_LOGS)" "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)"
 	@if [ "$(ACCELERATOR)" = "tcg" ]; then \
 		echo "no usable /dev/kvm: building with software emulation, which is far slower"; \
 	fi
-	$(PACKER) build \
+	$(PACKER_BUILD) \
 		-only=$(PACKER_BUILD_NON_FDE) \
-		-var material_manifest=$(MATERIAL_MANIFEST) \
-		-var output_directory=$(PACKER_OUTPUT_DIRECTORY_NON_FDE) \
-		-var build_log_directory=$(BUILD_LOGS) \
-		-var ssh_private_key_file=$(SSH_DIR)/id_ed25519 \
-		-var ssh_public_key_file=$(SSH_DIR)/id_ed25519.pub \
-		-var accelerator=$(ACCELERATOR) \
-		-var cpu_model=$(CPU_MODEL) \
-		-var cpus=$(CPUS) \
-		-var ssh_timeout=$(SSH_TIMEOUT) \
-		-var boot_wait=$(BOOT_WAIT) \
-		-var root_fs_label=$(ROOT_FS_LABEL) \
-		$(PACKER_PROJECT)
+		-var "architecture=$(ARCH)" \
+		-var "material_manifest=$(MATERIAL_MANIFEST)" \
+		-var "output_directory=$(PACKER_OUTPUT_DIRECTORY_NON_FDE)" \
+		-var "build_log_directory=$(BUILD_LOGS)" \
+		-var "ssh_private_key_file=$(PACKER_SSH_PRIVATE_KEY_FILE)" \
+		-var "ssh_public_key_file=$(PACKER_SSH_PUBLIC_KEY_FILE)" \
+		-var "accelerator=$(ACCELERATOR)" \
+		-var "cpu_model=$(CPU_MODEL)" \
+		-var "cpus=$(CPUS)" \
+		-var "ssh_timeout=$(SSH_TIMEOUT)" \
+		-var "boot_wait=$(BOOT_WAIT)" \
+		-var "root_fs_label=$(ROOT_FS_LABEL)" \
+		"$(PACKER_PROJECT)"
 	mkdir "$(CURDIR)/output-non-fde"
 	mv "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)/non-fde/nke-node.qcow2" \
 		"$(CURDIR)/output-non-fde/nke-node-non-fde-ubuntu-$(UBUNTU_VERSION)-$(ARCH).qcow2"
