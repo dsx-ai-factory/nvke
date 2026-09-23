@@ -45,7 +45,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "### Scope\nThis dashboard is only applicable to a GPU cluster. It is an importable reference dashboard and is not deployed by nke-stack. Select a Prometheus datasource with telemetry from the selected GPU cluster and NKE controller inventory metrics.\n\n### Assumptions\n- Every queried kube-state-metrics series carries the Prometheus label `k8s_cluster_name` (from the OpenTelemetry resource attribute `k8s.cluster.name`).\n- **Target Kubernetes**, **target Calico**, and **target OS profile** are dashboard variables. They are policy choices used to compute \u201cat target\u201d and burndown panels. Target Kubernetes is matched against kubelet versions.\n\n### Metric dependencies\n- **kube-state-metrics:** `kube_node_info` (kubelet version) and `kube_pod_container_info` (Calico `calico/node` image tag)\n- **NKE controller:** `cwe_cluster_info` / `nke_controller_cluster_info` (in-progress control-plane upgrades) and `cwe_node_info` / `nke_controller_node_info` (OS profile). These use `name` / `tenant_cluster` as the cluster identity matching the Cluster variable. See [dsx-ai-factory/nke](https://github.com/dsx-ai-factory/nke).\n\nMissing optional dependencies leave their corresponding panels empty."
+        "content": "### Scope\nThis dashboard is only applicable to a GPU cluster. It is an importable reference dashboard and is not deployed by nke-stack. Select a Prometheus datasource with telemetry from the selected GPU cluster and NKE controller inventory metrics.\n\n### Assumptions\n- Every queried kube-state-metrics series carries the Prometheus label `k8s_cluster_name` (from the OpenTelemetry resource attribute `k8s.cluster.name`).\n- **Target Kubernetes**, **target Calico**, and **target OS profile** are dashboard variables. They are policy choices used to compute \u201cat target\u201d and burndown panels. Target Kubernetes is matched against kubelet versions. A Calico cluster is at target only when every observed `calico/node` container is at the selected version; clusters with no Calico series are omitted from Calico progress.\n\n### Metric dependencies\n- **kube-state-metrics:** `kube_node_info` (kubelet version) and `kube_pod_container_info` (Calico `calico/node` image tag)\n- **NKE controller:** `cwe_cluster_info` / `nke_controller_cluster_info` (in-progress control-plane upgrades) and `cwe_node_info` / `nke_controller_node_info` (OS profile). These use `name` / `tenant_cluster` as the cluster identity matching the Cluster variable. See [dsx-ai-factory/nke](https://github.com/dsx-ai-factory/nke).\n\nMissing optional dependencies leave their corresponding panels empty."
       }
     },
     {
@@ -137,7 +137,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(max by (name) ({__name__=~\"(cwe|nke_controller)_cluster_info\",name=~\"$cluster\",status=~\"control_plane_upgrading|cp_nodes_recycling\"}))",
+          "expr": "count(max by (name) ({__name__=~\"(cwe|nke_controller)_cluster_info\",name=~\"$cluster\",status=~\"control_plane_upgrading|cp_nodes_recycling\"})) or (0 * count({__name__=~\"(cwe|nke_controller)_cluster_info\",name=~\"$cluster\"}))",
           "legendFormat": "Count",
           "instant": true,
           "range": false
@@ -283,7 +283,7 @@
       "id": 6,
       "type": "stat",
       "title": "At target Calico (${target_calico_version})",
-      "description": "",
+      "description": "Clusters where every calico/node container is at the target version. Empty when Calico metrics are absent.",
       "gridPos": {
         "x": 12,
         "y": 14,
@@ -297,14 +297,14 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(max by (k8s_cluster_name) (kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:v?${target_calico_version}([+._-].*)?(@.*)?$\"} or kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:v?${target_calico_version}([+._-].*)?(@.*)?$\"})) or vector(0)",
+          "expr": "(count((group by (k8s_cluster_name) ((kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:.*\"} or kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:.*\",image!~\".*/calico/node:.*\"})) unless on (k8s_cluster_name) group by (k8s_cluster_name) (((kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:.*\"} or kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:.*\",image!~\".*/calico/node:.*\"}) unless on (k8s_cluster_name,namespace,pod,container) (kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:v?${target_calico_version}([+._-].*)?(@.*)?$\"} or kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:v?${target_calico_version}([+._-].*)?(@.*)?$\",image!~\".*/calico/node:.*\"}))))) or (0 * count(group by (k8s_cluster_name) ((kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:.*\"} or kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:.*\",image!~\".*/calico/node:.*\"})))))",
           "legendFormat": "Count",
           "instant": true,
           "range": false
         },
         {
           "refId": "B",
-          "expr": "(100 * (count(max by (k8s_cluster_name) (kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:v?${target_calico_version}([+._-].*)?(@.*)?$\"} or kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:v?${target_calico_version}([+._-].*)?(@.*)?$\"}))) / clamp_min(count(group by (k8s_cluster_name) (kube_node_info{k8s_cluster_name=~\"$cluster\"})), 1)) or vector(0)",
+          "expr": "100 * (count((group by (k8s_cluster_name) ((kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:.*\"} or kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:.*\",image!~\".*/calico/node:.*\"})) unless on (k8s_cluster_name) group by (k8s_cluster_name) (((kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:.*\"} or kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:.*\",image!~\".*/calico/node:.*\"}) unless on (k8s_cluster_name,namespace,pod,container) (kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:v?${target_calico_version}([+._-].*)?(@.*)?$\"} or kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:v?${target_calico_version}([+._-].*)?(@.*)?$\",image!~\".*/calico/node:.*\"}))))) or (0 * count(group by (k8s_cluster_name) ((kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:.*\"} or kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:.*\",image!~\".*/calico/node:.*\"}))))) / count(group by (k8s_cluster_name) ((kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:.*\"} or kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:.*\",image!~\".*/calico/node:.*\"})))",
           "legendFormat": "Percent",
           "instant": true,
           "range": false
@@ -396,14 +396,14 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(max by (tenant_cluster,node) ({__name__=~\"(cwe|nke_controller)_node_info\",tenant_cluster=~\"$cluster\",os_profile=\"$target_os_profile\"}))",
+          "expr": "count(max by (tenant_cluster,node) ({__name__=~\"(cwe|nke_controller)_node_info\",tenant_cluster=~\"$cluster\",os_profile=\"$target_os_profile\"})) or (0 * count({__name__=~\"(cwe|nke_controller)_node_info\",tenant_cluster=~\"$cluster\"}))",
           "legendFormat": "Count",
           "instant": true,
           "range": false
         },
         {
           "refId": "B",
-          "expr": "(100 * (count(max by (tenant_cluster,node) ({__name__=~\"(cwe|nke_controller)_node_info\",tenant_cluster=~\"$cluster\",os_profile=\"$target_os_profile\"}))) / clamp_min(count(max by (tenant_cluster,node) ({__name__=~\"(cwe|nke_controller)_node_info\",tenant_cluster=~\"$cluster\"})), 1))",
+          "expr": "100 * (count(max by (tenant_cluster,node) ({__name__=~\"(cwe|nke_controller)_node_info\",tenant_cluster=~\"$cluster\",os_profile=\"$target_os_profile\"})) or (0 * count({__name__=~\"(cwe|nke_controller)_node_info\",tenant_cluster=~\"$cluster\"}))) / clamp_min(count(max by (tenant_cluster,node) ({__name__=~\"(cwe|nke_controller)_node_info\",tenant_cluster=~\"$cluster\"})), 1)",
           "legendFormat": "Percent",
           "instant": true,
           "range": false
@@ -631,7 +631,7 @@
       "id": 12,
       "type": "timeseries",
       "title": "Calico upgrade burndown (remaining clusters)",
-      "description": "Clusters not yet on the target Calico version (from calico/node image tag).",
+      "description": "Clusters with at least one calico/node container below or otherwise outside the target version. Empty when Calico metrics are absent.",
       "gridPos": {
         "x": 16,
         "y": 20,
@@ -645,7 +645,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "clamp_min((count(group by (k8s_cluster_name) (kube_node_info{k8s_cluster_name=~\"$cluster\"})) or vector(0)) - (count(max by (k8s_cluster_name) (kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:v?${target_calico_version}([+._-].*)?(@.*)?$\"} or kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:v?${target_calico_version}([+._-].*)?(@.*)?$\"})) or vector(0)), 0)",
+          "expr": "count(group by (k8s_cluster_name) (((kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:.*\"} or kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:.*\",image!~\".*/calico/node:.*\"}) unless on (k8s_cluster_name,namespace,pod,container) (kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:v?${target_calico_version}([+._-].*)?(@.*)?$\"} or kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:v?${target_calico_version}([+._-].*)?(@.*)?$\",image!~\".*/calico/node:.*\"})))) or (0 * count(group by (k8s_cluster_name) ((kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:.*\"} or kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:.*\",image!~\".*/calico/node:.*\"}))))",
           "legendFormat": "Remaining",
           "instant": false,
           "range": true
@@ -969,7 +969,7 @@
       "id": 19,
       "type": "table",
       "title": "Versions by cluster",
-      "description": "",
+      "description": "Lists every observed Calico, kubelet, and OS profile version for each cluster, including mixed versions during an upgrade.",
       "gridPos": {
         "x": 0,
         "y": 47,
@@ -1018,7 +1018,7 @@
               },
               "version": {
                 "aggregations": [
-                  "lastNotNull"
+                  "uniqueValues"
                 ],
                 "operation": "aggregate"
               },
@@ -1049,9 +1049,9 @@
             },
             "renameByName": {
               "k8s_cluster_name": "Cluster",
-              "version (lastNotNull)": "Calico version",
               "kubelet_version (uniqueValues)": "Kubelet versions",
-              "os_profile (uniqueValues)": "OS profiles"
+              "os_profile (uniqueValues)": "OS profiles",
+              "version (uniqueValues)": "Calico versions"
             }
           }
         }
