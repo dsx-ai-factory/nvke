@@ -13,13 +13,8 @@
 # run for a fork pull request with no repository secrets. Qualification is the
 # opposite of that on every axis: it is per-candidate rather than per-commit, it
 # will need registry credentials once `latest` consults the central artifact,
-# and layer 3 needs privileged infrastructure. So its permanent trigger is
+# and layer 3 needs privileged infrastructure. So its trigger is
 # `workflow_dispatch` and nothing else, and it must not become a gate member.
-#
-# The `push` block below is a temporary exception and is marked for removal.
-# It is not a step toward gate membership: it exists only because a workflow
-# that is not yet on the default branch cannot be dispatched, and something
-# has to run it before then.
 #
 # Note that the policy files this reads are NOT only checked here. The release
 # module's TestRepositoryPolicyFilesAreValid loads every qualification.yaml in
@@ -54,40 +49,17 @@ on:
         type: choice
         options: [full, active]
 
-  # SCAFFOLDING -- REMOVE BEFORE MERGE, along with the `push` arm of
-  # cancel-in-progress below.
-  #
-  # workflow_dispatch reads its trigger definition from the default branch, so
-  # this workflow cannot be dispatched at all until it merges -- not from the
-  # Run button, not with `gh workflow run --ref`. A push event reads the
-  # workflow from the ref being pushed, which is the only reason this block
-  # exists: it is how the workflow gets exercised before it can be dispatched.
-  #
-  # A literal branch name is correct for something this short-lived. A pattern
-  # such as release-sandbox/** is what a permanent trigger would use, because
-  # a feature-branch name that reaches main is dead config the day the branch
-  # is deleted.
-  push:
-    branches:
-      - feat/release-qualify-plan
-    paths:
-      - 'release/**'
-      - '*/qualification.yaml'
-      - '.github/workflows/release-qualify.yml'
-
 permissions: {}
 
 # There is no `main` result for a later run to erase, so the group is per-ref
 # and the question is only what a second run does to the first.
 #
-# The two triggers want opposite answers. Dispatching twice is two questions
-# -- typically two different candidates -- and both deserve an answer, so those
-# runs queue. A push is not a request for an answer about that commit; it is a
-# step in an edit loop, where queueing means waiting on a run whose commit you
-# have already replaced. So a push supersedes.
+# Dispatching twice is two questions -- typically two different candidates --
+# and both deserve an answer, so a second run queues behind the first rather
+# than cancelling it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  cancel-in-progress: false
 
 jobs:
   plan:
@@ -100,11 +72,11 @@ jobs:
     # rather than per step.
     #
     # The fallbacks are not decoration. `inputs` is populated only for
-    # workflow_dispatch and workflow_call, so under the push trigger above
-    # every one of these renders empty -- and an empty --component fails the
-    # required-flag check with a message about flags rather than about
-    # triggers. An empty string is falsy to `||`, so this also covers a
-    # dispatch submitted with a box cleared.
+    # workflow_dispatch and workflow_call, so any other trigger renders every
+    # one of these empty -- and an empty --component fails the required-flag
+    # check with a message about flags rather than about triggers. An empty
+    # string is falsy to `||`, so this also covers a dispatch submitted with a
+    # box cleared.
     #
     # VERSION has no fallback on purpose: empty is a meaningful value there,
     # meaning the component's latest release candidate.
