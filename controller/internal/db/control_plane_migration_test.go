@@ -45,7 +45,7 @@ func TestSyncMissingControlPlaneConfigsFromCPNodePools(t *testing.T) {
 	_, err = bunDB.NewInsert().Model(&alreadySynced).Exec(ctx)
 	require.NoError(t, err)
 	existingSnapshot, err := dbImpl.CreateControlPlaneConfiguration(ctx, &db.ControlPlaneConfiguration{
-		ClusterID:    alreadySynced.ID,
+		ClusterID: alreadySynced.ID,
 		Config: db.ControlPlaneConfigSpec{
 			Nico: &db.NicoControlPlaneProvider{OSProfile: "existing-os"},
 		},
