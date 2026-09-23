@@ -86,8 +86,10 @@ func TestIntegration_NodeAgentClientExternalMTLS(t *testing.T) {
 			recorder := &externalMTLSTestNodeAgent{peerURIs: make(chan string, 1)}
 			host, port := startExternalMTLSTestNodeAgent(t, serverCertificate, trustedCA.certPEM, recorder)
 			client := &NodeAgentClient{
-				cfg:                       config.Config{NodeAgent: config.NodeAgentConfig{Port: port}},
-				externalClientCertificate: &params.clientCertificate,
+				transport: &Transport{
+					cfg:                       config.Config{NodeAgent: config.NodeAgentConfig{Port: port}},
+					externalClientCertificate: &params.clientCertificate,
+				},
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -126,7 +128,7 @@ func TestIntegration_NodeAgentClientInsecureTransportRegression(t *testing.T) {
 
 	host, port, err := net.SplitHostPort(listener.Addr().String())
 	require.NoError(t, err)
-	client := &NodeAgentClient{cfg: config.Config{NodeAgent: config.NodeAgentConfig{Port: port}}}
+	client := &NodeAgentClient{transport: &Transport{cfg: config.Config{NodeAgent: config.NodeAgentConfig{Port: port}}}}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
