@@ -1,6 +1,6 @@
 // Go workspace for every module in the repository.
 //
-// All eleven modules resolve from public dependencies. Go downloads modules
+// All twelve modules resolve from public dependencies. Go downloads modules
 // into its cache on first use; no committed vendor tree or NVIDIA credentials
 // are required. See docs/go-workspace.md.
 go 1.27.2
@@ -17,4 +17,5 @@ use (
 	./controller/test/e2e
 	./management-engine
 	./os-image
+	./release
 )

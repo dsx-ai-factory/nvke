@@ -1,0 +1,58 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What must be qualified across the whole release: which components are in
+# scope, the streams they run against, and the named selections over those
+# streams that decide how much of the matrix a given run covers. How each
+# component is qualified is in its own qualification.yaml.
+#
+# The streams below are the ones that exist. The SADD's examples name
+# nico-forge and gb200, which is where this is going; the lanes that run today
+# are nico-sim's container backend on the two architectures CI already builds
+# for. Writing the target streams here instead would produce plans that nothing
+# can schedule, and a policy naming capabilities no runner has is worse than
+# one that admits the matrix is small.
+
+apiVersion: nke.nvidia.com/v1alpha1
+kind: QualificationPolicy
+spec:
+  # agent/ is absent deliberately. It is built from source alongside the OS
+  # image and baked into it, so it is never deployed on its own and a run has
+  # nothing to select. The image version identifies the agent inside it.
+  components:
+    - controller
+    - os-image
+    - cli
+
+  scopes:
+    # What a component bump runs against: the current minor, both arches.
+    active:
+      selector: {kube: "1.34"}
+    # No selector, so every stream. What the weekly run covers. Identical to
+    # `active` until a second minor has streams, which is the point -- adding a
+    # minor is adding streams, not editing scopes.
+    full: {}
+
+  # A stream names capabilities, not the infrastructure that satisfies them.
+  # Which runner label, site, or subnet a capability resolves to is an
+  # environment knob and belongs to the e2e suite's own config, so that the
+  # suite stays runnable by hand and by a second organisation.
+  #
+  # There is no `gpu` capability yet. Nothing here runs on a GPU, and declaring
+  # one would put a claim in the record that no lane backs. It arrives with the
+  # first Forge stream, and selectors work on any capability, so it needs no
+  # mechanism beyond being written down.
+  streams:
+    - name: nico-amd64-kube-1.34
+      capabilities: {provider: nico, arch: amd64, kube: "1.34"}
+    - name: nico-arm64-kube-1.34
+      capabilities: {provider: nico, arch: arm64, kube: "1.34"}
+
+    # Where this goes, once capacity exists:
+    #
+    # - name: nico-forge-gb200-amd64-kube-1.34
+    #   capabilities: {provider: nico-forge, gpu: gb200, arch: amd64, kube: "1.34"}
+    #
+    # CAPD is not here and should not be. It is a development and pull-request
+    # backend with no provider under it, so a pass on CAPD supports no claim
+    # about a release.

@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: nke.nvidia.com/v1alpha1
+kind: ComponentQualification
+metadata:
+  name: os-image
+  description: How the NKE node OS image is qualified.
+spec:
+  component: os-image
+
+  # The node agent is absent on purpose, and this is the file where someone
+  # would expect it. The agent is built from source in the same checkout as
+  # the image and baked into it, so an image and its agent come from one
+  # commit. There is no deploy-time choice to make and nothing to resolve.
+  dependencies:
+    - name: controller
+      selectors: [latest]
+    - name: cli
+      selectors: [latest]

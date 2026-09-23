@@ -64,7 +64,8 @@ WORK_MODULES := agent \
                 cli \
                 controller/test/e2e \
                 management-engine \
-                os-image
+                os-image \
+                release
 
 # Modules whose commands `build` can compile with `go build -o bin/ ./cmd/...`,
 # which names each binary after its package directory. controller/api and
@@ -315,7 +316,8 @@ PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
                      cli \
                      controller \
                      management-engine \
-                     os-image
+                     os-image \
+                     release
 
 # controller/api ships no tests of its own, so linting and testing it alone
 # compiles nothing that uses it. These are the modules that import it, and a

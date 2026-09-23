@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: nke.nvidia.com/v1alpha1
+kind: ComponentQualification
+metadata:
+  name: controller
+  description: How the NKE controller is qualified.
+spec:
+  component: controller
+
+  # The other two categories, held at their last-qualified versions. That is
+  # what makes a controller bump prove the controller: a failure names one
+  # category instead of three that all moved at once.
+  #
+  # No versionConstraint on either. The SADD's example carries one, but a
+  # constraint states a known-bad floor, and neither category has shipped a
+  # release yet -- every tag is a candidate. Inventing a floor here would
+  # exclude versions for no reason anybody could point at.
+  dependencies:
+    - name: os-image
+      selectors: [latest]
+    - name: cli
+      selectors: [latest]
+
+  # CAPNICo is not a dependency here. It is a first-party Go module compiled
+  # into the controller, so controller/go.mod pins it exactly and the e2e
+  # workflow reads that same line. A selector would replace an exact pin with
+  # float, which is strictly weaker.
+
+  # Omitted, so the controller runs against every stream in the scope. Naming
+  # streams here narrows it to a subset:
+  #
+  # streams:
+  #   - nico-amd64-kube-1.34

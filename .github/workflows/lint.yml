@@ -92,6 +92,11 @@ jobs:
             goversion: os-image/go.mod
             gowork: "off"
             timeout: 15
+          - name: release
+            dir: release
+            goversion: release/go.mod
+            gowork: "off"
+            timeout: 15
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

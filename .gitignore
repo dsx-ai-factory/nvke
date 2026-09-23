@@ -10,6 +10,19 @@ controller/hack/capd-reboot-controller/capd-reboot-controller
 **/.bin/
 **/dist/
 **/release/
+# The root release/ is tracked: it holds release tooling, not build output.
+# The rule above still catches a nested release/ a build drops somewhere, which
+# is what it was written for. Re-including the directory is what makes this
+# work -- git does not descend into an excluded directory, so a negation naming
+# a file inside it would never match.
+!/release/
+
+# `qualify plan --output plan.json`. release-qualify.yml writes it at the
+# checkout root, because this repository keeps what gets uploaded in the
+# checkout and reserves RUNNER_TEMP for intermediates nobody keeps. Anchored
+# to the root: only the workflow puts one there, since --output defaults to
+# stdout and a local run has to ask for the file by name.
+/plan.json
 
 # Coverage output and local cluster credentials.
 *.out

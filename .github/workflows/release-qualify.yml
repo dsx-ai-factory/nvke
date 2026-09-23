@@ -1,0 +1,170 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Resolve and print a qualification plan.
+#
+# SCAFFOLDING. This qualifies nothing. It resolves what qualifying a candidate
+# would involve and prints it. Both halves are deliberate -- the plan is the
+# part worth reviewing before any of it runs, and a workflow that silently did
+# nothing would be indistinguishable from a pass.
+#
+# WHY THIS IS ADVISORY AND DISPATCH-ONLY. Per the invariants in README.md, the
+# required gate is the aggregate in merge-gate.yml, and a required member must
+# run for a fork pull request with no repository secrets. Qualification is the
+# opposite of that on every axis: it is per-candidate rather than per-commit, it
+# will need registry credentials once `latest` consults the central artifact,
+# and layer 3 needs privileged infrastructure. So its permanent trigger is
+# `workflow_dispatch` and nothing else, and it must not become a gate member.
+#
+# The `push` block below is a temporary exception and is marked for removal.
+# It is not a step toward gate membership: it exists only because a workflow
+# that is not yet on the default branch cannot be dispatched, and something
+# has to run it before then.
+#
+# Note that the policy files this reads are NOT only checked here. The release
+# module's TestRepositoryPolicyFilesAreValid loads every qualification.yaml in
+# the tree, and that test runs in the merge gate, so a malformed policy fails a
+# pull request rather than waiting for someone to dispatch this.
+#
+# WHAT IT DOES NOT DO YET, AND WHY NOT. It does not invoke a qualification lane.
+# `qualify run` does not exist; layer 2 cannot run until backend-e2e.yml accepts
+# pre-built artifacts -- today the lane rebuilds the controller from the working
+# tree and reads the Kubernetes version from a constant -- and how layer 3 is
+# invoked is undecided. See release/README.md.
+
+name: Release qualification (plan only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: "Component to qualify"
+        required: true
+        default: controller
+        type: choice
+        options: [controller, os-image, cli]
+      version:
+        description: "Candidate to qualify. Empty means the component's latest release candidate."
+        required: false
+        type: string
+      scope:
+        description: "How much of the matrix to cover"
+        required: true
+        default: full
+        type: choice
+        options: [full, active]
+
+  # SCAFFOLDING -- REMOVE BEFORE MERGE, along with the `push` arm of
+  # cancel-in-progress below.
+  #
+  # workflow_dispatch reads its trigger definition from the default branch, so
+  # this workflow cannot be dispatched at all until it merges -- not from the
+  # Run button, not with `gh workflow run --ref`. A push event reads the
+  # workflow from the ref being pushed, which is the only reason this block
+  # exists: it is how the workflow gets exercised before it can be dispatched.
+  #
+  # A literal branch name is correct for something this short-lived. A pattern
+  # such as release-sandbox/** is what a permanent trigger would use, because
+  # a feature-branch name that reaches main is dead config the day the branch
+  # is deleted.
+  push:
+    branches:
+      - feat/release-qualify-plan
+    paths:
+      - 'release/**'
+      - '*/qualification.yaml'
+      - '.github/workflows/release-qualify.yml'
+
+permissions: {}
+
+# There is no `main` result for a later run to erase, so the group is per-ref
+# and the question is only what a second run does to the first.
+#
+# The two triggers want opposite answers. Dispatching twice is two questions
+# -- typically two different candidates -- and both deserve an answer, so those
+# runs queue. A push is not a request for an answer about that commit; it is a
+# step in an edit loop, where queueing means waiting on a run whose commit you
+# have already replaced. So a push supersedes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+jobs:
+  plan:
+    name: Resolve and print the plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Dispatch input comes from an operator, so it is passed through the
+    # environment rather than interpolated into the shell. Set once here
+    # rather than per step.
+    #
+    # The fallbacks are not decoration. `inputs` is populated only for
+    # workflow_dispatch and workflow_call, so under the push trigger above
+    # every one of these renders empty -- and an empty --component fails the
+    # required-flag check with a message about flags rather than about
+    # triggers. An empty string is falsy to `||`, so this also covers a
+    # dispatch submitted with a box cleared.
+    #
+    # VERSION has no fallback on purpose: empty is a meaningful value there,
+    # meaning the component's latest release candidate.
+    env:
+      COMPONENT: ${{ inputs.component || 'controller' }}
+      SCOPE: ${{ inputs.scope || 'full' }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Tags are the input to dependency resolution, so a shallow clone
+          # would resolve every dependency to nothing.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+
+      # Redirect rather than pipe to tee. The default shell is `bash -e`
+      # without pipefail, so a failing qualify piped into a succeeding tee
+      # would exit 0 and the step would pass having produced nothing.
+      - name: Resolve the qualification plan
+        run: |
+          go run ./release/cmd/qualify plan \
+            --component "${COMPONENT}" \
+            --scope "${SCOPE}" \
+            ${VERSION:+--version "${VERSION}"} \
+            --output plan.json
+          cat plan.json
+
+      - name: Summarise on the run page
+        run: |
+          {
+            echo "## Qualification plan"
+            echo
+            echo "Component: \`${COMPONENT}\` at \`${VERSION:-latest release candidate}\`, scope \`${SCOPE}\`"
+            echo
+            echo '```json'
+            cat plan.json
+            echo '```'
+            echo
+            echo '> Nothing was qualified. This run resolved the plan and printed it.'
+          } >>"${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload the plan
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          # What varies belongs in the name, as nico-vms-e2e.yml puts it: this
+          # is dispatched per component and per scope, so a bare
+          # `qualification-plan` leaves several runs' artifacts indistinguishable
+          # once downloaded. The version is deliberately absent -- it is often
+          # empty, and the plan names it inside.
+          name: qualification-plan-${{ env.COMPONENT }}-${{ env.SCOPE }}
+          path: plan.json
+          if-no-files-found: error
+          # Longer than the 1 day an intra-run handoff gets, because today
+          # nothing consumes this and a human reading it later is the point.
+          # Revisit when `run` lands and the plan becomes a job-to-job handoff.
+          retention-days: 30

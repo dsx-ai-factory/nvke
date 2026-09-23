@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: nke.nvidia.com/v1alpha1
+kind: ComponentQualification
+metadata:
+  name: cli
+  description: How nkectl is qualified.
+spec:
+  component: cli
+  dependencies:
+    - name: controller
+      selectors: [latest]
+    - name: os-image
+      selectors: [latest]

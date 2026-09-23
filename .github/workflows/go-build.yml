@@ -127,3 +127,12 @@ jobs:
           CGO_ENABLED: "1"
           GO_TEST_FLAGS: -race
         run: make -C cluster-api-provider-provisioned test
+
+      # Likewise the release module's only unit-test lane. This is what makes
+      # TestRepositoryPolicyFilesAreValid a merge-gate check rather than a test
+      # someone has to remember to run: it loads every qualification.yaml in the
+      # tree, so a selector naming a capability no stream declares fails here.
+      # No -race -- the planner is sequential and reads git tags through one
+      # subprocess at a time.
+      - name: Test release qualification tooling
+        run: make -C release test
