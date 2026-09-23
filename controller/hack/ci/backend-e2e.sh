@@ -383,10 +383,15 @@ stop_state_monitor() {
 # assertion, so a stale image fails here rather than passing quietly.
 ci_e2e_exec() {
   local cp_flag="$1"; shift
+  local e2e_bundle_server_url="http://${BUNDLE_MIRROR_NAME}/"
+  if [[ "${INSTALL_CNI_AFTER_INIT:-false}" == "true" ]]; then
+    e2e_bundle_server_url=""
+  fi
   runner_exec env \
     "CWE_EXPECTED_VERSION=${CWE_BUILD_VERSION}" \
     "CWE_PROFILES_DIR=${NKE_E2E_PROFILES_DIR}" \
     "NKE_E2E_DSX_IDENTITY_EXCHANGE=${DSX_IDENTITY_EXCHANGE_ENABLED}" \
+    "NKE_E2E_BUNDLE_SERVER_URL=${e2e_bundle_server_url}" \
     "E2E_BGP_CONTAINER_NAME=${BGP_CONTAINER_NAME}" \
     "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${cp_flag}" \
     "NKE_E2E_SPIRE_RELEASE=${NKE_E2E_SPIRE_RELEASE:-}" \

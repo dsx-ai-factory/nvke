@@ -4,12 +4,118 @@
 package nke
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 
 	"github.com/dsx-ai-factory/nke/controller/api"
 )
+
+func TestUnit_ContainerCAPIReadyCommandsPreserveBundleSource(t *testing.T) {
+	t.Setenv("NKE_E2E_BUNDLE_SERVER_URL", "http://bundle-mirror/")
+	commands := containerCAPIReadyCommands()
+	if len(commands) != 3 {
+		t.Fatalf("pre-kubeadm command count = %d, want 3", len(commands))
+	}
+	agentEnv := filepath.Join(t.TempDir(), "nke-agent")
+	if err := os.WriteFile(agentEnv, []byte("AGENT_ARGS=\"--secure-server-port 15005\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := strings.ReplaceAll(commands[0], "/etc/default/nke-agent", agentEnv)
+	command = strings.ReplaceAll(command, "systemctl restart nke-agent.service", "true")
+	for range 2 {
+		if output, err := exec.CommandContext(t.Context(), "sh", "-c", command).CombinedOutput(); err != nil {
+			t.Fatalf("agent override failed: %v: %s", err, output)
+		}
+	}
+	got, err := os.ReadFile(agentEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "AGENT_ARGS=\"--secure-server-port 15005 --disable-mlx5-rescan --bundle-server-url http://bundle-mirror/ --index-file-url http://bundle-mirror/index.json\"\n"
+	if string(got) != want {
+		t.Fatalf("agent arguments = %q, want %q", got, want)
+	}
+
+	pool, err := buildCAPDNodePool(NodePoolSpec{Name: "worker"}, "node-image:local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pool.Infra == nil || len(pool.Infra.PreKubeadmCommands) != 3 {
+		t.Fatalf("CAPD node pool does not include the agent override: %+v", pool.Infra)
+	}
+	cp, err := buildCAPDControlPlaneConfig(ClusterSpec{
+		CAPDNodeImage: "node-image:local",
+		ControlPlane: ControlPlane{Config: &ControlPlaneConfigSpec{
+			DesiredCount: 1,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.Infra == nil || len(cp.Infra.PreKubeadmCommands) != 3 {
+		t.Fatalf("CAPD control plane does not include the agent override: %+v", cp.Infra)
+	}
+
+	t.Setenv("NKE_E2E_BUNDLE_SERVER_URL", "")
+	if got := containerCAPIReadyCommands(); len(got) != 2 {
+		t.Fatalf("post-init CNI command count = %d, want 2", len(got))
+	}
+}
+
+func TestUnit_ContainerCAPIReadyCommandsReplaceBundleSource(t *testing.T) {
+	type parameters struct {
+		agentArgs string
+		bundleURL string
+		want      string
+	}
+	tests := map[string]parameters{
+		"index flag without bundle flag": {
+			agentArgs: `--secure-server-port 15005 --index-file-url http://old/index.json`,
+			bundleURL: "http://bundle-mirror/",
+			want:      `--secure-server-port 15005 --disable-mlx5-rescan --bundle-server-url http://bundle-mirror/ --index-file-url http://bundle-mirror/index.json`,
+		},
+		"replace stale flags without duplicates": {
+			agentArgs: `--disable-mlx5-rescan --secure-server-port 15005 --bundle-server-url http://old/ --index-file-url http://old/index.json`,
+			bundleURL: "http://bundle-mirror/",
+			want:      `--secure-server-port 15005 --disable-mlx5-rescan --bundle-server-url http://bundle-mirror/ --index-file-url http://bundle-mirror/index.json`,
+		},
+		"preserve shell and sed characters": {
+			agentArgs: `--secure-server-port 15005`,
+			bundleURL: `http://bundle-mirror/a&b|c\d'$(id)/`,
+			want:      `--secure-server-port 15005 --disable-mlx5-rescan --bundle-server-url http://bundle-mirror/a&b|c\d'$(id)/ --index-file-url http://bundle-mirror/a&b|c\d'$(id)/index.json`,
+		},
+	}
+
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("NKE_E2E_BUNDLE_SERVER_URL", params.bundleURL)
+			agentEnv := filepath.Join(t.TempDir(), "nke-agent")
+			if err := os.WriteFile(agentEnv, []byte("AGENT_ARGS=\""+params.agentArgs+"\"\nOTHER_SETTING=\"keep me\"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			command := containerCAPIReadyCommands()[0]
+			command = strings.ReplaceAll(command, "/etc/default/nke-agent", agentEnv)
+			command = strings.ReplaceAll(command, "systemctl restart nke-agent.service", "true")
+			for range 2 {
+				if output, err := exec.CommandContext(t.Context(), "sh", "-c", command).CombinedOutput(); err != nil {
+					t.Fatalf("agent override failed: %v: %s", err, output)
+				}
+			}
+			got, err := os.ReadFile(agentEnv)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := "AGENT_ARGS=\"" + params.want + "\"\nOTHER_SETTING=\"keep me\"\n"; string(got) != want {
+				t.Fatalf("agent arguments = %q, want %q", got, want)
+			}
+		})
+	}
+}
 
 func TestApplyNetworkConfig(t *testing.T) {
 	tests := []struct {
@@ -217,6 +323,7 @@ func TestUnit_BuildNicoVMSRequestControlPlaneConfig(t *testing.T) {
 }
 
 func TestBuildNicoRequestNodePools(t *testing.T) {
+	t.Setenv("NKE_E2E_BUNDLE_SERVER_URL", "http://bundle-mirror/")
 	instanceTypeID := uuid.NewString()
 	subnetID := uuid.NewString()
 	spec := ClusterSpec{

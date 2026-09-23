@@ -363,6 +363,10 @@ cwe_expected_version="$(make -C "${repo_root}" -s --no-print-directory print-BUI
 # on the Kind network, reached with `docker exec`.
 local_e2e_exec() {
   local cp_flag="$1"; shift
+  local e2e_bundle_server_url="${BUNDLE_SERVER_URL:-}"
+  if [[ "${INSTALL_CNI_AFTER_INIT:-false}" == "true" ]]; then
+    e2e_bundle_server_url=""
+  fi
   local exchange_enabled=false
   if jq -e 'index("dsx-identity-exchange") != null' <<<"${local_e2e_providers}" >/dev/null; then
     exchange_enabled=true
@@ -370,6 +374,7 @@ local_e2e_exec() {
   docker exec \
     -e "CWE_EXPECTED_VERSION=${cwe_expected_version}" \
     -e "NKE_E2E_DSX_IDENTITY_EXCHANGE=${exchange_enabled}" \
+    -e "NKE_E2E_BUNDLE_SERVER_URL=${e2e_bundle_server_url}" \
     -e "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${cp_flag}" \
     -e E2E_BGP_CONTAINER_NAME=bgp-containers \
     "${runner_name}" "$@"
