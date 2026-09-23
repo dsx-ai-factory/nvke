@@ -5,9 +5,26 @@
 # `-e2e.environment forge`. Identifiers only: the Forge API key and the Teleport
 # join are workflow secrets and are deliberately absent here.
 #
-# The values come from controller/hack/create-forge-nico-cluster.sh, the one
-# path in this repository known to have created a cluster on real Forge, and are
-# corroborated by controller/integration-test/testdata/default.
+# This is az61 (Frankfurt), in the Forge-Tenant-RelEng org. It is the site two
+# recorded provisioning exercises actually used: one on 2026-09-14/15 that
+# brought up a site controller and the tenant cluster tenant-1, and one on
+# 2026-09-19/20 that installed the management plane from deploy/capnico-forge
+# and brought up tenant-2 and tenant-3. All three tenants reached CoreDNS
+# Ready, which is the signal that matters — CoreDNS cannot schedule until the
+# CNI is working on a node NKE provisioned itself.
+#
+# An earlier version of this file carried a different site, taken from
+# controller/hack/create-forge-nico-cluster.sh. That script's defaults arrived
+# with the original cloud-workflow-engine import (7ce92b69) and have never
+# changed; nothing records a cluster ever being created there. The site is real
+# — its instance-type list was read once — but it is not ours and it is not
+# proven, so it is gone.
+#
+# Two values this schema has nowhere to put yet, recorded so they are not lost:
+# the org's human-facing name is Forge-Tenant-RelEng, and the site's jump host
+# is rel-eng-az61-jump-host, reached with `tsh ssh`. SADD 3.5.2 declares fields
+# for both; they land when something reads them, rather than being silently
+# dropped by a decoder that ignores unknown keys.
 #
 # This file changes when the hardware does. A run needing a different Kubernetes
 # or a different OS image touches nothing here: neither is an infrastructure
@@ -20,46 +37,50 @@ provider: forge
 # own terms without a shared schema to satisfy.
 infrastructure:
   org:
-    id: novxwn552ssc
+    id: "0996499333036436"
 
   sites:
-    # Keyed by role rather than by location: this site's human-facing name is
-    # not recorded anywhere in the repository, and the UUID is what the API
-    # takes. Rename it once someone confirms what Forge calls it.
-    default:
-      id: e85ae455-2962-4742-b885-4b9ae22769c8
-      vpcID: b64210af-8f8e-4e37-ad0a-8cf7c6babf28
-      subnetID: 53c42b79-3dbf-40e8-9363-75228d7b6e1b
+    az61:
+      id: 7aecd73d-ac9a-4148-a7ad-f3d031a79665
+      vpcID: e1c4cb64-7d77-4532-89bc-6f7c32ece209
+
+      # az61 is ETHERNET_VIRTUALIZER, so an interface attaches by subnet. The
+      # other RelEng site, ytl, is FNN and attaches by VPC prefix instead —
+      # which is why this schema will need a prefix alternative before ytl can
+      # be declared. Note also that both sites have a VPC named rel-eng-tests
+      # and they are different VPCs: names are unique per site, not per org.
+      subnetID: 9354ab14-b7f3-412c-9070-2d16f7a60c83
 
       # Attached to the nodes Forge creates. A key group governs
       # Serial-over-LAN console access, not authorized_keys, so this grants no
       # shell on a node.
-      sshKeyGroupID: 5057cbb3-51ba-4568-b9ad-531cdd626d97
+      sshKeyGroupID: b4a78ea3-9bc9-4702-889f-7a66472420c0
 
-      # From `ngc forge instance-type list --site e85ae455-2962-4742-b885-4b9ae22769c8
-      # --org novxwn552ssc`. Declared cheapest first: where several types satisfy
-      # a request the first listed wins.
+      # Only the two types below have actually carried a tenant here: the CPU
+      # one ran tenant-2 and the GPU one ran tenant-3, both to CoreDNS Ready.
+      # az61 offers more, but a Forge instance-type list caps at twenty rows
+      # and ignores every filter, so enumerating the rest means reading them by
+      # id. Declared cheapest first: where several types satisfy a request the
+      # first listed wins.
       #
       # `provides` is matched against the capabilities a run asks for, so
-      # requesting {machineType: cpu} cannot be answered by a GPU machine. Every
-      # type here is amd64, which is why the site boots an x86_64 image.
+      # requesting {machineType: cpu} cannot be answered by a GPU machine. Both
+      # types here are amd64, which is why the site boots an x86_64 image.
       #
-      # Note for qualification: this site offers no GB200, so a stream asking
-      # for {gpu: gb200} has nothing here to run on and will fail rather than
-      # fall back to an L40.
+      # Note for qualification: az61 offers no GB200, so a stream asking for
+      # {gpu: gb200} has nothing here to run on and will fail rather than fall
+      # back to an L40. ytl is where the GB200 capacity is — its instance-type
+      # list is dominated by gpu.gb200.* — so a GB200 stream needs ytl
+      # declared, and that needs the VPC-prefix support noted above.
+      #
+      # cpu.himem.t1 has a single 894 GB NVMe with root on it and no spare
+      # unpartitioned device. That does not matter for a tenant node, which is
+      # all this file is used for, but it does rule the type out for a
+      # bootstrap node under SADD 3.5.3.
       instanceTypes:
-        - name: cpu.t1
-          id: d1a6401c-6b19-4261-92c3-79555cb56462
+        - name: cpu.himem.t1
+          id: 9040815f-c04d-4254-bc6f-02180780eb4d
           provides: {machineType: cpu, arch: amd64}
-        - name: stor.1920gb.32x.t1
-          id: a955d89b-8680-4285-8bbf-8338b3874463
-          provides: {machineType: storage, arch: amd64}
-        - name: gpu.l40x8.ovx.t1
-          id: 7c168e39-8e3b-480f-a3c1-f9b90517bfc9
-          provides: {machineType: gpu, arch: amd64, gpu: l40}
-        - name: gpu.l40x8.ovx.t1.ib
-          id: 3b7bc0c3-9fd4-49b9-8c08-357d84cdb456
-          provides: {machineType: gpu, arch: amd64, gpu: l40}
-        - name: gpu.l40x8.ovx.t1.ibx2
-          id: 81873aa9-dbc4-4e7b-95b4-024625c79dad
+        - name: gpu.l40sx8
+          id: a3d6f067-270f-43e5-91cb-f0bf910b20ec
           provides: {machineType: gpu, arch: amd64, gpu: l40}

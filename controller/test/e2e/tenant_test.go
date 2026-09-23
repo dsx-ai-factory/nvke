@@ -575,9 +575,11 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		validate: validations{cpRotation: true},
 	}),
 	// The only entry that runs on hardware, and so the only one needing
-	// -e2e.environment. Opt-in via the "nico-forge" label: everything above
-	// runs against a simulator on the runner, while this one creates real
-	// instances in a real Forge site and costs real money.
+	// -e2e.environment. Opt-in via the "nico-forge" label, and that label
+	// alone: everything above runs against a simulator on the runner, while
+	// this one creates real instances in a real Forge site and costs real
+	// money. A scenario label such as "happy-path" would pull it into
+	// test-e2e-happy-path, which a developer runs expecting a simulator.
 	//
 	// Node counts are the smallest that still prove a control plane and a
 	// worker, and the pools name no instance type: the environment file's
@@ -587,7 +589,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	// provisioningOnly to start with. Create, node readiness and delete are
 	// what a first run on Forge has to get through before any deeper
 	// assertion is worth attempting.
-	Entry("nico-forge", Ordered, ContinueOnFailure, Label("nico-forge", "happy-path"), testSpec{
+	Entry("nico-forge", Ordered, ContinueOnFailure, Label("nico-forge"), testSpec{
 		buildSpec: nicoForgeSpec,
 		shape: clusterShape{
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
@@ -1056,13 +1058,18 @@ func nicoSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec 
 	}
 }
 
-// Dependency versions pinned by controller/hack/create-forge-nico-cluster.sh,
-// the known-good pairing for this site. Defaults rather than required inputs:
-// they are not what a nico-forge run qualifies, and a resolved combination
-// from the qualify tool will supply them once the run verb exists.
+// Dependency versions that have carried a tenant on az61. Defaults rather than
+// required inputs: they are not what a nico-forge run qualifies, and a resolved
+// combination from the qualify tool will supply them once the run verb exists.
+//
+// Kubernetes and the CNI are what the recorded az61 exercises ran. The SPIRE
+// pin is weaker evidence — those runs installed spire-agent unpinned, so this
+// is the version the repo's own Forge scaffolding names rather than one
+// observed on the hardware.
 const (
-	forgeDefaultCNIVersion   = "1.4.0"
-	forgeDefaultSpireVersion = "1.14.1+tpm1.9.0"
+	forgeDefaultKubernetesVersion = "1.36.3"
+	forgeDefaultCNIVersion        = "1.4.0"
+	forgeDefaultSpireVersion      = "1.14.1+tpm1.9.0"
 )
 
 // nicoForgeSpec builds a CAPNico topology on real Forge. The manifests are the
@@ -1086,7 +1093,7 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.Cluster
 	Expect(err).NotTo(HaveOccurred(), "should find an instance type providing the requested capabilities")
 
 	kubernetesVersion := defaultString(optionalVersion("kube"),
-		defaultString(shape.kubernetesVersion, defaultKubernetesVersion))
+		defaultString(shape.kubernetesVersion, forgeDefaultKubernetesVersion))
 
 	// The OS image is the component under qualification, so it is required and
 	// has no default: a run that did not name one has not said what it is
@@ -1120,10 +1127,10 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.Cluster
 			Pools:         forgeNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", site, instanceType),
 			EtcdEncrypted: shape.etcdEncrypted,
 			// Empty unless an entry asks for one, which CWE reads as "do not
-			// configure kube-vip". That is what create-forge-nico-cluster.sh
-			// does: it sends no VIP. The simulator backends advertise theirs
-			// through a BGP speaker the runner hosts, and a real site has no
-			// equivalent to borrow an address from.
+			// configure kube-vip". The az61 tenants were created without one,
+			// and so is every Forge create in this repository. The simulator
+			// backends advertise theirs through a BGP speaker the runner
+			// hosts, and a real site has no equivalent to borrow from.
 			ControlPlaneVIP: shape.controlPlaneVIP,
 		},
 		Workers: forgeNodePoolSpecs(shape.workerPools, "worker", "w", site, instanceType),

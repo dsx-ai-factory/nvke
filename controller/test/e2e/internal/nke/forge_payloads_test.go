@@ -39,10 +39,16 @@ func TestBuildForgeNodePayloadsRendersEveryInput(t *testing.T) {
 		t.Error("iPXE script should not carry the template's own header")
 	}
 
+	// The charts package and openvswitch-switch are asserted because dropping
+	// either is silent here and fatal on hardware: the agent refuses InstallCNI
+	// without the charts deb and without host ovs-vsctl, and that failure
+	// terminates provisioning rather than retrying.
 	joined := strings.Join(payloads.PreKubeadmCommands, "\n")
 	for _, want := range []string{
 		"nke-kubeadm-distro-" + inputs.KubernetesVersion,
 		"nke-cni-ovn-images-" + inputs.CNIVersion,
+		"nke-cni-ovn-charts-" + inputs.CNIVersion,
+		"openvswitch-switch",
 		"spire-agent=" + inputs.SpireVersion,
 	} {
 		if !strings.Contains(joined, want) {
@@ -75,9 +81,9 @@ func TestBuildNicoForgeRequestRequiresPayloads(t *testing.T) {
 		Name:              "forge",
 		Backend:           BackendNicoForge,
 		KubernetesVersion: "1.34.2",
-		OrgID:             "novxwn552ssc",
-		SiteID:            "e85ae455-2962-4742-b885-4b9ae22769c8",
-		VpcID:             "b64210af-8f8e-4e37-ad0a-8cf7c6babf28",
+		OrgID:             "0996499333036436",
+		SiteID:            "7aecd73d-ac9a-4148-a7ad-f3d031a79665",
+		VpcID:             "e1c4cb64-7d77-4532-89bc-6f7c32ece209",
 	}
 
 	if _, err := BuildCreateRequest(spec); err == nil {
@@ -103,15 +109,15 @@ func TestBuildNicoForgeRequestCarriesThePayloads(t *testing.T) {
 		Backend:           BackendNicoForge,
 		KubernetesVersion: "1.34.2",
 		CNIPlugin:         "ovn-kubernetes",
-		OrgID:             "novxwn552ssc",
-		SiteID:            "e85ae455-2962-4742-b885-4b9ae22769c8",
-		VpcID:             "b64210af-8f8e-4e37-ad0a-8cf7c6babf28",
+		OrgID:             "0996499333036436",
+		SiteID:            "7aecd73d-ac9a-4148-a7ad-f3d031a79665",
+		VpcID:             "e1c4cb64-7d77-4532-89bc-6f7c32ece209",
 		NodePayloads:      &payloads,
 		ControlPlane: singlePoolControlPlane(NodePoolSpec{
 			Name: "control-plane", NodeNamePrefix: "controlplane", ControlPlane: true, DesiredNodeCount: 1,
-			InstanceTypeID: "d1a6401c-6b19-4261-92c3-79555cb56462",
-			SubnetIDs:      []string{"53c42b79-3dbf-40e8-9363-75228d7b6e1b"},
-			SSHKeyGroupIDs: []string{"5057cbb3-51ba-4568-b9ad-531cdd626d97"},
+			InstanceTypeID: "9040815f-c04d-4254-bc6f-02180780eb4d",
+			SubnetIDs:      []string{"9354ab14-b7f3-412c-9070-2d16f7a60c83"},
+			SSHKeyGroupIDs: []string{"b4a78ea3-9bc9-4702-889f-7a66472420c0"},
 		}),
 	})
 	if err != nil {
