@@ -51,6 +51,10 @@ func TestCheckedInEnvironmentsParse(t *testing.T) {
 					if instanceType.ID == "" || instanceType.Name == "" {
 						t.Errorf("site %q declares an instance type with no name or id: %+v", siteName, instanceType)
 					}
+					// Host tools are downloaded per architecture.
+					if instanceType.Provides[capabilityArch] == "" {
+						t.Errorf("site %q instance type %q declares no arch", siteName, instanceType.Name)
+					}
 				}
 			}
 		})

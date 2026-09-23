@@ -20,11 +20,10 @@
 # — its instance-type list was read once — but it is not ours and it is not
 # proven, so it is gone.
 #
-# Two values this schema has nowhere to put yet, recorded so they are not lost:
-# the org's human-facing name is Forge-Tenant-RelEng, and the site's jump host
-# is rel-eng-az61-jump-host, reached with `tsh ssh`. SADD 3.5.2 declares fields
-# for both; they land when something reads them, rather than being silently
-# dropped by a decoder that ignores unknown keys.
+# One value this schema has nowhere to put yet, recorded so it is not lost: the
+# org's human-facing name is Forge-Tenant-RelEng. SADD 3.5.2 declares a field
+# for it; it lands when something reads it, rather than being silently dropped
+# by a decoder that ignores unknown keys.
 #
 # This file changes when the hardware does. A run needing a different Kubernetes
 # or a different OS image touches nothing here: neither is an infrastructure
@@ -55,7 +54,6 @@ infrastructure:
       # Serial-over-LAN console access, not authorized_keys, so this grants no
       # shell on a node.
       sshKeyGroupID: b4a78ea3-9bc9-4702-889f-7a66472420c0
-
       # Only the two types below have actually carried a tenant here: the CPU
       # one ran tenant-2 and the GPU one ran tenant-3, both to CoreDNS Ready.
       # az61 offers more, but a Forge instance-type list caps at twenty rows
@@ -74,9 +72,10 @@ infrastructure:
       # declared, and that needs the VPC-prefix support noted above.
       #
       # cpu.himem.t1 has a single 894 GB NVMe with root on it and no spare
-      # unpartitioned device. That does not matter for a tenant node, which is
-      # all this file is used for, but it does rule the type out for a
-      # bootstrap node under SADD 3.5.3.
+      # unpartitioned device, so the documented local-storage prerequisite is
+      # unmet. It does not block bootstrap: both exercises built their site
+      # controller on this type. It means a storage provisioner goes on before
+      # anything asks for a volume.
       instanceTypes:
         - name: cpu.himem.t1
           id: 9040815f-c04d-4254-bc6f-02180780eb4d

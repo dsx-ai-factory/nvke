@@ -34,7 +34,18 @@ type ForgeNodeInputs struct {
 	CNIVersion string
 	// SpireVersion selects the spire-agent package, e.g. "1.14.1+tpm1.9.0".
 	SpireVersion string
+
+	// AgentArgs overrides the node agent's arguments. Empty means the port
+	// CWE dials and nothing else. Whether the agent runs --disable-mtls has to
+	// agree with how the dialing side was deployed, and a mismatch fails as
+	// an opaque TLS handshake error, so a caller that decides the one decides
+	// the other here.
+	AgentArgs string
 }
+
+const (
+	defaultAgentArgs = "--secure-server-port 15005"
+)
 
 func (i ForgeNodeInputs) validate() error {
 	missing := make([]string, 0, 5)
@@ -63,6 +74,9 @@ func (i ForgeNodeInputs) validate() error {
 func BuildForgeNodePayloads(inputs ForgeNodeInputs) (NodePayloads, error) {
 	if err := inputs.validate(); err != nil {
 		return NodePayloads{}, err
+	}
+	if strings.TrimSpace(inputs.AgentArgs) == "" {
+		inputs.AgentArgs = defaultAgentArgs
 	}
 
 	ipxe, err := renderTemplate("nico_forge_ipxe", nicoForgeIPXETmpl, inputs)

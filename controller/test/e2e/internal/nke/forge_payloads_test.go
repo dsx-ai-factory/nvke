@@ -62,6 +62,27 @@ func TestBuildForgeNodePayloadsRendersEveryInput(t *testing.T) {
 	}
 }
 
+func TestBuildForgeNodePayloadsAgentArgs(t *testing.T) {
+	for _, tc := range []struct {
+		name, args, want string
+	}{
+		{"defaults to the dialed port", "", `AGENT_ARGS="--secure-server-port 15005"`},
+		{"carries an override verbatim", "--secure-server-port 15005 --disable-mtls", `AGENT_ARGS="--secure-server-port 15005 --disable-mtls"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inputs := completeForgeInputs()
+			inputs.AgentArgs = tc.args
+			payloads, err := BuildForgeNodePayloads(inputs)
+			if err != nil {
+				t.Fatalf("building payloads: %v", err)
+			}
+			if joined := strings.Join(payloads.PreKubeadmCommands, "\n"); !strings.Contains(joined, tc.want) {
+				t.Errorf("pre-kubeadm commands should write %s", tc.want)
+			}
+		})
+	}
+}
+
 func TestBuildForgeNodePayloadsNamesEveryMissingInput(t *testing.T) {
 	_, err := BuildForgeNodePayloads(ForgeNodeInputs{})
 	if err == nil {

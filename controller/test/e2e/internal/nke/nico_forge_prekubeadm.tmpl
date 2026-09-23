@@ -26,7 +26,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y nke-agent nke-kubeadm-distro-{
 DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-{{ .CNIVersion }} nke-cni-ovn-charts-{{ .CNIVersion }}
 DEBIAN_FRONTEND=noninteractive apt-get install -y openvswitch-switch
 DEBIAN_FRONTEND=noninteractive apt-get install -y spire-agent={{ .SpireVersion }}
-printf 'AGENT_ARGS="--secure-server-port 15005"\n' > /etc/default/nke-agent
+printf 'AGENT_ARGS="{{ .AgentArgs }}"\n' > /etc/default/nke-agent
 sysctl --system
 systemctl daemon-reload
 systemctl restart nke-agent.service
