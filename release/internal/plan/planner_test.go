@@ -6,6 +6,7 @@ package plan
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -124,6 +125,33 @@ func TestPlanResolvesAndExpands(t *testing.T) {
 	for _, s := range c.Streams {
 		if s.Skip != OutcomeNone {
 			t.Errorf("%s is skipped, but nothing has run", s.Name)
+		}
+	}
+}
+
+// A cell carries the capabilities its stream declared, so the run that
+// executes it is configured from the plan. Re-reading the policy at run time
+// would let an edit landing between the plan job and the last cell change what
+// that cell runs, which is the one thing resolving once is meant to prevent.
+func TestPlanCarriesStreamCapabilities(t *testing.T) {
+	p := newPlanner(t, controllerSpec, fakeTags{
+		"controller": {"v0.1.1-rc.8"},
+		"os-image":   {"v0.1.0-rc.4"},
+		"cli":        {"v0.1.0-rc.7"},
+	}, nil)
+
+	got, err := p.Plan("controller", "v0.1.1-rc.8", "active")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]map[string]string{
+		"amd64-1.34": {"arch": "amd64", "kube": "1.34"},
+		"arm64-1.34": {"arch": "arm64", "kube": "1.34"},
+	}
+	for _, s := range got.Combinations[0].Streams {
+		if !reflect.DeepEqual(s.Capabilities, want[s.Name]) {
+			t.Errorf("%s carries %v, want %v", s.Name, s.Capabilities, want[s.Name])
 		}
 	}
 }
@@ -419,9 +447,7 @@ func TestPlanIsDeterministic(t *testing.T) {
 	if first.Combinations[0].ID != second.Combinations[0].ID {
 		t.Error("two runs of the same inputs produced different combinations")
 	}
-	for i := range first.Combinations[0].Streams {
-		if first.Combinations[0].Streams[i] != second.Combinations[0].Streams[i] {
-			t.Error("two runs of the same inputs produced different stream order")
-		}
+	if !reflect.DeepEqual(first.Combinations[0].Streams, second.Combinations[0].Streams) {
+		t.Error("two runs of the same inputs produced different streams")
 	}
 }

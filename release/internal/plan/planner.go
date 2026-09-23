@@ -91,11 +91,11 @@ func (p *Planner) Plan(component, version, scope string) (*Plan, error) {
 // narrows to the component's own subset if it names one. Policy declaration
 // order is preserved, which is what makes two runs of the same plan produce
 // the same file.
-func (p *Planner) streams(scope policy.Scope, spec *policy.Component) ([]string, error) {
-	var out []string
+func (p *Planner) streams(scope policy.Scope, spec *policy.Component) ([]policy.Stream, error) {
+	var out []policy.Stream
 	for _, s := range p.Policy.Spec.Streams {
 		if scope.Matches(s) {
-			out = append(out, s.Name)
+			out = append(out, s)
 		}
 	}
 	if len(out) == 0 {
@@ -117,8 +117,8 @@ func (p *Planner) streams(scope policy.Scope, spec *policy.Component) ([]string,
 		}
 	}
 
-	narrowed := slices.DeleteFunc(out, func(name string) bool {
-		return !slices.Contains(spec.Spec.Streams, name)
+	narrowed := slices.DeleteFunc(out, func(s policy.Stream) bool {
+		return !slices.Contains(spec.Spec.Streams, s.Name)
 	})
 	if len(narrowed) == 0 {
 		return nil, fmt.Errorf(
@@ -207,7 +207,7 @@ func (p *Planner) versions(component string) ([]string, error) {
 
 // combinations resolves every dependency and takes the product.
 func (p *Planner) combinations(
-	spec *policy.Component, component, version string, streams []string,
+	spec *policy.Component, component, version string, streams []policy.Stream,
 ) ([]Combination, error) {
 	deps := spec.Spec.Dependencies
 	if len(deps) == 0 {
@@ -257,15 +257,15 @@ func (p *Planner) combinations(
 // combination pairs one dependency set with every stream in the scope,
 // marking the cells an earlier run already settled.
 func (p *Planner) combination(
-	id string, deps []Dependency, component, version string, streams []string,
+	id string, deps []Dependency, component, version string, streams []policy.Stream,
 ) Combination {
 	cells := make([]Stream, 0, len(streams))
-	for _, name := range streams {
-		cell := Stream{Name: name}
+	for _, s := range streams {
+		cell := Stream{Name: s.Name, Capabilities: s.Capabilities}
 		// A history that cannot answer is not a reason to refuse to plan:
 		// the worst case is rerunning a cell that had already settled, which
 		// costs time and proves the same thing.
-		if outcome, err := p.History.Outcome(component, version, id, name); err == nil && outcome.skippable() {
+		if outcome, err := p.History.Outcome(component, version, id, s.Name); err == nil && outcome.skippable() {
 			cell.Skip = outcome
 		}
 		cells = append(cells, cell)

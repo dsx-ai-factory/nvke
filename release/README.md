@@ -122,13 +122,24 @@ $ go run ./release/cmd/qualify plan --component controller --scope full
         { "name": "cli",      "version": "v0.1.0-rc.7" }
       ],
       "streams": [
-        { "name": "nico-amd64-kube-1.34" },
-        { "name": "nico-arm64-kube-1.34" }
+        {
+          "name": "nico-amd64-kube-1.34",
+          "capabilities": { "arch": "amd64", "kube": "1.34", "provider": "nico" }
+        },
+        {
+          "name": "nico-arm64-kube-1.34",
+          "capabilities": { "arch": "arm64", "kube": "1.34", "provider": "nico" }
+        }
       ]
     }
   ]
 }
 ```
+
+Each cell carries its stream's capabilities rather than just the name, so the
+run that executes it is configured from the plan. Reading them back out of the
+policy at run time would let an edit landing between the plan job and the last
+cell change what that cell runs, which is what resolving once is for.
 
 A stream a previous run settled stays in the file carrying `skip`, rather than
 being dropped. `passed` and `failed` are both skipped, because rerunning the

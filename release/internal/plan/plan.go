@@ -43,6 +43,13 @@ type Dependency struct {
 type Stream struct {
 	Name string `json:"name"`
 
+	// Capabilities is what the stream declared in the policy, copied here so
+	// the run that executes this cell is configured from the plan rather than
+	// by re-reading the policy. Resolution happens once; a policy edited
+	// between the plan and the last cell must not change what the last cell
+	// runs.
+	Capabilities map[string]string `json:"capabilities"`
+
 	// Skip says why the Planner decided against running this cell, and is
 	// empty when it will run. Skipped cells stay in the file rather than
 	// being dropped, so a plan covering four of six streams says so instead
