@@ -21,7 +21,7 @@ import (
 	"google.golang.org/grpc/reflection/grpc_reflection_v1"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
+	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 )
 
 const (

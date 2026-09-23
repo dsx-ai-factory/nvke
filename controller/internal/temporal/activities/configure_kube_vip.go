@@ -12,9 +12,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
+	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 
-	"github.com/NVIDIA/nke/controller/internal/nodes"
+	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
 )
 
 const (

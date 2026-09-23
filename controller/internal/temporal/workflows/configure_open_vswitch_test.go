@@ -18,8 +18,8 @@ import (
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/temporal/activities"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/temporal/activities"
 )
 
 func configureOpenVSwitchTestWorkflow(ctx workflow.Context, nodeID uuid.UUID) error {

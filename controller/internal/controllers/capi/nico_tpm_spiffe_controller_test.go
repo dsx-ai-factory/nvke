@@ -21,7 +21,7 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/NVIDIA/nke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 )
 
 func TestNicoTpmSpiffeControllerReconcileAnnotatesMachine(t *testing.T) {

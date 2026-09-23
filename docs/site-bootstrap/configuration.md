@@ -43,9 +43,11 @@ registry:
 | `cluster.k8sVersion` | string | yes | Plain semver, e.g. `1.34.2` — no leading `v`. |
 | `cluster.cniName` | string | yes | `calico` or `ovn-kubernetes`. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the agent's built-in default. |
+| `cluster.controlPlaneVIP` | string | no | Optional kube-vip control-plane VIP. Must be a routable unicast IPv4 address, reachable by the nodes over BGP, outside `podCidr` and `serviceCidr`, and not a node IP. Empty uses the IP of the node that initializes the cluster. |
 | `cluster.podCidr` | string | yes | Valid CIDR. Comma-separated list allowed for dual-stack. |
 | `cluster.serviceCidr` | string | yes | Valid CIDR. |
 | `cluster.nodeAgentPort` | string | no | gRPC port nke-agent listens on. Defaults to `15005`. Set it only if you passed `--secure-server-port` to the agent. |
+| `cluster.etcdEncryption` | bool | no | Encrypt the Kubernetes API's etcd data at rest. Defaults to `true`. Decided at bootstrap only: a cluster built with it `false` cannot be encrypted afterwards. |
 | `cluster.kubeletConfig.systemReservedMemory` | string | no | e.g. `16Gi`. |
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
@@ -63,10 +65,12 @@ Any field can be supplied or overridden via an environment variable. A set varia
 | `CLUSTER_K8S_VERSION` | `cluster.k8sVersion` |
 | `CLUSTER_CNI_NAME` | `cluster.cniName` |
 | `CLUSTER_CNI_VERSION` | `cluster.cniVersion` |
+| `CLUSTER_CONTROL_PLANE_VIP` | `cluster.controlPlaneVIP` |
 | `CLUSTER_POD_CIDR` | `cluster.podCidr` |
 | `CLUSTER_SERVICE_CIDR` | `cluster.serviceCidr` |
 | `CLUSTER_SYSTEM_RESERVED_MEMORY` | `cluster.kubeletConfig.systemReservedMemory` |
 | `CLUSTER_NODE_AGENT_PORT` | `cluster.nodeAgentPort` |
+| `CLUSTER_ETCD_ENCRYPTION` | `cluster.etcdEncryption` |
 | `REGISTRY_BOOTSTRAP_REPO` | `registry.bootstrapRepo` |
 | `REGISTRY_BOOTSTRAP_CHART` | `registry.bootstrapChart` |
 | `REGISTRY_API_KEY` | `registry.apiKey` |
@@ -101,6 +105,6 @@ All validation errors are reported together in one pass so you can fix them with
 
 ## What's Next After Bootstrap
 
-After the site controller cluster is up, you deploy the NKE services (CWE, Temporal, CNPG) onto it. That step uses a GitOps-based deploy repository and ArgoCD. See [Deploy Repository](deploy-repository.md) for the structure and application manifests.
+After the site controller cluster is up, install Cluster API and an infrastructure provider on it before deploying the NKE services (CWE, Temporal, CNPG) — see [Infrastructure Providers](infrastructure-providers.md). The NKE services deployment uses a GitOps-based deploy repository and ArgoCD; see [Deploy Repository](deploy-repository.md) for the structure and application manifests.
 
 > **TODO:** Confirm `j7sbcjl3qgta` is the final public NGC org for NKE Helm charts and container images. Update all `helm.ngc.nvidia.com/j7sbcjl3qgta` and `nvcr.io/j7sbcjl3qgta` references if the org changes.

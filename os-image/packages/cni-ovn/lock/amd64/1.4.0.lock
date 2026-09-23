@@ -1,6 +1,4 @@
 # nke-cni-ovn lock for 1.4.0 (amd64). Regenerate with `make lock`; review the diff before committing.
-# Seeded from the ovn_1.4.0-2 bundle's chart set. The chart sha256 and the image
-# digests are still missing: run `make lock` with an NGC key that can read nv-ngn.
 ovn 1.4.0
-image nvcr.io/nv-ngn/sdn/ovn-c:8be75b84-43126247-d411398
-image nvcr.io/nv-ngn/sdn/ovnkube-c:8be75b84-43126247-d411398
+artifact ovn-kubernetes-src-v1.4.0.tar.gz c807488a6cf9b3d690fcb61d8c607ffbe455f5d7bf28a85c3031ff327d3b935e https://github.com/ovn-kubernetes/ovn-kubernetes/archive/refs/tags/v1.4.0.tar.gz
+image ghcr.io/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu:release-1.4 sha256:8a7376d05735223734948b5b4f57af9a55bce76145ae8ac9b8f164b1b4fd87f2

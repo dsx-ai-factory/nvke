@@ -29,7 +29,13 @@ def main():
     """Render the chart and validate the embedded tenant RBAC manifest."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--chart", required=True)
+    parser.add_argument(
+        "--tenant-rbac-name",
+        default="nke:cwe",
+        help="Value of nkeOIDCAuth.tenantRbacName; the rendered ClusterRole/Role/Binding objects use this name.",
+    )
     args = parser.parse_args()
+    tenant_rbac_name = args.tenant_rbac_name
 
     base_command = [
         "helm",
@@ -42,6 +48,8 @@ def main():
         "nkeOIDCAuth.enabled=true",
         "--set",
         "tenantAccess.enabled=true",
+        "--set",
+        f"nkeOIDCAuth.tenantRbacName={tenant_rbac_name}",
     ]
     command = [
         *base_command,
@@ -75,9 +83,9 @@ def main():
         for document in inner
         if document and document.get("kind") in ("ClusterRole", "Role")
     }
-    cluster_role = roles.get(("ClusterRole", "nke:cwe"))
+    cluster_role = roles.get(("ClusterRole", tenant_rbac_name))
     if cluster_role is None:
-        print("ERROR: no nke:cwe ClusterRole in the nke-rbac manifest", file=sys.stderr)
+        print(f"ERROR: no {tenant_rbac_name} ClusterRole in the nke-rbac manifest", file=sys.stderr)
         return 1
 
     bindings = {
@@ -197,10 +205,10 @@ def main():
     ]
     if missing:
         for permission in missing:
-            print(f"ERROR: nke:cwe ClusterRole is missing {permission}", file=sys.stderr)
+            print(f"ERROR: {tenant_rbac_name} ClusterRole is missing {permission}", file=sys.stderr)
         return 1
 
-    print(f"nke:cwe ClusterRole grants all {len(required)} required permissions")
+    print(f"{tenant_rbac_name} ClusterRole grants all {len(required)} required permissions")
     print("nke:capi-cluster-admin uses all configured CAPI controller subjects")
     print("token exchange requires explicit subjects for every CAPI controller")
     return 0

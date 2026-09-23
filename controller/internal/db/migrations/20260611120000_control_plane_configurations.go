@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
-	cwedb "github.com/NVIDIA/nke/controller/internal/db"
+	cwedb "github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 //nolint:gochecknoinits // this is the typical way to register bun migrations

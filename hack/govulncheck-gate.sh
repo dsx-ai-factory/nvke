@@ -12,7 +12,10 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 module="$1"
 scanner="${GOVULNCHECK:-govulncheck}"
-waived_modules="${GOVULNCHECK_WAIVED_MODULES:-}"
+# <module>=<OSV-id>[,<OSV-id>...], space-separated across modules.
+waived_spec="${GOVULNCHECK_WAIVED:-}"
+waiver_review="${GOVULNCHECK_WAIVER_REVIEW:-}"
+waiver_owner="${GOVULNCHECK_WAIVER_OWNER:-}"
 
 [[ -f "${repo_root}/${module}/go.mod" ]] || {
   echo "ERROR: ${module} is not a Go module in this workspace" >&2
@@ -35,31 +38,66 @@ warn() {
   fi
 }
 
+# Captured, not streamed, because the waiver is scoped to an advisory now and
+# the report is the only place the advisory IDs appear. Echoed back either way,
+# so a human still sees exactly what govulncheck said.
+report="$(mktemp)"
+trap 'rm -f "${report}"' EXIT
 set +e
-(cd "${repo_root}/${module}" && GOPROXY=off "${scanner}" ./...)
+(cd "${repo_root}/${module}" && GOPROXY=off "${scanner}" ./...) >"${report}" 2>&1
 rc=$?
 set -e
+cat "${report}"
 
 if [[ ${rc} -ne 0 && ${rc} -ne 3 ]]; then
   error "govulncheck failed to run in ${module} (exit ${rc})"
   exit "${rc}"
 fi
 
-waived=false
-for candidate in ${waived_modules}; do
-  [[ "${candidate}" == "${module}" ]] && waived=true
+# The advisories waived for THIS module, if any.
+allowed=""
+for entry in ${waived_spec}; do
+  [[ "${entry%%=*}" == "${module}" ]] || continue
+  allowed="${entry#*=}"
+  allowed="${allowed//,/ }"
 done
 
-if [[ "${waived}" == "false" ]]; then
+if [[ -z "${allowed}" ]]; then
   [[ ${rc} -eq 0 ]] && exit 0
   error "${module} calls a vulnerable symbol"
   exit 3
 fi
 
-if [[ ${rc} -eq 3 ]]; then
-  warn "${module} is waived and still has a reachable vulnerability"
-  exit 0
+# Only the "Symbol Results" section lists advisories this code actually calls.
+# Anything below it is imported-but-not-called and is not what the gate is for.
+called="$(awk '/^=== Symbol Results ===/{s=1; next} /^=== /{s=0} s' "${report}" |
+  grep -oE 'GO-[0-9]{4}-[0-9]+' | sort -u || true)"
+
+fail=0
+for id in ${called}; do
+  case " ${allowed} " in
+    *" ${id} "*) ;;
+    *) error "${module} calls ${id}, which is not waived"; fail=1 ;;
+  esac
+done
+for id in ${allowed}; do
+  case " ${called} " in
+    *" ${id} "*) ;;
+    *) error "${module} no longer calls ${id}; remove it from GOVULNCHECK_WAIVED"; fail=1 ;;
+  esac
+done
+
+if [[ ${fail} -ne 0 ]]; then
+  [[ -n "${waiver_owner}" ]] && error "waiver owner: ${waiver_owner}"
+  exit 3
 fi
 
-error "${module} is clean but still waived; remove its waiver"
-exit 1
+# A date that fails the build would get the whole mechanism deleted the first
+# time it fired on a Monday. Warn loudly instead; the un-waive check above is
+# what actually stops rot.
+if [[ -n "${waiver_review}" ]] && [[ "$(date -u +%Y-%m-%d)" > "${waiver_review}" ]]; then
+  warn "the ${module} waiver passed its review date ${waiver_review} (owner: ${waiver_owner:-unassigned})"
+fi
+
+warn "${module} is waived for ${allowed// /, } and still calls it"
+exit 0

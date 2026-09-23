@@ -8,10 +8,10 @@ import (
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/nke/controller/internal/agent"
-	"github.com/NVIDIA/nke/controller/internal/config"
-	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/spiffe"
+	"github.com/dsx-ai-factory/nke/controller/internal/agent"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/spiffe"
 )
 
 type trustDomainAndBundleGetter func(context.Context, config.Config) (string, string, error)

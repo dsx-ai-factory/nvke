@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	infrav1 "github.com/NVIDIA/nke/cluster-api-provider-provisioned/api/v1alpha1"
+	infrav1 "github.com/dsx-ai-factory/nke/cluster-api-provider-provisioned/api/v1alpha1"
 )
 
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=machines,verbs=get;list;patch;update;watch

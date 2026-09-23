@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/client"
 
-	"github.com/NVIDIA/nke/controller/e2e/framework"
-	"github.com/NVIDIA/nke/controller/internal/temporal/workflows"
+	"github.com/dsx-ai-factory/nke/controller/e2e/framework"
+	"github.com/dsx-ai-factory/nke/controller/internal/temporal/workflows"
 )
 
 func TestGofailRunbookWorkerCrashRetriesAfterHeartbeatTimeout(t *testing.T) {

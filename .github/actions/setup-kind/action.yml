@@ -30,12 +30,20 @@ runs:
         bin="${RUNNER_TEMP}/kind-bin"
         mkdir -p "${bin}"
         cd "${bin}"
-        fetch() { curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o "$1" "$2"; }
+        # No --retry-delay: it replaces curl's exponential backoff with a flat
+        # wait. See install-k8s-community.sh for what that cost.
+        fetch() { curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 -o "$1" "$2"; }
+        # Committed digests, not the .sha256 files beside each artifact: those
+        # are served by the same host, so they share its compromise boundary.
+        # make/tool-versions.mk owns the version and the digest together.
+        case "${arch}" in
+          amd64) kind_want="$(make -C "${GITHUB_WORKSPACE}" --no-print-directory print-KIND_SHA256_AMD64)"; kubectl_want="$(make -C "${GITHUB_WORKSPACE}" --no-print-directory print-KUBECTL_SHA256_AMD64)" ;;
+          arm64) kind_want="$(make -C "${GITHUB_WORKSPACE}" --no-print-directory print-KIND_SHA256_ARM64)"; kubectl_want="$(make -C "${GITHUB_WORKSPACE}" --no-print-directory print-KUBECTL_SHA256_ARM64)" ;;
+          *) echo "no committed kind/kubectl digest for ${arch}" >&2; exit 1 ;;
+        esac
         fetch kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-${arch}"
-        fetch kind.sha256sum "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-${arch}.sha256sum"
-        echo "$(cut -d' ' -f1 kind.sha256sum)  kind" | sha256sum -c
+        echo "${kind_want}  kind" | sha256sum -c
         fetch kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${arch}/kubectl"
-        fetch kubectl.sha256 "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${arch}/kubectl.sha256"
-        echo "$(cat kubectl.sha256)  kubectl" | sha256sum -c
+        echo "${kubectl_want}  kubectl" | sha256sum -c
         chmod +x kind kubectl
         echo "${bin}" >> "${GITHUB_PATH}"

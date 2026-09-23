@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/nke/controller/internal/nodes"
+	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
 )
 
 type LabelNodeInput struct {

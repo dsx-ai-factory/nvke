@@ -24,9 +24,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/authtoken"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/cwe"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/authtoken"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
 )
 
 // The SPIRE half of NKE API authentication. The Workload API issues a JWT-SVID

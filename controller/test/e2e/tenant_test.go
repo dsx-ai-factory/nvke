@@ -20,12 +20,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/nke/controller/api"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/config"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/kube"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/nke"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/nkectl"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/tenantauth"
+	"github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nkectl"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/tenantauth"
 )
 
 // clusterLifecycle creates a cluster, reads it back, and deletes it again.
@@ -84,7 +84,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			// a flag-off CWE simply skips it. CI selects this entry only in its flag-on
 			// lane.
 			if (spec.validate.controlPlaneController || spec.validate.controlPlaneControllerUpdate ||
-				spec.validate.controlPlaneControllerRollingUpdate) &&
+				spec.validate.controlPlaneControllerRollingUpdate || spec.validate.controlPlaneControllerDelete) &&
 				os.Getenv("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER") != "true" {
 				Skip("requires CWE deployed with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true")
 			}
@@ -177,6 +177,11 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			if spec.validate.controlPlaneControllerRollingUpdate {
 				validateControllerManagedControlPlaneRollingUpdate(&test)
 			}
+			if spec.validate.controlPlaneControllerDelete {
+				validateControllerManagedControlPlaneDeleteRefused(&test)
+				validateControllerManagedControlPlaneSerializedDelete(&test)
+				validateControllerManagedControlPlaneUnreachableDelete(&test)
+			}
 			if spec.validate.nodePoolLifecycle {
 				validateAdditionalNodePool(&test)
 			}
@@ -185,6 +190,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			}
 			if spec.createVia == clientNkectl {
 				validateNkectlPostCreate(&test)
+				validateNkectlNodePoolLifecycle(&test)
 			}
 		})
 
@@ -313,6 +319,17 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		createVia: clientNkectl,
 		validate:  validations{provisioningOnly: true},
 	}),
+	// Mirrors the CAPD row above so the node pool lifecycle is covered on the
+	// NICo substrate too; the CLI creates the worker pool this row cares about.
+	Entry("nico-containers via nkectl", Ordered, ContinueOnFailure, Label("nico-containers", "nkectl"), testSpec{
+		buildSpec: nicoSpec,
+		shape: clusterShape{
+			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+		},
+		options:   nke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
+		createVia: clientNkectl,
+		validate:  validations{provisioningOnly: true},
+	}),
 	// This row is selected only by the dedicated identity-exchange lane. Keeping
 	// it off the broad "capd" label prevents the direct-SPIRE control lane from
 	// exercising a topology it did not deploy.
@@ -335,20 +352,36 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
 			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
-		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
-		validate: validations{controlPlaneController: true, controlPlaneControllerUpdate: true, controlPlaneControllerRollingUpdate: true},
+		// 15m, matching the nico-containers entry below. The roll waits on a
+		// replacement node reaching KubernetesReady, and the local-entrypoint
+		// CNI-after-init leg straddles 10m.
+		options: nke.Options{Provision: 15 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		validate: validations{
+			controlPlaneController:              true,
+			controlPlaneControllerUpdate:        true,
+			controlPlaneControllerRollingUpdate: true,
+			controlPlaneControllerDelete:        true,
+		},
 	}),
 	// The same for nico-containers, so the cp-controller path is not CAPD-only.
 	// Three control-plane nodes because the rolling-update spec needs a
-	// multi-node control plane to keep etcd quorum while it rolls.
+	// multi-node control plane to keep etcd quorum while it rolls, and because
+	// the delete specs assert the quorum floor refuses a delete at exactly that
+	// size. The delete specs grow the control plane to four and back, which is
+	// cheap here (containers) but is why nico-vms does not run them.
 	Entry("nico-containers control-plane controller (no CP node pool)", Ordered, ContinueOnFailure, Label("nico-containers", "cp-controller"), testSpec{
 		buildSpec: nicoControlPlaneControllerSpec,
 		shape: clusterShape{
 			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 3},
 			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
-		options:  nke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
-		validate: validations{controlPlaneController: true, controlPlaneControllerUpdate: true, controlPlaneControllerRollingUpdate: true},
+		options: nke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
+		validate: validations{
+			controlPlaneController:              true,
+			controlPlaneControllerUpdate:        true,
+			controlPlaneControllerRollingUpdate: true,
+			controlPlaneControllerDelete:        true,
+		},
 	}),
 	Entry("nico-vms control-plane controller (no CP node pool)", Ordered, ContinueOnFailure, Label("nico-vms", "cp-controller"), testSpec{
 		buildSpec: nicoVMSControlPlaneControllerSpec,
@@ -365,7 +398,9 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			},
 			workerPools: []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
-		options:  nke.Options{Provision: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
+		// A healthy create takes about 8.5 minutes, and nothing below gives up on
+		// its own, so this wait is what a broken node costs.
+		options:  nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{controlPlaneController: true, controlPlaneControllerUpdate: true, controlPlaneControllerRollingUpdate: true},
 	}),
 	// NICo gets the same bounded pull-request contract as CAPD. Keep this entry
@@ -431,13 +466,14 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			kubernetesVersion: "1.34.2",
-			cniPlugin:         CNIPluginOVN, // Required by the Open vSwitch typed-path assertion below.
-			// Default cpu2-mem2gb cannot schedule ovnkube-node (500m/1500Mi).
+			// Calico, so no openVSwitch assertion here; the "nico-vms ovn" entry
+			// below carries it. Large instances kept: cpu2-mem2gb was sized
+			// against ovnkube-node.
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
 			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
-		options:  nke.Options{Provision: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
-		validate: validations{scale: true, reboot: true, openVSwitch: true},
+		options:  nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
+		validate: validations{scale: true, reboot: true},
 	}),
 	Entry("nico-vms k8s upgrade", Ordered, ContinueOnFailure, Label("nico-vms", "happy-path", "upgrade"), testSpec{
 		buildSpec: nicoVMSSpec,
@@ -446,8 +482,25 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
 			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
-		options:  nke.Options{Provision: 90 * time.Minute, Upgrade: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
+		options:  nke.Options{Provision: 30 * time.Minute, Upgrade: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{upgrade: true},
+	}),
+	// The only entry that runs OVN-Kubernetes, and so the only one that can set
+	// openVSwitch. Every other nico-vms entry resolves to Calico through
+	// NKE_E2E_NICO_VMS_CNI, which the lane pins for image size. Kept to one
+	// control plane and one worker: the assertion is per node, and OVN images
+	// are the expensive part.
+	Entry("nico-vms ovn", Ordered, ContinueOnFailure, Label("nico-vms", "ovn"), testSpec{
+		buildSpec: nicoVMSSpec,
+		shape: clusterShape{
+			kubernetesVersion: "1.34.2",
+			cniPlugin:         CNIPluginOVN,
+			// Large instances: cpu2-mem2gb was sized against ovnkube-node.
+			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+		},
+		options:  nke.Options{Provision: 45 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
+		validate: validations{openVSwitch: true},
 	}),
 	Entry("CAPD with etcd encryption", Ordered, ContinueOnFailure, Label("capd", "extended", "encryption"), testSpec{
 		buildSpec: capdSpec,
@@ -495,20 +548,18 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		buildSpec: nicoVMSMultiPodCIDRSpec,
 		shape: clusterShape{
 			kubernetesVersion: "1.34.2",
-			cniPlugin:         CNIPluginOVN,
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
 			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
-		options: nke.Options{Provision: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 30 * time.Second},
+		options: nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 30 * time.Second},
 	}),
 	Entry("nico-vms node pool lifecycle", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "nodepool"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
-			cniPlugin:         CNIPluginOVN, // OVN provisions faster than the Calico default.
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
-		options:  nke.Options{Provision: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
+		options:  nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{clusterConfig: true, nodeReplacement: true, manualScaleDown: true, nodePoolLifecycle: true, nodePoolCascade: true},
 	}),
 	// Opt-in via the "cp-rotation" label: it exercises a 2-to-1 etcd member
@@ -516,11 +567,10 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	Entry("nico-vms single-node control-plane rotation", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "cp-rotation"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
-			cniPlugin:         CNIPluginOVN, // OVN provisions faster than the Calico default.
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
-		options:  nke.Options{Provision: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
+		options:  nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{cpRotation: true},
 	}),
 )...)
@@ -641,6 +691,14 @@ type validations struct {
 	// has enough nodes to keep quorum while rolling. Requires the same flag-on CWE
 	// as controlPlaneController (self-skips otherwise).
 	controlPlaneControllerRollingUpdate bool
+	// controlPlaneControllerDelete asserts the controller-owned, serialized
+	// control-plane delete: a delete that would leave fewer than three joined
+	// control-plane nodes is refused at the API, and an accepted one runs one
+	// teardown at a time with no control-plane join overlapping it. Ordered after
+	// controlPlaneControllerRollingUpdate so the control plane is already at three
+	// nodes. Requires the same flag-on CWE as controlPlaneController (self-skips
+	// otherwise).
+	controlPlaneControllerDelete bool
 }
 
 // setupTenantTest builds the per-backend wiring (clients, trust domain, logger)
@@ -1009,9 +1067,9 @@ func nicoVMSSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSp
 		Name:              name,
 		Backend:           nke.BackendNicoVMS,
 		KubernetesVersion: defaultString(shape.kubernetesVersion, defaultKubernetesVersion),
-		// NKE_E2E_NICO_VMS_CNI moves the default for entries that do not pin one; Calico's
-		// images are a third of OVN's and import in a third of the time on every node.
-		CNIPlugin: defaultString(shape.cniPlugin, defaultString(os.Getenv("NKE_E2E_NICO_VMS_CNI"), CNIPluginOVN)),
+		// Calico, like the other two backends. An image built here has no OVN debs:
+		// fetch-artifacts.sh needs an NGC key, and skips arm64 entirely.
+		CNIPlugin: defaultString(shape.cniPlugin, defaultString(os.Getenv("NKE_E2E_NICO_VMS_CNI"), CNIPluginCalico)),
 		OrgID:     nicoVMSOrgID,
 		SiteID:    nicoVMSSiteID,
 		VpcID:     nicoVMSVpcID,

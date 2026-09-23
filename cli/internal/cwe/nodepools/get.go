@@ -12,10 +12,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
-	"github.com/NVIDIA/nke/cli/internal/clients"
-	"github.com/NVIDIA/nke/cli/internal/clusterstate"
-	"github.com/NVIDIA/nke/cli/internal/util"
-	api "github.com/NVIDIA/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/cli/internal/clients"
+	"github.com/dsx-ai-factory/nke/cli/internal/clusterstate"
+	"github.com/dsx-ai-factory/nke/cli/internal/util"
+	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 
 // NewGetCmd returns the "nkectl get nodepools" subcommand. Both filters are

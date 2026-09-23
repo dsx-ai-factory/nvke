@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/NVIDIA/nke/cli/internal/clients"
-	"github.com/NVIDIA/nke/cli/internal/config"
+	"github.com/dsx-ai-factory/nke/cli/internal/clients"
+	"github.com/dsx-ai-factory/nke/cli/internal/config"
 )
 
 var (

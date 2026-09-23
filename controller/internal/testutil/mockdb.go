@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 // MockDB is a testify mock for db.DB. Set MockTx (or GetTx) before use so RunInTx invokes the callback with it.

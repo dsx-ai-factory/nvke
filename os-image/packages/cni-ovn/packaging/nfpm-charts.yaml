@@ -20,10 +20,11 @@ maintainer: "NKE <nke-dev@exchange.nvidia.com>"
 mtime: "2026-01-01T00:00:00Z"
 description: |
   ovn-kubernetes ${STREAM} Helm chart for NKE nodes
-  The nv-ngn ovn-kubernetes chart, unpacked to /etc/dgx/ovn-kubernetes, where
-  nke-agent runs helm on it with values-nke.yaml when it installs the CNI. The
-  container images ship separately in ${IMAGES_PACKAGE}; install both for a
-  node with no registry access.
+  The public github.com/ovn-kubernetes/ovn-kubernetes chart, unpacked to
+  /etc/dgx/ovn-kubernetes, where nke-agent runs helm on it with
+  values-nke.yaml when it installs the CNI. The container image ships
+  separately in ${IMAGES_PACKAGE}; install both for a node with no registry
+  access.
 
 # Every stream unpacks to the same directory, so only one can be installed.
 provides:

@@ -9,7 +9,7 @@ import (
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	"github.com/NVIDIA/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/controller/api"
 )
 
 // GetCluster returns the cluster with the given id.

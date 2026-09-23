@@ -73,8 +73,9 @@ member_path() {
   esac
 }
 
+# No --retry-delay: it replaces curl's exponential backoff with a flat wait.
 fetch() {
-  curl -fsSL --retry 5 --retry-delay 2 --max-time 300 --max-filesize "$MAX_ARTIFACT_BYTES" -o "$2" "$1" ||
+  curl -fsSL --retry 8 --max-time 300 --max-filesize "$MAX_ARTIFACT_BYTES" -o "$2" "$1" ||
     die "download $1 failed"
   # --max-filesize is advisory: a chunked response has no Content-Length for
   # curl to check it against, so re-check the ceiling on what landed.

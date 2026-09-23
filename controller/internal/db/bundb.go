@@ -17,7 +17,7 @@ import (
 	"github.com/uptrace/bun/extra/bunotel"
 	"github.com/uptrace/bun/extra/bunslog"
 
-	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
 )
 
 // logFormat creates slog attributes for query events, including PostgreSQL

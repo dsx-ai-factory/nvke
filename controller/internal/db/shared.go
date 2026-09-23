@@ -38,6 +38,17 @@ type Condition struct {
 	LastTransitionTime time.Time       `json:"lastTransitionTime,omitempty"`
 }
 
+// Equal reports whether two conditions describe the same state. It compares
+// LastTransitionTime with time.Time.Equal rather than ==, because == also
+// compares the monotonic clock reading and the *Location pointer: the same
+// instant read back from JSONB (UTC) and taken from an apimachinery
+// metav1.Time (Local, see its UnmarshalJSON) is not == equal.
+func (c Condition) Equal(other Condition) bool {
+	return c.Status == other.Status &&
+		c.Message == other.Message &&
+		c.LastTransitionTime.Equal(other.LastTransitionTime)
+}
+
 func NewCondition(status bool, message string) Condition {
 	return Condition{
 		Status:             ConditionStatusFromBool(status),

@@ -13,31 +13,60 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 
-	"github.com/NVIDIA/nke/controller/internal/constants"
-	kubeadmv1beta3 "github.com/NVIDIA/nke/controller/internal/kubeadmconfig/thirdparty/kubeadmtypes/v1beta3"
-	kubeletconfigv1beta1 "github.com/NVIDIA/nke/controller/internal/kubeadmconfig/thirdparty/kubeletconfig/v1beta1"
-	kubeproxyconfigv1alpha1 "github.com/NVIDIA/nke/controller/internal/kubeadmconfig/thirdparty/kubeproxyconfig/v1alpha1"
+	"github.com/dsx-ai-factory/nke/controller/internal/constants"
+	kubeadmv1beta3 "github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig/thirdparty/kubeadmtypes/v1beta3"
+	kubeletconfigv1beta1 "github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig/thirdparty/kubeletconfig/v1beta1"
+	kubeproxyconfigv1alpha1 "github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig/thirdparty/kubeproxyconfig/v1alpha1"
 )
 
 const (
-	defaultPatchesDirectory          = "/etc/kubernetes/patches"
-	defaultClusterName               = "kubernetes"
-	defaultDNSDomain                 = "cluster.local"
-	defaultBindPort                  = 6443
-	defaultCRISocket                 = "unix:///var/run/containerd/containerd.sock"
-	defaultImagePullPolicy           = "IfNotPresent"
-	defaultImageRepository           = "registry.k8s.io"
-	defaultAuditPolicyFile           = "/etc/kubernetes/policies/audit-policy.yaml"
-	defaultAuditLogPath              = "/var/log/kubernetes_audit/audit.log"
-	defaultKubeletCertificateAuth    = "/etc/kubernetes/pki/ca.crt"
-	defaultCertificatesDir           = "/etc/kubernetes/pki"
-	defaultEtcdDataDir               = "/var/lib/etcd"
-	defaultListenMetricsURLs         = "http://0.0.0.0:2381"
-	defaultKubeProxyMetricsBind      = "0.0.0.0:10249"
-	defaultBindAddress               = "0.0.0.0"
-	defaultAuditLogMaxAge            = "30"
-	defaultAuditLogMaxBackup         = "3"
-	defaultAuditLogMaxSize           = "100"
+	defaultPatchesDirectory       = "/etc/kubernetes/patches"
+	defaultClusterName            = "kubernetes"
+	defaultDNSDomain              = "cluster.local"
+	defaultBindPort               = 6443
+	defaultCRISocket              = "unix:///var/run/containerd/containerd.sock"
+	defaultImagePullPolicy        = "IfNotPresent"
+	defaultImageRepository        = "registry.k8s.io"
+	defaultAuditPolicyFile        = "/etc/kubernetes/policies/audit-policy.yaml"
+	defaultAuditLogPath           = "/var/log/kubernetes_audit/audit.log"
+	defaultKubeletCertificateAuth = "/etc/kubernetes/pki/ca.crt"
+	defaultCertificatesDir        = "/etc/kubernetes/pki"
+	defaultEtcdDataDir            = "/var/lib/etcd"
+	defaultListenMetricsURLs      = "http://0.0.0.0:2381"
+	defaultKubeProxyMetricsBind   = "0.0.0.0:10249"
+	defaultBindAddress            = "0.0.0.0"
+	defaultAuditLogMaxAge         = "30"
+	// defaultControlPlaneBindAddress keeps kube-controller-manager and
+	// kube-scheduler on loopback. Both serve only their own metrics and health
+	// endpoints, and nothing outside the node consumes them, so binding all
+	// interfaces exposed them for no gain (CIS 1.3.7 and 1.4.2). Deliberately
+	// separate from defaultBindAddress, which the API server also uses and which
+	// must keep listening on a routable address for nodes and clients to reach
+	// it. A scraper that later needs these endpoints should reach them through a
+	// localhost-scoped path rather than widening this back to 0.0.0.0.
+	defaultControlPlaneBindAddress = "127.0.0.1"
+	// defaultAuditLogMaxBackup is held at or above ten so a rotation storm cannot
+	// age the audit trail out faster than it can be shipped. Three rotations of a
+	// 100Mi log is well under a day of retained history on a busy API server,
+	// which is what CIS 1.2.18 objects to.
+	defaultAuditLogMaxBackup = "10"
+	defaultAuditLogMaxSize   = "100"
+	// defaultServiceAccountExtendTokenExpiration turns off the extended
+	// (one-year) service account token lifetime, so projected tokens expire on
+	// the bound schedule the cluster actually intends (CIS 1.2.30). The extension
+	// exists to shield clients that cannot re-read a rotating token; NKE ships no
+	// such client, and leaving it on silently grants every workload a year-long
+	// credential.
+	defaultServiceAccountExtendTokenExpiration = "false"
+	// defaultTLSCipherSuites pins the TLS 1.2 handshake to AEAD suites with
+	// forward secrecy, instead of accepting Go's broader default set (CIS 1.2.29).
+	// TLS 1.3 suites are not configurable through this flag and are unaffected.
+	defaultTLSCipherSuites = "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384," +
+		"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384," +
+		"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256," +
+		"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256," +
+		"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256," +
+		"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
 	defaultProfilingDisabled         = "false"
 	defaultAPIServerShutdownDelay    = "10s"
 	defaultAPIServerShutdownRetry    = "true"
@@ -81,7 +110,35 @@ const (
 	// featureGatesFlag is the kube-apiserver flag carrying comma-separated
 	// `Name=bool` pairs.
 	featureGatesFlag = "feature-gates"
+
+	// defaultPodPidsLimit caps PIDs per pod, which the kubelet otherwise leaves
+	// unbounded so a single runaway process can exhaust the node's PID space
+	// (CIS 4.2.13). Threads count against this cgroup limit, not just processes,
+	// and GPU training pods run many dataloader workers and CUDA threads apiece
+	// — so this sits well above a general-purpose default. The control asks only
+	// that a limit exist; the value is chosen to bound a fork bomb without being
+	// reachable by a legitimate workload.
+	defaultPodPidsLimit = 16384
 )
+
+// kubeletTLSCipherSuites returns the TLS 1.2 cipher suites the kubelet's
+// serving endpoint accepts, restricting it to AEAD suites with forward secrecy
+// instead of Go's broader default set (CIS 4.2.12). TLS 1.3 suites are not
+// configurable through this field and are unaffected.
+//
+// Returns a fresh slice per call: KubeletConfiguration holds it by reference
+// and there is more than one call site, so a shared backing array could be
+// mutated through one config and observed through the other.
+func kubeletTLSCipherSuites() []string {
+	return []string{
+		"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+		"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+		"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+		"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+		"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
+		"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+	}
+}
 
 // imageVolumeGAVersion is the release where KEP-4639 went GA and the gate
 // became enabled by default. Kubernetes removes a gate roughly two releases
@@ -167,6 +224,15 @@ func initKubeletConfiguration(containerMode bool, kubernetesVersion string) kube
 		// deadline.
 		SerializeImagePulls:   ptr.To(false),
 		MaxParallelImagePulls: ptr.To[int32](defaultMaxParallelImagePulls),
+		TLSCipherSuites:       kubeletTLSCipherSuites(),
+		PodPidsLimit:          ptr.To[int64](defaultPodPidsLimit),
+		// RuntimeDefault seccomp for every workload that does not name a
+		// profile of its own (CIS 4.2.14). Without this the kubelet runs
+		// unconfined by default, so a pod gets the container runtime's full
+		// syscall surface unless its author opted in. Pods that genuinely need
+		// a wider surface can still say so explicitly in their securityContext;
+		// this only changes what happens when nothing is specified.
+		SeccompDefault: ptr.To(true),
 		KubeReserved: map[string]string{
 			"cpu":               "1000m",
 			memoryKey:           defaultKubeReservedMemory,
@@ -209,6 +275,9 @@ func joinKubeletConfiguration(kubernetesVersion string) kubeletconfigv1beta1.Kub
 		ServerTLSBootstrap:    true,
 		SerializeImagePulls:   ptr.To(false),
 		MaxParallelImagePulls: ptr.To[int32](defaultMaxParallelImagePulls),
+		TLSCipherSuites:       kubeletTLSCipherSuites(),
+		PodPidsLimit:          ptr.To[int64](defaultPodPidsLimit),
+		SeccompDefault:        ptr.To(true),
 		FeatureGates:          imageVolumeKubeletFeatureGates(kubernetesVersion),
 	}
 }
@@ -219,7 +288,7 @@ func controlPlaneComponent() kubeadmv1beta3.ControlPlaneComponent {
 	return kubeadmv1beta3.ControlPlaneComponent{
 		ExtraArgs: map[string]string{
 			"profiling":    defaultProfilingDisabled,
-			"bind-address": defaultBindAddress,
+			"bind-address": defaultControlPlaneBindAddress,
 		},
 	}
 }

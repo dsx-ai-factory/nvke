@@ -4,7 +4,9 @@
 # than pointing at CloudFront, which nothing would fetch. Same value as
 # controller/test/kubeadm/internal/nicovms/launch.go.
 set boot-loader http://127.0.0.1/qcow-imager.efi
-set image-url https://d1veq6e8nuk2fy.cloudfront.net/nke-isos/qcow/images/24.04/x86_64/lvm/2026-06-25/1035/nke-24.04-x86_64-lvm-2026-06-25-1035.qcow2
+# The lane rewrites this to the qcow2 it pulled from GHCR. Unreachable here for
+# the same reason as boot-loader: this repository names no CloudFront host.
+set image-url http://127.0.0.1/nke-node.qcow2
 set disk-strategy {{ .DiskSelectionStrategy }}
 
 # You probably don't need to change these

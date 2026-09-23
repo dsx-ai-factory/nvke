@@ -155,11 +155,26 @@ type Verifier struct {
 // NewVerifier takes a validated configuration and one KeySource per issuer, keyed
 // by Issuer.Name. Both directions of mismatch are startup failures.
 func NewVerifier(cfg *Config, sources map[string]KeySource) (*Verifier, error) {
+	return newVerifier(cfg, sources, true)
+}
+
+func newVerifier(cfg *Config, sources map[string]KeySource, requireAdmissionPolicy bool) (*Verifier, error) {
 	if cfg == nil {
 		return nil, errors.New("authentication config is nil")
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid authentication config: %w", err)
+	}
+	if requireAdmissionPolicy {
+		for index, issuer := range cfg.Issuers {
+			if issuer.Admit == nil {
+				return nil, fmt.Errorf(
+					"invalid authentication config: issuers[%d] (%s): admit is required; an issuer with no admission rules would authenticate callers and then reject all of them",
+					index,
+					strings.TrimSpace(issuer.Name),
+				)
+			}
+		}
 	}
 
 	entries := make(map[string]*issuerEntry, len(cfg.Issuers))
@@ -171,14 +186,34 @@ func NewVerifier(cfg *Config, sources map[string]KeySource) (*Verifier, error) {
 			return nil, fmt.Errorf("issuer %q (%s): no key source supplied", iss.Name, iss.Issuer)
 		}
 
-		admit, err := iss.Admit.resolve()
-		if err != nil {
-			return nil, fmt.Errorf("issuer %q (%s): admit: %w", iss.Name, iss.Issuer, err)
+		var admit *admitRules
+		if iss.Admit != nil {
+			var err error
+			admit, err = iss.Admit.resolve()
+			if err != nil {
+				return nil, fmt.Errorf("issuer %q (%s): admit: %w", iss.Name, iss.Issuer, err)
+			}
 		}
 
 		// Cloned because jwt.WithAudience keeps the slice rather than copying it.
 		audiences := slices.Clone(iss.EffectiveAudiences(cfg.Audiences))
 		algorithms := slices.Clone(iss.Algorithms)
+		parserOptions := []jwt.ParserOption{
+			// golang-jwt treats "exp" as optional by default, so without this
+			// a token minted with no expiry verifies forever.
+			jwt.WithExpirationRequired(),
+			// Re-checks "iss" against the verified claims, which is what makes
+			// the pre-verification read below safe to select a key source on.
+			jwt.WithIssuer(iss.Issuer),
+			jwt.WithValidMethods(algorithms),
+			jwt.WithLeeway(clockSkewLeeway),
+			// Any-of: expectAllAud defaults to false, so one matching audience
+			// is enough. Not WithAllAudiences, where adding an accepted
+			// audience would reject every token not also carrying it.
+			jwt.WithAudience(audiences...),
+			// jwt.WithIssuedAt is deliberately absent: "iat" says when a token
+			// was minted, not when it becomes usable.
+		}
 		entries[iss.Issuer] = &issuerEntry{
 			name:       iss.Name,
 			issuer:     iss.Issuer,
@@ -186,22 +221,7 @@ func NewVerifier(cfg *Config, sources map[string]KeySource) (*Verifier, error) {
 			algorithms: algorithms,
 			admit:      admit,
 			keys:       src,
-			parser: jwt.NewParser(
-				// golang-jwt treats "exp" as optional by default, so without this
-				// a token minted with no expiry verifies forever.
-				jwt.WithExpirationRequired(),
-				// Re-checks "iss" against the verified claims, which is what makes
-				// the pre-verification read below safe to select a key source on.
-				jwt.WithIssuer(iss.Issuer),
-				jwt.WithValidMethods(algorithms),
-				jwt.WithLeeway(clockSkewLeeway),
-				// Any-of: expectAllAud defaults to false, so one matching audience
-				// is enough. Not WithAllAudiences, where adding an accepted
-				// audience would reject every token not also carrying it.
-				jwt.WithAudience(audiences...),
-				// jwt.WithIssuedAt is deliberately absent: "iat" says when a token
-				// was minted, not when it becomes usable.
-			),
+			parser:     jwt.NewParser(parserOptions...),
 		}
 	}
 
@@ -290,6 +310,9 @@ func (v *Verifier) Admit(p *Principal) error {
 	entry, ok := v.entries[p.Issuer]
 	if !ok {
 		return failure(ReasonUnknownIssuer, fmt.Errorf("no configured issuer matches %q", p.Issuer))
+	}
+	if entry.admit == nil {
+		return entry.failure(ReasonNotAdmitted, errors.New("token verifier has no REST admission policy"))
 	}
 	if !entry.admit.admits(p) {
 		// Elided even though the subject is verified: it is still a caller-chosen

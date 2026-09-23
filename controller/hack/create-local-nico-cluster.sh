@@ -21,7 +21,6 @@ NICO_VPC_ID="${NICO_VPC_ID:-00000000-0000-0000-0000-000000000002}"
 NICO_SUBNET_ID="${NICO_SUBNET_ID:-00000000-0000-0000-0000-000000000003}"
 NICO_SSH_KEY_GROUP_ID="${NICO_SSH_KEY_GROUP_ID:-00000000-0000-0000-0000-000000000004}"
 NICO_INSTANCE_TYPE_ID="${NICO_INSTANCE_TYPE_ID:-00000000-0000-0000-0000-000000000005}"
-CAPI_SPIRE_ATTESTATION_METHOD="${CAPI_SPIRE_ATTESTATION_METHOD:-joinToken}"
 
 # /api/* is authenticated. hack/nke-token.sh prints nothing when NKE is not, so
 # this works either way.
@@ -85,7 +84,6 @@ BODY=$(cat <<EOF
             }
           }
         },
-        "spireAttestationMethod": "${CAPI_SPIRE_ATTESTATION_METHOD}",
         "preKubeadmCommands": [
           "mkdir -p /run/cluster-api",
           "echo success > /run/cluster-api/bootstrap-success.complete"
@@ -127,7 +125,6 @@ BODY=$(cat <<EOF
             }
           }
         },
-        "spireAttestationMethod": "${CAPI_SPIRE_ATTESTATION_METHOD}",
         "preKubeadmCommands": [
           "mkdir -p /run/cluster-api",
           "echo success > /run/cluster-api/bootstrap-success.complete"

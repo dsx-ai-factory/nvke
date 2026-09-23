@@ -106,11 +106,16 @@ sudo -n true 2>/dev/null || fail "passwordless sudo is required to create the br
 
 # Lifted from setup-linux.sh:66-82. Resolving the package by architecture turns
 # an obscure apt failure into a clear one, and both architectures need it now:
-# the arm64 scale set nke-arm64-16c64g gives its runners nested KVM.
+# the arm64 scale set arc-arm64-kvm gives its runners nested KVM.
+# UEFI_PKG is arm64-only: aarch64 has no BIOS, so domain_xml.go:35-36 emits
+# <os firmware='efi'> for every aarch64 guest whatever the UEFI flag says.
+# Without the firmware libvirt refuses the domain with "Unable to find 'efi'
+# firmware that is compatible with the current configuration". amd64 boots
+# BIOS here and needs nothing.
 DEB_ARCH="$(dpkg --print-architecture)"
 case "${DEB_ARCH}" in
-  amd64) QEMU_SYSTEM_PKG="qemu-system-x86" ;;
-  arm64) QEMU_SYSTEM_PKG="qemu-system-arm" ;;
+  amd64) QEMU_SYSTEM_PKG="qemu-system-x86"; UEFI_PKG="" ;;
+  arm64) QEMU_SYSTEM_PKG="qemu-system-arm"; UEFI_PKG="qemu-efi-aarch64" ;;
   *) fail "unsupported architecture: ${DEB_ARCH} (supported: amd64, arm64)" ;;
 esac
 
@@ -158,9 +163,18 @@ fi
 #                           or produces nothing (artifacts.go:192-201)
 #   dnsmasq-base            section 5
 #   iptables                sections 5 and 6
+#   build-essential         make, and the C toolchain nico-sim's CGO_ENABLED=1
+#                           build needs (internal/state/store.go imports "C").
+#                           The ARC scale-set image ships neither; the EC2
+#                           fleet it replaced did.
+#   libcap2-bin             setcap, for `make build-privileged`
+#                           (nico-sim/Makefile:26)
+#   ${UEFI_PKG}             arm64 only, see section 1. Empty on amd64.
 #
 # Dropped from setup-linux.sh, each for a reason:
-#   ovmf, qemu-efi-aarch64  the lane boots vanilla Ubuntu noble on BIOS; no UEFI
+#   ovmf                    amd64 boots vanilla Ubuntu noble on BIOS. This is
+#                           an amd64-only statement: the arm64 guests have no
+#                           BIOS and get qemu-efi-aarch64 above.
 #   swtpm, swtpm-tools      no LUKS/FDE image, so no vTPM. virsh.go:276-278
 #                           returns ("", false, nil) -- TPM skipped, no error --
 #                           when exec.LookPath("swtpm_setup") fails
@@ -173,9 +187,14 @@ fi
 #   docker, tilt, kubectl,  workstation tooling; D5 dropped CNI and the
 #   kind, helm, go, ko      kubectl-based verification that would have needed it
 
+# sudo -E, not sudo: sudo resets the environment, so the DEBIAN_FRONTEND set
+# above never reaches apt and its maintainer scripts can open a dialog nobody
+# answers. DPkg::Lock::Timeout bounds the other half -- unattended-upgrades
+# holds the lock on a fresh runner, and dpkg's default is to wait forever. One
+# job sat on it for 5h29m and was recorded as cancelled, not failed.
 log "Installing QEMU/libvirt packages for ${DEB_ARCH}..."
-sudo apt-get update -qq
-sudo apt-get install -y -qq -o Dpkg::Options::="--force-confold" \
+sudo -E apt-get update -qq -o DPkg::Lock::Timeout=600
+sudo -E apt-get install -y -qq -o DPkg::Lock::Timeout=600 -o Dpkg::Options::="--force-confold" \
   "${QEMU_SYSTEM_PKG}" \
   qemu-utils \
   libvirt-daemon-system \
@@ -184,7 +203,10 @@ sudo apt-get install -y -qq -o Dpkg::Options::="--force-confold" \
   genisoimage \
   dnsmasq-base \
   iptables \
-  ethtool
+  ethtool \
+  build-essential \
+  libcap2-bin \
+  ${UEFI_PKG:+"${UEFI_PKG}"}
 
 # The FDE node image, opt-in. It boots UEFI (ovmf), binds LUKS to a TPM on its
 # first boot (swtpm; nico-vms provisions a vTPM only when swtpm_setup is on
@@ -196,12 +218,34 @@ if [[ "${FDE}" == true ]]; then
   log "NKE_CI_HOST_FDE=true: installing UEFI firmware, swtpm, e2fsprogs and sshpass"
   # sshpass: the E2E lane reads each guest's journals through nico-vms'
   # password-login diagnostic user when a node never registers.
-  sudo apt-get install -y -qq -o Dpkg::Options::="--force-confold" \
+  sudo -E apt-get install -y -qq -o DPkg::Lock::Timeout=600 -o Dpkg::Options::="--force-confold" \
     ovmf \
     swtpm \
     swtpm-tools \
     e2fsprogs \
     sshpass
+fi
+
+# Re-assert the device mode, because installing the packages above took it
+# away. qemu-system-common's postinst chowns /dev/kvm to root:kvm and chmods
+# it 0660, undoing the "Report the accelerator" step that ran before this
+# script. On a VM runner that is harmless -- the login user is in the kvm
+# group. In a container the runner is uid 1001 in groups runner, sudo, users,
+# docker and libvirt, but not kvm, so it loses the device:
+#
+#   1. pod starts           crw-rw---- root 994
+#   2. after chmod 666      crw-rw-rw- root 994
+#   3. after installing     crw-rw---- root kvm   <- here
+#
+# QEMU then cannot open it, libvirt reports
+#   the accel 'kvm' is not supported by '/usr/bin/qemu-system-aarch64'
+# so the KVM machine list is empty, 'virt' never resolves to 'virt-*', and
+# the domain is refused with "Unable to find 'efi' firmware that is
+# compatible with the current configuration" -- which is what #863 recorded.
+# os-image-artifact.yml never hit this because it chmods after installing.
+if [[ -c /dev/kvm ]]; then
+  sudo chmod 666 /dev/kvm
+  log "/dev/kvm re-opened after package install: $(ls -l /dev/kvm)"
 fi
 
 # GRO merges inbound segments into super-frames the tap cannot take, so guest
@@ -598,7 +642,12 @@ else
   # shellcheck disable=SC2064  # expand IMAGE_TMP now, not at trap time
   trap "rm -rf '${IMAGE_TMP}'" EXIT
 
-  if ! curl -fsSL --retry 3 --retry-delay 5 --max-time 120 \
+  # --retry alone skips a mid-transfer reset: curl treats only timeouts and
+  # 408/429/5xx as transient. --speed-limit turns a stall into one.
+  CURL_FETCH=(-fsSL --retry 3 --retry-all-errors --retry-delay 180
+              --speed-limit 1048576 --speed-time 30)
+
+  if ! curl "${CURL_FETCH[@]}" --max-time 120 \
        -o "${IMAGE_TMP}/SHA256SUMS" "${IMAGE_BASE_URL}/SHA256SUMS"; then
     fail "could not download SHA256SUMS from ${IMAGE_BASE_URL}"
   fi
@@ -607,7 +656,7 @@ else
   expected="$(awk -v n="${IMAGE_NAME}" '$2 == n || $2 == "*" n {print $1}' "${IMAGE_TMP}/SHA256SUMS" | head -1)"
   [[ -n "${expected}" ]] || fail "no SHA256SUMS entry for ${IMAGE_NAME}"
 
-  if ! curl -fsSL --retry 3 --retry-delay 5 --max-time 900 \
+  if ! curl "${CURL_FETCH[@]}" --max-time 900 \
        -o "${IMAGE_TMP}/${IMAGE_NAME}" "${IMAGE_BASE_URL}/${IMAGE_NAME}"; then
     fail "could not download the base image from ${IMAGE_BASE_URL}/${IMAGE_NAME}"
   fi

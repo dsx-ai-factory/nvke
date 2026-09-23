@@ -45,8 +45,9 @@ download_verified() {
     --location \
     --connect-timeout 10 \
     --max-time 30 \
-    --retry 3 \
-    --retry-delay 5 \
+    --retry 8 \
+    --retry-all-errors \
+    --retry-max-time 240 \
     --retry-connrefused \
     "${url}" \
     -o "${destination}"

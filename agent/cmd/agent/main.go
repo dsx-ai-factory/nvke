@@ -27,8 +27,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 
-	server "github.com/NVIDIA/nke/agent/internal/agent"
-	"github.com/NVIDIA/nke/agent/internal/grpcserver"
+	server "github.com/dsx-ai-factory/nke/agent/internal/agent"
+	"github.com/dsx-ai-factory/nke/agent/internal/grpcserver"
 )
 
 const (

@@ -244,7 +244,31 @@ while IFS= read -r -d '' file; do
 done < <(markdown_files)
 
 # ---------------------------------------------------------------------------
-# Check 6: no internal tracker identifiers
+# Check 6: every job in merge-gate.yml is in gate.needs
+# ---------------------------------------------------------------------------
+
+# `gate` is the required check, and it can only fail on what it waits for. A
+# job added to merge-gate.yml but forgotten in `needs:` runs, goes red, and the
+# gate still reports success -- a silent false pass on every pull request.
+gate_jobs="$(
+	awk '
+		/^jobs:$/ { in_jobs = 1; next }
+		in_jobs && /^[^[:space:]]/ { exit }
+		in_jobs && /^  [a-z0-9_-]+:$/ { gsub(/[ :]/, ""); print }
+	' .github/workflows/merge-gate.yml | grep -vx gate
+)"
+[[ -n "${gate_jobs}" ]] || {
+	echo "ERROR: no jobs parsed from .github/workflows/merge-gate.yml" >&2
+	exit 2
+}
+while read -r job; do
+	[[ -n "${job}" ]] || continue
+	printf '%s\n' "${members}" | grep -qx -- "${job}" ||
+		error ".github/workflows/merge-gate.yml: job '${job}' is missing from gate.needs — the gate would pass while it fails"
+done <<<"${gate_jobs}"
+
+# ---------------------------------------------------------------------------
+# Check 7: no internal tracker identifiers
 # ---------------------------------------------------------------------------
 
 # Internal ticket IDs are dead links to an external reader. CHANGELOG.md is

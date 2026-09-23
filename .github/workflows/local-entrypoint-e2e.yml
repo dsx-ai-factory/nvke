@@ -47,7 +47,8 @@ permissions: {}
 
 concurrency:
   # The sha keeps main runs apart. Sharing one group, and main never cancels,
-  # means a second main run waits out the first.
+  # means a second main run waits out the first. Only the second: GitHub keeps
+  # one pending run per group, so a third arrival evicts the queued second.
   group: Local entrypoint E2E-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
@@ -59,24 +60,38 @@ jobs:
 
   local-entrypoint:
     needs: changes
-    name: local-backend-e2e.sh on Linux (post-init CNI ${{ matrix.install_cni_after_init }})
+    name: local-backend-e2e.sh on Linux (${{ matrix.arch }}, post-init CNI ${{ matrix.install_cni_after_init }})
     if: github.repository == 'dsx-ai-factory/nke' && needs.changes.outputs.run_e2e == 'true'
     # The L4 pool is one machine, and this lane runs on pull requests, on main,
     # and twice a day. A run on main waited 87 minutes for a runner, longer than
     # the 84 minutes it then took. cpu16 has capacity, and the L4 was never
     # faster: leg 1 took 778s there against 845s on a developer box.
-    runs-on: linux-amd64-cpu16
+    #
+    # Neither architecture needs /dev/kvm, and both need the Docker Hub mirror
+    # below, which only resolves inside the NVIDIA fleet.
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     timeout-minutes: 120
     strategy:
       fail-fast: false
+      # Listed rather than crossed: arm64 covers the default CNI path only, so
+      # the pool carries three legs and not four.
       matrix:
         # CNI reaches a node two ways. false is what a developer running this
         # script gets; true installs it after kubeadm init from a Debian package,
         # with no bundle mirror and no bundle flags on the node image. Only this
-        # lane covers the second one.
-        install_cni_after_init: [false, true]
+        # lane covers the second one, and only on amd64.
+        include:
+          - arch: amd64
+            runner: linux-amd64-cpu16
+            install_cni_after_init: false
+          - arch: amd64
+            runner: linux-amd64-cpu16
+            install_cni_after_init: true
+          - arch: arm64
+            runner: linux-arm64-cpu16
+            install_cni_after_init: false
     env:
       INSTALL_CNI_AFTER_INIT: ${{ matrix.install_cni_after_init }}
       # Pull-request mirrors run the same bounded lifecycle as the CAPD lane.
@@ -171,9 +186,15 @@ jobs:
           version="$(grep -oE 'TILT_VERSION:=v[0-9.]+' controller/hack/ci/backend-e2e.sh \
             | head -1 | sed 's/.*:=v//')"
           [[ -n "${version}" ]] || { echo "could not read the pinned Tilt version" >&2; exit 1; }
+          # Tilt names the 64-bit ARM asset arm64, not aarch64.
+          case "$(uname -m)" in
+            x86_64) tilt_arch=x86_64 ;;
+            aarch64) tilt_arch=arm64 ;;
+            *) echo "Tilt publishes no release asset for $(uname -m)" >&2; exit 1 ;;
+          esac
           tmp="$(mktemp -d)"
           curl -fsSL -o "${tmp}/tilt.tgz" \
-            "https://github.com/tilt-dev/tilt/releases/download/v${version}/tilt.${version}.linux.x86_64.tar.gz"
+            "https://github.com/tilt-dev/tilt/releases/download/v${version}/tilt.${version}.linux.${tilt_arch}.tar.gz"
           tar -xzf "${tmp}/tilt.tgz" -C "${tmp}" tilt
           sudo install -m 0755 "${tmp}/tilt" /usr/local/bin/tilt
           tilt version
@@ -186,7 +207,8 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: local-entrypoint-e2e-cni-${{ matrix.install_cni_after_init }}-${{ github.run_id }}-${{ github.run_attempt }}
+          # The arch too: GitHub keeps two same-named artifacts.
+          name: local-entrypoint-e2e-${{ matrix.arch }}-cni-${{ matrix.install_cni_after_init }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: controller/.local/backend-e2e/
           if-no-files-found: ignore
           retention-days: 7

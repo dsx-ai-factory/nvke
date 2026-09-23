@@ -18,12 +18,13 @@
 # background goroutine. This script waits (polls GetKubeadmStatus) before InstallCNI so e.g.
 # InstallCNI sees /etc/kubernetes/admin.conf after init completes.
 #
-# OVN-CHART POD READINESS AFTER InstallCNI: if gRPC succeeds but ovn-kubernetes pods flap
-# (e.g. FailedToRetrieveImagePullSecret ovncni-nvcr-ips), the chart expects NVCR/image-pull
-# secrets in the cluster; create the referenced secret(s) or use --helm-set to override chart
-# values per your values-nke.yaml. Missing /etc/cni/net.d/10-ovn-kubernetes.conf in readiness
-# probes is typical until ovnkube-node establishes OVS/control-plane SB connections; persistent
-# failure is an OVN/OVS/logs issue, not fixed by delaying the grpcurl script further.
+# OVN-CHART POD READINESS AFTER InstallCNI: the image is the public
+# ghcr.io/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu (no pull secret) and
+# the images deb pre-imports it into containerd, so a flapping pod is not a
+# registry-auth problem. Missing /etc/cni/net.d/10-ovn-kubernetes.conf in
+# readiness probes is typical until ovnkube-node establishes OVS/control-plane
+# SB connections; persistent failure is an OVN/OVS/logs issue, not fixed by
+# delaying the grpcurl script further.
 #
 # Examples:
 #   ./scripts/grpcurl-kubeadm-cni-test.sh 192.168.1.10 ovn init \\

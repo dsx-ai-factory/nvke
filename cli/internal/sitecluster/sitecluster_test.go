@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NVIDIA/nke/cli/internal/sitespec"
-	api "github.com/NVIDIA/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/cli/internal/sitespec"
+	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 
 func capiInfraCluster(t *testing.T, req api.CreateClusterJSONRequestBody) map[string]interface{} {
@@ -102,37 +102,44 @@ func TestClusterRequest_CarriesTheSiteSpecAsProvisionedHosts(t *testing.T) {
 	}
 }
 
-// TestClusterRequest_OneControlPlanePoolSizedToTheSiteSpec: every site spec
-// node joins as a control-plane node, so a pool that does not count them all
+// TestClusterRequest_ControlPlaneSizedToTheSiteSpec: every site spec node joins
+// as a control-plane node, so a control plane that does not count them all
 // leaves hosts unused and the cluster smaller than the file asked for.
-func TestClusterRequest_OneControlPlanePoolSizedToTheSiteSpec(t *testing.T) {
+func TestClusterRequest_ControlPlaneSizedToTheSiteSpec(t *testing.T) {
 	req, err := ClusterRequest(testSiteSpec())
 	if err != nil {
 		t.Fatalf("ClusterRequest returned error: %v", err)
 	}
 
-	if req.NodePools == nil || len(*req.NodePools) != 1 {
-		t.Fatalf("want exactly one node pool, got %#v", req.NodePools)
+	cp := req.ControlPlaneConfig
+	if cp == nil {
+		t.Fatal("ClusterRequest sent no controlPlaneConfig")
 	}
-	pool := (*req.NodePools)[0]
-	if !pool.ControlPlane {
-		t.Error("the pool is not a control-plane pool")
+	if cp.DesiredCount != 3 {
+		t.Errorf("desiredCount = %d, want 3 site spec nodes", cp.DesiredCount)
 	}
-	if pool.DesiredNodeCount != 3 {
-		t.Errorf("desiredNodeCount = %d, want 3 site spec nodes", pool.DesiredNodeCount)
+	if cp.SystemReservedMemory != "512Mi" {
+		t.Errorf("systemReservedMemory = %q, want the site spec's kubelet reservation", cp.SystemReservedMemory)
 	}
-	if pool.SystemReservedMemory != "512Mi" {
-		t.Errorf("systemReservedMemory = %q, want the site spec's kubelet reservation", pool.SystemReservedMemory)
+	if cp.Infra == nil {
+		t.Fatal("controlPlaneConfig carries no infra payload")
 	}
-	if pool.Infra == nil {
-		t.Fatal("the pool carries no infra payload")
-	}
-	if got := pool.Infra.MachineTemplate["kind"]; got != provisionedMachineTemplateKind {
+	if got := cp.Infra.MachineTemplate["kind"]; got != provisionedMachineTemplateKind {
 		t.Errorf("infra.machineTemplate kind = %v, want %q", got, provisionedMachineTemplateKind)
 	}
-	if pool.Infra.SpireAttestationMethod != api.SpireAttestationMethodCreateTpm {
-		t.Errorf("infra.spireAttestationMethod = %q, want %q",
-			pool.Infra.SpireAttestationMethod, api.SpireAttestationMethodCreateTpm)
+}
+
+// TestClusterRequest_SendsNoControlPlaneNodePool: CWE rejects a control-plane
+// node pool once control-plane controller provisioning is enabled, and a site
+// cluster has no workers, so the request should carry no pools at all.
+func TestClusterRequest_SendsNoControlPlaneNodePool(t *testing.T) {
+	req, err := ClusterRequest(testSiteSpec())
+	if err != nil {
+		t.Fatalf("ClusterRequest returned error: %v", err)
+	}
+
+	if req.NodePools != nil && len(*req.NodePools) != 0 {
+		t.Errorf("the request carries node pools, want none: %#v", *req.NodePools)
 	}
 }
 
@@ -203,6 +210,43 @@ func TestClusterRequest_SerialisesToTheAPIShape(t *testing.T) {
 	}
 }
 
+// TestClusterRequest_CarriesTheControlPlaneVIP checks VIP forwarding and omission.
+func TestClusterRequest_CarriesTheControlPlaneVIP(t *testing.T) {
+	inv := testSiteSpec()
+	inv.Cluster.ControlPlaneVIP = "10.0.0.100"
+
+	req, err := ClusterRequest(inv)
+	if err != nil {
+		t.Fatalf("ClusterRequest returned error: %v", err)
+	}
+	if req.ControlPlaneVIP != "10.0.0.100" {
+		t.Errorf("ControlPlaneVIP = %q, want %q", req.ControlPlaneVIP, "10.0.0.100")
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshalling the request: %v", err)
+	}
+	if !strings.Contains(string(body), `"controlPlaneVIP":"10.0.0.100"`) {
+		t.Errorf("request JSON does not carry the VIP:\n%s", body)
+	}
+
+	empty := testSiteSpec() // no VIP
+	req, err = ClusterRequest(empty)
+	if err != nil {
+		t.Fatalf("ClusterRequest returned error: %v", err)
+	}
+	if req.ControlPlaneVIP != "" {
+		t.Errorf("ControlPlaneVIP = %q, want empty", req.ControlPlaneVIP)
+	}
+	body, err = json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshalling the request: %v", err)
+	}
+	if strings.Contains(string(body), "controlPlaneVIP") {
+		t.Errorf("an empty VIP must be omitted from the JSON body, but it is present:\n%s", body)
+	}
+}
+
 func TestClusterRequest_RejectsANilSiteSpec(t *testing.T) {
 	if _, err := ClusterRequest(nil); err == nil {
 		t.Error("expected an error for a nil site spec")
@@ -214,5 +258,31 @@ func TestClusterRequest_RejectsNoNodes(t *testing.T) {
 	inv.Cluster.Nodes = nil
 	if _, err := ClusterRequest(inv); err == nil {
 		t.Error("expected an error for a site spec with no nodes")
+	}
+}
+
+// TestClusterRequest_EtcdEncryption: the request carries the site spec's
+// decision and nothing else decides it here. Unset resolves to on so a spec
+// that skipped SetDefaults still cannot produce an unencrypted cluster.
+func TestClusterRequest_EtcdEncryption(t *testing.T) {
+	on, off := true, false
+	for _, tc := range []struct {
+		name  string
+		field *bool
+		want  bool
+	}{
+		{"unset", nil, true},
+		{"true", &on, true},
+		{"false", &off, false},
+	} {
+		inv := testSiteSpec()
+		inv.Cluster.EtcdEncryption = tc.field
+		req, err := ClusterRequest(inv)
+		if err != nil {
+			t.Fatalf("%s: ClusterRequest: %v", tc.name, err)
+		}
+		if req.EtcdEncrypted != tc.want {
+			t.Errorf("%s: etcdEncrypted = %v, want %v", tc.name, req.EtcdEncrypted, tc.want)
+		}
 	}
 }

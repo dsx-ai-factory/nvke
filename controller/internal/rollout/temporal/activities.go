@@ -15,7 +15,7 @@ import (
 	temporalactivity "go.temporal.io/sdk/activity"
 	sdktemporal "go.temporal.io/sdk/temporal"
 
-	"github.com/NVIDIA/nke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
 )
 
 // heartbeatInterval is how often the long agent activities (ApplyToNode,

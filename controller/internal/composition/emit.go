@@ -56,8 +56,16 @@ dependencies:
 		if version == DerivedVersion {
 			version = "0.0.0"
 		}
-		fmt.Fprintf(&b, "  - {name: %s, version: %q, repository: %q, condition: %s.enabled}\n",
-			name, version, c.Helm.DefaultRepository, name)
+		// Helm resolves a dependency by the chart's published name, which is not
+		// always the component key -- the controller publishes as nke-controller.
+		// The alias keeps the values key and the condition on the key, so
+		// renaming the published chart does not move either.
+		alias := ""
+		if c.Helm.DefaultChart != name {
+			alias = fmt.Sprintf(", alias: %s", name)
+		}
+		fmt.Fprintf(&b, "  - {name: %s, version: %q, repository: %q, condition: %s.enabled%s}\n",
+			c.Helm.DefaultChart, version, c.Helm.DefaultRepository, name, alias)
 	}
 	return b.Bytes(), nil
 }

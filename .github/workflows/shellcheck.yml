@@ -15,7 +15,7 @@
 # Deliberately NOT path-filtered, for the reason recorded in actionlint.yml: a
 # filtered check does not report on a pull request that misses the filter, and
 # a required check that never reports leaves that pull request waiting forever.
-# See docs/branch-protection-settings.md.
+# See .github/workflows/README.md.
 
 name: Shellcheck
 
@@ -66,13 +66,17 @@ jobs:
         run: |
           set -euo pipefail
           version="$(make --no-print-directory print-SHELLCHECK_VERSION)"
+          sha256="$(make --no-print-directory print-SHELLCHECK_SHA256)"
           archive="shellcheck-v${version}.linux.x86_64.tar.xz"
           url="https://github.com/koalaman/shellcheck/releases/download/v${version}/${archive}"
           tmp="$(mktemp -d)"
           trap 'rm -rf "${tmp}"' EXIT
 
-          curl -fsSL -o "${tmp}/${archive}" "${url}"
-          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  ${tmp}/${archive}" | sha256sum --check
+          # No retry at all until now: a 504 from the release CDN failed the job
+          # on the first response. Same form as setup-kind and setup-crane.
+          curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 \
+            -o "${tmp}/${archive}" "${url}"
+          echo "${sha256}  ${tmp}/${archive}" | sha256sum --check
           tar -xJf "${tmp}/${archive}" -C "${tmp}"
           mkdir -p "${HOME}/.local/bin"
           install -m 0755 "${tmp}/shellcheck-v${version}/shellcheck" "${HOME}/.local/bin/shellcheck"

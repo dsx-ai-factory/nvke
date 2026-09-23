@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	api "github.com/NVIDIA/nke/controller/api"
+	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 
 func quietLogger() *slog.Logger {

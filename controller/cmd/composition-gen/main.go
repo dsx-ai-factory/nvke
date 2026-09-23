@@ -19,7 +19,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/NVIDIA/nke/controller/internal/composition"
+	"github.com/dsx-ai-factory/nke/controller/internal/composition"
 )
 
 func main() {

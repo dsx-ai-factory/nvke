@@ -46,8 +46,13 @@ nke-stack:
     # Chart repository is build-time only (helm resolves dependencies before
     # values exist), but the IMAGE is a value -- so the nested deployment points
     # at the nvcr mirror and its pull secret without rebuilding nke-stack.
+    #
+    # The tag is inherited from the chart's appVersion, so this repository and
+    # the chart version have to move together: only releases published after
+    # the nke-controller rename exist under this path, and a pre-rename
+    # appVersion resolves to a tag that was never pushed here.
     image:
-      repository: nvcr.io/j7sbcjl3qgta/controller
+      repository: nvcr.io/j7sbcjl3qgta/nke-controller
     imagePullSecrets:
       - name: svc-nke-ngc-imagepull
     secrets:

@@ -4,11 +4,15 @@
 # than pointing at CloudFront, which nothing would fetch. Same value as
 # controller/test/kubeadm/internal/nicovms/launch.go.
 set boot-loader http://127.0.0.1/qcow-imager.efi
-set image-url https://d1veq6e8nuk2fy.cloudfront.net/nke-isos/qcow/images/24.04/aarch64/lvm/2026-06-25/1035/nke-24.04-aarch64-lvm-2026-06-25-1035.qcow2
+# The lane rewrites this to the qcow2 it pulled from GHCR. Unreachable here for
+# the same reason as boot-loader: this repository names no CloudFront host.
+set image-url http://127.0.0.1/nke-node.qcow2
 set disk-strategy {{ .DiskSelectionStrategy }}
 
-# You probably don't need to change these
-set console-config console=tty0 console=ttyS1,115200
+# You probably don't need to change these.
+# Not a copy of the amd64 line. A virt machine's only UART is a PL011, and
+# adaptConsoleForVM rewrites ttyS1 to ttyS0, which does not exist here.
+set console-config console=tty0 console=ttyAMA0,115200
 # Not a copy of the amd64 line. pci=realloc and reboot=pci are x86-only, and
 # intel_iommu=on names a controller no ARM machine has. iommu.passthrough=1 is
 # the architecture-neutral spelling of iommu=pt.

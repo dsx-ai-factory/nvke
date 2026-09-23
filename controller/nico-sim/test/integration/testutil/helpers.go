@@ -19,8 +19,8 @@ import (
 
 	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
-	nvmconfig "github.com/NVIDIA/nke/controller/nico-sim/internal/config"
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/seed"
+	nvmconfig "github.com/dsx-ai-factory/nke/controller/nico-sim/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/seed"
 )
 
 var instanceNameSeq atomic.Uint64

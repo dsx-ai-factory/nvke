@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	nvmconfig "github.com/NVIDIA/nke/controller/nico-sim/internal/config"
+	nvmconfig "github.com/dsx-ai-factory/nke/controller/nico-sim/internal/config"
 )
 
 // Config is an alias for the nico-sim config type so test packages don't

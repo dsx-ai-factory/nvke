@@ -1,4 +1,4 @@
-module github.com/NVIDIA/nke/agent
+module github.com/dsx-ai-factory/nke/agent
 
 go 1.26.0
 

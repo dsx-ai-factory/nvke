@@ -29,7 +29,7 @@ import (
 	"k8s.io/client-go/rest"
 	k8stesting "k8s.io/client-go/testing"
 
-	"github.com/NVIDIA/nke/agent/internal/k8s"
+	"github.com/dsx-ai-factory/nke/agent/internal/k8s"
 )
 
 func TestConfigureDynamicClientRESTConfig_setsRewriteRateLimits(t *testing.T) {

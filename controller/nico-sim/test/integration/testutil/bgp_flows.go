@@ -21,7 +21,7 @@ import (
 
 	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/netutil"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/netutil"
 )
 
 const (

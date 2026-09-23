@@ -19,10 +19,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
-	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
-	"github.com/NVIDIA/nke/controller/internal/controllers/tenant"
-	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/dbwrapper"
+	dbfilters "github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/filters"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllers/tenant"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 // Reconciler reconciles tenant Kubernetes Node status into CWE nodes.
@@ -117,13 +117,18 @@ func (r *Reconciler) updateKubernetesHealth(ctx context.Context, nodeID uuid.UUI
 
 		previousConditions := lockedNode.Conditions
 		applyKubernetesNodeHealth(&lockedNode, kubeNode)
-		if lockedNode.Conditions == previousConditions {
+		if lockedNode.Conditions.Equal(previousConditions) {
 			r.logger.Debug("Kubernetes node health unchanged, skipping update",
 				"nodeID", nodeID, "nodeName", lockedNode.Name)
 			return nil
 		}
 
 		r.logger.Info("Kubernetes node health changed, updating node",
+			"nodeID", nodeID,
+			"nodeName", lockedNode.Name,
+			"changes", describeConditionChanges(previousConditions, lockedNode.Conditions),
+		)
+		r.logger.Debug("Kubernetes node health change detail",
 			"nodeID", nodeID,
 			"nodeName", lockedNode.Name,
 			"previousConditions", previousConditions,

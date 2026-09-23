@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/NVIDIA/nke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
 )
 
 // TestRegisterClusterPreflight_PanicsOnDuplicate locks in the

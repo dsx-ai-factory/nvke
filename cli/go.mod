@@ -1,9 +1,10 @@
-module github.com/NVIDIA/nke/cli
+module github.com/dsx-ai-factory/nke/cli
 
 go 1.26.5
 
 require (
-	github.com/NVIDIA/nke/controller/api v0.0.0-00010101000000-000000000000
+	github.com/dsx-ai-factory/nke/controller/api v0.0.0-00010101000000-000000000000
+	github.com/dsx-ai-factory/nke/controller/deploy/charts v0.0.0-00010101000000-000000000000
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/google/uuid v1.6.0
 	github.com/oapi-codegen/runtime v1.7.0
@@ -74,4 +75,6 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 )
 
-replace github.com/NVIDIA/nke/controller/api => ../controller/api
+replace github.com/dsx-ai-factory/nke/controller/api => ../controller/api
+
+replace github.com/dsx-ai-factory/nke/controller/deploy/charts => ../controller/deploy/charts

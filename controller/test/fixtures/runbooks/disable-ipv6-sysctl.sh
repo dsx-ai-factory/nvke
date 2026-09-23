@@ -12,9 +12,11 @@ net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1
 EOF
 
-# Update sysctl
+# Update sysctl. Not a bare "sysctl -p": that reads /etc/sysctl.conf, which
+# Ubuntu 26.04 does not ship, so it fails on a 26.04 node. --system reads every
+# sysctl.d directory and /etc/sysctl.conf when it exists, so it works on both.
 echo "Updating sysctl..."
-sysctl -p
+sysctl --system
 
 # Reload sysctl via procps restart
 echo "Reloading sysctl..."

@@ -8,7 +8,7 @@ import (
 
 	"github.com/uptrace/bun"
 
-	dbpackage "github.com/NVIDIA/nke/controller/internal/db"
+	dbpackage "github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 //nolint:gochecknoinits // this is the typical way to register bun migrations

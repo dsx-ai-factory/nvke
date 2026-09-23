@@ -6,8 +6,8 @@ package server
 import (
 	"context"
 
-	"github.com/NVIDIA/nke/controller/api"
-	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 type cniPluginsService struct{}

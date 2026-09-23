@@ -4,8 +4,8 @@ Builds the two Debian packages `nke-agent` installs when it sets up OVN:
 
 | Package | Contents | Installed to |
 |---|---|---|
-| `nke-cni-ovn-charts-<stream>` | The nv-ngn `ovn-kubernetes` chart, unpacked | `/etc/dgx/ovn-kubernetes/` |
-| `nke-cni-ovn-images-<stream>` | `ovn-c` and `ovnkube-c`, as one docker-archive | `/usr/lib/nke/cni-ovn/<stream>/`, imported into containerd by `postinst` |
+| `nke-cni-ovn-charts-<stream>` | The `ovn-kubernetes` Helm chart, unpacked | `/etc/dgx/ovn-kubernetes/` |
+| `nke-cni-ovn-images-<stream>` | `ovn-kube-ubuntu`, as one docker-archive | `/usr/lib/nke/cni-ovn/<stream>/`, imported into containerd by `postinst` |
 
 `provision.sh` stages both into the image under `/usr/lib/nke/debs` as a local
 apt repo. Nothing is installed at bake time: `nke-agent` installs them by name
@@ -22,52 +22,58 @@ OVN's: `bundle.sh`, the charts spec and the lock.
 `dpkg-query -L` lists for the charts package. The chart is unpacked at build
 time so both paths hold with no maintainer script.
 
-`values-nke.yaml` runs OVS on the host (`ovs-node: false`), so the node image
-installs `openvswitch-switch`; the agent checks for `ovs-vsctl` before helm.
+`values-nke.yaml` is written by `bundle.sh`, not shipped upstream. It sets
+`tags.ovs-node: false`, so OVS stays on the host (the node image installs
+`openvswitch-switch`; the agent checks for `ovs-vsctl` before helm), and pins
+`global.image.repository` and `tag` to the one image the images package
+imports into containerd. The chart has no `values.yaml`: its defaults are
+`values-single-node-zone.yaml`, which helm must be given before
+`values-nke.yaml`.
 
 Every stream unpacks to the same directory, so the charts package `Provides`
 and `Conflicts` with `nke-cni-ovn-charts`: one stream per node.
 
 ## Access
 
-The chart comes from `helm.ngc.nvidia.com/nv-ngn/sdn` and the images from
-`nvcr.io/nv-ngn/sdn`. Both need an NGC API key with access to the `nv-ngn` org,
-in `NGC_API_KEY`, for `make lock` and for every build. `fetch-artifacts.sh`
-skips these debs when the key is unset, so a CI image has no OVN packages until
-the workflow gets that secret.
+Both come unauthenticated from the public
+[github.com/ovn-kubernetes/ovn-kubernetes](https://github.com/ovn-kubernetes/ovn-kubernetes)
+project: the chart is `helm/ovn-kubernetes/` in the `v<stream>` source tarball
+(there is no chart repository), the image is
+`ghcr.io/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu:release-<X.Y>`. That tag
+moves with every merge to the branch, so the lock pins the resolved digest and
+only `make lock` re-reads it — a re-run adopts whatever has merged there since,
+unlike Calico's immutable `vX.Y.Z` refs, so diff the digest change on review.
 
 ## Building
 
 ```bash
-NGC_API_KEY=... make debs OUT_DIR=/absolute/path
+make debs OUT_DIR=/absolute/path
 ```
 
-Linux only. `debs` runs `bundle` first, which verifies the chart and every
-image against `lock/<arch>/<stream>.lock` before anything is unpacked, and reindexes
-`OUT_DIR` with `dpkg-scanpackages` when it finishes. `make repro-check` builds
-twice and compares every `.deb` byte-for-byte.
+Linux only. `debs` runs `bundle` first, which verifies the chart source and
+the image against `lock/<arch>/<stream>.lock` before anything is unpacked,
+and reindexes `OUT_DIR` with `dpkg-scanpackages` when it finishes. `make
+repro-check` builds twice and compares every `.deb` byte-for-byte.
 
 ## Bumping the stream
 
-Set `OVN_STREAMS`, refresh the lock, review it, commit it:
+`OVN_STREAMS` is `X.Y.0`: the stream is the chart's release, and the image
+tag is `release-X.Y`; `bundle.sh` refuses a lock whose `image` tag differs.
+Seed the amd64 lock's `image` line by hand, lock amd64 first (other arches
+take the image list from it), review, commit:
 
 ```bash
-NGC_API_KEY=... make lock OVN_STREAMS=1.4.5
+printf 'image ghcr.io/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu:release-1.5\n' >lock/amd64/1.5.0.lock
+make lock OVN_STREAMS=1.5.0
+make lock OVN_STREAMS=1.5.0 ARCH=arm64
 git diff -- lock
 ```
-
-The image *list* comes from the lock's existing `image` lines. Check them
-against the new chart's `values-images.yaml`: with `values-nke.yaml` only
-`ovnkube-control-plane` and `ovnkube-single-node-zone` run, so `ovn-c` and
-`ovnkube-c` at the tag that file pins are all it needs. The digests `make lock`
-writes should match the `sha256` fields beside those tags.
 
 Keep the default stream in step with `defaultOvnCniChartStream` in
 `agent/internal/agent/cni.go`.
 
 ## Size
 
-`ovn-c` and `ovnkube-c` unpack to about 2.2 GB together, so the images deb is
-the largest thing in the node image. The other charts in the legacy bundle
-(multus, sriov-device-plugin, sdn-mutator, sdn-monitoring, ovn-sdn-debug) and
-their images are not packaged: nothing in this repository installs them.
+`ovn-kube-ubuntu` is the only image: every OVN role runs from it, so the
+images package is about 350 MiB. `ovs-node`, `ovn-ipsec` and the DPU
+subcharts ship in the chart but stay tagged off.

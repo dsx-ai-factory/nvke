@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/NVIDIA/nke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nke/controller/internal/capi"
 )
 
 const (

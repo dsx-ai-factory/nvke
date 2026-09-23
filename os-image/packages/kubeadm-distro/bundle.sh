@@ -73,8 +73,9 @@ component_url() {
 # fetch writes url to a scratch path; the caller moves it into place only once
 # it verifies, so a partial body never appears under the artifact's name.
 # --retry-all-errors is left off so a pin typo fails on the first 404.
+# No --retry-delay: it replaces curl's exponential backoff with a flat wait.
 fetch() {
-  curl -fsSL --retry 5 --retry-delay 2 --max-time 600 --max-filesize "$MAX_ARTIFACT_BYTES" -o "$2" "$1" || die "download $1 failed"
+  curl -fsSL --retry 8 --max-time 600 --max-filesize "$MAX_ARTIFACT_BYTES" -o "$2" "$1" || die "download $1 failed"
   # --max-filesize is advisory: a chunked response has no Content-Length for
   # curl to check it against, so re-check the ceiling on what landed.
   local size; size="$(stat -c %s "$2")"

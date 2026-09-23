@@ -115,7 +115,7 @@ components:
     displayName: NKE controller (cloud-workflow-engine)
     helm:
       defaultRepository: oci://ghcr.io/dsx-ai-factory/nke/charts
-      defaultChart: controller
+      defaultChart: nke-controller
       # Version is derived from `git describe --match controller/v*`, never
       # authored: the pin does not exist until the tag does.
       defaultVersion: derived

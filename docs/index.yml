@@ -8,6 +8,8 @@ navigation:
     path: concepts.md
   - page: Architecture
     path: architecture.md
+  - page: Your First Cluster
+    path: first-cluster.md
 
   - section: Site Controller Bootstrap
     contents:
@@ -19,6 +21,8 @@ navigation:
         path: site-bootstrap/configuration.md
       - page: Deploy Repository
         path: site-bootstrap/deploy-repository.md
+      - page: Infrastructure Providers
+        path: site-bootstrap/infrastructure-providers.md
       - page: Pre-Provisioned Nodes
         path: site-bootstrap/pre-provisioned-nodes.md
       - page: Custom Base OS

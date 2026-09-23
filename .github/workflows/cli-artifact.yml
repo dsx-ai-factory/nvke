@@ -1,0 +1,163 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: CLI Artifact GHCR
+
+# Publishes nkectl binaries to GHCR as OCI artifacts, alongside the existing
+# GitHub Release. Tags are OS/ARCH-suffixed only (e.g. v0.1.0-linux-amd64),
+# same as os-image -- no `oras manifest index create` step, so unlike
+# agent-artifact.yml there is no bare `:version` tag a consumer can pull with
+# `--platform` to auto-select. Pull the suffixed tag directly.
+#
+# nkectl also ships darwin builds -- every existing `--artifact-platform`
+# use in this repo is linux-only, so this is the first time that flag sees a
+# `darwin/*` value. Watch the first real run.
+
+# Called by release.yml after its build, so a cli/v* tag produces one set of
+# binaries rather than four independent ones, and this runs behind the licence
+# gate release.yml already enforces. The tag trigger is gone for that reason.
+#
+# workflow_dispatch still works and still builds: dist_artifact is empty there,
+# so the build step below runs instead of the download.
+on:
+  workflow_call:
+    inputs:
+      dist_artifact:
+        description: Artifact holding the binaries release.yml built. Empty means build here.
+        type: string
+        required: false
+        default: ""
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: CLI Artifact GHCR-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'dsx-ai-factory/nke'
+    name: Publish binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      security-events: write  # the malware scan uploads SARIF
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      - name: Read pinned tool versions
+        id: versions
+        run: |
+          echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+        with:
+          version: ${{ steps.versions.outputs.oras_version }}
+
+      - name: Resolve version and tags
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}/cli"
+
+          version="$(git describe --match 'cli/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          version="${version#cli/}"
+
+          aliases=("sha-${GITHUB_SHA}")
+          if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+            aliases+=("edge")
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            aliases+=("${GITHUB_REF_NAME#cli/}")
+          fi
+
+          {
+            echo "repo=${repo}"
+            echo "version=${version}"
+            echo "aliases=${aliases[*]}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Publishing ${repo} ${version} as: ${aliases[*]}"
+
+      # One build per release. release.yml builds and checksums; this consumes
+      # exactly those bytes, so checksums.txt describes what ships here too.
+      - name: Download the release build
+        if: inputs.dist_artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ inputs.dist_artifact }}
+          path: dist
+
+      - name: Build binaries
+        if: inputs.dist_artifact == ''
+        run: make -C cli build-cross DIST="${GITHUB_WORKSPACE}/dist"
+
+      - name: Malware scan
+        uses: ./.github/actions/malware-scan
+        with:
+          scan_path: 'dist'
+          category: 'clamav-cli-artifact'
+          output_file: 'clamav-cli-artifact.sarif'
+
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | oras login ghcr.io \
+            --username "${{ github.actor }}" --password-stdin
+
+      - name: Push per-platform artifacts
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          ALIASES: ${{ steps.meta.outputs.aliases }}
+          REPO: ${{ steps.meta.outputs.repo }}
+        run: |
+          set -euo pipefail
+          read -ra aliases <<< "${ALIASES}"
+
+          for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os="${platform%/*}"
+            arch="${platform#*/}"
+            bin="nkectl-${os}-${arch}"
+
+            tags=""
+            for alias in "${aliases[@]}"; do
+              tags="${tags:+${tags},}${alias}-${os}-${arch}"
+            done
+
+            ( cd dist && oras push "${REPO}:${tags}" \
+                --artifact-type application/vnd.nvidia.nke.cli.v1 \
+                --artifact-platform "${platform}" \
+                --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+                --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+                --annotation "org.opencontainers.image.version=${VERSION}" \
+                --annotation "org.opencontainers.image.licenses=Apache-2.0" \
+                --annotation "org.opencontainers.image.title=nkectl" \
+                "${bin}:application/octet-stream" )
+          done
+
+      - name: Show published artifact
+        shell: bash
+        env:
+          REPO: ${{ steps.meta.outputs.repo }}
+        run: |
+          set -euo pipefail
+          oras manifest fetch --pretty "${REPO}:sha-${GITHUB_SHA}-linux-amd64"

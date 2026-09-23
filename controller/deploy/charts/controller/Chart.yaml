@@ -1,12 +1,12 @@
 ---
 apiVersion: v2
-name: controller
+name: nke-controller
 
 # The chart name is the last path segment of the OCI repository it is pushed
-# to, so this is what puts the chart at <registry>/nke/charts/controller. The
-# service it deploys is still the cloud-workflow-engine binary; nameOverride in
-# values.yaml pins the rendered resource names and labels to that older name so
-# the rename is an artifact-location change only.
+# to, so this is what puts the chart at <registry>/nke/charts/nke-controller.
+# The service it deploys is still the cloud-workflow-engine binary; nameOverride
+# in values.yaml pins the rendered resource names and labels to that older name
+# so the rename is an artifact-location change only.
 description: A Helm chart to deploy the NKE controller service
 
 # A chart can be either an 'application' or a 'library' chart.

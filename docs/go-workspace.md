@@ -1,6 +1,6 @@
 # The Go workspace
 
-This repository holds nine Go modules. `go.work` at the root ties together all
+This repository holds eleven Go modules. `go.work` at the root ties together all
 of them, so one `make build` covers the whole tree and one Go toolchain version
 applies across it.
 
@@ -15,10 +15,12 @@ when the first two go stale.
 | `cli` | yes | builds from public dependencies |
 | `cluster-api-provider-provisioned` | yes | builds from public dependencies |
 | `controller/api` | yes | builds from public dependencies |
+| `controller/deploy/charts` | yes | no dependencies; embeds the repository's Helm charts for nkectl |
 | `controller/hack/capd-reboot-controller` | yes | builds from public dependencies |
 | `controller/test/e2e` | yes | builds from public dependencies |
 | `controller` | yes | public dependencies + one vendored INTERNAL module |
 | `controller/nico-sim` | yes | builds from public dependencies |
+| `management-engine` | yes | builds from public dependencies |
 | `os-image` | yes | builds from public dependencies |
 
 ### The vendored dependency

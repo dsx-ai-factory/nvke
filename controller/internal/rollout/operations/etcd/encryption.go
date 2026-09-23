@@ -11,9 +11,9 @@ import (
 
 	"github.com/google/uuid"
 
-	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
+	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 
-	"github.com/NVIDIA/nke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
 )
 
 const (

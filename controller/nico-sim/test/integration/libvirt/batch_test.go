@@ -15,7 +15,7 @@ import (
 
 	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
-	"github.com/NVIDIA/nke/controller/nico-sim/test/integration/testutil"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/test/integration/testutil"
 )
 
 // TestBatchProductionCloudInit runs N production cloud-init instances in parallel
@@ -75,7 +75,7 @@ func TestBatchProductionCloudInit(t *testing.T) {
 	t.Logf("Using image URL: %s", imageURL)
 
 	ipxeScript := fmt.Sprintf(`#!ipxe
-set boot-loader https://d3mq564cn7sth7.cloudfront.net/nke-isos/qcow/efi/x86_64/2026-03-10/1773155704/qcow-imager.efi
+set boot-loader https://example.test/nke-isos/qcow/efi/x86_64/2026-03-10/1773155704/qcow-imager.efi
 set image-url %s
 set disk-strategy smallest
 set console-config console=tty0 console=ttyS1,115200

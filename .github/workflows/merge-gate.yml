@@ -117,7 +117,9 @@ jobs:
     uses: ./.github/workflows/go-work-check.yml
     permissions:
       contents: read
-    secrets: inherit
+    # The one secret it uses, not inherit. go-work-check.yml declares it.
+    secrets:
+      NKE_INTERNAL_RO_TOKEN: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
 
   chart:
     uses: ./.github/workflows/chart.yml
@@ -169,6 +171,14 @@ jobs:
   # govulncheck needs more than contents:read -- it uploads SARIF. A called
   # workflow cannot be granted less than its jobs request, or the whole file
   # fails to start with no jobs and no error message.
+  # The fourth generated-artifact check. The other three (generated, chart via
+  # composition, and the proto/OpenAPI diffs) were already members; this one
+  # was not, so THIRD_PARTY_NOTICES.md drift could land on main.
+  notices:
+    uses: ./.github/workflows/notices-check.yml
+    permissions:
+      contents: read
+
   govulncheck:
     uses: ./.github/workflows/govulncheck.yml
     permissions:
@@ -195,6 +205,7 @@ jobs:
       - docs-check
       - lint
       - gofail
+      - notices
       - govulncheck
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -23,8 +23,8 @@ import (
 	"google.golang.org/grpc/status"
 	yaml "gopkg.in/yaml.v2"
 
-	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
-	nkeutils "github.com/NVIDIA/nke/agent/pkg/utils"
+	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	nkeutils "github.com/dsx-ai-factory/nke/agent/pkg/utils"
 )
 
 const (

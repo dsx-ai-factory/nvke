@@ -31,12 +31,17 @@ if [[ "$2" == */agent ]]; then
 fi
 ''')
                 make.chmod(0o755)
+                machine = {"amd64": "x86_64", "arm64": "aarch64"}[arch]
+                uname = tools / "uname"
+                uname.write_text(f'#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo {machine};; esac\n')
+                uname.chmod(0o755)
                 artifacts = root / "artifacts"
                 result = subprocess.run(
                     ["bash", str(script)],
                     env={**os.environ, "PATH": f"{tools}:{os.environ['PATH']}",
                          "ARCH": arch, "ARTIFACTS_DIR": str(artifacts),
-                         "NGC_API_KEY": ""},
+                         "SOURCE_ROOT": str(script.parents[3]),
+                         "NGC_API_KEY": "", "NKE_PACKAGE_BUILDER": "host"},
                     capture_output=True, text=True, check=False,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -44,6 +49,31 @@ fi
                 self.assertTrue((artifacts / "nke-agent-spire.conf").is_file())
                 self.assertFalse((artifacts / "nke-agent").exists())
                 self.assertFalse((artifacts / "nke-agent.service").exists())
+
+    def test_rejects_source_root_that_does_not_own_the_script(self):
+        script = Path(__file__).with_name("fetch-artifacts.sh")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            source.mkdir()
+            artifacts = root / "artifacts"
+
+            result = subprocess.run(
+                ["bash", str(script)],
+                env={
+                    **os.environ,
+                    "ARCH": "amd64",
+                    "ARTIFACTS_DIR": str(artifacts),
+                    "SOURCE_ROOT": str(source),
+                },
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("does not own", result.stderr)
+            self.assertFalse(artifacts.exists())
 
 
 if __name__ == "__main__":

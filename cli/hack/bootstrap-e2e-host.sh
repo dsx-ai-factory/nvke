@@ -7,7 +7,8 @@
 # locally. cli/e2e/bootstrap/run.sh needs a standalone containerd with nerdctl
 # and buildkitd, and must not be able to reach Docker.
 #
-#   install-runtime   nerdctl-full pinned by NERDCTL_VERSION/NERDCTL_FULL_SHA256;
+#   install-runtime   nerdctl-full pinned by NERDCTL_VERSION and the
+#                     NERDCTL_FULL_SHA256_<ARCH> for the host's architecture;
 #                     a containerd on CONTAINERD_ADDRESS with its own data root;
 #                     a buildkitd on BUILDKIT_HOST building into
 #                     CONTAINERD_NAMESPACE.
@@ -49,11 +50,20 @@ wait_for_socket() {
 # install_runtime installs nerdctl-full and starts the standalone containerd
 # and buildkitd, pinned by the environment guarded below.
 install_runtime() {
-  : "${NERDCTL_VERSION:?}" "${NERDCTL_FULL_SHA256:?}" "${CONTAINERD_ADDRESS:?}" "${BUILDKIT_HOST:?}" "${CONTAINERD_NAMESPACE:?}"
-  archive="nerdctl-full-${NERDCTL_VERSION}-linux-amd64.tar.gz"
-  curl -fsSL -o "/tmp/${archive}" \
+  : "${NERDCTL_VERSION:?}" "${CONTAINERD_ADDRESS:?}" "${BUILDKIT_HOST:?}" "${CONTAINERD_NAMESPACE:?}"
+  # One checksum per arch. A single pin passes on the wrong-arch archive and
+  # defers the failure to the first exec.
+  deb_arch="$(dpkg --print-architecture)"
+  case "${deb_arch}" in
+    amd64) : "${NERDCTL_FULL_SHA256_AMD64:?}"; sha256="${NERDCTL_FULL_SHA256_AMD64}" ;;
+    arm64) : "${NERDCTL_FULL_SHA256_ARM64:?}"; sha256="${NERDCTL_FULL_SHA256_ARM64}" ;;
+    *) echo "nerdctl-full publishes no release asset for ${deb_arch}" >&2; return 1 ;;
+  esac
+  archive="nerdctl-full-${NERDCTL_VERSION}-linux-${deb_arch}.tar.gz"
+  # A 500 from the releases CDN otherwise ends the lane before the test starts.
+  curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 -o "/tmp/${archive}" \
     "https://github.com/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/${archive}"
-  echo "${NERDCTL_FULL_SHA256}  /tmp/${archive}" | sha256sum -c -
+  echo "${sha256}  /tmp/${archive}" | sha256sum -c -
   sudo tar Cxzf /usr/local "/tmp/${archive}"
 
   # A dedicated unit, config and data root, so this never reuses Docker's

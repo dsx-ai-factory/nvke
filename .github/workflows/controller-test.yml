@@ -88,9 +88,15 @@ jobs:
         include:
           # `make test` here already drops ./integration-test, which needs a
           # running CWE on port 8080.
+          # test-integration-local adds the two `integration`-tagged packages.
+          # Neither needs a service, and until now nothing ran either: the
+          # tagged file in ./internal/agent was not even type-checked, because
+          # no target vetted that package with the tag.
           - module: controller
-            run: make test
+            run: make test test-integration-local
           - module: controller/nico-sim
+            run: make test
+          - module: controller/deploy/charts
             run: make test
           # Every module here has a Makefile with a `test` target, so all of
           # them go through `make test` and pick up -race from GO_TEST_FLAGS
@@ -148,8 +154,10 @@ jobs:
   #     compile-only assertion for the whole suite.
   #   - controller/e2e/... is behind `-tags gofail`; `go list ./e2e/...`
   #     reports "matched no packages" without it.
-  #   - the teleport and nico-vms integration suites are behind
-  #     `-tags integration`. No workflow anywhere sets a Go build tag.
+  #   - the nico-sim real-VM suites are behind `-tags integration` and need
+  #     libvirt or qemu, a bridge and a node image. The teleport and
+  #     internal/agent suites carry the same tag but need nothing, so the test
+  #     job above runs them for real rather than vetting them here.
   #   - controller/integration-test is dropped from `make test` by a grep,
   #     because it needs a CWE on port 8080.
   #
@@ -172,9 +180,6 @@ jobs:
           - name: e2e gofail
             dir: controller
             run: go vet -tags gofail ./e2e/...
-          - name: teleport integration
-            dir: controller
-            run: go vet -tags integration ./internal/teleport/...
           - name: nico-sim integration
             dir: controller/nico-sim
             run: go vet -tags integration ./test/integration/...

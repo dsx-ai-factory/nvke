@@ -22,8 +22,8 @@ import (
 
 	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/app"
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/seed"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/app"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/seed"
 )
 
 // TestEnv wraps a running nico-sim app and httptest server for integration testing.

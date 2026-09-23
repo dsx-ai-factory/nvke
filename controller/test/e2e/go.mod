@@ -1,21 +1,21 @@
-module github.com/NVIDIA/nke/controller/test/e2e
+module github.com/dsx-ai-factory/nke/controller/test/e2e
 
 go 1.26.5
 
 require (
-	github.com/NVIDIA/nke/controller/api v0.0.0-00010101000000-000000000000
+	github.com/dsx-ai-factory/nke/controller/api v0.0.0-00010101000000-000000000000
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
 	github.com/oapi-codegen/runtime v1.7.0
-	github.com/onsi/ginkgo/v2 v2.32.2
-	github.com/onsi/gomega v1.43.0
+	github.com/onsi/ginkgo/v2 v2.33.0
+	github.com/onsi/gomega v1.43.1
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/sync v0.23.0
 	k8s.io/api v0.37.0
 	k8s.io/apimachinery v0.37.0
 	k8s.io/client-go v0.37.0
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd
-	sigs.k8s.io/controller-runtime v0.25.0
+	sigs.k8s.io/controller-runtime v0.25.1
 	sigs.k8s.io/yaml v1.6.0
 )
 
@@ -81,4 +81,4 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 )
 
-replace github.com/NVIDIA/nke/controller/api => ../../api
+replace github.com/dsx-ai-factory/nke/controller/api => ../../api

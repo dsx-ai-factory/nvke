@@ -32,20 +32,21 @@
 # agent.startSecureServer to grpc.Server.Serve, and it reached main behind a
 # green check because this job reported it without failing on it. See #89.
 #
-# controller/nico-sim is waived rather than gated:
+# GOVULNCHECK_WAIVED is empty. Nothing is waived. controller/nico-sim was, for
+# GO-2026-4736 on gobgp v3, until it moved to gobgp v4: the advisory restricts
+# the v4 entry to pkg/server, and nico-sim imports only pkg/packet/bgp, so the
+# symbol is no longer called.
 #
-#   GO-2026-4736  github.com/osrg/gobgp/v3 v3.37.0  Fixed in: N/A
+# A waiver is scoped to the advisory rather than the module, as
+# <module>=<OSV-id>, so a second, unrelated reachable vulnerability in that
+# module still fails the gate -- which a module-wide waiver would have hidden --
+# and a waived advisory that stops being called fails and asks to be un-waived.
+# An exclusion nobody is forced to revisit is how the previous single-module
+# scope survived long after the dependency that justified it was gone.
 #
-# It is reachable for real -- internal/bgp/speaker.go calls ParseBGPMessage on
-# the wire path -- and it cannot be bumped away. The advisory lists gobgp,
-# gobgp/v3 and gobgp/v4 all as `introduced: 0` with no fixed version, so there
-# is no release to move to. It needs an upstream fix or a documented VEX Not
-# Affected, neither of which is a CI change.
-#
-# The waiver is written so it cannot outlive its reason: a waived module that
-# comes back CLEAN fails this job and asks to be un-waived. An exclusion nobody
-# is forced to revisit is how the previous single-module scope survived long
-# after the dependency that justified it was gone.
+# GOVULNCHECK_WAIVER_REVIEW warns past its date rather than failing. A date that
+# broke the build would get the whole mechanism deleted the first time it fired;
+# the un-waive check is what actually stops rot.
 #
 # The gate runs after the upload so that a failure still leaves the findings in
 # the Security tab rather than losing them with the job.
@@ -99,6 +100,8 @@ jobs:
   discover-modules:
     name: Discover workspace modules
     runs-on: ubuntu-latest
+    # Same as license.yml's discover-modules, which does the same work.
+    timeout-minutes: 5
     if: github.repository == 'dsx-ai-factory/nke'
     outputs:
       modules: ${{ steps.find.outputs.modules }}
@@ -153,7 +156,9 @@ jobs:
           {
             echo "go=$(make --no-print-directory print-GOVULNCHECK_GO_VERSION)"
             echo "tool=$(make --no-print-directory print-GOVULNCHECK_VERSION)"
-            echo "waived=$(make --no-print-directory print-GOVULNCHECK_WAIVED_MODULES)"
+            echo "waived=$(make --no-print-directory print-GOVULNCHECK_WAIVED)"
+            echo "waiver_owner=$(make --no-print-directory print-GOVULNCHECK_WAIVER_OWNER)"
+            echo "waiver_review=$(make --no-print-directory print-GOVULNCHECK_WAIVER_REVIEW)"
           } >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -239,7 +244,7 @@ jobs:
         # paths under GITHUB_WORKSPACE, so against RUNNER_TEMP it silently
         # returns '' and skips the upload while the job still reports green.
         if: always() && steps.scan.outputs.sarif != ''
-        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         with:
           sarif_file: ${{ steps.scan.outputs.sarif }}
           checkout_path: ${{ github.workspace }}/${{ matrix.module.dir }}
@@ -258,5 +263,7 @@ jobs:
         shell: bash
         env:
           GOPROXY: "off"
-          GOVULNCHECK_WAIVED_MODULES: ${{ steps.versions.outputs.waived }}
+          GOVULNCHECK_WAIVED: ${{ steps.versions.outputs.waived }}
+          GOVULNCHECK_WAIVER_OWNER: ${{ steps.versions.outputs.waiver_owner }}
+          GOVULNCHECK_WAIVER_REVIEW: ${{ steps.versions.outputs.waiver_review }}
         run: ./hack/govulncheck-gate.sh "${{ matrix.module.dir }}"

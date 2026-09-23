@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NVIDIA/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/controller/api"
 )
 
 // Mode comes from PERMISSIVE_MODE, outside this package. Only ModePermissive

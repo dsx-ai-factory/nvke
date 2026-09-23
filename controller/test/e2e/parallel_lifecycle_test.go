@@ -12,8 +12,8 @@ import (
 	. "github.com/onsi/gomega"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/NVIDIA/nke/controller/api"
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/nke"
+	"github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 )
 
 // parallelClusterStagger spaces out create/delete requests so the clusters'
@@ -38,6 +38,7 @@ var _ = Describe("Parallel tenant cluster lifecycle", Ordered, ContinueOnFailure
 	Label("nico-vms", "extended", "parallel-lifecycle"), func() {
 		shapes := []clusterShape{
 			{
+				// Needs an image carrying OVN debs; one built here has none.
 				cniPlugin:         CNIPluginOVN,
 				controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 				workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},

@@ -64,6 +64,13 @@ on:
       - 'Makefile'
       - '.github/workflows/go-work-check.yml'
   workflow_call:
+    secrets:
+      NKE_INTERNAL_RO_TOKEN:
+        description: >-
+          Read-only token for the private cluster-api-provider-nico module.
+          Optional: without it the full re-derivation takes its documented
+          skip branch, which is what a fork pull request already gets.
+        required: false
   workflow_dispatch:
 
 permissions: {}

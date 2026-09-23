@@ -1,9 +1,19 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-ARG BASE_REGISTRY=docker.io
+# Base images for the image this repository ships. Fully qualified and
+# digest-pinned in an ARG, which is the form Dependabot can parse -- a FROM
+# whose registry is a variable is not, which is why these followed a floating
+# tag until now.
+#
+# Internal builds override these rather than BASE_REGISTRY, for example
+#   docker build --build-arg GOLANG_IMAGE=dockerhub.nvidia.com/golang:1.26.8@sha256:... .
+# A digest is content-addressed, so a mirror serving the same content answers
+# to the same digest.
+ARG GOLANG_IMAGE=docker.io/golang:1.26.8@sha256:6c2a5538f964f1c82f97ad14988bf05de100d922d159d0e398b54c7b0ca0c6c9
+ARG ALPINE_IMAGE=docker.io/alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
-FROM --platform=${BUILDPLATFORM} ${BASE_REGISTRY}/golang:1.26.6 AS builder
+FROM --platform=${BUILDPLATFORM} ${GOLANG_IMAGE} AS builder
 ARG TARGETOS
 ARG TARGETARCH
 ARG BUILD_VERSION=dev
@@ -19,10 +29,10 @@ RUN cd cluster-api-provider-provisioned && \
       -o /out/cluster-api-provider-provisioned \
       ./cmd/manager
 
-FROM --platform=${BUILDPLATFORM} ${BASE_REGISTRY}/alpine:3.24.1 AS certificates
+FROM --platform=${BUILDPLATFORM} ${ALPINE_IMAGE} AS certificates
 RUN apk add --no-cache ca-certificates
 
-FROM ${BASE_REGISTRY}/alpine:3.24.1
+FROM ${ALPINE_IMAGE}
 COPY --from=certificates /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /out/cluster-api-provider-provisioned /usr/local/bin/cluster-api-provider-provisioned
 COPY LICENSE NOTICE /licenses/

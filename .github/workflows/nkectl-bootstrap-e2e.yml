@@ -20,6 +20,21 @@
 # Advisory, not gating: this lane is not in merge-gate.yml's `gate` and has no
 # workflow_call for one to reach it by, so a red run has to be looked at
 # deliberately rather than blocking a merge.
+#
+# WHY IT STAYS ADVISORY, so the question stops being reopened. It fails the
+# tests README.md's "Adding a required gate member" asks, and invariant 5
+# there is explicit that such work stays advisory:
+#
+#   Self-hosted runner.  Both legs need linux-*-cpu16 for a bootstrap cluster
+#   and three nested control planes. merge-gate.yml runs on `pull_request`, and
+#   a fork pull request cannot reach the NVIDIA pool at all.
+#
+#   Latency.  12-17 minutes against a gate whose wall clock is about nine.
+#
+# Making it required would mean `gate` never reporting on a fork pull request,
+# so it could never merge -- the same failure the required-member rules exist
+# to prevent. Making it gateable means removing the runner dependency first,
+# which is a change to the lane, not to its gate membership.
 name: nkectl bootstrap e2e
 
 # No workflow_call: this lane left the merge gate when it moved to the mirror
@@ -37,6 +52,13 @@ on:
       # The suite builds CWE from controller/Dockerfile, so a controller-only
       # change has to run it too.
       - 'controller/**'
+      # controller/Dockerfile builds against the committed vendor/ tree, not a
+      # module download, so a vendoring change can break the image the same
+      # way a controller/** change can. Same paths controller-test.yml watches
+      # for the same reason.
+      - 'go.work'
+      - 'go.work.sum'
+      - 'vendor/**'
       - '.github/workflows/nkectl-bootstrap-e2e.yml'
   # Twice a day as well: a schedule ignores the paths above, so a break they
   # filtered out still surfaces within twelve hours.
@@ -54,11 +76,21 @@ concurrency:
 
 jobs:
   e2e:
-    name: e2e
+    name: e2e (${{ matrix.arch }})
     # The bootstrap cluster and three nested control planes need the 16-CPU
-    # pool; pull requests reach it through the mirror branch.
-    runs-on: linux-amd64-cpu16
+    # pool; pull requests reach it through the mirror branch. Neither leg needs
+    # /dev/kvm.
+    runs-on: ${{ matrix.runner }}
     if: github.repository == 'dsx-ai-factory/nke'
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: linux-amd64-cpu16
+          - arch: arm64
+            runner: linux-arm64-cpu16
     # A full run takes 12-17 minutes on this pool, most of it the node image
     # build and CWE's three sequential control-plane joins. The margin covers
     # a cold image cache and a slow mirror; queue time does not count.
@@ -79,14 +111,13 @@ jobs:
       # run.sh writes it into the site inventory and uses it for every fixture
       # host's pre-provisioned SPIRE agent configuration.
       NKECTL_E2E_SPIRE_TRUST_DOMAIN: nkectl-e2e.example.test
-      # The postgres chart is an OCI artifact on Docker Hub too, and helm's
-      # pull of it counts against the same limit.
-      NKECTL_CWE_POSTGRES_CHART: oci://dc.local.gha-runners.nvidia.com/bitnamicharts/postgresql
       # nerdctl >= 1.7.0 is kind's stated minimum for its nerdctl provider.
       # nerdctl-full bundles a matching containerd, runc and CNI plugins, so
       # nothing here depends on the containerd shipped with the image's Docker.
       NERDCTL_VERSION: 2.3.5
-      NERDCTL_FULL_SHA256: b697295c623639734aaab737523c808fd3cc8d3046039fd94fff1744e4c317aa
+      # Both, from the release's SHA256SUMS. The script picks by host arch.
+      NERDCTL_FULL_SHA256_AMD64: b697295c623639734aaab737523c808fd3cc8d3046039fd94fff1744e4c317aa
+      NERDCTL_FULL_SHA256_ARM64: 6e4b687f1d138e750a3c8372abc0f81d3d7490b6359c48c0562fc7dfe98859b2
       # A standalone socket and data root. Docker's containerd.io package owns
       # a unit also named `containerd.service`, on
       # /run/containerd/containerd.sock; reusing it would mean this job is
@@ -196,9 +227,9 @@ jobs:
           CAPI_VERSION: ${{ steps.versions.outputs.capi_version }}
         run: |
           set -Eeuo pipefail
-          curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused \
+          curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 --retry-connrefused \
             -o /tmp/clusterctl \
-            "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPI_VERSION}/clusterctl-linux-amd64"
+            "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPI_VERSION}/clusterctl-linux-$(dpkg --print-architecture)"
           chmod +x /tmp/clusterctl
           sudo mv /tmp/clusterctl /usr/local/bin/clusterctl
           got="$(clusterctl version -o short)"
@@ -224,7 +255,7 @@ jobs:
           fi
           sudo apt-get update
           sudo apt-get install -y --allow-change-held-packages \
-            "linux-modules-extra-$(uname -r)"
+            jq "linux-modules-extra-$(uname -r)"
           sudo modprobe tpm_vtpm_proxy
           modinfo tpm_vtpm_proxy
           # -c, not -e: it has to be the character device swtpm opens.
@@ -249,7 +280,7 @@ jobs:
         run: |
           sudo -E env "PATH=$PATH" nerdctl build \
             --file controller/Dockerfile \
-            --platform linux/amd64 \
+            --platform "linux/${{ matrix.arch }}" \
             --tag "${CWE_IMAGE}" \
             --build-arg "BUILD_VERSION=nkectl-bootstrap-e2e" \
             --build-arg "GIT_VERSION=${GITHUB_SHA}" \
@@ -283,7 +314,8 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: nkectl-bootstrap-e2e-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          # The arch too: GitHub keeps two same-named artifacts.
+          name: nkectl-bootstrap-e2e-diagnostics-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: cli/cluster-diagnostics/
           if-no-files-found: ignore
           retention-days: 7

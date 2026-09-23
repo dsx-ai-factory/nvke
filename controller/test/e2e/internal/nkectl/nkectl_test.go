@@ -185,3 +185,71 @@ func TestResolveBinary(t *testing.T) {
 		require.ErrorIs(t, err, ErrBinaryNotFound)
 	})
 }
+
+// WaitForNodePoolDeleted reads not-found as the pool having gone, so anything
+// this matches by mistake reads as a completed deletion.
+func TestNodePoolNotFoundIn(t *testing.T) {
+	ref := NodePoolRef{Cluster: "capd-cluster-20260914", Pool: "nkectl-workers"}
+
+	tests := []struct {
+		name string
+		out  string
+		want bool
+	}{
+		{
+			name: "the node pool is absent",
+			out:  `Error: node pool "nkectl-workers" not found in cluster "capd-cluster-20260914"`,
+			want: true,
+		},
+		{
+			// `get nodepools --cluster` resolves the cluster first, so a missing
+			// cluster says "not found" too. Reading that as a deletion would
+			// pass the wait against a cluster that had gone instead.
+			name: "the cluster is absent",
+			out:  `Error: cluster "capd-cluster-20260914" not found`,
+			want: false,
+		},
+		{
+			name: "the same pool name is absent from another cluster",
+			out:  `Error: node pool "nkectl-workers" not found in cluster "some-other-cluster"`,
+			want: false,
+		},
+		{
+			name: "a different pool is absent from this cluster",
+			out:  `Error: node pool "gpu-workers" not found in cluster "capd-cluster-20260914"`,
+			want: false,
+		},
+		{
+			name: "an unrelated failure",
+			out:  `Error: Get "http://127.0.0.1:1234/api/nodepools": dial tcp: connection refused`,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, nodePoolNotFoundIn(tt.out, ref))
+		})
+	}
+}
+
+// CleanupCreatedNodePools sweeps what trackCreatedNodePool recorded, so a pool
+// missing from it is one nothing will remove.
+func TestTrackCreatedNodePool(t *testing.T) {
+	r := &Runner{}
+	first := NodePoolRef{Cluster: "capd-one", Pool: "nkectl-workers"}
+	// The same pool name in another cluster is another pool.
+	second := NodePoolRef{Cluster: "capd-two", Pool: "nkectl-workers"}
+
+	r.trackCreatedNodePool(first)
+	r.trackCreatedNodePool(second)
+	require.Equal(t, []NodePoolRef{first, second}, r.createdNodePools)
+
+	// CreateNodePool records the name it asked for and again the name CWE
+	// reported, which are normally the same. The second must not duplicate.
+	r.trackCreatedNodePool(first)
+	require.Equal(t, []NodePoolRef{first, second}, r.createdNodePools)
+
+	r.untrackCreatedNodePool(first)
+	require.Equal(t, []NodePoolRef{second}, r.createdNodePools)
+}

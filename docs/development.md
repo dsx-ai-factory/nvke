@@ -94,7 +94,6 @@ These are the checks where a local answer will differ from CI, and why:
 
 | check | why it differs |
 |---|---|
-| `govulncheck` | CI pins Go 1.26.6 (`make show-versions`) while `go.work` asks for 1.26.5. Under 1.26.5 `controller` reports 7 reachable standard-library findings and `agent` 4; under 1.26.6 both report none. |
 | the CAPD end-to-end suite | `make test-e2e-backend-ci` refuses to start unless the host is Linux on amd64. On a Mac it stops before it reaches Docker. |
 | the gofail suite | `make -C controller e2e-gofail` needs PostgreSQL, an envtest API server and a Temporal dev server. |
 | CodeQL, Scorecard, dependency review | these need GitHub-side infrastructure and have no local form. |

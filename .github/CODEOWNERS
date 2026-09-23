@@ -1,5 +1,6 @@
 # CODEOWNERS — the last rule that matches wins. A ruleset on `main` sets
-# `require_code_owner_review`. See docs/branch-protection-settings.md.
+# `require_code_owner_review`. Read it with `gh api
+# repos/dsx-ai-factory/nke/rules/branches/main --jq '[.[].type]'`.
 #
 # Every rule keeps @dsx-ai-factory/nke-write, so any team member can still approve and no
 # rule here blocks a pull request. Remove the team from a line to make it a gate.
@@ -19,7 +20,7 @@ go.sum @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
 /go.work.sum @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
 
 # area/controller — Cloud Workflow Engine
-/controller/ @dsx-ai-factory/nke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris
+/controller/ @dsx-ai-factory/nke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris @jedimt
 /cluster-api-provider-provisioned/ @dsx-ai-factory/nke-write @jonathanmeier5 @rbever-nvidia @TerryHowe
 
 # area/agent — renamed from node-agent in #36
@@ -30,7 +31,6 @@ go.sum @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
 
 # area/os-image
 /os-image/ @dsx-ai-factory/nke-write @j-griffith @jdubs @pdmack
-/node-images/ @dsx-ai-factory/nke-write @j-griffith @jdubs @pdmack
 
 # area/generated — vendored AICR charts
 /generated/ @dsx-ai-factory/nke-write @nhammernik @TerryHowe
@@ -42,8 +42,8 @@ go.sum @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
 # area/docs
 # `docs/` has no leading slash, so it matches any depth, like labeler's
 # `**/docs/**`. `/*.md` does not cross a `/`, so a module README stays put.
-docs/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris
-/docs/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris
+docs/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris @jedimt
+/docs/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris @jedimt
 /fern/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris
 /*.md @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris
 /LICENSE @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris

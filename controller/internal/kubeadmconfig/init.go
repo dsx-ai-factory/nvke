@@ -13,8 +13,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	bootstraptokenv1 "github.com/NVIDIA/nke/controller/internal/kubeadmconfig/thirdparty/bootstraptoken/v1"
-	kubeadmv1beta3 "github.com/NVIDIA/nke/controller/internal/kubeadmconfig/thirdparty/kubeadmtypes/v1beta3"
+	bootstraptokenv1 "github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig/thirdparty/bootstraptoken/v1"
+	kubeadmv1beta3 "github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig/thirdparty/kubeadmtypes/v1beta3"
 )
 
 const (
@@ -216,6 +216,8 @@ func clusterConfiguration(config *InitConfig) kubeadmv1beta3.ClusterConfiguratio
 				"kubelet-certificate-authority":           defaultKubeletCertificateAuth,
 				"profiling":                               defaultProfilingDisabled,
 				"bind-address":                            defaultBindAddress,
+				"service-account-extend-token-expiration": defaultServiceAccountExtendTokenExpiration,
+				"tls-cipher-suites":                       defaultTLSCipherSuites,
 				"shutdown-delay-duration":                 defaultAPIServerShutdownDelay,
 				"shutdown-send-retry-after":               defaultAPIServerShutdownRetry,
 				"shutdown-watch-termination-grace-period": defaultAPIServerShutdownWatch,

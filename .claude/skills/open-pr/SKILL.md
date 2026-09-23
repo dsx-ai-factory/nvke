@@ -29,9 +29,9 @@ executable checklist, not a replacement for it.
    the squash; do not polish them.
 5. Reference the issue with `Closes #<N>` for non-trivial changes (the repo is
    issue-first — open one before a significant PR).
-6. Apply exactly one change-category label: `breaking`, `feature`,
-   `improvement`, `bug`, or `documentation`. `breaking` also needs `!` in the
-   title or a `BREAKING CHANGE:` footer.
+6. Apply exactly one change-category label: `feature`, `enhancement`, `bug`,
+   or `documentation`. There is no `breaking` label; mark a breaking change
+   with `!` in the title or a `BREAKING CHANGE:` footer.
 7. If a substantial portion of the change was AI-generated, disclose that in
    the PR description (required by CONTRIBUTING.md).
 
@@ -46,8 +46,8 @@ column of green ticks with checks simply missing.
 gh pr checks <number> --repo dsx-ai-factory/nke --json name,workflow
 ```
 
-Compare against [docs/branch-protection-settings.md](../../../docs/branch-protection-settings.md)
-for which checks must appear. `gate` and DCO always report; golangci-lint,
+Which checks block a merge is a repository setting. Read it with
+`gh api repos/dsx-ai-factory/nke/rules/branches/main --jq '[.[].type]'`. `gate` and DCO always report; golangci-lint,
 CodeQL, govulncheck, gitleaks, grype, actionlint, shellcheck, the image build,
 and the notices gate depend on the mirror and are legitimately absent for
 unvetted authors — flag that state rather than treating it as passing.

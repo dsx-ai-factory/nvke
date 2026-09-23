@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	api "github.com/NVIDIA/nke/controller/api"
+	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 
 func TestYAMLToRequest_ValidRoundTrip(t *testing.T) {

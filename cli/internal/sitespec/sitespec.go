@@ -23,6 +23,7 @@ package sitespec
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"regexp"
 	"strconv"
@@ -37,6 +38,10 @@ const (
 	// site spec does not set cluster.nodeAgentPort.
 	DefaultNodeAgentPort = "15005"
 
+	// DefaultEtcdEncryption is what cluster.etcdEncryption means when the site
+	// spec leaves it unset.
+	DefaultEtcdEncryption = true
+
 	// SiteSpec field paths — the single source of truth for the dotted paths
 	// shared by the environment bindings and the validator messages.
 	pathClusterName          = "clusterName"
@@ -44,10 +49,12 @@ const (
 	pathK8sVersion           = "cluster.k8sVersion"
 	pathCniName              = "cluster.cniName"
 	pathCniVersion           = "cluster.cniVersion"
+	pathControlPlaneVIP      = "cluster.controlPlaneVIP"
 	pathPodCidr              = "cluster.podCidr"
 	pathServiceCidr          = "cluster.serviceCidr"
 	pathSystemReservedMemory = "cluster.kubeletConfig.systemReservedMemory"
 	pathNodeAgentPort        = "cluster.nodeAgentPort"
+	pathEtcdEncryption       = "cluster.etcdEncryption"
 	pathBootstrapRepo        = "registry.bootstrapRepo"
 	pathBootstrapChart       = "registry.bootstrapChart"
 	pathAPIKey               = "registry.apiKey"
@@ -125,6 +132,9 @@ type Cluster struct {
 	// CniVersion is an optional CNI plugin version (e.g. "3.31.4" for Calico).
 	// Empty lets the node-agent use its compiled-in default.
 	CniVersion string `yaml:"cniVersion"`
+	// ControlPlaneVIP is an optional IPv4 API endpoint advertised by kube-vip
+	// over BGP. Empty uses the IP of the node that initializes the cluster.
+	ControlPlaneVIP string `yaml:"controlPlaneVIP,omitempty"`
 	// PodCidr is the pod network CIDR. Multiple CIDRs may be given as a
 	// comma-separated string.
 	PodCidr string `yaml:"podCidr"`
@@ -133,8 +143,19 @@ type Cluster struct {
 	// NodeAgentPort is the gRPC port nke-agent listens on. Defaults to
 	// DefaultNodeAgentPort when unset.
 	NodeAgentPort string `yaml:"nodeAgentPort"`
+	// EtcdEncryption enables encryption at rest for the Kubernetes API's etcd
+	// data. A pointer so "not set" can be told from "set to false": the
+	// default is on, and an explicit false is permanent — a cluster built
+	// without encryption cannot be encrypted afterwards.
+	EtcdEncryption *bool `yaml:"etcdEncryption,omitempty"`
 	// KubeletConfig holds optional kubelet resource reservations.
 	KubeletConfig KubeletConfig `yaml:"kubeletConfig"`
+}
+
+// EtcdEncryptionEnabled reports whether the cluster's etcd data is encrypted
+// at rest. Unset means enabled; see EtcdEncryption.
+func (c Cluster) EtcdEncryptionEnabled() bool {
+	return c.EtcdEncryption == nil || *c.EtcdEncryption
 }
 
 // Node is a single pre-provisioned host.
@@ -204,10 +225,12 @@ func envBindings() map[string]string {
 		"CLUSTER_K8S_VERSION":            pathK8sVersion,
 		"CLUSTER_CNI_NAME":               pathCniName,
 		"CLUSTER_CNI_VERSION":            pathCniVersion,
+		"CLUSTER_CONTROL_PLANE_VIP":      pathControlPlaneVIP,
 		"CLUSTER_POD_CIDR":               pathPodCidr,
 		"CLUSTER_SERVICE_CIDR":           pathServiceCidr,
 		"CLUSTER_SYSTEM_RESERVED_MEMORY": pathSystemReservedMemory,
 		"CLUSTER_NODE_AGENT_PORT":        pathNodeAgentPort,
+		"CLUSTER_ETCD_ENCRYPTION":        pathEtcdEncryption,
 		"REGISTRY_BOOTSTRAP_REPO":        pathBootstrapRepo,
 		"REGISTRY_BOOTSTRAP_CHART":       pathBootstrapChart,
 		"REGISTRY_API_KEY":               pathAPIKey,
@@ -250,6 +273,14 @@ func Load(path string) (*SiteSpec, error) {
 			return nil, err
 		}
 		v.Set(pathNodes, nodes)
+	}
+
+	// The decoder reads "" as false for a bool. Here that would disable
+	// encryption silently and for the life of the cluster, and "" is what an
+	// unset template variable produces. Refuse it before decoding loses it.
+	if raw, ok := v.Get(pathEtcdEncryption).(string); ok && raw == "" {
+		return nil, fmt.Errorf("site spec file %s: %s: %q is not a boolean (true or false)",
+			path, pathEtcdEncryption, raw)
 	}
 
 	var inv SiteSpec
@@ -307,6 +338,10 @@ func (inv *SiteSpec) SetDefaults() {
 	if inv.Cluster.NodeAgentPort == "" {
 		inv.Cluster.NodeAgentPort = DefaultNodeAgentPort
 	}
+	if inv.Cluster.EtcdEncryption == nil {
+		enabled := DefaultEtcdEncryption
+		inv.Cluster.EtcdEncryption = &enabled
+	}
 }
 
 // Validate checks that every mandatory field is present and well-formed and
@@ -331,6 +366,7 @@ func (inv *SiteSpec) appendDataChecks(v *validator) {
 	v.checkCNI(inv.Cluster.CniName)
 	v.checkCIDR(pathPodCidr, inv.Cluster.PodCidr, true)
 	v.checkCIDR(pathServiceCidr, inv.Cluster.ServiceCidr, false)
+	v.checkControlPlaneVIP(inv.Cluster)
 	v.checkNodeAgentPort(inv.Cluster.NodeAgentPort)
 	v.checkRegistry(inv.Registry)
 	v.checkSpire(inv.Spire)
@@ -480,6 +516,64 @@ func (v *validator) checkCIDR(path, value string, allowList bool) {
 		if _, _, err := net.ParseCIDR(p); err != nil {
 			v.addf("%s %q is not a valid CIDR", path, p)
 		}
+	}
+}
+
+// checkControlPlaneVIP requires an optional IPv4 VIP to avoid node IPs and
+// pod and service CIDRs.
+func (v *validator) checkControlPlaneVIP(c Cluster) {
+	if c.ControlPlaneVIP == "" {
+		return
+	}
+
+	vip, err := netip.ParseAddr(c.ControlPlaneVIP)
+	if err != nil {
+		v.addf("%s %q is not a valid IP address", pathControlPlaneVIP, c.ControlPlaneVIP)
+		return
+	}
+	// Match CWE's rejection of IPv4-mapped IPv6 addresses.
+	if !vip.Is4() {
+		v.addf("%s %q must be an IPv4 address", pathControlPlaneVIP, c.ControlPlaneVIP)
+		return
+	}
+	// The VIP becomes kubeadm's controlPlaneEndpoint and a /32 advertised over
+	// BGP, so the other control-plane nodes have to be able to dial it: not the
+	// unspecified, loopback, multicast, link-local or broadcast forms.
+	if !vip.IsGlobalUnicast() {
+		v.addf("%s %q must be a routable unicast address", pathControlPlaneVIP, c.ControlPlaneVIP)
+		return
+	}
+
+	// Compare equivalent address forms. checkNode reports malformed node IPs.
+	for _, n := range c.Nodes {
+		nodeAddr, err := netip.ParseAddr(n.IP)
+		if err != nil {
+			continue
+		}
+		if vip == nodeAddr.Unmap() {
+			v.addf("%s %q must not equal a node IP (%s.ip)", pathControlPlaneVIP, c.ControlPlaneVIP, pathNodes)
+		}
+	}
+
+	for _, cidr := range strings.Split(c.PodCidr, ",") {
+		v.checkVIPOutsideCIDR(vip, c.ControlPlaneVIP, pathPodCidr, cidr)
+	}
+	v.checkVIPOutsideCIDR(vip, c.ControlPlaneVIP, pathServiceCidr, c.ServiceCidr)
+}
+
+// checkVIPOutsideCIDR reports when the VIP falls inside cidr. A malformed or
+// empty cidr is left to checkCIDR; nothing is reported here for it.
+func (v *validator) checkVIPOutsideCIDR(vip netip.Addr, vipText, path, cidr string) {
+	cidr = strings.TrimSpace(cidr)
+	if cidr == "" {
+		return
+	}
+	prefix, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return
+	}
+	if prefix.Contains(vip) {
+		v.addf("%s %q is inside %s %q", pathControlPlaneVIP, vipText, path, cidr)
 	}
 }
 

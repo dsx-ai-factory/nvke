@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/NVIDIA/nke/controller/test/kubeadm/internal/cluster"
-	"github.com/NVIDIA/nke/controller/test/kubeadm/internal/nicovms"
+	"github.com/dsx-ai-factory/nke/controller/test/kubeadm/internal/cluster"
+	"github.com/dsx-ai-factory/nke/controller/test/kubeadm/internal/nicovms"
 )
 
 // On-VM post-mortems, run through the node-agent's ExecuteScript RPC rather

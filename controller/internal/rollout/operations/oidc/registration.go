@@ -6,9 +6,9 @@ package oidc
 import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/nke/controller/internal/config"
-	"github.com/NVIDIA/nke/controller/internal/rollout"
-	"github.com/NVIDIA/nke/controller/internal/rollout/nodeagent"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
 )
 
 // RegisterDefaults wires the enable-OIDC operation into reg with its runtime

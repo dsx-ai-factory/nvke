@@ -11,8 +11,8 @@ import (
 
 // nke-260306-24.04-amd64-fde/ipxeScript
 const productionAMD64FDEScript = `#!ipxe
-set boot-loader https://d3mq564cn7sth7.cloudfront.net/nke-isos/qcow/efi/x86_64/2026-03-10/1773155704/qcow-imager.efi
-set image-url https://d3mq564cn7sth7.cloudfront.net/nke-isos/qcow/images/24.04/x86_64/lvm/2026-03-04/1772660145/nke-24.04-x86_64-lvm-2026-03-04-1772660145.qcow2
+set boot-loader https://example.test/nke-isos/qcow/efi/x86_64/2026-03-10/1773155704/qcow-imager.efi
+set image-url https://example.test/nke-isos/qcow/images/24.04/x86_64/lvm/2026-03-04/1772660145/nke-24.04-x86_64-lvm-2026-03-04-1772660145.qcow2
 set disk-strategy {{ .DiskSelectionStrategy }}
 
 # You probably don't need to change these
@@ -27,8 +27,8 @@ boot
 
 // nke-260306-24.04-arm64-fde/ipxeScript
 const productionARM64FDEScript = `#!ipxe
-set boot-loader https://d3mq564cn7sth7.cloudfront.net/nke-isos/qcow/efi/aarch64/2026-03-06/1772834088/qcow-imager.efi
-set image-url https://d3mq564cn7sth7.cloudfront.net/nke-isos/qcow/images/24.04/aarch64/lvm/2026-03-04/1772595122/nke-24.04-aarch64-lvm-2026-03-04-1772595122.qcow2
+set boot-loader https://example.test/nke-isos/qcow/efi/aarch64/2026-03-06/1772834088/qcow-imager.efi
+set image-url https://example.test/nke-isos/qcow/images/24.04/aarch64/lvm/2026-03-04/1772595122/nke-24.04-aarch64-lvm-2026-03-04-1772595122.qcow2
 set disk-strategy {{ .DiskSelectionStrategy }}
 
 # You probably don't need to change these
@@ -47,7 +47,7 @@ func TestParseProductionAMD64FDEScript(t *testing.T) {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	if spec.ImageURL != "https://d3mq564cn7sth7.cloudfront.net/nke-isos/qcow/images/24.04/x86_64/lvm/2026-03-04/1772660145/nke-24.04-x86_64-lvm-2026-03-04-1772660145.qcow2" {
+	if spec.ImageURL != "https://example.test/nke-isos/qcow/images/24.04/x86_64/lvm/2026-03-04/1772660145/nke-24.04-x86_64-lvm-2026-03-04-1772660145.qcow2" {
 		t.Errorf("ImageURL = %q", spec.ImageURL)
 	}
 	if !spec.UpdateGrubTmpl {
@@ -73,7 +73,7 @@ func TestParseProductionARM64FDEScript(t *testing.T) {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	if spec.ImageURL != "https://d3mq564cn7sth7.cloudfront.net/nke-isos/qcow/images/24.04/aarch64/lvm/2026-03-04/1772595122/nke-24.04-aarch64-lvm-2026-03-04-1772595122.qcow2" {
+	if spec.ImageURL != "https://example.test/nke-isos/qcow/images/24.04/aarch64/lvm/2026-03-04/1772595122/nke-24.04-aarch64-lvm-2026-03-04-1772595122.qcow2" {
 		t.Errorf("ImageURL = %q", spec.ImageURL)
 	}
 	if !spec.UpdateGrubTmpl {

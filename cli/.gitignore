@@ -11,6 +11,13 @@ bin/
 e2e/bootstrap/.hosts.csv
 e2e/bootstrap/.sitespec.rendered.yaml
 
+# The etcd encryption key `nkectl bootstrap site` writes, the temporary file
+# it is assembled in, and the E2E's copy next to the site spec. The root
+# .gitignore carries the same rules for a bootstrap run from anywhere else.
+*-etcd-encryption-key.json
+.*-etcd-encryption-key.json.*
+e2e/bootstrap/.etcd-encryption-key.json
+
 # E2E scratch: the cluster dump `nkectl bootstrap site` collects when a
 # bootstrap fails, and CI uploads as an artifact. Regenerated on every
 # failing run.

@@ -25,7 +25,7 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/yaml"
 
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
 )
 
 // Where the authentication configuration lives, in cwe.Namespace().

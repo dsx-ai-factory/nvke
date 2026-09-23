@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +34,10 @@ type fakeRunner struct {
 	// applied holds the contents of every manifest a kubectl apply was
 	// pointed at. See captureApply.
 	applied []string
+
+	// chartFiles holds, per release, the files present in the chart directory
+	// that release's helm install was pointed at. See captureChart.
+	chartFiles map[string]map[string]bool
 }
 
 type fakeOutput struct {
@@ -60,9 +65,51 @@ func (f *fakeRunner) captureApply(name string, args []string) {
 	}
 }
 
+// captureChart records the files in the chart directory a helm install was
+// pointed at, for the same reason captureApply exists: an extracted chart is
+// removed as soon as Deploy returns, so a test that looked afterwards would
+// find nothing.
+func (f *fakeRunner) captureChart(name string, args []string) {
+	if name != "helm" || len(args) == 0 {
+		return
+	}
+	joined := joinArgs(args)
+	// The two releases installed from a chart carried in the binary. The rest
+	// name an upstream chart, which has no directory to walk.
+	for _, release := range []string{cweReleaseName, postgresReleaseName} {
+		if !strings.Contains(joined, "upgrade --install "+release+" ") {
+			continue
+		}
+		fields := strings.Fields(joined)
+		for i, field := range fields {
+			if field != release || i+1 >= len(fields) {
+				continue
+			}
+			root := fields[i+1]
+			files := map[string]bool{}
+			_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+				if err != nil || info.IsDir() {
+					return nil //nolint:nilerr // a missing chart is what the test asserts on
+				}
+				rel, relErr := filepath.Rel(root, path)
+				if relErr == nil {
+					files[filepath.ToSlash(rel)] = true
+				}
+				return nil
+			})
+			if f.chartFiles == nil {
+				f.chartFiles = map[string]map[string]bool{}
+			}
+			f.chartFiles[release] = files
+			return
+		}
+	}
+}
+
 func (f *fakeRunner) Run(_ context.Context, name string, args ...string) (string, error) {
 	f.calls = append(f.calls, fakeCall{name: name, args: args})
 	f.captureApply(name, args)
+	f.captureChart(name, args)
 	idx := len(f.calls) - 1
 	if idx < len(f.outputs) {
 		return f.outputs[idx].output, f.outputs[idx].err
@@ -70,13 +117,6 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) (string
 	if len(f.outputs) > 0 {
 		last := f.outputs[len(f.outputs)-1]
 		return last.output, last.err
-	}
-	// `kubectl kustomize` is the one call whose stdout Deploy reads rather than
-	// discards: it renders the provisioned provider and rewrites its image. An
-	// empty answer is not a manifest, so stand in for one here rather than
-	// making every test script it.
-	if name == "kubectl" && len(args) > 0 && args[0] == "kustomize" {
-		return "        image: " + provisionedDefaultImage + "\n", nil
 	}
 	// The CAPI probe must report "not installed", or Deploy skips clusterctl.
 	if name == "kubectl" && containsArg(args, "deployment") && containsArg(args, capiCoreDeployment) {
@@ -127,8 +167,6 @@ func testConfig(t *testing.T) Config {
 	return Config{
 		CWEImage:                 "nvcr.io/org/controller:edge",
 		ProvisionedProviderImage: "cluster-api-provider-provisioned:local",
-		ProvisionedProviderPath:  t.TempDir(),
-		ChartPath:                t.TempDir(), // any existing dir stands in for the chart
 		PostgresPassword:         "test-password",
 	}
 }
@@ -149,15 +187,35 @@ func TestDeploy_RequiresKubeconfigAndImage(t *testing.T) {
 	}
 }
 
-func TestNodeAgentPortArgs(t *testing.T) {
-	if got := nodeAgentPortArgs(Config{}); len(got) != 0 {
-		t.Errorf("nodeAgentPortArgs with no port = %v, want none", got)
-	}
-	got := joinArgs(nodeAgentPortArgs(Config{NodeAgentPort: "15005"}))
-	for _, want := range []string{"env[0].name=NODE_AGENT_PORT", "env[0].value=15005"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("nodeAgentPortArgs = %q, want it to contain %q", got, want)
-		}
+func TestCWEEnvArgs(t *testing.T) {
+	const cpControllerEnv = "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER"
+
+	for _, tc := range []struct {
+		name string
+		cfg  Config
+		want []string
+	}{{
+		name: "the control-plane mode is sent with nothing else configured",
+		cfg:  Config{},
+		want: []string{
+			"--set-string", "env[0].name=" + cpControllerEnv,
+			"--set-string", "env[0].value=true",
+		},
+	}, {
+		name: "the node agent port is numbered after it",
+		cfg:  Config{NodeAgentPort: "15005"},
+		want: []string{
+			"--set-string", "env[0].name=" + cpControllerEnv,
+			"--set-string", "env[0].value=true",
+			"--set-string", "env[1].name=NODE_AGENT_PORT",
+			"--set-string", "env[1].value=15005",
+		},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cweEnvArgs(tc.cfg); !slices.Equal(got, tc.want) {
+				t.Errorf("cweEnvArgs =\n\t%q\nwant\n\t%q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -268,27 +326,31 @@ func TestDeploy_EnablesPostInitCNI(t *testing.T) {
 	}
 }
 
-func TestDeploy_PullsThePostgresChartFromTheConfiguredRef(t *testing.T) {
-	for _, tt := range []struct {
-		name string
-		ref  string
-		want string
-	}{
-		{name: "default is Docker Hub", ref: "", want: postgresChartRef},
-		{name: "override is used verbatim", ref: "oci://mirror.example.com/bitnamicharts/postgresql", want: "oci://mirror.example.com/bitnamicharts/postgresql"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			runner := &fakeRunner{}
-			cfg := testConfig(t)
-			cfg.PostgresChartRef = tt.ref
-			if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
-				t.Fatalf("Deploy returned error: %v", err)
-			}
-			postgres := helmCalls(runner)[0]
-			if !strings.Contains(postgres, "upgrade --install postgres "+tt.want+" ") {
-				t.Errorf("postgres helm call = %q, want chart %q", postgres, tt.want)
-			}
-		})
+// TestDeploy_InstallsPostgresFromTheEmbeddedChart: Postgres comes from the
+// binary, like the controller chart. Nothing is pulled, so the call carries
+// neither a chart version nor a values file -- the chart's own values hold the
+// databases, the Service name both consumers dial, and the pinned image.
+func TestDeploy_InstallsPostgresFromTheEmbeddedChart(t *testing.T) {
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", testConfig(t)); err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
+	}
+	postgres := helmCalls(runner)[0]
+
+	chartArg := chartArgOf(t, postgres, postgresReleaseName)
+	if !filepath.IsAbs(chartArg) {
+		t.Errorf("postgres chart = %q, want the path of an extracted chart", chartArg)
+	}
+	if !runner.chartFiles[postgresReleaseName]["templates/postgresql.yaml"] {
+		t.Errorf("the chart installed for postgres is not the embedded one: %v", runner.chartFiles[postgresReleaseName])
+	}
+	for _, unwanted := range []string{"--version", "--values"} {
+		if strings.Contains(postgres, unwanted+" ") {
+			t.Errorf("postgres call passes %s, but nothing is pulled and the chart carries its own values: %q", unwanted, postgres)
+		}
+	}
+	if !strings.Contains(postgres, "auth.password=test-password") {
+		t.Errorf("postgres call = %q, want the password supplied per run", postgres)
 	}
 }
 
@@ -320,7 +382,7 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 
 	postgres, temporal, spireCRDs, spire, cwe := releases[0], releases[1], releases[2], releases[3], releases[4]
 
-	if !strings.Contains(postgres, "upgrade --install postgres "+postgresChartRef) {
+	if !strings.Contains(postgres, "upgrade --install postgres "+chartArgOf(t, postgres, postgresReleaseName)) {
 		t.Errorf("postgres call = %q, want the postgres release/chart", postgres)
 	}
 	if !strings.Contains(postgres, "auth.password=test-password") {
@@ -345,8 +407,8 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 		t.Errorf("SPIRE call = %q, want the pinned chart and CWE identity", spire)
 	}
 
-	if !strings.Contains(cwe, "upgrade --install cloud-workflow-engine "+cfg.ChartPath) {
-		t.Errorf("cwe call = %q, want the cwe release/chart path", cwe)
+	if !strings.Contains(cwe, "upgrade --install "+cweReleaseName+" ") {
+		t.Errorf("cwe call = %q, want the cwe release and its chart directory", cwe)
 	}
 	if !strings.Contains(cwe, "--set-string supportedInfraProviders=infra") {
 		t.Errorf("cwe call = %q, want infra provider support enabled", cwe)
@@ -388,63 +450,76 @@ func TestDeploy_PropagatesHelmError(t *testing.T) {
 	}
 }
 
-func TestDeploy_ResolvesChartPathFromRepoRoot(t *testing.T) {
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "go.work"), []byte("go 1.26\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	chartDir := filepath.Join(root, "controller", "deploy", "charts", "controller")
-	if err := os.MkdirAll(chartDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
+// TestDeploy_UsesTheEmbeddedChartOutsideARepo is the reason the chart is
+// embedded: a binary run from anywhere installs the chart it was built with,
+// with no checkout above the working directory, no environment variable and
+// no way to point it somewhere else.
+func TestDeploy_UsesTheEmbeddedChartOutsideARepo(t *testing.T) {
 	oldWd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
-	nested := filepath.Join(root, "cli", "cmd", "nkectl")
-	if err := os.MkdirAll(nested, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(nested); err != nil {
+	outside := t.TempDir()
+	if err := os.Chdir(outside); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldWd) })
 
-	got, err := resolveChartPath()
-	if err != nil {
-		t.Fatalf("resolveChartPath returned error: %v", err)
+	cfg := testConfig(t)
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
 	}
-	// Resolve symlinks on both sides: on macOS, t.TempDir() lives under
-	// /tmp, which is itself a symlink to /private/tmp, and os.Getwd() (which
-	// resolveChartPath walks up from) returns the resolved path.
-	wantResolved, err := filepath.EvalSymlinks(chartDir)
-	if err != nil {
-		t.Fatal(err)
+
+	releases := helmCalls(runner)
+	// The directories are removed when Deploy returns, so what they held is
+	// recorded as each call is made.
+	for release, want := range map[string][]string{
+		cweReleaseName:      {"Chart.yaml", "templates/_helpers.tpl"},
+		postgresReleaseName: {"Chart.yaml", "templates/_helpers.tpl", "templates/postgresql.yaml"},
+	} {
+		files, ok := runner.chartFiles[release]
+		if !ok {
+			t.Fatalf("the chart installed for %s was never inspected", release)
+		}
+		for _, f := range want {
+			if !files[f] {
+				t.Errorf("the chart extracted for %s is missing %s: %v", release, f, files)
+			}
+		}
 	}
-	gotResolved, err := filepath.EvalSymlinks(got)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if gotResolved != wantResolved {
-		t.Errorf("resolveChartPath() = %q, want %q", gotResolved, wantResolved)
+	for _, release := range []string{cweReleaseName, postgresReleaseName} {
+		chartArg := chartArgOf(t, callFor(t, releases, release), release)
+		if _, err := os.Stat(chartArg); !os.IsNotExist(err) {
+			t.Errorf("the chart extracted for %s outlived Deploy at %s", release, chartArg)
+		}
 	}
 }
 
-func TestDeploy_ChartPathResolutionFailsOutsideARepo(t *testing.T) {
-	oldWd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
+// callFor returns the `helm upgrade --install <release>` call from calls.
+func callFor(t *testing.T, calls []string, release string) string {
+	t.Helper()
+	for _, call := range calls {
+		if strings.Contains(call, "upgrade --install "+release+" ") {
+			return call
+		}
 	}
-	dir := t.TempDir()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+	t.Fatalf("no helm install for %s in %v", release, calls)
+	return ""
+}
 
-	if _, err := resolveChartPath(); err == nil {
-		t.Fatal("expected an error when no go.work is found above the working directory")
+// chartArgOf returns the chart argument of a `helm upgrade --install <release>
+// <chart>` call.
+func chartArgOf(t *testing.T, call, release string) string {
+	t.Helper()
+	fields := strings.Fields(call)
+	for i, f := range fields {
+		if f == release && i+1 < len(fields) {
+			return fields[i+1]
+		}
 	}
+	t.Fatalf("no chart argument in %q", call)
+	return ""
 }
 
 func TestWaitReady_SucceedsOnOKStatus(t *testing.T) {

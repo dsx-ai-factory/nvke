@@ -1,24 +1,22 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Base image registry. Defaults to Docker Hub so the image builds for anyone
-# with no NVIDIA network access. Internal builds override it, e.g.
-#   docker build --build-arg BASE_REGISTRY=dockerhub.nvidia.com .
+# Base images for the image this repository ships. Fully qualified and
+# digest-pinned in an ARG, which is the form Dependabot can parse -- a FROM
+# whose registry is a variable is not, which is why these followed a floating
+# tag until now.
 #
-# The ${BASE_REGISTRY} images below are not digest-pinned, unlike the other
-# Dockerfiles here. Dependabot cannot parse a FROM whose registry is a variable,
-# so nothing would ever move the digest. Following the tag at least picks up
-# in-place rebuilds, which is how base-OS CVE fixes ship under one patch tag.
-#
-# To pin them, put the whole reference in an ARG Dependabot can read
-# (ARG GOLANG_IMAGE=docker.io/golang:1.26.6@sha256:...). That changes what
-# callers override, so it needs agreement from whoever runs internal builds.
-ARG BASE_REGISTRY=docker.io
+# Internal builds override these rather than BASE_REGISTRY, for example
+#   docker build --build-arg GOLANG_IMAGE=dockerhub.nvidia.com/golang:1.26.8@sha256:... .
+# A digest is content-addressed, so a mirror serving the same content answers
+# to the same digest.
+ARG GOLANG_IMAGE=docker.io/golang:1.26.8@sha256:6c2a5538f964f1c82f97ad14988bf05de100d922d159d0e398b54c7b0ca0c6c9
+ARG ALPINE_IMAGE=docker.io/alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 FROM ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:0.3.0@sha256:6402624276b66ef7a733e126488397c9cf33c6706ee1f52a9c7ffad2a540aa7c AS spiffe-jwt-exec-auth
 
 # Set up golang build container
-FROM ${BASE_REGISTRY}/golang:1.26.6 AS builder
+FROM ${GOLANG_IMAGE} AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
@@ -40,7 +38,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} BUILD_VERSION=${B
 ########################################################################
 # Multi-state-final build
 # This should be alpine for us to test & debug
-FROM ${BASE_REGISTRY}/alpine:3.24.1
+FROM ${ALPINE_IMAGE}
 # Runtime + in-container debug tooling, installed in a single --no-cache layer
 # so the apk index is not shipped. Documentation (*-doc) packages and packages
 # with no function inside this pod (binutils, pciutils, usbutils) are

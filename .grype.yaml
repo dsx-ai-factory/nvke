@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 # Known vulnerabilities that the scans do not fail on.
 #
 # An entry here says "we know, and we cannot fix it here". It does NOT claim

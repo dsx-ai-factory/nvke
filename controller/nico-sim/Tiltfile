@@ -105,14 +105,23 @@ def register(ctx):
     _container_backend_enabled = "container" in _backends
     _vm_backend_enabled = "vm" in _backends
     # NFS-backed worktrees cannot store Linux file capabilities. Build the
-    # runnable server on the host-local /tmp filesystem so build-privileged can
-    # apply CAP_NET_ADMIN consistently; source and persistent state stay in the
+    # runnable server outside the worktree so build-privileged can apply
+    # CAP_NET_ADMIN consistently; source and persistent state stay in the
     # worktree.
+    #
+    # Not /tmp when /tmp is nosuid. Ubuntu 26.04 mounts it as a nosuid tmpfs,
+    # and nosuid makes the kernel drop file capabilities at exec: setcap
+    # succeeds, getcap shows the bit, and the process still starts with
+    # CapEff=0. The BGP speaker then fails every route install with "operation
+    # not permitted" and the control-plane VIP never becomes reachable.
     _nico_sim_binary = "/tmp/cwe-nico-sim"
+    _tmp_opts = str(local("findmnt -no OPTIONS --target /tmp 2>/dev/null || true", quiet=True, echo_off=True))
+    if "nosuid" in _tmp_opts:
+        _nico_sim_binary = os.path.join(os.getenv("HOME", "/var/tmp"), ".cache", "cwe-nico-sim")
     _build_target = "build"
     if _vm_backend_enabled and _host_os == "Linux":
         _build_target = "build-privileged"
-    _nico_sim_build_cmd = "truncate -s 0 %s/nico-sim.log 2>/dev/null; cd nico-sim && make BINARY=%s %s" % (_log_dir, _nico_sim_binary, _build_target)
+    _nico_sim_build_cmd = "truncate -s 0 %s/nico-sim.log 2>/dev/null; mkdir -p %s; cd nico-sim && make BINARY=%s %s" % (_log_dir, os.path.dirname(_nico_sim_binary), _nico_sim_binary, _build_target)
     if os.getenv("NICO_SIM_BINARY_PREBUILT", "false") == "true":
         _nico_sim_build_cmd = "test -x %s" % _nico_sim_binary
 

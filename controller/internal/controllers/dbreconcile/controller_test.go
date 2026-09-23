@@ -14,7 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile"
 )
 
 func TestUnit_SetupController(t *testing.T) {

@@ -19,6 +19,13 @@ on:
       - .github/workflows/capd-dsx-identity-exchange-e2e.yml
       - .github/workflows/backend-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml
+  # Twice a day, like every other e2e lane. A schedule ignores the paths above,
+  # so a break they filtered out, or one a flake hid, still surfaces within
+  # twelve hours. :30 past, continuing the ladder the other lanes use -- 2,14
+  # is taken at :00 CAPD, :15 NICo, :30 bringup, :45 gofail; 3,15 at :00
+  # nkectl-bootstrap and nico-vms, :15 local-entrypoint.
+  schedule:
+    - cron: '30 3,15 * * *'
   workflow_dispatch:
 
 permissions: {}
@@ -42,6 +49,16 @@ jobs:
   capd-dsx-identity-exchange:
     needs: changes
     if: needs.changes.outputs.run_e2e == 'true'
+    # Same two pools capd-e2e uses. Neither needs /dev/kvm.
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: linux-amd64-cpu16
+          - arch: arm64
+            runner: linux-arm64-cpu16
     uses: ./.github/workflows/backend-e2e.yml
     permissions:
       contents: read
@@ -49,8 +66,8 @@ jobs:
       NKE_INTERNAL_RO_TOKEN: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
     with:
       backend: capd-dsx-identity
-      arch: amd64
-      runner: linux-amd64-cpu16
+      arch: ${{ matrix.arch }}
+      runner: ${{ matrix.runner }}
       label-filter: identity-exchange
       providers: '["capi_core", "bgp-containers", "capd", "capd-reboot-controller", "dsx-identity-exchange"]'
       install-cni-after-init: true

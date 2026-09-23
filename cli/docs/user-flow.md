@@ -9,7 +9,8 @@ below is on `main`; the steps the CLI does not cover are marked.
 | Command | What it does | Status |
 |---|---|---|
 | `nkectl generate sitespec <name> --nodes hosts.csv` | Writes a site spec for `bootstrap site` from a node CSV. `--set path=value` fills in what the CSV does not carry. | Available |
-| `nkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running CWE, has CWE create the site cluster on the spec's hosts through `nke-agent`, writes `<name>.kubeconfig`, tears the Kind cluster down. `--dry-run` validates the spec only. | Available |
+| `nkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running CWE, has CWE create the site cluster on the spec's hosts through `nke-agent`, writes `<name>.kubeconfig` and `<name>-etcd-encryption-key.json`, tears the Kind cluster down. `--dry-run` validates the spec only. | Available |
+| Install an infrastructure provider on the new cluster | Install Cluster API and CAPNICo, before the site controller. See [Infrastructure Providers](../../docs/site-bootstrap/infrastructure-providers.md). No `nkectl` command. | Not in the CLI |
 | Install the site controller on the new cluster | Deploy the controller Helm chart (`controller/deploy/charts/controller`). No `nkectl` command yet. | Not in the CLI |
 | `nkectl config set-site --url <cwe-url> --kubeconfig <path>` | Points the CLI at a site controller. `use-site` switches between entries, `view` prints the config. | Available |
 | `nkectl get providers` | Lists the Cluster API infrastructure providers the site controller can use, with their state. Alpha. | Available |
@@ -68,19 +69,28 @@ REGISTRY_API_KEY=... nkectl bootstrap site -f sitespec.yaml
 
 The command needs nerdctl and containerd on the host, and network reach to
 the hosts' `nke-agent` ports. On success it
-writes `my-tier0-site.kubeconfig` in the working directory (`--kubeconfig-out`
-changes the path) and removes the Kind cluster. On failure it writes cluster
+writes `my-tier0-site.kubeconfig` and `my-tier0-site-etcd-encryption-key.json`
+in the working directory (`--kubeconfig-out` and `--encryption-key-out` change
+the paths) and removes the Kind cluster. Every control-plane node holds the
+etcd encryption key; the key file is a convenience for installing a controller
+later and the copy a disaster recovery needs. Move it off the host. On failure it writes cluster
 diagnostics to `cluster-diagnostics/` first; `--keep-bootstrap-cluster` keeps
 the Kind cluster for debugging.
 
-### 3. Install the site controller
+### 3. Install an infrastructure provider
+
+Install Cluster API and CAPNICo onto the site cluster, before the site
+controller — see [Infrastructure Providers](../../docs/site-bootstrap/infrastructure-providers.md)
+for why the order matters. `nkectl` has no command for this step.
+
+### 4. Install the site controller
 
 The site cluster from step 2 is a plain Kubernetes cluster. The site controller
 (CWE) that manages tenant clusters is installed with the controller Helm chart
 in [`controller/deploy/charts/controller`](../../controller/deploy/charts/controller).
 `nkectl` has no command for this step yet.
 
-### 4. Point the CLI at the site controller
+### 5. Point the CLI at the site controller
 
 ```bash
 nkectl config set-site --name my-tier0-site \
@@ -102,13 +112,11 @@ The kubeconfig identity needs `create` on `serviceaccounts/token` for
 `nke-client`. See
 [Configuring NKE API Authentication](../../controller/docs/configuring-api-authentication.md).
 
-### 5. Check the infrastructure providers
+### 6. Check the infrastructure providers
 
 A tenant cluster is created on an infrastructure provider: a controller running
 on the site cluster that holds credentials for its backend and creates machines
-there. Installing a provider and giving it those credentials is a deployment
-step, done with Helm, Argo CD, or `kubectl` against the site cluster — not with
-`nkectl`. Once it is done, confirm the site can use it:
+there. Once step 3 is done, confirm the site can use it:
 
 ```bash
 nkectl get providers
@@ -119,14 +127,14 @@ can tell an uninstalled provider from a misconfigured one before creating a
 cluster on it. `CONFIGURED` means the provider's CRDs are established, its
 controller is running, and its credentials are in place; it does not prove the
 credentials work. Needs `kubectl` on `PATH` and the site kubeconfig from
-step 4.
+step 5.
 
 `nkectl` only reads this state and never changes it, so it makes no difference
 whether Helm, Argo CD, or a person applied the provider — the same command
 reports it either way. On a site managed by Argo CD, that makes `get providers`
 the check that what Argo synced is something a provider can actually use.
 
-### 6. Create a tenant cluster
+### 7. Create a tenant cluster
 
 ```bash
 nkectl create cluster -f examples/capd-cluster.yaml
@@ -139,7 +147,7 @@ The spec is a `CreateClusterRequest`; the schema is served at `/api/docs` on
 the site controller. [examples/capd-cluster.yaml](../examples/capd-cluster.yaml)
 is a starting point.
 
-### 7. Watch it come up
+### 8. Watch it come up
 
 ```bash
 nkectl get clusters
@@ -147,7 +155,7 @@ nkectl get clusters <cluster-name>
 nkectl get clusters <cluster-name> -o yaml
 ```
 
-### 8. Get the tenant cluster's kubeconfig
+### 9. Get the tenant cluster's kubeconfig
 
 ```bash
 nkectl get kubeconfig <cluster-name> --output-file ./tenant.kubeconfig
@@ -155,9 +163,9 @@ nkectl get kubeconfig <cluster-name> --output-file ./tenant.kubeconfig
 
 Without `--output-file`, the kubeconfig is written to stdout. This reads the
 site cluster directly, the same as `get providers`, so it needs the site
-kubeconfig from step 4.
+kubeconfig from step 5.
 
-### 9. Patch the tenant cluster
+### 10. Patch the tenant cluster
 
 ```bash
 # Bump the Kubernetes version
@@ -170,7 +178,7 @@ nkectl patch cluster my-cluster --patch-file patch.yaml
 Only the fields in the patch document are changed. `nkectl patch cluster
 --help` covers `--patch`, `--patch-file`, and field clearing in full.
 
-### 10. Add a node pool
+### 11. Add a node pool
 
 ```bash
 nkectl create nodepool -f pool.yaml
@@ -191,7 +199,7 @@ chosen.
 [examples/nico-mock-nodepool.yaml](../examples/nico-mock-nodepool.yaml) is a
 starting point. Provisioning is asynchronous, the same as cluster creation.
 
-### 11. Scale a node pool
+### 12. Scale a node pool
 
 ```bash
 nkectl patch nodepool <nodepool-name> --cluster <cluster-name> --patch 'desiredNodeCount: 8'
@@ -212,7 +220,7 @@ CWE's own message. There is no confirmation prompt, so a lower count starts
 removing nodes straight away.
 
 
-### 12. Delete a node pool
+### 13. Delete a node pool
 
 ```bash
 nkectl delete nodepool <nodepool-name> --cluster <cluster-name>
@@ -224,7 +232,7 @@ before removal; run `nkectl get nodepools --cluster <cluster-name>` to check
 on it. Deleting the last joined control-plane node pool of a cluster is
 rejected with CWE's own message — delete the cluster instead.
 
-### 13. Delete the tenant cluster
+### 14. Delete the tenant cluster
 
 ```bash
 nkectl delete cluster <cluster-name>

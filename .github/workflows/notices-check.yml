@@ -29,6 +29,13 @@ on:
       # NVIDIA runner pool, so this self-hosted job cannot switch triggers. It
       # has to name the trusted Dependabot branch directly.
       - "dependabot/**"
+  # Called by merge-gate.yml, which is what makes this required. Before that it
+  # was the only one of the four generated-artifact checks that could not block
+  # a merge: an unvetted author never reached the mirror branch, so drift
+  # landed on main and surfaced there, which is how syscmp's main went red on
+  # 2026-08-12. The push triggers above stay, so main and dependabot branches
+  # still get their own run.
+  workflow_call:
   workflow_dispatch:
 
 permissions: {}
@@ -62,7 +69,11 @@ env:
 jobs:
   notices-check:
     name: Check THIRD_PARTY_NOTICES.md is up to date
-    runs-on: linux-amd64-cpu16
+    # ubuntu-latest, not the self-hosted pool: a required gate member must run
+    # for a fork author, and this job needs no secret and no NVIDIA network --
+    # checkout, setup-go, and go-licenses over the committed vendor tree. It
+    # took 47-53s on the 16-CPU pool, so the hosted runner has room.
+    runs-on: ubuntu-latest
     if: github.repository == 'dsx-ai-factory/nke'
     timeout-minutes: 30
     permissions:

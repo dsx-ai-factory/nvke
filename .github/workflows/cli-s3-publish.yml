@@ -1,0 +1,176 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: CLI S3 Publish
+
+# Publishes nkectl binaries to S3, fronted by the same CloudFront distribution
+# agent/scripts/upload-s3-apt-intake.sh already uses for the agent .deb --
+# confirmed live and unauthenticated. Uses scripts/upload-s3-flat.sh, a
+# generic uploader, not that apt-specific one (it shells to dpkg-deb and
+# writes an apt-publisher index.json; nkectl is neither a .deb nor
+# apt-consumed).
+#
+# Needs a new `s3-publish` GitHub Environment (Settings -> Environments),
+# not a reuse of `apt-intake` -- that name and scope are conceptually
+# apt-specific. Required environment vars:
+#
+#   S3_PUBLISH_S3_URI             variable  e.g. s3://nke-prod-assets/nke-packages
+#   S3_PUBLISH_AWS_ROLE_ARN       variable  role ARN with write access to the
+#                                           nkectl/* prefix under that URI
+#   S3_PUBLISH_AWS_REGION         variable  optional, defaults to us-west-2
+#   S3_PUBLISH_CLOUDFRONT_DOMAIN  variable  domain fronting that bucket, used
+#                                           to verify the upload is actually
+#                                           reachable (e.g. d1veq6e8nuk2fy.cloudfront.net)
+#
+# The role's permission policy needs nke-packages/nkectl/* added -- see
+# artifacts.md section 19 for the exact IAM diff. Until that widening lands,
+# this workflow will fail at the upload step with an access-denied error, not
+# silently do nothing.
+
+# Called by release.yml after its build, so a cli/v* tag produces one set of
+# binaries rather than four independent ones, and this runs behind the licence
+# gate release.yml already enforces. The tag trigger is gone for that reason.
+#
+# workflow_dispatch still works and still builds: dist_artifact is empty there,
+# so the build step below runs instead of the download.
+on:
+  workflow_call:
+    inputs:
+      dist_artifact:
+        description: Artifact holding the binaries release.yml built. Empty means build here.
+        type: string
+        required: false
+        default: ""
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: CLI S3 Publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'dsx-ai-factory/nke' &&
+      startsWith(github.ref, 'refs/tags/cli/v')
+    name: Publish to S3
+    runs-on: ubuntu-latest
+    environment: s3-publish
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      security-events: write  # the malware scan uploads SARIF
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      - name: Resolve release
+        id: meta
+        shell: bash
+        env:
+          S3_URI: ${{ vars.S3_PUBLISH_S3_URI }}
+          ROLE_ARN: ${{ vars.S3_PUBLISH_AWS_ROLE_ARN }}
+          REGION: ${{ vars.S3_PUBLISH_AWS_REGION }}
+          CF_DOMAIN: ${{ vars.S3_PUBLISH_CLOUDFRONT_DOMAIN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${S3_URI}" ]]; then
+            echo "::error::S3_PUBLISH_S3_URI is not set in the s3-publish environment"
+            exit 1
+          fi
+          if [[ -z "${ROLE_ARN}" ]]; then
+            echo "::error::S3_PUBLISH_AWS_ROLE_ARN is not set in the s3-publish environment"
+            exit 1
+          fi
+          if [[ -z "${CF_DOMAIN}" ]]; then
+            echo "::error::S3_PUBLISH_CLOUDFRONT_DOMAIN is not set in the s3-publish environment"
+            exit 1
+          fi
+
+          # Job-level if already requires refs/tags/cli/v*; no branch/sha path.
+          release="${GITHUB_REF_NAME#cli/}"
+
+          {
+            echo "s3_uri=${S3_URI}"
+            echo "role_arn=${ROLE_ARN}"
+            echo "region=${REGION:-us-west-2}"
+            echo "release=${release}"
+            echo "cf_domain=${CF_DOMAIN}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Publishing nkectl release ${release} to ${S3_URI}"
+
+      # One build per release. release.yml builds and checksums; this consumes
+      # exactly those bytes, so checksums.txt describes what ships here too.
+      - name: Download the release build
+        if: inputs.dist_artifact != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ inputs.dist_artifact }}
+          path: dist
+
+      - name: Build binaries
+        if: inputs.dist_artifact == ''
+        run: make -C cli build-cross DIST="${GITHUB_WORKSPACE}/dist"
+
+      - name: Malware scan
+        uses: ./.github/actions/malware-scan
+        with:
+          scan_path: 'dist'
+          category: 'clamav-cli-s3'
+          output_file: 'clamav-cli-s3.sarif'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ steps.meta.outputs.role_arn }}
+          aws-region: ${{ steps.meta.outputs.region }}
+
+      - name: Upload to S3
+        shell: bash
+        env:
+          S3_URI: ${{ steps.meta.outputs.s3_uri }}
+          RELEASE: ${{ steps.meta.outputs.release }}
+        run: |
+          set -euo pipefail
+          for platform in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
+            S3_PREFIX="nkectl/releases/${RELEASE}/${platform}" \
+              ./scripts/upload-s3-flat.sh "dist/nkectl-${platform}"
+          done
+
+      - name: Verify upload
+        shell: bash
+        env:
+          CF_DOMAIN: ${{ steps.meta.outputs.cf_domain }}
+          S3_URI: ${{ steps.meta.outputs.s3_uri }}
+          RELEASE: ${{ steps.meta.outputs.release }}
+        run: |
+          set -euo pipefail
+          # head-object, not curl on the CloudFront URL: that domain sits
+          # behind a WAF IP allowlist that GitHub-hosted runners are never
+          # on (confirmed live -- a real upload 403's from here every time),
+          # so an HTTP check can never pass from CI. head-object uses this
+          # job's own IAM role instead, so it verifies the same fact --
+          # the object is really there -- without needing network access
+          # to the CDN itself.
+          bucket="${S3_URI#s3://}"
+          bucket="${bucket%%/*}"
+          s3_path="${S3_URI#s3://*/}"
+          for platform in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
+            key="${s3_path}/nkectl/releases/${RELEASE}/${platform}/nkectl-${platform}"
+            aws s3api head-object --bucket "${bucket}" --key "${key}" >/dev/null
+            url="https://${CF_DOMAIN}/${key}"
+            echo "OK s3://${bucket}/${key} (${url})"
+          done

@@ -7,7 +7,7 @@ import (
 	"errors"
 	nethttp "net/http"
 
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/state"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/state"
 )
 
 // handleGetCurrentTenant returns the tenant seeded for the request's org.

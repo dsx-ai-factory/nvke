@@ -10,7 +10,7 @@ import (
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	api "github.com/NVIDIA/nke/controller/api"
+	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 
 // ListClusters returns the clusters matching params. A nil params lists every

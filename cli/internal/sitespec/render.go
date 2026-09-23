@@ -181,7 +181,7 @@ func Build(clusterName string, nodes []Node, sets []string) (*SiteSpec, error) {
 		if err := checkSettable(path); err != nil {
 			return nil, err
 		}
-		if err := setScalar(root, path, value); err != nil {
+		if err := setValue(root, path, value); err != nil {
 			return nil, err
 		}
 	}

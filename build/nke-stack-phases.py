@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 """Emit one line per phase: name, cumulative --set flags, and preconditions.
 
 Format: <name>\t<flags>\t<requires>

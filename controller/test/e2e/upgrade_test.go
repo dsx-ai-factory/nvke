@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/NVIDIA/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/controller/api"
 )
 
 const upgradeStartingKubernetesVersion = "1.34.2"

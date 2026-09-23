@@ -17,8 +17,8 @@ import (
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
 
-	"github.com/NVIDIA/nke/controller/internal/rollout"
-	"github.com/NVIDIA/nke/controller/internal/rollout/temporal"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout/temporal"
 )
 
 // activityCtx installs a StartToCloseTimeout and MaximumAttempts=1.

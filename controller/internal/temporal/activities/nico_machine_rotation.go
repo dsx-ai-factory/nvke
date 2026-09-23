@@ -16,8 +16,8 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/NVIDIA/nke/controller/internal/capi"
-	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 func (a *Activities) shouldRotateNicoMachineNetworkCandidate(ctx context.Context, machine *clusterv1.Machine) (bool, error) {
@@ -319,7 +319,7 @@ func isNicoNetworkExhaustionMessage(message string) bool {
 	// some environments, which uses the same allocation substrings.
 	// https://github.com/NVIDIA/infra-controller/blob/fdb5d34320bdce562bbc18eb958065a047ea8dd6/rest-api/api/pkg/api/handler/instance.go#L540-L629
 	// https://github.com/NVIDIA/infra-controller/blob/fdb5d34320bdce562bbc18eb958065a047ea8dd6/crates/api-db/src/ip_allocator.rs#L60
-	// https://github.com/NVIDIA/nke/controller/-/blob/dffb36a8/internal/providers/forge/api/errors.go#L57-L72
+	// https://github.com/dsx-ai-factory/nke/controller/-/blob/dffb36a8/internal/providers/forge/api/errors.go#L57-L72
 
 	nicoPreflightExhausted := strings.Contains(normalized, "does not have enough ip addresses:") &&
 		(strings.Contains(normalized, "subnet ") || strings.Contains(normalized, "vpc prefix "))

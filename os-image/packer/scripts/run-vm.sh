@@ -18,39 +18,27 @@
 #
 # Usage (QCOW filenames encode the Ubuntu version/arch -- see vm_name in
 # nke-node-fde.pkr.hcl / nke-node-non-fde.pkr.hcl -- check output-fde/ or
-# output-non-fde/ for the exact name). OVMF_CODE defaults per ARCH (both
+# output-non-fde/ for the exact name). OVMF_CODE defaults per image architecture (both
 # variants are UEFI-only), so it's not usually needed:
 #   QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2 \
 #     ./packer/scripts/run-vm.sh
 #   QCOW=packer/output-fde/nke-node-fde-ubuntu-26.04.1-amd64.qcow2 \
 #     TPM=1 ./packer/scripts/run-vm.sh
 #   QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2 \
-#     ARCH=arm64 ./packer/scripts/run-vm.sh
+#     ./packer/scripts/run-vm.sh
 #
 # Env:
 #   QCOW          path to the qcow2 to boot (required)
-#   ARCH          amd64 or arm64 (default: amd64) -- must match QCOW's own
-#                 arch. Picks qemu-system-x86_64 vs qemu-system-aarch64, the
-#                 machine type (arm64 has no sane default the way x86's "pc"
-#                 is one, so arm64 always gets -machine virt even without
-#                 OVMF_CODE), the accelerator (same ARCH-vs-host-arch
-#                 reasoning as packer/Makefile and boot-smoke.sh: KVM only
-#                 virtualizes the host's own architecture), and OVMF_CODE's
-#                 default below.
+#   ACCELERATOR   kvm, hvf, or tcg; defaults to available native acceleration
+#   REQUIRE_ACCELERATION  set to 1 to reject software emulation
+#                 Architecture is inferred from the qcow2 filename.
 #   SSH_KEY       ssh key to inject (default: packer/.ssh/id_ed25519)
 #   SSH_PORT      host port to forward to guest :22 (default: 2222)
 #   OVMF_CODE     defaults to the standard OVMF (amd64) / AAVMF (arm64) path
-#                 for this ARCH if that file exists on the host -- every
-#                 qcow2 this repo builds is UEFI-only, so this "just works"
-#                 without setting anything, unlike earlier versions of this
-#                 script which silently booted BIOS-style (a black screen:
-#                 "SeaBIOS ... Booting from Hard Disk..." with no further
-#                 progress, since there's no BIOS-bootable bootloader on
-#                 these disks) unless you remembered to pass it. Set BIOS=1
-#                 to force the old BIOS-style boot instead, for some other,
-#                 non-UEFI qcow2 you point this at.
+#                 for this ARCH. NKE qcow2s are UEFI-only.
 #   OVMF_VARS_TEMPLATE  default: /usr/share/OVMF/OVMF_VARS_4M.fd (amd64) or
 #                 /usr/share/AAVMF/AAVMF_VARS.fd (arm64)
+#                 Override OVMF_CODE and OVMF_VARS_TEMPLATE together as a matching pair.
 #   TPM           set to 1 to attach a fresh swtpm (the FDE image's first
 #                 real boot needs one to complete its TPM bind; the shipped
 #                 image's build-time luks.key= GRUB parameter unlocks it
@@ -61,6 +49,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=qemu-arch.sh
+source "${ROOT}/scripts/qemu-arch.sh"
 QCOW="${QCOW:-}"
 if [[ -z "${QCOW}" ]]; then
   echo "run-vm: QCOW is required, e.g. QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2 $0" >&2
@@ -83,53 +73,8 @@ fi
 SSH_PORT="${SSH_PORT:-2222}"
 MEMORY="${MEMORY:-4096}"
 CPUS="${CPUS:-2}"
-ARCH="${ARCH:-amd64}"
-
-case "${ARCH}" in
-  amd64)
-    QEMU_BIN=qemu-system-x86_64
-    ARCH_UNAME=x86_64
-    MACHINE_ARGS=()
-    ;;
-  arm64)
-    QEMU_BIN=qemu-system-aarch64
-    ARCH_UNAME=aarch64
-    # Unlike x86 (which defaults to a sane "pc" machine), QEMU has no
-    # default machine type for aarch64 -- it must be named explicitly,
-    # regardless of whether OVMF_CODE/EFI is in play.
-    MACHINE_ARGS=(-machine virt)
-    ;;
-  *)
-    echo "run-vm: unsupported ARCH=${ARCH} (expected amd64 or arm64)" >&2
-    exit 1
-    ;;
-esac
-
-# Default OVMF_CODE per ARCH unless BIOS=1 opts out: every qcow2 this repo
-# builds is UEFI-only, so silently falling back to BIOS boot (the "SeaBIOS
-# ... Booting from Hard Disk..." black screen, since there's no BIOS-bootable
-# loader on these disks) is never what you actually want by default here.
-if [[ -z "${OVMF_CODE:-}" && -z "${BIOS:-}" ]]; then
-  if [[ "${ARCH}" == "arm64" ]]; then
-    OVMF_CODE_DEFAULT=/usr/share/AAVMF/AAVMF_CODE.fd
-  else
-    OVMF_CODE_DEFAULT=/usr/share/OVMF/OVMF_CODE_4M.fd
-  fi
-  if [[ -f "${OVMF_CODE_DEFAULT}" ]]; then
-    OVMF_CODE="${OVMF_CODE_DEFAULT}"
-  else
-    echo "run-vm: no OVMF_CODE given and ${OVMF_CODE_DEFAULT} not found; booting BIOS-style, which will not work for this repo's own qcow2s. Install ovmf/qemu-efi-aarch64, or set OVMF_CODE explicitly." >&2
-  fi
-fi
-
-# Same probe as packer/Makefile and boot-smoke.sh, and for the same reason:
-# KVM only accelerates a guest matching the host's own architecture.
-if [[ "$(uname -m)" == "${ARCH_UNAME}" && -c /dev/kvm && -w /dev/kvm ]]; then
-  ACCEL_ARGS=(-enable-kvm -cpu host)
-else
-  echo "run-vm: no usable same-arch /dev/kvm, booting under software emulation (slower)" >&2
-  ACCEL_ARGS=(-accel tcg -cpu max)
-fi
+nke_qemu_env "$(nke_arch_from_qcow "${QCOW}")"
+OVMF_CODE="${OVMF_CODE:-${EFI_CODE_DEFAULT}}"
 
 WORKDIR="$(mktemp -d)"
 DISK="${WORKDIR}/vm.qcow2"
@@ -153,7 +98,6 @@ cloud-localds "${WORKDIR}/seed.iso" "${WORKDIR}/user-data" "${WORKDIR}/meta-data
 
 QEMU_ARGS=(
   -m "${MEMORY}" -smp "${CPUS}"
-  "${MACHINE_ARGS[@]}"
   "${ACCEL_ARGS[@]}"
   -nographic
   -drive if=virtio,file="${DISK}",format=qcow2
@@ -168,16 +112,11 @@ QEMU_ARGS=(
 # intermittent guest-kernel instability while developing those variants —
 # see the same comment in demo-fde.sh.
 if [[ -n "${OVMF_CODE:-}" ]]; then
-  if [[ "${ARCH}" == "amd64" ]]; then
-    OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
-  else
-    OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-/usr/share/AAVMF/AAVMF_VARS.fd}"
-  fi
-  cp "${OVMF_VARS_TEMPLATE}" "${WORKDIR}/OVMF_VARS.fd"
-  EFI_MACHINE_ARGS=()
-  [[ "${ARCH}" == "amd64" ]] && EFI_MACHINE_ARGS=(-machine type=q35)
+  OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-${EFI_VARS_DEFAULT}}"
+  install -m 0600 "${OVMF_VARS_TEMPLATE}" "${WORKDIR}/OVMF_VARS.fd"
   QEMU_ARGS=(
-    "${EFI_MACHINE_ARGS[@]}"
+    -machine "type=${QEMU_MACHINE}"
+    -cpu "${QEMU_CPU}"
     -drive if=pflash,format=raw,readonly=on,file="${OVMF_CODE}"
     -drive if=pflash,format=raw,file="${WORKDIR}/OVMF_VARS.fd"
     "${QEMU_ARGS[@]}"
@@ -195,7 +134,7 @@ if [[ "${TPM:-}" == "1" ]]; then
   QEMU_ARGS+=(
     -chardev "socket,id=chrtpm,path=${WORKDIR}/tpm/swtpm-sock"
     -tpmdev emulator,id=tpm0,chardev=chrtpm
-    -device tpm-tis,tpmdev=tpm0
+    -device "${TPM_DEVICE_SPEC}"
   )
 fi
 

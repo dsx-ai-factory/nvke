@@ -13,12 +13,12 @@ import (
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
 
-	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/rollout"
-	rolloutkubevip "github.com/NVIDIA/nke/controller/internal/rollout/guards/kubevip"
-	rolloutoidc "github.com/NVIDIA/nke/controller/internal/rollout/operations/oidc"
-	rollouttemporal "github.com/NVIDIA/nke/controller/internal/rollout/temporal"
-	"github.com/NVIDIA/nke/controller/internal/temporal/activities"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
+	rolloutkubevip "github.com/dsx-ai-factory/nke/controller/internal/rollout/guards/kubevip"
+	rolloutoidc "github.com/dsx-ai-factory/nke/controller/internal/rollout/operations/oidc"
+	rollouttemporal "github.com/dsx-ai-factory/nke/controller/internal/rollout/temporal"
+	"github.com/dsx-ai-factory/nke/controller/internal/temporal/activities"
 )
 
 func TestEnableOIDCWorkflow_CompletesThenWritesBackAndMarks(t *testing.T) {

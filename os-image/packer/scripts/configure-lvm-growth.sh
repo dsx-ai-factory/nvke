@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-SRC=/tmp/nke-image/lvm
+SRC=/var/tmp/nke-image/lvm
 
 echo "Installing LVM first-boot growth script + service..."
 sudo install -m 0755 "${SRC}/lvm-growth-firstboot.sh" /usr/local/bin/lvm-growth-firstboot.sh

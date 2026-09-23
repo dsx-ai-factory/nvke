@@ -12,8 +12,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/NVIDIA/nke/controller/internal/constants"
-	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 //go:embed capi_spire_agent.conf.tmpl
@@ -65,8 +66,8 @@ func (a *Activities) renderCAPIBootstrapUserData(
 		return "", fmt.Errorf("failed to read node set capi provider: %w", err)
 	}
 
-	if capiNodeSetProvider.SpireAttestationMethod == db.SpireAttestationMethodJoinToken && spireJoinToken == "" {
-		return "", fmt.Errorf("spire join token is required when infra.spireAttestationMethod is joinToken")
+	if a.cfg.NodeAgentSpireAttestationMethod == config.SpireAttestationMethodJoinToken && spireJoinToken == "" {
+		return "", fmt.Errorf("spire join token is required when SPIRE attestation method is joinToken")
 	}
 
 	// A site stood up without SPIFFE has no SPIRE and no workload socket to
@@ -103,7 +104,7 @@ func (a *Activities) renderCAPIBootstrapUserData(
 				Owner:       "root:root",
 				Permissions: "0644",
 				Content: buildCAPISpireAgentConfig(
-					capiNodeSetProvider.SpireAttestationMethod,
+					db.SpireAttestationMethod(a.cfg.NodeAgentSpireAttestationMethod),
 					a.cfg.SpireServerAddress,
 					a.cfg.SpireServerPort,
 					trustDomain,
@@ -112,10 +113,12 @@ func (a *Activities) renderCAPIBootstrapUserData(
 			},
 		)
 	}
+	runCommands := append([]string(nil), capiNodeSetProvider.PreKubeadmCommands...)
+	runCommands = append(runCommands, a.nodeAgentTLSJWTBootstrapCommands()...)
 
 	userData := capiCloudInitConfig{
 		WriteFiles: files,
-		RunCmd:     append([]string(nil), capiNodeSetProvider.PreKubeadmCommands...),
+		RunCmd:     runCommands,
 	}
 
 	yamlBytes, err := yaml.Marshal(userData)

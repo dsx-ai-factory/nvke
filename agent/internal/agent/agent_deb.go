@@ -14,8 +14,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
-	"github.com/NVIDIA/nke/agent/pkg/deb"
+	pb "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
+	"github.com/dsx-ai-factory/nke/agent/pkg/deb"
 )
 
 func (s *NodeAgentServer) InstallPackages(ctx context.Context, req *pb.InstallPackagesRequest) (*pb.InstallPackagesResponse, error) {

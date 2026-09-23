@@ -194,6 +194,36 @@ func TestValidateInvalidInputs(t *testing.T) {
 		{"bad podCidr", func(i *SiteSpec) { i.Cluster.PodCidr = "10.100.0.0" }, pathPodCidr},
 		{"bad podCidr in list", func(i *SiteSpec) { i.Cluster.PodCidr = "10.100.0.0/16,nope" }, pathPodCidr},
 		{"missing serviceCidr", func(i *SiteSpec) { i.Cluster.ServiceCidr = "" }, pathServiceCidr},
+		{"vip not an IP", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "nope" }, pathControlPlaneVIP},
+		{"vip is IPv6", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "fd00::1" }, pathControlPlaneVIP},
+		{"vip equals a node IP", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "10.0.0.1" }, pathControlPlaneVIP},
+		{"vip inside podCidr", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "10.100.0.5" }, pathControlPlaneVIP},
+		{"vip inside serviceCidr", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "10.200.0.5" }, pathControlPlaneVIP},
+		{"vip inside second podCidr", func(i *SiteSpec) {
+			i.Cluster.PodCidr = "10.100.0.0/16,10.40.0.0/16"
+			i.Cluster.ControlPlaneVIP = "10.40.0.5"
+		}, pathControlPlaneVIP},
+		// A 4-in-6 mapped address must be rejected the way CWE rejects it. Here
+		// the mapped form equals the node at 10.0.0.1, so a string compare would
+		// miss the collision. The address-based compare must still catch it.
+		{"vip mapped IPv4 equals a node IP", func(i *SiteSpec) {
+			i.Cluster.ControlPlaneVIP = "::ffff:10.0.0.1"
+		}, pathControlPlaneVIP},
+		// A mapped address with no colliding node is still not IPv4 and must be
+		// rejected on that ground.
+		{"vip mapped IPv4 not colliding", func(i *SiteSpec) {
+			i.Cluster.ControlPlaneVIP = "::ffff:172.16.0.5"
+		}, pathControlPlaneVIP},
+		// The unabbreviated spelling of the same mapped address must be rejected too.
+		{"vip mapped IPv4 unabbreviated", func(i *SiteSpec) {
+			i.Cluster.ControlPlaneVIP = "0:0:0:0:0:ffff:10.0.0.1"
+		}, pathControlPlaneVIP},
+		// IPv4 forms that clear the overlap checks but cannot serve an endpoint.
+		{"vip unspecified", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "0.0.0.0" }, pathControlPlaneVIP},
+		{"vip loopback", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "127.0.0.1" }, pathControlPlaneVIP},
+		{"vip broadcast", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "255.255.255.255" }, pathControlPlaneVIP},
+		{"vip multicast", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "224.0.0.1" }, pathControlPlaneVIP},
+		{"vip link-local", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "169.254.1.1" }, pathControlPlaneVIP},
 		{"bad nodeAgentPort", func(i *SiteSpec) { i.Cluster.NodeAgentPort = "70000" }, pathNodeAgentPort},
 		{"missing bootstrapRepo", func(i *SiteSpec) { i.Registry.BootstrapRepo = "" }, pathBootstrapRepo},
 		{"missing bootstrapChart", func(i *SiteSpec) { i.Registry.BootstrapChart = "" }, pathBootstrapChart},
@@ -212,6 +242,37 @@ func TestValidateInvalidInputs(t *testing.T) {
 				t.Errorf("error %q does not mention %q", err.Error(), tc.wantSub)
 			}
 		})
+	}
+}
+
+// TestValidateControlPlaneVIP_Accepts checks empty and non-overlapping IPv4 VIPs.
+func TestValidateControlPlaneVIP_Accepts(t *testing.T) {
+	for name, vip := range map[string]string{
+		"empty is valid":       "",
+		"valid IPv4 VIP":       "10.0.0.100",
+		"public address":       "198.51.100.10",
+		"shared address space": "100.64.0.10",
+	} {
+		t.Run(name, func(t *testing.T) {
+			inv := minimalValid()
+			inv.Cluster.ControlPlaneVIP = vip
+			if err := inv.Validate(); err != nil {
+				t.Errorf("Validate rejected VIP %q: %v", vip, err)
+			}
+		})
+	}
+}
+
+// TestLoadControlPlaneVIPFromEnv checks the environment override.
+func TestLoadControlPlaneVIPFromEnv(t *testing.T) {
+	t.Setenv("CLUSTER_CONTROL_PLANE_VIP", "10.0.0.100")
+
+	inv, err := Load(writeTemp(t, validYAML))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if inv.Cluster.ControlPlaneVIP != "10.0.0.100" {
+		t.Errorf("ControlPlaneVIP = %q, want env value %q", inv.Cluster.ControlPlaneVIP, "10.0.0.100")
 	}
 }
 
@@ -560,6 +621,62 @@ func TestLoad_AggregatesDataAndReferenceErrors(t *testing.T) {
 	for _, want := range []string{pathPodCidr, pathSpireCACertFile} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("Load() error = %q, want it to name %q — both problems must surface in one pass", err, want)
+		}
+	}
+}
+
+func TestLoadDefaultsEtcdEncryptionOn(t *testing.T) {
+	// validYAML says nothing about encryption; the loaded spec must resolve
+	// that to on, so every reader downstream sees a decided value.
+	inv, err := Load(writeTemp(t, validYAML))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if inv.Cluster.EtcdEncryption == nil || !*inv.Cluster.EtcdEncryption {
+		t.Errorf("EtcdEncryption = %v, want &true after Load", inv.Cluster.EtcdEncryption)
+	}
+	if !inv.Cluster.EtcdEncryptionEnabled() {
+		t.Error("EtcdEncryptionEnabled() = false for an unset field, want true")
+	}
+}
+
+func TestLoadEnvDisablesEtcdEncryption(t *testing.T) {
+	t.Setenv("CLUSTER_ETCD_ENCRYPTION", "false")
+
+	inv, err := Load(writeTemp(t, validYAML))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if inv.Cluster.EtcdEncryptionEnabled() {
+		t.Error("CLUSTER_ETCD_ENCRYPTION=false did not disable encryption")
+	}
+}
+
+func TestEtcdEncryptionEnabled(t *testing.T) {
+	on, off := true, false
+	for _, tc := range []struct {
+		name  string
+		field *bool
+		want  bool
+	}{
+		{"unset", nil, true},
+		{"true", &on, true},
+		{"false", &off, false},
+	} {
+		if got := (Cluster{EtcdEncryption: tc.field}).EtcdEncryptionEnabled(); got != tc.want {
+			t.Errorf("%s: EtcdEncryptionEnabled() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestLoadRejectsEmptyEtcdEncryption: the decoder would read "" as false,
+// which for this field is a permanent, silent opt-out. It is refused instead.
+func TestLoadRejectsEmptyEtcdEncryption(t *testing.T) {
+	for _, value := range []string{`""`, `''`} {
+		spec := strings.Replace(validYAML, "cluster:\n", "cluster:\n  etcdEncryption: "+value+"\n", 1)
+		_, err := Load(writeTemp(t, spec))
+		if err == nil || !strings.Contains(err.Error(), pathEtcdEncryption) || !strings.Contains(err.Error(), "not a boolean") {
+			t.Errorf("etcdEncryption: %s: err = %v, want one naming %s as not a boolean", value, err, pathEtcdEncryption)
 		}
 	}
 }

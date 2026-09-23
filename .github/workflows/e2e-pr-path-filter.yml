@@ -30,6 +30,7 @@ permissions: {}
 jobs:
   filter:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pull-requests: read
     outputs:
@@ -65,12 +66,10 @@ jobs:
               exit 0
             fi
 
-            # The CWE-facing CLI: the REST client, the commands built on it, and
-            # the types they exchange. A change here can break against a live
-            # CWE, which is what hack/ci/nkectl-smoke.sh checks, so it still
-            # runs. The rest of cli/ -- docs, examples, the bootstrap e2e suite,
-            # the packages that never call CWE -- cannot, and still skips.
-            cwe_facing='^cli/(cmd/|internal/(clients|clusterstate|cwe|sitecluster)/)'
+            # The CLI hack/ci/nkectl-smoke.sh exercises against a live CWE. Keep
+            # in step with what the smoke asserts on; capd-e2e.yml mirrors it as
+            # push globs. The rest of cli/ cannot break against CWE, and skips.
+            cwe_facing='^cli/(cmd/|internal/(clients|clusterstate|cwe|providers|sitecluster|util)/)'
             e2e_unrelated='(^|/)docs/|^cli/|^cluster-api-provider-provisioned/'
 
             if [[ -n "$changed_files" ]] && ! grep -qEv "$e2e_unrelated" <<< "$changed_files"; then

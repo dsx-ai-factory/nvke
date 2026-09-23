@@ -4,7 +4,7 @@
 package server_test
 
 import (
-	"github.com/NVIDIA/nke/controller/internal/testutil"
+	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
 )
 
 // mockDB and mockTx are aliases so existing server tests can keep using the same type names.

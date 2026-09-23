@@ -31,7 +31,7 @@ cd os-image   && make notices
 not set `GOWORK=off`), for two different reasons. The controller and nkectl read
 the committed `vendor/` tree, which is a workspace-level construct — that is what
 lets them run without downloading the internal `cluster-api-provider-nico`.
-`os-image` requires `github.com/NVIDIA/nke/agent`, which resolves only through
+`os-image` requires `github.com/dsx-ai-factory/nke/agent`, which resolves only through
 the workspace's `use` directive; with the workspace off, `go-licenses` fails with
 `go.mod file not found` before it collects anything.
 

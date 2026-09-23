@@ -178,7 +178,7 @@ func TestGetMachineArchitecture(t *testing.T) {
 	assert.Contains(t, validArchs, arch)
 }
 
-func TestGetBundleURL(t *testing.T) {
+func TestGetBundleIndexPath(t *testing.T) {
 	// Save original readFile function and restore after test
 	originalReadFile := readFile
 	defer func() { readFile = originalReadFile }()
@@ -193,7 +193,7 @@ VERSION="22.04.5 LTS (Jammy Jellyfish)"`
 			return []byte(osReleaseContent), nil
 		}
 
-		url, err := GetBundleURL()
+		url, err := GetBundleIndexPath()
 		assert.NoError(t, err)
 		assert.Equal(t, DefaultBundleIndexUbuntu22, url)
 	})
@@ -208,7 +208,7 @@ VERSION="24.04 LTS (Noble Numbat)"`
 			return []byte(osReleaseContent), nil
 		}
 
-		url, err := GetBundleURL()
+		url, err := GetBundleIndexPath()
 		assert.NoError(t, err)
 		assert.Equal(t, DefaultBundleIndexUbuntu24, url)
 	})
@@ -222,7 +222,7 @@ VERSION_ID="20.04"`
 			return []byte(osReleaseContent), nil
 		}
 
-		_, err := GetBundleURL()
+		_, err := GetBundleIndexPath()
 		assert.Error(t, err)
 	})
 }
@@ -350,17 +350,6 @@ func TestExtractVersion(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestVerifyBundles(t *testing.T) {
-	// VerifyBundles is currently a stub that returns nil
-	ctx := t.Context()
-	bundles := []Bundle{
-		{Name: "test-bundle", Version: semver.MustParse("v1.0.0")},
-	}
-
-	err := VerifyBundles(ctx, bundles)
-	assert.NoError(t, err)
 }
 
 func TestIndexFindWithX86_64Architecture(t *testing.T) {

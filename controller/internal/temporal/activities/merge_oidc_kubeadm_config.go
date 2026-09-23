@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/NVIDIA/nke/controller/internal/kubeadmconfig"
+	"github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig"
 )
 
 // MergeOIDCKubeadmConfigInput identifies the cluster whose persisted

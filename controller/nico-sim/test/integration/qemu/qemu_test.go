@@ -14,7 +14,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/NVIDIA/nke/controller/nico-sim/test/integration/testutil"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/test/integration/testutil"
 )
 
 var (

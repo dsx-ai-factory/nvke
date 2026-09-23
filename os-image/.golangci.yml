@@ -39,6 +39,6 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(github.com/NVIDIA/)
+        - prefix(github.com/dsx-ai-factory/nke)
     gofumpt:
       extra-rules: true

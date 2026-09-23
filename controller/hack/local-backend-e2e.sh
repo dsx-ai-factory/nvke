@@ -159,6 +159,7 @@ export NODE_AGENT_REPO_PATH
 export KIND_CLUSTER_NAME="${kind_cluster_name}"
 export CAPD_NODE_AGENT_LOCAL_BUILD="${CAPD_NODE_AGENT_LOCAL_BUILD:-true}"
 export CAPD_SPIRE_ATTESTATION_METHOD="${CAPD_SPIRE_ATTESTATION_METHOD:-$(e2e_attestation_method)}"
+export NODE_AGENT_SPIRE_ATTESTATION_METHOD="${CAPD_SPIRE_ATTESTATION_METHOD}"
 log "SPIRE node attestation: ${CAPD_SPIRE_ATTESTATION_METHOD}"
 
 [[ -f "${NODE_AGENT_REPO_PATH}/Makefile" ]] || \
@@ -226,9 +227,12 @@ else
     || fail "could not start the bundle mirror"
   export BUNDLE_SERVER_URL="http://${mirror_ip}/"
   export INDEX_FILE_URL="http://${mirror_ip}/index.json"
-  # Prove it serves before building an image that bakes the URL in.
-  docker run --rm --network kind alpine:3.22 \
-    wget -q -O /dev/null "${INDEX_FILE_URL}" \
+  # Prove it serves before building an image that bakes the URL in. Poll rather
+  # than probe once: nginx has only just been started, and a single wget raced
+  # its first socket bind and failed a run with "Connection refused".
+  docker run --rm --network kind alpine:3.22 sh -c \
+    'for _ in $(seq 30); do wget -q -O /dev/null "$1" && exit 0; sleep 1; done; exit 1' \
+    _ "${INDEX_FILE_URL}" \
     || fail "bundle mirror is not serving ${INDEX_FILE_URL}"
   log "bundle mirror at ${BUNDLE_SERVER_URL}"
 fi

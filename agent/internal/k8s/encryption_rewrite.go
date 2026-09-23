@@ -111,16 +111,18 @@ func rewriteEncryptableResourceType(ctx context.Context, dyn dynamic.Interface, 
 }
 
 // isSkippableEncryptRewriteError returns true for errors that should not abort the full rewrite:
-// the object disappeared (list/update race), or this principal cannot update that object.
+// the object disappeared between the list and the update, a benign race because an object that
+// no longer exists needs no re-encryption.
+//
+// Forbidden is deliberately not skippable. The rewrite exists to re-encrypt every object under
+// the current key, so an object the agent cannot update is an object left under the old key.
+// Skipping it would report a successful rewrite over data that is only partially re-encrypted,
+// hiding the missing RBAC; failing loudly surfaces it instead.
 func isSkippableEncryptRewriteError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if apierrors.IsNotFound(err) || apierrors.IsGone(err) {
-		return true
-	}
-	// TODO: see if we have to handle forbidden errors
-	return false
+	return apierrors.IsNotFound(err) || apierrors.IsGone(err)
 }
 
 func listEncryptableObjectRefs(

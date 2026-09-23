@@ -1,0 +1,103 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Publishes the CI dashboard to GitHub Pages, hourly.
+#
+# The Actions UI answers "did this run pass". It does not answer "has this lane
+# been flaking for a week", which is the question that actually gets asked, and
+# which cost a day of manual dispatching to answer once. This grid is one row
+# per workflow and one square per run, so a pattern is visible without opening
+# anything.
+#
+# The window is a run count rather than a time span, on purpose. The e2e lanes
+# are on twice-daily crons, so a 24-hour view would be two squares wide and
+# show nothing; thirty squares covers whatever span that lane needs to produce
+# them, and a busy lane still shows its last thirty.
+#
+# Nothing is committed. hack/ci-dashboard/generate.sh writes data.json into a
+# scratch directory beside the viewer, and the whole directory is the Pages
+# deployment, so the repository never carries the data.
+#
+# The site is private: Pages visibility is set to the repository's, so only
+# people who can read this repository can open the link.
+name: CI dashboard
+
+on:
+  schedule:
+    # Hourly. A lane that finished at :05 shows up within the hour, and the
+    # generation is well under a hundred API calls, so the cost is noise.
+    - cron: '0 * * * *'
+  workflow_dispatch:
+    inputs:
+      runs-per-workflow:
+        description: Squares per row. Raise it to look further back.
+        required: false
+        default: '30'
+        type: string
+      fetch-runs:
+        description: >-
+          Runs to read per view before grouping. Raise it with
+          runs-per-workflow, or quiet lanes run out of history.
+        required: false
+        default: '1500'
+        type: string
+
+permissions: {}
+
+concurrency:
+  # One deployment at a time, and never cancel one in flight: a half-published
+  # site is worse than a stale one.
+  group: ci-dashboard-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Generate and publish
+    runs-on: ubuntu-latest
+    if: github.repository == 'dsx-ai-factory/nke'
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    permissions:
+      # Reading the run history of this repository is the whole input.
+      actions: read
+      contents: read
+      # deploy-pages needs these two; nothing else here writes anything.
+      pages: write
+      id-token: write
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Generate data.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUNS_PER_WORKFLOW: ${{ inputs.runs-per-workflow || '30' }}
+          FETCH_RUNS: ${{ inputs.fetch-runs || '1500' }}
+          OUT: site/data.json
+        run: |
+          set -euo pipefail
+          ./hack/ci-dashboard/generate.sh
+          cp hack/ci-dashboard/index.html site/index.html
+          ls -l site/
+
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+      - name: Deploy to Pages
+        id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+      - name: Say where it went
+        env:
+          URL: ${{ steps.deploy.outputs.page_url }}
+        run: echo "::notice::CI dashboard published to ${URL}"

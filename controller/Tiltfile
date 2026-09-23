@@ -1012,6 +1012,12 @@ _cwe_install_cni_after_init = os.getenv(
     "INSTALL_CNI_AFTER_INIT",
     _tilt_env.get("INSTALL_CNI_AFTER_INIT", "false"))
 
+# Keep the chart default when this is unset. E2E sets it explicitly so the
+# deployment-wide method matches the attestor baked into its CAPD node image.
+_cwe_spire_attestation_method = os.getenv(
+    "NODE_AGENT_SPIRE_ATTESTATION_METHOD",
+    _tilt_env.get("NODE_AGENT_SPIRE_ATTESTATION_METHOD", ""))
+
 _cwe_chart_flags = [
     "--create-namespace",
     "--set", "cni.installAfterInit=%s" % ("true" if _cwe_install_cni_after_init == "true" else "false"),
@@ -1035,6 +1041,11 @@ _cwe_chart_flags = [
     "--wait",
     "--timeout", "10m",
 ] + _all_cwe_chart_flags
+
+if _cwe_spire_attestation_method != "":
+    _cwe_chart_flags += [
+        "--set-string", "nodeAgent.spireAttestationMethod=%s" % _cwe_spire_attestation_method,
+    ]
 
 if CWE_IMAGE:
     _image_parts = CWE_IMAGE.split(":")

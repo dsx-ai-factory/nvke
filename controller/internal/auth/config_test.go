@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/nke/controller/internal/auth"
+	"github.com/dsx-ai-factory/nke/controller/internal/auth"
 )
 
 // configHeader is the apiVersion/kind preamble every valid file carries.

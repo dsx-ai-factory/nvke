@@ -37,7 +37,6 @@ area/os-image:
   - changed-files:
       - any-glob-to-any-file:
           - "os-image/**"
-          - "node-images/**"
 
 area/ci-build:
   - changed-files:

@@ -11,13 +11,5 @@ PRODUCT := OVN
 VERSIONS := $(OVN_STREAMS)
 CONTENT_SPEC := $(CURDIR)/packaging/nfpm-charts.yaml
 CONTENT_KIND := charts
-BUNDLE_DEPS := check-ngc-key
 
 include ../cni-common/deb.mk
-
-.PHONY: check-ngc-key
-check-ngc-key: ## Fail early without the NGC key the chart and image pulls need.
-	@if [ -z "$${NGC_API_KEY:-}" ]; then \
-		echo "cni-ovn: NGC_API_KEY is required (an NGC key with access to the nv-ngn org)." >&2; \
-		exit 1; \
-	fi

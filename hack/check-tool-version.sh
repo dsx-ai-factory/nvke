@@ -13,6 +13,7 @@ install_hint() {
   case "${tool}" in
     actionlint) echo "go install github.com/rhysd/actionlint/cmd/actionlint@v${expected#v}" ;;
     kubeconform) echo "https://github.com/yannh/kubeconform/releases/tag/${expected}" ;;
+    kubectl) echo "https://dl.k8s.io/release/${expected}/bin/\$(go env GOOS)/\$(go env GOARCH)/kubectl" ;;
     govulncheck) echo "go install golang.org/x/vuln/cmd/govulncheck@${expected}" ;;
     helm) echo "https://github.com/helm/helm/releases/tag/${expected}" ;;
     shellcheck) echo "https://github.com/koalaman/shellcheck/releases/tag/v${expected#v}" ;;
@@ -41,6 +42,11 @@ case "${tool}" in
     ;;
   kubeconform)
     actual="$(kubeconform -v | tr -d '[:space:]')"
+    ;;
+  kubectl)
+    # `kubectl version --client` contacts no cluster; the Kustomize line below
+    # it is why this reads the Client Version field by name rather than a row.
+    actual="$(kubectl version --client 2>/dev/null | awk '$1 == "Client" { print $3 }')"
     ;;
   govulncheck)
     actual="$(govulncheck -version 2>&1 | awk -F@ '$1 == "Scanner: govulncheck" { print $2 }')"

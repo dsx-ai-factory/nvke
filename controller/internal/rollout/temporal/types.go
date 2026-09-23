@@ -6,7 +6,7 @@ package temporal
 import (
 	"github.com/google/uuid"
 
-	"github.com/NVIDIA/nke/controller/internal/rollout"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
 )
 
 // Activity names used by workflow.ExecuteActivity.

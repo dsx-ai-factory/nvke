@@ -28,12 +28,11 @@ import (
 // the max_backups setting in virtlogd.conf).
 const maxLogBackups = 3
 
-// consoleLogNames are the known console log file names produced by each VM backend,
-// in preference order.
+// consoleLogNames are the known console log file names produced by each VM backend.
 var consoleLogNames = []string{
 	"console.log",          // darwin-qemu
-	"disk.qcow2.ttyS1.log", // libvirt serial 1 (preferred)
-	"disk.qcow2.ttyS0.log", // libvirt serial 0 (fallback)
+	"disk.qcow2.ttyS0.log", // libvirt serial 0
+	"disk.qcow2.ttyS1.log", // libvirt serial 1
 }
 
 // Server is an SSH server that streams VM console logs to connecting clients.
@@ -314,13 +313,18 @@ func (s *Server) streamConsoleLogFollow(ctx context.Context, w io.Writer, instan
 
 func (s *Server) findConsoleLog(instanceID string) string {
 	instanceDir := filepath.Join(s.instancesDir, instanceID)
+	var bestPath string
+	var bestModTime time.Time
 	for _, name := range consoleLogNames {
 		path := filepath.Join(instanceDir, name)
 		if info, err := os.Stat(path); err == nil && info.Size() > 0 {
-			return path
+			if bestPath == "" || info.ModTime().After(bestModTime) {
+				bestPath = path
+				bestModTime = info.ModTime()
+			}
 		}
 	}
-	return ""
+	return bestPath
 }
 
 func generateHostKey() (ssh.Signer, error) {

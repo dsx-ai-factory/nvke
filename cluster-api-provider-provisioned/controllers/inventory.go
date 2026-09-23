@@ -19,7 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
-	infrav1 "github.com/NVIDIA/nke/cluster-api-provider-provisioned/api/v1alpha1"
+	infrav1 "github.com/dsx-ai-factory/nke/cluster-api-provider-provisioned/api/v1alpha1"
 )
 
 var tpmEKPubHashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)

@@ -52,6 +52,30 @@ jobs:
         with:
           persist-credentials: false
 
+      # WHAT THIS ACTUALLY COVERS. The action reviews what GitHub's dependency
+      # graph resolved, which is not obviously all nine modules in a monorepo
+      # with a committed vendor/ tree. Measured on 2026-09-20, it is:
+      #
+      #   65 manifests = 9 go.mod + 56 workflow files
+      #
+      # Every module is in it -- agent, cli, cluster-api-provider-provisioned,
+      # controller, controller/api, controller/hack/capd-reboot-controller,
+      # controller/nico-sim, controller/test/e2e, os-image -- so this check is
+      # covering and not merely configured. vendor/ and go.sum contribute
+      # nothing: zero entries match either.
+      #
+      # Covering is not blocking. This workflow is not a merge-gate member, so
+      # a finding here is advisory. Read what does block with:
+      #   gh api repos/dsx-ai-factory/nke/rules/branches/main --jq '[.[].type]'
+      #
+      # Re-measure with:
+      #
+      #   gh api graphql -f query='{ repository(owner:"dsx-ai-factory",
+      #     name:"nke") { dependencyGraphManifests(first:100,
+      #     withDependencies:false) { totalCount nodes { filename } } } }'
+      #
+      # A new module that never appears there is silently unreviewed, which is
+      # why the count is written down rather than assumed.
       - name: Review dependencies
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:

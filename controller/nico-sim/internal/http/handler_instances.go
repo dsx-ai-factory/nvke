@@ -11,7 +11,7 @@ import (
 
 	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/state"
+	"github.com/dsx-ai-factory/nke/controller/nico-sim/internal/state"
 )
 
 func (s *Server) handleGetInstance(w nethttp.ResponseWriter, r *nethttp.Request) {

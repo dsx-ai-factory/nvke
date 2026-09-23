@@ -40,7 +40,7 @@ include ../make/tool-versions.mk
 include ../make/golangci.mk
 
 # Image URL to use all building/pushing image targets
-IMG_NAME ?= nvcr.io/j7sbcjl3qgta/cloud-workflow-engine
+IMG_NAME ?= nvcr.io/j7sbcjl3qgta/nke-controller
 IMG_TAG ?= latest
 IMG ?= ${IMG_NAME}:${IMG_TAG}
 # Falls back to the commit before v0.0.0. A CI checkout is shallow and carries
@@ -130,6 +130,12 @@ generate-check: generate-api ## Verify generated API code is up to date. (run by
 		git diff --name-only -- api/models.gen.go api/server.gen.go api/client.gen.go; \
 		exit 1; \
 	fi
+	@# git diff says nothing about a path git is not tracking, so a newly
+	@# generated file would otherwise pass while never being committed. Same
+	@# guard as Makefile's licences-check.
+	@untracked=$$(git ls-files --others --exclude-standard -- api/models.gen.go api/server.gen.go api/client.gen.go); \
+	 [ -z "$$untracked" ] \
+		|| { echo "ERROR: generated API files are not tracked. Run 'make generate' and commit them:"; printf '%s\n' "$$untracked" | sed 's/^/    /'; exit 1; }
 
 RELEASE_LDFLAGS ?= -s -w -buildid= -extldflags -static
 
@@ -143,12 +149,12 @@ print-%:
 # -buildvcs=false because the version comes from the -X ldflag below. See the note
 # on work-check-offline in the root Makefile.
 build: ## Build controller into bin/.
-	CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags "-X github.com/NVIDIA/nke/controller/internal/version.Version=${BUILD_VERSION} $(RELEASE_LDFLAGS)" -o ./bin/$(WORKER_BIN_NAME) ./cmd/worker/
+	CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags "-X github.com/dsx-ai-factory/nke/controller/internal/version.Version=${BUILD_VERSION} $(RELEASE_LDFLAGS)" -o ./bin/$(WORKER_BIN_NAME) ./cmd/worker/
 
 .PHONY: fmt
 fmt: ## Format code (gofumpt + goimports; matches .golangci.yml formatters).
 	go run mvdan.cc/gofumpt@v0.11.0 -w -extra .
-	go run golang.org/x/tools/cmd/goimports@v0.48.0 -w -local github.com/NVIDIA/nke/controller .
+	go run golang.org/x/tools/cmd/goimports@v0.48.0 -w -local github.com/dsx-ai-factory/nke/controller .
 
 # GO_TEST_FLAGS lets CI add -race without the workflow having to restate the
 # test command, so `make test` stays the one definition of what "the tests" are.
@@ -174,6 +180,15 @@ test: ## Execute unit tests (excludes integration tests). (run by the merge gate
 	# `go list ./...` no longer needs filtering here. The old grep matched
 	# by accident anyway: `.` is a regex wildcard, not a path prefix.
 	go test $(GO_TEST_FLAGS) ./... -coverprofile=coverage.txt -covermode $(GO_COVER_MODE)
+
+# The `integration` build tag covers two packages here, and neither needs a
+# service to be running. internal/agent binds a loopback socket and mints its
+# own certificates; internal/teleport skips every tagged test unless
+# TELEPORT_ENABLED is set. Kept out of `test` above so a developer with
+# TELEPORT_ENABLED exported does not reach a live Teleport from a unit run.
+.PHONY: test-integration-local
+test-integration-local: ## Execute the `integration`-tagged tests that need no external service. (run by the merge gate)
+	go test $(GO_TEST_FLAGS) -tags=integration -count=1 ./internal/agent/... ./internal/teleport/...
 
 .PHONY: test-integration
 test-integration: ## Execute tests against a running CWE deployment.
@@ -313,7 +328,7 @@ docker-build-multiarch: ## Build the controller image for linux/amd64 and linux/
 # Publish targets for pushing to an explicit registry (used by CI's
 # image-nvcr.yml). These deliberately do NOT use IMG_NAME/IMG: this OSS repo
 # must never default-push to the internal production image
-# (nvcr.io/j7sbcjl3qgta/cloud-workflow-engine, IMG_NAME above). The destination
+# (nvcr.io/j7sbcjl3qgta/nke-controller, IMG_NAME above). The destination
 # has no default and must be passed explicitly via IMG_REPO, guarded by
 # check-img-repo below, so a bare invocation cannot clobber it.
 #
@@ -325,6 +340,19 @@ PUSH_TAGS ?=
 ARCH ?= amd64
 BUILDX_EXTRA_ARGS ?=
 
+# Every stage after the push used to re-resolve a mutable tag: the manifest
+# stitched <t>-amd64 and <t>-arm64, the SBOM re-pulled sha-<sha>-<arch>, and the
+# promotion resolved the version tag again. Each could read a newer push than
+# the one that run made. These files carry the digest forward instead. Under
+# bin/, which is already gitignored.
+DIGEST_FILE       ?= $(CURDIR)/bin/image-digest-$(ARCH).txt
+INDEX_DIGEST_FILE ?= $(CURDIR)/bin/image-digest-index.txt
+
+# The per-arch sources docker-manifest stitches. Empty means the mutable
+# per-arch tags, which is what a local run wants. CI passes the digests
+# docker-push-arch recorded, so the index holds exactly what this run pushed.
+ARCH_DIGESTS ?=
+
 .PHONY: check-img-repo
 check-img-repo:
 	@test -n "$(IMG_REPO)" || { echo "ERROR: IMG_REPO must be set explicitly"; exit 1; }
@@ -332,6 +360,7 @@ check-img-repo:
 
 .PHONY: docker-push-arch
 docker-push-arch: check-img-repo ## Build+push one arch to IMG_REPO, tags <t>-$(ARCH)
+	@mkdir -p $(dir $(DIGEST_FILE))
 	@# --provenance=false: the default provenance turns a single-arch push into an
 	@# OCI index, which breaks docker-manifest's imagetools create and the NGC UI.
 	docker buildx build -f Dockerfile \
@@ -340,14 +369,30 @@ docker-push-arch: check-img-repo ## Build+push one arch to IMG_REPO, tags <t>-$(
 	  --build-arg BUILD_VERSION=${BUILD_VERSION} \
 	  --build-arg GIT_VERSION=${GIT_VERSION} \
 	  $(BUILDX_EXTRA_ARGS) \
+	  --metadata-file $(DIGEST_FILE).json \
 	  ..
+	@# containerimage.digest is the manifest buildx just pushed. Read with sed
+	@# rather than jq, which the self-hosted runners do not all carry.
+	@sed -n 's/.*"containerimage\.digest": *"\([^"]*\)".*/\1/p' $(DIGEST_FILE).json > $(DIGEST_FILE)
+	@test -s $(DIGEST_FILE) || { echo "ERROR: no containerimage.digest in $(DIGEST_FILE).json"; exit 1; }
+	@echo "pushed $(IMG_REPO)@$$(cat $(DIGEST_FILE))"
 
 .PHONY: docker-manifest
 docker-manifest: check-img-repo ## Stitch <t>-amd64 + <t>-arm64 into <t> under IMG_REPO
+	@mkdir -p $(dir $(INDEX_DIGEST_FILE))
 	@set -e; for t in $(PUSH_TAGS); do \
-	  docker buildx imagetools create -t "$(IMG_REPO):$$t" \
-	    "$(IMG_REPO):$$t-amd64" "$(IMG_REPO):$$t-arm64"; \
+	  if [ -n "$(ARCH_DIGESTS)" ]; then \
+	    srcs=""; for d in $(ARCH_DIGESTS); do srcs="$$srcs $(IMG_REPO)@$$d"; done; \
+	  else \
+	    srcs="$(IMG_REPO):$$t-amd64 $(IMG_REPO):$$t-arm64"; \
+	  fi; \
+	  docker buildx imagetools create -t "$(IMG_REPO):$$t" $$srcs; \
 	done
+	@# One inspect, not one per stage: every tag above points at the same index,
+	@# and everything downstream reads this digest rather than a tag.
+	@docker buildx imagetools inspect "$(IMG_REPO):$(firstword $(PUSH_TAGS))" \
+	  --format '{{.Manifest.Digest}}' > $(INDEX_DIGEST_FILE)
+	@echo "index $(IMG_REPO)@$$(cat $(INDEX_DIGEST_FILE))"
 
 ##@ Run
 
@@ -410,7 +455,7 @@ license-policy-check: $(GO_LICENSES) ## Verify every third-party dependency uses
 	@# that genuinely need ignoring are named explicitly.
 	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO_LICENSES) check ./cmd/worker \
 		--allowed_licenses=$(ALLOWED_LICENSES) \
-		--ignore="$$(GOWORK=off go list -m),github.com/NVIDIA/nke/agent,github.com/dsx-ai-factory/cluster-api-provider-nico"
+		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nke/agent,github.com/dsx-ai-factory/cluster-api-provider-nico"
 
 .PHONY: notices
 notices: $(GO_LICENSES) ## Regenerate THIRD_PARTY_NOTICES.md for the released worker binary.

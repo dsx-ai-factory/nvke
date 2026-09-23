@@ -35,10 +35,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NVIDIA/nke/controller/test/kubeadm/internal/cloudinit"
-	"github.com/NVIDIA/nke/controller/test/kubeadm/internal/cluster"
-	"github.com/NVIDIA/nke/controller/test/kubeadm/internal/nicovms"
-	"github.com/NVIDIA/nke/controller/test/kubeadm/internal/verify"
+	"github.com/dsx-ai-factory/nke/controller/test/kubeadm/internal/cloudinit"
+	"github.com/dsx-ai-factory/nke/controller/test/kubeadm/internal/cluster"
+	"github.com/dsx-ai-factory/nke/controller/test/kubeadm/internal/nicovms"
+	"github.com/dsx-ai-factory/nke/controller/test/kubeadm/internal/verify"
 )
 
 const (

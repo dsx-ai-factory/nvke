@@ -1,0 +1,195 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package db
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/google/uuid"
+	"github.com/uptrace/bun"
+)
+
+// deprecatedControlPlaneNodeSet is a control-plane node set that is no longer
+// its pool's current node set but still owns pooled control-plane nodes — i.e. a
+// generation left behind by an in-flight rolling upgrade.
+type deprecatedControlPlaneNodeSet struct {
+	NodeSetID         uuid.UUID `bun:"node_set_id"`
+	ClusterID         uuid.UUID `bun:"cluster_id"`
+	CurrentConfigID   uuid.UUID `bun:"current_config_id"`
+	OSProfile         string    `bun:"os_profile"`
+	ConfigProfile     string    `bun:"config_profile"`
+	KubernetesVersion string    `bun:"kubernetes_version"`
+}
+
+// MigrateControlPlaneToController re-parents legacy node-pool-managed
+// control-plane nodes onto the control-plane controller when the site has opted
+// in via PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER.
+//
+// It is a temporary, boot-time, flag-gated, idempotent sweep: it runs once per
+// process start, after schema migrations and before the controllers and worker
+// start, so nothing mutates nodes while ownership is rewritten. It is a no-op
+// when the flag is off (nothing is recorded, so a later flag flip runs it on the
+// next boot). Re-parenting is pure metadata: pooled control-plane nodes have
+// their node_pool_id/node_set_id cleared and are pinned to a control-plane
+// configuration snapshot — the cluster's current one, except a deprecated node
+// generation left by an in-flight upgrade gets a freshly minted snapshot so the
+// controller still finishes its rollout — then the emptied pools and node sets
+// are deleted. Deleting clusters are skipped. The sweep is one transaction and
+// fails closed: if any non-deleting cluster cannot be fully migrated it errors so
+// the worker refuses to start rather than serve a half-migrated fleet.
+//
+// Remove this and its worker call site once every site is migrated and the flag
+// is on by default.
+func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB, useController bool) error {
+	if !useController {
+		return nil
+	}
+
+	tx, err := bunDB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin control-plane migration tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // Rollback is a no-op after a successful Commit; tx errors are handled at Commit.
+
+	// 1. Enumerate deprecated control-plane node sets (not their pool's current
+	//    set but still owning pooled CP nodes) so each keeps a distinct snapshot.
+	var deprecated []deprecatedControlPlaneNodeSet
+	if err := tx.NewRaw(`
+		SELECT ns.id                 AS node_set_id,
+		       p.cluster_id          AS cluster_id,
+		       c.configuration_id    AS current_config_id,
+		       ns.os_profile         AS os_profile,
+		       ns.config_profile     AS config_profile,
+		       ns.kubernetes_version AS kubernetes_version
+		FROM node_sets ns
+		JOIN node_pools p ON p.id = ns.node_pool_id
+		JOIN clusters c ON c.id = p.cluster_id
+		WHERE p.control_plane = TRUE
+		  AND p.current_node_set_id IS NOT NULL
+		  AND ns.id <> p.current_node_set_id
+		  AND c.configuration_id IS NOT NULL
+		  AND COALESCE(c.conditions->'deleting'->>'status', '') <> 'True'
+		  AND EXISTS (
+		      SELECT 1 FROM nodes n
+		      WHERE n.node_set_id = ns.id
+		        AND n.control_plane = TRUE
+		        AND n.node_pool_id IS NOT NULL
+		  )
+	`).Scan(ctx, &deprecated); err != nil {
+		return fmt.Errorf("list deprecated control-plane node sets: %w", err)
+	}
+
+	// For each deprecated generation, mint a snapshot (the cluster's current one
+	// with the generation's rollout-relevant fields overlaid) and pin its nodes
+	// to it. INSERT precedes UPDATE so the nodes.configuration_id FK is satisfied.
+	for _, d := range deprecated {
+		var newConfigID uuid.UUID
+		if err := tx.NewRaw(`
+			INSERT INTO control_plane_configurations (cluster_id, config, change_reason)
+			SELECT ?,
+			       cur.config || jsonb_build_object(
+			           'os_profile', ?::text,
+			           'config_profile', ?::text,
+			           'kubernetes_version', ?::text
+			       ),
+			       ?
+			FROM control_plane_configurations cur
+			WHERE cur.id = ?
+			RETURNING id
+		`, d.ClusterID, d.OSProfile, d.ConfigProfile, d.KubernetesVersion,
+			"control-plane migration: preserve deprecated node generation for rollout",
+			d.CurrentConfigID).Scan(ctx, &newConfigID); err != nil {
+			return fmt.Errorf("snapshot deprecated control-plane node set %s: %w", d.NodeSetID, err)
+		}
+
+		if _, err := tx.NewRaw(`
+			UPDATE nodes
+			SET node_pool_id = NULL,
+			    node_set_id = NULL,
+			    configuration_id = ?,
+			    updated_at = current_timestamp
+			WHERE node_set_id = ?
+			  AND control_plane = TRUE
+			  AND node_pool_id IS NOT NULL
+		`, newConfigID, d.NodeSetID).Exec(ctx); err != nil {
+			return fmt.Errorf("re-parent deprecated control-plane nodes for node set %s: %w", d.NodeSetID, err)
+		}
+	}
+
+	// 2. Re-parent the remaining pooled CP nodes (on their pool's current node
+	//    set) to the cluster's current snapshot. Step 1's nodes are already
+	//    detached; clusters without a snapshot or being deleted are left alone.
+	if _, err := tx.NewRaw(`
+		UPDATE nodes AS n
+		SET node_pool_id = NULL,
+		    node_set_id = NULL,
+		    configuration_id = c.configuration_id,
+		    updated_at = current_timestamp
+		FROM clusters AS c
+		WHERE n.cluster_id = c.id
+		  AND n.control_plane = TRUE
+		  AND n.node_pool_id IS NOT NULL
+		  AND c.configuration_id IS NOT NULL
+		  AND COALESCE(c.conditions->'deleting'->>'status', '') <> 'True'
+	`).Exec(ctx); err != nil {
+		return fmt.Errorf("re-parent control-plane nodes: %w", err)
+	}
+
+	// 3. Clear the current-node-set pointer on now-empty CP pools so their node
+	//    sets can be deleted without violating the FK.
+	if _, err := tx.NewRaw(`
+		UPDATE node_pools AS p
+		SET current_node_set_id = NULL
+		WHERE p.control_plane = TRUE
+		  AND NOT EXISTS (SELECT 1 FROM nodes n WHERE n.node_pool_id = p.id)
+	`).Exec(ctx); err != nil {
+		return fmt.Errorf("clear current node set on emptied control-plane pools: %w", err)
+	}
+
+	// 4. Delete the node sets belonging to the now-empty control-plane pools.
+	if _, err := tx.NewRaw(`
+		DELETE FROM node_sets AS ns
+		USING node_pools AS p
+		WHERE ns.node_pool_id = p.id
+		  AND p.control_plane = TRUE
+		  AND NOT EXISTS (SELECT 1 FROM nodes n WHERE n.node_pool_id = p.id)
+	`).Exec(ctx); err != nil {
+		return fmt.Errorf("delete node sets of emptied control-plane pools: %w", err)
+	}
+
+	// 5. Delete the now-empty CP node pools. Pools of skipped clusters still have
+	//    nodes referencing them and survive.
+	if _, err := tx.NewRaw(`
+		DELETE FROM node_pools AS p
+		WHERE p.control_plane = TRUE
+		  AND NOT EXISTS (SELECT 1 FROM nodes n WHERE n.node_pool_id = p.id)
+	`).Exec(ctx); err != nil {
+		return fmt.Errorf("delete emptied control-plane node pools: %w", err)
+	}
+
+	// 6. Safety net: any non-deleting cluster still holding pooled CP nodes could
+	//    not be migrated (missing snapshot). Fail loudly so the worker refuses to
+	//    start and retries next boot rather than serve a half-migrated fleet.
+	var leftover int
+	if err := tx.NewRaw(`
+		SELECT count(*)
+		FROM nodes n
+		JOIN clusters c ON c.id = n.cluster_id
+		WHERE n.control_plane = TRUE
+		  AND n.node_pool_id IS NOT NULL
+		  AND COALESCE(c.conditions->'deleting'->>'status', '') <> 'True'
+	`).Scan(ctx, &leftover); err != nil {
+		return fmt.Errorf("verify control-plane migration completeness: %w", err)
+	}
+	if leftover > 0 {
+		return fmt.Errorf("control-plane migration incomplete: %d pooled control-plane node(s) remain; cluster missing configuration_id?", leftover)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit control-plane migration: %w", err)
+	}
+
+	return nil
+}

@@ -15,11 +15,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
+	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 
-	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/kubeadmconfig"
-	"github.com/NVIDIA/nke/controller/internal/nodes"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig"
+	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
 )
 
 type cachedJoinStrings struct {

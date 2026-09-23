@@ -5,7 +5,7 @@ syntax = "proto3";
 
 package proto;
 
-option go_package = "github.com/NVIDIA/nke/agent/pkg/agent/proto";
+option go_package = "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto";
 
 service NodeAgent {
   rpc GetKubeadmStatus(KubeadmStatusRequest) returns (KubeadmStatusResponse) {}
