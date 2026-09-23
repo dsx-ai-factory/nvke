@@ -1,9 +1,13 @@
 # Reference node OS image
 
-Ubuntu 26.04 image that ships `nke-agent` and `spire-agent` so a site
+Ubuntu image that ships `nke-agent` and `spire-agent` so a site
 controller can reach the node over SPIFFE mTLS, built on Ubuntu's
 NVIDIA-tuned kernel flavor (`linux-nvidia`/`linux-nvidia-64k`), not the
 generic default. The contract is [SPEC.md](SPEC.md).
+
+26.04 LTS is the default. 24.04 LTS is built and published alongside it, for
+consumers whose other software pins that release — see `UBUNTU_RELEASE` under
+[Build the OS image](#build-the-os-image).
 
 | Path | What |
 |---|---|
@@ -52,7 +56,24 @@ make -C os-image boot-smoke REQUIRE_ACCELERATION=1
 
 Use `ARCH=arm64` for an arm64 image on a matching Linux KVM host (`image-native`
 always needs one, regardless of which host builds the packages), or `VARIANT=fde`
-for the encrypted image. Image baking uses the existing package Make targets.
+for the encrypted image. `UBUNTU_RELEASE` selects the Ubuntu point release, and
+with it the image flavor — it defaults to `26.04.1`, and `UBUNTU_RELEASE=24.04.5`
+builds the 24.04 LTS flavor instead:
+
+```bash
+make -C os-image/packer os-image-non-fde ARCH=amd64 UBUNTU_RELEASE=24.04.5
+```
+
+The point release lands in the output filename, so the two flavors never
+collide on disk (`nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2`). Pass the same
+`UBUNTU_RELEASE` to `collect-qcow2-*`, which re-derives that expected name.
+Building 24.04 needs a package builder no newer than 24.04: the `nke-agent`
+.deb declares a bare `Depends: libc6` with no version, so an agent compiled
+against a newer glibc installs cleanly and then fails to exec.
+`NKE_PACKAGE_BUILDER=nix` targets the glibc 2.39 baseline and is safe for either
+flavor; a host build is only safe on a host at or below the target release.
+`boot-smoke` runs `nke-agent -version` inside the booted guest, so a mismatch
+fails the build rather than reaching a published image. Image baking uses the existing package Make targets.
 `NKE_PACKAGE_BUILDER=auto|host|nix` picks the package builder: `auto` builds on
 a matching Linux host and otherwise uses the
 [NixOS package-builder VM](nix/README.md), which returns the packages to the

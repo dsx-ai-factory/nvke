@@ -76,12 +76,29 @@ ARCH ?= amd64
 #
 # Use 26.04.1 to avoid the GA installer's intermittent overlayfs crash
 # during curtin extraction. Reproduction details: PR #737.
+#
+# UBUNTU_RELEASE picks the point release, and with it the image flavor. 24.04
+# LTS is built and published alongside 26.04 because the DSX CSC DPU stack
+# installs Ubuntu 24.04 host packages onto the node (doca-host ...ubuntu2404,
+# plus noble-pinned libfuse2t64/freeipmi/readline/ipmitool); no ubuntu2604
+# DOCA host package exists to pin instead.
+#
+# Both flavors need nothing else per-release: linux-nvidia, linux-nvidia-64k
+# and the split linux-firmware-* vendor packages that provision.sh prunes are
+# all in noble-updates as well as 26.04, and the FDE variant's explicit
+# initramfs-tools install is a no-op on 24.04, which already defaults to it.
+#
+# The archive directory is the major.minor of this value. An explicit ISO_URL
+# still wins and still names the output, because UBUNTU_VERSION below is read
+# back out of the URL rather than taken from UBUNTU_RELEASE.
+UBUNTU_RELEASE ?= 26.04.1
+override UBUNTU_SERIES := $(word 1,$(subst ., ,$(UBUNTU_RELEASE))).$(word 2,$(subst ., ,$(UBUNTU_RELEASE)))
 ifeq ($(ARCH),arm64)
-  ISO_URL      ?= https://cdimage.ubuntu.com/releases/26.04/release/ubuntu-26.04.1-live-server-arm64.iso
-  ISO_CHECKSUM ?= file:https://cdimage.ubuntu.com/releases/26.04/release/SHA256SUMS
+  ISO_URL      ?= https://cdimage.ubuntu.com/releases/$(UBUNTU_SERIES)/release/ubuntu-$(UBUNTU_RELEASE)-live-server-arm64.iso
+  ISO_CHECKSUM ?= file:https://cdimage.ubuntu.com/releases/$(UBUNTU_SERIES)/release/SHA256SUMS
 else
-  ISO_URL      ?= https://releases.ubuntu.com/26.04/ubuntu-26.04.1-live-server-$(ARCH).iso
-  ISO_CHECKSUM ?= file:https://releases.ubuntu.com/26.04/SHA256SUMS
+  ISO_URL      ?= https://releases.ubuntu.com/$(UBUNTU_SERIES)/ubuntu-$(UBUNTU_RELEASE)-live-server-$(ARCH).iso
+  ISO_CHECKSUM ?= file:https://releases.ubuntu.com/$(UBUNTU_SERIES)/SHA256SUMS
 endif
 override UBUNTU_VERSION := $(patsubst ubuntu-%-live-server-$(ARCH).iso,%,$(notdir $(ISO_URL)))
 
@@ -407,6 +424,13 @@ check-deps:
 .PHONY: test
 test: ## Check artifact staging, QCOW2 collection, and workflow wiring.
 	$(PYTHON) -B -m unittest discover -s scripts -p 'test_*.py'
+
+# Read one derived value, the same way make/versions.mk does for the repository
+# root. The values that depend on UBUNTU_RELEASE and ARCH are computed here and
+# nowhere else, so this is how a caller or a test sees what a given pair
+# resolves to without starting a build.
+print-%:
+	@echo "$($*)"
 
 # Copy the one completed image without changing its bytes. Collection is a
 # separate target so local builds and CI use the same source-owned boundary.

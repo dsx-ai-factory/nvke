@@ -1484,13 +1484,71 @@ exec "${REAL_MV:?}" "$@"
             self.assertNotEqual(dirty.returncode, 0)
             self.assertIn("source checkout is dirty", dirty.stderr)
 
-    def test_collection_copies_exact_bytes_and_prints_one_basename(self):
+    def test_ubuntu_release_selects_the_installer_iso_for_both_flavors(self):
+        # The default flavor's values are asserted literally rather than
+        # derived: 26.04's URLs, and the filenames that follow from them, are
+        # what every current consumer of this build already pins, so a change
+        # to the derivation must not be able to move them quietly.
+        #
+        # releases.ubuntu.com carries only amd64 and cdimage carries the rest,
+        # for 24.04 exactly as for 26.04 -- the series directory is the only
+        # thing that moves between them.
         cases = (
-            ("fde", "amd64"),
-            ("non-fde", "arm64"),
+            ("26.04.1", "amd64",
+             "https://releases.ubuntu.com/26.04/ubuntu-26.04.1-live-server-amd64.iso",
+             "file:https://releases.ubuntu.com/26.04/SHA256SUMS"),
+            ("26.04.1", "arm64",
+             "https://cdimage.ubuntu.com/releases/26.04/release/ubuntu-26.04.1-live-server-arm64.iso",
+             "file:https://cdimage.ubuntu.com/releases/26.04/release/SHA256SUMS"),
+            ("24.04.5", "amd64",
+             "https://releases.ubuntu.com/24.04/ubuntu-24.04.5-live-server-amd64.iso",
+             "file:https://releases.ubuntu.com/24.04/SHA256SUMS"),
+            ("24.04.5", "arm64",
+             "https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.5-live-server-arm64.iso",
+             "file:https://cdimage.ubuntu.com/releases/24.04/release/SHA256SUMS"),
         )
-        for variant, arch in cases:
-            with self.subTest(variant=variant, arch=arch), tempfile.TemporaryDirectory() as tmp:
+        for release, arch, iso_url, iso_checksum in cases:
+            with self.subTest(release=release, arch=arch):
+                variables = (f"UBUNTU_RELEASE={release}", f"ARCH={arch}")
+                for name, expected in (
+                    ("ISO_URL", iso_url),
+                    ("ISO_CHECKSUM", iso_checksum),
+                    ("UBUNTU_VERSION", release),
+                ):
+                    result = self.run_make(
+                        f"print-{name}", cwd=PACKER_DIR, variables=variables
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.strip(), expected)
+
+    def test_explicit_iso_url_still_names_the_image_over_ubuntu_release(self):
+        # ISO_URL stays authoritative: UBUNTU_VERSION, and with it the output
+        # filename and everything collection checks it against, is read back
+        # out of the URL rather than taken from UBUNTU_RELEASE. An override
+        # therefore cannot produce an image labelled as a release it is not.
+        result = self.run_make(
+            "print-UBUNTU_VERSION",
+            cwd=PACKER_DIR,
+            variables=(
+                "UBUNTU_RELEASE=26.04.1",
+                "ARCH=amd64",
+                "ISO_URL=https://example.invalid/ubuntu-24.04.9-live-server-amd64.iso",
+            ),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "24.04.9")
+
+    def test_collection_copies_exact_bytes_and_prints_one_basename(self):
+        # Collection re-derives the expected filename from ISO_URL, so a leg
+        # building the 24.04 flavor has to pass the same UBUNTU_RELEASE here or
+        # collection looks for the default flavor's name and refuses.
+        cases = (
+            ("fde", "amd64", "26.04.1"),
+            ("non-fde", "arm64", "26.04.1"),
+            ("non-fde", "amd64", "24.04.5"),
+        )
+        for variant, arch, release in cases:
+            with self.subTest(variant=variant, arch=arch, release=release), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 source = root / "source"
                 workspace = root / "workspace"
@@ -1498,7 +1556,7 @@ exec "${REAL_MV:?}" "$@"
                 commit = self.create_source_repo(source)
                 output = workspace / f"output-{variant}"
                 output.mkdir()
-                name = f"nke-node-{variant}-ubuntu-26.04.1-{arch}.qcow2"
+                name = f"nke-node-{variant}-ubuntu-{release}-{arch}.qcow2"
                 payload = f"{variant}-{arch}-bytes".encode()
                 (output / name).write_bytes(payload)
                 dist = workspace / "dist"
@@ -1511,6 +1569,7 @@ exec "${REAL_MV:?}" "$@"
                         f"EXPECTED_SOURCE_COMMIT={commit}",
                         f"QCOW2_DIST_DIR={dist}",
                         f"ARCH={arch}",
+                        f"UBUNTU_RELEASE={release}",
                     ),
                 )
 
