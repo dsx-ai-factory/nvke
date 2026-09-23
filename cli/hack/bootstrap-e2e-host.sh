@@ -60,7 +60,8 @@ install_runtime() {
     *) echo "nerdctl-full publishes no release asset for ${deb_arch}" >&2; return 1 ;;
   esac
   archive="nerdctl-full-${NERDCTL_VERSION}-linux-${deb_arch}.tar.gz"
-  curl -fsSL -o "/tmp/${archive}" \
+  # A 500 from the releases CDN otherwise ends the lane before the test starts.
+  curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 -o "/tmp/${archive}" \
     "https://github.com/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/${archive}"
   echo "${sha256}  /tmp/${archive}" | sha256sum -c -
   sudo tar Cxzf /usr/local "/tmp/${archive}"
