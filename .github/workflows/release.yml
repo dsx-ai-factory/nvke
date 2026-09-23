@@ -44,12 +44,15 @@ jobs:
       contents: read
 
   # Skipped for tags that a dedicated workflow releases: agent/ (agent-deb-publish.yml),
-  # os-image/ (os-image-artifact.yml), and cluster-api-provider-provisioned/
+  # os-image/ (os-image-artifact.yml), cluster-api-provider-provisioned/
   # (image-provisioned-nvcr.yml's promote-ghcr job -- an image push, with no
-  # release-worthy asset of its own yet). Those jobs build the real artifacts,
-  # create the release, and publish it only after verification. This job would
-  # otherwise cut a notes-only release first, and CHANGELOG.md has no section a
-  # component tag can match.
+  # release-worthy asset of its own yet), and nktp/ (nktp-chart-publish.yml).
+  # Those jobs build the real artifacts, create the release, and publish it only
+  # after verification. This job would otherwise cut a notes-only release first,
+  # and CHANGELOG.md has no section a component tag can match.
+  #
+  # nktp/ is skipped for a second reason as well: it is not a go.work module, so
+  # the component step below would hard-error rather than fall through.
   release:
     name: Create GitHub release
     outputs:
@@ -57,7 +60,15 @@ jobs:
       # one build rather than four.
       component_dir: ${{ steps.component.outputs.dir }}
       dist_artifact: cli-dist-${{ github.run_id }}-${{ github.run_attempt }}
-    if: ${{ !startsWith(github.ref_name, 'agent/') && !startsWith(github.ref_name, 'os-image/') && !startsWith(github.ref_name, 'cluster-api-provider-provisioned/') }}
+    # nktp/ is here for a different reason than the others: it is not a go.work
+    # module at all, so the step below would hard-error with "names 'nktp',
+    # which is not a module in go.work" on the very tag nktp/AGENTS.md tells you
+    # to push. Its chart is published by nktp-chart-publish.yml instead.
+    if: >-
+      ${{ !startsWith(github.ref_name, 'agent/')
+        && !startsWith(github.ref_name, 'os-image/')
+        && !startsWith(github.ref_name, 'cluster-api-provider-provisioned/')
+        && !startsWith(github.ref_name, 'nktp/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [license-checks]
@@ -415,6 +426,12 @@ jobs:
               echo "Controller tag ${GITHUB_REF_NAME}:"
               echo "  - image → Image NVCR (nvcr.io source, promoted to ghcr.io/dsx-ai-factory/nke/nke-controller and DSX NVCR)"
               echo "  - chart → Chart Publish / Chart Publish NVCR"
+              ;;
+
+            nktp/v*)
+              echo "NKTP tag ${GITHUB_REF_NAME}:"
+              echo "  - chart → NKTP Chart Publish (ghcr.io/dsx-ai-factory/nke/charts/nktp)"
+              echo "  - note  → chart only; NKTP builds no image and no binary"
               ;;
 
             *)

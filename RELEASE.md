@@ -87,6 +87,7 @@ themselves, after they have built and verified the real artifacts:
 | `agent/vX.Y.Z` | `agent-deb-publish.yml` (+ `agent-artifact.yml`) | `.deb`s, GitHub Release assets, GHCR binary, NVCR binary + `.deb`, S3/CloudFront `.deb` |
 | `os-image/vX.Y.Z` | `os-image-artifact.yml` | qcow2 on GHCR, NVCR, and S3/CloudFront; `nke-os-image-check` on the GitHub Release |
 | `cli/vX.Y.Z` | `release.yml` (+ `cli-artifact.yml`, `cli-artifact-nvcr.yml`, `cli-s3-publish.yml`) | binaries on GitHub Release, GHCR, NVCR, S3/CloudFront |
+| `nktp/vX.Y.Z` | `nktp-chart-publish.yml` | chart on GHCR. No image and no binary |
 
 An `os-image/` tag that fails Packer or the boot-smoke test never publishes the
 OCI artifact and never promotes the GitHub Release out of draft.
@@ -103,6 +104,22 @@ additionally publishes the controller image and Helm chart:
 Every `main` commit already publishes the image and chart to NVCR. GHCR receives
 released versions only, which is why a chart built from a tag can safely point at
 `ghcr.io/dsx-ai-factory/nke/nke-controller:<version>` while a chart built from `main` could not.
+
+An `nktp/vX.Y.Z` tag publishes one thing, the chart:
+
+| Workflow | What it publishes |
+|---|---|
+| `nktp-chart-publish.yml` | chart to `ghcr.io/dsx-ai-factory/nke/charts/nktp` |
+
+NKTP is chart-only: no image, no binary, nothing on the GitHub Release. It is
+skipped by `release.yml`'s release job for that reason, and because `nktp` is
+not a `go.work` module, which that job requires of every tag it does handle.
+
+The tag and `nktp/deploy/charts/nktp/Chart.yaml` must carry the same version.
+The publish job checks this and fails the release rather than pushing a chart
+that answers to a version nobody tagged. A released chart version is immutable,
+so any change to the chart bumps it, including the README and the dashboards,
+which ship inside the package.
 Releases before the repository moved to `dsx-ai-factory` on 2026-09-12 were promoted to
 `ghcr.io/nvidia/nke/controller` instead: `controller/v0.1.1-rc.1` to `rc.3` are there,
 `controller/v0.1.0` predates the promotion job, and the `rc.4` promotion failed, so that

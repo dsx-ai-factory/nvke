@@ -1,0 +1,153 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: NKTP Chart Publish
+
+# Packages the NKTP Helm chart and publishes it under
+# ghcr.io/dsx-ai-factory/nke/charts as an OCI artifact:
+#
+#   ghcr.io/dsx-ai-factory/nke/charts/nktp:0.1.0        <- release tag
+#   ghcr.io/dsx-ai-factory/nke/charts/nktp:0.1.0-rc.1   <- release candidate
+#
+# The last path segment is the chart's `name:`, not anything set here. This is
+# the sibling of chart-publish.yml, which does the same for the controller
+# chart; `charts/` stays a reserved path segment so a chart and an image never
+# land in one OCI repository.
+#
+# Two differences from chart-publish.yml, both because NKTP builds nothing:
+#
+#   - No image rewrite step. The controller chart names an image this
+#     repository publishes, so that job pins the registry before packaging.
+#     NKTP names no image of ours, so there is nothing to pin.
+#   - `helm dependency build` runs first. The chart declares three upstream
+#     charts and does not commit charts/, so the archives have to be fetched
+#     before `helm package` will include them.
+#
+# Release tags only, like chart-publish.yml. A chart packaged from main would
+# carry a version like 0.1.0-4-gabcdef, which is not a version anyone released.
+on:
+  push:
+    tags:
+      - "nktp/v[0-9]+.[0-9]+.[0-9]+"
+      - "nktp/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  # A literal name, NOT ${{ github.workflow }}: inside a called workflow that
+  # expression is the caller's name, so siblings would share a group and cancel
+  # each other. See the same note in chart-publish.yml.
+  group: NKTP Chart Publish-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: false
+
+env:
+  CHART: nktp/deploy/charts/nktp
+
+jobs:
+  publish:
+    name: Publish chart
+    runs-on: ubuntu-latest
+    # The ref check is not redundant with the `on:` filter: it also covers
+    # workflow_dispatch, which accepts any ref.
+    if: >-
+      github.repository == 'dsx-ai-factory/nke' &&
+      startsWith(github.ref, 'refs/tags/nktp/v')
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Version pins come from make/versions.mk, so `make show-versions` and CI
+      # cannot disagree.
+      - name: Read pinned tool versions
+        id: versions
+        run: |
+          echo "helm_version=$(make --no-print-directory print-HELM_VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ steps.versions.outputs.helm_version }}
+
+      - name: Resolve version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Strip "nktp/"; keep "v" for appVersion, drop it for the chart
+          # version, because OCI chart tags are plain semver without a v.
+          describe="$(git describe --match 'nktp/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          describe="${describe#nktp/}"
+          version="${describe#v}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "app_version=${describe}" >> "${GITHUB_OUTPUT}"
+          echo "Chart version: ${version}  appVersion: ${describe}"
+
+      # The tag is the release, and the chart version is what a consumer pulls.
+      # If the two disagree, the published artifact answers to a version nobody
+      # tagged. AGENTS.md states the rule; this enforces it.
+      - name: Check the tag matches Chart.yaml
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Read Chart.yaml directly, anchored at column 0. `helm show chart`
+          # also prints every dependency's version once charts/ is populated,
+          # and the first one it prints is a subchart's, not this chart's.
+          chart_version="$(awk '/^version:/ { print $2; exit }' "${CHART}/Chart.yaml")"
+          if [ "${chart_version}" != "${VERSION}" ]; then
+            echo "::error::tag says ${VERSION} but ${CHART}/Chart.yaml says ${chart_version}"
+            exit 1
+          fi
+          echo "tag and Chart.yaml agree on ${VERSION}"
+
+      # charts/ is not committed, so the dependency archives have to be here
+      # before packaging. `build` uses Chart.lock rather than re-resolving, so
+      # what ships is what the lock pinned.
+      - name: Fetch chart dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          helm dependency build "${CHART}"
+          ls -lh "${CHART}/charts"
+
+      - name: Package
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          APP_VERSION: ${{ steps.meta.outputs.app_version }}
+        run: |
+          set -euo pipefail
+          helm package "${CHART}" \
+            --version "${VERSION}" \
+            --app-version "${APP_VERSION}" \
+            --destination "${RUNNER_TEMP}/chart-dist"
+          ls -lh "${RUNNER_TEMP}/chart-dist"
+
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | helm registry login ghcr.io \
+            --username "${{ github.actor }}" --password-stdin
+
+      - name: Push chart
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          helm push \
+            "${RUNNER_TEMP}/chart-dist/nktp-${VERSION}.tgz" \
+            oci://ghcr.io/dsx-ai-factory/nke/charts
+          echo "Pushed ghcr.io/dsx-ai-factory/nke/charts/nktp:${VERSION}"
