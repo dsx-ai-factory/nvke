@@ -67,8 +67,8 @@ type Site struct {
 	// credential in GHCR_USERNAME and GHCR_TOKEN.
 	RegistryServer string `json:"registryServer"`
 
-	// JumpHost is the Teleport node the Forge site's machines are reached
-	// through. The Teleport proxy is not configured here: tsh takes it from
+	// JumpHost is the node the Forge site's machines are reached through. The
+	// Teleport proxy is not configured here: tsh takes it from
 	// $TELEPORT_PROXY or the logged-in profile.
 	JumpHost string `json:"jumpHost"`
 	// TeleportLogin is the jump host login; empty is tsh's default.
@@ -77,6 +77,15 @@ type Site struct {
 	// a login session. Empty leaves it to tsh: $TELEPORT_IDENTITY_FILE, else
 	// the runner's tsh profile.
 	TeleportIdentityFile string `json:"teleportIdentityFile"`
+
+	// JumpHostUser is the jump host login for the plain-SSH route, taken
+	// when JUMP_HOST_PASSWORD is set. Empty falls back to TeleportLogin, so a
+	// site that uses the same account for both names it once.
+	JumpHostUser string `json:"jumpHostUser"`
+	// JumpHostKeyFingerprint pins the jump host's host key on the plain-SSH
+	// route. Empty accepts whatever it presents and warns on every dial;
+	// see teleport.SSHJumpHost for how to read one.
+	JumpHostKeyFingerprint string `json:"jumpHostKeyFingerprint"`
 }
 
 // Load reads the config file at path and applies defaults. A missing file is

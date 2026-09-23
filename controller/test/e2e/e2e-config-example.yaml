@@ -43,7 +43,16 @@
 #   disableMTLS: false
 #   controllerRepository: ghcr.io/dsx-ai-factory/nke/nke-controller
 #   registryServer: ghcr.io
-#   jumpHost: ""               # required: the Teleport node the site's machines sit behind
+#   jumpHost: ""               # required: the node the site's machines sit behind
 #   teleportLogin: ""          # "" -> tsh's default
 #   teleportIdentityFile: ""   # "" -> $TELEPORT_IDENTITY_FILE, else the runner's tsh profile
 #   (the Teleport proxy comes from $TELEPORT_PROXY or the tsh login profile)
+#
+#   Interim route, for a jump host that is not Teleport-enrolled yet: set
+#   $JUMP_HOST_PASSWORD and the suite logs into jumpHost over plain SSH and
+#   has its sshd forward, instead of shelling out to tsh. Unset uses Teleport.
+#   The password is the jump host's; the machine beyond it is still reached
+#   with the key the run generated.
+#   jumpHostUser: ""           # "" -> teleportLogin
+#   jumpHostKeyFingerprint: "" # `ssh-keyscan -t ed25519 <jumpHost> | ssh-keygen -lf -`
+#                              # "" accepts any host key and warns on every dial

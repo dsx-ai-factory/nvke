@@ -408,9 +408,8 @@ without it the lane is skipped:
 The node is torn down afterwards (tenants are deleted first). `-e2e.keep-site`, or
 `lifecycle.preserveOnFailure` with a failed spec, keeps it.
 
-Prerequisites: a `tsh login` to the Teleport cluster the site's jump host is
-enrolled in (or `TELEPORT_PROXY` and `TELEPORT_IDENTITY_FILE` in CI), the jump
-host in `site.jumpHost`, `FORGE_API_KEY`, and for `full` `GHCR_USERNAME` and
+Prerequisites: a way to reach the jump host (below), the jump host in
+`site.jumpHost`, `FORGE_API_KEY`, and for `full` `GHCR_USERNAME` and
 `GHCR_TOKEN`. Neither the proxy nor the jump host is checked in; secrets are
 read only from the environment. Build the inputs, then fill in the `site:`
 block of `e2e-config-example.yaml`:
@@ -425,3 +424,23 @@ go test -timeout 5h . -args \
 
 The deploy path is exported from a pinned commit (`site.DeployPathRef`) until it
 merges; `site-inputs` fetches it.
+
+### Reaching the jump host
+
+Teleport is the intended route: `tsh login` to the cluster the jump host is
+enrolled in, or `TELEPORT_PROXY` and `TELEPORT_IDENTITY_FILE` in CI.
+
+Until a site's jump host is enrolled, set `JUMP_HOST_PASSWORD` and the lane logs
+into it over plain SSH and asks its sshd to forward, instead of shelling out to
+`tsh`. The jump host needs `AllowTcpForwarding` on; the error names it if not.
+Set `site.jumpHostUser` (defaults to `site.teleportLogin`) and
+`site.jumpHostKeyFingerprint`, which comes from:
+
+```bash
+ssh-keyscan -t ed25519 <jump host> | ssh-keygen -lf -
+```
+
+Without the fingerprint the run still works and warns on every dial that it
+accepted the key unchecked -- which means it offered the password to whatever
+answered on port 22. The password is the jump host's alone: the node beyond it
+is reached with the ed25519 key the run generates, never with a password.

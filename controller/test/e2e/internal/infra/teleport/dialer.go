@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package teleport reaches a machine that is not enrolled in Teleport through
-// one that is.
+// a jump host that is, or -- until a site's jump host is enrolled -- through
+// one reached over plain SSH. See SSHJumpHost for that interim path; only the
+// relay differs between them.
 //
 // The jump host only relays bytes. The SSH session to the machine is
 // negotiated here, with a key that never leaves the runner, so the jump host

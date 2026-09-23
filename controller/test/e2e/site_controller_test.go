@@ -43,6 +43,9 @@ const (
 	envForgeAPIKey   = "FORGE_API_KEY"
 	envRegistryUser  = "GHCR_USERNAME"
 	envRegistryToken = "GHCR_TOKEN"
+	// envJumpHostPassword selects the plain-SSH route to the jump host.
+	// Unset uses Teleport.
+	envJumpHostPassword = "JUMP_HOST_PASSWORD"
 )
 
 // Host tools the node installs for nkectl, pinned to what has built a site on
@@ -228,6 +231,20 @@ func newSiteLane() (siteLane, error) {
 	dialer := &teleport.Dialer{
 		Login:        cfg.Site.TeleportLogin,
 		IdentityFile: cfg.Site.TeleportIdentityFile,
+	}
+	// Teleport is the route; the password is the interim one, for a site
+	// whose jump host is not enrolled yet. Selected by the secret being
+	// present, so enrolling the jump host later means dropping
+	// JUMP_HOST_PASSWORD rather than editing anything. The machines beyond it
+	// are reached with the run's own key either way.
+	if password := os.Getenv(envJumpHostPassword); password != "" {
+		if jerr := dialer.JumpOverSSH(teleport.SSHJumpHost{
+			User:               defaultString(cfg.Site.JumpHostUser, cfg.Site.TeleportLogin),
+			Password:           password,
+			HostKeyFingerprint: cfg.Site.JumpHostKeyFingerprint,
+		}); jerr != nil {
+			return siteLane{}, jerr
+		}
 	}
 	provider, err := forge.New(forge.Options{
 		Env:      env,
