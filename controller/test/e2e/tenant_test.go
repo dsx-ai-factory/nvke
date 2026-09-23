@@ -487,7 +487,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		options:  nke.Options{Provision: 30 * time.Minute, Upgrade: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{upgrade: true},
 	}),
-	// OVN-Kubernetes is now the shipped default for nico-vms, so most entries
+	// OVN-Kubernetes is the default CNI for nico-vms entries, so most entries
 	// exercise it implicitly through NKE_E2E_NICO_VMS_CNI. This entry is the
 	// small OVN smoke: it pins OVN explicitly and asserts the typed Open
 	// vSwitch node-agent RPC and NetworkPolicy enforcement. Kept to one
