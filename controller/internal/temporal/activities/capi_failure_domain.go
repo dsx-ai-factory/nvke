@@ -10,8 +10,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 )
 
 // applyCAPIMachine creates a CAPI Machine, or reapplies one that already exists
@@ -28,7 +26,7 @@ func (a *Activities) applyCAPIMachine(ctx context.Context, machine *clusterv1.Ma
 		machine.Spec.FailureDomain = existing.Spec.FailureDomain
 	}
 
-	if err := a.k8sClient.Patch(ctx, machine, client.Apply, client.FieldOwner(constants.FieldManagerCWE), client.ForceOwnership); err != nil {
+	if err := a.k8sClient.Patch(ctx, machine, client.Apply, client.FieldOwner(a.cfg.FieldManagerName), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply machine %s: %w", machine.Name, err)
 	}
 	return nil

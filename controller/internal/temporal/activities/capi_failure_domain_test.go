@@ -14,6 +14,8 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
 )
 
 func TestApplyCAPIMachinePreservesExistingFailureDomain(t *testing.T) {
@@ -33,7 +35,10 @@ func TestApplyCAPIMachinePreservesExistingFailureDomain(t *testing.T) {
 		},
 	}
 	k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build()
-	activity := &Activities{k8sClient: k8sClient}
+	activity := &Activities{
+		cfg:       config.Config{FieldManagerName: "cloud-workflow-engine"},
+		k8sClient: k8sClient,
+	}
 	desired := existing.DeepCopy()
 	desired.Spec.FailureDomain = "fd-b"
 
