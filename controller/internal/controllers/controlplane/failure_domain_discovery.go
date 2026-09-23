@@ -7,7 +7,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"time"
 
 	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
@@ -17,24 +16,17 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
-const (
-	failureDomainRetryInterval = 30 * time.Second
-)
-
 // failureDomains is what control-plane placement needs from outside the database.
 type failureDomains struct {
 	eligible []string
-	// Migration only: observedByNodeName carries the placement CAPI already made
-	// for node rows that never recorded their own. Remove it and the Machine list
-	// below once every control-plane node has a non-nil failure_domain.
+	// observedByNodeName tracks active CAPI Machine placements for spread counts.
 	observedByNodeName map[string]string
 }
 
 // readFailureDomains returns a complete snapshot of the control-plane-eligible
 // failure domains of a cluster and the domain CAPI already reports for each of
 // its active control-plane Machines. A discovery error is returned with a nil
-// snapshot. It runs inside the serialized control-plane reconcile so discovery,
-// legacy backfill, and new placement stay together.
+// snapshot and aborts reconciliation.
 func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster) (*failureDomains, error) {
 	if !r.cfg.UseControlPlaneControllerForControlPlane() {
 		return &failureDomains{}, nil
@@ -68,8 +60,8 @@ func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster)
 		return discovered, nil
 	}
 
-	// Migration only: collect existing Machine placements for the nullable-row
-	// backfill described by observedByNodeName.
+	// Collect active Machine placements to count existing nodes without writing
+	// their observed domains back to the database.
 	machines := &clusterv1.MachineList{}
 	if err := r.k8sClient.List(ctx, machines,
 		client.InNamespace(constants.NamespaceNKESystem),

@@ -78,6 +78,7 @@ func TestUnit_ControlPlaneNodeSchedulerReconcileCAPIStartsManagedPendingNodeWork
 	temporalClient := &mockWorkflowStarter{}
 	expectProvisionWorkflow(t, temporalClient, managedNodeID)
 	expectProvisionWorkflow(t, temporalClient, unsupportedNodeID)
+	expectProvisionWorkflow(t, temporalClient, unassignedNodeID)
 
 	scheduler := NewControlPlaneNodeScheduler(config.Config{
 		TemporalTaskQueue:    "test-task-queue",

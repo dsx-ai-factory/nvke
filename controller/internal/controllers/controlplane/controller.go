@@ -79,7 +79,6 @@ func nodeClusterKeys(_ context.Context, node db.Node) ([]dbreconcile.Key, error)
 
 // Reconcile reconciles one cluster's control plane from a ClusterID root key.
 func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconcile.Result, error) {
-	result := reconcile.Result{}
 	err := c.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		// Re-read under a row lock: the cluster may have been enqueued from a stale
 		// event, so the reconciler could otherwise act on a stale snapshot and race
@@ -98,11 +97,7 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 		}
 
 		reconciler := newReconciler(c.cfg, c.logger, tx, c.cweTemporalClient, c.k8sClient)
-		result, err = reconciler.reconcile(ctx, lockedCluster)
-		return err
+		return reconciler.reconcile(ctx, lockedCluster)
 	})
-	if err != nil {
-		return reconcile.Result{}, err
-	}
-	return result, nil
+	return reconcile.Result{}, err
 }

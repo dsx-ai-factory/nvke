@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
 )
@@ -102,42 +101,6 @@ func TestIsSurgeAtClusterLevel_InstanceTypePreferenceNotRequired(t *testing.T) {
 	pools := []db.NodePool{{ControlPlane: true, MaxSurge: 0}}
 
 	assert.True(t, isSurgeAtClusterLevel(cluster, pools))
-}
-
-func TestReconcileNodesNeedingRolloutDefersControllerSurgeWithoutPlacement(t *testing.T) {
-	t.Parallel()
-
-	currentSpec := nicoCPSpec("nke-1.34.2", "cfg", "1.34.2")
-	staleSpec := staleCPSpec(t, currentSpec)
-	staleConfigID := uuid.New()
-	cluster := clusterWithCurrentSnapshot(currentSpec, 1)
-	cluster.ControlPlaneConfig.DesiredCount = 1
-	cluster.EnableCPNodeRecycling = true
-	staleNode := makeCPControllerNode("cp-stale", staleConfigID)
-
-	mockTx := &testutil.MockTx{}
-	mockTx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Once()
-	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{staleNode}, nil).Once()
-	r := &reconciler{
-		cfg:    config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:     mockTx,
-		logger: slog.New(slog.DiscardHandler),
-	}
-	cp := &controlPlane{
-		nodes:                         []db.Node{staleNode},
-		nodePinnedControlPlaneConfigs: map[uuid.UUID]db.ControlPlaneConfigSpec{staleConfigID: staleSpec},
-		clusterControlPlaneConfig:     cluster.ControlPlaneConfig,
-		useController:                 true,
-	}
-
-	placement := newFailureDomainPlacement(nil)
-	err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, placement)
-
-	require.NoError(t, err)
-	assert.True(t, placement.wasDeferred())
-	mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
-	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
-	mockTx.AssertExpectations(t)
 }
 
 func TestGetTotalDesiredControlPlaneNodes_WithSurge(t *testing.T) {

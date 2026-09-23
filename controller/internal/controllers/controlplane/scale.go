@@ -21,23 +21,18 @@ const (
 )
 
 // scaleUp creates pending control-plane nodes and returns the number created.
-// A non-nil placement gives every new node a failure-domain decision in its
-// initial row. A nil placement preserves the legacy node-pool surge path, which
-// does not use control-plane-controller placement. Instance-type selection
-// remains the control plane node scheduler's responsibility.
+// An allocator seeded with eligible domains spreads new nodes across them. A
+// zero-value allocator leaves the requested domain empty for legacy node-pool
+// surge nodes. Instance-type selection remains the control plane node
+// scheduler's responsibility.
 func (r *reconciler) scaleUp(
 	ctx context.Context,
 	cluster db.Cluster,
 	count int,
 	reason string,
-	placement *failureDomainPlacement,
+	allocator domainAllocator,
 ) (int, error) {
 	if count <= 0 {
-		return 0, nil
-	}
-
-	if placement != nil && placement.allocator == nil {
-		placement.markDeferred()
 		return 0, nil
 	}
 
@@ -48,10 +43,7 @@ func (r *reconciler) scaleUp(
 
 	created := 0
 	for range count {
-		var failureDomain *string
-		if placement != nil {
-			failureDomain = placement.take()
-		}
+		failureDomain := new(allocator.take())
 		createdNode, err := r.createPendingNode(ctx, cluster, existingNodeNames, failureDomain)
 		if err != nil {
 			return created, err

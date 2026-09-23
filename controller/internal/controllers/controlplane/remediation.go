@@ -86,28 +86,28 @@ func selectNodeToRemediate(markedNodes []db.Node) db.Node {
 
 	// First, look for the oldest pending (not yet provisioned) node
 	for _, node := range markedNodes {
-		if node.IsPending() {
+		if isPending(node) {
 			return node
 		}
 	}
 
 	// Second, look for the oldest node that is not yet provisioned
 	for _, node := range markedNodes {
-		if !node.IsProvisioned() {
+		if !isProvisioned(node) {
 			return node
 		}
 	}
 
 	// Third, look for the oldest node that is not yet KubernetesReady
 	for _, node := range markedNodes {
-		if !node.IsKubernetesReady() {
+		if !isKubernetesReady(node) {
 			return node
 		}
 	}
 
 	// Fourth, look for the oldest node that is not yet NodeAgentReady
 	for _, node := range markedNodes {
-		if !node.IsNodeAgentReady() {
+		if !isNodeAgentReady(node) {
 			return node
 		}
 	}
@@ -160,7 +160,7 @@ func canStartRemediation(log *slog.Logger, controlPlane *controlPlane, nodeToRem
 		if node.ID == nodeToRemove.ID {
 			continue
 		}
-		if node.IsKubernetesReady() && node.IsProvisioned() && node.IsNodeAgentReady() {
+		if isKubernetesReady(node) && isProvisioned(node) && isNodeAgentReady(node) {
 			log.Info("Found additional healthy node that could support bootstrapping", "healthyNodeName", node.Name)
 			additionalHealthyNodes++
 		}
@@ -183,13 +183,13 @@ func canStartRemediation(log *slog.Logger, controlPlane *controlPlane, nodeToRem
 		}
 
 		// We consider pending nodes not part of the etcd cluster yet.
-		if node.IsPending() {
+		if isPending(node) {
 			continue
 		}
 
 		targetTotalMembers++
 
-		if !node.IsKubernetesReady() {
+		if !isKubernetesReady(node) {
 			// We consider nodes that are not KubernetesReady as unhealthy members.
 			targetUnhealthyMembers++
 		}

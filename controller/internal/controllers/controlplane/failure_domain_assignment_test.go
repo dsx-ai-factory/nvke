@@ -4,20 +4,13 @@
 package controlplane
 
 import (
-	"context"
-	"errors"
 	"maps"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"k8s.io/utils/ptr"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
 )
 
 func TestLeastUsedFailureDomainSelection(t *testing.T) {
@@ -52,7 +45,6 @@ func TestLeastUsedFailureDomainSelection(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-
 			assert.Equal(t, tc.want, leastUsedFailureDomainSelection(tc.counts))
 		})
 	}
@@ -92,20 +84,15 @@ func TestDomainAllocatorTake(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-
 			allocator := newDomainAllocator(leastUsedFailureDomainSelection, tc.eligible)
 			for _, domain := range tc.recorded {
 				allocator.record(domain)
 			}
-
 			assert.Equal(t, tc.want, allocator.take())
 		})
 	}
 }
 
-// TestDomainAllocatorTakeCountsItsOwnHandouts catches a take() that selects without
-// counting, which would hand every node the same domain. The stub selection
-// makes the assertion independent of the least-used policy.
 func TestDomainAllocatorTakeCountsItsOwnHandouts(t *testing.T) {
 	t.Parallel()
 
@@ -126,453 +113,111 @@ func TestDomainAllocatorTakeCountsItsOwnHandouts(t *testing.T) {
 
 func TestDomainAllocatorSpreadsSuccessiveTakes(t *testing.T) {
 	t.Parallel()
-
 	allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-b", "fd-a", "fd-c"})
-
 	got := []string{allocator.take(), allocator.take(), allocator.take(), allocator.take()}
-
 	assert.Equal(t, []string{"fd-a", "fd-b", "fd-c", "fd-a"}, got)
 }
 
 func TestDomainAllocatorTakeWithoutEligibleDomainsIsRepeatable(t *testing.T) {
 	t.Parallel()
-
-	// A nil selection proves take() short-circuits before consulting it.
 	allocator := newDomainAllocator(nil, nil)
-
 	assert.Empty(t, allocator.take())
 	assert.Empty(t, allocator.take())
 }
 
-// TestDomainAllocatorCollapsesDuplicateEligibleDomains pins that a domain listed
-// twice is one placement slot, not two.
+func TestZeroValueDomainAllocatorRequestsNoSpecificDomain(t *testing.T) {
+	t.Parallel()
+	var allocator domainAllocator
+	assert.Empty(t, allocator.take())
+	assert.Empty(t, allocator.take())
+}
+
 func TestDomainAllocatorCollapsesDuplicateEligibleDomains(t *testing.T) {
 	t.Parallel()
-
 	allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-a", "fd-b"})
-
 	got := []string{allocator.take(), allocator.take(), allocator.take(), allocator.take()}
-
 	assert.Equal(t, []string{"fd-a", "fd-b", "fd-a", "fd-b"}, got)
 }
 
-func TestPrepareFailureDomainPlacementBackfillsAndSpreadsUnplacedNodes(t *testing.T) {
+func TestNewControlPlaneDomainAllocator(t *testing.T) {
 	t.Parallel()
-
-	clusterID := uuid.New()
-	nodes := []db.Node{
-		{
-			ID:           uuid.New(),
-			ClusterID:    clusterID,
-			Name:         "cp-a",
-			ControlPlane: true,
-			Conditions: db.NodeConditions{
-				Provisioned: db.NewCondition(true, "provisioned"),
-			},
-		},
-		{
-			ID:           uuid.New(),
-			ClusterID:    clusterID,
-			Name:         "cp-b",
-			ControlPlane: true,
-			Conditions: db.NodeConditions{
-				Pending: db.NewCondition(true, "pending"),
-			},
-		},
-		{
-			ID:           uuid.New(),
-			ClusterID:    clusterID,
-			Name:         "cp-c",
-			ControlPlane: true,
-			Conditions: db.NodeConditions{
-				Pending: db.NewCondition(true, "pending"),
-			},
-		},
-	}
-
-	mockTx := &testutil.MockTx{}
-	for nodeName, domain := range map[string]string{
-		"cp-a": "fd-a",
-		"cp-b": "fd-b",
-		"cp-c": "fd-c",
-	} {
-		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
-			return node.Name == nodeName && ptr.Deref(node.FailureDomain, "") == domain
-		})).Return(db.Node{}, nil).Once()
-	}
-
-	r := &reconciler{
-		cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:  mockTx,
-	}
-	domains := &failureDomains{
-		eligible:           []string{"fd-c", "fd-b", "fd-a"},
-		observedByNodeName: map[string]string{"cp-a": "fd-a"},
-	}
-
-	placement, err := r.prepareFailureDomainPlacement(context.Background(), nodes, domains)
-
-	require.NoError(t, err)
-	require.NotNil(t, placement)
-	require.NotNil(t, placement.allocator)
-	assert.False(t, placement.wasDeferred())
-	mockTx.AssertExpectations(t)
-}
-
-func TestPrepareFailureDomainPlacementDefersUntilExistingPlacementIsObserved(t *testing.T) {
-	t.Parallel()
-
-	clusterID := uuid.New()
-	nodes := []db.Node{
-		{
-			ID:           uuid.New(),
-			ClusterID:    clusterID,
-			Name:         "cp-claimed",
-			ControlPlane: true,
-			Conditions: db.NodeConditions{
-				Pending:             db.NewCondition(true, "waiting for infrastructure allocation"),
-				ProvisioningClaimed: db.NewCondition(true, "provisioning workflow claimed node"),
-			},
-		},
-		{
-			ID:           uuid.New(),
-			ClusterID:    clusterID,
-			Name:         "cp-pending",
-			ControlPlane: true,
-			Conditions: db.NodeConditions{
-				Pending: db.NewCondition(true, "pending"),
-			},
-		},
-	}
-
-	mockTx := &testutil.MockTx{}
-	r := &reconciler{
-		cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:  mockTx,
-	}
-	domains := &failureDomains{eligible: []string{"fd-a", "fd-b"}}
-
-	placement, err := r.prepareFailureDomainPlacement(context.Background(), nodes, domains)
-
-	require.NoError(t, err)
-	require.NotNil(t, placement)
-	assert.Nil(t, placement.allocator)
-	assert.True(t, placement.wasDeferred())
-	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
-	mockTx.AssertExpectations(t)
-
-	// Once CAPI reports the claimed node's placement, the allocator is whole again
-	// and the pending node takes the other domain.
-	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
-		return node.Name == "cp-claimed" && ptr.Deref(node.FailureDomain, "") == "fd-a"
-	})).Return(db.Node{}, nil).Once()
-	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
-		return node.Name == "cp-pending" && ptr.Deref(node.FailureDomain, "") == "fd-b"
-	})).Return(db.Node{}, nil).Once()
-	domains.observedByNodeName = map[string]string{"cp-claimed": "fd-a"}
-
-	placement, err = r.prepareFailureDomainPlacement(context.Background(), nodes, domains)
-
-	require.NoError(t, err)
-	require.NotNil(t, placement)
-	require.NotNil(t, placement.allocator)
-	assert.False(t, placement.wasDeferred())
-	mockTx.AssertExpectations(t)
-}
-
-func TestPrepareFailureDomainPlacementDiscoveryFailureDefersUnplacedNode(t *testing.T) {
-	t.Parallel()
-
-	clusterID := uuid.New()
-	nodes := []db.Node{{
-		ID:           uuid.New(),
-		ClusterID:    clusterID,
-		Name:         "cp-pending",
-		ControlPlane: true,
-		Conditions: db.NodeConditions{
-			Pending: db.NewCondition(true, "pending"),
-		},
-	}}
-
-	mockTx := &testutil.MockTx{}
-	r := &reconciler{
-		cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:  mockTx,
-	}
-
-	placement, err := r.prepareFailureDomainPlacement(context.Background(), nodes, nil)
-
-	require.NoError(t, err)
-	require.NotNil(t, placement)
-	assert.Nil(t, placement.allocator)
-	assert.True(t, placement.wasDeferred())
-	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
-	mockTx.AssertExpectations(t)
-}
-
-func TestPrepareFailureDomainPlacementDiscoveryFailureDoesNotDeferWithoutUnplacedNode(t *testing.T) {
-	t.Parallel()
-
-	clusterID := uuid.New()
-	nodes := []db.Node{{
-		ID:           uuid.New(),
-		ClusterID:    clusterID,
-		Name:         "cp-claimed",
-		ControlPlane: true,
-		Conditions: db.NodeConditions{
-			Pending:             db.NewCondition(true, "waiting for infrastructure allocation"),
-			ProvisioningClaimed: db.NewCondition(true, "provisioning workflow claimed node"),
-		},
-	}}
-
-	mockTx := &testutil.MockTx{}
-	r := &reconciler{
-		cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:  mockTx,
-	}
-
-	placement, err := r.prepareFailureDomainPlacement(context.Background(), nodes, nil)
-
-	require.NoError(t, err)
-	require.NotNil(t, placement)
-	assert.Nil(t, placement.allocator)
-	assert.False(t, placement.wasDeferred())
-	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
-	mockTx.AssertExpectations(t)
-}
-
-func TestPrepareFailureDomainPlacementMarksUnsupportedProviderComplete(t *testing.T) {
-	t.Parallel()
-
-	clusterID := uuid.New()
-	nodes := []db.Node{{
-		ID:           uuid.New(),
-		ClusterID:    clusterID,
-		Name:         "cp-pending",
-		ControlPlane: true,
-		Conditions: db.NodeConditions{
-			Pending: db.NewCondition(true, "pending"),
-		},
-	}}
-
-	mockTx := &testutil.MockTx{}
-	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
-		return node.Name == "cp-pending" && node.FailureDomain != nil && *node.FailureDomain == ""
-	})).Return(db.Node{}, nil).Once()
-	r := &reconciler{
-		cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:  mockTx,
-	}
-
-	placement, err := r.prepareFailureDomainPlacement(context.Background(), nodes, &failureDomains{})
-
-	require.NoError(t, err)
-	require.NotNil(t, placement)
-	require.NotNil(t, placement.allocator)
-	assert.False(t, placement.wasDeferred())
-	mockTx.AssertExpectations(t)
-}
-
-func TestPrepareFailureDomainPlacementSkipsNodesMarkedForDeletion(t *testing.T) {
-	t.Parallel()
-
-	clusterID := uuid.New()
-	nodes := []db.Node{
-		{
-			ID:           uuid.New(),
-			ClusterID:    clusterID,
-			Name:         "cp-deleting",
-			ControlPlane: true,
-			Conditions: db.NodeConditions{
-				Deleting: db.NewCondition(true, "deleting"),
-			},
-		},
-		{
-			ID:            uuid.New(),
-			ClusterID:     clusterID,
-			Name:          "cp-placed",
-			ControlPlane:  true,
-			FailureDomain: new("fd-a"),
-			Conditions: db.NodeConditions{
-				Provisioned: db.NewCondition(true, "provisioned"),
-			},
-		},
-		{
-			ID:           uuid.New(),
-			ClusterID:    clusterID,
-			Name:         "cp-pending",
-			ControlPlane: true,
-			Conditions: db.NodeConditions{
-				Pending: db.NewCondition(true, "pending"),
-			},
-		},
-	}
-
-	mockTx := &testutil.MockTx{}
-	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
-		return node.Name == "cp-pending" && ptr.Deref(node.FailureDomain, "") == "fd-b"
-	})).Return(db.Node{}, nil).Once()
-	r := &reconciler{
-		cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:  mockTx,
-	}
-
-	placement, err := r.prepareFailureDomainPlacement(
-		context.Background(),
-		nodes,
-		&failureDomains{eligible: []string{"fd-a", "fd-b"}},
-	)
-
-	require.NoError(t, err)
-	require.NotNil(t, placement)
-	require.NotNil(t, placement.allocator)
-	assert.False(t, placement.wasDeferred())
-	mockTx.AssertExpectations(t)
-}
-
-func TestPrepareFailureDomainPlacementSurfacesDatabaseErrors(t *testing.T) {
-	t.Parallel()
-
-	clusterID := uuid.New()
-	claimed := db.Node{
-		ID:           uuid.New(),
-		ClusterID:    clusterID,
-		Name:         "cp-claimed",
-		ControlPlane: true,
-		Conditions: db.NodeConditions{
-			Pending:             db.NewCondition(true, "waiting for infrastructure allocation"),
-			ProvisioningClaimed: db.NewCondition(true, "provisioning workflow claimed node"),
-		},
-	}
-	pending := db.Node{
-		ID:           uuid.New(),
-		ClusterID:    clusterID,
-		Name:         "cp-pending",
-		ControlPlane: true,
-		Conditions: db.NodeConditions{
-			Pending: db.NewCondition(true, "pending"),
-		},
-	}
 
 	tests := map[string]struct {
 		nodes    []db.Node
 		observed map[string]string
-		wantErr  string
+		eligible []string
+		counts   map[string]int
+		wantNext string
 	}{
-		"adopting an observed placement fails": {
-			nodes:    []db.Node{claimed},
-			observed: map[string]string{"cp-claimed": "fd-a"},
-			wantErr:  "adopting observed failure domain for node",
+		"CAPI placement is counted for an existing node without a DB decision": {
+			nodes:    []db.Node{{Name: "cp-old"}},
+			observed: map[string]string{"cp-old": "fd-a"},
+			eligible: []string{"fd-a", "fd-b"},
+			counts:   map[string]int{"fd-a": 1, "fd-b": 0},
+			wantNext: "fd-b",
 		},
-		"persisting a new placement fails": {
-			nodes:   []db.Node{pending},
-			wantErr: "persisting failure domain for node",
+		"CAPI observation overrides the stored request and is counted once": {
+			nodes:    []db.Node{{Name: "cp-0", FailureDomain: new("fd-a")}},
+			observed: map[string]string{"cp-0": "fd-b"},
+			eligible: []string{"fd-a", "fd-b"},
+			counts:   map[string]int{"fd-a": 0, "fd-b": 1},
+			wantNext: "fd-a",
+		},
+		"stored decision counts before a new Machine exists": {
+			nodes:    []db.Node{{Name: "cp-new", FailureDomain: new("fd-a")}},
+			eligible: []string{"fd-a", "fd-b"},
+			counts:   map[string]int{"fd-a": 1, "fd-b": 0},
+			wantNext: "fd-b",
+		},
+		"unobserved legacy node is omitted without blocking placement": {
+			nodes:    []db.Node{{Name: "cp-old"}, {Name: "cp-placed", FailureDomain: new("fd-a")}},
+			eligible: []string{"fd-a", "fd-b"},
+			counts:   map[string]int{"fd-a": 1, "fd-b": 0},
+			wantNext: "fd-b",
+		},
+		"node marked for deletion is not counted": {
+			nodes: []db.Node{{Name: "cp-deleting", FailureDomain: new("fd-a"), Conditions: db.NodeConditions{
+				Deleting: db.NewCondition(true, "deleting"),
+			}}},
+			observed: map[string]string{"cp-deleting": "fd-a"},
+			eligible: []string{"fd-a", "fd-b"},
+			counts:   map[string]int{"fd-a": 0, "fd-b": 0},
+			wantNext: "fd-a",
+		},
+		"ineligible observed domain is ignored": {
+			nodes:    []db.Node{{Name: "cp-0"}},
+			observed: map[string]string{"cp-0": "retired"},
+			eligible: []string{"fd-a", "fd-b"},
+			counts:   map[string]int{"fd-a": 0, "fd-b": 0},
+			wantNext: "fd-a",
+		},
+		"provider without failure domains selects empty string": {
+			nodes:    []db.Node{{Name: "cp-old"}},
+			counts:   map[string]int{},
+			wantNext: "",
 		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-
-			mockTx := &testutil.MockTx{}
-			mockTx.On("UpdateNode", mock.Anything, mock.Anything).
-				Return(db.Node{}, errors.New("deadlock detected")).Once()
-			r := &reconciler{
-				cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-				db:  mockTx,
-			}
-			domains := &failureDomains{
-				eligible:           []string{"fd-a", "fd-b"},
+			allocator := newControlPlaneDomainAllocator(tc.nodes, &failureDomains{
+				eligible:           tc.eligible,
 				observedByNodeName: tc.observed,
-			}
-
-			placement, err := r.prepareFailureDomainPlacement(context.Background(), tc.nodes, domains)
-
-			require.ErrorContains(t, err, tc.wantErr)
-			assert.Nil(t, placement)
-			mockTx.AssertExpectations(t)
+			})
+			assert.Equal(t, tc.counts, allocator.machinesPerDomain)
+			assert.Equal(t, tc.wantNext, allocator.take())
 		})
 	}
 }
 
-func TestPrepareFailureDomainPlacementSkippedWhenControllerDoesNotOwnTheControlPlane(t *testing.T) {
+func TestNewControlPlaneDomainAllocatorDoesNotBackfillExistingNode(t *testing.T) {
 	t.Parallel()
-
-	mockTx := &testutil.MockTx{}
-	r := &reconciler{cfg: config.Config{}, db: mockTx}
-
-	placement, err := r.prepareFailureDomainPlacement(context.Background(), nil, nil)
-
-	require.NoError(t, err)
-	require.NotNil(t, placement)
-	assert.False(t, placement.wasDeferred())
-	mockTx.AssertNotCalled(t, "ListNodes", mock.Anything, mock.Anything)
-}
-
-func TestPrepareFailureDomainPlacementReconcilesNodesOnAProviderWithoutDomains(t *testing.T) {
-	t.Parallel()
-
-	clusterID := uuid.New()
-	nodes := []db.Node{
-		{
-			ID: uuid.New(), ClusterID: clusterID, Name: "cp-provisioned", ControlPlane: true,
-			Conditions: db.NodeConditions{Provisioned: db.NewCondition(true, "provisioned")},
-		},
-		{
-			ID: uuid.New(), ClusterID: clusterID, Name: "cp-pending", ControlPlane: true,
-			Conditions: db.NodeConditions{Pending: db.NewCondition(true, "pending")},
-		},
-		{
-			ID: uuid.New(), ClusterID: clusterID, Name: "cp-deleting", ControlPlane: true,
-			Conditions: db.NodeConditions{Deleting: db.NewCondition(true, "deleting")},
-		},
-		{
-			ID: uuid.New(), ClusterID: clusterID, Name: "cp-settled", ControlPlane: true,
-			FailureDomain: new(""),
-			Conditions:    db.NodeConditions{Provisioned: db.NewCondition(true, "provisioned")},
-		},
-	}
-
-	mockTx := &testutil.MockTx{}
-	for _, name := range []string{"cp-provisioned", "cp-pending"} {
-		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
-			return node.Name == name && node.FailureDomain != nil && *node.FailureDomain == ""
-		})).Return(db.Node{}, nil).Once()
-	}
-	r := &reconciler{
-		cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:  mockTx,
-	}
-
-	placement, err := r.prepareFailureDomainPlacement(context.Background(), nodes, &failureDomains{})
-
-	require.NoError(t, err)
-	require.NotNil(t, placement)
-	require.NotNil(t, placement.allocator)
-	assert.False(t, placement.wasDeferred(), "a provider without domains must not wait for an observation")
-	mockTx.AssertExpectations(t)
-}
-
-func TestPrepareFailureDomainPlacementSurfacesErrorsRecordingAbsentDomains(t *testing.T) {
-	t.Parallel()
-
-	clusterID := uuid.New()
-	nodes := []db.Node{{
-		ID: uuid.New(), ClusterID: clusterID, Name: "cp-pending", ControlPlane: true,
-		Conditions: db.NodeConditions{Pending: db.NewCondition(true, "pending")},
-	}}
-
-	mockTx := &testutil.MockTx{}
-	mockTx.On("UpdateNode", mock.Anything, mock.Anything).
-		Return(db.Node{}, errors.New("deadlock detected")).Once()
-	r := &reconciler{
-		cfg: config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:  mockTx,
-	}
-
-	placement, err := r.prepareFailureDomainPlacement(context.Background(), nodes, &failureDomains{})
-
-	require.ErrorContains(t, err, "recording absent failure domain for node")
-	assert.Nil(t, placement)
-	mockTx.AssertExpectations(t)
+	nodes := []db.Node{{Name: "cp-old"}}
+	allocator := newControlPlaneDomainAllocator(nodes, &failureDomains{
+		eligible:           []string{"fd-a", "fd-b"},
+		observedByNodeName: map[string]string{"cp-old": "fd-a"},
+	})
+	assert.Nil(t, nodes[0].FailureDomain)
+	assert.Equal(t, "fd-b", allocator.take())
 }

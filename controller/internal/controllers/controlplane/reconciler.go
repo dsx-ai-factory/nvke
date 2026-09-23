@@ -11,7 +11,6 @@ import (
 
 	temporalclient "go.temporal.io/sdk/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
@@ -43,16 +42,16 @@ func newReconciler(
 	}
 }
 
-func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) (reconcile.Result, error) {
+func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	// The TeardownCluster workflow deletes CP nodes for a deleting cluster;
 	// reconciling scale-up here would keep recreating them and deadlock teardown.
 	if cluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
-		return reconcile.Result{}, nil
+		return nil
 	}
 
 	controlPlane, err := readControlPlane(ctx, r.db, cluster, r.cfg.UseControlPlaneControllerForControlPlane())
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("reading control plane: %w", err)
+		return fmt.Errorf("reading control plane: %w", err)
 	}
 
 	// The order below is deliberate: everything that does not change etcd
@@ -61,67 +60,60 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) (reconci
 
 	// Status only; no membership change.
 	if err := r.reconcileControlPlaneRolloutRequiredCondition(ctx, controlPlane); err != nil {
-		return reconcile.Result{}, fmt.Errorf("reconciling control plane rollout-required conditions: %w", err)
+		return fmt.Errorf("reconciling control plane rollout-required conditions: %w", err)
 	}
 
-	failureDomains, discoveryErr := r.readFailureDomains(ctx, cluster)
-	if discoveryErr != nil {
-		r.logger.Info("failure-domain discovery failed; node creation or placement will be deferred if reconciliation requires a failure-domain decision",
-			"clusterID", cluster.ID,
-			"err", discoveryErr,
-		)
-	}
-
-	placement, err := r.prepareFailureDomainPlacement(ctx, controlPlane.nodes, failureDomains)
+	failureDomains, err := r.readFailureDomains(ctx, cluster)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("preparing control-plane failure-domain placement: %w", err)
+		return fmt.Errorf("discovering control-plane failure domains: %w", err)
+	}
+	// Only controller-managed control planes seed the allocator with eligible
+	// domains. Legacy node-pool mode uses the zero value, so its surge nodes
+	// request no specific domain.
+	allocator := domainAllocator{}
+	if controlPlane.useController {
+		allocator = newControlPlaneDomainAllocator(controlPlane.nodes, failureDomains)
 	}
 
 	// Host creation only. A pending or in-flight delete must not stall it: the
 	// replacement host is exactly what lets the control plane shrink safely.
-	if err := r.reconcileControlPlaneScaleUp(ctx, cluster, controlPlane, placement); err != nil {
-		return reconcile.Result{}, fmt.Errorf("reconciling control plane scale-up: %w", err)
+	if err := r.reconcileControlPlaneScaleUp(ctx, cluster, controlPlane, allocator); err != nil {
+		return fmt.Errorf("reconciling control plane scale-up: %w", err)
 	}
 
 	// Records delete intent only; the teardown itself is started at the bottom.
 	if _, err := r.remediateMachines(ctx, cluster, controlPlane); err != nil {
-		return reconcile.Result{}, err
+		return err
 	}
 
 	// ConfigMap changes only.
 	if err := r.reconcileK8sUpgrade(ctx, cluster, controlPlane); err != nil {
-		return reconcile.Result{}, fmt.Errorf("reconciling k8s upgrade: %w", err)
+		return fmt.Errorf("reconciling k8s upgrade: %w", err)
 	}
 
 	// FIXME: https://github.com/dsx-ai-factory/nke/issues/784 - reconcileNodesNeedingRollout
 	// still tears a node down directly instead of recording intent and letting the
 	// promotion below start it, so rollout teardowns bypass the serialized path.
-	if err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane, placement); err != nil {
-		return reconcile.Result{}, fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
-	}
-
-	result := reconcile.Result{}
-	if placement.wasDeferred() {
-		r.logger.Info("deferring control-plane node creation or placement until failure-domain information is available", "clusterID", cluster.ID)
-		result.RequeueAfter = failureDomainRetryInterval
+	if err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane, allocator); err != nil {
+		return fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
 	}
 
 	// Grow before shrink: join a ready host if one is waiting, and leave any
 	// queued delete alone until that join is done.
 	joinInFlight, err := r.reconcileControlPlaneJoins(ctx, cluster, controlPlane)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("reconciling control plane joins: %w", err)
+		return fmt.Errorf("reconciling control plane joins: %w", err)
 	}
 	if joinInFlight {
-		return result, nil
+		return nil
 	}
 
 	// Promote the oldest accepted delete into a teardown, one at a time.
 	if _, err := r.reconcileRequestedDeletes(ctx, cluster, controlPlane); err != nil {
-		return reconcile.Result{}, fmt.Errorf("reconciling requested control plane deletes: %w", err)
+		return fmt.Errorf("reconciling requested control plane deletes: %w", err)
 	}
 
-	return result, nil
+	return nil
 }
 
 // reconcileControlPlaneRolloutRequiredCondition refreshes each
@@ -170,7 +162,7 @@ func (r *reconciler) reconcileControlPlaneScaleUp(
 	ctx context.Context,
 	cluster db.Cluster,
 	controlPlane *controlPlane,
-	placement *failureDomainPlacement,
+	allocator domainAllocator,
 ) error {
 	if !r.cfg.UseControlPlaneControllerForControlPlane() {
 		return nil
@@ -185,7 +177,7 @@ func (r *reconciler) reconcileControlPlaneScaleUp(
 	// selection and Forge capacity checks are the control plane node scheduler's job: it picks
 	// each node's Forge instance type from the pinned InstanceTypePreference at
 	// schedule time and persists it back onto the node row.
-	created, err := r.scaleUp(ctx, cluster, deficit, "control-plane scale-up", placement)
+	created, err := r.scaleUp(ctx, cluster, deficit, "control-plane scale-up", allocator)
 	if err != nil {
 		return fmt.Errorf("scaling up control-plane nodes: %w", err)
 	}

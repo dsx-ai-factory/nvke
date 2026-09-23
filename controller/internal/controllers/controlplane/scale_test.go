@@ -225,7 +225,7 @@ func TestReconcile_SkipsClusterBeingDeleted(t *testing.T) {
 	}
 	cluster.Conditions.Deleting = db.NewCondition(true, "cluster teardown in progress")
 
-	_, err := r.reconcile(context.Background(), cluster)
+	err := r.reconcile(context.Background(), cluster)
 	require.NoError(t, err)
 	// The teardown workflow owns CP node deletion; the reconciler must not read or
 	// (re)create nodes for a cluster being torn down.
@@ -252,7 +252,7 @@ func TestReconcileControlPlaneScaleUp_FeatureFlagDisabled(t *testing.T) {
 	}
 	cp := &controlPlane{}
 
-	err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, nil)
+	err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, domainAllocator{})
 	require.NoError(t, err)
 	mockTx.AssertNotCalled(t, "ListClusterNodeNames", mock.Anything, mock.Anything)
 	mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
@@ -303,10 +303,9 @@ func TestReconcileControlPlaneScaleUp_FeatureFlagEnabled(t *testing.T) {
 		},
 	}
 
-	placement := newFailureDomainPlacement(newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"}))
-	err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, placement)
+	allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"})
+	err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, allocator)
 	require.NoError(t, err)
-	assert.False(t, placement.wasDeferred())
 	mockTx.AssertExpectations(t)
 }
 
@@ -328,12 +327,12 @@ func TestScaleUpSharesFailureDomainAllocatorAcrossCreationSites(t *testing.T) {
 	}).Return(db.Node{}, nil).Times(3)
 
 	r := &reconciler{db: mockTx, logger: slog.Default()}
-	placement := newFailureDomainPlacement(newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"}))
+	allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"})
 
-	created, err := r.scaleUp(context.Background(), cluster, 2, "control-plane scale-up", placement)
+	created, err := r.scaleUp(context.Background(), cluster, 2, "control-plane scale-up", allocator)
 	require.NoError(t, err)
 	assert.Equal(t, 2, created)
-	created, err = r.scaleUp(context.Background(), cluster, 1, "surge node during upgrade", placement)
+	created, err = r.scaleUp(context.Background(), cluster, 1, "surge node during upgrade", allocator)
 	require.NoError(t, err)
 	assert.Equal(t, 1, created)
 
@@ -341,29 +340,50 @@ func TestScaleUpSharesFailureDomainAllocatorAcrossCreationSites(t *testing.T) {
 	mockTx.AssertExpectations(t)
 }
 
-func TestReconcileControlPlaneScaleUpDefersWithoutPlacement(t *testing.T) {
+func TestScaleUpUsesAllocatorDecision(t *testing.T) {
 	t.Parallel()
 
-	mockTx := &testutil.MockTx{}
-	r := &reconciler{
-		cfg:    config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:     mockTx,
-		logger: slog.Default(),
-	}
-	cluster := db.Cluster{
-		ID: uuid.New(),
-		ControlPlaneConfig: db.ControlPlaneConfig{
-			ConfigurationID: uuid.New(),
-			DesiredCount:    1,
+	tests := map[string]struct {
+		allocator domainAllocator
+		want      *string
+	}{
+		"legacy node-pool mode requests no specific domain": {
+			want: new(""),
+		},
+		"allocator without eligible domains requests no specific domain": {
+			allocator: newDomainAllocator(leastUsedFailureDomainSelection, nil),
+			want:      new(""),
+		},
+		"eligible domain is assigned": {
+			allocator: newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a"}),
+			want:      new("fd-a"),
 		},
 	}
 
-	placement := newFailureDomainPlacement(nil)
-	err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, &controlPlane{}, placement)
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cluster := db.Cluster{
+				ID: uuid.New(),
+				ControlPlaneConfig: db.ControlPlaneConfig{
+					ConfigurationID: uuid.New(),
+				},
+			}
+			mockTx := &testutil.MockTx{}
+			mockTx.On("ListClusterNodeNames", mock.Anything, cluster.ID).Return([]string{}, nil).Once()
+			var placement *string
+			mockTx.On("CreateNode", mock.Anything, mock.AnythingOfType("*db.Node")).Run(func(args mock.Arguments) {
+				placement = args.Get(1).(*db.Node).FailureDomain
+			}).Return(db.Node{}, nil).Once()
 
-	require.NoError(t, err)
-	assert.True(t, placement.wasDeferred())
-	mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
+			r := &reconciler{db: mockTx, logger: slog.Default()}
+			created, err := r.scaleUp(context.Background(), cluster, 1, "control-plane scale-up", tc.allocator)
+			require.NoError(t, err)
+			assert.Equal(t, 1, created)
+			assert.Equal(t, tc.want, placement)
+			mockTx.AssertExpectations(t)
+		})
+	}
 }
 
 func TestReconcileControlPlaneScaleUp_Deficit(t *testing.T) {
@@ -423,10 +443,9 @@ func TestReconcileControlPlaneScaleUp_Deficit(t *testing.T) {
 			}
 			cp := &controlPlane{nodes: nodes}
 
-			placement := newFailureDomainPlacement(newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"}))
-			err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, placement)
+			allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"})
+			err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, allocator)
 			require.NoError(t, err)
-			assert.False(t, placement.wasDeferred())
 			mockTx.AssertExpectations(t)
 			if tc.wantCreated == 0 {
 				mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)

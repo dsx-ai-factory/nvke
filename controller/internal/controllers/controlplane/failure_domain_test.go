@@ -8,7 +8,6 @@ import (
 	"errors"
 	"log/slog"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -191,7 +190,7 @@ func TestReadFailureDomainsWithoutAPlacementView(t *testing.T) {
 	}
 }
 
-func TestControllerRequeuesWhileClusterInfrastructureIsNotReady(t *testing.T) {
+func TestControllerReturnsErrorWhileClusterInfrastructureIsNotReady(t *testing.T) {
 	t.Parallel()
 
 	clusterID := uuid.New()
@@ -205,20 +204,22 @@ func TestControllerRequeuesWhileClusterInfrastructureIsNotReady(t *testing.T) {
 	}
 	nodes := []db.Node{
 		{
-			ID:           uuid.New(),
-			ClusterID:    clusterID,
-			ControlPlane: true,
-			Name:         "cp-existing",
+			ID:            uuid.New(),
+			ClusterID:     clusterID,
+			ControlPlane:  true,
+			Name:          "cp-existing",
+			FailureDomain: new("fd-a"),
 			Conditions: db.NodeConditions{
 				Provisioned:     db.NewCondition(true, "provisioned"),
 				KubernetesReady: db.NewCondition(true, "ready"),
 			},
 		},
 		{
-			ID:           uuid.New(),
-			ClusterID:    clusterID,
-			ControlPlane: true,
-			Name:         "cp-pending",
+			ID:            uuid.New(),
+			ClusterID:     clusterID,
+			ControlPlane:  true,
+			Name:          "cp-pending",
+			FailureDomain: new("fd-b"),
 			Conditions: db.NodeConditions{
 				Pending: db.NewCondition(true, "pending"),
 			},
@@ -227,7 +228,7 @@ func TestControllerRequeuesWhileClusterInfrastructureIsNotReady(t *testing.T) {
 	mockTx := &testutil.MockTx{}
 	mockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(cluster, nil).Once()
 	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
-	mockTx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Twice()
+	mockTx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Once()
 	mockDB := &testutil.MockDB{MockTx: mockTx}
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
 
@@ -246,8 +247,8 @@ func TestControllerRequeuesWhileClusterInfrastructureIsNotReady(t *testing.T) {
 
 	result, err := controller.Reconcile(context.Background(), dbreconcile.ClusterKey(clusterID))
 
-	require.NoError(t, err)
-	assert.Equal(t, 30*time.Second, result.RequeueAfter)
+	require.ErrorContains(t, err, "discovering control-plane failure domains: capi cluster infrastructure is not yet provisioned")
+	assert.Zero(t, result)
 	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 	mockDB.AssertExpectations(t)
 	mockTx.AssertExpectations(t)
@@ -284,9 +285,8 @@ func failureDomainMachine(
 	}
 }
 
-// assertControlPlaneNodesPlaced asserts that the cluster's control-plane nodes
-// that are still waiting for infrastructure all have a failure domain. It returns
-// all of the cluster's control-plane nodes regardless of the assertion.
+// assertControlPlaneNodesPlaced asserts that the nodes created by this test's
+// reconcile already have a failure-domain decision in their initial row.
 func assertControlPlaneNodesPlaced(ctx context.Context, t *testing.T, database db.DB, clusterID uuid.UUID) []db.Node {
 	t.Helper()
 
@@ -296,11 +296,6 @@ func assertControlPlaneNodesPlaced(ctx context.Context, t *testing.T, database d
 	require.NotEmpty(t, nodes, "expected control-plane nodes")
 
 	for _, node := range nodes {
-		// A node whose infrastructure already exists may legitimately be waiting
-		// for CAPI to report its placement.
-		if node.IsMarkedForDeletion() || node.HasInfrastructureProvisioningStarted() {
-			continue
-		}
 		assert.NotNil(t, node.FailureDomain, "node %s was left unplaced by reconcile", node.Name)
 	}
 	return nodes
@@ -364,9 +359,7 @@ func TestReconcilePlacesTheNodesItCreatedInTheSamePass(t *testing.T) {
 			nil,
 			k8sClient,
 		)
-		result, err := r.reconcile(ctx, cluster)
-		require.NoError(t, err)
-		assert.Zero(t, result.RequeueAfter, "placement should not defer when discovery is healthy")
+		require.NoError(t, r.reconcile(ctx, cluster))
 		return nil
 	}))
 
