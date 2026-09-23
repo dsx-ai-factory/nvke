@@ -437,7 +437,7 @@ func (c *Controller) createTokenForNode(ctx context.Context, node db.Node, ekPub
 		return fmt.Errorf("invalid EK public key hash for node %s: %w", node.ID, err)
 	}
 
-	tokenName := teleport.TPMTokenName(node.ID)
+	tokenName := teleport.TPMTokenName(c.cfg.Teleport.TokenNamePrefix, node.ID)
 	expiresAt := time.Now().Add(TPMTokenTTL)
 
 	c.logger.Info("Creating Teleport TPM join token",

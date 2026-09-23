@@ -9,10 +9,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const testManagedByValue = "nke-cloud-workflow-engine"
+
 func TestOwnershipLabels(t *testing.T) {
-	got := OwnershipLabels()
+	got := OwnershipLabels(testManagedByValue)
 	expected := map[string]string{
-		LabelManagedBy: LabelManagedByValue,
+		LabelManagedBy: testManagedByValue,
 	}
 	assert.Equal(t, expected, got)
 }
@@ -27,14 +29,14 @@ func TestMergeLabels(t *testing.T) {
 			name:       "nil user labels",
 			userLabels: nil,
 			expected: map[string]string{
-				LabelManagedBy: LabelManagedByValue,
+				LabelManagedBy: testManagedByValue,
 			},
 		},
 		{
 			name:       "empty user labels",
 			userLabels: map[string]string{},
 			expected: map[string]string{
-				LabelManagedBy: LabelManagedByValue,
+				LabelManagedBy: testManagedByValue,
 			},
 		},
 		{
@@ -46,7 +48,7 @@ func TestMergeLabels(t *testing.T) {
 			expected: map[string]string{
 				"custom-key":   "custom-value",
 				"another":      "label",
-				LabelManagedBy: LabelManagedByValue,
+				LabelManagedBy: testManagedByValue,
 			},
 		},
 		{
@@ -56,7 +58,7 @@ func TestMergeLabels(t *testing.T) {
 				"custom":       "preserved",
 			},
 			expected: map[string]string{
-				LabelManagedBy: LabelManagedByValue,
+				LabelManagedBy: testManagedByValue,
 				"custom":       "preserved",
 			},
 		},
@@ -64,7 +66,7 @@ func TestMergeLabels(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := MergeLabels(tt.userLabels)
+			got := MergeLabels(tt.userLabels, testManagedByValue)
 			assert.Equal(t, tt.expected, got)
 		})
 	}
@@ -103,14 +105,14 @@ func TestIsOwnedByCWE(t *testing.T) {
 		{
 			name: "correct managed-by value",
 			labels: map[string]string{
-				LabelManagedBy: LabelManagedByValue,
+				LabelManagedBy: testManagedByValue,
 			},
 			expected: true,
 		},
 		{
 			name: "correct managed-by with other labels",
 			labels: map[string]string{
-				LabelManagedBy: LabelManagedByValue,
+				LabelManagedBy: testManagedByValue,
 				"custom":       "label",
 			},
 			expected: true,
@@ -119,7 +121,7 @@ func TestIsOwnedByCWE(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := IsOwnedByCWE(tt.labels)
+			got := IsOwnedByCWE(tt.labels, testManagedByValue)
 			assert.Equal(t, tt.expected, got)
 		})
 	}

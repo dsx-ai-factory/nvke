@@ -31,23 +31,25 @@ type clusterReader interface {
 // tenant-manager lifecycle changes. The informer LIST on startup also supplies
 // create events for Secrets that existed before CWE restarted.
 type SecretReconciler struct {
-	database   clusterReader
-	reader     client.Reader
-	managerSet *ManagerSet
+	database            clusterReader
+	reader              client.Reader
+	managerSet          *ManagerSet
+	managedByLabelValue string
 }
 
-func NewSecretReconciler(database clusterReader, reader client.Reader, managerSet *ManagerSet) *SecretReconciler {
+func NewSecretReconciler(database clusterReader, reader client.Reader, managerSet *ManagerSet, managedByLabelValue string) *SecretReconciler {
 	return &SecretReconciler{
-		database:   database,
-		reader:     reader,
-		managerSet: managerSet,
+		database:            database,
+		reader:              reader,
+		managerSet:          managerSet,
+		managedByLabelValue: managedByLabelValue,
 	}
 }
 
 func (r *SecretReconciler) SetupWithManager(manager ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(manager).
 		Named("tenant-access-secret").
-		For(&corev1.Secret{}, builder.WithPredicates(tenantAccessSecretPredicate())).
+		For(&corev1.Secret{}, builder.WithPredicates(tenantAccessSecretPredicate(r.managedByLabelValue))).
 		Complete(r)
 }
 
@@ -62,7 +64,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		return ctrl.Result{}, fmt.Errorf("getting tenant-access Secret %s: %w", secretRef, err)
 	}
 
-	clusterID, ok := clusterIDForKubeconfigSecret(secret)
+	clusterID, ok := clusterIDForKubeconfigSecret(secret, r.managedByLabelValue)
 	if !ok {
 		r.managerSet.RemoveKubeconfigSecret(secretRef)
 		return ctrl.Result{}, nil
@@ -99,9 +101,9 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	return ctrl.Result{}, nil
 }
 
-func clusterIDForKubeconfigSecret(secret *corev1.Secret) (uuid.UUID, bool) {
+func clusterIDForKubeconfigSecret(secret *corev1.Secret, managedByLabelValue string) (uuid.UUID, bool) {
 	if secret.Namespace != tenantaccess.SecretsNamespace ||
-		secret.Labels[constants.LabelKeyNkeManagedBy] != constants.LabelValueNkeManagedBy ||
+		secret.Labels[constants.LabelKeyNkeManagedBy] != managedByLabelValue ||
 		!tenantaccess.IsCWEKubeconfigSecretName(secret.Name) {
 		return uuid.Nil, false
 	}
@@ -109,13 +111,13 @@ func clusterIDForKubeconfigSecret(secret *corev1.Secret) (uuid.UUID, bool) {
 	return clusterID, err == nil
 }
 
-func tenantAccessSecretPredicate() predicate.Predicate {
+func tenantAccessSecretPredicate(managedByLabelValue string) predicate.Predicate {
 	matches := func(object client.Object) bool {
 		secret, ok := object.(*corev1.Secret)
 		if !ok {
 			return false
 		}
-		_, matches := clusterIDForKubeconfigSecret(secret)
+		_, matches := clusterIDForKubeconfigSecret(secret, managedByLabelValue)
 		return matches
 	}
 

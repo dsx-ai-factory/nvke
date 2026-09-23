@@ -233,7 +233,7 @@ func TestController_Reconcile(t *testing.T) {
 		trustBundleSecret,
 	).Build()
 
-	cfg := config.Config{TenantAccessEnabled: true}
+	cfg := config.Config{TenantAccessEnabled: true, ManagedByLabelValue: "cloud-workflow-engine"}
 	tenantManagers := &recordingTenantManagerSet{}
 	c := NewController(cfg, slog.New(slog.DiscardHandler), dbwrapper.New(mockDB, slog.New(slog.DiscardHandler)), k8sClient, nodeAgentClient, tenantManagers)
 	c.scheme = testScheme(t)
@@ -502,7 +502,7 @@ func TestController_ReconcileOIDC(t *testing.T) {
 		Namespace: SecretsNamespace,
 	}, tbSecret))
 	assert.Equal(t, []byte("test-ca"), tbSecret.Data[TrustBundleSecretKey])
-	assert.Equal(t, constants.LabelValueNkeManagedBy, tbSecret.Labels[constants.LabelKeyNkeManagedBy])
+	assert.Equal(t, "cloud-workflow-engine", tbSecret.Labels[constants.LabelKeyNkeManagedBy])
 	assert.Equal(t, oidcCluster.ID.String(), tbSecret.Labels[constants.LabelKeyClusterID])
 	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, kcSecret.Labels[constants.LabelKeyKubeconfigMode])
 	assert.Equal(t, corev1.SecretTypeOpaque, kcSecret.Type)
@@ -660,7 +660,7 @@ func assertSecret(t *testing.T, ctx context.Context, k8sClient ctrlclient.Client
 	assert.Equal(t, []byte(testKubeconfig), secret.Data[KubeconfigSecretKey])
 	assert.Equal(t, corev1.SecretTypeOpaque, secret.Type)
 	assert.Equal(t, cluster.Name, secret.Labels[clusterv1.ClusterNameLabel])
-	assert.Equal(t, constants.LabelValueNkeManagedBy, secret.Labels[constants.LabelKeyNkeManagedBy])
+	assert.Equal(t, "cloud-workflow-engine", secret.Labels[constants.LabelKeyNkeManagedBy])
 	assert.Equal(t, cluster.ID.String(), secret.Labels[constants.LabelKeyClusterID])
 	assert.Equal(t, constants.LabelValueKubeconfigModeAdmin, secret.Labels[constants.LabelKeyKubeconfigMode])
 	assertOwnedByCAPICluster(t, secret, cluster)
@@ -679,7 +679,7 @@ func assertAdminSecret(t *testing.T, ctx context.Context, k8sClient ctrlclient.C
 	assert.Equal(t, []byte(wantKubeconfig), secret.Data[KubeconfigSecretKey])
 	assert.Equal(t, corev1.SecretTypeOpaque, secret.Type)
 	assert.Equal(t, cluster.Name, secret.Labels[clusterv1.ClusterNameLabel])
-	assert.Equal(t, constants.LabelValueNkeManagedBy, secret.Labels[constants.LabelKeyNkeManagedBy])
+	assert.Equal(t, "cloud-workflow-engine", secret.Labels[constants.LabelKeyNkeManagedBy])
 	assert.Equal(t, cluster.ID.String(), secret.Labels[constants.LabelKeyClusterID])
 	assert.Equal(t, constants.LabelValueKubeconfigModeAdmin, secret.Labels[constants.LabelKeyKubeconfigMode])
 	assertOwnedByCAPICluster(t, secret, cluster)
@@ -715,6 +715,9 @@ func newTestController(
 	k8sClient ctrlclient.Client,
 	nodeAgentClient agent.Client,
 ) *Controller {
+	if cfg.ManagedByLabelValue == "" {
+		cfg.ManagedByLabelValue = "cloud-workflow-engine"
+	}
 	logger := slog.New(slog.DiscardHandler)
 	c := NewController(cfg, logger, dbwrapper.New(database, logger), k8sClient, nodeAgentClient, &recordingTenantManagerSet{})
 	c.scheme = testSchemeForController()

@@ -121,9 +121,10 @@ type Client interface {
 }
 
 type clientImpl struct {
-	proxyAddress    string
-	credentialsPath string
-	logger          *slog.Logger
+	proxyAddress        string
+	credentialsPath     string
+	managedByLabelValue string
+	logger              *slog.Logger
 
 	mu        sync.RWMutex
 	apiClient *client.Client
@@ -151,9 +152,10 @@ func NewClient(ctx context.Context, cfg config.TeleportConfig, opts ...ClientOpt
 	}
 
 	c := &clientImpl{
-		proxyAddress:    cfg.ProxyAddress,
-		credentialsPath: cfg.IdentityFile,
-		logger:          slog.Default(),
+		proxyAddress:        cfg.ProxyAddress,
+		credentialsPath:     cfg.IdentityFile,
+		managedByLabelValue: cfg.ManagedByLabelValue,
+		logger:              slog.Default(),
 	}
 
 	for _, opt := range opts {
@@ -208,7 +210,7 @@ func (c *clientImpl) Close() error {
 
 func (c *clientImpl) UpsertToken(ctx context.Context, token ProvisionToken) error {
 	// Inject ownership labels - these are always added/overwritten
-	token.Labels = MergeLabels(token.Labels)
+	token.Labels = MergeLabels(token.Labels, c.managedByLabelValue)
 
 	return c.withRetry(ctx, "UpsertToken", func() error {
 		c.mu.RLock()
@@ -248,7 +250,7 @@ func (c *clientImpl) GetToken(ctx context.Context, name string) (*ProvisionToken
 		result = fromTeleportToken(teleportToken)
 
 		// Verify ownership - refuse to return tokens not managed by CWE
-		if !IsOwnedByCWE(result.Labels) {
+		if !IsOwnedByCWE(result.Labels, c.managedByLabelValue) {
 			c.logger.Warn("attempted to access token not owned by CWE",
 				"name", name,
 				LabelManagedBy, result.Labels[LabelManagedBy],
@@ -271,7 +273,7 @@ func (c *clientImpl) DeleteToken(ctx context.Context, name string) error {
 	}
 
 	// GetToken already verified ownership, but double-check
-	if !IsOwnedByCWE(token.Labels) {
+	if !IsOwnedByCWE(token.Labels, c.managedByLabelValue) {
 		c.logger.Warn("attempted to delete token not owned by CWE",
 			"name", name,
 			LabelManagedBy, token.Labels[LabelManagedBy],
@@ -311,7 +313,7 @@ func (c *clientImpl) ListTokens(ctx context.Context) ([]ProvisionToken, error) {
 		for _, tt := range teleportTokens {
 			totalCount++
 			token := fromTeleportToken(tt)
-			if IsOwnedByCWE(token.Labels) {
+			if IsOwnedByCWE(token.Labels, c.managedByLabelValue) {
 				result = append(result, *token)
 			}
 		}
@@ -369,7 +371,7 @@ func (c *clientImpl) ListNodes(ctx context.Context, namespace string, opts ...Li
 	for k, v := range options.extraLabels {
 		labels[k] = v
 	}
-	for k, v := range OwnershipLabels() {
+	for k, v := range OwnershipLabels(c.managedByLabelValue) {
 		labels[k] = v
 	}
 

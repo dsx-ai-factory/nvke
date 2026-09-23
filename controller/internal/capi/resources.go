@@ -21,7 +21,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
-func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster db.Cluster, paused bool) error {
+func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster db.Cluster, paused bool, fieldManagerName, managedByLabelValue string) error {
 	namespace := constants.NamespaceNKESystem
 
 	manifest, err := ClusterScaffoldManifest(cluster)
@@ -35,7 +35,7 @@ func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster 
 	infraCluster.SetNamespace(namespace)
 	infraCluster.SetName(cluster.Name)
 	SetPausedAnnotation(infraCluster, paused)
-	if err := k8sClient.Patch(ctx, infraCluster, client.Apply, client.FieldOwner(constants.FieldManagerCWE), client.ForceOwnership); err != nil {
+	if err := k8sClient.Patch(ctx, infraCluster, client.Apply, client.FieldOwner(fieldManagerName), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply infra cluster: %w", err)
 	}
 
@@ -56,7 +56,7 @@ func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster 
 			Name:      cluster.Name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				constants.LabelKeyNkeManagedBy: constants.LabelValueNkeManagedBy,
+				constants.LabelKeyNkeManagedBy: managedByLabelValue,
 			},
 		},
 		Spec: clusterv1.ClusterSpec{
@@ -70,7 +70,7 @@ func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster 
 	}
 	SetPausedAnnotation(clusterObj, paused)
 
-	if err := k8sClient.Patch(ctx, clusterObj, client.Apply, client.FieldOwner(constants.FieldManagerCWE), client.ForceOwnership); err != nil {
+	if err := k8sClient.Patch(ctx, clusterObj, client.Apply, client.FieldOwner(fieldManagerName), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply CAPI cluster: %w", err)
 	}
 

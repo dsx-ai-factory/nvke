@@ -33,6 +33,10 @@ A Helm chart to deploy the NKE controller service
 | deploymentAnnotations | object | `{}` | Annotations on the Deployment `metadata` (evaluated with `tpl`) |
 | env | list | `[]` | Additional environment variables to inject into the CWE container. |
 | fullnameOverride | string | `""` |  |
+| identity.fieldManagerMachineHealthIssueName | string | `"cloud-workflow-engine-machine-health-issue"` | Field manager used when patching a Machine's health-issue annotation. |
+| identity.fieldManagerName | string | `"cloud-workflow-engine"` | Field manager for this controller's own CAPI/NICo Server-Side-Apply patches. |
+| identity.fieldManagerRebootMachineName | string | `"cloud-workflow-engine-reboot-machine"` | Field manager scoped to the CAPI Machine reboot annotation alone. |
+| identity.managedByLabelValue | string | `"cloud-workflow-engine"` | Value written under the nke.nvidia.com/managed-by label on objects this controller owns, and the value the tenant Secret reconciler filters on. |
 | image.digest | string | `""` | Optional digest (sha256:...) for the nke-controller image. When set, the pod pulls by digest and the tag becomes informational only. Use this to pin an immutable image. |
 | image.pullPolicy | string | `"IfNotPresent"` | This sets the pull policy for images. |
 | image.repository | string | `"ghcr.io/dsx-ai-factory/nke/nke-controller"` | Repository, including registry, for the nke-controller image (the CWE service) that this chart deploys. Override to pull it from a different registry (e.g. a private mirror); pair any change with a matching `imagePullSecrets` entry. Not to be confused with `profiles.image.repository` below, a separate optional content image. |
@@ -123,7 +127,9 @@ A Helm chart to deploy the NKE controller service
 | teleport.environment | string | `"non-prod"` | Teleport environment label: "prod" or "non-prod" (default: "non-prod") |
 | teleport.identityFile | string | `"/var/run/teleport/identity"` | Path where the tbot identity file is mounted |
 | teleport.identitySecretName | string | `"cloud-workflow-engine-teleport"` | Name of the Kubernetes secret containing the tbot identity (written by tbot output) |
+| teleport.managedByLabelValue | string | `"nke-cloud-workflow-engine"` | Value of the Teleport "managed-by" label this controller stamps on tokens it creates, and the value ownership checks compare against. |
 | teleport.proxyAddress | string | `""` | Teleport proxy address (site-specific, must be set per environment) |
+| teleport.tokenNamePrefix | string | `"nke-cwe-"` | Prefix for the deterministic Teleport TPM join token name this controller mints for a node. |
 | temporal.cloudWorkflow.namespace | string | `"cloud-workflow-engine"` |  |
 | temporal.cloudWorkflow.queue | string | `"cloud-workflow-engine-tasks"` |  |
 | temporal.host | string | `"temporal-frontend.temporal.svc.cluster.local"` |  |

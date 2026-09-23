@@ -177,10 +177,10 @@ func (a *Activities) nicoMachineTeleportConfig(createCtx *capiMachineCreateConte
 
 	return &TeleportUserDataConfig{
 		Enabled:      true,
-		TokenName:    teleport.TPMTokenName(createCtx.node.ID),
+		TokenName:    teleport.TPMTokenName(a.cfg.Teleport.TokenNamePrefix, createCtx.node.ID),
 		ProxyAddress: a.cfg.Teleport.ProxyAddress,
 		JoinMethod:   string(teleport.JoinMethodTPM),
-		Labels:       buildTeleportLabels(createCtx.node, createCtx.cluster, nicoProvider, nodePoolID, isControlPlaneRole, a.cfg.NKESiteControllerName, a.cfg.Teleport.Environment),
+		Labels:       buildTeleportLabels(createCtx.node, createCtx.cluster, nicoProvider, nodePoolID, isControlPlaneRole, a.cfg.NKESiteControllerName, a.cfg.Teleport.Environment, a.cfg.Teleport.ManagedByLabelValue),
 	}, nil
 }
 
@@ -486,7 +486,7 @@ func cniChartsPackageName(plugin db.CniPlugin, version string) (string, error) {
 
 // buildTeleportLabels constructs YAML-formatted label lines for the Teleport config in userData.
 // Output is "key: value" per line (no leading indent); the template applies indentation.
-func buildTeleportLabels(node db.Node, cluster db.Cluster, nicoProvider db.NicoClusterProvider, nodePoolID uuid.UUID, controlPlane bool, siteName, environment string) string {
+func buildTeleportLabels(node db.Node, cluster db.Cluster, nicoProvider db.NicoClusterProvider, nodePoolID uuid.UUID, controlPlane bool, siteName, environment, managedByLabelValue string) string {
 	labels := map[string]string{
 		teleport.LabelNodeID:                node.ID.String(),
 		teleport.LabelNodeName:              node.Name,
@@ -496,7 +496,7 @@ func buildTeleportLabels(node db.Node, cluster db.Cluster, nicoProvider db.NicoC
 		teleport.LabelCluster:               cluster.ID.String(),
 		teleport.LabelClusterName:           cluster.Name,
 		teleport.LabelResourceGroup:         teleport.LabelResourceGroupNKEValue,
-		teleport.LabelManagedBy:             teleport.LabelManagedByValue,
+		teleport.LabelManagedBy:             managedByLabelValue,
 		teleport.LabelEnvironment:           environment,
 	}
 	if nodePoolID != uuid.Nil {

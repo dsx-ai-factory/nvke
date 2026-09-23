@@ -449,6 +449,7 @@ func main() {
 		dbInstance,
 		k8sControllerManager.GetClient(),
 		tenantManagerSet,
+		cfg.ManagedByLabelValue,
 	)
 	if err := tenantSecretReconciler.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up tenant manager Secret reconciler", "error", err)

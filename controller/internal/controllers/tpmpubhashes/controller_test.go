@@ -47,8 +47,8 @@ func TestController_ReconcileRendersManagedClusterStaticEntries(t *testing.T) {
 func TestController_ReconcileFiltersClusterStaticEntries(t *testing.T) {
 	controller := newControllerForTest(t,
 		newTPMClusterStaticEntryForTest("host-valid", constants.FieldManagerMachineSpireEntry, "hash-valid"),
-		newTPMClusterStaticEntryForTest("host-unmanaged", constants.LabelValueNkeManagedBy, "hash-unmanaged"),
-		newClusterStaticEntryForTest("host-wrong-class", constants.LabelValueNkeManagedBy, "other-class", spiffeIDForTPMHash("hash-wrong-class")),
+		newTPMClusterStaticEntryForTest("host-unmanaged", "cloud-workflow-engine", "hash-unmanaged"),
+		newClusterStaticEntryForTest("host-wrong-class", "cloud-workflow-engine", "other-class", spiffeIDForTPMHash("hash-wrong-class")),
 		newClusterStaticEntryForTest("host-non-tpm", constants.FieldManagerMachineSpireEntry, testSpireClassName, "spiffe://example.org/spire/agent/join-token/hash-non-tpm"),
 	)
 
@@ -140,6 +140,7 @@ func newControllerForTest(t *testing.T, objs ...client.Object) *Controller {
 			SpireClassName:                 testSpireClassName,
 			SpireServerNamespace:           testSpireServerNamespace,
 			SpireTPMPubhashesConfigMapName: testTPMPubhashesCMName,
+			FieldManagerName:               "cloud-workflow-engine",
 		},
 		k8sClient: fake.NewClientBuilder().
 			WithScheme(newControllerTestScheme(t)).

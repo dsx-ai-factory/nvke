@@ -151,6 +151,28 @@ type Config struct {
 	// NKESiteControllerName is the name of the site controller
 	NKESiteControllerName string `env:"NKE_SITE_CONTROLLER_NAME"`
 
+	// FieldManagerName is the Server-Side-Apply field manager this controller
+	// uses for its own CAPI/NICo patches. Defaults to today's literal so an
+	// unset value is today's behavior exactly; a site that renames it changes
+	// who future patches say they own, not who owns fields already applied
+	// under the old name.
+	FieldManagerName string `env:"FIELD_MANAGER_NAME" default:"cloud-workflow-engine"`
+
+	// FieldManagerRebootMachineName is the field manager scoped to the CAPI
+	// Machine reboot annotation alone, kept separate from FieldManagerName so
+	// removing it releases only that annotation.
+	FieldManagerRebootMachineName string `env:"FIELD_MANAGER_REBOOT_MACHINE_NAME" default:"cloud-workflow-engine-reboot-machine"`
+
+	// FieldManagerMachineHealthIssueName is the field manager used when
+	// patching a Machine's health-issue annotation.
+	FieldManagerMachineHealthIssueName string `env:"FIELD_MANAGER_MACHINE_HEALTH_ISSUE_NAME" default:"cloud-workflow-engine-machine-health-issue"`
+
+	// ManagedByLabelValue is the value written under the
+	// nke.nvidia.com/managed-by label key on objects this controller owns,
+	// and the value the tenant Secret reconciler filters incoming Secret
+	// events on. Both sides must agree, so this is read from one place.
+	ManagedByLabelValue string `env:"MANAGED_BY_LABEL_VALUE" default:"cloud-workflow-engine"`
+
 	// SpiffeEnabled is a feature flag to enable SPIFFE support.
 	SpiffeEnabled bool `env:"SPIFFE_ENABLED" default:"false"`
 
@@ -362,6 +384,15 @@ type TeleportConfig struct {
 	DefaultClusterEnabled    bool `env:"DEFAULT_CLUSTER_ENABLED" default:"false"`
 	DefaultCPPoolEnabled     bool `env:"DEFAULT_CP_POOL_ENABLED" default:"false"`
 	DefaultWorkerPoolEnabled bool `env:"DEFAULT_WORKER_POOL_ENABLED" default:"false"`
+
+	// ManagedByLabelValue is the value of the Teleport "managed-by" label this
+	// controller stamps on tokens it creates, and the value ownership checks
+	// (IsOwnedByCWE) compare incoming tokens against.
+	ManagedByLabelValue string `env:"MANAGED_BY_LABEL_VALUE" default:"nke-cloud-workflow-engine"`
+
+	// TokenNamePrefix prefixes the deterministic Teleport TPM join token name
+	// this controller mints for a node.
+	TokenNamePrefix string `env:"TOKEN_NAME_PREFIX" default:"nke-cwe-"`
 }
 
 // NodePoolTeleportDefault returns the teleport default for a node pool based on its role.

@@ -107,7 +107,7 @@ func TestIntegration_TokenCreateAndRead(t *testing.T) {
 	assert.Equal(t, "true", got.Labels["cwe-integration-test"])
 
 	// Verify ownership labels were automatically added
-	assert.Equal(t, teleport.LabelManagedByValue, got.Labels[teleport.LabelManagedBy],
+	assert.Equal(t, "nke-cloud-workflow-engine", got.Labels[teleport.LabelManagedBy],
 		"managed-by label should be set automatically")
 
 	// Verify TPM config
@@ -151,7 +151,7 @@ func TestIntegration_OwnershipLabels(t *testing.T) {
 	assert.Equal(t, "custom-value", got.Labels["custom-label"])
 
 	// Ownership label should be automatically added
-	assert.Equal(t, teleport.LabelManagedByValue, got.Labels[teleport.LabelManagedBy])
+	assert.Equal(t, "nke-cloud-workflow-engine", got.Labels[teleport.LabelManagedBy])
 }
 
 // TestIntegration_ListTokensFiltersOwned verifies ListTokens only returns CWE-owned tokens.
@@ -180,7 +180,7 @@ func TestIntegration_ListTokensFiltersOwned(t *testing.T) {
 
 	// All returned tokens should have the ownership label (filtered by default)
 	for _, tok := range tokens {
-		assert.Equal(t, teleport.LabelManagedByValue, tok.Labels[teleport.LabelManagedBy],
+		assert.Equal(t, "nke-cloud-workflow-engine", tok.Labels[teleport.LabelManagedBy],
 			"all listed tokens should have managed-by label")
 	}
 }
