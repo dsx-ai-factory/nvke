@@ -186,7 +186,7 @@ func (op *EnableOIDCOperation) BuildApplyToNodePayload(ctx context.Context, clus
 	if err != nil {
 		return nil, fmt.Errorf("build OIDC authentication config for cluster %s: %w", cluster.Name(), err)
 	}
-	file, err := kubeadmconfig.GenerateAPIServerAuthenticationConfig(cfg)
+	file, err := kubeadmconfig.GenerateAPIServerAuthenticationConfig(cfg, cluster.KubernetesVersion())
 	if err != nil {
 		return nil, fmt.Errorf("render OIDC authentication config for cluster %s: %w", cluster.Name(), err)
 	}

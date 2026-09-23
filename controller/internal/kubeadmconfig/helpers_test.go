@@ -13,6 +13,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	// supportedK8sVersion is a release the fleet actually runs that understands
+	// the anonymous-restricted AuthenticationConfiguration, so the golden
+	// fixtures render the wiring the way production sees it.
+	supportedK8sVersion = "v1.34.2"
+	// unsupportedK8sVersion is an in-fleet release below the floor: it serves
+	// AuthenticationConfiguration under a different API version and has no
+	// generally available anonymous conditions.
+	unsupportedK8sVersion = "v1.31.9"
+)
+
 // updateGolden rewrites the testdata fixtures from the rendered output instead
 // of asserting against them. The fixtures order map keys the way
 // sigs.k8s.io/yaml emits them, so hand-editing them when a field is added is

@@ -107,8 +107,8 @@ type OIDCUserValidationRule = apiserverv1.UserValidationRule
 // GenerateAPIServerAuthenticationConfig renders the AuthenticationConfiguration
 // document into the on-node File the greenfield bootstrap stages and the
 // brownfield rollout delivers to each control-plane node.
-func GenerateAPIServerAuthenticationConfig(config *OIDCAuthenticationConfig) (File, error) {
-	content, err := renderAuthenticationConfig(config)
+func GenerateAPIServerAuthenticationConfig(config *OIDCAuthenticationConfig, kubernetesVersion string) (File, error) {
+	content, err := renderAuthenticationConfig(config, kubernetesVersion)
 	if err != nil {
 		return File{}, err
 	}
@@ -121,7 +121,7 @@ func GenerateAPIServerAuthenticationConfig(config *OIDCAuthenticationConfig) (Fi
 	}, nil
 }
 
-func renderAuthenticationConfig(config *OIDCAuthenticationConfig) ([]byte, error) {
+func renderAuthenticationConfig(config *OIDCAuthenticationConfig, kubernetesVersion string) ([]byte, error) {
 	if config == nil {
 		return nil, fmt.Errorf("rendering AuthenticationConfiguration requires a non-nil config")
 	}
@@ -137,7 +137,11 @@ func renderAuthenticationConfig(config *OIDCAuthenticationConfig) ([]byte, error
 	// The single choke point for both the greenfield bootstrap and the
 	// brownfield OIDC rollout, so every rendered document carries the anonymous
 	// restriction and the two paths stay byte-identical.
-	if doc.Anonymous == nil {
+	//
+	// Below the supported floor the restriction is dropped rather than rendered
+	// into a document kube-apiserver cannot parse: an OIDC cluster on 1.29 or
+	// 1.31 keeps exactly the config it had before this restriction existed.
+	if doc.Anonymous == nil && supportsAnonymousAuthConfig(kubernetesVersion) {
 		doc.Anonymous = anonymousProbeAuthConfig()
 	}
 

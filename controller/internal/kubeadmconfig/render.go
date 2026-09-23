@@ -160,6 +160,37 @@ func needsImageVolumeFeatureGate(kubernetesVersion string) bool {
 	return parsed.LessThan(imageVolumeGAVersion())
 }
 
+// anonymousAuthConfigMinVersion is the first release that can consume the
+// AuthenticationConfiguration this package renders: apiserver.config.k8s.io/v1
+// and the AnonymousAuthConfigurableEndpoints conditions both reach GA there.
+// Earlier releases serve the document under a different API version (v1alpha1
+// on 1.29, v1beta1 on 1.30 and 1.31) and keep the anonymous conditions behind a
+// gate that is alpha or absent.
+func anonymousAuthConfigMinVersion() *version.Version { return version.MustParseGeneric("1.32.0") }
+
+// supportsAnonymousAuthConfig reports whether kubernetesVersion understands the
+// anonymous-restricted AuthenticationConfiguration.
+//
+// An unparseable version yields false on purpose, mirroring
+// needsImageVolumeFeatureGate. Skipping the restriction leaves anonymous access
+// where it already is, which is recoverable; handing kube-apiserver a document
+// it cannot parse stops the control plane from starting at all.
+func supportsAnonymousAuthConfig(kubernetesVersion string) bool {
+	parsed, err := version.ParseGeneric(kubernetesVersion)
+	if err != nil {
+		return false
+	}
+	return !parsed.LessThan(anonymousAuthConfigMinVersion())
+}
+
+// needsAuthenticationConfig reports whether a control-plane node gets an
+// AuthenticationConfiguration at all. OIDC still requires one on every release
+// that supports it, so the anonymous restriction only widens the set of
+// clusters that get the file and the flag; it never narrows it.
+func needsAuthenticationConfig(kubernetesVersion string, oidc *OIDCAuthenticationConfig) bool {
+	return oidc != nil || supportsAnonymousAuthConfig(kubernetesVersion)
+}
+
 // imageVolumeKubeletFeatureGates returns the kubelet featureGates map for
 // kubernetesVersion, or nil when the gate is unnecessary. nil keeps the field
 // omitted from the rendered YAML rather than emitting an empty map.

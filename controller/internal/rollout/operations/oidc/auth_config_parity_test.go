@@ -58,8 +58,12 @@ func TestBuildApplyToNodePayload_MatchesGreenfieldGolden(t *testing.T) {
 		}),
 	)
 
-	// The cluster name becomes the audience, so it has to match the golden.
-	cluster := fakeCluster{name: "tenant-cluster-42", k8s: "1.30.0", cps: []rollout.Node{cpNode()}}
+	// The cluster name becomes the audience, so it has to match the golden, and
+	// the version has to be one that carries the anonymous restriction -- the
+	// greenfield golden is rendered with it, so parity is only meaningful above
+	// the floor. Below it both paths drop the section, which
+	// TestRenderAuthenticationConfigOmitsAnonymousBelowFloor covers.
+	cluster := fakeCluster{name: "tenant-cluster-42", k8s: "1.34.2", cps: []rollout.Node{cpNode()}}
 	payload, err := op.BuildApplyToNodePayload(context.Background(), cluster)
 	require.NoError(t, err)
 

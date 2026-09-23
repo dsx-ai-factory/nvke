@@ -71,7 +71,7 @@ func TestAnonymousProbeAuthConfigAllowsClusterInfoDiscovery(t *testing.T) {
 // reaches the renderer without one -- the brownfield OIDC rollout builds its own
 // -- still comes out restricted. Without this the two paths diverge silently.
 func TestRenderAuthenticationConfigAddsAnonymousRestriction(t *testing.T) {
-	rendered, err := renderAuthenticationConfig(testAuthenticationConfig())
+	rendered, err := renderAuthenticationConfig(testAuthenticationConfig(), supportedK8sVersion)
 	require.NoError(t, err)
 	assert.Contains(t, string(rendered), "anonymous:")
 	assert.Contains(t, string(rendered), "- path: /livez")
@@ -80,6 +80,86 @@ func TestRenderAuthenticationConfigAddsAnonymousRestriction(t *testing.T) {
 // A caller-supplied OIDC config with no providers is still a misconfiguration:
 // the anonymous section must not make it render cleanly.
 func TestRenderAuthenticationConfigStillRequiresAJWTProvider(t *testing.T) {
-	_, err := renderAuthenticationConfig(&OIDCAuthenticationConfig{})
+	_, err := renderAuthenticationConfig(&OIDCAuthenticationConfig{}, supportedK8sVersion)
 	require.ErrorContains(t, err, "requires at least one JWT provider")
+}
+
+// The AuthenticationConfiguration this package renders is only parseable from
+// 1.32 on: earlier releases serve the type under a different API version and
+// keep the anonymous conditions behind an alpha gate or lack them entirely.
+// Staging it anyway leaves kube-apiserver unable to start, which is how the
+// fleet's 1.29 and 1.31 profiles would have seen this change.
+func TestSupportsAnonymousAuthConfig(t *testing.T) {
+	for _, tt := range []struct {
+		version string
+		want    bool
+	}{
+		{version: "v1.29.7", want: false},
+		{version: "v1.30.0", want: false},
+		{version: "v1.31.12", want: false},
+		{version: "v1.32.0", want: true},
+		{version: "v1.34.2", want: true},
+		{version: "", want: false},
+		{version: "not-a-version", want: false},
+	} {
+		t.Run(tt.version, func(t *testing.T) {
+			assert.Equal(t, tt.want, supportsAnonymousAuthConfig(tt.version))
+		})
+	}
+}
+
+// Below the floor a non-OIDC cluster keeps exactly the wiring it had before the
+// anonymous restriction existed: no flag, no volume, no staged file.
+func TestClusterConfigurationSkipsAuthConfigBelowFloor(t *testing.T) {
+	cfg := validInitConfig()
+	cfg.KubernetesVersion = unsupportedK8sVersion
+
+	clusterConfig := clusterConfiguration(cfg)
+
+	assert.NotContains(t, clusterConfig.APIServer.ExtraArgs, AuthConfigFlagName)
+	for _, volume := range clusterConfig.APIServer.ExtraVolumes {
+		assert.NotEqual(t, authenticationConfigVolume().Name, volume.Name)
+	}
+
+	artifacts, err := cfg.Render()
+	require.NoError(t, err)
+	for _, file := range artifacts.Files {
+		assert.NotEqual(t, defaultOIDCAuthConfigPath, file.Path)
+	}
+}
+
+// OIDC still needs the flag on those releases, so the gate must not take it
+// away -- it only decides whether non-OIDC clusters get one too.
+func TestClusterConfigurationKeepsAuthConfigForOIDCBelowFloor(t *testing.T) {
+	cfg := validInitConfig()
+	cfg.KubernetesVersion = unsupportedK8sVersion
+	cfg.AuthenticationConfig = testAuthenticationConfig()
+
+	args := clusterConfiguration(cfg).APIServer.ExtraArgs
+
+	assert.Equal(t, defaultOIDCAuthConfigPath, args[AuthConfigFlagName])
+}
+
+// An OIDC cluster below the floor renders the document it rendered before this
+// change: folding the anonymous section in would make kube-apiserver reject it.
+func TestRenderAuthenticationConfigOmitsAnonymousBelowFloor(t *testing.T) {
+	rendered, err := renderAuthenticationConfig(testAuthenticationConfig(), unsupportedK8sVersion)
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(rendered), "anonymous:")
+	assert.Contains(t, string(rendered), "jwt:")
+}
+
+// Control-plane joins stage the same file as init, so they need the same gate;
+// otherwise an expanding control plane gets a document init never wrote.
+func TestJoinRenderSkipsAuthConfigFileBelowFloor(t *testing.T) {
+	cfg := validControlPlaneJoinConfig()
+	cfg.KubernetesVersion = unsupportedK8sVersion
+
+	artifacts, err := cfg.Render()
+	require.NoError(t, err)
+
+	for _, file := range artifacts.Files {
+		assert.NotEqual(t, defaultOIDCAuthConfigPath, file.Path)
+	}
 }

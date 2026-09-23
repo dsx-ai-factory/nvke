@@ -75,7 +75,7 @@ etcd:
       quota-backend-bytes: "17179869184"
 imageRepository: registry.k8s.io
 kind: ClusterConfiguration
-kubernetesVersion: v1.28.0
+kubernetesVersion: v1.34.2
 networking:
   dnsDomain: cluster.local
   podSubnet: 10.244.0.0/16

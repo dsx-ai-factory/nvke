@@ -341,6 +341,7 @@ func validWorkerJoinConfig() *JoinConfig {
 
 func validControlPlaneJoinConfig() *JoinConfig {
 	cfg := validWorkerJoinConfig()
+	cfg.KubernetesVersion = supportedK8sVersion
 	cfg.NodeName = "cp-1"
 	cfg.NodeIP = "10.0.0.2"
 	cfg.ControlPlane = true

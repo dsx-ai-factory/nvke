@@ -250,7 +250,7 @@ func TestInitConfigRenderDefaultsEmptyEtcdQuotaBackendBytes(t *testing.T) {
 }
 
 func TestRenderAuthenticationConfigNilConfig(t *testing.T) {
-	_, err := renderAuthenticationConfig(nil)
+	_, err := renderAuthenticationConfig(nil, supportedK8sVersion)
 	require.ErrorContains(t, err, "non-nil config")
 }
 
@@ -343,7 +343,7 @@ func validInitConfig() *InitConfig {
 		NodeIP:                "192.168.1.10",
 		APIServerEndpoint:     "cluster.local:6443",
 		NodeName:              "node1",
-		KubernetesVersion:     "v1.28.0",
+		KubernetesVersion:     supportedK8sVersion,
 		PodSubnet:             "10.244.0.0/16",
 		ServiceSubnet:         "10.96.0.0/12",
 		EtcdQuotaBackendBytes: EtcdQuotaBackendBytes,
