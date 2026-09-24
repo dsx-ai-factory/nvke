@@ -141,6 +141,9 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			candidate, opts := expectSucceed2(lane.candidate(node))
 			var err error
 			built, err = site.Bootstrap(ctx, node, session, candidate, opts)
+			if err != nil {
+				collectSiteDiagnostics(ctx, session)
+			}
 			Expect(err).NotTo(HaveOccurred(), "should build the site controller")
 			GinkgoLogr.Info("site controller", "kubeconfig", built.Kubeconfig, "cweVersion", built.Version)
 		}, NodeTimeout(3*time.Hour))
@@ -261,11 +264,7 @@ func newSiteLane() (siteLane, error) {
 			return bootLoaderURL, imageURL, ierr
 		},
 		Dialer: forge.Teleport(dialer),
-		Node: nke.ForgeNodeInputs{
-			KubernetesVersion: kubernetesVersion,
-			CNIVersion:        defaultString(optionalVersion("nke-cni-ovn"), forgeDefaultCNIVersion),
-			SpireVersion:      defaultString(optionalVersion("spire-agent"), forgeDefaultSpireVersion),
-		},
+		Node:   nodeInputs(cfg, kubernetesVersion),
 		Tools: forge.HostTools{
 			NerdctlVersion:    defaultString(optionalVersion("nerdctl"), siteDefaultNerdctlVersion),
 			KindVersion:       defaultString(optionalVersion("kind"), siteDefaultKindVersion),
@@ -280,6 +279,43 @@ func newSiteLane() (siteLane, error) {
 		cfg: cfg, name: name, env: env, site: forgeSite, instanceType: instanceType,
 		capabilities: capabilities, apiKey: apiKey, provider: provider,
 	}, nil
+}
+
+// siteDiagnostics is written next to site-e2e.log, in the directory the
+// suite runs from, so CI picks it up with the rest of the run's record.
+const siteDiagnostics = "site-diagnostics.tar.gz"
+
+// collectSiteDiagnostics pulls the node's diagnostics off before teardown
+// releases it. Best effort and never fails the spec: the bootstrap failure
+// is the finding, and losing the diagnostics must not replace it with a
+// second, less useful one.
+func collectSiteDiagnostics(ctx context.Context, session infra.Session) {
+	// Detached, because a spec that failed on its own timeout has a context
+	// that is already done, which is exactly when the diagnostics matter.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
+	defer cancel()
+	if err := site.CollectDiagnostics(ctx, session, siteDiagnostics); err != nil {
+		GinkgoLogr.Error(err, "could not collect the node's diagnostics")
+		return
+	}
+	GinkgoLogr.Info("collected the node's diagnostics", "path", siteDiagnostics)
+}
+
+// nodeInputs is what cloud-init writes onto the node. The agent's arguments
+// are decided here because they have to agree with the bootstrap's
+// --disable-mtls, which comes from the same config field: the two sides
+// negotiate with each other, and a mismatch surfaces as an opaque TLS
+// handshake error rather than as a configuration problem.
+func nodeInputs(cfg config.Config, kubernetesVersion string) nke.ForgeNodeInputs {
+	inputs := nke.ForgeNodeInputs{
+		KubernetesVersion: kubernetesVersion,
+		CNIVersion:        defaultString(optionalVersion("nke-cni-ovn"), forgeDefaultCNIVersion),
+		SpireVersion:      defaultString(optionalVersion("spire-agent"), forgeDefaultSpireVersion),
+	}
+	if cfg.Site.DisableMTLS {
+		inputs.AgentArgs = nke.AgentArgsNoMTLS
+	}
+	return inputs
 }
 
 // candidate is what the site is built from, resolved once the node exists.

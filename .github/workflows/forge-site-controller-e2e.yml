@@ -414,6 +414,18 @@ jobs:
             # No jumpHostUser or jumpHostKeyFingerprint: Teleport takes the
             # login from the identity and the host key from the cluster CA.
             teleportLogin: "root"
+            # The no-SPIRE path, for the bootstrap only. It also decides the
+            # node agent's arguments, which have to agree -- see nodeInputs.
+            #
+            # The alternative needs the node's TPM EK thumbprint in the site
+            # spec, and Forge does not report one: run 36016817952 installed
+            # SPIRE with tpmThumbprints=0, so no TPM attestor was deployed,
+            # the agent could never attest, and the cluster sat in
+            # Provisioning for its full 30 minutes without an error. The
+            # procedure that has actually built a site on az61 bootstraps
+            # this way too, and turns SPIRE and TPM on in the deploy path
+            # afterwards -- which the full stage still exercises.
+            disableMTLS: true
             images:
               - ${SITE_INPUTS}/controller.tar
               - ${SITE_INPUTS}/capi-provisioned.tar
@@ -473,11 +485,14 @@ jobs:
             -e2e.versions="controller=${SITE_CONTROLLER_VERSION},os-image-bootloader=${OS_IMAGE_BOOTLOADER},os-image=${OS_IMAGE}" \
             "${keep[@]}" 2>&1 | tee site-e2e.log
 
-      # The Ginkgo log, which is the whole diagnostic record: the suite writes
-      # its forwarded kubeconfig to a temp directory and nothing else to disk,
-      # so every phase boundary, remote command and failure lives in stdout.
-      # An hour-long run is worth more than a scroll-back in the job view, and
-      # a green one is the reference for diagnosing the next red one.
+      # The Ginkgo log carries every phase boundary, remote command and
+      # failure. An hour-long run is worth more than a scroll-back in the job
+      # view, and a green one is the reference for diagnosing the next red
+      # one.
+      #
+      # site-diagnostics.tar.gz is what nkectl collected on the node when a
+      # bootstrap failed. It only exists on a failure, and only the suite can
+      # save it: the node is released minutes later and takes it with it.
       - name: Upload the run log
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -485,6 +500,7 @@ jobs:
           name: forge-site-${{ env.SITE_STAGE }}-${{ github.run_id }}
           path: |
             controller/test/e2e/site-e2e.log
+            controller/test/e2e/site-diagnostics.tar.gz
             ${{ runner.temp }}/tbot.log
           if-no-files-found: warn
           retention-days: 7

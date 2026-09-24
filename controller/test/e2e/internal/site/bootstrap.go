@@ -149,6 +149,34 @@ const (
 	diagnosticsDir = workDir + "/diagnostics"
 )
 
+// diagnosticsArchive is where CollectDiagnostics stages its tarball on the
+// node. Beside the directory rather than inside it, so the archive does not
+// try to contain itself.
+const diagnosticsArchive = workDir + "/diagnostics.tar.gz"
+
+// CollectDiagnostics copies the cluster diagnostics nkectl writes on failure
+// off the node and into dest.
+//
+// It has to be called before the node is released, which on a failed run is
+// minutes later, and nothing else preserves them: run 36016817952 spent 48
+// minutes reaching a 30-minute "Provisioning" timeout and kept no evidence
+// from the cluster side at all. A tarball rather than a file at a time
+// because the directory's contents are nkectl's to decide.
+func CollectDiagnostics(ctx context.Context, s infra.Session, dest string) error {
+	cmd := fmt.Sprintf("test -d %s && tar -czf %s -C %s diagnostics",
+		shellQuote(diagnosticsDir), shellQuote(diagnosticsArchive), shellQuote(workDir))
+	if out, err := s.Run(ctx, asRoot(cmd)); err != nil {
+		return fmt.Errorf("archive the diagnostics on the node: %w\n%s", err, tail(out))
+	}
+	// Fetch, not Run: it reads into its own buffer, so the bytes arrive
+	// unmixed with anything the shell says.
+	data, err := s.Fetch(ctx, diagnosticsArchive)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dest, data, 0o644)
+}
+
 func (b bootstrap) stageNkectl(ctx context.Context) error {
 	data, err := os.ReadFile(b.candidate.Nkectl)
 	if err != nil {

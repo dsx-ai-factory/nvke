@@ -45,6 +45,18 @@ type ForgeNodeInputs struct {
 
 const (
 	defaultAgentArgs = "--secure-server-port 15005"
+
+	// AgentArgsNoMTLS is the no-SPIRE path, and has to be paired with
+	// `nkectl bootstrap site --disable-mtls`. On the default args the agent
+	// expects a SPIFFE identity, which it can only get if the site spec
+	// carries the node's TPM EK thumbprint -- without one nkectl deploys no
+	// TPM attestor, the agent never attests, and the cluster sits in
+	// Provisioning until the timeout rather than reporting anything.
+	//
+	// os-image/SPEC.md does not list this as a supported production mode. It
+	// is how a site gets built today: the SBOM procedure bootstraps this way
+	// and turns SPIRE and TPM on afterwards, in the management-plane install.
+	AgentArgsNoMTLS = defaultAgentArgs + " --disable-mtls"
 )
 
 func (i ForgeNodeInputs) validate() error {

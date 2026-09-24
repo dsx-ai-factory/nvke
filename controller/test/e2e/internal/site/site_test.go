@@ -97,6 +97,39 @@ func (f *fakeSession) Forward(_ context.Context, port int) (string, error) {
 
 func (f *fakeSession) Teardown(context.Context) error { return nil }
 
+func TestCollectDiagnostics(t *testing.T) {
+	s := newFakeSession()
+	s.fetch[diagnosticsArchive] = []byte("tarball")
+	dest := filepath.Join(t.TempDir(), "site-diagnostics.tar.gz")
+
+	if err := CollectDiagnostics(context.Background(), s, dest); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if got, err := os.ReadFile(dest); err != nil || string(got) != "tarball" {
+		t.Errorf("wrote %q, %v", got, err)
+	}
+	// Archived from the parent so the tarball is not inside what it archives.
+	if i := s.ran("tar -czf " + diagnosticsArchive + " -C " + workDir + " diagnostics"); i < 0 {
+		t.Errorf("did not archive the diagnostics: %v", s.runs)
+	}
+}
+
+// A run that failed before nkectl wrote anything has no diagnostics
+// directory, and that must be reported rather than leaving an empty file
+// where the real ones would be.
+func TestCollectDiagnosticsWithoutADirectory(t *testing.T) {
+	s := newFakeSession()
+	s.fail = func(string) (string, error) { return "", errors.New("exit status 1") }
+	dest := filepath.Join(t.TempDir(), "site-diagnostics.tar.gz")
+
+	if err := CollectDiagnostics(context.Background(), s, dest); err == nil {
+		t.Fatal("a missing diagnostics directory should be reported")
+	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Errorf("wrote a file anyway: %v", err)
+	}
+}
+
 // unquoted strips the shell quoting from a command, so a test can match the
 // words it runs.
 var unquoted = strings.NewReplacer(`'\''`, "", "'", "").Replace
