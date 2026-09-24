@@ -208,11 +208,9 @@ jobs:
       # that surfaces as an unexplained relay error deep in a 40-minute run.
       # Matched to nv-prd-dgxc's server version rather than merely within the
       # supported skew.
-      # tbot as well as tsh. The harness only ever runs tsh, but
-      # teleport-actions/auth below ships no binary of its own: it shells out
-      # to tbot, and fails with "Unable to locate executable file" if one is
-      # not already on PATH. Both come out of the same tarball, so the version
-      # pin covers the join as well as the relay.
+      # tbot as well as tsh: the harness relays with tsh, and the step below
+      # runs tbot as the daemon that keeps the identity fresh. Both come out
+      # of the same tarball, so one pin covers the join and the relay.
       - name: Install tsh and tbot
         shell: bash
         env:
@@ -266,23 +264,74 @@ jobs:
       # against rg-nke-arc-runners-github-join, whose bot holds
       # rg-k8aas-bot-ssh-root -- root on the four jump hosts labelled
       # tbot-root-allowed=true, one of which is the az61 one this lane uses.
-      # The action exports TELEPORT_PROXY and TELEPORT_IDENTITY_FILE, which
-      # is exactly what the dialer's tsh relay reads.
       #
-      # certificate-ttl is requested, not granted: Teleport issues the
-      # shortest max_session_ttl across the bot's roles, and rg-nke-ssh-sudo
-      # caps that at 2h today -- a role that matches no node and is carried
-      # only for parity with the GitLab bot. A `full` run can outlast it, so
-      # until that role is dropped from the bot or given an explicit TTL,
-      # expect relay failures past the two-hour mark. Teardown itself is a
-      # Forge API call and does not go through here, so the machine is still
-      # released.
-      - name: Authenticate to Teleport
-        uses: teleport-actions/auth@3b365df2b4f64891358392a444ff34929ba0d0b1 # v2.1.2
-        with:
-          proxy: ${{ env.FORGE_TELEPORT_PROXY }}
-          token: rg-nke-arc-runners-github-join
-          certificate-ttl: 4h
+      # A DAEMON, NOT teleport-actions/auth. That action mints exactly one
+      # certificate and stamps it disallow-reissue, and the cluster caps
+      # every certificate at the shortest max_session_ttl across the bot's
+      # roles -- 2h, set by rg-nke-ssh-sudo, a role that matches no node and
+      # is carried only for parity with the GitLab bot. Asking for 4h
+      # measurably returns 1h59m. A `full` run's 150-minute budget outlives
+      # that, and the relay would start failing partway through.
+      #
+      # tbot in daemon mode renews instead, rewriting the same identity file
+      # every 20 minutes, so the absolute TTL stops mattering. The dialer
+      # starts a fresh `tsh` per dial and reads TELEPORT_IDENTITY_FILE, so it
+      # picks the new file up with no coordination; sessions already open are
+      # unaffected, since the cluster sets no disconnect_expired_cert.
+      #
+      # Every element of this config was verified against nv-prd-dgxc 18.11
+      # by forge-connectivity-probe.yml before the lane was changed.
+      - name: Start the Teleport identity daemon
+        shell: bash
+        env:
+          TBOT_DIR: ${{ runner.temp }}/tbot
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "${TBOT_DIR}"
+          cat > "${RUNNER_TEMP}/tbot.yaml" <<EOF
+          version: v2
+          proxy_server: ${FORGE_TELEPORT_PROXY}
+          onboarding:
+            join_method: github
+            token: rg-nke-arc-runners-github-join
+          # Nothing to persist: the bot re-joins with the runner's OIDC token,
+          # so there is no state worth keeping and none left on disk.
+          storage:
+            type: memory
+          # 1h is what the cluster grants whatever is asked for. The interval
+          # is the part that matters: the file on disk is never within 40
+          # minutes of expiring, however long the run lasts.
+          credential_lifetime:
+            ttl: 1h
+            renewal_interval: 20m
+          services:
+            - type: identity
+              destination:
+                type: directory
+                path: ${TBOT_DIR}
+          EOF
+
+          tbot start -c "${RUNNER_TEMP}/tbot.yaml" >"${RUNNER_TEMP}/tbot.log" 2>&1 &
+          echo $! > "${RUNNER_TEMP}/tbot.pid"
+
+          for _ in $(seq 1 30); do
+            [ -s "${TBOT_DIR}/identity" ] && break
+            sleep 2
+          done
+          if [ ! -s "${TBOT_DIR}/identity" ]; then
+            echo "::error::tbot wrote no identity in 60s; the run cannot reach the jump host"
+            sed 's/^/  /' "${RUNNER_TEMP}/tbot.log"
+            exit 1
+          fi
+
+          # What teleport-actions/auth used to export, and what both tsh and
+          # the dialer read. config.go deliberately leaves the identity path
+          # empty so that it comes from here.
+          {
+            echo "TELEPORT_PROXY=${FORGE_TELEPORT_PROXY}"
+            echo "TELEPORT_IDENTITY_FILE=${TBOT_DIR}/identity"
+          } >> "${GITHUB_ENV}"
+          tsh --proxy "${FORGE_TELEPORT_PROXY}" --identity "${TBOT_DIR}/identity" status
 
       # site-inputs pulls the controller and capi-provisioned images, both
       # private. The suite's own GHCR credential is separate and passed as
@@ -351,10 +400,9 @@ jobs:
       #                         Ginkgo itself is wedged.
       #   timeout-minutes 180   the runner is killed. Same leak, no log.
       #
-      # A fourth clock is not ours: on the Teleport route the bot certificate
-      # expires after the shortest max_session_ttl among its roles, 2h today.
-      # It is shorter than the Ginkgo timeout, so a long `full` run can lose
-      # the relay before it finishes. See the auth step.
+      # There is no fourth clock. The bot certificate expires in an hour, but
+      # tbot rewrites it every twenty minutes for as long as the job runs --
+      # see the daemon step. Before that it was a real limit on `full`.
       #
       # environments/forge.yaml declares one site (az61), so the suite
       # resolves it without being told which.
@@ -394,14 +442,27 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: forge-site-${{ env.SITE_STAGE }}-${{ github.run_id }}
-          path: controller/test/e2e/site-e2e.log
+          path: |
+            controller/test/e2e/site-e2e.log
+            ${{ runner.temp }}/tbot.log
           if-no-files-found: warn
           retention-days: 7
 
-      # The runner is ephemeral, so this is belt and braces -- but an identity
-      # good for hours, sitting where a later step could read it, is not worth
-      # the saving. The auth action chooses the path; hence the indirection.
+      # Before removing the identity, because a dead daemon would write it
+      # straight back. A relay failure late in a long run is a tbot question
+      # first, which is why its log is an artifact above.
+      - name: Stop the Teleport identity daemon
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [ -f "${RUNNER_TEMP}/tbot.pid" ] || exit 0
+          kill "$(cat "${RUNNER_TEMP}/tbot.pid")" 2>/dev/null || true
+
+      # The runner is ephemeral, so this is belt and braces -- but a live
+      # identity sitting where a later step could read it is not worth the
+      # saving.
       - name: Remove the Teleport identity
         if: always()
         shell: bash
-        run: rm -f -- "${TELEPORT_IDENTITY_FILE:-}"
+        run: rm -rf -- "${RUNNER_TEMP}/tbot"
