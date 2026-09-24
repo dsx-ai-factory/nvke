@@ -1,0 +1,113 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Records the digest a publisher just published, as a durable artifact the
+# release layer can assemble a candidate from.
+#
+# WHY IT RESOLVES RATHER THAN PARSES. Every publisher here speaks a different
+# client -- buildx, oras, helm -- and each prints its digest in a different
+# shape, when it prints one at all. Nine of the fifteen publish workflows
+# capture no registry digest today, so "emit what you already computed" is not
+# available for most of them. Asking the registry is one mechanism that covers
+# images, OCI artifacts and Helm charts alike, because at this layer they are
+# all just manifests behind a reference.
+#
+# It is also the stronger claim. A parsed digest is what the client said it
+# pushed; a resolved one is what the registry will actually serve the next
+# consumer to ask. Those differ exactly when something is wrong -- a failed
+# push whose exit code was swallowed, a tag overwritten between steps -- which
+# is when the release layer most needs to not believe the optimistic answer.
+#
+# Requires a docker login to the registry already in the environment, which
+# every caller has by the time it has pushed. crane reads the same config.
+name: Record a published digest
+description: Resolve what a registry serves for a reference, and keep it as an artifact
+
+inputs:
+  reference:
+    description: >-
+      The full registry reference that was just published, including the tag,
+      for example nvcr.io/org/nke-controller:v1.2.3. Resolved as-is.
+    required: true
+  component:
+    description: >-
+      Names this artifact in the candidate, and names the uploaded file. One
+      per published thing, unique within a release: nke-controller,
+      nke-controller-chart, nke-agent-deb-amd64.
+    required: true
+  retention_days:
+    description: >-
+      How long the record outlives its run. Ninety days by default, because a
+      candidate is assembled well after the publishers that fed it, and the
+      one-day retention the image workflows use for their per-arch digests is
+      sized for a debugging aid rather than for evidence.
+    required: false
+    default: "90"
+
+outputs:
+  digest:
+    description: The resolved digest, as sha256:...
+    value: ${{ steps.resolve.outputs.digest }}
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-crane
+
+    - id: resolve
+      shell: bash
+      env:
+        REFERENCE: ${{ inputs.reference }}
+        COMPONENT: ${{ inputs.component }}
+      run: |
+        set -euo pipefail
+
+        # Fails the publisher when the reference does not resolve. That is the
+        # intended behaviour: a publish whose result cannot be addressed by
+        # digest has not produced something the release layer can qualify, and
+        # finding that out here is cheaper than finding it out at promotion.
+        if ! digest="$(crane digest "${REFERENCE}" 2>&1)"; then
+          echo "::error::${REFERENCE} did not resolve after publishing: ${digest}"
+          exit 1
+        fi
+
+        case "${digest}" in
+          sha256:*) ;;
+          *) echo "::error::crane digest returned ${digest} for ${REFERENCE}, which is not a digest"; exit 1 ;;
+        esac
+
+        dir="${RUNNER_TEMP}/release-digests"
+        mkdir -p "${dir}"
+        # The reference is kept whole alongside the digest. A digest on its own
+        # says what the bytes are but not where they were published, and the
+        # same bytes reach several registries on the promotion paths.
+        cat > "${dir}/${COMPONENT}.json" <<EOF
+        {
+          "component": "${COMPONENT}",
+          "reference": "${REFERENCE}",
+          "digest": "${digest}",
+          "revision": "${GITHUB_SHA}",
+          "ref": "${GITHUB_REF_NAME}",
+          "run": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+        }
+        EOF
+
+        echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+        echo "record_dir=${dir}" >> "${GITHUB_OUTPUT}"
+
+        {
+          echo "### Digest recorded"
+          echo
+          echo "\`${REFERENCE}\`"
+          echo
+          echo "\`${digest}\`"
+        } >> "${GITHUB_STEP_SUMMARY}"
+
+    # release-digest-* is the prefix `assemble` globs for. Renaming it is a
+    # change to the release layer's input contract, not a cosmetic one.
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: release-digest-${{ inputs.component }}
+        path: ${{ steps.resolve.outputs.record_dir }}/${{ inputs.component }}.json
+        retention-days: ${{ inputs.retention_days }}
+        if-no-files-found: error
