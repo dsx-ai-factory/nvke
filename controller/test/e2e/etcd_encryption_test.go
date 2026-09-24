@@ -627,11 +627,15 @@ if ! kubectl --kubeconfig "$kubeconfig_path" create secret generic "$secret_name
 	fail_verification "failed to create the verifier Secret"
 fi
 
-if ! etcd_pod="$(kubectl --kubeconfig "$kubeconfig_path" get pods -n kube-system \
-	-l component=etcd -o jsonpath='{.items[0].metadata.name}')"; then
+# items[*], not items[0]: indexing an empty list is an error, so a cluster with
+# no etcd pod took the branch below and reported a failed list. Both causes
+# reached one message and the "no etcd pod" branch was unreachable.
+if ! etcd_pods="$(kubectl --kubeconfig "$kubeconfig_path" get pods -n kube-system \
+	-l component=etcd -o jsonpath='{.items[*].metadata.name}')"; then
 	etcd_pod="unknown"
 	fail_verification "failed to list etcd pods"
 fi
+etcd_pod="${etcd_pods%% *}"
 if [ -z "$etcd_pod" ]; then
 	etcd_pod="unknown"
 	fail_verification "no etcd pod found"
@@ -736,7 +740,21 @@ case "$args" in
 		if [ "${FAKE_ETCD_LIST_STATUS:-0}" -ne 0 ]; then
 			exit "$FAKE_ETCD_LIST_STATUS"
 		fi
-		printf '%s' "${FAKE_ETCD_POD:-etcd-0}"
+		# No colon, so an empty FAKE_ETCD_POD models a cluster with no etcd pod
+		# rather than falling back to the default.
+		etcd_pod_out="${FAKE_ETCD_POD-etcd-0}"
+		# Real kubectl treats an out-of-range index as an error, so items[0]
+		# against an empty list exits non-zero instead of printing nothing.
+		# Without this the empty case is indistinguishable from a healthy one.
+		if [ -z "$etcd_pod_out" ]; then
+			case "$args" in
+				*'items[0]'*)
+					printf '%s\n' 'error: array index out of bounds' >&2
+					exit 1
+					;;
+			esac
+		fi
+		printf '%s' "$etcd_pod_out"
 		;;
 	*" get pods -n kube-system -l component=kube-apiserver "*)
 		printf '%s\n' 'kube-apiserver-1|10.0.0.11' 'kube-apiserver-0|10.0.0.10'
@@ -868,6 +886,16 @@ func TestEtcdEncryptionVerifyScript(t *testing.T) {
 			name:            "encrypted Secret succeeds",
 			wantSuccess:     true,
 			wantLogContains: []string{"raw etcd Secret encryption verified"},
+		},
+		{
+			name:            "etcd pod list fails",
+			environment:     []string{"FAKE_ETCD_LIST_STATUS=1"},
+			wantLogContains: []string{"failed to list etcd pods"},
+		},
+		{
+			name:            "no etcd pod exists",
+			environment:     []string{"FAKE_ETCD_POD="},
+			wantLogContains: []string{"no etcd pod found"},
 		},
 		{
 			name:            "etcd value read fails",

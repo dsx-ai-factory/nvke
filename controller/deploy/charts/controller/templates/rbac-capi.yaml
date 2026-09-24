@@ -19,6 +19,26 @@ rules:
       - patch
       - update
       - watch
+  # The tenant-access controller owns each tenant's kubeconfig Secret by the
+  # CAPI Cluster, and OwnerReferencesPermissionEnforcement requires `update` on
+  # the owner's finalizers subresource before it will accept an ownerReference
+  # carrying blockOwnerDeletion.
+  #
+  # Without this the Secret is never created, Cluster API cannot probe the
+  # workload cluster, ControlPlaneInitialized stays False waiting for
+  # status.nodeRef, and every tenant cluster hangs in Provisioning indefinitely.
+  # The API error names blockOwnerDeletion and never the missing permission,
+  # which is what makes it hard to place.
+  #
+  # Its own rule rather than an entry in the list above: `update` is the only
+  # verb the enforcement checks, and create/delete on a subresource mean
+  # nothing.
+  - apiGroups:
+      - cluster.x-k8s.io
+    resources:
+      - clusters/finalizers
+    verbs:
+      - update
   - apiGroups:
       - infrastructure.cluster.x-k8s.io
     resources:

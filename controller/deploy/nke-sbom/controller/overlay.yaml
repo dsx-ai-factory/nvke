@@ -1,0 +1,264 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What this target changes about controller, applied over values.yaml.
+
+# OFF, matching a NICo site controller that provisioned a real tenant.
+#
+# Not a recommendation for a production site -- a deliberate choice for the
+# first run on this path, which is already changing one thing that has never
+# been exercised on NICo (spiffe.enabled). API authentication is a separate
+# axis: apiAuth is REST tokens, spiffe is CWE-to-agent mTLS. Turning both on at
+# once means a failure could be either.
+#
+# It also cannot simply be flipped true here. The chart defaults
+# apiAuth.configMap.create to false and mounts `nke-auth-config`, which on the
+# e2e lanes comes from the nke-auth-dev item -- and that item is test
+# scaffolding (it creates nke-client, nke-outsider and nke-e2e ServiceAccounts)
+# that a site has no business installing. CWE treats a configured-but-unreadable
+# AUTH_CONFIG_PATH as a startup failure, never as "disabled", so enabling this
+# without supplying the ConfigMap does not degrade -- it fails to start.
+#
+# To turn it on later: set apiAuth.configMap.create=true and supply real
+# apiAuth.config, or add a site-specific auth-config item.
+apiAuth:
+  enabled: false
+  permissive: false
+
+# The SAME value the capnico-e2e target uses, deliberately: this is a tenant
+# guard rail, not a mode. It reaches CWE as SUPPORTED_INFRA_PROVIDERS, an
+# accept-list validated at startup (internal/config), and renders nothing else
+# -- the CAPI permissions come from capi.rbac.create below, which is a separate
+# key.
+#
+# `infra` only permits the infrastructure-provider-agnostic escape-hatch input.
+# The clients do differ -- the e2e suite's nico-containers backend submits an
+# Infra block, while `nkectl create cluster` submits the Nico block -- but that
+# is a difference in what callers send, not in what a site must accept. Keeping
+# the value identical everywhere is what lets one SBOM serve both.
+supportedInfraProviders: nico,infra
+capi:
+  rbac:
+    create: true
+
+tenantAccess:
+  enabled: true
+
+# OFF, for the same reason and matching that same site.
+#
+# The settings below are kept, not deleted: the SPIRE OIDC discovery provider
+# and its nodeport are still installed by this path, and the CA chain in
+# nke-base-config still publishes oidc-provider-upstream-ca -- the spire item
+# waits on that Certificate regardless. So turning this true is a one-line
+# change once the SPIRE half is proven, with nothing else to reassemble.
+nkeOIDCAuth:
+  enabled: false
+  # Logical issuer, string-compared against the JWT's iss claim; it does not
+  # have to resolve. discoveryURL does, and is VIP-derived, so it is passed in.
+  issuerURL: "https://nke.site-controller.internal"
+  # The CA the OIDC provider's leaf is signed by, published by the chain in
+  # controller/deploy/k8s/oidc-upstream-ca.yaml.
+  caBundleSecret:
+    namespace: spire-server
+    name: oidc-provider-upstream-ca
+    key: ca.crt
+
+# The CAPD lane installs the CNI as part of cluster creation rather than after
+# init; the node-pool lane differs and overrides this.
+cni:
+  installAfterInit: true
+
+# Empty on this path: none of the twelve variables the Tiltfile forwards
+# (TEMPORAL_UI_URL, LOG_LEVEL, FORGE_URL, ...) are set by backend-e2e.sh.
+env: []
+
+# ---------------------------------------------------------------------------
+# Moved here from controller/hack/tilt-cwe-chart-values.yaml, which the lane
+# used to read off disk and pass as a second --values file. It is static
+# configuration -- the same on every run -- so it belongs in the overlay: a
+# deploy path that does not carry it under-describes the deployment, and a
+# reader of the generated tree could not tell how CWE was configured.
+#
+# The Tiltfile still reads that file (controller/Tiltfile:1018,1197), so this
+# is a second copy and the two can drift. Verified equivalent at the time of
+# the move by rendering the controller chart from each and diffing: identical.
+#
+# Two things deliberately NOT copied, because the run supplies them:
+# image.repository/tag (the locally built controller) and
+# spiffe.spire.serverAddress (the kind VIP). image.pullPolicy IS kept -- the
+# image is side-loaded into kind, so it must not be re-pulled.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+fullnameOverride: cloud-workflow-engine
+namespaceOverride: cloud-workflow-engine
+
+nkeSystemNamespace:
+  create: false
+
+# PINNED, unlike the e2e targets. A site is not building the controller from
+# source, so "whatever the lane just built" is not a meaningful default here:
+# with these unset the chart falls back to its own repository plus appVersion
+# 0.0.0, which is not a published image and fails to pull.
+#
+# THE TAG HERE MUST BE ONE THE SITE HAS STAGED. With imagePullSecrets empty
+# (see below) the only images that resolve are those already in the node's
+# containerd, so bumping this without staging the new image first gives
+# ImagePullBackOff, not an upgrade. Verified the hard way on a live site: pinning
+# rc.8, which the node had never seen, took CWE down until it was reverted.
+#
+# Staging a newer build, in the k8s.io namespace the kubelet reads:
+#   ctr -n k8s.io images import <saved-image>.tar
+#
+# NOTE THE REPOSITORY. #827 renamed the published image to nke-controller, so
+# rc.7 onward are at <registry>/nke-controller and rc.6 and earlier ONLY at
+# .../nke/controller. Moving between them changes both lines.
+#
+# NVCR, NOT GHCR, and that is about which builds exist rather than a preference.
+# GHCR publishes release tags only; NVCR publishes one per commit. #850 removed
+# infra.spireAttestationMethod from the cluster API and moved the choice to
+# nodeAgent.spireAttestationMethod below, and no release has been cut since --
+# GHCR's newest, rc.8, is revision 4c5dc9bc from 2026-09-20, 43 commits before
+# it. A site controller running rc.8 rejects this checkout's own nkectl with
+#   400 Bad Request: infra.spireAttestationMethod is required
+# at "creating the site cluster". The tag below is this branch's merge base with
+# main, so the CWE binary, this chart and nkectl all come from one commit.
+# Repoint at a GHCR release tag once one is cut past #850.
+#
+# This block becomes redundant once the item installs a published chart rather
+# than ../charts/controller: the chart carries the repository as its default
+# and its appVersion as the tag, so one version would pin both. It cannot
+# switch yet -- no published chart has the NodePort Service template this path
+# relies on, and Helm ignores an unknown value silently.
+#
+# CWE_IMAGE overrides this for an unreleased build or another registry; the
+# SBOM is otherwise authoritative.
+image:
+  repository: nvcr.io/j7sbcjl3qgta/nke-controller
+  tag: v0.1.1-rc.8-51-g35019978
+  pullPolicy: IfNotPresent
+
+# EMPTY, and it must stay empty. The controller image is staged into the node's
+# containerd before the install -- the node IS the cluster, so it resolves under
+# pullPolicy: IfNotPresent with no credential. The only pull secret this path
+# renders is ghcr-imagepull, and it lives in capnico-system for CAPNICo's image;
+# naming it here would reference a Secret that does not exist in this namespace.
+#
+# A site that pulls the controller from a registry instead needs its own secret
+# in cloud-workflow-engine, supplied with --values-for.
+imagePullSecrets: []
+
+podSecurityContext: null
+securityContext:
+  readOnlyRootFilesystem: false
+
+metrics:
+  networkPolicy:
+    enabled: false
+serviceMonitor:
+  enabled: false
+
+# /readyz, not /api/version. /api/version proves only that HTTP is serving;
+# /readyz returns {"status":"ok","checks":{"database":"ok","temporal":"ok"}},
+# so readiness means Postgres and Temporal are actually reachable. With the
+# weaker probe a pod reports Ready while both are down, which is how the first
+# run of this path looked healthy without having been checked.
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 20
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+appDb:
+  url: postgres-postgresql.postgres.svc.cluster.local:5432
+  dbName: cloud-workflow
+  postgresUser: postgres
+  # postgresPassword is a real credential on this path and is NOT committed.
+  # Supply it with --values-for controller=<file>, together with the matching
+  # value on BOTH of temporal's datastores -- default and visibility. Setting
+  # it on only one leaves the Temporal schema job crash-looping with
+  # "password authentication failed", which that run hit.
+  sslMode: disable
+
+# The port nke-agent listens on, and it has to agree with three other places:
+# the sitespec used at bootstrap (nkectl's default, cli/internal/sitespec),
+# os-image/SPEC.md's contract, and the agent drop-in the node's cloud-init
+# writes. A real site sets it explicitly rather than relying on a default, and
+# so does this.
+env:
+  - name: NODE_AGENT_PORT
+    value: "15005"
+
+# service.port is the CLUSTER-IP port and must stay the chart default: the
+# container listens on 8080, and setting port: 30080 here only renames the
+# in-cluster port while leaving nothing reachable from the node. That is the
+# mistake this file made on its first run -- a live site's release shows
+# service.port: 30080, but it reaches CWE through the separate NodePort
+# Service nkectl's bootstrap applies (cwe-nodeport.yaml), not through that.
+#
+# nodePort renders a SECOND Service beside the ClusterIP one, which is the
+# chart's supported way to publish the API without a cluster route -- for the
+# host running nkectl, or an operator reaching /api on a node address.
+service:
+  port: 8080
+  nodePort: 30080
+
+secrets:
+  # Names the Secret ../nke-base-config/35-dgxc-tenant-credentials.yaml.tmpl
+  # renders. Empty means CWE never receives DGXC_TENANT_USER and
+  # DGXC_TENANT_PASSWORD, and every tenant create fails at user-data rendering
+  # -- one of that run's eleven failures. The chart injects them only
+  # when this names a Secret carrying keys `user` and `password`.
+  dgxcTenantCredSecretName: dgxc-tenant-credentials
+
+# TPM, explicitly. The chart defaults to this and validates the value, but a
+# site SBOM should state it rather than inherit it: the alternative, joinToken,
+# is what the CAPD lane uses because its containers have no TPM. This path's
+# whole identity chain runs the other way -- NicoMachine.status.tpmEkPubHash to
+# the tpm-pubhashes ConfigMap to SPIRE's tpmDirect attestor -- so tpm is not a
+# default here, it is the requirement.
+nodeAgent:
+  spireAttestationMethod: tpm
+
+temporal:
+  host: temporal-frontend.temporal.svc.cluster.local
+  port: 7233
+
+profiles:
+  path: /profiles
+  # Profiles are a separate content image, materialised by an init container.
+  # Without it /api/osProfiles returns 500 and nothing can be provisioned --
+  # the profiles directory may be empty at startup, but it must exist by the
+  # time a cluster is created.
+  #
+  # NOT pinned, unlike image above: fleet profile content is maintained outside
+  # this repository, so there is no tag here that would mean the same thing on
+  # another site. The reference run staged a locally built profiles image into
+  # the node's containerd -- a bare name with no registry, which is why it needs
+  # no credential and why pinning it here would not be portable.
+  #
+  # Supply repository and tag with --values-for controller=<file>. Without them
+  # the chart refuses to render: profiles.image.tag or .digest is required when
+  # enabled=true.
+  image:
+    enabled: true
+
+# apiAuth is not set here. The Tiltfile drives it from NKE_AUTH_ENABLED and
+# NKE_PERMISSIVE_MODE, and the chart's default ConfigMap name already matches
+# the one deploy/k8s/nke-auth-dev.yaml applies.
+
+spiffe:
+  enabled: true
+  endpointSocket: unix:///spiffe-workload-api/spire-agent.sock
+  spire:
+    serverNamespace: spire-server
+    className: spire-mgmt-spire
+    tpmPubhashesConfigMapName: tpm-pubhashes
+    serverPort: "30440"

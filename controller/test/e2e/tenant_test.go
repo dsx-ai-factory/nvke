@@ -291,11 +291,12 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		options:  nke.Options{Provision: 30 * time.Minute, Upgrade: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{upgrade: true},
 	}),
-	// The only entry that runs OVN-Kubernetes, and so the only one that can set
-	// openVSwitch. Every other nico-vms entry resolves to Calico through
-	// NKE_E2E_NICO_VMS_CNI, which the lane pins for image size. Kept to one
-	// control plane and one worker: the assertion is per node, and OVN images
-	// are the expensive part.
+	// OVN-Kubernetes is the default CNI for nico-vms entries, so most entries
+	// exercise it implicitly through NKE_E2E_NICO_VMS_CNI. This entry is the
+	// small OVN smoke: it pins OVN explicitly and asserts the typed Open
+	// vSwitch node-agent RPC and NetworkPolicy enforcement. Kept to one
+	// control plane and one worker: the assertions are per node, and OVN
+	// images are the expensive part.
 	Entry("nico-vms ovn", Ordered, ContinueOnFailure, Label("nico-vms", "ovn"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
@@ -306,7 +307,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
 		options:  nke.Options{Provision: 45 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
-		validate: validations{openVSwitch: true},
+		validate: validations{openVSwitch: true, ovnNetworking: true},
 	}),
 	Entry("CAPD with etcd encryption", Ordered, ContinueOnFailure, Label("capd", "extended", "encryption"), testSpec{
 		buildSpec: capdSpec,
@@ -472,6 +473,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			validateNodeReadinessPostCreate(&test)
 			if spec.validate.openVSwitch {
 				validateOpenVSwitchPostCreate(&test)
+			}
+			if spec.validate.ovnNetworking {
+				validateOVNNetworkPolicyPostCreate(&test)
 			}
 			if spec.validate.postReadyChecks {
 				validatePostReadyClusterState(&test)
@@ -680,6 +684,9 @@ type validations struct {
 	// openVSwitch proves OVN node provisioning used the typed node-agent RPC
 	// on every node and did not enter the legacy runbook fallback.
 	openVSwitch bool
+	// ovnNetworking validates NetworkPolicy enforcement on the explicit OVN
+	// smoke topology.
+	ovnNetworking bool
 	// csrApproval rotates a Ready worker's kubelet serving certificate and
 	// verifies that the tenant CSR controller approves and obtains a new one.
 	csrApproval bool
@@ -1249,9 +1256,8 @@ func nicoVMSSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSp
 		Name:              name,
 		Backend:           nke.BackendNicoVMS,
 		KubernetesVersion: defaultString(shape.kubernetesVersion, defaultKubernetesVersion),
-		// Calico, like the other two backends. An image built here has no OVN debs:
-		// fetch-artifacts.sh needs an NGC key, and skips arm64 entirely.
-		CNIPlugin: defaultString(shape.cniPlugin, defaultString(os.Getenv("NKE_E2E_NICO_VMS_CNI"), CNIPluginCalico)),
+		// OVN-Kubernetes unless the entry pins a CNI or NKE_E2E_NICO_VMS_CNI overrides it.
+		CNIPlugin: defaultString(shape.cniPlugin, defaultString(os.Getenv("NKE_E2E_NICO_VMS_CNI"), CNIPluginOVN)),
 		OrgID:     nicoVMSOrgID,
 		SiteID:    nicoVMSSiteID,
 		VpcID:     nicoVMSVpcID,

@@ -406,10 +406,11 @@ func tailFollow(path string, n int) {
 		os.Stdout.WriteString(cleanConsoleOutput(string(data)))
 	}
 
-	if err := followStream(f, os.Stdout, 200*time.Millisecond); err != nil {
-		fmt.Fprintf(os.Stderr, "\nread error: %v\n", err)
-		os.Exit(1)
-	}
+	// followStream only returns once reading has failed for good (it loops on
+	// io.EOF), so its return value is always a real error.
+	err = followStream(f, os.Stdout, 200*time.Millisecond)
+	fmt.Fprintf(os.Stderr, "\nread error: %v\n", err)
+	os.Exit(1)
 }
 
 // followStream reads from r and writes the cleaned output to w, tail -f

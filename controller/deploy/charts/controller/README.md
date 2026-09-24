@@ -33,6 +33,10 @@ A Helm chart to deploy the NKE controller service
 | deploymentAnnotations | object | `{}` | Annotations on the Deployment `metadata` (evaluated with `tpl`) |
 | env | list | `[]` | Additional environment variables to inject into the CWE container. |
 | fullnameOverride | string | `""` |  |
+| identity.fieldManagerMachineHealthIssueName | string | `"cloud-workflow-engine-machine-health-issue"` | Field manager used when patching a Machine's health-issue annotation. |
+| identity.fieldManagerName | string | `"cloud-workflow-engine"` | Field manager for this controller's own CAPI/NICo Server-Side-Apply patches. |
+| identity.fieldManagerRebootMachineName | string | `"cloud-workflow-engine-reboot-machine"` | Field manager scoped to the CAPI Machine reboot annotation alone. |
+| identity.managedByLabelValue | string | `"cloud-workflow-engine"` | Value written under the nke.nvidia.com/managed-by label on objects this controller owns, and the value the tenant Secret reconciler filters on. |
 | image.digest | string | `""` | Optional digest (sha256:...) for the nke-controller image. When set, the pod pulls by digest and the tag becomes informational only. Use this to pin an immutable image. |
 | image.pullPolicy | string | `"IfNotPresent"` | This sets the pull policy for images. |
 | image.repository | string | `"ghcr.io/dsx-ai-factory/nke/nke-controller"` | Repository, including registry, for the nke-controller image (the CWE service) that this chart deploys. Override to pull it from a different registry (e.g. a private mirror); pair any change with a matching `imagePullSecrets` entry. Not to be confused with `profiles.image.repository` below, a separate optional content image. |
@@ -62,9 +66,15 @@ A Helm chart to deploy the NKE controller service
 | nkeOIDCAuth.tenantRbacName | string | `"nke:cwe"` | Name of the ClusterRole/Role/Binding objects the tenant-access controller applies into every tenant cluster (nke-rbac.yaml). |
 | nkeSystemNamespace.annotations | object | `{}` | Extra annotations merged onto nke-system. This is useful for adding additional annotations to the namespace to protect it from being deleted. Listing annotations that template already defaults here duplicates the key in the rendered Namespace. |
 | nkeSystemNamespace.create | bool | `true` | Create the shared nke-system namespace. The object always carries helm.sh/resource-policy: keep so a Helm uninstall does not delete it, and argocd.argoproj.io/sync-options: Prune=false,Delete=false so an Argo prune or Application delete does not either. Both are set by the template for default delete protection. |
+| nodeAgent.externalMTLS.enabled | bool | `false` | Present an externally managed client certificate instead of the controller SPIRE X509-SVID. |
+| nodeAgent.externalMTLS.secret.caBundleKey | string | `"ca.crt"` | Secret key containing the PEM-encoded issuing CA bundle. |
+| nodeAgent.externalMTLS.secret.certificateKey | string | `"tls.crt"` | Secret key containing the PEM-encoded client certificate chain. |
+| nodeAgent.externalMTLS.secret.name | string | `""` | Name of the externally managed Secret containing the client identity. |
+| nodeAgent.externalMTLS.secret.privateKeyKey | string | `"tls.key"` | Secret key containing the PEM-encoded client private key. |
 | nodeAgent.spireAttestationMethod | string | `"tpm"` | SPIRE node attestation method used by every cluster managed by this controller deployment. Set this value once when the environment is first deployed. Changing it in an existing environment is unsupported and requires a separately coordinated migration. |
 | nodeAgent.tlsJwt.algorithms | list | `["RS256"]` | Asymmetric JWT signing algorithms accepted from the issuer. |
-| nodeAgent.tlsJwt.enabled | bool | `false` | Add JWT node authentication to the existing secure node-agent transport for every node agent managed by this controller. Requires spiffe.enabled until another TLS-capable base transport is available. |
+| nodeAgent.tlsJwt.dsxIdentityExchangeURL | string | `""` | DSX Identity token-exchange endpoint injected into node-agent bootstrap arguments when TLS/JWT is enabled. |
+| nodeAgent.tlsJwt.enabled | bool | `false` | Add JWT node authentication to the existing secure node-agent transport for every node agent managed by this controller. Requires either spiffe.enabled or nodeAgent.externalMTLS.enabled. |
 | nodeAgent.tlsJwt.issuer | string | `""` | Identity issuer expected in node-agent JWTs. |
 | nodeAgent.tlsJwt.jwksURI | string | `""` | HTTPS endpoint serving the issuer's JSON Web Key Set. |
 | nodeAgent.tlsJwt.subjectTrustDomain | string | `""` | Exact SPIFFE trust domain accepted in node-agent JWT subjects. |
@@ -94,6 +104,7 @@ A Helm chart to deploy the NKE controller service
 | service.annotations | object | `{}` | Additional annotations for the service |
 | service.labels | object | `{}` | Additional labels for the service |
 | service.port | int | `8080` | apiserver port |
+| service.nodePort | string | `""` | NodePort for a second Service beside the one above, reachable without a cluster route. Empty renders none; the Service above stays ClusterIP. |
 | service.type | string | `"ClusterIP"` |  |
 | serviceAccount.annotations | object | `{}` |  |
 | serviceAccount.automount | bool | `true` |  |
@@ -123,7 +134,9 @@ A Helm chart to deploy the NKE controller service
 | teleport.environment | string | `"non-prod"` | Teleport environment label: "prod" or "non-prod" (default: "non-prod") |
 | teleport.identityFile | string | `"/var/run/teleport/identity"` | Path where the tbot identity file is mounted |
 | teleport.identitySecretName | string | `"cloud-workflow-engine-teleport"` | Name of the Kubernetes secret containing the tbot identity (written by tbot output) |
+| teleport.managedByLabelValue | string | `"nke-cloud-workflow-engine"` | Value of the Teleport "managed-by" label this controller stamps on tokens it creates, and the value ownership checks compare against. |
 | teleport.proxyAddress | string | `""` | Teleport proxy address (site-specific, must be set per environment) |
+| teleport.tokenNamePrefix | string | `"nke-cwe-"` | Prefix for the deterministic Teleport TPM join token name this controller mints for a node. |
 | temporal.cloudWorkflow.namespace | string | `"cloud-workflow-engine"` |  |
 | temporal.cloudWorkflow.queue | string | `"cloud-workflow-engine-tasks"` |  |
 | temporal.host | string | `"temporal-frontend.temporal.svc.cluster.local"` |  |
@@ -147,4 +160,3 @@ A Helm chart to deploy the NKE controller service
 | tracing.serviceName | string | `"cloud-workflow-engine"` | Resource attribute service.name written when tracing.endpoint is set. With operatorInject, prefer operator-injected OTEL_SERVICE_NAME instead. |
 | volumeMounts | list | `[]` |  |
 | volumes | list | `[]` |  |
-

@@ -44,9 +44,10 @@ jobs:
       contents: read
 
   # Skipped for tags that a dedicated workflow releases: agent/ (agent-deb-publish.yml),
-  # os-image/ (os-image-artifact.yml), and cluster-api-provider-provisioned/
-  # (image-provisioned-nvcr.yml's promote-ghcr job -- an image push, with no
-  # release-worthy asset of its own yet). Those jobs build the real artifacts,
+  # os-image/ (os-image-artifact.yml), nktp/ (nktp-chart-publish.yml; not a Go
+  # module, so the go.work check below would reject it), and
+  # cluster-api-provider-provisioned/ (image-provisioned-nvcr.yml's promote-ghcr
+  # job -- an image push, with no release-worthy asset of its own yet). Those jobs build the real artifacts,
   # create the release, and publish it only after verification. This job would
   # otherwise cut a notes-only release first, and CHANGELOG.md has no section a
   # component tag can match.
@@ -57,13 +58,15 @@ jobs:
       # one build rather than four.
       component_dir: ${{ steps.component.outputs.dir }}
       dist_artifact: cli-dist-${{ github.run_id }}-${{ github.run_attempt }}
-    if: ${{ !startsWith(github.ref_name, 'agent/') && !startsWith(github.ref_name, 'os-image/') && !startsWith(github.ref_name, 'cluster-api-provider-provisioned/') }}
+    if: ${{ !startsWith(github.ref_name, 'agent/') && !startsWith(github.ref_name, 'os-image/') && !startsWith(github.ref_name, 'nktp/') && !startsWith(github.ref_name, 'cluster-api-provider-provisioned/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [license-checks]
     permissions:
       contents: write         # creates the GitHub release
       security-events: write  # the malware scan uploads SARIF
+      id-token: write         # the OIDC token the attestation is signed against
+      attestations: write     # writes the provenance attestation
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -222,6 +225,36 @@ jobs:
           category: 'clamav-release'
           output_file: 'clamav-release.sarif'
 
+      # Provenance over checksums.txt, not over each artifact: that file
+      # already names every asset by SHA-256, so one attestation covers all of
+      # them and a consumer runs one verify rather than one per download. It
+      # also covers the assets a release does not attach -- os-image's four
+      # qcow2s ship as OCI artifacts because they are too large, and
+      # checksums.txt names them too.
+      #
+      # This is provenance, not just a signature: the attestation records the
+      # workflow, the ref and the commit that produced the bytes. See
+      # RELEASE.md, "Verifying a release".
+      - name: Attest the release checksums
+        id: attest
+        if: steps.artifacts.outputs.has_files == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/checksums.txt
+
+      # Attached as a release asset as well as stored by GitHub, so a consumer
+      # can verify offline with `gh attestation verify --bundle` and never call
+      # the API. Added after the count above, which verify-release-assets
+      # treats as a minimum -- an extra asset is fine, a missing one is not.
+      - name: Attach the attestation bundle
+        if: steps.artifacts.outputs.has_files == 'true'
+        shell: bash
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          cp "${BUNDLE}" dist/checksums.txt.sigstore.json
+
       - name: Extract changelog section for this tag
         id: changelog
         shell: bash
@@ -367,6 +400,11 @@ jobs:
               echo "OS-image tag ${GITHUB_REF_NAME}:"
               echo "  - qcow2  → OS Image Artifact (Packer + boot-smoke, then ghcr.io/dsx-ai-factory/nke/os-image)"
               echo "  - check  → nke-os-image-check attached to the GitHub Release"
+              ;;
+
+            nktp/v*)
+              echo "NKTP tag ${GITHUB_REF_NAME}:"
+              echo "  - chart → NKTP Chart Publish"
               ;;
 
             cluster-api-provider-provisioned/v*)

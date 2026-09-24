@@ -329,7 +329,8 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 		// provider that created it, so without it the command reports the
 		// cluster as missing rather than deleting it.
 		deleteCommand := fmt.Sprintf(
-			"KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s", cluster.Name)
+			"KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s", cluster.Name,
+		)
 		return fmt.Errorf("%w; site cluster creation has started, so bootstrap cluster %q was retained for recovery "+
 			"(kubeconfig: %s); delete it after recovery with `%s`",
 			err, cluster.Name, cluster.KubeconfigPath, deleteCommand)
@@ -411,7 +412,8 @@ func createSiteCluster(
 	// bootstrap cluster this command is about to delete. Returning here would
 	// tear that engine down underneath them.
 	if err := sitecluster.WaitControlPlaneJoined(
-		ctx, client, created.ID, len(inv.Cluster.Nodes), time.Until(deadline), logger); err != nil {
+		ctx, client, created.ID, len(inv.Cluster.Nodes), time.Until(deadline), logger,
+	); err != nil {
 		return true, err
 	}
 	logger.Info("all control plane nodes joined", "cluster", created.Name, "nodes", len(inv.Cluster.Nodes))

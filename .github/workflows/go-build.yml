@@ -99,6 +99,11 @@ jobs:
       - name: Check the Go version copies agree with go.work
         run: make go-version-check
 
+      # The two images this repository publishes build from base images named
+      # by digest. Reads files only, so it is safe for a fork pull request.
+      - name: Check release-relevant base images are digest-pinned
+        run: make base-image-check
+
       - name: Build
         run: make version-check
 

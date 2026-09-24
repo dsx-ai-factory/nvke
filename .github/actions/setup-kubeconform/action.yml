@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Installs kubeconform at the version pinned in make/tool-versions.mk and
+# verifies its sha256. chart.yml and nktp-chart.yml both need it before their
+# fail-closed chart targets.
+
+name: Set up kubeconform
+description: Download kubeconform at the pinned version, verify sha256, add it to PATH
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        # Only amd64 has a committed digest; both callers run on ubuntu-latest.
+        if [ "$(uname -m)" != x86_64 ]; then
+          echo "::error::no committed kubeconform digest for $(uname -m)"
+          exit 1
+        fi
+        ver="$(make -C "${GITHUB_WORKSPACE}" --no-print-directory print-KUBECONFORM_VERSION)"
+        # A committed digest, not the release's own CHECKSUMS: that file is
+        # served by the host that serves the artifact, so it shares the same
+        # compromise boundary. make/tool-versions.mk owns both lines.
+        want="$(make -C "${GITHUB_WORKSPACE}" --no-print-directory print-KUBECONFORM_SHA256_AMD64)"
+        bin="${RUNNER_TEMP}/kubeconform-bin"
+        mkdir -p "${bin}"
+        tar="${bin}/kubeconform.tar.gz"
+        # No --retry-delay, so curl keeps its exponential backoff. See
+        # setup-crane/action.yml.
+        curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 -o "${tar}" \
+          "https://github.com/yannh/kubeconform/releases/download/${ver}/kubeconform-linux-amd64.tar.gz"
+        echo "${want}  ${tar}" | sha256sum -c -
+        tar -xzf "${tar}" -C "${bin}" kubeconform
+        echo "${bin}" >> "${GITHUB_PATH}"

@@ -1,11 +1,3 @@
-## Flox Environment Manifest -----------------------------------------
-##
-##   _Everything_ you need to know about the _manifest_ is here:
-##
-##               https://flox.dev/docs/concepts/manifest
-##
-## -------------------------------------------------------------------
-# Flox manifest version managed by Flox CLI
 schema-version = "1.11.0"
 
 
@@ -25,14 +17,9 @@ schema-version = "1.11.0"
 # Leaving a package unpinned is not neutral. Re-locking moved kubernetes-helm
 # from 3.19.1 to 4.2.4, a major release.
 [install]
-# go.work, and every go.mod except agent and nico-sim. CI reads go-version-file:
-# go.work with GOTOOLCHAIN=local. An older go here does not fail loudly, because
-# GOTOOLCHAIN=auto downloads 1.26.5 on top and hides the gap.
-# Keep in step with go.work, which owns the version. A static manifest cannot
-# derive it, so this is the one copy that needs updating by hand.
-go = { pkg-path = "go", version = "1.26.8", pkg-group = "go" }
+go = { pkg-path = "go_1_27", pkg-group = "go" }
 # GOLANGCI_LINT_VERSION in six module Makefiles, and lint.yml:223.
-golangci-lint = { pkg-path = "golangci-lint", version = "2.12.2", pkg-group = "golangci-lint" }
+golangci-lint = { pkg-path = "golangci-lint", version = "2.13.2", pkg-group = "golangci-lint" }
 # Shared by local checks and workflows through make/tool-versions.mk.
 kubernetes-helm = { pkg-path = "kubernetes-helm", version = "4.2.4", pkg-group = "helm" }
 # backend-e2e.yml:118 and nkectl-bootstrap-e2e.yml:121.
@@ -119,10 +106,6 @@ on-activate = '''
 ## Other Environment Options -----------------------------------------
 [options]
 # Systems that environment is compatible with.
-#
-# x86_64-darwin is absent because nixpkgs builds neither go@1.26.5 nor
-# kind@0.32.0 for it, so keeping it would make the lock fail. The remaining three
-# resolve to identical versions.
 systems = [
   "aarch64-darwin",
   "aarch64-linux",

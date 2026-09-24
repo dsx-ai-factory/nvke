@@ -135,7 +135,7 @@ func (c *Controller) reconcileTpmPubhashesCm(ctx context.Context) error {
 		ctx,
 		configMap,
 		client.Apply,
-		client.FieldOwner(constants.FieldManagerCWE),
+		client.FieldOwner(c.cfg.FieldManagerName),
 		client.ForceOwnership,
 	); err != nil {
 		return fmt.Errorf("failed to apply TPM pubhashes configmap: %w", err)

@@ -157,6 +157,7 @@ func TestUnit_ConfigValidateNodeAgentTLSJWT(t *testing.T) {
 	enabled.NodeAgentTLSJWTJWKSURI = "https://identity.example.test/jwks"
 	enabled.NodeAgentTLSJWTAlgorithms = []string{"RS256"}
 	enabled.NodeAgentTLSJWTSubjectTrustDomain = "identity.example.test"
+	enabled.NodeAgentTLSJWTDSXIdentityExchangeURL = "https://identity.example.test/v1/exchange"
 	enabled.SupportedInfraProviders = []string{config.InfraProviderInfra}
 
 	missingIssuer := enabled
@@ -167,8 +168,12 @@ func TestUnit_ConfigValidateNodeAgentTLSJWT(t *testing.T) {
 	missingAlgorithms.NodeAgentTLSJWTAlgorithms = nil
 	missingSubjectTrustDomain := enabled
 	missingSubjectTrustDomain.NodeAgentTLSJWTSubjectTrustDomain = ""
+	missingExchangeURL := enabled
+	missingExchangeURL.NodeAgentTLSJWTDSXIdentityExchangeURL = ""
 	missingSpiffe := enabled
 	missingSpiffe.SpiffeEnabled = false
+	externalMTLS := missingSpiffe
+	externalMTLS.NodeAgentExternalMTLSEnabled = true
 	nicoProvider := enabled
 	nicoProvider.SupportedInfraProviders = []string{config.InfraProviderNico}
 	bothProviders := enabled
@@ -185,9 +190,12 @@ func TestUnit_ConfigValidateNodeAgentTLSJWT(t *testing.T) {
 		"enabled accepts controller JWT trust settings": {
 			config: enabled,
 		},
-		"enabled rejects SPIFFE disabled": {
+		"enabled rejects all secure base transports disabled": {
 			config:  missingSpiffe,
-			wantErr: "SPIFFE_ENABLED must be true when NODE_AGENT_TLS_JWT_ENABLED=true",
+			wantErr: "SPIFFE_ENABLED or NODE_AGENT_EXTERNAL_MTLS_ENABLED must be true when NODE_AGENT_TLS_JWT_ENABLED=true",
+		},
+		"enabled accepts external mTLS without SPIFFE": {
+			config: externalMTLS,
 		},
 		"enabled rejects a missing issuer": {
 			config:  missingIssuer,
@@ -204,6 +212,10 @@ func TestUnit_ConfigValidateNodeAgentTLSJWT(t *testing.T) {
 		"enabled rejects a missing subject trust domain": {
 			config:  missingSubjectTrustDomain,
 			wantErr: "NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN is required when NODE_AGENT_TLS_JWT_ENABLED=true",
+		},
+		"enabled rejects a missing DSX Identity exchange URL": {
+			config:  missingExchangeURL,
+			wantErr: "NODE_AGENT_TLS_JWT_DSX_IDENTITY_EXCHANGE_URL is required when NODE_AGENT_TLS_JWT_ENABLED=true",
 		},
 		"enabled accepts Nico": {
 			config: nicoProvider,
@@ -281,6 +293,16 @@ func TestConfig_ValidateSpireAttestationMethod(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestUnit_ConfigParseNodeAgentExternalMTLS(t *testing.T) {
+	withEnv(t, "NODE_AGENT_EXTERNAL_MTLS_ENABLED", ptr.To("true"))
+	setMinimumEnv(t)
+
+	cfg, err := config.ParseConfigFromEnv()
+
+	require.NoError(t, err)
+	require.True(t, cfg.NodeAgentExternalMTLSEnabled)
 }
 
 func withEnv(t *testing.T, name string, value *string) {

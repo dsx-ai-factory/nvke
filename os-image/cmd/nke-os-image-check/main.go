@@ -32,6 +32,7 @@ func run(args []string) int {
 	endpoint := fs.String("endpoint", "", "nke-agent host or host:port (default port 15005)")
 	socket := fs.String("spiffe-socket", check.DefaultSPIFFESocket, "SPIFFE workload API address")
 	trustDomain := fs.String("expect-trust-domain", "", "If set, require the local SVID to be in this trust domain")
+	tlsJWT := fs.Bool("tls-jwt", false, "Expect an NKEAuth record, matching an agent run with --grpc-auth-mode=tls-jwt")
 	timeout := fs.Duration("timeout", 30*time.Second, "Overall probe timeout")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -58,17 +59,22 @@ func run(args []string) int {
 		Endpoint:          *endpoint,
 		SPIFFESocket:      *socket,
 		ExpectTrustDomain: *trustDomain,
+		ExpectAuthRecord:  *tlsJWT,
 	})
 	if err != nil {
 		slog.Error("probe failed", "err", err)
 		return 1
 	}
-	slog.Info("nke-agent reachable",
+	attrs := []any{
 		"endpoint", result.Endpoint,
 		"client_svid", result.ClientSVID,
 		"agent_version", result.AgentVersion,
 		"kubeadm_status", result.Kubeadm,
 		"services", result.Services,
-	)
+	}
+	if result.AuthRecord {
+		attrs = append(attrs, "auth_record", true, "unverified_auth_subject", result.AuthSubject)
+	}
+	slog.Info("nke-agent reachable", attrs...)
 	return 0
 }

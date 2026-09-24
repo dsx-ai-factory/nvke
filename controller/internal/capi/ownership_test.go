@@ -33,7 +33,7 @@ func TestValidateSecretOwnership(t *testing.T) {
 		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
 			constants.LabelKeyClusterID:      cluster.ID.String(),
 			constants.LabelKeyKubeconfigMode: constants.LabelValueKubeconfigModeSPIRE,
-			constants.LabelKeyNkeManagedBy:   constants.LabelValueNkeManagedBy,
+			constants.LabelKeyNkeManagedBy:   "cloud-workflow-engine",
 		}}}
 		require.NoError(t, capi.ValidateSecretOwnership(secret, cluster))
 	})
@@ -69,8 +69,8 @@ func TestSetSecretOwnership(t *testing.T) {
 
 	cluster := db.Cluster{ID: uuid.New(), Name: "alpha"}
 	secret := &corev1.Secret{}
-	capi.SetSecretOwnership(secret, cluster, constants.LabelValueKubeconfigModeSPIRE)
-	assert.Equal(t, constants.LabelValueNkeManagedBy, secret.Labels[constants.LabelKeyNkeManagedBy])
+	capi.SetSecretOwnership(secret, cluster, constants.LabelValueKubeconfigModeSPIRE, "cloud-workflow-engine")
+	assert.Equal(t, "cloud-workflow-engine", secret.Labels[constants.LabelKeyNkeManagedBy])
 	assert.Equal(t, cluster.ID.String(), secret.Labels[constants.LabelKeyClusterID])
 	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, secret.Labels[constants.LabelKeyKubeconfigMode])
 }

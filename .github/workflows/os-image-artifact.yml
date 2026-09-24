@@ -893,6 +893,8 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
+      id-token: write       # the OIDC token the attestation is signed against
+      attestations: write   # writes the provenance attestation
     steps:
       - name: Download every leg's assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -913,6 +915,22 @@ jobs:
           echo "::group::checksums"
           cat dist/checksums.txt
           echo "::endgroup::"
+
+      # Provenance over the merged checksums.txt, made after both legs are in.
+      # It covers the four qcow2s as well: they ship as OCI artifacts because
+      # they are too large to attach here, but checksums.txt names them, so
+      # attesting it binds their digests too.
+      - name: Attest the release checksums
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/checksums.txt
+
+      - name: Attach the attestation bundle
+        shell: bash
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: cp "${BUNDLE}" dist/checksums.txt.sigstore.json
 
       - name: Create GitHub Release
         id: release
@@ -948,9 +966,14 @@ jobs:
             `checksums.txt` covers all four qcow2s and the checker binary. The
             disks themselves are the OCI artifacts above; they are too large to
             attach here.
+
+            `checksums.txt.sigstore.json` is the build-provenance attestation
+            over `checksums.txt`; see [RELEASE.md](RELEASE.md) for the verify
+            commands.
           files: |
             dist/nke-os-image-check
             dist/checksums.txt
+            dist/checksums.txt.sigstore.json
           fail_on_unmatched_files: true
           prerelease: ${{ contains(github.ref_name, '-rc.') }}
           make_latest: false

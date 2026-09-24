@@ -1,0 +1,60 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+{{- $workload := .Values.cluster_events.kubernetes | default dict }}
+{{- $account := $workload.serviceAccount | default "nktp-cluster-events-collector" }}
+{{- $leaseName := .Values.cluster_events.otelcol.config.extensions.k8s_leader_elector.lease_name }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nktp-cluster-events-{{ .Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nktp-cluster-events-{{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nktp-cluster-events-{{ .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $account }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nktp-cluster-events
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    resourceNames: [{{ $leaseName | quote }}]
+    verbs: [get, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nktp-cluster-events
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nktp-cluster-events
+subjects:
+  - kind: ServiceAccount
+    name: {{ $account }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: {{ $leaseName | quote }}
+  namespace: {{ .Release.Namespace }}
+# The election client manages the Lease spec.

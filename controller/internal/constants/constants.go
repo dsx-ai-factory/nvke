@@ -86,9 +86,10 @@ const (
 	LabelKeyNodeLabelTerminate             = "nke.nvidia.com/terminate"
 	LabelKeyNodeLabelTerminateStatus       = "nke.nvidia.com/terminate-status"
 
-	// NKE label keys and values for cluster static entries
-	LabelKeyNkeManagedBy   = "nke.nvidia.com/managed-by"
-	LabelValueNkeManagedBy = "cloud-workflow-engine"
+	// NKE label key for cluster static entries. The value is
+	// config.Config.ManagedByLabelValue, not a constant -- it is
+	// per-install configurable.
+	LabelKeyNkeManagedBy = "nke.nvidia.com/managed-by"
 
 	// NamespaceNKESystem is the shared management-plane namespace for tenant-access
 	// Secrets and OIDC-mode CAPI objects. The Helm chart creates it unconditionally.
@@ -103,12 +104,13 @@ const (
 	LabelValueKubeconfigModeSPIRE = "spire"
 	LabelValueKubeconfigModeAdmin = "admin"
 
-	// NKE Field Managers for server-side apply
-	FieldManagerCWE                   = "cloud-workflow-engine"
-	FieldManagerCWERebootMachine      = "cloud-workflow-engine-reboot-machine"
-	FieldManagerCWEMachineHealthIssue = "cloud-workflow-engine-machine-health-issue"
-	FieldManagerNicoTpmSpiffe         = "nico-tpm-spiffe-controller"
-	FieldManagerMachineSpireEntry     = "machine-spire-entry-controller"
+	// NKE Field Managers for server-side apply. This controller's own three
+	// (config.Config.FieldManagerName, FieldManagerRebootMachineName,
+	// FieldManagerMachineHealthIssueName) are per-install configurable, not
+	// constants here. FieldManagerNicoTpmSpiffe and FieldManagerMachineSpireEntry
+	// are not CWE-branded and stay fixed.
+	FieldManagerNicoTpmSpiffe     = "nico-tpm-spiffe-controller"
+	FieldManagerMachineSpireEntry = "machine-spire-entry-controller"
 
 	// Node annotations
 	NodeAnnotationKeyMachineHealthIssue = "nke.nvidia.com/machine-health-issue"

@@ -153,6 +153,15 @@ func NewWorker(
 	trustDomain string,
 	tenantClientProvider *kube.DBClusterTenantClientProvider,
 ) (worker.Worker, error) {
+	controllerClientCABundle := ""
+	if cfg.NodeAgentExternalMTLSEnabled {
+		caPEM, err := os.ReadFile(config.NodeAgentExternalTLSCAPath)
+		if err != nil {
+			return nil, fmt.Errorf("read controller client CA bundle: %w", err)
+		}
+		controllerClientCABundle = string(caPEM)
+	}
+
 	workerOpts := worker.Options{}
 	if cfg.Tracing.Enabled {
 		tracingInterceptor, err := newTracingInterceptor()
@@ -171,6 +180,7 @@ func NewWorker(
 		nodeAgentClient,
 		trustDomain,
 		tenantClientProvider,
+		controllerClientCABundle,
 	))
 
 	w.RegisterWorkflow(workflows.ProvisionCluster)

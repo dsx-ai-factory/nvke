@@ -566,9 +566,9 @@ func (s *NodeAgentServer) rootedPath(path string) string {
 
 func listStaticPodContainerIDs(runner nkeutils.CommandRunner, containerName string) ([]string, error) {
 	output, err := runner.RunSplitOutput("crictl", []string{
-		"ps",                                                       //nolint:goconst // crictl argv fragment; naming each CLI flag reads worse than the literal
-		"--label", "io.kubernetes.container.name=" + containerName, //nolint:goconst // crictl argv fragment; naming each CLI flag reads worse than the literal
-		"-o", "json", //nolint:goconst // crictl argv fragment; naming each CLI flag reads worse than the literal
+		"ps",
+		"--label", "io.kubernetes.container.name=" + containerName,
+		"-o", "json",
 	}, nil)
 	if stderr := strings.TrimSpace(string(output.Stderr)); stderr != "" {
 		slog.Warn("crictl ps static pod wrote to stderr", "container", containerName, "stderr", stderr)
@@ -681,7 +681,7 @@ func sleepOrDone(ctx context.Context, d time.Duration) error {
 }
 
 func (s *NodeAgentServer) removeKubeVipFromLoopback(runner nkeutils.CommandRunner, vip string) error {
-	output, err := runner.Run("ip", []string{"addr", "del", vip + "/32", "dev", "lo"}, nil) //nolint:goconst // ip(8) argv fragment; naming each CLI flag reads worse than the literal
+	output, err := runner.Run("ip", []string{"addr", "del", vip + "/32", "dev", "lo"}, nil)
 	if err == nil {
 		slog.Info("removed kube-vip address from lo", "vip", vip)
 		return nil
@@ -739,8 +739,8 @@ func (s *NodeAgentServer) closeRemoteVipPeers(runner nkeutils.CommandRunner, vip
 	for _, peer := range peers {
 		slog.Info("closing stale remote VIP socket", "vip", vip, "port", port, "peerIP", peer.IP, "peerPort", peer.Port)
 		output, err := runner.Run("ss", []string{
-			"-Ktan", "state", "established", //nolint:goconst // ss(8) argv fragment; naming each CLI flag reads worse than the literal
-			"src", vip, "sport", "=", ":" + strconv.Itoa(port), //nolint:goconst // ss(8) filter keyword, not a domain term
+			"-Ktan", "state", "established",
+			"src", vip, "sport", "=", ":" + strconv.Itoa(port),
 			"dst", peer.IP, "dport", "=", ":" + peer.Port,
 		}, nil)
 		if err != nil {
@@ -807,7 +807,7 @@ func formatVipSocketPeers(vip string, port int, peers []vipSocketPeer) string {
 
 func (s *NodeAgentServer) listRemoteVipPeers(runner nkeutils.CommandRunner, vip string, port int) ([]vipSocketPeer, error) {
 	output, err := runner.Run("ss", []string{
-		"-Htan", "state", "established", //nolint:goconst // ss(8) argv fragment; naming each CLI flag reads worse than the literal
+		"-Htan", "state", "established",
 		"src", vip, "sport", "=", ":" + strconv.Itoa(port),
 	}, nil)
 	if err != nil {

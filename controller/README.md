@@ -87,6 +87,28 @@ Use the latest tagged version or a specific semver (e.g. `@v0.0.5`) as needed.
 For the controller-to-node-agent TLS/JWT transport configuration, see
 [Configuring node-agent TLS/JWT authentication](docs/configuring-node-agent-tls-jwt.md).
 
+External node-agent mTLS identity is disabled by default. When enabled, the
+controller mounts the configured externally managed Secret read-only and
+presents that certificate instead of its SPIRE X509-SVID. This setting is
+independent of the application-level authentication protocol used with the node
+agent. In this mode, the agent's self-signed server certificate is not verified.
+For NICo nodes, the controller exposes generated files through the OS-profile
+template value `.Files`. Each entry contains its path, owner, permissions,
+encoding, and content in the representation declared by that encoding.
+Compatible profiles append those entries to their existing cloud-init
+`write_files` list and quote the metadata and content. CAPI serializes the same
+file model directly. In every mode, both paths replace `/etc/default/nke-agent`
+with a plain-text configuration containing the node-agent port. External mTLS
+also writes the CA to `/etc/nke/controller-ca.crt` with `encoding: b64` and adds
+`--controller-client-ca-bundle=/etc/nke/controller-ca.crt` to the agent
+arguments. These controller files follow any provider or profile files so the
+defaults win within `write_files`; NICo profiles and CAPI users may replace the
+agent configuration later through `runcmd` or `preKubeadmCommands`. The
+controller does not validate profile compatibility.
+Release the compatible agent, DSX profiles, and images before enabling external mTLS.
+Secret updates take effect in the controller after its reloader-triggered pod
+restart, but do not rotate the CA on existing nodes.
+
 ## CAPI + Tilt Development (Recommended)
 
 This is the recommended local workflow for developing against a Kind management cluster with CAPD.

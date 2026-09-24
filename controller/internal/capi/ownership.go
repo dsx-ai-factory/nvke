@@ -35,11 +35,11 @@ func ValidateSecretOwnership(secret *corev1.Secret, cluster db.Cluster) error {
 }
 
 // SetSecretOwnership writes the immutable ownership labels onto secret.
-func SetSecretOwnership(secret *corev1.Secret, cluster db.Cluster, mode string) {
+func SetSecretOwnership(secret *corev1.Secret, cluster db.Cluster, mode, managedByLabelValue string) {
 	if secret.Labels == nil {
 		secret.Labels = map[string]string{}
 	}
-	secret.Labels[constants.LabelKeyNkeManagedBy] = constants.LabelValueNkeManagedBy
+	secret.Labels[constants.LabelKeyNkeManagedBy] = managedByLabelValue
 	secret.Labels[constants.LabelKeyClusterID] = cluster.ID.String()
 	secret.Labels[constants.LabelKeyKubeconfigMode] = mode
 }

@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v2
+name: nktp
+description: A scalable, OpenTelemetry pipeline for collecting, processing, and exporting Kubernetes metrics, logs, and traces.
+type: application
+version: 0.1.0
+home: https://github.com/dsx-ai-factory/nke/tree/main/nktp
+sources:
+  - https://github.com/dsx-ai-factory/nke
+
+dependencies:
+  - name: opentelemetry-kube-stack
+    repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+    version: 0.22.0
+  - name: prometheus-node-exporter
+    alias: node-exporter
+    repository: https://prometheus-community.github.io/helm-charts
+    version: 4.56.1
+    condition: node-exporter.enabled
+  - name: metrics-server
+    repository: https://kubernetes-sigs.github.io/metrics-server/
+    version: 3.13.1
+    condition: metrics-server.enabled

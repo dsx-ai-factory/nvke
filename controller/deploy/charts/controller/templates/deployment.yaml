@@ -21,6 +21,9 @@ metadata:
   {{- if and .Values.secrets.cnpgDbPasswordsSecretName (not (hasKey (default dict .Values.deploymentAnnotations) "secret.reloader.stakater.com/reload")) }}
   {{- $reloadSecrets = append $reloadSecrets .Values.secrets.cnpgDbPasswordsSecretName }}
   {{- end }}
+  {{- if and .Values.nodeAgent.externalMTLS.enabled (not (hasKey (default dict .Values.deploymentAnnotations) "secret.reloader.stakater.com/reload")) }}
+  {{- $reloadSecrets = append $reloadSecrets (required "nodeAgent.externalMTLS.secret.name is required when external mTLS is enabled" .Values.nodeAgent.externalMTLS.secret.name) }}
+  {{- end }}
   {{- if and .Values.apiAuth.enabled (not (hasKey (default dict .Values.deploymentAnnotations) "configmap.reloader.stakater.com/reload")) }}
   {{- $reloadConfigMaps = append $reloadConfigMaps .Values.apiAuth.configMap.name }}
   {{- end }}
@@ -153,6 +156,11 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            {{- if .Values.nodeAgent.externalMTLS.enabled }}
+            - name: node-agent-client-tls
+              mountPath: /etc/nke/node-agent-client-tls
+              readOnly: true
+            {{- end }}
             {{- if .Values.apiAuth.enabled }}
             - name: nke-auth-config
               mountPath: {{ include "controller.apiAuth.mountPath" . | quote }}
@@ -182,6 +190,16 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
+            # Identity strings for Server-Side-Apply field managers and the
+            # managed-by label. See values.yaml identity.* for the greenfield story.
+            - name: FIELD_MANAGER_NAME
+              value: {{ .Values.identity.fieldManagerName | quote }}
+            - name: FIELD_MANAGER_REBOOT_MACHINE_NAME
+              value: {{ .Values.identity.fieldManagerRebootMachineName | quote }}
+            - name: FIELD_MANAGER_MACHINE_HEALTH_ISSUE_NAME
+              value: {{ .Values.identity.fieldManagerMachineHealthIssueName | quote }}
+            - name: MANAGED_BY_LABEL_VALUE
+              value: {{ .Values.identity.managedByLabelValue | quote }}
             # Metrics server listen address
             - name: METRICS_LISTEN_ADDRESS
               value: {{ .Values.metrics.listenAddress | quote }}
@@ -233,7 +251,11 @@ spec:
               value: {{ required "nodeAgent.tlsJwt.algorithms must contain at least one algorithm when TLS/JWT is enabled" (join "," .Values.nodeAgent.tlsJwt.algorithms) | quote }}
             - name: NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN
               value: {{ required "nodeAgent.tlsJwt.subjectTrustDomain is required when TLS/JWT is enabled" .Values.nodeAgent.tlsJwt.subjectTrustDomain | quote }}
+            - name: NODE_AGENT_TLS_JWT_DSX_IDENTITY_EXCHANGE_URL
+              value: {{ required "nodeAgent.tlsJwt.dsxIdentityExchangeURL is required when TLS/JWT is enabled" (.Values.nodeAgent.tlsJwt.dsxIdentityExchangeURL | trim) | quote }}
             {{- end }}
+            - name: NODE_AGENT_EXTERNAL_MTLS_ENABLED
+              value: {{ .Values.nodeAgent.externalMTLS.enabled | quote }}
             - name: NKE_OIDC_AUTH_ENABLED
               value: {{ .Values.nkeOIDCAuth.enabled | quote }}
             {{- if .Values.nkeOIDCAuth.issuerURL }}
@@ -333,6 +355,13 @@ spec:
             - name: TELEPORT_ENVIRONMENT
               value: {{ .Values.teleport.environment | quote }}
             {{- end }}
+            # Set unconditionally: node userdata carries a TPM join token
+            # name and ownership label regardless of teleport.enabled, which
+            # only gates this controller's own Teleport API client.
+            - name: TELEPORT_MANAGED_BY_LABEL_VALUE
+              value: {{ .Values.teleport.managedByLabelValue | quote }}
+            - name: TELEPORT_TOKEN_NAME_PREFIX
+              value: {{ .Values.teleport.tokenNamePrefix | quote }}
             {{- if .Values.secrets.dgxcTenantCredSecretName }}
             - name: DGXC_TENANT_USER
               valueFrom:
@@ -385,6 +414,18 @@ spec:
               value: {{ .value | quote }}
             {{- end }}
       volumes:
+        {{- if .Values.nodeAgent.externalMTLS.enabled }}
+        - name: node-agent-client-tls
+          secret:
+            secretName: {{ required "nodeAgent.externalMTLS.secret.name is required when external mTLS is enabled" .Values.nodeAgent.externalMTLS.secret.name }}
+            items:
+              - key: {{ required "nodeAgent.externalMTLS.secret.certificateKey is required when external mTLS is enabled" .Values.nodeAgent.externalMTLS.secret.certificateKey }}
+                path: tls.crt
+              - key: {{ required "nodeAgent.externalMTLS.secret.privateKeyKey is required when external mTLS is enabled" .Values.nodeAgent.externalMTLS.secret.privateKeyKey }}
+                path: tls.key
+              - key: {{ required "nodeAgent.externalMTLS.secret.caBundleKey is required when external mTLS is enabled" .Values.nodeAgent.externalMTLS.secret.caBundleKey }}
+                path: ca.crt
+        {{- end }}
         {{- if .Values.profiles.image.enabled }}
         - name: profiles
           emptyDir: {}

@@ -1,0 +1,37 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+{{- $key := "large_target_metrics" }}
+{{- $values := index $.Values $key }}
+{{- $name := printf "nktp-%s-targetallocator" ($key | replace "_" "-") }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $name }}-{{ $.Release.Namespace }}
+# Unauthenticated discovery does not need Secret access.
+# The upstream Secret watcher can log Forbidden while monitor discovery continues.
+rules:
+  - apiGroups: [""]
+    resources: [pods, services, endpoints, namespaces, nodes]
+    verbs: [get, list, watch]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list, watch]
+  - apiGroups: [monitoring.coreos.com]
+    resources: [servicemonitors, podmonitors, probes, scrapeconfigs]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $name }}-{{ $.Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $name }}-{{ $.Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $values.kubernetes.targetAllocator.serviceAccount | default $name }}
+    namespace: {{ $.Release.Namespace }}

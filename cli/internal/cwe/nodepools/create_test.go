@@ -82,7 +82,8 @@ func TestCreateNodePoolFromStdin(t *testing.T) {
 
 	cmd := NewCreateCmd(clientFn)
 	cmd.SetIn(bytes.NewBufferString(fmt.Sprintf(
-		"clusterID: %s\nname: from-stdin\nnodeNamePrefix: gpu\ndesiredNodeCount: 1\n", clusterID)))
+		"clusterID: %s\nname: from-stdin\nnodeNamePrefix: gpu\ndesiredNodeCount: 1\n", clusterID,
+	)))
 
 	out, err := run(t, cmd, "-f", "-")
 	if err != nil {
@@ -101,7 +102,8 @@ func TestCreateNodePoolFromJSON(t *testing.T) {
 	clusterID := fake.clusterIDFor(t, "alpha")
 
 	spec := fmt.Sprintf(
-		`{"clusterID": %q, "name": "json-pool", "nodeNamePrefix": "gpu", "desiredNodeCount": 3}`, clusterID)
+		`{"clusterID": %q, "name": "json-pool", "nodeNamePrefix": "gpu", "desiredNodeCount": 3}`, clusterID,
+	)
 
 	out, err := run(t, NewCreateCmd(clientFn), "-f", writeSpec(t, "pool.json", spec))
 	if err != nil {
@@ -163,7 +165,8 @@ func TestCreateNodePoolUnknownField(t *testing.T) {
 	clusterID := fake.clusterIDFor(t, "alpha")
 
 	spec := fmt.Sprintf(
-		"clusterID: %s\nname: bad\nnodeNamePrefix: gpu\ndesiredNodeCount: 1\ntaints: []\n", clusterID)
+		"clusterID: %s\nname: bad\nnodeNamePrefix: gpu\ndesiredNodeCount: 1\ntaints: []\n", clusterID,
+	)
 
 	out, err := run(t, NewCreateCmd(clientFn), "-f", writeSpec(t, "pool.yaml", spec))
 	if err == nil {
@@ -229,7 +232,8 @@ func TestCreateNodePoolServerErrors(t *testing.T) {
 			fake.failCreateWith(tc.status, tc.body)
 
 			spec := fmt.Sprintf(
-				"clusterID: %s\nname: gpu-workers\nnodeNamePrefix: gpu\ndesiredNodeCount: 1\n", clusterID)
+				"clusterID: %s\nname: gpu-workers\nnodeNamePrefix: gpu\ndesiredNodeCount: 1\n", clusterID,
+			)
 
 			out, err := run(t, NewCreateCmd(clientFn), "-f", writeSpec(t, "pool.yaml", spec))
 			if err == nil {

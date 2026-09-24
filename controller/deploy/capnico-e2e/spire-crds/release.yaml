@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Cluster-scoped CRDs only, shipped separately from the spire chart because helm
+# never upgrades CRDs that are part of a chart. Installed before spire so its
+# controller manager has kinds to reconcile, and before anything applies a
+# ClusterSPIFFEID.
+chart:
+  name: spire-crds
+  version: "0.6.1"
+  repository: https://spiffe.github.io/helm-charts-hardened/
+release:
+  name: spire-crds
+  namespace: spire-server

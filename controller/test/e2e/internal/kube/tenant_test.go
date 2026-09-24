@@ -25,6 +25,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -395,6 +396,7 @@ func TestGetAdminClientReadsPublishedKubeconfigAndRegistersVerifierSchemes(t *te
 		appsv1.SchemeGroupVersion.WithKind("ReplicaSet"),
 		coordinationv1.SchemeGroupVersion.WithKind("Lease"),
 		corev1.SchemeGroupVersion.WithKind("Pod"),
+		networkingv1.SchemeGroupVersion.WithKind("NetworkPolicy"),
 		policyv1.SchemeGroupVersion.WithKind("PodDisruptionBudget"),
 	} {
 		if !tenantClient.Scheme().Recognizes(gvk) {

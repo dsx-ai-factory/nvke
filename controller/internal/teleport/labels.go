@@ -10,8 +10,10 @@ import (
 )
 
 const (
+	// LabelManagedBy is the label key. Its value is
+	// config.TeleportConfig.ManagedByLabelValue, not a constant -- it is
+	// per-install configurable.
 	LabelManagedBy             = "managed-by"
-	LabelManagedByValue        = "nke-cloud-workflow-engine"
 	LabelResourceGroup         = "resource-group"
 	LabelResourceGroupNKEValue = "nke"
 	LabelSite                  = "site"
@@ -35,23 +37,24 @@ func NodeRoleLabel(controlPlane bool) string {
 	return LabelNodeRoleWorker
 }
 
-var ErrNotOwnedByCWE = errors.New("token is not managed by nke-cloud-workflow-engine")
+var ErrNotOwnedByCWE = errors.New("token is not managed by this controller")
 
-// OwnershipLabels returns the standard ownership labels for CWE-managed tokens.
-func OwnershipLabels() map[string]string {
+// OwnershipLabels returns the standard ownership labels for tokens managed by
+// this controller, stamped with managedByValue (config.TeleportConfig.ManagedByLabelValue).
+func OwnershipLabels(managedByValue string) map[string]string {
 	return map[string]string{
-		LabelManagedBy: LabelManagedByValue,
+		LabelManagedBy: managedByValue,
 	}
 }
 
 // MergeLabels merges ownership labels with user-provided labels. Ownership labels take precedence.
-func MergeLabels(userLabels map[string]string) map[string]string {
+func MergeLabels(userLabels map[string]string, managedByValue string) map[string]string {
 	result := make(map[string]string)
 
 	for k, v := range userLabels {
 		result[k] = v
 	}
-	for k, v := range OwnershipLabels() {
+	for k, v := range OwnershipLabels(managedByValue) {
 		result[k] = v
 	}
 
@@ -59,8 +62,8 @@ func MergeLabels(userLabels map[string]string) map[string]string {
 }
 
 // IsOwnedByCWE checks if a token has the correct managed-by label.
-func IsOwnedByCWE(labels map[string]string) bool {
-	return labels[LabelManagedBy] == LabelManagedByValue
+func IsOwnedByCWE(labels map[string]string, managedByValue string) bool {
+	return labels[LabelManagedBy] == managedByValue
 }
 
 // BuildLabelsString constructs a sorted, comma-separated "key=value" label string.

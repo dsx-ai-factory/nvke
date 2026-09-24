@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Deploy path for the CAPD end-to-end lane. Hand-authored: there is no umbrella
+# chart and no generator -- each component is its own helm release, and the item
+# order below IS the install order, which is what docs/site-bootstrap/
+# deploy-repository.md specifies.
+#
+# cert-manager is deliberately absent. clusterctl init installs it before this
+# runs, so a second owner would fail on CRDs it cannot adopt. The CAPI
+# providers are absent for the same reason -- clusterctl brings all four.
+#
+# capnico-crds is here rather than in the prologue because it is a plain apply
+# of a pinned release's CRDs, which is what a manifest item is.
+items:
+  - {name: nke-base-config, type: manifest}
+  - {name: nke-auth-dev, type: manifest}
+  - {name: spire-tpm-pubhashes, type: manifest}
+  - {name: spire-server-nodeport, type: manifest}
+  - {name: spire-oidc-provider-nodeport, type: manifest}
+  - {name: nke-spire-client, type: manifest}
+  - {name: capnico-crds, type: manifest}
+  - {name: capd-cwe-rbac, type: manifest}
+  - {name: capd-reboot-controller, type: manifest}
+  - {name: postgresql, type: helm}
+  - {name: spire-crds, type: helm}
+  - {name: temporal, type: helm}
+  - {name: spire, type: helm}
+  - {name: controller, type: helm}

@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
@@ -29,10 +30,24 @@ import (
 
 	server "github.com/dsx-ai-factory/nke/agent/internal/agent"
 	"github.com/dsx-ai-factory/nke/agent/internal/grpcserver"
+	"github.com/dsx-ai-factory/nke/agent/internal/tlsjwt"
 )
 
 const (
 	DefaultNodeServerListenPort = "15005"
+
+	// authModeSPIFFEMTLS serves gRPC over SPIFFE mTLS alone: the agent's X.509
+	// SVID is its identity to the controller.
+	authModeSPIFFEMTLS = "spiffe-mtls"
+	// authModeTLSJWT adds the pre-gRPC authentication exchange on top of the
+	// secure base transport. The agent sends a DSX identity token once the
+	// handshake has authenticated the controller.
+	authModeTLSJWT = "tls-jwt"
+
+	// defaultDSXIdentityTimeout bounds one token-exchange call. It sits well
+	// inside tlsjwt.HandshakeTimeout so a slow exchange fails the exchange
+	// rather than the whole handshake deadline.
+	defaultDSXIdentityTimeout = 10 * time.Second
 )
 
 // VERSION is set at build time via: -ldflags "-X main.VERSION=<version>"
@@ -56,16 +71,42 @@ func envOr(key, fallback string) string {
 // TODO:  May want to move this and define it in the agent package, and just
 // pass the full config to NewAgent but for now beyond the scope of this commit :)
 type AgentConfig struct {
-	Version               string
-	NodeServerListenPort  string
-	MLX5Rescan            bool
-	BundleServerURL       string
-	IndexFileURL          string
-	CniImageRegistry      string
-	AuditLogger           *slog.Logger
-	ScriptExecutionLogger *slog.Logger
-	DisableMTLS           bool
-	SPIFFESocketPath      string
+	Version                string
+	NodeServerListenPort   string
+	MLX5Rescan             bool
+	BundleServerURL        string
+	IndexFileURL           string
+	CniImageRegistry       string
+	AuditLogger            *slog.Logger
+	ScriptExecutionLogger  *slog.Logger
+	DisableMTLS            bool
+	SPIFFESocketPath       string
+	GRPCAuthMode           string
+	DSXIdentityExchangeURL string
+	DSXIdentityCABundle    string
+	DSXIdentityTimeout     time.Duration
+}
+
+// validateAuthConfig rejects authentication settings that cannot work, so a
+// misconfigured agent fails at startup with a readable message instead of
+// failing every handshake.
+func validateAuthConfig(cfg AgentConfig) error {
+	switch cfg.GRPCAuthMode {
+	case authModeSPIFFEMTLS:
+		return nil
+	case authModeTLSJWT:
+		if cfg.DisableMTLS {
+			return fmt.Errorf("--grpc-auth-mode=%s cannot be combined with --disable-mtls: "+
+				"the agent must authenticate the controller before it sends an identity token", authModeTLSJWT)
+		}
+		if cfg.DSXIdentityExchangeURL == "" {
+			return fmt.Errorf("--grpc-auth-mode=%s requires --dsx-identity-exchange-url", authModeTLSJWT)
+		}
+		return nil
+	default:
+		return fmt.Errorf("--grpc-auth-mode must be %q or %q, got %q",
+			authModeSPIFFEMTLS, authModeTLSJWT, cfg.GRPCAuthMode)
+	}
 }
 
 func Bootstrap(kubeVersion string) error {
@@ -154,6 +195,33 @@ func buildSpiffeMtlsConfig(ctx context.Context, socketPath string) (*tls.Config,
 	return tlsconfig.MTLSServerConfig(source, source, authorizer), nil
 }
 
+// buildTLSJWTCredentials wraps base with the pre-gRPC authentication exchange.
+// It builds the token source but does not mint a token: the first connection
+// does that, so an unreachable SPIRE or DSX Identity leaves the agent listening
+// and failing handshakes rather than refusing to start.
+func buildTLSJWTCredentials(
+	ctx context.Context,
+	cfg AgentConfig,
+	base credentials.TransportCredentials,
+) (credentials.TransportCredentials, error) {
+	jwtSource, err := workloadapi.NewJWTSource(ctx, workloadapi.WithClientOptions(workloadapi.WithAddr(cfg.SPIFFESocketPath)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create jwt-svid source: %w", err)
+	}
+
+	exchanger, err := tlsjwt.NewExchangeClient(cfg.DSXIdentityExchangeURL, cfg.DSXIdentityCABundle, cfg.DSXIdentityTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dsx identity exchange client: %w", err)
+	}
+
+	tokens, err := tlsjwt.NewCachingTokenSource(tlsjwt.WorkloadAPISVIDs(jwtSource), exchanger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create node-agent token source: %w", err)
+	}
+
+	return tlsjwt.NewServerCredentials(base, tokens, slog.Default())
+}
+
 // newAuditLogInterceptor returns an interceptor that logs audit events using the provided logger.
 func newAuditLogInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
 	return func(
@@ -206,7 +274,17 @@ func startSecureServer(ctx context.Context, cfg AgentConfig, agentServer *server
 		if err != nil {
 			log.Fatalf("failed to build SPIFFE mTLS config: %v", err)
 		}
-		serverOptions = append(serverOptions, grpc.Creds(credentials.NewTLS(tlsCfg)))
+
+		var transportCredentials credentials.TransportCredentials = credentials.NewTLS(tlsCfg)
+		if cfg.GRPCAuthMode == authModeTLSJWT {
+			slog.Info("adding TLS/JWT authentication to gRPC", "exchange_endpoint", cfg.DSXIdentityExchangeURL)
+			transportCredentials, err = buildTLSJWTCredentials(ctx, cfg, transportCredentials)
+			if err != nil {
+				slog.Error("failed to build TLS/JWT credentials", "err", err)
+				os.Exit(1)
+			}
+		}
+		serverOptions = append(serverOptions, grpc.Creds(transportCredentials))
 	}
 
 	s := grpc.NewServer(serverOptions...)
@@ -257,6 +335,29 @@ func main() {
 	disableMLX5Rescan := flag.Bool("disable-mlx5-rescan", false, "Disable mlx5 rescan (disables the init routine mlx5 reset proc)")
 	disableMTLS := flag.Bool("disable-mtls", false, "Disable mTLS / use plaintext gRPC (development only)")
 	spiffeSocketPath := flag.String("spiffe-socket-path", "unix:///tmp/spire-agent/public/api.sock", "Path to the SPIFFE workload API socket (--disable-mtls ignores this)")
+	grpcAuthMode := flag.String(
+		"grpc-auth-mode",
+		authModeSPIFFEMTLS,
+		fmt.Sprintf("gRPC authentication mode: %q serves SPIFFE mTLS alone, %q also sends a DSX identity token "+
+			"to the controller before gRPC starts", authModeSPIFFEMTLS, authModeTLSJWT),
+	)
+	dsxIdentityExchangeURL := flag.String(
+		"dsx-identity-exchange-url",
+		envOr("NKE_DSX_IDENTITY_EXCHANGE_URL", ""),
+		"DSX Identity token-exchange endpoint, required by --grpc-auth-mode=tls-jwt. Also set via NKE_DSX_IDENTITY_EXCHANGE_URL. "+
+			"Example: https://dsx-identity.example.com/v1/exchange",
+	)
+	dsxIdentityCABundle := flag.String(
+		"dsx-identity-ca-bundle",
+		envOr("NKE_DSX_IDENTITY_CA_BUNDLE", ""),
+		"PEM CA bundle authenticating the DSX Identity endpoint. When empty, the system trust store is used. "+
+			"Also set via NKE_DSX_IDENTITY_CA_BUNDLE",
+	)
+	dsxIdentityTimeout := flag.Duration(
+		"dsx-identity-timeout",
+		defaultDSXIdentityTimeout,
+		"Timeout for one DSX Identity token-exchange request",
+	)
 	versionFlag := flag.Bool("version", false, "Print the version and exit")
 	auditLogFileName := flag.String(
 		"audit-log-file",
@@ -302,16 +403,25 @@ func main() {
 
 	// Build config from flags and build-time vars
 	cfg := AgentConfig{
-		Version:               VERSION,
-		NodeServerListenPort:  *secureServerPort,
-		MLX5Rescan:            !*disableMLX5Rescan,
-		BundleServerURL:       *bundleServerURL,
-		IndexFileURL:          *indexFileURL,
-		CniImageRegistry:      *cniImageRegistry,
-		AuditLogger:           auditLogger,
-		ScriptExecutionLogger: scriptExecutionLogger,
-		DisableMTLS:           *disableMTLS,
-		SPIFFESocketPath:      *spiffeSocketPath,
+		Version:                VERSION,
+		NodeServerListenPort:   *secureServerPort,
+		MLX5Rescan:             !*disableMLX5Rescan,
+		BundleServerURL:        *bundleServerURL,
+		IndexFileURL:           *indexFileURL,
+		CniImageRegistry:       *cniImageRegistry,
+		AuditLogger:            auditLogger,
+		ScriptExecutionLogger:  scriptExecutionLogger,
+		DisableMTLS:            *disableMTLS,
+		SPIFFESocketPath:       *spiffeSocketPath,
+		GRPCAuthMode:           *grpcAuthMode,
+		DSXIdentityExchangeURL: *dsxIdentityExchangeURL,
+		DSXIdentityCABundle:    *dsxIdentityCABundle,
+		DSXIdentityTimeout:     *dsxIdentityTimeout,
+	}
+
+	if err := validateAuthConfig(cfg); err != nil {
+		slog.Error("invalid authentication configuration", "err", err)
+		os.Exit(1)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

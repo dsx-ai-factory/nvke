@@ -13,6 +13,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	enums "go.temporal.io/api/enums/v1"
+	workflowpb "go.temporal.io/api/workflow/v1"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
@@ -198,4 +201,60 @@ func TestControlPlaneDeleteStateHelpers(t *testing.T) {
 	assert.Equal(t, tearingDown.ID, got.ID)
 
 	assert.Len(t, (&controlPlane{nodes: []db.Node{healthy, requested, tearingDown}}).nodesWithDeleteRequested(), 1)
+}
+
+// TestTeardownClosedUnsuccessfully pins the predicate that decides whether a
+// teardown needs a fresh run. Nothing else retries TeardownNode, so reading a
+// closed-and-failed run as "still in flight" is what wedges the cluster: the
+// node keeps Deleting, every later control-plane delete, join, remediation and
+// rollout defers behind it, and the row still counts toward the control plane's
+// size so no replacement is built either.
+func TestTeardownClosedUnsuccessfully(t *testing.T) {
+	t.Parallel()
+
+	closed := timestamppb.New(time.Now())
+
+	tests := []struct {
+		name string
+		info *workflowpb.WorkflowExecutionInfo
+		want bool
+	}{
+		{
+			name: "still running is not a candidate",
+			info: &workflowpb.WorkflowExecutionInfo{Status: enums.WORKFLOW_EXECUTION_STATUS_RUNNING},
+			want: false,
+		},
+		{
+			name: "completed is not a candidate",
+			info: &workflowpb.WorkflowExecutionInfo{CloseTime: closed, Status: enums.WORKFLOW_EXECUTION_STATUS_COMPLETED},
+			want: false,
+		},
+		{
+			name: "failed needs a fresh run",
+			info: &workflowpb.WorkflowExecutionInfo{CloseTime: closed, Status: enums.WORKFLOW_EXECUTION_STATUS_FAILED},
+			want: true,
+		},
+		{
+			name: "terminated needs a fresh run",
+			info: &workflowpb.WorkflowExecutionInfo{CloseTime: closed, Status: enums.WORKFLOW_EXECUTION_STATUS_TERMINATED},
+			want: true,
+		},
+		{
+			name: "timed out needs a fresh run",
+			info: &workflowpb.WorkflowExecutionInfo{CloseTime: closed, Status: enums.WORKFLOW_EXECUTION_STATUS_TIMED_OUT},
+			want: true,
+		},
+		{
+			name: "canceled needs a fresh run",
+			info: &workflowpb.WorkflowExecutionInfo{CloseTime: closed, Status: enums.WORKFLOW_EXECUTION_STATUS_CANCELED},
+			want: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, teardownClosedUnsuccessfully(tc.info))
+		})
+	}
 }

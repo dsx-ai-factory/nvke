@@ -185,6 +185,16 @@ done
 if ((copied > 0)); then
   run_priv chown -R "$(id -u):$(id -g)" "${CONSOLE_LOG_DIR}" 2>/dev/null
   log "Copied ${copied} serial-console log(s) to ${CONSOLE_LOG_DIR}"
+  # A guest that oopses reports only "Node data not available" upstack, and the
+  # console log that says why is inside a 3 GB artifact. Print the trace header
+  # so the job log names the cause. Seen on 7.0.0-1018-nvidia: a page fault in
+  # execmem_free killed the kworker and froze boot for 888 seconds.
+  oops="$(grep -ahoE '(BUG: unable to handle|Oops: |kernel BUG at |general protection fault|watchdog: BUG).*' \
+    "${CONSOLE_LOG_DIR}"/*ttyS0.log 2>/dev/null | sort -u)"
+  if [[ -n "${oops}" ]]; then
+    log "GUEST KERNEL FAULT in serial console:"
+    printf '%s\n' "${oops}"
+  fi
 else
   log "No *ttyS[01].log files found under: ${LOG_ROOTS[*]}"
 fi

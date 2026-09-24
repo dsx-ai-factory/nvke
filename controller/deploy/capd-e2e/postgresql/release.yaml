@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The development datastore: one pod, ephemeral, wrapping the official postgres
+# image pinned by digest. Not Bitnami's chart -- helm resolves dependencies at
+# package time over plain HTTPS, and Docker Hub's anonymous rate limit killed
+# two consecutive runs before the deploy had started.
+#
+# path, not repository: this chart lives in this repository and has no
+# dependencies, so helm installs it straight from the directory. Relative to
+# this deploy path.
+chart:
+  name: postgresql
+  version: "0.1.0"
+  path: ../charts/postgresql
+release:
+  name: postgresql
+  namespace: postgres
+values:
+  - values.yaml

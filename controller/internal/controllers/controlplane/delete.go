@@ -8,8 +8,14 @@ import (
 	"fmt"
 	"sort"
 
+	enums "go.temporal.io/api/enums/v1"
+	workflowpb "go.temporal.io/api/workflow/v1"
+	"go.temporal.io/sdk/client"
+
+	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
+	"github.com/dsx-ai-factory/nke/controller/internal/temporal/workflows"
 )
 
 // reconcileRequestedDeletes turns accepted control-plane node deletes into
@@ -33,9 +39,6 @@ func (r *reconciler) reconcileRequestedDeletes(
 	}
 
 	requested := cp.nodesWithDeleteRequested()
-	if len(requested) == 0 {
-		return false, nil
-	}
 
 	logger := r.logger.With(
 		"clusterID", cluster.ID,
@@ -43,11 +46,33 @@ func (r *reconciler) reconcileRequestedDeletes(
 		"requestedDeletes", len(requested),
 	)
 
+	// The in-flight check runs before the "nothing requested" return on purpose.
+	// A teardown whose workflow closed without completing is not in flight, and
+	// nothing else retries it: the outbox marks its entry processed as soon as
+	// the workflow starts, so the node keeps Deleting for good. That one row then
+	// defers every later control-plane delete, join, remediation and rollout, and
+	// still counts toward the control plane's size, so no replacement is built
+	// either. A wedged cluster has no requested deletes left, so returning early
+	// would never look at it.
 	if deleting, ok := cp.nodeTearingDown(); ok {
+		restarted, err := r.restartFailedTeardown(ctx, deleting)
+		if err != nil {
+			return false, err
+		}
+		if restarted {
+			return true, nil
+		}
+		if len(requested) == 0 {
+			return false, nil
+		}
 		logger.Info("Deferring control-plane node delete: another teardown is already in flight",
 			"inFlightNodeID", deleting.ID,
 			"inFlightNodeName", deleting.Name,
 		)
+		return false, nil
+	}
+
+	if len(requested) == 0 {
 		return false, nil
 	}
 
@@ -60,6 +85,65 @@ func (r *reconciler) reconcileRequestedDeletes(
 
 	nodeLogger.Info("Started teardown for a requested control-plane node delete")
 	return true, nil
+}
+
+// restartFailedTeardown starts a fresh TeardownNode run for a node whose last
+// run closed without completing, and reports whether it started one.
+//
+// Same shape as joinWorkflowStatus above and reconcileK8sUpgrade: Temporal keeps
+// returning the closed execution, so without an explicit restart the node stays
+// Deleting forever. TeardownNode is idempotent step by step -- the cancels treat
+// a missing workflow as success, the drain and the kube Node delete ignore a
+// node that is already gone, the CAPI deletes ignore NotFound, and the agent's
+// etcd member removal succeeds when the member is absent -- so a second run
+// picks up wherever the first stopped.
+func (r *reconciler) restartFailedTeardown(ctx context.Context, node db.Node) (bool, error) {
+	if r.cweTemporalClient == nil {
+		return false, nil
+	}
+
+	workflowID := constants.TeardownNodeWorkflowPrefix + node.ID.String()
+	desc, err := r.cweTemporalClient.DescribeWorkflowExecution(ctx, workflowID, "")
+	if err != nil {
+		if isWorkflowNotFoundError(err) {
+			// The outbox has not delivered the start yet. Leave it alone.
+			return false, nil
+		}
+		return false, fmt.Errorf("describing teardown workflow for node %s: %w", node.ID, err)
+	}
+	if !teardownClosedUnsuccessfully(desc.GetWorkflowExecutionInfo()) {
+		return false, nil
+	}
+
+	input, err := nodes.RestartTeardownInput(node)
+	if err != nil {
+		return false, err
+	}
+
+	run, err := r.cweTemporalClient.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                r.cfg.TemporalTaskQueue,
+		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
+		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
+	}, workflows.TeardownNode, input)
+	if err != nil {
+		return false, fmt.Errorf("restarting teardown workflow for node %s (%s): %w", node.ID, node.Name, err)
+	}
+
+	r.logger.Warn("Restarted a control-plane node teardown whose workflow closed without completing",
+		"nodeID", node.ID,
+		"nodeName", node.Name,
+		"workflowID", run.GetID(),
+		"runID", run.GetRunID(),
+	)
+	return true, nil
+}
+
+// teardownClosedUnsuccessfully reports whether a described TeardownNode run has
+// finished and did not complete, so nothing will finish that teardown unless a
+// new run starts.
+func teardownClosedUnsuccessfully(info *workflowpb.WorkflowExecutionInfo) bool {
+	return info.GetCloseTime() != nil && info.GetStatus() != enums.WORKFLOW_EXECUTION_STATUS_COMPLETED
 }
 
 // selectNextControlPlaneNodeToDelete picks the request that has been waiting

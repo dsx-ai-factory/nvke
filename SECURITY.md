@@ -100,14 +100,29 @@ issues resolved under our coordinated vulnerability disclosure policy.
 
 ## Artifact integrity
 
-**nke has published pre-releases only, and none of their artifacts is signed
-yet. Each release attaches a SHA-256 `checksums.txt`; verify against it, and
-treat any artifact that does not match as unverified.**
+**Every release attaches a SHA-256 `checksums.txt` with a build-provenance
+attestation over it, and the images published to GHCR are attested by digest.
+Verify the attestation, then the checksums, and treat any artifact that fails
+either as unverified.**
 
-Every release artifact is published with a SHA-256 checksum file. Container
-images and binaries will be signed with [cosign](https://docs.sigstore.dev/)
-keyless signing, and verification instructions will be published in
-[RELEASE.md](RELEASE.md) alongside the first signed release. Third-party dependency licenses for the `agent` module are recorded in
+Release artifacts and the GHCR container images carry
+[GitHub build-provenance attestations](https://docs.github.com/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds):
+keyless Sigstore, signed against the GitHub Actions OIDC token, recording the
+workflow, ref and commit that produced the artifact, and logged in a public
+transparency log. There is no signing key held by this project.
+
+[RELEASE.md](RELEASE.md) carries the verify commands and what each attestation
+covers. Always pass `--repo dsx-ai-factory/nke` — that is what binds an
+attestation to this repository rather than to any GitHub workflow anywhere.
+
+A checksum alone proves a download arrived intact, not who produced it: whoever
+can replace an artifact can replace the checksum file beside it. That is what
+the attestation adds.
+
+The NVCR and DSX copies of the published images are not yet attested, because
+those registries do not serve the OCI referrers API. No SLSA level is claimed.
+
+Third-party dependency licenses for the `agent` module are recorded in
 [agent/THIRD_PARTY_NOTICES.md](agent/THIRD_PARTY_NOTICES.md), regenerated and
 verified in CI on every push.
 

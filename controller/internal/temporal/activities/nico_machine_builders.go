@@ -177,10 +177,10 @@ func (a *Activities) nicoMachineTeleportConfig(createCtx *capiMachineCreateConte
 
 	return &TeleportUserDataConfig{
 		Enabled:      true,
-		TokenName:    teleport.TPMTokenName(createCtx.node.ID),
+		TokenName:    teleport.TPMTokenName(a.cfg.Teleport.TokenNamePrefix, createCtx.node.ID),
 		ProxyAddress: a.cfg.Teleport.ProxyAddress,
 		JoinMethod:   string(teleport.JoinMethodTPM),
-		Labels:       buildTeleportLabels(createCtx.node, createCtx.cluster, nicoProvider, nodePoolID, isControlPlaneRole, a.cfg.NKESiteControllerName, a.cfg.Teleport.Environment),
+		Labels:       buildTeleportLabels(createCtx.node, createCtx.cluster, nicoProvider, nodePoolID, isControlPlaneRole, a.cfg.NKESiteControllerName, a.cfg.Teleport.Environment, a.cfg.Teleport.ManagedByLabelValue),
 	}, nil
 }
 
@@ -336,6 +336,7 @@ func (a *Activities) renderUserData(
 	userDataTemplate, err := template.New("userData").Funcs(
 		template.FuncMap{
 			"indent":     utils.Indent,
+			"quote":      utils.Quote,
 			"trimPrefix": utils.TrimPrefix,
 		},
 	).Parse(userDataTemplateText)
@@ -379,6 +380,7 @@ func (a *Activities) renderUserData(
 		CNIChartsPackage      string
 		CNIImagePackage       string
 		DiskSelectionStrategy string
+		Files                 []db.CloudInitFile
 		HashedPassword        string
 		Hostname              string
 		KubernetesVersion     string
@@ -397,6 +399,11 @@ func (a *Activities) renderUserData(
 		Username              string
 	}
 
+	files, err := a.nodeAgentBootstrapFiles()
+	if err != nil {
+		return "", err
+	}
+
 	if err := a.validateDgxcTenantCredentials(); err != nil {
 		return "", err
 	}
@@ -412,6 +419,7 @@ func (a *Activities) renderUserData(
 		CNIChartsPackage:      cniChartsPackage,
 		CNIImagePackage:       cniImagePackage,
 		DiskSelectionStrategy: string(diskSelectionStrategy),
+		Files:                 files,
 		HashedPassword:        hashedPassword,
 		Hostname:              node.Name,
 		KubernetesVersion:     kubernetesVersion,
@@ -438,10 +446,7 @@ func (a *Activities) renderUserData(
 		return "", fmt.Errorf("failed to execute userData template: %w", err)
 	}
 
-	return injectNodeAgentTLSJWTBootstrap(
-		userDataByteBuffer.String(),
-		a.nodeAgentTLSJWTBootstrapCommands(),
-	)
+	return userDataByteBuffer.String(), nil
 }
 
 func (a *Activities) validateDgxcTenantCredentials() error {
@@ -486,7 +491,7 @@ func cniChartsPackageName(plugin db.CniPlugin, version string) (string, error) {
 
 // buildTeleportLabels constructs YAML-formatted label lines for the Teleport config in userData.
 // Output is "key: value" per line (no leading indent); the template applies indentation.
-func buildTeleportLabels(node db.Node, cluster db.Cluster, nicoProvider db.NicoClusterProvider, nodePoolID uuid.UUID, controlPlane bool, siteName, environment string) string {
+func buildTeleportLabels(node db.Node, cluster db.Cluster, nicoProvider db.NicoClusterProvider, nodePoolID uuid.UUID, controlPlane bool, siteName, environment, managedByLabelValue string) string {
 	labels := map[string]string{
 		teleport.LabelNodeID:                node.ID.String(),
 		teleport.LabelNodeName:              node.Name,
@@ -496,7 +501,7 @@ func buildTeleportLabels(node db.Node, cluster db.Cluster, nicoProvider db.NicoC
 		teleport.LabelCluster:               cluster.ID.String(),
 		teleport.LabelClusterName:           cluster.Name,
 		teleport.LabelResourceGroup:         teleport.LabelResourceGroupNKEValue,
-		teleport.LabelManagedBy:             teleport.LabelManagedByValue,
+		teleport.LabelManagedBy:             managedByLabelValue,
 		teleport.LabelEnvironment:           environment,
 	}
 	if nodePoolID != uuid.Nil {

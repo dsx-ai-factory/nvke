@@ -90,8 +90,8 @@ nodeAgent:
   spireAttestationMethod: "tpm"
   tlsJwt:
     # -- Add JWT node authentication to the existing secure node-agent transport
-    # for every node agent managed by this controller. Requires spiffe.enabled
-    # until another TLS-capable base transport is available.
+    # for every node agent managed by this controller. Requires either
+    # spiffe.enabled or nodeAgent.externalMTLS.enabled.
     enabled: false
     # -- Identity issuer expected in node-agent JWTs.
     issuer: ""
@@ -102,6 +102,37 @@ nodeAgent:
       - RS256
     # -- Exact SPIFFE trust domain accepted in node-agent JWT subjects.
     subjectTrustDomain: ""
+    # -- DSX Identity token-exchange endpoint injected into node-agent bootstrap
+    # arguments when TLS/JWT is enabled.
+    dsxIdentityExchangeURL: ""
+  externalMTLS:
+    # -- Present an externally managed client certificate instead of the
+    # controller SPIRE X509-SVID.
+    enabled: false
+    secret:
+      # -- Name of the externally managed Secret containing the client identity.
+      name: ""
+      # -- Secret key containing the PEM-encoded client certificate chain.
+      certificateKey: tls.crt
+      # -- Secret key containing the PEM-encoded client private key.
+      privateKeyKey: tls.key
+      # -- Secret key containing the PEM-encoded issuing CA bundle.
+      caBundleKey: ca.crt
+
+# identity configures the strings this controller compiles into
+# Server-Side-Apply field managers and the nke.nvidia.com/managed-by label
+# value. Every value here defaults to today's literal, so an unset value is
+# today's behavior exactly.
+identity:
+  # -- Field manager for this controller's own CAPI/NICo Server-Side-Apply patches.
+  fieldManagerName: "cloud-workflow-engine"
+  # -- Field manager scoped to the CAPI Machine reboot annotation alone.
+  fieldManagerRebootMachineName: "cloud-workflow-engine-reboot-machine"
+  # -- Field manager used when patching a Machine's health-issue annotation.
+  fieldManagerMachineHealthIssueName: "cloud-workflow-engine-machine-health-issue"
+  # -- Value written under the nke.nvidia.com/managed-by label on objects this
+  # controller owns, and the value the tenant Secret reconciler filters on.
+  managedByLabelValue: "cloud-workflow-engine"
 
 nkeSystemNamespace:
   # -- Create the shared nke-system namespace. The object always carries
@@ -158,6 +189,12 @@ service:
   type: ClusterIP
   # -- apiserver port
   port: 8080
+  # -- NodePort to publish the apiserver on, via a second Service beside the one
+  # above. Empty renders no such Service. Set it where the API has to be
+  # reachable without a cluster route -- the host running `nkectl bootstrap
+  # site`, or an operator reaching /api on a node address. This does not change
+  # the Service above, which stays ClusterIP for in-cluster callers.
+  nodePort: ""
   # -- Additional annotations for the service
   annotations: {}
   # -- Additional labels for the service
@@ -564,3 +601,9 @@ teleport:
   identityFile: "/var/run/teleport/identity"
   # -- Name of the Kubernetes secret containing the tbot identity (written by tbot output)
   identitySecretName: "cloud-workflow-engine-teleport"
+  # -- Value of the Teleport "managed-by" label this controller stamps on
+  # tokens it creates, and the value ownership checks compare against.
+  managedByLabelValue: "nke-cloud-workflow-engine"
+  # -- Prefix for the deterministic Teleport TPM join token name this
+  # controller mints for a node.
+  tokenNamePrefix: "nke-cwe-"

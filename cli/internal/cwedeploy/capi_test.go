@@ -71,7 +71,8 @@ func TestInstallProvisionedProvider_RewritesTheImage(t *testing.T) {
 	cfg.ProvisionedProviderImage = "ghcr.io/nvidia/nke/cluster-api-provider-provisioned:v0.1.0"
 
 	if err := New(runner, nil).installProvisionedProvider(
-		context.Background(), "/tmp/kubeconfig", cfg, time.Minute); err != nil {
+		context.Background(), "/tmp/kubeconfig", cfg, time.Minute,
+	); err != nil {
 		t.Fatalf("installProvisionedProvider returned error: %v", err)
 	}
 
@@ -135,7 +136,8 @@ func TestInstallProvisionedProvider_AppliesTheEmbeddedManifest(t *testing.T) {
 	cfg := testConfig(t)
 
 	if err := New(runner, nil).installProvisionedProvider(
-		context.Background(), "/tmp/kubeconfig", cfg, time.Minute); err != nil {
+		context.Background(), "/tmp/kubeconfig", cfg, time.Minute,
+	); err != nil {
 		t.Fatalf("installProvisionedProvider: %v", err)
 	}
 	for _, call := range runner.calls {

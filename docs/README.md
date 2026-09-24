@@ -71,6 +71,7 @@ Deeper module documentation:
 | [../os-image/SPEC.md](../os-image/SPEC.md) | The contract a node image has to meet |
 | [../controller/profiles/README.md](../controller/profiles/README.md) | External profiles |
 | [../controller/deploy/charts/controller/README.md](../controller/deploy/charts/controller/README.md) | The engine's Helm chart and its values |
+| [../nktp/deploy/charts/nktp/README.md](../nktp/deploy/charts/nktp/README.md) | The NKTP Helm chart, what it deploys and its values |
 | [../build/README.md](../build/README.md) | The per-component build and publish scripts |
 | [../os-image/README.md](../os-image/README.md) | Node image build, FDE/non-FDE variants, release |
 
@@ -81,6 +82,7 @@ Deeper module documentation:
 | [../controller/test/e2e/README.md](../controller/test/e2e/README.md) | The end to end suite |
 | [../controller/integration-test/README.md](../controller/integration-test/README.md) | The integration tests |
 | [../controller/nico-sim/docs/e2e-testing.md](../controller/nico-sim/docs/e2e-testing.md) | End-to-end testing for nico-sim's VM backend |
+| [nktp/kind-validation.md](nktp/kind-validation.md) | Ad hoc validation of the NKTP chart's default values on a Kind cluster |
 
 ## Project and process
 
@@ -100,7 +102,8 @@ Deeper module documentation:
 `AGENTS.md` files carry instructions for AI coding agents, not for people. There
 is one at the repository root, and one in
 [../agent/AGENTS.md](../agent/AGENTS.md),
-[../controller/AGENTS.md](../controller/AGENTS.md) and
+[../controller/AGENTS.md](../controller/AGENTS.md),
+[../nktp/AGENTS.md](../nktp/AGENTS.md) and
 [../os-image/AGENTS.md](../os-image/AGENTS.md).
 
 ## Not indexed here

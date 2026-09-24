@@ -1,0 +1,23 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+{{- $values := .Values.large_target_metrics -}}
+{{- $allocator := $values.kubernetes.targetAllocator | default dict -}}
+{{- if not (and (kindIs "map" $allocator) (deepEqual $allocator.enabled true)) -}}
+{{- fail "large_target_metrics.kubernetes.targetAllocator.enabled must be true to assign each scrape target to one Collector replica" -}}
+{{- end -}}
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: nktp-large-target-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- /* The upstream pre-delete Job selects this label to delete the Collector before the Operator. */}}
+    helm.sh/chart: {{ include "opentelemetry-kube-stack.chart" (index .Subcharts "opentelemetry-kube-stack") }}
+spec:
+  {{- $collector := dict "image" ($values.otelcol.image | default .Values.otelcol_image) }}
+  {{- /* Kubernetes workload values override defaults. The resolved Collector image overrides any workload image. */}}
+  {{- mustMergeOverwrite (dict "mode" "statefulset" "managementState" "managed" "upgradeStrategy" "automatic") (omit $values.kubernetes "config") $collector | toYaml | nindent 2 }}
+  config:
+    {{- $values.otelcol.config | toYaml | nindent 4 }}

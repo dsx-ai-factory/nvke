@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What this target changes about spire, applied over values.yaml.
+
+spire-server:
+  controllerManager:
+    identities:
+      clusterSPIFFEIDs:
+        nke-spire-client:
+          type: raw
+          # /nke-e2e/ rather than NKE's own /nke-service/, so the probe does
+          # not share NKE's prefix and admit.spiffe's prefix check is actually
+          # exercised.
+          spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nke-e2e/{{.PodSpec.ServiceAccountName}}"
+          namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  - nke-spire-clients
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: cloud-workflow-engine
+              nke.nvidia.com/purpose: nke-auth-dev
+
+# The hostnames the OIDC discovery provider will answer to, minus the two this
+# run computes. A tenant kube-apiserver fetches the discovery document by IP,
+# and the provider rejects any request whose Host header is not on this list.
+#
+# Stated here, not just in components/spire.yaml, so the deploy path describes
+# its own deployment: the chart is not part of the generated tree, so a reader
+# of capd-e2e/ alone could not otherwise see them. deploy-nke-stack.sh reads
+# this list and appends MANAGEMENT_VIP and the kind bridge gateway, because
+# --set-json replaces a list rather than appending to it.
+spiffe-oidc-discovery-provider:
+  config:
+    additionalDomains:
+      - "nke.site-controller.internal"
+      - "localhost"
+      - "127.0.0.1"

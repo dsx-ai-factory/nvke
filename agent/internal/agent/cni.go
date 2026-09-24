@@ -231,7 +231,7 @@ func ovnImageRepository(registry, upstreamRepo string) string {
 // `install` fails once the release exists, so the second attempt could never succeed.
 func buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podNetworkCidr, serviceCidr, imageRegistry, upstreamRepo string, cniConfig map[string]string) []string {
 	args := []string{
-		"upgrade", "--install", //nolint:goconst // helm argv fragment; naming each CLI flag reads worse than the literal
+		"upgrade", "--install",
 		"ovn-kubernetes",
 		chartDir,
 	}
@@ -577,7 +577,7 @@ func (s *NodeAgentServer) runCalicoHelmInstallFromDir(chartDir string, req *pb.I
 	// See buildOvnKubernetesHelmInstallArgs: retried activity, so the release
 	// may already exist.
 	args := []string{
-		"upgrade", "--install", "tigera-operator", chartDir, //nolint:goconst // helm argv fragment
+		"upgrade", "--install", "tigera-operator", chartDir,
 		"--namespace", "tigera-operator",
 		"--create-namespace",
 	}

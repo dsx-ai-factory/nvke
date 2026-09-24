@@ -259,7 +259,8 @@ func TestParseNodesCSV(t *testing.T) {
 			header+
 				"cp-01,10.10.50.2,"+strings.Repeat("a", 64)+"\n"+
 				"cp-02,10.10.50.3,\n"+
-				"cp-03,10.10.50.4,\n"))
+				"cp-03,10.10.50.4,\n",
+		))
 		if err != nil {
 			t.Fatalf("ParseNodesCSV: %v", err)
 		}

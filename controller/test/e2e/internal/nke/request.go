@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -140,10 +141,24 @@ var (
 )
 
 func containerCAPIReadyCommands() []string {
-	return []string{
+	var commands []string
+	// Cloud-init replaces the agent arguments baked into the container node image.
+	// Restore the E2E bundle source before kubeadm init needs it for CNI installation.
+	bundleServerURL := strings.TrimRight(strings.TrimSpace(os.Getenv("NKE_E2E_BUNDLE_SERVER_URL")), "/")
+	if bundleServerURL != "" {
+		commands = append(commands, fmt.Sprintf(
+			`sh -ec 'agent_env=/etc/default/nke-agent; sed_url=$(printf "%%s" "$1" | sed "s/[\\\\&|]/\\\\&/g"); sed -E -i.bak "/^AGENT_ARGS=/ { s/ --(bundle-server-url|index-file-url)(=[^ \" ]+| [^ \" ]+)//g; s/^AGENT_ARGS=\"--disable-mlx5-rescan ?/AGENT_ARGS=\"/; s/ --disable-mlx5-rescan//g; s|\"$| --disable-mlx5-rescan --bundle-server-url ${sed_url}/ --index-file-url ${sed_url}/index.json\"|; }" "$agent_env"; rm -f "$agent_env.bak"; systemctl restart nke-agent.service' -- %s`,
+			shellQuote(bundleServerURL),
+		))
+	}
+	return append(commands,
 		"mkdir -p /run/cluster-api",
 		"echo success > /run/cluster-api/bootstrap-success.complete",
-	}
+	)
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
 // BuildCreateRequest dispatches to the backend-specific request builder.
@@ -418,6 +433,7 @@ func buildCAPDControlPlaneConfig(spec ClusterSpec) (*api.CreateClusterControlPla
 	if cfg.Infra == nil {
 		return nil, fmt.Errorf("CAPD control plane config skeleton is missing infra.machineTemplate")
 	}
+	cfg.Infra.PreKubeadmCommands = containerCAPIReadyCommands()
 	if err := setMapPath(cfg.Infra.MachineTemplate, spec.CAPDNodeImage, capiSpecKey, "template", capiSpecKey, "customImage"); err != nil {
 		return nil, fmt.Errorf("setting control plane custom image: %w", err)
 	}
@@ -443,6 +459,7 @@ func buildCAPDNodePool(spec NodePoolSpec, nodeImage string) (api.NodePoolCreateC
 	if pool.Infra == nil {
 		return api.NodePoolCreateConfig{}, fmt.Errorf("CAPD node pool skeleton is missing infra.machineTemplate")
 	}
+	pool.Infra.PreKubeadmCommands = containerCAPIReadyCommands()
 	if err := setMapPath(pool.Infra.MachineTemplate, nodeImage, capiSpecKey, "template", capiSpecKey, "customImage"); err != nil {
 		return api.NodePoolCreateConfig{}, fmt.Errorf("setting custom image: %w", err)
 	}

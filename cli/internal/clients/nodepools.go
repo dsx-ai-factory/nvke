@@ -109,6 +109,7 @@ func (c *CWEClient) FindNodePoolByName(ctx context.Context, clusterName, name st
 		return &pools[0], nil
 	default:
 		return nil, fmt.Errorf(
-			"node pool name %q is ambiguous in cluster %q: %d node pools match", name, clusterName, len(pools))
+			"node pool name %q is ambiguous in cluster %q: %d node pools match", name, clusterName, len(pools),
+		)
 	}
 }

@@ -1,0 +1,46 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Warns when go.work asks for a Go release the Flox catalog does not carry yet.
+# Advisory only: it never fails, and it is not part of merge-gate.yml.
+name: Flox Go Version
+
+on:
+  pull_request:
+    paths: ['go.work']
+  push:
+    branches: [main]
+    paths: ['go.work']
+
+permissions: {}
+
+concurrency:
+  group: Flox Go Version-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  flox-show:
+    name: go.work version is in the Flox catalog
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    container:
+      image: ghcr.io/flox/flox:v1.17.0@sha256:785dc66693f0d560fb09dc13e606005437f23a727a9195409281e67f40f5bd26
+    env:
+      FLOX_DISABLE_METRICS: 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: go.work
+          sparse-checkout-cone-mode: false
+
+      # The image has no sed or awk.
+      - name: Check flox show
+        run: |
+          ver=$(grep '^go ' go.work | cut -d' ' -f2)
+          pkg="go_1_$(echo "$ver" | cut -d. -f2)"
+          flox show "$pkg" | grep -q "@$ver\b" \
+            || echo "::warning file=go.work::go.work asks for Go $ver, but 'flox show $pkg' does not list it"

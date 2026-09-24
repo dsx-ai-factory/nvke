@@ -1,0 +1,59 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+{{- $root := . -}}
+{{- range $name, $group := (include "nktp.ksm.groups" . | fromYaml) }}
+{{- if not $group.kubernetes.serviceAccount }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $group.serviceAccount }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    {{- include "nktp.ksm.labels" (dict "root" $root "group" $group) | nindent 4 }}
+{{- end }}
+{{- range $scope, $rules := $group.rules }}
+{{- if $rules }}
+{{- $role := include "nktp.ksm.roleName" (dict "root" $root "group" $group "scope" $scope) }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $role }}
+  labels:
+    {{- include "nktp.ksm.labels" (dict "root" $root "group" $group) | nindent 4 }}
+rules:
+  {{- range $apiGroup, $resources := $rules }}
+  - apiGroups: [{{ $apiGroup | quote }}]
+    resources: {{ $resources | toJson }}
+    verbs: [list, watch]
+  {{- end }}
+{{- $namespaces := list "" -}}
+{{- if and (eq $scope "namespaced") $group.namespaces -}}
+{{- $namespaces = $group.namespaces -}}
+{{- end -}}
+{{- range $namespace := $namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: {{ ternary "RoleBinding" "ClusterRoleBinding" (ne $namespace "") }}
+metadata:
+  name: {{ $role }}
+  labels:
+    {{- include "nktp.ksm.labels" (dict "root" $root "group" $group) | nindent 4 }}
+  {{- if $namespace }}
+  namespace: {{ $namespace }}
+  {{- end }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $role }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $group.serviceAccount }}
+    namespace: {{ $root.Release.Namespace }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

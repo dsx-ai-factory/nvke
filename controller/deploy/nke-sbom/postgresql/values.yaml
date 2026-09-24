@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Read back from a live site controller's release, which is the
+# configuration that provisioned a real tenant.
+#
+# auth.postgresPassword is NOT here. It is a site secret and comes in through
+# --values-for postgresql=<file>, and the SAME value has to reach both of
+# Temporal's datastores -- default and visibility. Setting it on only one
+# leaves the Temporal schema job crash-looping with "password authentication
+# failed", which that run hit.
+auth:
+  username: postgres
+  database: postgres
+
+primary:
+  # primary.persistence, NOT a top-level persistence: the Bitnami chart nests
+  # it here, and helm does not reject unknown values, so a top-level
+  # persistence.enabled=true is accepted and silently ignored. That is how the
+  # that run ended up running Postgres on an emptyDir.
+  persistence:
+    enabled: true
+    size: 40Gi
+    # A live site binds this to local-path. Left empty here so it takes whatever the
+    # site made default -- which provisioner is right is a property of the
+    # hardware, and there must BE a default or the PVC sits Pending forever.
+    storageClass: ""
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      memory: 256Mi
+  # The databases CWE and Temporal expect to exist. Nothing else creates them.
+  initdb:
+    scripts:
+      init-cwe.sql: |
+        CREATE DATABASE "cloud-workflow";
+      init-temporal.sql: |
+        CREATE DATABASE temporal;
+        CREATE DATABASE temporal_visibility;
+
+# PINNED BY DIGEST -- the one image on this path that the chart does not pin
+# for us.
+#
+# Bitnami's chart defaults every image to `tag: latest`, and bitnami/postgresql
+# on Docker Hub no longer publishes version tags at all: the only human-readable
+# tags are `latest` and `latest-metadata`, the versioned images having moved to
+# bitnamilegacy/postgresql. So there is no version to pin to -- a digest is the
+# only durable reference.
+#
+# Without this the SBOM cannot say which database it installs. Two installs a
+# week apart get different binaries with nothing in the tree to show it, which
+# for the component holding all CWE state is the worst place for it.
+#
+# This digest is what `latest` resolved to on a live site controller, read
+# back from the running pod's imageID. The chart's own appVersion claims 18.3.0;
+# that is chart metadata and not what was pulled.
+image:
+  digest: "sha256:b74b23f091dcc87041bcae557d840c36458af46b955279cb13aedec4c32d7f71"

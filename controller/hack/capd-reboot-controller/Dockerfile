@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # syntax=docker/dockerfile:1
-FROM golang:1.26.8-alpine@sha256:51a7c389a5ddaf82f527191a1e9bff9928655130a44e4975dd1d7e0acf59f1ae
+FROM golang:1.27.1-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

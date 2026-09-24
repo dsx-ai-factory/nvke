@@ -289,7 +289,7 @@ func TestMachineReconcilerRequeuesAVanishedClaimWithoutAnError(t *testing.T) {
 
 	result, err := reconciler.Reconcile(context.Background(), machineRequest(testMachineName))
 	require.NoError(t, err)
-	require.Equal(t, ctrl.Result{Requeue: true}, result)
+	require.Equal(t, ctrl.Result{RequeueAfter: retryNow}, result)
 }
 
 func TestMachineReconcilerKeepsAnExistingBinding(t *testing.T) {
@@ -381,7 +381,7 @@ func TestMachineReconcilerAddsFinalizerBeforeAllocation(t *testing.T) {
 
 	result, err := reconciler.Reconcile(context.Background(), machineRequest(testMachineName))
 	require.NoError(t, err)
-	require.Equal(t, ctrl.Result{Requeue: true}, result)
+	require.Equal(t, ctrl.Result{RequeueAfter: retryNow}, result)
 
 	machine = getInfraMachine(t, k8sClient, testMachineName)
 	require.Contains(t, machine.Finalizers, machineFinalizer)

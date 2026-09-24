@@ -1,0 +1,266 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Install a deploy path: walk its nke-deploy.yaml and apply the items in the
+# order listed. The list IS the order -- see
+# docs/site-bootstrap/deploy-repository.md, which this format follows.
+#
+# A helm item is one chart installed as one release; the item order does the
+# sequencing. There are no enable flags and no phases, so nothing this script
+# emits can override what an item's values decided.
+#
+# Everything is a local path. These trees are consumed in place, so there is no
+# registry, no oras pull and no tarball to extract.
+#
+# TRANSITIONAL. This script stands in for nkectl, which is the intended owner of
+# NKE software stack installation. It is deleted -- together with
+# nke-sbom-items.py and render-template.py beside it -- once nkectl installs a
+# deploy path directly, from either a local directory or an OCI registry.
+# Tracked in https://github.com/dsx-ai-factory/nke/issues/873.
+#
+# Because it is going away, it deliberately carries no tests and no golden
+# files: those belong to the implementation that replaces it, not to the
+# stand-in.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ITEMS_PY="${SCRIPT_DIR}/nke-sbom-items.py"
+RENDER_PY="${SCRIPT_DIR}/render-template.py"
+
+SBOM=""
+TARGET=""
+DRY_RUN=""
+KUBECONFIG_PATH=""
+PHASE_TIMEOUT="${PHASE_TIMEOUT:-15m}"
+REQUIRE_TIMEOUT="${REQUIRE_TIMEOUT:-180s}"
+PASSTHROUGH=()
+CONFIG=""
+CHART_OVERRIDES=()
+VALUES_FOR=()
+DEPLOY_PATH=""
+
+log() { printf '\n=== %s\n' "$*" >&2; }
+die() { printf 'use-nke-sbom: %s\n' "$*" >&2; exit 1; }
+
+usage() {
+  cat >&2 <<'USAGE'
+usage: use-nke-sbom.sh install --sbom DIR --target NAME [options] [-- helm args]
+
+  --sbom DIR          directory holding deploy paths, e.g. ./deploy
+  --target NAME       deploy path inside it, e.g. capd-e2e
+  --chart-override ITEM=PATH
+                      where to find one item's chart, for a component this
+                      repository does not publish. Repeatable.
+  --config PATH       BootstrapConfig, as JSON. Required by a template item;
+                      its fields are the context those templates render against.
+  --values-for ITEM=PATH
+                      an extra values file for one item, applied after the
+                      item's own values. This is how per-run values reach a
+                      single component: with one release per chart the keys are
+                      no longer prefixed, so a value meant for the controller
+                      cannot be broadcast to every item. Repeatable.
+  --dry-run           print the argv each step would run, and exit
+  --kubeconfig PATH   passed to every kubectl call
+  --                  everything after is forwarded to helm verbatim
+USAGE
+  exit 2
+}
+
+# run executes a command, or prints it when --dry-run is set. Every helm and
+# kubectl call goes through here, which is what makes --dry-run a complete
+# description of the install rather than a summary of it.
+run() {
+  if [[ -n "${DRY_RUN}" ]]; then
+    printf '%q ' "$@"
+    printf '\n'
+    return 0
+  fi
+  "$@"
+}
+
+kubectl_run() {
+  if [[ -n "${KUBECONFIG_PATH}" ]]; then
+    run kubectl --kubeconfig "${KUBECONFIG_PATH}" "$@"
+  else
+    run kubectl "$@"
+  fi
+}
+
+# apply_manifest_item applies every .yaml in the item directory, lexicographically.
+# The generator names them 00-, 10-, 40- precisely so that order is the intended
+# one: namespaces exist before anything lands in them.
+apply_manifest_item() {
+  local dir="$1" file found=""
+  for file in "${dir}"/*.yaml; do
+    [[ -e "${file}" ]] || continue
+    found=1
+    kubectl_run apply --server-side -f "${file}"
+  done
+  [[ -n "${found}" ]] || die "manifest item ${dir} contains no .yaml files"
+}
+
+# render_template_item renders the item and applies what comes out.
+#
+# The output goes to a temp directory rather than over the source: the tree may
+# be a read-only extraction of a published artifact, and what is rendered holds
+# credentials. Removed as soon as it is applied.
+render_template_item() {
+  local dir="$1" item="$2" out
+  [[ -n "${CONFIG}" ]] || die "item ${item} is type template, which needs --config <BootstrapConfig json>.
+Its .yaml.tmpl files render against that context; see
+docs/site-bootstrap/deploy-repository.md for the field names."
+  out="$(mktemp -d)"
+  python3 "${RENDER_PY}" "${CONFIG}" "${dir}" "${out}" >/dev/null
+  apply_manifest_item "${out}"
+  rm -rf "${out}"
+}
+
+# apply_argocd_item creates the Application. Server-side apply of the CR rather
+# than `argocd app create --upsert`: same object, no binary, no login.
+apply_argocd_item() {
+  local dir="$1"
+  [[ -f "${dir}/application.yaml" ]] || die "argocd item ${dir} has no application.yaml"
+  kubectl_run apply --server-side -f "${dir}/application.yaml"
+}
+
+# wait_for_requires blocks on the preconditions a phase declares but the chart
+# does not own. helm --wait cannot do this: it waits on workloads, and a
+# Certificate is not one, so it would return before the CA is issued.
+wait_for_requires() {
+  local phase="$1" specs="$2" spec kind name namespace condition
+  for spec in ${specs}; do
+    IFS=: read -r kind name namespace condition <<<"${spec}"
+    if [[ -z "${DRY_RUN}" ]] && ! kubectl ${KUBECONFIG_PATH:+--kubeconfig "${KUBECONFIG_PATH}"} \
+        -n "${namespace}" get "${kind}" "${name}" >/dev/null 2>&1; then
+      die "phase ${phase} requires ${kind}/${name} in namespace ${namespace}, which does not exist.
+It is not part of this chart -- an earlier item supplies it. In this repository
+that is the nke-base-config item, from controller/deploy/k8s/oidc-upstream-ca.yaml."
+    fi
+    log "waiting for ${kind}/${name} condition=${condition}"
+    kubectl_run -n "${namespace}" wait --for="condition=${condition}" \
+      "${kind}/${name}" --timeout="${REQUIRE_TIMEOUT}"
+  done
+}
+
+# chart_override prints the --chart-override value for an item, if one was given.
+chart_override() {
+  local entry
+  for entry in ${CHART_OVERRIDES[@]+"${CHART_OVERRIDES[@]}"}; do
+    if [[ "${entry%%=*}" == "$1" ]]; then
+      printf '%s' "${entry#*=}"
+      return
+    fi
+  done
+}
+
+# values_for prints the --values-for paths for an item, newline separated.
+values_for() {
+  local entry
+  for entry in ${VALUES_FOR[@]+"${VALUES_FOR[@]}"}; do
+    if [[ "${entry%%=*}" == "$1" ]]; then
+      printf '%s\n' "${entry#*=}"
+    fi
+  done
+}
+
+# install_single installs one chart as one release. No enable flags and no phase
+# loop: a release contains only its own chart, so there is nothing to turn off.
+install_helm_item() {
+  local dir="$1" item="$2"
+  [[ -f "${dir}/release.yaml" ]] || die "helm item ${dir} has no release.yaml"
+
+  local form chart_name version repository path release namespace values requires
+  IFS=$'\x1f' read -r form chart_name version repository path release namespace values requires \
+    < <(python3 "${ITEMS_PY}" release "${dir}/release.yaml")
+
+  # An override wins, because the caller had to build or fetch the chart. Then a
+  # path inside the deploy path, then a repository the chart is published to.
+  local ref=() override
+  override="$(chart_override "${item}")"
+  if [[ -n "${override}" ]]; then
+    ref=("${override}")
+  elif [[ -n "${path}" ]]; then
+    ref=("${DEPLOY_PATH}/${path}")
+  elif [[ "${repository}" == oci://* ]]; then
+    ref=("${repository%/}/${chart_name}" --version "${version}")
+  elif [[ -n "${repository}" ]]; then
+    # A classic index.yaml repository names the chart separately.
+    ref=("${chart_name}" --repo "${repository}" --version "${version}")
+  else
+    die "item ${item} names no chart source.
+Give release.yaml a chart.repository or chart.path, or pass
+--chart-override ${item}=<path> -- which is what a chart this repository does
+not publish needs."
+  fi
+
+  wait_for_requires "${item}" "${requires}"
+
+  # The item's own values first, then whatever the run supplies for it. Helm
+  # merges -f in order, so the caller's file wins on any key it names.
+  local values_args=() file
+  for file in ${values//,/ }; do
+    values_args+=(--values "${dir}/${file}")
+  done
+  while IFS= read -r file; do
+    [[ -n "${file}" ]] || continue
+    [[ -f "${file}" ]] || die "--values-for ${item}: no such file: ${file}"
+    values_args+=(--values "${file}")
+  done < <(values_for "${item}")
+
+  log "item ${item} -> release ${release} (${chart_name} ${version}) in ${namespace}"
+  run helm upgrade --install "${release}" "${ref[@]}" \
+    ${KUBECONFIG_PATH:+--kubeconfig "${KUBECONFIG_PATH}"} \
+    --namespace "${namespace}" \
+    --wait --timeout "${PHASE_TIMEOUT}" \
+    ${values_args[@]+"${values_args[@]}"} \
+    ${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}
+}
+
+install() {
+  [[ -n "${SBOM}" ]] || die "--sbom is required"
+  [[ -n "${TARGET}" ]] || die "--target is required"
+
+  DEPLOY_PATH="${SBOM}/${TARGET}"
+  [[ -f "${DEPLOY_PATH}/nke-deploy.yaml" ]] \
+    || die "no nke-deploy.yaml in ${DEPLOY_PATH}"
+
+  local name type
+  while IFS=$'\t' read -r name type; do
+    [[ -n "${name}" ]] || continue
+    local dir="${DEPLOY_PATH}/${name}"
+    [[ -d "${dir}" ]] || die "item ${name} has no directory at ${dir}"
+    log "item ${name} (${type})"
+    case "${type}" in
+      manifest) apply_manifest_item "${dir}" ;;
+      argocd)   apply_argocd_item "${dir}" ;;
+      helm)     install_helm_item "${dir}" "${name}" ;;
+      template) render_template_item "${dir}" "${name}" ;;
+      *) die "item ${name} has unknown type ${type}" ;;
+    esac
+  done < <(python3 "${ITEMS_PY}" items "${DEPLOY_PATH}/nke-deploy.yaml")
+}
+
+[[ $# -gt 0 ]] || usage
+case "$1" in
+  install) shift ;;
+  *) usage ;;
+esac
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --sbom) SBOM="$2"; shift 2 ;;
+    --target) TARGET="$2"; shift 2 ;;
+    --config) CONFIG="$2"; shift 2 ;;
+    --chart-override) CHART_OVERRIDES+=("$2"); shift 2 ;;
+    --values-for) VALUES_FOR+=("$2"); shift 2 ;;
+    --kubeconfig) KUBECONFIG_PATH="$2"; shift 2 ;;
+    --timeout) PHASE_TIMEOUT="$2"; shift 2 ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    --) shift; PASSTHROUGH=("$@"); break ;;
+    -h | --help) usage ;;
+    *) die "unknown argument: $1" ;;
+  esac
+done
+
+install

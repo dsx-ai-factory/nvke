@@ -225,9 +225,45 @@ Each node in `.Cluster.Nodes`:
 
 ### `.Registry`
 
+Credentials for images the site cannot stage locally. On a site controller the
+node's containerd is the cluster's containerd, so an imported image resolves
+with `imagePullPolicy: IfNotPresent` and needs no credential at all. CAPNICo is
+the exception: its published manifest names an image on `ghcr.io` that is not
+anonymously pullable, so a deploy path that installs it must template a
+`kubernetes.io/dockerconfigjson` Secret.
+
 | Expression | Type | Description |
 |------------|------|-------------|
 | `.Registry.NGCAPIKey` | string | NGC API key |
+| `.Registry.Server` | string | Registry host (e.g. `ghcr.io`) |
+| `.Registry.Username` | string | Registry username |
+| `.Registry.Token` | string | Registry token or password |
+
+### `.Nico`
+
+Credentials for the NICo instance API that the CAPNICo infrastructure provider
+calls. CAPNICo reads them from a `nico-credentials` Secret it does not create,
+so a deploy path that installs CAPNICo must template that Secret.
+
+| Expression | Type | Description |
+|------------|------|-------------|
+| `.Nico.Endpoint` | string | NICo API base URL |
+| `.Nico.OrgID` | string | Organization ID |
+| `.Nico.Token` | string | API token |
+| `.Nico.APIName` | string | API name (e.g. `forge`) |
+
+### `.Tenant`
+
+The login CWE renders into every tenant node's cloud-init. CWE requires
+`DGXC_TENANT_USER` and `DGXC_TENANT_PASSWORD`, and the controller chart injects
+them only when `secrets.dgxcTenantCredSecretName` names a Secret carrying keys
+`user` and `password`. Without it, tenant creation fails at user-data
+rendering.
+
+| Expression | Type | Description |
+|------------|------|-------------|
+| `.Tenant.User` | string | Tenant node username |
+| `.Tenant.Password` | string | Tenant node password |
 
 ### `.ArgoCD`
 

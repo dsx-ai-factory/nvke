@@ -39,28 +39,39 @@ on:
     tags:
       - "agent/v[0-9]+.[0-9]+.[0-9]+"
       - "agent/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Agent tag or full commit SHA to build
+        type: string
+        required: true
 
 permissions: {}
+
+env:
+  SOURCE_REF: ${{ inputs.ref || github.ref_name }}
 
 concurrency:
   # A literal name, NOT ${{ github.workflow }}. Inside a called workflow that
   # expression is the CALLER's name, so any workflow merge-gate.yml calls would
   # share a group with its siblings and cancel them.
-  group: Agent Deb Publish-${{ github.ref }}
+  group: Agent Deb Publish-${{ inputs.ref || github.ref_name }}
   # Never cancel a publish midway: a half-written index.json leaves apt-publisher
   # with a partial release.
   cancel-in-progress: false
 
 jobs:
   build:
+    cache-mode: read
     name: Build the ${{ matrix.arch }} package
     runs-on: ${{ matrix.runner }}
     # Tag-only: a branch workflow_dispatch must not produce packages that the
     # publish job (or a later re-enable) could upload into apt intake.
     if: >-
       github.repository == 'dsx-ai-factory/nke' &&
-      startsWith(github.ref, 'refs/tags/agent/v')
+      (startsWith(inputs.ref || github.ref_name, 'agent/v') || inputs.ref != '')
+    outputs:
+      sha: ${{ steps.package.outputs.sha }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -74,9 +85,21 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     steps:
+      - name: Validate source ref
+        run: |
+          if [[ ! "${SOURCE_REF}" =~ ^(agent/v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?|[0-9a-f]{40})$ ]]; then
+            echo "::error::ref must be an agent release tag or a full lowercase commit SHA"
+            exit 1
+          fi
+          if [[ "${SOURCE_REF}" == agent/v* && "${GITHUB_REF}" != "refs/tags/${SOURCE_REF}" ]]; then
+            echo "::error::Release builds must run from their source tag; select it with --ref"
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref || github.sha }}
           # DEB_VERSION comes from `git describe --match 'agent/v*'`; a shallow
           # clone would stamp the wrong version into a release package.
           fetch-depth: 0
@@ -103,6 +126,7 @@ jobs:
         run: make deb-${{ matrix.arch }}
 
       - name: Inspect what was produced
+        id: package
         working-directory: agent
         run: |
           set -euo pipefail
@@ -150,6 +174,7 @@ jobs:
           esac
 
           echo "OK  ${deb}  package=${pkg} version=${ver} arch=${arch}"
+          echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
 
       # Scanned here rather than in the two consumers. `publish` and
       # `github-release` both take `needs: [build]`, so gating once covers the
@@ -175,11 +200,9 @@ jobs:
   publish:
     name: Upload to apt intake
     needs: [build]
-    # Same tag gate as build: never ingest from a branch (including
-    # workflow_dispatch on main). Re-run from the agent/v* tag only.
     if: >-
       github.repository == 'dsx-ai-factory/nke' &&
-      startsWith(github.ref, 'refs/tags/agent/v')
+      startsWith(inputs.ref || github.ref_name, 'agent/v')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: apt-intake
@@ -221,10 +244,7 @@ jobs:
           project="${APT_INTAKE_PROJECT:-nke-agent}"
           region="${APT_INTAKE_AWS_REGION:-us-west-2}"
 
-          # Tag refs are agent/vX.Y.Z; the intake release key and apt-publisher
-          # expect the unprefixed form (vX.Y.Z), matching DEB_VERSION's source.
-          # Job-level if already requires refs/tags/agent/v*; no branch/sha path.
-          release="${GITHUB_REF_NAME#agent/}"
+          release="${SOURCE_REF#agent/}"
 
           {
             echo "s3_uri=${APT_INTAKE_S3_URI}"
@@ -251,6 +271,60 @@ jobs:
           APT_INTAKE_S3_URI: ${{ steps.meta.outputs.s3_uri }}
           APT_INTAKE_PROJECT: ${{ steps.meta.outputs.project }}
           APT_INTAKE_RELEASE: ${{ steps.meta.outputs.release }}
+          PUBLISH_INDEX_JSON: "true"
+          ASSETS_DIR: bin
+        run: ./scripts/upload-s3-apt-intake.sh
+
+  publish-dev:
+    name: Upload dev packages to S3
+    needs: [build]
+    if: >-
+      github.repository == 'dsx-ai-factory/nke' &&
+      github.ref == 'refs/heads/main' &&
+      !startsWith(inputs.ref || github.ref_name, 'agent/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      APT_INTAKE_S3_URI: ${{ vars.AGENT_DEV_S3_URI }}
+      APT_INTAKE_PROJECT: nke-agent
+      APT_INTAKE_RELEASE: ${{ needs.build.outputs.sha }}
+      DEV_AWS_ROLE_ARN: ${{ vars.AGENT_DEV_AWS_ROLE_ARN }}
+    steps:
+      - name: Validate dev publication
+        run: |
+          : "${APT_INTAKE_S3_URI:?Set the AGENT_DEV_S3_URI repository variable}"
+          : "${DEV_AWS_ROLE_ARN:?Set the AGENT_DEV_AWS_ROLE_ARN repository variable}"
+          if [[ ! "${APT_INTAKE_RELEASE}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Dev publication requires the full built commit SHA"
+            exit 1
+          fi
+
+      - name: Checkout uploader
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Download packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: agent-deb-*
+          merge-multiple: true
+          path: agent/bin
+
+      - name: Configure dev AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ env.DEV_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AGENT_DEV_AWS_REGION || 'us-west-2' }}
+
+      - name: Upload dev packages
+        working-directory: agent
+        env:
+          PUBLISH_INDEX_JSON: "false"
           ASSETS_DIR: bin
         run: ./scripts/upload-s3-apt-intake.sh
 
@@ -262,11 +336,12 @@ jobs:
     needs: [build]
     if: >-
       github.repository == 'dsx-ai-factory/nke' &&
-      startsWith(github.ref, 'refs/tags/agent/v')
+      startsWith(inputs.ref || github.ref_name, 'agent/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       REPO: ghcr.io/dsx-ai-factory/nke/agent-deb
+      SOURCE_SHA: ${{ needs.build.outputs.sha }}
     permissions:
       contents: read
       packages: write
@@ -316,7 +391,7 @@ jobs:
       # `oras manifest index create` cannot tell the two packages apart.
       - name: Push per-architecture packages
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ env.SOURCE_REF }}
         run: |
           set -euo pipefail
           version="${VERSION#agent/}"
@@ -336,7 +411,7 @@ jobs:
                 --artifact-type application/vnd.nvidia.nke.agent.deb.v1 \
                 --artifact-platform "linux/${arch}" \
                 --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
-                --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+                --annotation "org.opencontainers.image.revision=${SOURCE_SHA}" \
                 --annotation "org.opencontainers.image.version=${version}" \
                 --annotation "org.opencontainers.image.licenses=Apache-2.0" \
                 --annotation "org.opencontainers.image.title=nke-agent.deb" \
@@ -346,13 +421,13 @@ jobs:
 
           oras manifest index create "${REPO}:${version}" \
             --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
-            --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --annotation "org.opencontainers.image.revision=${SOURCE_SHA}" \
             --annotation "org.opencontainers.image.version=${version}" \
             "${version}-amd64" "${version}-arm64"
 
       - name: Show published index
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ env.SOURCE_REF }}
         run: |
           set -euo pipefail
           version="${VERSION#agent/}"
@@ -365,8 +440,10 @@ jobs:
     needs: [build]
     if: >-
       github.repository == 'dsx-ai-factory/nke' &&
-      startsWith(github.ref, 'refs/tags/agent/v')
+      startsWith(inputs.ref || github.ref_name, 'agent/v')
     runs-on: ubuntu-latest
+    env:
+      SOURCE_SHA: ${{ needs.build.outputs.sha }}
     environment: nvcr
     timeout-minutes: 10
     permissions:
@@ -422,7 +499,7 @@ jobs:
 
       - name: Push per-architecture packages
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ env.SOURCE_REF }}
           REPO: ${{ steps.meta.outputs.repo }}
         run: |
           set -euo pipefail
@@ -442,7 +519,7 @@ jobs:
                 --artifact-type application/vnd.nvidia.nke.agent.deb.v1 \
                 --artifact-platform "linux/${arch}" \
                 --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
-                --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+                --annotation "org.opencontainers.image.revision=${SOURCE_SHA}" \
                 --annotation "org.opencontainers.image.version=${version}" \
                 --annotation "org.opencontainers.image.licenses=Apache-2.0" \
                 --annotation "org.opencontainers.image.title=nke-agent.deb" \
@@ -452,13 +529,13 @@ jobs:
 
           oras manifest index create "${REPO}:${version}" \
             --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
-            --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --annotation "org.opencontainers.image.revision=${SOURCE_SHA}" \
             --annotation "org.opencontainers.image.version=${version}" \
             "${version}-amd64" "${version}-arm64"
 
       - name: Show published index
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ env.SOURCE_REF }}
           REPO: ${{ steps.meta.outputs.repo }}
         run: |
           set -euo pipefail
@@ -466,7 +543,9 @@ jobs:
           oras manifest fetch --pretty "${REPO}:${version}"
 
   # Separate from apt intake so the release job does not need the apt-intake
-  # environment or id-token. Runs only on agent/v* tag pushes (not branch
+  # environment or its credentials -- the id-token below is the Actions OIDC
+  # token the attestation is signed against, which is scoped to this workflow
+  # and gives no access to anything. Runs only on agent/v* tag pushes (not branch
   # workflow_dispatch). make_latest stays false so a component release never
   # becomes the repository "latest" over a bare vX.Y.Z release.
   github-release:
@@ -474,11 +553,13 @@ jobs:
     needs: [build]
     if: >-
       github.repository == 'dsx-ai-factory/nke' &&
-      startsWith(github.ref, 'refs/tags/agent/v')
+      startsWith(inputs.ref || github.ref_name, 'agent/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
+      id-token: write       # the OIDC token the attestation is signed against
+      attestations: write   # writes the provenance attestation
     steps:
       # Only for agent/THIRD_PARTY_NOTICES.md, which is attached below and
       # cannot be produced from the build artifacts. It runs BEFORE the download:
@@ -489,6 +570,7 @@ jobs:
         with:
           persist-credentials: false
           clean: false
+          ref: ${{ needs.build.outputs.sha }}
           sparse-checkout: agent/THIRD_PARTY_NOTICES.md
           sparse-checkout-cone-mode: false
 
@@ -530,11 +612,27 @@ jobs:
           sed 's/^/    /' agent/bin/checksums.txt
 
           # Tag is agent/vX.Y.Z; title uses "agent vX.Y.Z" to match AGENTS.md.
-          version="${GITHUB_REF_NAME#agent/}"
+          version="${SOURCE_REF#agent/}"
           {
             echo "version=${version}"
             echo "release_name=agent ${version}"
           } >> "${GITHUB_OUTPUT}"
+
+      # Provenance over checksums.txt, which already names every .deb and the
+      # notices file by SHA-256, so one attestation covers all of them.
+      - name: Attest the release checksums
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: agent/bin/checksums.txt
+
+      # Attached as well as stored by GitHub, so a consumer can verify offline
+      # with `gh attestation verify --bundle`.
+      - name: Attach the attestation bundle
+        shell: bash
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: cp "${BUNDLE}" agent/bin/checksums.txt.sigstore.json
 
       # The release is created as a draft so the packages upload before it is
       # published. If a repository has release immutability turned on, GitHub
@@ -547,7 +645,7 @@ jobs:
         id: release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ env.SOURCE_REF }}
           name: ${{ steps.meta.outputs.release_name }}
           draft: true
           body: |
@@ -555,15 +653,16 @@ jobs:
 
             Apt install path is the apt-publisher intake from this same workflow; these assets are the same `.deb`s attached for direct download.
 
-            Verify a download with `sha256sum -c checksums.txt`. That proves the
-            file arrived intact; it does not prove provenance, because nke does
-            not sign release artifacts yet.
+            Verify `checksums.txt` against its build-provenance attestation,
+            then `sha256sum -c checksums.txt`. See [RELEASE.md](RELEASE.md) for
+            the commands.
           files: |
             agent/bin/*.deb
             agent/bin/checksums.txt
+            agent/bin/checksums.txt.sigstore.json
             agent/bin/THIRD_PARTY_NOTICES.md
           fail_on_unmatched_files: true
-          prerelease: ${{ contains(github.ref_name, '-rc.') }}
+          prerelease: ${{ contains(env.SOURCE_REF, '-rc.') }}
           make_latest: false
           generate_release_notes: false
 
@@ -612,4 +711,4 @@ jobs:
                 ...context.repo, release_id, draft: false, make_latest: 'false',
               });
             }
-            core.info(`Published ${context.ref.replace('refs/tags/', '')} with ${debs.length} packages.`);
+            core.info(`Published ${process.env.SOURCE_REF} with ${debs.length} packages.`);

@@ -61,7 +61,7 @@ func TestMachineReconcilerDoesNotOverwriteAConcurrentTenantNodeProviderID(t *tes
 
 	result, err := reconciler.Reconcile(context.Background(), machineRequest(testMachineName))
 	require.NoError(t, err)
-	require.Equal(t, ctrl.Result{Requeue: true}, result)
+	require.Equal(t, ctrl.Result{RequeueAfter: retryNow}, result)
 	require.Equal(t, "provisioned://other/10.0.0.12", getTenantNode(t, tenantClient).Spec.ProviderID)
 }
 

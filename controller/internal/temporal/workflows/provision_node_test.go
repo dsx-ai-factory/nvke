@@ -50,7 +50,7 @@ func setupLabelNodeEnv(t *testing.T, database db.DB, profilesDir string) (
 	env = testSuite.NewTestWorkflowEnvironment()
 	env.SetWorkerOptions(worker.Options{DeadlockDetectionTimeout: 5 * time.Second})
 
-	a := activities.NewActivities(config.Config{ProfilesDir: profilesDir}, database, nil, nil, "", nil)
+	a := activities.NewActivities(config.Config{ProfilesDir: profilesDir}, database, nil, nil, "", nil, "")
 
 	env.RegisterActivity(a.GetNode)
 	env.RegisterActivity(a.GetClusterForNode)

@@ -1,0 +1,292 @@
+{
+  "uid": "nktp-cluster-events",
+  "title": "NKTP Cluster Events",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Reporting replicas",
+      "description": "Collector processes with recent telemetry. This does not report Kubernetes readiness or identify the leader.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "count(count by (instance) (otelcol_process_memory_rss_bytes{job=\"nktp-cluster-events\"}))",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Received Event records",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "barAlignment": -1,
+            "stacking": {
+              "mode": "normal",
+              "group": "events"
+            }
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (instance) (increase(otelcol_receiver_accepted_log_records_total{job=\"nktp-cluster-events\"}[$__interval]))",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Records accepted during each interval, including updates to existing Kubernetes Events.",
+      "interval": "2m"
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Exported Event records",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "barAlignment": -1,
+            "stacking": {
+              "mode": "normal",
+              "group": "events"
+            }
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (instance) (increase(otelcol_exporter_sent_log_records_total{job=\"nktp-cluster-events\"}[$__interval]))",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Records exported to the configured backend during each interval.",
+      "interval": "2m"
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Export failures /s",
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (instance) (rate(otelcol_exporter_send_failed_log_records_total{job=\"nktp-cluster-events\"}[5m]))",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Refused Event records /s",
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (instance) (rate(otelcol_receiver_refused_log_records_total{job=\"nktp-cluster-events\"}[5m]))",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Exporter queue use",
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * sum by (instance, exporter) (otelcol_exporter_queue_size{job=\"nktp-cluster-events\",data_type=\"logs\"}) / sum by (instance, exporter) (otelcol_exporter_queue_capacity{job=\"nktp-cluster-events\",data_type=\"logs\"})",
+          "legendFormat": "{{instance}} / {{exporter}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "CPU cores",
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cores",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (instance) (rate(otelcol_process_cpu_seconds_total{job=\"nktp-cluster-events\"}[5m]))",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Memory (RSS)",
+      "gridPos": {
+        "x": 12,
+        "y": 25,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (instance) (otelcol_process_memory_rss_bytes{job=\"nktp-cluster-events\"})",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "logs",
+      "title": "Leadership changes",
+      "description": "Receiver leadership transitions in the selected time range. The latest message is not a live Lease status check.",
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "expr": "{service_name=\"nktp-cluster-events\"} |~ \"Events Receiver started as leader|no longer leader, stopping\"",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      }
+    }
+  ]
+}

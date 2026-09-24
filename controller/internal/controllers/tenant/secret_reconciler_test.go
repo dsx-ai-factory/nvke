@@ -49,7 +49,7 @@ func TestSecretReconcilerFeedsSecretIdentityToManagerSet(t *testing.T) {
 		return newFakeRuntime(nil), nil
 	}), 1)
 	t.Cleanup(managerSet.Shutdown)
-	reconciler := NewSecretReconciler(staticClusterReader{cluster: cluster}, reader, managerSet)
+	reconciler := NewSecretReconciler(staticClusterReader{cluster: cluster}, reader, managerSet, "cloud-workflow-engine")
 
 	_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{
 		Namespace: secret.Namespace,
@@ -84,7 +84,7 @@ func TestSecretReconcilerIgnoresMetadataOnlySecretUpdate(t *testing.T) {
 		return newFakeRuntime(func() { stopped <- struct{}{} }), nil
 	}), 1)
 	t.Cleanup(managerSet.Shutdown)
-	reconciler := NewSecretReconciler(staticClusterReader{cluster: cluster}, reader, managerSet)
+	reconciler := NewSecretReconciler(staticClusterReader{cluster: cluster}, reader, managerSet, "cloud-workflow-engine")
 	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: secret.Namespace, Name: secret.Name}}
 
 	_, err := reconciler.Reconcile(ctx, request)
@@ -124,7 +124,7 @@ func TestSecretReconcilerStopsRuntimeWhenSecretIsDeleted(t *testing.T) {
 		return newFakeRuntime(func() { stopped <- struct{}{} }), nil
 	}), 1)
 	t.Cleanup(managerSet.Shutdown)
-	reconciler := NewSecretReconciler(staticClusterReader{cluster: cluster}, reader, managerSet)
+	reconciler := NewSecretReconciler(staticClusterReader{cluster: cluster}, reader, managerSet, "cloud-workflow-engine")
 	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: secret.Namespace, Name: secret.Name}}
 
 	_, err := reconciler.Reconcile(ctx, request)
@@ -167,7 +167,7 @@ func TestSecretReconcilerRejectsDeletingCluster(t *testing.T) {
 		return newFakeRuntime(nil), nil
 	}), 1)
 	t.Cleanup(managerSet.Shutdown)
-	reconciler := NewSecretReconciler(staticClusterReader{cluster: cluster}, reader, managerSet)
+	reconciler := NewSecretReconciler(staticClusterReader{cluster: cluster}, reader, managerSet, "cloud-workflow-engine")
 
 	_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Namespace: secret.Namespace, Name: secret.Name}})
 	require.NoError(t, err)
@@ -182,7 +182,7 @@ func tenantAccessSecret(clusterID uuid.UUID, clusterName, uid, resourceVersion s
 			UID:             types.UID(uid),
 			ResourceVersion: resourceVersion,
 			Labels: map[string]string{
-				constants.LabelKeyNkeManagedBy: constants.LabelValueNkeManagedBy,
+				constants.LabelKeyNkeManagedBy: "cloud-workflow-engine",
 				constants.LabelKeyClusterID:    clusterID.String(),
 			},
 		},

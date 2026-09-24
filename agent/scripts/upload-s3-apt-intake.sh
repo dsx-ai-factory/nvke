@@ -33,6 +33,7 @@ set -euo pipefail
 : "${APT_INTAKE_S3_URI:?APT_INTAKE_S3_URI must be set (e.g. s3://example-bucket/nke-packages)}"
 : "${APT_INTAKE_PROJECT:?APT_INTAKE_PROJECT must be set (e.g. nke-agent)}"
 : "${APT_INTAKE_RELEASE:?APT_INTAKE_RELEASE must be set (e.g. v0.1.26)}"
+: "${PUBLISH_INDEX_JSON:?PUBLISH_INDEX_JSON must be set to true or false}"
 
 DISTROS_RAW="${APT_INTAKE_DISTROS:-resolute noble}"
 read -r -a DISTROS <<<"$DISTROS_RAW"
@@ -97,6 +98,12 @@ for deb in "${debs[@]}"; do
       >>"$tmp_artifacts"
   done
 done
+
+if [[ "${PUBLISH_INDEX_JSON}" != true ]]; then
+  echo "S3 upload complete: ${RELEASE_BASE}"
+  echo "Skipping index.json update because PUBLISH_INDEX_JSON is not true."
+  exit 0
+fi
 
 jq -s '.' "$tmp_artifacts" >"$tmp_new_artifacts"
 

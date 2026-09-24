@@ -302,6 +302,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write       # the OIDC token the attestation is signed against
+      attestations: write   # writes the provenance attestation
     steps:
       - name: Log in to NVCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -333,6 +335,7 @@ jobs:
       # with it and the digest is preserved. What GHCR serves is the image NVCR
       # already holds, not a rebuild.
       - name: Copy the released image to GHCR
+        id: copy
         shell: bash
         env:
           NKE_NGC_ORG: ${{ vars.NKE_NGC_ORG }}
@@ -360,10 +363,33 @@ jobs:
           crane copy "${src}" "${dst}:${version}"
           crane tag "${dst}:${version}" "sha-${GITHUB_SHA}"
 
+          # For the attestation below. The subject is named by digest, never by
+          # tag: a tag is a mutable pointer, so provenance attached to one says
+          # nothing about what it points at later. Every tag above resolves to
+          # this digest, so one attestation covers them all.
+          {
+            echo "image=${dst}"
+            echo "digest=${digest}"
+          } >> "${GITHUB_OUTPUT}"
+
           {
             echo "- \`${dst}:${version}\` is \`${digest}\`"
             echo "- copied from \`${src}\`, not rebuilt"
           } >> "${GITHUB_STEP_SUMMARY}"
+
+      # push-to-registry attaches the attestation to the image as an OCI
+      # referrer, so a consumer verifies against GHCR alone and never calls the
+      # GitHub API. GHCR serves the referrers API; NVCR does not, which is why
+      # the NVCR and DSX copies are not attested here -- see RELEASE.md.
+      #
+      # crane copy does not carry referrers, so the image is attested where it
+      # lands rather than at the source.
+      - name: Attest the promoted image
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.copy.outputs.image }}
+          subject-digest: ${{ steps.copy.outputs.digest }}
+          push-to-registry: true
 
   promote-dsx:
     name: Promote to DSX

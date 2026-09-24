@@ -85,7 +85,7 @@ func uuidSlicesSetEqual(a, b []uuid.UUID) bool {
 
 func cloudInitFilesEqual(a, b []CloudInitFile) bool {
 	return slices.EqualFunc(a, b, func(x, y CloudInitFile) bool {
-		return x.Path == y.Path && x.Owner == y.Owner && x.Permissions == y.Permissions && x.Content == y.Content
+		return x.Path == y.Path && x.Owner == y.Owner && x.Permissions == y.Permissions && x.Encoding == y.Encoding && x.Content == y.Content
 	})
 }
 

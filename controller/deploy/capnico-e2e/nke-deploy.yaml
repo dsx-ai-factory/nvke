@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Deploy path for the CAPNICo end-to-end lane. Hand-authored: there is no
+# umbrella chart and no generator -- each component is its own helm release, and
+# the item order below IS the install order, which is what
+# docs/site-bootstrap/deploy-repository.md specifies.
+#
+# Absent deliberately:
+#   cert-manager   clusterctl init installs it before this runs, so a second
+#                  owner would fail on CRDs it cannot adopt.
+#   the CAPD items this lane has no use for -- the reboot test double and CWE's
+#   RBAC over dockerclusters -- and nke-spire-client, whose authn-spire specs
+#   the nico lane does not run.
+#   CAPNICo itself. It is built from the checkout controller/go.mod pins and
+#                  installed by controller/hack/nico-provider/install-capnico.sh,
+#                  the same script Tilt's nico provider runs, so both paths
+#                  deploy the provider identically. Installing it here instead
+#                  would mean pulling the released chart and image from a
+#                  private registry, and no credential in this repository
+#                  reaches them: GITHUB_TOKEN sees only packages NKE itself
+#                  publishes, NKE_INTERNAL_RO_TOKEN is wired for git and never
+#                  for a registry, and NGC_API_KEY -- which the released path in
+#                  install-capnico.sh needs -- is set in no workflow at all.
+#                  The nico-credentials Secret it reads IS here, because that is
+#                  site configuration a real deploy repository carries.
+#
+# nke-base-config is a template item because nico-credentials carries the
+# simulator's endpoint, which is computed per run. Nothing in it is secret on
+# this lane -- the token is nico-simctl-token -- but the endpoint still has to
+# be substituted, and a Secret is not reachable by helm values.
+items:
+  - {name: nke-base-config, type: template}
+  - {name: nke-auth-dev, type: manifest}
+  - {name: spire-tpm-pubhashes, type: manifest}
+  - {name: spire-server-nodeport, type: manifest}
+  - {name: spire-oidc-provider-nodeport, type: manifest}
+  - {name: postgresql, type: helm}
+  - {name: spire-crds, type: helm}
+  - {name: temporal, type: helm}
+  - {name: spire, type: helm}
+  - {name: controller, type: helm}

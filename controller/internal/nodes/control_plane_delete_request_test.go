@@ -479,7 +479,19 @@ func TestStartRequestedTeardown(t *testing.T) {
 
 	require.True(t, nodes.IsDeleting(written), "the node should now be Deleting")
 	require.False(t, nodes.IsDeleteRequested(written), "the request should be cleared once started")
-	require.Nil(t, written.DeleteRequest, "the recorded payload should be cleared once replayed")
+
+	// The payload stays on the row while the teardown runs. The workflow's start
+	// event is the only other copy and a closed run cannot be replayed, so a
+	// restart of a failed teardown reads the intent back from here. It goes away
+	// with the row, not before. IsDeleteRequested reads the condition, not this,
+	// so a retained payload cannot look like a second queued delete.
+	var replayed struct {
+		Reason           string `json:"reason"`
+		ForceUnreachable bool   `json:"forceUnreachable"`
+	}
+	require.NoError(t, json.Unmarshal(written.DeleteRequest, &replayed))
+	require.Equal(t, "API", replayed.Reason, "the recorded reason should survive for a restart")
+	require.True(t, replayed.ForceUnreachable, "the force verdict should survive for a restart")
 	mockTx.AssertExpectations(t)
 }
 

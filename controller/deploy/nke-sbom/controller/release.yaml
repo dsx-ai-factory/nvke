@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# cloud-workflow-engine. Last, because it blocks on "no identity issued" until
+# SPIRE has issued its SVID, and it reads both Postgres and Temporal.
+#
+# path, not repository: the published chart carries a released image and this
+# lane builds the controller at HEAD, so installing a published chart would test
+# the templates as they were when that artifact was cut. The image itself is
+# repointed with --set at install time.
+chart:
+  name: nke-controller
+  version: "0.0.0"
+  path: ../charts/controller
+release:
+  name: controller
+  namespace: cloud-workflow-engine
+values:
+  - values.yaml
+  - overlay.yaml

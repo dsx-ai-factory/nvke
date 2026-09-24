@@ -75,6 +75,15 @@ write_files:
     content: |
 {{ indent 6 .TrustBundle }}
 {{- end }}
+{{- range .Files }}
+  - path: {{ quote .Path }}
+    owner: {{ quote .Owner }}
+    permissions: {{ quote .Permissions }}
+{{- if .Encoding }}
+    encoding: {{ quote .Encoding }}
+{{- end }}
+    content: {{ quote .Content }}
+{{- end }}
 
 runcmd:
 {{- if .TeleportEnabled }}
@@ -96,7 +105,6 @@ runcmd:
 {{- if .SpiffeEnabled }}
   - systemctl disable --now nke-attestation
   - /usr/local/bin/fetch-and-install-bundle.sh https://d3mq564cn7sth7.cloudfront.net/nke_bundles/Ubuntu_24.04/x86_64/spire_agent_v1.14.1_tpm_attestor_v1.9.0_x86_64.tgz ./install.sh
-  - printf 'AGENT_ARGS="--enable-spiffe --secure-server-port {{ .NodeAgentPort }}"\n' > /etc/default/nke-agent
 {{- else }}
   - echo SERVER=REPLACED-BY-SWE >> /etc/dgx/attestation/vars
   - echo "SAN_IP=$(hostname -I | cut -d' ' -f1)" >> /etc/dgx/attestation/vars

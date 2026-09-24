@@ -131,7 +131,8 @@ func (s *NodeAgentServer) runCloudInitStatusPreflightCheck() (*pb.NodePreflightR
 
 		if exitCode := exitErr.ExitCode(); exitCode != cloudInitStatusRecoverableExitCode {
 			return nil, fmt.Errorf(
-				"check_cloud_init_status: cloud-init status exited %d: %s", exitCode, report)
+				"check_cloud_init_status: cloud-init status exited %d: %s", exitCode, report,
+			)
 		}
 	}
 

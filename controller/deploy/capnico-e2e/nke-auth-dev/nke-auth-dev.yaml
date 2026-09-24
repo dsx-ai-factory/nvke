@@ -1,0 +1,190 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# nke-auth-dev, copied from this repository per manifests/nke-auth-dev.pin.yaml. Applied with kubectl apply --server-side.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+    name: cloud-workflow-engine
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-clients
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-client
+    namespace: nke-clients
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-outsiders
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-outsider
+    namespace: nke-outsiders
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-e2e
+    namespace: nke-clients
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-client-token-minter
+    namespace: nke-clients
+rules:
+    - apiGroups:
+        - ""
+      resourceNames:
+        - nke-client
+      resources:
+        - serviceaccounts/token
+      verbs:
+        - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-client-token-minter
+    namespace: nke-clients
+roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: Role
+    name: nke-client-token-minter
+subjects:
+    - kind: ServiceAccount
+      name: nke-e2e
+      namespace: nke-clients
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-outsider-token-minter
+    namespace: nke-outsiders
+rules:
+    - apiGroups:
+        - ""
+      resourceNames:
+        - nke-outsider
+      resources:
+        - serviceaccounts/token
+      verbs:
+        - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-outsider-token-minter
+    namespace: nke-outsiders
+roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: Role
+    name: nke-outsider-token-minter
+subjects:
+    - kind: ServiceAccount
+      name: nke-e2e
+      namespace: nke-clients
+---
+apiVersion: v1
+data:
+    auth.yaml: |
+        apiVersion: auth.nke.nvidia.com/v1alpha1
+        kind: AuthenticationConfiguration
+        audiences: ["https://nke.tilt.local"]
+        issuers:
+          - name: local-kubernetes
+            issuer: "https://kubernetes.default.svc.cluster.local"
+            # Every issuer is fetched the same way, as a JWKS over HTTPS. The
+            # cluster's own endpoint is not anonymous, hence the bearer token and
+            # the issuer-discovery ClusterRole.
+            jwks:
+              uri: "https://kubernetes.default.svc/openid/v1/jwks"
+              caBundlePath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              bearerTokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token
+            algorithms: [RS256, ES256]
+            admit:
+              serviceAccounts:
+                # Omitting `name` would widen the rule to every service account in
+                # the namespace, nke-e2e above included.
+                - namespace: nke-clients
+                  name: nke-client
+          # SPIRE is omitted because it is not reachable yet, and an unreachable
+          # issuer is a startup failure in enforcing mode. Two things are missing: the
+          # discovery provider's serving certificate does not carry the in-cluster
+          # service name, which does not resolve from the pod network anyway, and
+          # caBundlePath needs secret oidc-provider-upstream-ca copied over from the
+          # spire-server namespace. Every value below was read off this cluster:
+          #
+          #   - name: spire
+          #     issuer: "https://nke.site-controller.internal"
+          #     jwks:
+          #       uri: "https://nke.site-controller.internal:30443/keys"
+          #       caBundlePath: /etc/nke/spire-ca/ca.crt
+          #     algorithms: [RS256]
+          #     admit:
+          #       spiffe:
+          #         trustDomain: cwe-capi.nke.local
+          #         pathPrefixes: ["/nke-e2e/"]
+kind: ConfigMap
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-auth-config
+    namespace: cloud-workflow-engine

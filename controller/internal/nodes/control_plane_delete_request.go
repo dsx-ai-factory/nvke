@@ -209,13 +209,35 @@ func StartRequestedTeardown(ctx context.Context, tx db.Tx, nodeID uuid.UUID) err
 	}
 
 	node.Conditions.DeleteRequested = db.NewCondition(false, "Teardown started")
-	node.DeleteRequest = nil
 
 	return StartTeardown(ctx, tx, node, TeardownNodeInput{
 		Reason:             recorded.Reason,
 		ForceUnreachable:   recorded.ForceUnreachable,
 		MachineHealthIssue: recorded.MachineHealthIssue,
 	}, "Node deletion in progress")
+}
+
+// RestartTeardownInput rebuilds the TeardownNode input for a fresh run of a
+// teardown whose workflow closed without completing. It replays what the caller
+// recorded and forces the unreachable path: the graceful path already had its
+// run and failed, and a node's health conditions stop being refreshed once it is
+// Deleting, so re-deriving the verdict gives the same answer and fails the same
+// way forever. ForceUnreachable never waives etcd member removal, so the retry
+// cannot leave a stale member behind.
+func RestartTeardownInput(node db.Node) (TeardownNodeInput, error) {
+	var recorded deleteRequestRecord
+	if len(node.DeleteRequest) > 0 {
+		if err := json.Unmarshal(node.DeleteRequest, &recorded); err != nil {
+			return TeardownNodeInput{}, fmt.Errorf("failed to read recorded delete request for node %s: %w", node.ID, err)
+		}
+	}
+	return TeardownNodeInput{
+		NodeID:             node.ID,
+		AllowCPNode:        true,
+		Reason:             recorded.Reason,
+		MachineHealthIssue: recorded.MachineHealthIssue,
+		ForceUnreachable:   true,
+	}, nil
 }
 
 // StartTeardown marks node as deleting and queues TeardownNode for it. It is the
@@ -228,6 +250,19 @@ func StartRequestedTeardown(ctx context.Context, tx db.Tx, nodeID uuid.UUID) err
 func StartTeardown(ctx context.Context, tx db.Tx, node db.Node, input TeardownNodeInput, deletingMessage string) error {
 	input.NodeID = node.ID
 	input.AllowCPNode = true
+
+	// Keep the queued input on the row. The workflow's start event is the only
+	// other copy of it, and a closed run cannot be replayed, so a restart reads
+	// the intent back from here.
+	recorded, err := json.Marshal(deleteRequestRecord{
+		Reason:             input.Reason,
+		ForceUnreachable:   input.ForceUnreachable,
+		MachineHealthIssue: input.MachineHealthIssue,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to record teardown input for node %s: %w", node.ID, err)
+	}
+	node.DeleteRequest = recorded
 
 	node.Conditions.Deleting = db.NewCondition(true, deletingMessage)
 	if _, err := tx.UpdateNode(ctx, &node); err != nil {

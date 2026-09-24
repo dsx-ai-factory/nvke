@@ -44,6 +44,15 @@ write_files:
     permissions: '0644'
     content: |
 {{ indent 6 .TrustBundle }}
+{{- range .Files }}
+  - path: {{ quote .Path }}
+    owner: {{ quote .Owner }}
+    permissions: {{ quote .Permissions }}
+{{- if .Encoding }}
+    encoding: {{ quote .Encoding }}
+{{- end }}
+    content: {{ quote .Content }}
+{{- end }}
 
 runcmd:
   - systemctl restart spire-agent.service

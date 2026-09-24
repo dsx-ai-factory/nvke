@@ -56,6 +56,7 @@ What distinguishes it from a generic CAPI distribution:
 | `build/` | Build and publish scripts per component. |
 | `docs/` | Architecture, getting started, and admin guides. |
 | `os-image/` | Reference Ubuntu node OS image (spec + Packer) and `nke-os-image-check`. |
+| `nktp/` | NVIDIA Kubernetes Telemetry Pipeline (NKTP): a Helm chart that deploys an OpenTelemetry pipeline for cluster metrics, logs and traces. Versioned and released on its own. |
 
 **Eleven Go modules**, tied together by a workspace at the repository root, each
 independently buildable. `make build` links six binaries: `agent`, `updater`,

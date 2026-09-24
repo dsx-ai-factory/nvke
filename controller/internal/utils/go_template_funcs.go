@@ -4,8 +4,16 @@
 package utils
 
 import (
+	"strconv"
 	"strings"
 )
+
+// Quote returns a double-quoted Go string literal, which is also a valid YAML
+// double-quoted scalar. It is useful for safely embedding values in YAML
+// templates.
+func Quote(value string) string {
+	return strconv.Quote(value)
+}
 
 // Indent adds the specified number of spaces to the beginning of each non-empty line.
 // Empty lines remain empty (no spaces added) to avoid trailing whitespace.

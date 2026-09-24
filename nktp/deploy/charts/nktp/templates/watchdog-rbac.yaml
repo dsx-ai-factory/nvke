@@ -1,0 +1,49 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+{{- $workload := .Values.watchdog.kubernetes }}
+{{- $allocator := $workload.targetAllocator | default dict }}
+{{- $operatorValues := index .Values "opentelemetry-kube-stack" "opentelemetry-operator" }}
+{{- if and $operatorValues.enabled $operatorValues.clusterRole.create $operatorValues.manager.metrics.secure }}
+{{- $operator := index (index .Subcharts "opentelemetry-kube-stack").Subcharts "opentelemetry-operator" }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nktp-watchdog-operator-metrics-{{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "opentelemetry-operator.fullname" $operator }}-metrics
+subjects:
+  - kind: ServiceAccount
+    name: {{ $workload.serviceAccount | default "nktp-watchdog-collector" }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nktp-watchdog-targetallocator
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: [pods, services]
+    verbs: [get, list, watch]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nktp-watchdog-targetallocator
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nktp-watchdog-targetallocator
+subjects:
+  - kind: ServiceAccount
+    name: {{ $allocator.serviceAccount | default "nktp-watchdog-targetallocator" }}
+    namespace: {{ .Release.Namespace }}

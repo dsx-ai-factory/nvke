@@ -7,13 +7,6 @@ package_update: true
 package_upgrade: false
 
 write_files:
-  - path: /etc/default/nke-agent
-    owner: root:root
-    permissions: '0644'
-    content: |
-      AGENT_ARGS="--secure-server-port {{ .NodeAgentPort }}"
-      KUBE_RESERVED_CPU="500m"
-      KUBE_RESERVED_MEM="250Mi"
 {{- if .TeleportEnabled }}
   - path: /etc/teleport.yaml
     owner: root:root
@@ -80,6 +73,15 @@ write_files:
     permissions: '0644'
     content: |
 {{ indent 6 .TrustBundle }}
+{{- range .Files }}
+  - path: {{ quote .Path }}
+    owner: {{ quote .Owner }}
+    permissions: {{ quote .Permissions }}
+{{- if .Encoding }}
+    encoding: {{ quote .Encoding }}
+{{- end }}
+    content: {{ quote .Content }}
+{{- end }}
 
 runcmd:
   - systemctl stop nke-agent.service

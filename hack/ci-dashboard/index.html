@@ -1,0 +1,248 @@
+<!doctype html>
+<!--
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+
+Static viewer for data.json, which hack/ci-dashboard/generate.sh writes. No
+build step and no dependencies: the page is opened straight from the Pages
+deployment and fetches data.json beside it.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NKE CI</title>
+<style>
+  :root {
+    --bg: #12141a; --fg: #e6e8ee; --dim: #8b91a3; --line: #262a35; --panel: #1a1d26;
+    --ok: #2ea043; --bad: #d1332e; --cancel: #4e5666; --run: #c7951b; --none: #1e2129;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  header {
+    position: sticky; top: 0; z-index: 3; background: var(--panel);
+    border-bottom: 1px solid var(--line); padding: 10px 14px;
+    display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  }
+  h1 { font-size: 14px; margin: 0; font-weight: 600; }
+  h1 a { color: var(--fg); text-decoration: none; }
+  .tabs { display: flex; gap: 2px; }
+  .tab {
+    padding: 4px 12px; border: 1px solid var(--line); background: transparent;
+    color: var(--dim); cursor: pointer; font: inherit; border-radius: 3px;
+  }
+  .tab[aria-selected="true"] { background: var(--bg); color: var(--fg); border-color: #3b4252; }
+  .meta { color: var(--dim); margin-left: auto; display: flex; gap: 14px; align-items: center; }
+  input[type=search] {
+    background: var(--bg); border: 1px solid var(--line); color: var(--fg);
+    padding: 4px 8px; font: inherit; border-radius: 3px; width: 200px;
+  }
+  .legend { display: flex; gap: 10px; align-items: center; }
+  .legend i { width: 11px; height: 11px; display: inline-block; border-radius: 2px; margin-right: 4px; }
+
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 0; }
+  tbody tr:hover { background: #171a22; }
+  .name {
+    position: sticky; left: 0; background: var(--bg); z-index: 1;
+    padding: 3px 10px 3px 14px; white-space: nowrap; border-right: 1px solid var(--line);
+    max-width: 380px; overflow: hidden; text-overflow: ellipsis;
+  }
+  tbody tr:hover .name { background: #171a22; }
+  .name a { color: var(--fg); text-decoration: none; }
+  .name a:hover { text-decoration: underline; }
+  .stat { color: var(--dim); font-size: 11px; padding-right: 10px; white-space: nowrap; text-align: right; }
+  .cells { padding: 3px 0; white-space: nowrap; }
+  .cell {
+    width: 13px; height: 13px; display: inline-block; margin-right: 2px;
+    border-radius: 2px; background: var(--none); vertical-align: middle;
+  }
+  a.cell:hover { outline: 2px solid var(--fg); outline-offset: 1px; }
+  .c-success { background: var(--ok); }
+  .c-failure, .c-timed_out, .c-startup_failure { background: var(--bad); }
+  .c-cancelled, .c-neutral, .c-stale { background: var(--cancel); }
+  .c-in_progress, .c-queued, .c-pending, .c-waiting,
+  .c-requested, .c-action_required { background: var(--run); }
+  .c-skipped { background: var(--none); border: 1px solid var(--line); }
+  .empty { color: var(--dim); padding: 30px 14px; }
+
+  /* A native title attribute waits about a second and cannot be styled, which
+     is too slow for a grid you scan. */
+  #tip {
+    position: fixed; z-index: 10; display: none; max-width: 460px;
+    background: #0c0e13; border: 1px solid #39405020; border-color: #394050;
+    border-radius: 5px; padding: 8px 10px; box-shadow: 0 6px 20px #0008;
+    pointer-events: none; font-size: 12px; line-height: 1.5;
+  }
+  #tip .hd { font-weight: 600; margin-bottom: 4px; }
+  #tip .subj { color: var(--fg); margin: 3px 0 5px; white-space: normal; }
+  #tip dl { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; margin: 0; }
+  #tip dt { color: var(--dim); }
+  #tip dd { margin: 0; }
+  #tip .fail { color: #ff9b95; margin-top: 5px; white-space: normal; }
+  #tip .slow { color: var(--run); }
+</style>
+</head>
+<body>
+<header>
+  <h1><a id="repolink" href="#">NKE CI</a></h1>
+  <div class="tabs" role="tablist">
+    <button class="tab" id="tab-main" role="tab" aria-selected="true">main</button>
+    <button class="tab" id="tab-pr" role="tab" aria-selected="false">pull requests</button>
+  </div>
+  <input type="search" id="filter" placeholder="filter jobs" aria-label="filter jobs">
+  <div class="meta">
+    <span class="legend">
+      <span><i class="c-success"></i>pass</span>
+      <span><i class="c-failure"></i>fail</span>
+      <span><i class="c-cancelled"></i>cancelled</span>
+      <span><i class="c-in_progress"></i>running</span>
+    </span>
+    <span id="generated"></span>
+  </div>
+</header>
+<div id="out"><p class="empty">loading data.json&hellip;</p></div>
+<div id="tip" role="tooltip"></div>
+
+<script>
+const S = { data: null, view: 'main', filter: '' };
+
+const secs = s => s == null ? '' :
+  s < 90 ? s + 's' : s < 5400 ? Math.round(s / 60) + 'm' : (s / 3600).toFixed(1) + 'h';
+
+const esc = s => String(s).replace(/[&<>"]/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const ago = iso => {
+  const m = (Date.now() - new Date(iso)) / 60000;
+  if (m < 60) return Math.round(m) + 'm ago';
+  if (m < 1440) return Math.round(m / 60) + 'h ago';
+  return Math.round(m / 1440) + 'd ago';
+};
+
+function tipHTML(r, repo) {
+  const rows = [];
+  const add = (k, v, cls) => rows.push(
+    `<dt>${k}</dt><dd${cls ? ` class="${cls}"` : ''}>${v}</dd>`);
+
+  add('when', `${esc(ago(r.t))} <span style="color:var(--dim)">${esc(r.t.replace('T', ' '))}</span>`);
+  add('commit', `<code>${esc(r.sha)}</code>`);
+  add('trigger', esc(r.ev) + (r.actor ? ` by ${esc(r.actor)}` : ''));
+  if (r.pr) add('pull request', `#${r.pr}`);
+  if (r.d) add('ran for', esc(secs(r.d)));
+  // A long queue here is the concurrency group serialising runs on one commit,
+  // not a slow fleet. It is invisible in the Actions UI, and it is often the
+  // larger half of the wall clock, so it gets its own line and turns amber.
+  if (r.q > 60) add('queued', esc(secs(r.q)) + ' before starting', 'slow');
+
+  const failed = (r.failed || []).length
+    ? `<div class="fail">failed: ${r.failed.map(esc).join('<br>')}</div>` : '';
+
+  return `<div class="hd">${esc(r.c)}</div>` +
+         (r.msg ? `<div class="subj">${esc(r.msg)}</div>` : '') +
+         `<dl>${rows.join('')}</dl>${failed}`;
+}
+
+const tipEl = () => document.getElementById('tip');
+
+function showTip(ev, html) {
+  const t = tipEl();
+  t.innerHTML = html;
+  t.style.display = 'block';
+  const pad = 12, w = t.offsetWidth, h = t.offsetHeight;
+  let x = ev.clientX + pad, y = ev.clientY + pad;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - pad;
+  if (y + h > innerHeight - 8) y = ev.clientY - h - pad;
+  t.style.left = Math.max(8, x) + 'px';
+  t.style.top = Math.max(8, y) + 'px';
+}
+
+const hideTip = () => { tipEl().style.display = 'none'; };
+
+function render() {
+  const d = S.data;
+  const repo = d.repo;
+  document.getElementById('repolink').href = `https://github.com/${repo}`;
+  document.getElementById('repolink').textContent = `${repo} CI`;
+  document.getElementById('generated').textContent =
+    'generated ' + d.generated.replace('T', ' ');
+
+  const f = S.filter.toLowerCase();
+  const rows = (d.views[S.view] || []).filter(r => !f || r.workflow.toLowerCase().includes(f));
+  const out = document.getElementById('out');
+
+  if (!rows.length) { out.innerHTML = '<p class="empty">no jobs match.</p>'; return; }
+
+  const table = document.createElement('table');
+  const tbody = document.createElement('tbody');
+
+  for (const row of rows) {
+    const tr = document.createElement('tr');
+
+    const name = document.createElement('td');
+    name.className = 'name';
+    const a = document.createElement('a');
+    a.href = row.workflow_url; a.textContent = row.workflow; a.title = row.workflow;
+    name.appendChild(a);
+    tr.appendChild(name);
+
+    // Pass rate over the window, so a row that is mostly red reads as such
+    // without counting squares.
+    const scored = row.runs.filter(r => r.c === 'success' || r.c === 'failure' || r.c === 'timed_out');
+    const pass = scored.filter(r => r.c === 'success').length;
+    const stat = document.createElement('td');
+    stat.className = 'stat';
+    stat.textContent = scored.length ? `${pass}/${scored.length}` : '';
+    tr.appendChild(stat);
+
+    const cells = document.createElement('td');
+    cells.className = 'cells';
+    for (const r of row.runs) {
+      const c = document.createElement('a');
+      c.className = 'cell c-' + (r.c || 'none').replace(/[^a-z_]/g, '');
+      c.href = `https://github.com/${repo}/actions/runs/${r.id}`;
+      c.rel = 'noreferrer';
+      c.onmouseenter = e => showTip(e, tipHTML(r, repo));
+      c.onmousemove = e => showTip(e, tipHTML(r, repo));
+      c.onmouseleave = hideTip;
+      // Keyboard users get the same card, since the cells are focusable links.
+      c.onfocus = e => showTip(
+        Object.assign({}, e, {
+          clientX: c.getBoundingClientRect().left,
+          clientY: c.getBoundingClientRect().bottom,
+        }), tipHTML(r, repo));
+      c.onblur = hideTip;
+      cells.appendChild(c);
+    }
+    tr.appendChild(cells);
+    tbody.appendChild(tr);
+  }
+
+  table.appendChild(tbody);
+  out.replaceChildren(table);
+}
+
+function pick(view) {
+  S.view = view;
+  document.getElementById('tab-main').setAttribute('aria-selected', view === 'main');
+  document.getElementById('tab-pr').setAttribute('aria-selected', view === 'pr');
+  render();
+}
+
+document.getElementById('tab-main').onclick = () => pick('main');
+document.getElementById('tab-pr').onclick = () => pick('pr');
+document.getElementById('filter').oninput = e => { S.filter = e.target.value; render(); };
+
+fetch('data.json', { cache: 'no-store' })
+  .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+  .then(d => { S.data = d; render(); })
+  .catch(e => {
+    document.getElementById('out').innerHTML =
+      '<p class="empty">could not load data.json: ' + e.message + '</p>';
+  });
+</script>
+</body>
+</html>

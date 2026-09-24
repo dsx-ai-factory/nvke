@@ -22,7 +22,6 @@ import (
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
@@ -70,7 +69,7 @@ func (a *Activities) InstallKubeLocalDNS(ctx context.Context, input InstallKubeL
 				return struct{}{}, err
 			}
 
-			if err := applyKubeLocalDNSManifest(ctx, tenantClient); err != nil {
+			if err := applyKubeLocalDNSManifest(ctx, tenantClient, a.cfg.FieldManagerName); err != nil {
 				return struct{}{}, err
 			}
 			if err := ensureCoreDNSClusterDNSLabel(ctx, tenantClient); err != nil {
@@ -88,7 +87,7 @@ func (a *Activities) InstallKubeLocalDNS(ctx context.Context, input InstallKubeL
 	return err
 }
 
-func applyKubeLocalDNSManifest(ctx context.Context, tenantClient ctrlclient.Client) error {
+func applyKubeLocalDNSManifest(ctx context.Context, tenantClient ctrlclient.Client, fieldManagerName string) error {
 	decoder := utilyaml.NewYAMLOrJSONDecoder(bytes.NewReader(kubeLocalDNSManifest), 4096)
 	for {
 		obj := &unstructured.Unstructured{}
@@ -105,7 +104,7 @@ func applyKubeLocalDNSManifest(ctx context.Context, tenantClient ctrlclient.Clie
 		if err := tenantClient.Apply(
 			ctx,
 			ctrlclient.ApplyConfigurationFromUnstructured(obj),
-			ctrlclient.FieldOwner(constants.FieldManagerCWE),
+			ctrlclient.FieldOwner(fieldManagerName),
 			ctrlclient.ForceOwnership,
 		); err != nil {
 			return fmt.Errorf("failed to apply kube-local-dns %s %s: %w", obj.GetKind(), obj.GetName(), err)

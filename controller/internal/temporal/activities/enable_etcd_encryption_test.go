@@ -53,7 +53,7 @@ func TestPrepareEtcdEncryption_ReturnsStableNodeOrderAndHealthyExecutor(t *testi
 		return filters.ClusterID != nil && *filters.ClusterID == clusterID &&
 			filters.ControlPlane != nil && *filters.ControlPlane
 	})).Return(nodes, nil).Once()
-	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil)
+	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil, "")
 
 	result, err := a.PrepareEtcdEncryption(context.Background(), activities.PrepareEtcdEncryptionInput{
 		ClusterID: clusterID,
@@ -81,7 +81,7 @@ func TestValidateEtcdEncryptionHealth_RejectsOldNodeAgent(t *testing.T) {
 	mockDB := &testutil.MockDB{}
 	mockDB.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{node}, nil).Once()
 	nodeAgent := &agenttest.FakeClient{AgentVersion: "0.1.25"}
-	a := activities.NewActivities(config.Config{}, mockDB, nil, nodeAgent, "", nil)
+	a := activities.NewActivities(config.Config{}, mockDB, nil, nodeAgent, "", nil, "")
 
 	err := a.ValidateEtcdEncryptionHealth(context.Background(), activities.ValidateEtcdEncryptionHealthInput{
 		ClusterID:       clusterID,
@@ -109,7 +109,7 @@ func TestCompleteEtcdEncryption_MarksEncryptedAndClearsOwnProgress(t *testing.T)
 	})).Return(db.Cluster{}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil)
+	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil, "")
 	_, err := a.CompleteEtcdEncryption(context.Background(), activities.CompleteEtcdEncryptionInput{ClusterID: clusterID})
 	require.NoError(t, err)
 	mockDB.MockTx.AssertExpectations(t)
@@ -132,7 +132,7 @@ func TestClearEtcdEncryptionUpdateInProgress_ClearsOnlyEtcdEncryption(t *testing
 	})).Return(db.Cluster{}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil)
+	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil, "")
 	_, err := a.ClearEtcdEncryptionUpdateInProgress(
 		context.Background(),
 		activities.ClearEtcdEncryptionUpdateInProgressInput{ClusterID: clusterID},
@@ -160,7 +160,7 @@ func TestClearEtcdEncryptionUpdateInProgress_RecordsFailure(t *testing.T) {
 	})).Return(db.Cluster{}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil)
+	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil, "")
 	_, err := a.ClearEtcdEncryptionUpdateInProgress(
 		context.Background(),
 		activities.ClearEtcdEncryptionUpdateInProgressInput{
@@ -183,7 +183,7 @@ func TestClearEtcdEncryptionUpdateInProgress_DoesNotClearOtherOperations(t *test
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil)
+	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil, "")
 	_, err := a.ClearEtcdEncryptionUpdateInProgress(
 		context.Background(),
 		activities.ClearEtcdEncryptionUpdateInProgressInput{ClusterID: clusterID},
@@ -210,7 +210,7 @@ func TestStartEtcdEncryptionRewrite_ResumesRunningOperation(t *testing.T) {
 			}, nil
 		},
 	}
-	a := activities.NewActivities(config.Config{}, mockDB, nil, nodeAgent, "", nil)
+	a := activities.NewActivities(config.Config{}, mockDB, nil, nodeAgent, "", nil, "")
 
 	operation, err := a.StartEtcdEncryptionRewrite(context.Background(), activities.EtcdEncryptionRewriteInput{
 		NodeID: node.ID, OperationID: "existing-op",
@@ -238,7 +238,7 @@ func TestStartEtcdEncryptionRewrite_StartsFreshOperationAfterFailure(t *testing.
 			}, nil
 		},
 	}
-	a := activities.NewActivities(config.Config{}, mockDB, nil, nodeAgent, "", nil)
+	a := activities.NewActivities(config.Config{}, mockDB, nil, nodeAgent, "", nil, "")
 
 	operation, err := a.StartEtcdEncryptionRewrite(context.Background(), activities.EtcdEncryptionRewriteInput{
 		NodeID: node.ID, OperationID: "new-op",

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
@@ -54,6 +55,79 @@ func TestAuthorizeClient(t *testing.T) {
 			}
 			if !tc.wantErr && err != nil {
 				t.Fatalf("authorizeClient(%q) = %v, want nil", tc.id, err)
+			}
+		})
+	}
+}
+
+// A misconfigured authentication mode must stop the agent at startup. The
+// alternative is a systemd unit that restarts forever while every handshake
+// fails, which is what an unrecognized flag already produces.
+func TestValidateAuthConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		cfg     AgentConfig
+		wantErr string
+	}{
+		{
+			name: "default mode needs no exchange configuration",
+			cfg:  AgentConfig{GRPCAuthMode: authModeSPIFFEMTLS},
+		},
+		{
+			name: "default mode tolerates disabled mTLS for development",
+			cfg:  AgentConfig{GRPCAuthMode: authModeSPIFFEMTLS, DisableMTLS: true},
+		},
+		{
+			name: "tls-jwt with an exchange endpoint",
+			cfg: AgentConfig{
+				GRPCAuthMode:           authModeTLSJWT,
+				DSXIdentityExchangeURL: "https://identity.example.test/v1/exchange",
+			},
+		},
+		{
+			name: "tls-jwt cannot run on plaintext gRPC",
+			cfg: AgentConfig{
+				GRPCAuthMode:           authModeTLSJWT,
+				DisableMTLS:            true,
+				DSXIdentityExchangeURL: "https://identity.example.test/v1/exchange",
+			},
+			wantErr: "cannot be combined with --disable-mtls",
+		},
+		{
+			name:    "tls-jwt without an exchange endpoint",
+			cfg:     AgentConfig{GRPCAuthMode: authModeTLSJWT},
+			wantErr: "requires --dsx-identity-exchange-url",
+		},
+		{
+			name:    "unknown mode",
+			cfg:     AgentConfig{GRPCAuthMode: "mtls"},
+			wantErr: `--grpc-auth-mode must be "spiffe-mtls" or "tls-jwt", got "mtls"`,
+		},
+		{
+			name:    "empty mode",
+			cfg:     AgentConfig{},
+			wantErr: `got ""`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateAuthConfig(tc.cfg)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("validateAuthConfig() = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("validateAuthConfig() = nil, want error containing %q", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("validateAuthConfig() = %v, want error containing %q", err, tc.wantErr)
 			}
 		})
 	}

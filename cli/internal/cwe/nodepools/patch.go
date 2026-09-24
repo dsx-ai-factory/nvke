@@ -140,7 +140,8 @@ func loadPatchNodePoolRequest(cmd *cobra.Command, patch, patchFile string) ([]by
 	for field, value := range patchMap {
 		if value == nil {
 			return nil, fmt.Errorf(
-				"%s: null is not a value; omit the field to leave it unchanged", field)
+				"%s: null is not a value; omit the field to leave it unchanged", field,
+			)
 		}
 	}
 	data, err := json.Marshal(patchMap)

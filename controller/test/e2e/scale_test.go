@@ -47,6 +47,7 @@ func validateNodePoolScale(test *tenantTest) {
 		)
 		controlPlaneNode := expectNewNode(ctx, test, controlPlanePool.ID, originalControlPlaneNodes)
 		workerNode := expectNewNode(ctx, test, workerPool.ID, originalWorkerNodes)
+		validateOVNLifecycleTraffic(ctx, test, "scale-up", controlPlaneNode.Name, workerNode.Name)
 
 		By("Decrementing the desired count of the control-plane and worker pools by 1")
 		expectSucceed(test.nke.UpdateNodePoolDesiredCount(ctx, controlPlanePool.ID, originalControlPlaneCount))
@@ -68,6 +69,7 @@ func validateNodePoolScale(test *tenantTest) {
 			poolScale{pool: controlPlanePool, desired: originalControlPlaneCount},
 			poolScale{pool: workerPool, desired: originalWorkerCount},
 		)
+		validateOVNLifecycleTraffic(ctx, test, "scale-down")
 	}, Label("lifecycle", "scale"), NodeTimeout(2*time.Hour))
 }
 

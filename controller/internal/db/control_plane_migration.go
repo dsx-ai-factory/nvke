@@ -23,6 +23,63 @@ type deprecatedControlPlaneNodeSet struct {
 	KubernetesVersion string    `bun:"kubernetes_version"`
 }
 
+// SyncMissingControlPlaneConfigsFromCPNodePools creates a control-plane
+// configuration snapshot for every non-deleting cluster that still has an
+// active CP node pool but a nil clusters.configuration_id.
+//
+// MigrateControlPlaneToController calls this first. The helper is exported so
+// the imported-site case can be unit-tested without running the Postgres-only
+// re-parent SQL.
+func SyncMissingControlPlaneConfigsFromCPNodePools(ctx context.Context, bunDB *bun.DB) error {
+	var clusterIDs []uuid.UUID
+	err := bunDB.NewSelect().
+		TableExpr("clusters AS c").
+		Column("c.id").
+		Join("JOIN node_pools AS np ON np.cluster_id = c.id").
+		Where("np.control_plane = ?", true).
+		Where("c.configuration_id IS NULL").
+		Distinct().
+		Scan(ctx, &clusterIDs)
+	if err != nil {
+		return fmt.Errorf("list clusters missing control-plane configuration: %w", err)
+	}
+	if len(clusterIDs) == 0 {
+		return nil
+	}
+
+	q := NewDB(bunDB)
+	cp := true
+	for _, id := range clusterIDs {
+		cluster, err := q.GetCluster(ctx, id)
+		if err != nil {
+			return fmt.Errorf("load cluster %s: %w", id, err)
+		}
+		if cluster.Conditions.Deleting.Status == ConditionStatusTrue {
+			continue
+		}
+		pools, err := q.ListNodePools(ctx, NodePoolFilters{ClusterID: &id, ControlPlane: &cp})
+		if err != nil {
+			return fmt.Errorf("list control-plane node pools for cluster %s: %w", id, err)
+		}
+		if !hasActiveControlPlaneNodePool(pools) {
+			continue
+		}
+		if err := q.SyncClusterControlPlaneConfigFromCPNodePools(ctx, id); err != nil {
+			return fmt.Errorf("sync control-plane config for cluster %s (%s): %w", cluster.Name, id, err)
+		}
+	}
+	return nil
+}
+
+func hasActiveControlPlaneNodePool(pools []NodePool) bool {
+	for i := range pools {
+		if pools[i].ControlPlane && pools[i].Conditions.Deleting.Status != ConditionStatusTrue {
+			return true
+		}
+	}
+	return false
+}
+
 // MigrateControlPlaneToController re-parents legacy node-pool-managed
 // control-plane nodes onto the control-plane controller when the site has opted
 // in via PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER.
@@ -40,11 +97,20 @@ type deprecatedControlPlaneNodeSet struct {
 // fails closed: if any non-deleting cluster cannot be fully migrated it errors so
 // the worker refuses to start rather than serve a half-migrated fleet.
 //
+// Before rewriting ownership it fills missing clusters.configuration_id from
+// active CP node pools. Self-imported site controllers often have a pool but no
+// snapshot (inject skipped the pool-create sync); without that the fail-closed
+// leftover check would abort startup.
+//
 // Remove this and its worker call site once every site is migrated and the flag
 // is on by default.
 func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB, useController bool) error {
 	if !useController {
 		return nil
+	}
+
+	if err := SyncMissingControlPlaneConfigsFromCPNodePools(ctx, bunDB); err != nil {
+		return err
 	}
 
 	tx, err := bunDB.BeginTx(ctx, nil)

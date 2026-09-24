@@ -34,6 +34,10 @@ on:
       - "controller/**"
       - "agent/**"
       - Makefile
+      # The deploy path this lane installs. Without it a change to the tree
+      # that defines the management plane triggers nothing, and the lane that
+      # would have caught the break runs on some later, unrelated push.
+      - "controller/deploy/**"
       - .github/workflows/nico-e2e.yml
       - .github/workflows/backend-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml
@@ -43,6 +47,15 @@ on:
   schedule:
     - cron: '15 2,14 * * *'
   workflow_dispatch:
+    inputs:
+      use-nke-stack:
+        description: >-
+          Deploy the management plane from controller/deploy/capnico-e2e with
+          use-nke-sbom.sh. This is the default on every trigger, as on the CAPD
+          lane; set false here to fall back to Tilt.
+        required: false
+        type: boolean
+        default: true
 
 permissions: {}
 
@@ -115,3 +128,14 @@ jobs:
       # only one in CI not covering controller-managed control planes.
       single-runner-control-plane-modes: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}
       needs-capnico-source: true
+      # Default on every trigger; a dispatch can still opt out, the same form
+      # the CAPD lane uses. Written as "not a dispatch OR the input" rather
+      # than `inputs.x || true`: in GitHub expressions `false || true` is true,
+      # so the `|| true` form would swallow an explicit false and leave no way
+      # back to Tilt.
+      #
+      # Tilt is the fallback for one thing the deploy path does not replace:
+      # it supervises nico-sim as a serve_cmd, where run-nico-sim.sh starts the
+      # process and leaves it. A simulator that dies mid-suite shows up as
+      # specs timing out rather than as a resource error.
+      use-nke-stack: ${{ github.event_name != 'workflow_dispatch' || inputs.use-nke-stack }}

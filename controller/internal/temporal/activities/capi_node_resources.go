@@ -119,7 +119,7 @@ func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context,
 		return err
 	}
 
-	if err := a.k8sClient.Patch(ctx, infraMachine, client.Apply, client.FieldOwner(constants.FieldManagerCWE), client.ForceOwnership); err != nil {
+	if err := a.k8sClient.Patch(ctx, infraMachine, client.Apply, client.FieldOwner(a.cfg.FieldManagerName), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply infra machine %s: %w", infraMachine.GetName(), err)
 	}
 
@@ -134,7 +134,7 @@ func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context,
 	}
 
 	bootstrapSecret := buildCAPIBootstrapSecret(createCtx, userData)
-	if err := a.k8sClient.Patch(ctx, bootstrapSecret, client.Apply, client.FieldOwner(constants.FieldManagerCWE), client.ForceOwnership); err != nil {
+	if err := a.k8sClient.Patch(ctx, bootstrapSecret, client.Apply, client.FieldOwner(a.cfg.FieldManagerName), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply bootstrap secret %s: %w", bootstrapSecret.Name, err)
 	}
 
@@ -157,7 +157,7 @@ func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context,
 	if spireJoinToken != "" {
 		machine.Annotations[constants.MachineAnnotationKeySpireAgentSpiffeIDPath] = spireAgentAlternateIDPath
 	}
-	if err := a.k8sClient.Patch(ctx, machine, client.Apply, client.FieldOwner(constants.FieldManagerCWE), client.ForceOwnership); err != nil {
+	if err := a.k8sClient.Patch(ctx, machine, client.Apply, client.FieldOwner(a.cfg.FieldManagerName), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply machine %s: %w", machine.Name, err)
 	}
 
@@ -201,7 +201,7 @@ func (a *Activities) createTemplateLessForgeCAPIMachineForNode(ctx context.Conte
 	if err != nil {
 		return err
 	}
-	if err := a.k8sClient.Patch(ctx, nicoMachine, client.Apply, client.FieldOwner(constants.FieldManagerCWE), client.ForceOwnership); err != nil {
+	if err := a.k8sClient.Patch(ctx, nicoMachine, client.Apply, client.FieldOwner(a.cfg.FieldManagerName), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply NicoMachine %s: %w", nicoMachine.Name, err)
 	}
 
@@ -210,7 +210,7 @@ func (a *Activities) createTemplateLessForgeCAPIMachineForNode(ctx context.Conte
 		return err
 	}
 	bootstrapSecret := buildCAPIBootstrapSecret(createCtx, userData)
-	if err := a.k8sClient.Patch(ctx, bootstrapSecret, client.Apply, client.FieldOwner(constants.FieldManagerCWE), client.ForceOwnership); err != nil {
+	if err := a.k8sClient.Patch(ctx, bootstrapSecret, client.Apply, client.FieldOwner(a.cfg.FieldManagerName), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply bootstrap secret %s: %w", bootstrapSecret.Name, err)
 	}
 
@@ -222,7 +222,7 @@ func (a *Activities) createTemplateLessForgeCAPIMachineForNode(ctx context.Conte
 	if err != nil {
 		return err
 	}
-	if err := a.k8sClient.Patch(ctx, machine, client.Apply, client.FieldOwner(constants.FieldManagerCWE), client.ForceOwnership); err != nil {
+	if err := a.k8sClient.Patch(ctx, machine, client.Apply, client.FieldOwner(a.cfg.FieldManagerName), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply machine %s: %w", machine.Name, err)
 	}
 
@@ -297,7 +297,7 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 		logger.Info("Applying machine health issue annotation", "nodeID", input.NodeID, "machine", machine.Name, "machineHealthIssue", input.MachineHealthIssue)
 		machine.Annotations = map[string]string{constants.MachineAnnotationKeyMachineHealthIssue: *input.MachineHealthIssue}
 
-		if err := a.k8sClient.Patch(ctx, machine, client.Apply, client.FieldOwner(constants.FieldManagerCWEMachineHealthIssue), client.ForceOwnership); err != nil {
+		if err := a.k8sClient.Patch(ctx, machine, client.Apply, client.FieldOwner(a.cfg.FieldManagerMachineHealthIssueName), client.ForceOwnership); err != nil {
 			return fmt.Errorf("failed to apply machine health issue annotation: %w", err)
 		}
 	}
@@ -648,7 +648,7 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	machineName := node.Name
 
 	// Note: With SSA, a field manager can give up ownership of a field by applying an object that no longer includes that field.
-	// If no other manager owns that field, Kubernetes removes it. Since FieldManagerCWERebootMachine owns only the reboot annotation,
+	// If no other manager owns that field, Kubernetes removes it. Since FieldManagerRebootMachineName owns only the reboot annotation,
 	// we can simply apply an object with no reboot annotation present at all to delete it.
 	annotations := map[string]string{}
 
@@ -668,7 +668,7 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 		},
 	}
 
-	if err := a.k8sClient.Patch(ctx, machine, client.Apply, client.FieldOwner(constants.FieldManagerCWERebootMachine), client.ForceOwnership); err != nil {
+	if err := a.k8sClient.Patch(ctx, machine, client.Apply, client.FieldOwner(a.cfg.FieldManagerRebootMachineName), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply machine reboot annotation: %w", err)
 	}
 

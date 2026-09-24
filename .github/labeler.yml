@@ -32,6 +32,7 @@ area/chart:
       - any-glob-to-any-file:
           - "controller/deploy/**"
           - "controller/hack/chart-*-assertions.*"
+          - "nktp/deploy/**"
 
 area/os-image:
   - changed-files:
@@ -79,3 +80,9 @@ area/generated:
   - changed-files:
       - any-glob-to-any-file:
           - "generated/**"
+
+area/nktp:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "nktp/**"
+          - ".github/workflows/nktp-*.yml"

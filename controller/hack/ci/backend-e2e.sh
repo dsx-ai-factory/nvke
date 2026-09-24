@@ -121,6 +121,18 @@ else
   NICO_PROVIDER_ENABLED=false
 fi
 
+# Which deploy path use-nke-sbom.sh installs, one per backend. The trees are not
+# interchangeable: capd-e2e carries the reboot test double, CWE's RBAC over
+# dockerclusters and nke-spire-client, while capnico-e2e carries the
+# nico-credentials Secret instead. deploy-sbom.sh defaults to capd-e2e, so the
+# NICo lane has to name its own or it would install the wrong management plane
+# and fail somewhere far from the cause.
+if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
+  SBOM_TARGET=capnico-e2e
+else
+  SBOM_TARGET=capd-e2e
+fi
+
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
     log "$1 is required" >&2
@@ -383,10 +395,15 @@ stop_state_monitor() {
 # assertion, so a stale image fails here rather than passing quietly.
 ci_e2e_exec() {
   local cp_flag="$1"; shift
+  local e2e_bundle_server_url="http://${BUNDLE_MIRROR_NAME}/"
+  if [[ "${INSTALL_CNI_AFTER_INIT:-false}" == "true" ]]; then
+    e2e_bundle_server_url=""
+  fi
   runner_exec env \
     "CWE_EXPECTED_VERSION=${CWE_BUILD_VERSION}" \
     "CWE_PROFILES_DIR=${NKE_E2E_PROFILES_DIR}" \
     "NKE_E2E_DSX_IDENTITY_EXCHANGE=${DSX_IDENTITY_EXCHANGE_ENABLED}" \
+    "NKE_E2E_BUNDLE_SERVER_URL=${e2e_bundle_server_url}" \
     "E2E_BGP_CONTAINER_NAME=${BGP_CONTAINER_NAME}" \
     "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${cp_flag}" \
     "NKE_E2E_SPIRE_RELEASE=${NKE_E2E_SPIRE_RELEASE:-}" \
@@ -542,7 +559,7 @@ collect_diagnostics() {
           clusters,machinedeployments,machinesets,machines,kubeadmcontrolplanes,kubeadmconfigs,dockerclusters,dockermachines \
           -A \
           >"${STATE_DIR}/capi-describe.txt" 2>&1
-        for artifact in tilt.log tilt-snapshot.json e2e.log junit.xml \
+        for artifact in tilt.log tilt-snapshot.json nico-sim.log e2e.log junit.xml \
           junit-cp-controller.xml junit-nodepool.xml; do
           docker cp "${RUNNER_NAME}:/state/${artifact}" "${STATE_DIR}/${artifact}" >/dev/null 2>&1 || true
         done
@@ -856,28 +873,17 @@ configure_kind_dockerhub_mirror
 kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_IMAGE}"
 kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_PROFILES_TILT_IMAGE}"
 
-# capd-reboot-controller is a CAPD test double, not management-plane software:
-# CAPD "nodes" are containers, so a machine reboot has no analogue and this
-# restarts the container instead. The Tilt path gets it from its provider
-# module; the nke-stack path has no Tilt, so it is built here and applied by
-# deploy-nke-stack.sh. It stays out of the nke-stack chart deliberately -- no
-# operator deploys it, and its image is a local ko.local reference.
-# The suite reads the SPIRE server's ConfigMap and lists its pods by label, and
-# both names derive from the helm release: <release>-server and
-# instance=<release>. Tilt installs SPIRE as its own release named "spire",
-# which is what the suite defaults to; under the umbrella every subchart
-# inherits the umbrella's release instead, so the defaults find nothing and
-# every spec needing the management trust domain fails with
-# `configmaps "spire-server" not found`. Must match STACK_RELEASE in
-# deploy-nke-stack.sh.
+# The suite finds SPIRE's ConfigMap and pods from the release name. Its own
+# default is "spire", which is what both paths now install: Tilt installs SPIRE
+# as its own release, and the deploy path names the release in
+# controller/deploy/capd-e2e/spire/release.yaml. The umbrella was the odd one out -- every
+# subchart inherited its release, so this had to be overridden to nke-stack or
+# the defaults found nothing and every spec needing the management trust domain
+# failed with `configmaps "spire-server" not found`.
 NKE_E2E_SPIRE_RELEASE="${NKE_E2E_SPIRE_RELEASE:-}"
-if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
-  NKE_E2E_SPIRE_RELEASE="${NKE_E2E_SPIRE_RELEASE:-nke-stack}"
-  log "spire release for the suite: ${NKE_E2E_SPIRE_RELEASE}"
-fi
 
 if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
-  log "building capd-reboot-controller for the nke-stack path"
+  log "building capd-reboot-controller for the deploy-path lane"
   docker build \
     -t "${CAPD_REBOOT_IMAGE}" \
     -f "${CONTROLLER_ROOT}/hack/capd-reboot-controller/Dockerfile" \
@@ -987,21 +993,20 @@ runner_exec tar -xzf /state/cwe-source.tgz -C /workspace/cloud-workflow-engine
 # not in it. Stage them separately, preserving the build/ + generated/ layout the
 # script derives REPO_ROOT from. Only when the stack path is selected.
 if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
-  runner_exec mkdir -p /workspace/nke-stack/generated/nke-stack
+  # docker cp will not create a missing parent, so the root has to exist before
+  # the first copy. It used to arrive as a side effect of mkdir -p on the
+  # generated chart directory, which no longer gets staged.
+  runner_exec mkdir -p /workspace/nke-stack
   docker cp "${WORKSPACE_ROOT}/build" "${RUNNER_NAME}:/workspace/nke-stack/build"
-  # .helmignore included: without it the packaged chart differs from what a
-  # normal build produces, and helm falls back to its built-in default.
-  for f in Chart.yaml values.yaml .helmignore; do
-    docker cp "${WORKSPACE_ROOT}/generated/nke-stack/${f}" \
-      "${RUNNER_NAME}:/workspace/nke-stack/generated/nke-stack/${f}"
-  done
-  docker cp "${WORKSPACE_ROOT}/controller/hack/ci/deploy-nke-stack.sh" \
-    "${RUNNER_NAME}:/usr/local/bin/deploy-nke-stack.sh"
-  # build-local packages the CWE chart from the working tree, so the build tree
-  # needs it at the path build/nke-stack.sh derives from REPO_ROOT.
-  runner_exec mkdir -p /workspace/nke-stack/controller/deploy
-  docker cp "${WORKSPACE_ROOT}/controller/deploy/charts" \
-    "${RUNNER_NAME}:/workspace/nke-stack/controller/deploy/charts"
+  docker cp "${WORKSPACE_ROOT}/controller/hack/ci/deploy-sbom.sh" \
+    "${RUNNER_NAME}:/usr/local/bin/deploy-sbom.sh"
+  # The deploy paths and the charts they install from live under one root, so
+  # this is a single copy. build/use-nke-sbom.sh reads nke-deploy.yaml from
+  # here; controller/deploy/<target>/controller/release.yaml reaches its chart
+  # as ../../charts/controller, which resolves inside the same tree.
+  runner_exec mkdir -p /workspace/nke-stack/controller
+  docker cp "${WORKSPACE_ROOT}/controller/deploy" \
+    "${RUNNER_NAME}:/workspace/nke-stack/controller/deploy"
   # A chart in a private package needs credentials inside the runner too; helm
   # on the outer host already has them if anyone pushed or pulled it.
   if [[ -f "${HOME}/.config/helm/registry/config.json" ]]; then
@@ -1030,7 +1035,10 @@ runner_exec env CLUSTER_TOPOLOGY=true clusterctl init \
   --infrastructure "docker:${CAPD_PROVIDER_VERSION}"
 runner_exec kubectl rollout status deployment/capi-controller-manager -n capi-system --timeout=5m
 runner_exec kubectl rollout status deployment/capd-controller-manager -n capd-system --timeout=5m
-if [[ -n "${CAPNICO_SOURCE_SRC:-}" && "${NICO_PROVIDER_ENABLED}" != true ]]; then
+# On the deploy path these are the capnico-crds item, vendored at the ref
+# controller/go.mod pins, so applying them here too would give them two owners.
+if [[ -n "${CAPNICO_SOURCE_SRC:-}" && "${NICO_PROVIDER_ENABLED}" != true \
+      && "${NKE_E2E_USE_STACK:-false}" != "true" ]]; then
   log "installing CAPNICo CRDs"
   runner_exec kubectl apply -f "${CAPNICO_SOURCE_CONTAINER_DIR}/config/crd/bases"
   runner_exec kubectl wait --for=condition=Established crd \
@@ -1040,8 +1048,14 @@ if [[ -n "${CAPNICO_SOURCE_SRC:-}" && "${NICO_PROVIDER_ENABLED}" != true ]]; the
     nicomachinetemplates.infrastructure.cluster.x-k8s.io \
     --timeout=2m
 fi
-log "injecting SPIRE exec-auth plugin into CAPI/CAPD controllers"
-runner_exec bash /workspace/cloud-workflow-engine/hack/apply-capi-spiffe-exec-auth.sh
+# Deferred on the deploy path until after the install: the script only waits for
+# the patched pods to roll out when csi.spiffe.io is registered, and that
+# CSIDriver arrives with the spire item. Run here it patches and moves on,
+# leaving the rollout unverified; run after, it is checked.
+if [[ "${NKE_E2E_USE_STACK:-false}" != "true" ]]; then
+  log "injecting SPIRE exec-auth plugin into CAPI/CAPD controllers"
+  runner_exec bash /workspace/cloud-workflow-engine/hack/apply-capi-spiffe-exec-auth.sh
+fi
 
 if ! management_vip="$(e2e_management_vip "${KIND_CLUSTER_NAME}")"; then
   log "Kind control-plane IP was not found"
@@ -1089,14 +1103,14 @@ jq -n \
   }' >"${E2E_CONFIG}"
 docker cp "${E2E_CONFIG}" "${RUNNER_NAME}:/state/e2e-config.json"
 
-# NKE_E2E_STACK_CHART deploys the six management-plane charts from the nke-stack
-# umbrella instead of Tilt. Everything below -- rollout checks, CAPI probes, the
-# Ginkgo legs -- is identical either way. Tilt remains the default: it also
-# runs the inner-loop live_update the umbrella has no equivalent for. The pieces
-# its providers deploy -- capd-reboot-controller, the CAPD RBAC for CWE and the
-# BGP container -- are handled explicitly on this path instead.
+# Installs the management plane from controller/deploy/capd-e2e, one helm release per
+# component, instead of Tilt. Everything below -- rollout checks, CAPI probes,
+# the Ginkgo legs -- is identical either way. Tilt stays available for the
+# inner loop, which the deploy path has no live_update equivalent for. The
+# pieces its providers deploy that the deploy path does not carry -- the BGP
+# container -- are handled explicitly here.
 if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
-  log "deploying the management plane from the nke-stack umbrella chart"
+  log "deploying the management plane from the ${SBOM_TARGET} deploy path"
 
   # FRR, so kube-vip on container-based tenant nodes can peer through the kind
   # gateway. Tilt's bgp-containers provider runs this; without Tilt nothing did,
@@ -1107,6 +1121,51 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
   log "starting the BGP container ${BGP_CONTAINER_NAME}"
   CONTAINER_NAME="${BGP_CONTAINER_NAME}" bash "${CONTROLLER_ROOT}/hack/bgp-containers/up.sh"
   BGP_CONTAINER_OWNED=true
+
+  # nico-sim. Tilt runs it as a serve_cmd, which is not available here -- see
+  # the script's header.
+  #
+  # Independent of the CAPNICo install below: neither reads anything the other
+  # writes, so the order between them is free. First because it is the cheap
+  # one -- a failure here surfaces in seconds rather than after a docker build.
+  # Nothing calls the endpoint until a NicoCluster exists, which is the suite,
+  # long after both.
+  #
+  # It listens inside the runner, so the address CAPNICo dials is the runner's
+  # own kind-network IP, passed as NICO_SIM_ENDPOINT_HOST below. deploy-sbom.sh
+  # falls back to KIND_GATEWAY_IP when that is unset, which is right for a
+  # developer running the simulator on the host and wrong here.
+  if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
+    if [[ "${NICO_SIM_BINARY_PREBUILT}" != "true" ]]; then
+      log "the NICo backend needs a prebuilt nico-sim binary on the deploy path"
+      exit 1
+    fi
+    log "starting nico-sim in the runner"
+    runner_exec env \
+      NICO_SIM_DIR=/workspace/cloud-workflow-engine/nico-sim \
+      NICO_SIM_BINARY=/tmp/cwe-nico-sim \
+      CAPD_KINDEST_NODE_IMAGE="${CAPD_NODE_IMAGE}" \
+      bash /workspace/cloud-workflow-engine/hack/nico-provider/run-nico-sim.sh
+  fi
+
+  # CAPNICo is deliberately not a deploy-path item: the released chart and image
+  # sit in a private registry no secret in this repository reaches. It is built
+  # from the checkout controller/go.mod pins and installed by the same script
+  # Tilt's nico provider runs, so the two paths deploy the provider identically.
+  #
+  # Before the install, not after: CWE watches the NICo CRDs this chart brings,
+  # and the controller item is the last thing use-nke-sbom.sh installs.
+  # nico-credentials is the other way round -- the deploy path renders it as
+  # part of nke-base-config -- which is fine, because CAPNICo reads that Secret
+  # when it reconciles rather than at startup.
+  if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
+    log "installing CAPNICo from ${CAPNICO_SOURCE_CONTAINER_DIR}"
+    runner_exec env \
+      CAPNICO_SOURCE_DIR="${CAPNICO_SOURCE_CONTAINER_DIR}" \
+      CAPNICO_STAGED_CHART_DIR=/state/capnico-chart \
+      KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
+      bash /workspace/cloud-workflow-engine/hack/nico-provider/install-capnico.sh
+  fi
   # VERSION is passed in because the runner holds a tar of the working tree, not
   # a clone: `git describe` inside it finds no repository, so build-local cannot
   # derive one. It is NOT CWE_BUILD_VERSION -- that is an image tag
@@ -1114,6 +1173,8 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
   # the prerelease field instead. The controller image tag is set separately
   # from CWE_IMAGE, so the two need not match.
   runner_exec env \
+    SBOM_TARGET="${SBOM_TARGET}" \
+    NICO_SIM_ENDPOINT_HOST="${runner_kind_ip}" \
     VERSION="0.0.0-e2e.${git_short_sha}" \
     MANAGEMENT_VIP="${management_vip}" \
     KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
@@ -1128,7 +1189,10 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
     SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM="${SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM:-}" \
     NKE_E2E_STACK_CHART="${NKE_E2E_STACK_CHART}" \
     NKE_E2E_STACK_VERSION="${NKE_E2E_STACK_VERSION:-}" \
-    bash /usr/local/bin/deploy-nke-stack.sh "${CWE_IMAGE}"
+    bash /usr/local/bin/deploy-sbom.sh "${CWE_IMAGE}"
+
+  log "injecting SPIRE exec-auth plugin into CAPI/CAPD controllers"
+  runner_exec bash /workspace/cloud-workflow-engine/hack/apply-capi-spiffe-exec-auth.sh
 else
 log "deploying the management plane with Tilt"
 BGP_CONTAINER_OWNED=true

@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
 )
@@ -38,7 +39,7 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 		newKubeDNSService(),
 	).Build()
 	provider := &fakeTenantClientProvider{tenantClient: tenantClient}
-	a := &Activities{db: database, tenantClientProvider: provider}
+	a := &Activities{db: database, tenantClientProvider: provider, cfg: config.Config{FieldManagerName: "cloud-workflow-engine"}}
 
 	input := InstallKubeLocalDNSInput{ClusterID: cluster.ID}
 	require.NoError(t, executeInstallKubeLocalDNSActivity(t, a, input))
@@ -158,6 +159,7 @@ func TestInstallKubeLocalDNSLabelsCoreDNSDaemonSet(t *testing.T) {
 	a := &Activities{
 		db:                   database,
 		tenantClientProvider: &fakeTenantClientProvider{tenantClient: tenantClient},
+		cfg:                  config.Config{FieldManagerName: "cloud-workflow-engine"},
 	}
 
 	require.NoError(t, executeInstallKubeLocalDNSActivity(t, a, InstallKubeLocalDNSInput{ClusterID: cluster.ID}))
@@ -189,6 +191,7 @@ func TestInstallKubeLocalDNSDefersSelectorUntilClusterDNSPodIsReady(t *testing.T
 	a := &Activities{
 		db:                   database,
 		tenantClientProvider: &fakeTenantClientProvider{tenantClient: tenantClient},
+		cfg:                  config.Config{FieldManagerName: "cloud-workflow-engine"},
 	}
 
 	// The activity should fail rather than silently leaving kube-dns
@@ -234,6 +237,7 @@ func TestInstallKubeLocalDNSRewritesSelectorWhenNodeLocalDNSIsReady(t *testing.T
 	a := &Activities{
 		db:                   database,
 		tenantClientProvider: &fakeTenantClientProvider{tenantClient: tenantClient},
+		cfg:                  config.Config{FieldManagerName: "cloud-workflow-engine"},
 	}
 
 	require.NoError(t, executeInstallKubeLocalDNSActivity(t, a, InstallKubeLocalDNSInput{ClusterID: cluster.ID}))
@@ -256,6 +260,7 @@ func TestInstallKubeLocalDNSReturnsTenantClientProviderError(t *testing.T) {
 	a := &Activities{
 		db:                   database,
 		tenantClientProvider: &fakeTenantClientProvider{err: providerErr},
+		cfg:                  config.Config{FieldManagerName: "cloud-workflow-engine"},
 	}
 
 	err := executeInstallKubeLocalDNSActivity(t, a, InstallKubeLocalDNSInput{ClusterID: cluster.ID})

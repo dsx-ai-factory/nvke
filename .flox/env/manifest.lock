@@ -17,14 +17,13 @@
         "outputs": "all"
       },
       "go": {
-        "pkg-path": "go",
-        "pkg-group": "go",
-        "version": "1.26.5"
+        "pkg-path": "go_1_27",
+        "pkg-group": "go"
       },
       "golangci-lint": {
         "pkg-path": "golangci-lint",
         "pkg-group": "golangci-lint",
-        "version": "2.12.2"
+        "version": "2.13.2"
       },
       "jq": {
         "pkg-path": "jq"
@@ -49,11 +48,6 @@
       },
       "nix": {
         "pkg-path": "nix"
-      },
-      "oapi-codegen": {
-        "pkg-path": "oapi-codegen",
-        "pkg-group": "oapi-codegen",
-        "version": "2.4.1"
       },
       "python3": {
         "pkg-path": "python313",
@@ -94,88 +88,87 @@
   },
   "packages": [
     {
-      "attr_path": "go",
+      "attr_path": "go_1_27",
       "broken": false,
-      "derivation": "/nix/store/l4h5brja9krijg49rjgqqwl41gallzyk-go-1.26.5.drv",
+      "derivation": "/nix/store/s5g06vbqc1f4zyv93f9m4q3yv4iy1rvd-go-1.27.1.drv",
       "description": "Go Programming language",
       "install_id": "go",
       "license": "BSD-3-Clause",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=56c02bc00adcf003215cc4bd996d6efaf4cff188",
-      "name": "go-1.26.5",
-      "pname": "go",
-      "rev": "56c02bc00adcf003215cc4bd996d6efaf4cff188",
-      "rev_count": 1060451,
-      "rev_date": "2026-08-23T15:22:48Z",
-      "scrape_date": "2026-08-25T04:56:37.939227Z",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=44a91898084f46797b5fac650c7e8c9ac38c43d4",
+      "name": "go-1.27.1",
+      "pname": "go_1_27",
+      "rev": "44a91898084f46797b5fac650c7e8c9ac38c43d4",
+      "rev_count": 1077143,
+      "rev_date": "2026-09-20T16:21:31Z",
+      "scrape_date": "2026-09-22T04:58:28.733478Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "1.26.5",
+      "version": "1.27.1",
       "outputs_to_install": [
-        "out",
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/4im44k446822ixjai0mdaizqskc90qxr-go-1.26.5"
+        "out": "/nix/store/9w6fm5c9v3lx0vxd4pqy7i8qmdfsmq7g-go-1.27.1"
       },
       "system": "aarch64-darwin",
       "group": "go",
       "priority": 5
     },
     {
-      "attr_path": "go",
+      "attr_path": "go_1_27",
       "broken": false,
-      "derivation": "/nix/store/0gbv4dwd20dvc1ld7v7vmbym3wh5lvkp-go-1.26.5.drv",
+      "derivation": "/nix/store/d3z4f96si97bqkksvkc1knfvis76w47f-go-1.27.1.drv",
       "description": "Go Programming language",
       "install_id": "go",
       "license": "BSD-3-Clause",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=56c02bc00adcf003215cc4bd996d6efaf4cff188",
-      "name": "go-1.26.5",
-      "pname": "go",
-      "rev": "56c02bc00adcf003215cc4bd996d6efaf4cff188",
-      "rev_count": 1060451,
-      "rev_date": "2026-08-23T15:22:48Z",
-      "scrape_date": "2026-08-25T05:27:24.256396Z",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=44a91898084f46797b5fac650c7e8c9ac38c43d4",
+      "name": "go-1.27.1",
+      "pname": "go_1_27",
+      "rev": "44a91898084f46797b5fac650c7e8c9ac38c43d4",
+      "rev_count": 1077143,
+      "rev_date": "2026-09-20T16:21:31Z",
+      "scrape_date": "2026-09-22T05:30:29.822645Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "1.26.5",
+      "version": "1.27.1",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/yjifjy7qjzm9jli8xhzwy3y6fzw84405-go-1.26.5"
+        "out": "/nix/store/40wlcfzp30vzja0qnrr2in1y24fvysz8-go-1.27.1"
       },
       "system": "aarch64-linux",
       "group": "go",
       "priority": 5
     },
     {
-      "attr_path": "go",
+      "attr_path": "go_1_27",
       "broken": false,
-      "derivation": "/nix/store/11w7bm3ywzxmqw9cczv44gxcfiws472f-go-1.26.5.drv",
+      "derivation": "/nix/store/fcdhjm4l5d9x3m63nnid441912lqchgf-go-1.27.1.drv",
       "description": "Go Programming language",
       "install_id": "go",
       "license": "BSD-3-Clause",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=56c02bc00adcf003215cc4bd996d6efaf4cff188",
-      "name": "go-1.26.5",
-      "pname": "go",
-      "rev": "56c02bc00adcf003215cc4bd996d6efaf4cff188",
-      "rev_count": 1060451,
-      "rev_date": "2026-08-23T15:22:48Z",
-      "scrape_date": "2026-08-25T06:00:38.715007Z",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=44a91898084f46797b5fac650c7e8c9ac38c43d4",
+      "name": "go-1.27.1",
+      "pname": "go_1_27",
+      "rev": "44a91898084f46797b5fac650c7e8c9ac38c43d4",
+      "rev_count": 1077143,
+      "rev_date": "2026-09-20T16:21:31Z",
+      "scrape_date": "2026-09-22T06:07:52.504338Z",
       "stabilities": [
         "unstable"
       ],
       "unfree": false,
-      "version": "1.26.5",
+      "version": "1.27.1",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/xrgn6m0c5vbz06467q06zdwnk6qqdl7z-go-1.26.5"
+        "out": "/nix/store/wzf7v2cm02izb6c7j0y7zqxv8iw50hz4-go-1.27.1"
       },
       "system": "x86_64-linux",
       "group": "go",
@@ -184,28 +177,27 @@
     {
       "attr_path": "golangci-lint",
       "broken": false,
-      "derivation": "/nix/store/wsfjjyhm2kz8dza3qvh4vzf39yvxhx4w-golangci-lint-2.12.2.drv",
+      "derivation": "/nix/store/r79r20yqmnnc1ybs1ra1h3647fzbqi0y-golangci-lint-2.13.2.drv",
       "description": "Fast linters Runner for Go",
       "install_id": "golangci-lint",
       "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=ffb3c9b700e759be2ef13237c9d8f953b32a1e46",
-      "name": "golangci-lint-2.12.2",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=44a91898084f46797b5fac650c7e8c9ac38c43d4",
+      "name": "golangci-lint-2.13.2",
       "pname": "golangci-lint",
-      "rev": "ffb3c9b700e759be2ef13237c9d8f953b32a1e46",
-      "rev_count": 1058091,
-      "rev_date": "2026-08-19T10:27:33Z",
-      "scrape_date": "2026-08-21T04:55:37.641698Z",
+      "rev": "44a91898084f46797b5fac650c7e8c9ac38c43d4",
+      "rev_count": 1077143,
+      "rev_date": "2026-09-20T16:21:31Z",
+      "scrape_date": "2026-09-22T04:58:28.776438Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "2.12.2",
+      "version": "2.13.2",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/cqawpcdr4iif6g81i9flza941zxzgac5-golangci-lint-2.12.2"
+        "out": "/nix/store/86zcj3bjakjbbv0mw45hnfzakp4lbyj7-golangci-lint-2.13.2"
       },
       "system": "aarch64-darwin",
       "group": "golangci-lint",
@@ -214,28 +206,27 @@
     {
       "attr_path": "golangci-lint",
       "broken": false,
-      "derivation": "/nix/store/2fm59nlrwrmky38k4wqga4b49ab306d7-golangci-lint-2.12.2.drv",
+      "derivation": "/nix/store/3k60ykanla1s539ky0z1alcv24nsrpbz-golangci-lint-2.13.2.drv",
       "description": "Fast linters Runner for Go",
       "install_id": "golangci-lint",
       "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=ffb3c9b700e759be2ef13237c9d8f953b32a1e46",
-      "name": "golangci-lint-2.12.2",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=44a91898084f46797b5fac650c7e8c9ac38c43d4",
+      "name": "golangci-lint-2.13.2",
       "pname": "golangci-lint",
-      "rev": "ffb3c9b700e759be2ef13237c9d8f953b32a1e46",
-      "rev_count": 1058091,
-      "rev_date": "2026-08-19T10:27:33Z",
-      "scrape_date": "2026-08-21T05:24:59.437582Z",
+      "rev": "44a91898084f46797b5fac650c7e8c9ac38c43d4",
+      "rev_count": 1077143,
+      "rev_date": "2026-09-20T16:21:31Z",
+      "scrape_date": "2026-09-22T05:30:29.893402Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "2.12.2",
+      "version": "2.13.2",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/dyiky0qyz8p8z3c54rz5z2qdwbrf05c7-golangci-lint-2.12.2"
+        "out": "/nix/store/y2an7133w5r04086j4jl1niwsr67rx48-golangci-lint-2.13.2"
       },
       "system": "aarch64-linux",
       "group": "golangci-lint",
@@ -244,28 +235,27 @@
     {
       "attr_path": "golangci-lint",
       "broken": false,
-      "derivation": "/nix/store/brznwjf44vslb41i16lchdga14zwz8n2-golangci-lint-2.12.2.drv",
+      "derivation": "/nix/store/hzajn6lwarrhvh24jfkxxhd8wdir7d5h-golangci-lint-2.13.2.drv",
       "description": "Fast linters Runner for Go",
       "install_id": "golangci-lint",
       "license": "GPL-3.0-or-later",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=ffb3c9b700e759be2ef13237c9d8f953b32a1e46",
-      "name": "golangci-lint-2.12.2",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=44a91898084f46797b5fac650c7e8c9ac38c43d4",
+      "name": "golangci-lint-2.13.2",
       "pname": "golangci-lint",
-      "rev": "ffb3c9b700e759be2ef13237c9d8f953b32a1e46",
-      "rev_count": 1058091,
-      "rev_date": "2026-08-19T10:27:33Z",
-      "scrape_date": "2026-08-21T05:58:01.217823Z",
+      "rev": "44a91898084f46797b5fac650c7e8c9ac38c43d4",
+      "rev_count": 1077143,
+      "rev_date": "2026-09-20T16:21:31Z",
+      "scrape_date": "2026-09-22T06:07:52.576051Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "2.12.2",
+      "version": "2.13.2",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/yl3hlickshlf7smf4iql5lalmhi6hhqg-golangci-lint-2.12.2"
+        "out": "/nix/store/ilazks9wgdw6vbc6q8gb2i4by1r1cr73-golangci-lint-2.13.2"
       },
       "system": "x86_64-linux",
       "group": "golangci-lint",
@@ -533,93 +523,6 @@
       },
       "system": "x86_64-linux",
       "group": "kubeconform",
-      "priority": 5
-    },
-    {
-      "attr_path": "oapi-codegen",
-      "broken": false,
-      "derivation": "/nix/store/ic51cvyqc4ckfnp0p7qcpzpwrwb50ihm-oapi-codegen-2.4.1.drv",
-      "description": "Go client and server OpenAPI 3 generator",
-      "install_id": "oapi-codegen",
-      "license": "Apache-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=17f6bd177404d6d43017595c5264756764444ab8",
-      "name": "oapi-codegen-2.4.1",
-      "pname": "oapi-codegen",
-      "rev": "17f6bd177404d6d43017595c5264756764444ab8",
-      "rev_count": 835620,
-      "rev_date": "2025-07-26T16:59:46Z",
-      "scrape_date": "2025-07-29T00:32:56.921925Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "2.4.1",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/a4ya4cidmz9rc7xkpssg8c5cilfyx074-oapi-codegen-2.4.1"
-      },
-      "system": "aarch64-darwin",
-      "group": "oapi-codegen",
-      "priority": 5
-    },
-    {
-      "attr_path": "oapi-codegen",
-      "broken": false,
-      "derivation": "/nix/store/319q1hm7v5xkadz2hc9n248j4n9fxca3-oapi-codegen-2.4.1.drv",
-      "description": "Go client and server OpenAPI 3 generator",
-      "install_id": "oapi-codegen",
-      "license": "Apache-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=17f6bd177404d6d43017595c5264756764444ab8",
-      "name": "oapi-codegen-2.4.1",
-      "pname": "oapi-codegen",
-      "rev": "17f6bd177404d6d43017595c5264756764444ab8",
-      "rev_count": 835620,
-      "rev_date": "2025-07-26T16:59:46Z",
-      "scrape_date": "2025-07-29T00:57:07.262042Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "2.4.1",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/xbqmblb4zi8qm61jgkdk9s15bv2sxbbi-oapi-codegen-2.4.1"
-      },
-      "system": "aarch64-linux",
-      "group": "oapi-codegen",
-      "priority": 5
-    },
-    {
-      "attr_path": "oapi-codegen",
-      "broken": false,
-      "derivation": "/nix/store/z1s6xamisc5va4rqvlrvs42f0slbpy3r-oapi-codegen-2.4.1.drv",
-      "description": "Go client and server OpenAPI 3 generator",
-      "install_id": "oapi-codegen",
-      "license": "Apache-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=17f6bd177404d6d43017595c5264756764444ab8",
-      "name": "oapi-codegen-2.4.1",
-      "pname": "oapi-codegen",
-      "rev": "17f6bd177404d6d43017595c5264756764444ab8",
-      "rev_count": 835620,
-      "rev_date": "2025-07-26T16:59:46Z",
-      "scrape_date": "2025-07-29T01:47:15.693015Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "2.4.1",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/yyvhpdszhkmfs6k8s1l5r07vlgll6pm2-oapi-codegen-2.4.1"
-      },
-      "system": "x86_64-linux",
-      "group": "oapi-codegen",
       "priority": 5
     },
     {
@@ -1117,6 +1020,7 @@
       "version": "4.4.1",
       "outputs_to_install": [
         "man",
+        "out",
         "out"
       ],
       "outputs": {
@@ -1151,6 +1055,7 @@
       "version": "4.4.1",
       "outputs_to_install": [
         "man",
+        "out",
         "out"
       ],
       "outputs": {

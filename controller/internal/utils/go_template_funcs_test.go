@@ -11,6 +11,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func TestUnit_Quote(t *testing.T) {
+	t.Parallel()
+
+	value := "root:root # YAML-sensitive\nnext line"
+	quoted := Quote(value)
+
+	var decoded string
+	require.NoError(t, yaml.Unmarshal([]byte(quoted), &decoded))
+	assert.Equal(t, value, decoded)
+}
+
 func TestIndent_Empty(t *testing.T) {
 	result := Indent(5, "")
 	assert.Empty(t, result)

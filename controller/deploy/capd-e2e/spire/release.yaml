@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The published SPIFFE hardened chart, like spire-crds beside it.
+#
+# This was pinned to a COMMIT until 2026-09-20, because global.spire.jwtIssuer
+# had no upstream release: 0.29.0 accepts the value but never renders
+# "jwt_issuer" into the SPIRE server config, so the value is silently ignored.
+# Only the templating in that commit emitted it. 0.30.1 does, so the pin is no
+# longer needed -- and build/spire-chart.sh, which existed only to clone and
+# `helm dependency build` that commit, is gone with it.
+#
+# 0.30.1 is also what cli/internal/cwedeploy installs, so the deploy path and
+# nkectl now agree on the version.
+#
+# The only difference against the pinned commit is four ClusterSPIFFEIDs for
+# SPIKE (spire-spike-bootstrap/keeper/nexus/pilot), which 0.30.1 no longer
+# emits by default and nothing here installs or uses.
+chart:
+  name: spire
+  version: "0.30.1"
+  repository: https://spiffe.github.io/helm-charts-hardened/
+release:
+  name: spire
+  namespace: spire-server
+values:
+  - values.yaml
+  - overlay.yaml
+# Preconditions this item needs and does not own. helm --wait only waits on
+# workloads, and a Certificate is not one, so --wait would return before the CA
+# is issued. nke-base-config applies it; this blocks until cert-manager has.
+requires:
+  - {kind: certificate, name: oidc-provider-upstream-ca, namespace: spire-server, condition: Ready}

@@ -126,6 +126,11 @@ jobs:
     permissions:
       contents: read
 
+  nktp-chart:
+    uses: ./.github/workflows/nktp-chart.yml
+    permissions:
+      contents: read
+
   licenses:
     uses: ./.github/workflows/license.yml
     permissions:
@@ -198,6 +203,7 @@ jobs:
       - agent-test
       - workspace
       - chart
+      - nktp-chart
       - licenses
       - generated
       - actionlint

@@ -1,0 +1,86 @@
+{
+  "uid": "nktp-gateway-traces",
+  "title": "NKTP Traces Gateway",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Received spans /s",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0 } },
+      "targets": [
+        { "expr": "sum(rate(otelcol_receiver_accepted_spans_total{job=\"nktp-gateway-traces\"}[5m]))", "legendFormat": "spans", "refId": "A" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Exported spans /s",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0 } },
+      "targets": [
+        { "expr": "sum(rate(otelcol_exporter_sent_spans_total{job=\"nktp-gateway-traces\"}[5m]))", "legendFormat": "spans", "refId": "A" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Export failures /s",
+      "gridPos": { "x": 0, "y": 7, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0 } },
+      "targets": [
+        { "expr": "sum(rate(otelcol_exporter_send_failed_spans_total{job=\"nktp-gateway-traces\"}[5m]))", "legendFormat": "spans", "refId": "A" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Refused spans /s",
+      "gridPos": { "x": 12, "y": 7, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0 } },
+      "targets": [
+        { "expr": "sum(rate(otelcol_receiver_refused_spans_total{job=\"nktp-gateway-traces\"}[5m]))", "legendFormat": "spans", "refId": "A" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Exporter queue use",
+      "gridPos": { "x": 0, "y": 14, "w": 24, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } },
+      "targets": [
+        { "expr": "100 * sum by (exporter) (otelcol_exporter_queue_size{job=\"nktp-gateway-traces\",data_type=\"traces\"}) / sum by (exporter) (otelcol_exporter_queue_capacity{job=\"nktp-gateway-traces\",data_type=\"traces\"})", "legendFormat": "{{exporter}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "CPU cores",
+      "gridPos": { "x": 0, "y": 21, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "cores", "min": 0 } },
+      "targets": [
+        { "expr": "sum(rate(otelcol_process_cpu_seconds_total{job=\"nktp-gateway-traces\"}[5m]))", "legendFormat": "CPU cores", "refId": "A" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Memory (RSS)",
+      "gridPos": { "x": 12, "y": 21, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 } },
+      "targets": [
+        { "expr": "sum(otelcol_process_memory_rss_bytes{job=\"nktp-gateway-traces\"})", "legendFormat": "RSS", "refId": "A" }
+      ]
+    }
+  ]
+}

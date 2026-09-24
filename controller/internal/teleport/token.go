@@ -12,15 +12,12 @@ import (
 	"github.com/google/uuid"
 )
 
-const (
-	TPMTokenNamePrefix = "nke-cwe-" //nolint:gosec // This is a naming prefix, not credentials
-)
-
 var ErrInvalidEKPubHash = errors.New("invalid EK public key hash format")
 
-// TPMTokenName returns the deterministic Teleport token name for a node.
-func TPMTokenName(nodeID uuid.UUID) string {
-	return TPMTokenNamePrefix + nodeID.String()
+// TPMTokenName returns the deterministic Teleport token name for a node,
+// under prefix (config.TeleportConfig.TokenNamePrefix).
+func TPMTokenName(prefix string, nodeID uuid.UUID) string {
+	return prefix + nodeID.String()
 }
 
 // ValidateEKPubHash validates that the hash is a valid hex-encoded SHA-256 digest.

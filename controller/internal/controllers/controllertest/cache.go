@@ -70,7 +70,7 @@ func (c *fakeCache) scopeFor(gvk schema.GroupVersionKind) (string, labels.Select
 	return metav1.NamespaceAll, labels.Everything()
 }
 
-func (c *fakeCache) informerForObject(ctx context.Context, object client.Object) (cache.Informer, error) {
+func (c *fakeCache) informerForObject(object client.Object) (cache.Informer, error) {
 	gvk, err := apiutil.GVKForObject(object, c.scheme)
 	if err != nil {
 		return nil, err
@@ -94,7 +94,7 @@ func (c *fakeCache) informerForObject(ctx context.Context, object client.Object)
 	}
 
 	listWatch := &toolscache.ListWatch{
-		ListFunc: func(_ metav1.ListOptions) (runtime.Object, error) {
+		ListWithContextFunc: func(ctx context.Context, _ metav1.ListOptions) (runtime.Object, error) {
 			list, err := c.newList(listGVK)
 			if err != nil {
 				return nil, err
@@ -104,7 +104,7 @@ func (c *fakeCache) informerForObject(ctx context.Context, object client.Object)
 			}
 			return list, nil
 		},
-		WatchFunc: func(_ metav1.ListOptions) (watch.Interface, error) {
+		WatchFuncWithContext: func(ctx context.Context, _ metav1.ListOptions) (watch.Interface, error) {
 			list, err := c.newList(listGVK)
 			if err != nil {
 				return nil, err
@@ -150,7 +150,7 @@ func (c *fakeCache) GetInformer(
 	object client.Object,
 	_ ...cache.InformerGetOption,
 ) (cache.Informer, error) {
-	return c.informerForObject(ctx, object)
+	return c.informerForObject(object)
 }
 
 func (c *fakeCache) GetInformerForKind(
@@ -166,7 +166,7 @@ func (c *fakeCache) GetInformerForKind(
 	if !ok {
 		return nil, fmt.Errorf("scheme object %s is not a client.Object", gvk)
 	}
-	return c.informerForObject(ctx, clientObject)
+	return c.informerForObject(clientObject)
 }
 
 func (c *fakeCache) RemoveInformer(context.Context, client.Object) error { return nil }

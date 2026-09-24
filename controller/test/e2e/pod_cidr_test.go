@@ -86,11 +86,11 @@ func validatePodCIDRPostCreate(test *tenantTest) {
 			return nil
 		}).WithContext(ctx).WithTimeout(1 * time.Minute).WithPolling(1 * time.Second).Should(Succeed())
 
-		test.log.Info("Building an authenticated client for the tenant cluster")
+		test.log.Info("Building an admin client for pod CIDR connectivity probes")
 		var tenantClient client.Client
 		Eventually(func(ctx context.Context) error {
 			var err error
-			tenantClient, err = test.tenantClients.GetClient(ctx, test.cluster.Name)
+			tenantClient, err = test.tenantClients.GetAdminClient(ctx, test.cluster.Name)
 			return err
 		}).WithContext(ctx).WithTimeout(1 * time.Minute).WithPolling(1 * time.Second).Should(Succeed())
 

@@ -1,0 +1,65 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Deploy path for a NICo site controller on real hardware.
+#
+# The order is not designed from first principles. It was derived from a
+# provisioning run that stood a site controller up on bare metal and had it
+# provision a tenant cluster, whose install script is this file in script form.
+# That order in turn follows the management-software phases:
+#
+#   untaint -> storage class -> cert-manager -> CAPI core -> CAPNICo
+#            -> Postgres -> Temporal -> CWE
+#
+# Outside this deploy path, and before it:
+#   untaint        a bootstrap cluster is all control-plane and tainted
+#                  NoSchedule. Nothing schedules until it is removed, and
+#                  clusterctl init times out on cert-manager with no hint why.
+#   clusterctl init  brings cert-manager AND CAPI core AND the kubeadm
+#                  providers. cert-manager first because CAPI's own manifests
+#                  embed an Issuer and a Certificate.
+#   image staging  the node IS the cluster, so images imported into its
+#                  containerd resolve with imagePullPolicy: IfNotPresent. This
+#                  is why a site needs no registry credentials except the one
+#                  for CAPNICo, whose manifest names a remote image.
+#   a default StorageClass  a bare site ships none, so every PVC sits Pending.
+#                  Deliberately not an item: which provisioner is right is a
+#                  property of the hardware, not of NKE. That run installed
+#                  rancher local-path because its instance type has a single
+#                  NVMe with root on it, which also means the documented
+#                  prerequisite of a spare unpartitioned device cannot be met
+#                  there. A site with real storage should use it instead.
+#
+# AFTER this deploy path, one more step: apply-capi-spiffe-exec-auth.sh, which
+# gives the CAPI controllers a csi.spiffe.io volume and the SPIFFE JWT
+# exec-auth plugin. After, not before -- the script only waits for the rollout
+# once csi.spiffe.io is registered, and that CSIDriver arrives with the spire
+# item. See README.md.
+#
+# DIFFERENT FROM capnico-e2e in four ways, each of which that run hit:
+#   capnico        a manifest item, not a helm item installed from source:
+#                  there is no provider checkout on a site, and the published
+#                  chart is not reachable without credentials this path does
+#                  not assume. The public release asset is.
+#   persistence    the e2e lane runs Postgres on emptyDir because it is
+#                  disposable. A site must not.
+#   secrets        four of them carry real credentials, so they are template
+#                  items rendered from BootstrapConfig rather than committed.
+#
+# SPIRE IS IN, deliberately. That run used --disable-mtls end to end, but its
+# own notes record that os-image/SPEC.md lists that as NOT a supported
+# production mode, and the reference image ships mTLS on. The flag is a property
+# of bootstrapping the site controller's own node -- at that moment the only
+# SPIRE server alive is the one in the throwaway kind cluster -- and nothing
+# drives that node afterwards, so it does not constrain this path.
+items:
+  - {name: nke-base-config, type: template}
+  - {name: spire-tpm-pubhashes, type: manifest}
+  - {name: spire-server-nodeport, type: manifest}
+  - {name: spire-oidc-provider-nodeport, type: manifest}
+  - {name: capnico, type: manifest}
+  - {name: postgresql, type: helm}
+  - {name: spire-crds, type: helm}
+  - {name: temporal, type: helm}
+  - {name: spire, type: helm}
+  - {name: controller, type: helm}

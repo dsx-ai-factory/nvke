@@ -256,7 +256,7 @@ func (c *Controller) upsertKubeconfigSecret(ctx context.Context, cluster db.Clus
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{KubeconfigSecretKey: kubeconfig},
 	}
-	capi.SetSecretOwnership(secret, cluster, mode)
+	capi.SetSecretOwnership(secret, cluster, mode, c.cfg.ManagedByLabelValue)
 	return c.upsertSecret(ctx, cluster, secret)
 }
 
@@ -318,7 +318,7 @@ func (c *Controller) publishSPIRE(ctx context.Context, cluster db.Cluster, admin
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{TrustBundleSecretKey: ca},
 	}
-	capi.SetSecretOwnership(trustBundleSecret, cluster, constants.LabelValueKubeconfigModeSPIRE)
+	capi.SetSecretOwnership(trustBundleSecret, cluster, constants.LabelValueKubeconfigModeSPIRE, c.cfg.ManagedByLabelValue)
 	return c.upsertSecret(ctx, cluster, trustBundleSecret)
 }
 

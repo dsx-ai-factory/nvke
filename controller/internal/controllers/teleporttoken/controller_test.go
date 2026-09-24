@@ -297,8 +297,10 @@ func testConfig() config.Config {
 	return config.Config{
 		NKESiteControllerName: "test-site",
 		Teleport: config.TeleportConfig{
-			Enabled:     true,
-			Environment: "non-prod",
+			Enabled:             true,
+			Environment:         "non-prod",
+			ManagedByLabelValue: "nke-cloud-workflow-engine",
+			TokenNamePrefix:     "nke-cwe-",
 		},
 	}
 }
@@ -459,7 +461,7 @@ func TestReconcile(t *testing.T) {
 
 		mockTeleport.On("ListNodes", ctx, TeleportNamespace, mock.Anything).Return([]teleport.Node{}, nil)
 		mockTeleport.On("UpsertToken", ctx, mock.MatchedBy(func(token teleport.ProvisionToken) bool {
-			return token.Name == teleport.TPMTokenName(node.ID)
+			return token.Name == teleport.TPMTokenName("nke-cwe-", node.ID)
 		})).Return(nil)
 
 		result, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
@@ -482,7 +484,7 @@ func TestReconcile(t *testing.T) {
 			{
 				Hostname: "node-1",
 				Labels: map[string]string{
-					teleport.LabelManagedBy: teleport.LabelManagedByValue,
+					teleport.LabelManagedBy: "nke-cloud-workflow-engine",
 					teleport.LabelNodeID:    node1.ID.String(),
 				},
 			},
@@ -518,13 +520,13 @@ func TestReconcile(t *testing.T) {
 			{
 				Hostname: "node-1",
 				Labels: map[string]string{
-					teleport.LabelManagedBy: teleport.LabelManagedByValue,
+					teleport.LabelManagedBy: "nke-cloud-workflow-engine",
 					teleport.LabelNodeID:    uuid.New().String(), // Different node-id
 				},
 			},
 		}, nil)
 		mockTeleport.On("UpsertToken", ctx, mock.MatchedBy(func(token teleport.ProvisionToken) bool {
-			return token.Name == teleport.TPMTokenName(node.ID)
+			return token.Name == teleport.TPMTokenName("nke-cwe-", node.ID)
 		})).Return(nil)
 
 		_, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
@@ -549,7 +551,7 @@ func TestReconcile(t *testing.T) {
 			{
 				Hostname: "node-1",
 				Labels: map[string]string{
-					teleport.LabelManagedBy: teleport.LabelManagedByValue,
+					teleport.LabelManagedBy: "nke-cloud-workflow-engine",
 					teleport.LabelNodeID:    node.ID.String(),
 					// No site label - bootstrap scenario
 				},
@@ -677,7 +679,7 @@ func TestCreateTokenForNode(t *testing.T) {
 
 		mockTeleport.On("UpsertToken", ctx, mock.MatchedBy(func(token teleport.ProvisionToken) bool {
 			// Verify token structure
-			assert.Equal(t, teleport.TPMTokenName(node.ID), token.Name)
+			assert.Equal(t, teleport.TPMTokenName("nke-cwe-", node.ID), token.Name)
 			assert.Equal(t, []string{"Node"}, token.Roles)
 			assert.Equal(t, teleport.JoinMethodTPM, token.JoinMethod)
 
@@ -935,7 +937,7 @@ func TestTokenCreationTracking(t *testing.T) {
 			{
 				Hostname: "node-1",
 				Labels: map[string]string{
-					teleport.LabelManagedBy: teleport.LabelManagedByValue,
+					teleport.LabelManagedBy: "nke-cloud-workflow-engine",
 					teleport.LabelNodeID:    node.ID.String(),
 				},
 			},
@@ -991,7 +993,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 		// Teleport returns empty - node is gone
 		mockTeleport.On("ListNodes", ctx, TeleportNamespace, mock.Anything).Return([]teleport.Node{}, nil)
 		mockTeleport.On("UpsertToken", ctx, mock.MatchedBy(func(token teleport.ProvisionToken) bool {
-			return token.Name == teleport.TPMTokenName(node.ID)
+			return token.Name == teleport.TPMTokenName("nke-cwe-", node.ID)
 		})).Return(nil)
 
 		_, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
@@ -1020,7 +1022,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 			{
 				Hostname: "steady-node",
 				Labels: map[string]string{
-					teleport.LabelManagedBy: teleport.LabelManagedByValue,
+					teleport.LabelManagedBy: "nke-cloud-workflow-engine",
 					teleport.LabelNodeID:    node.ID.String(),
 				},
 			},
@@ -1051,7 +1053,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 			{
 				Hostname: "new-node",
 				Labels: map[string]string{
-					teleport.LabelManagedBy: teleport.LabelManagedByValue,
+					teleport.LabelManagedBy: "nke-cloud-workflow-engine",
 					teleport.LabelNodeID:    node.ID.String(),
 				},
 			},
@@ -1117,14 +1119,14 @@ func TestObservedStateReconciliation(t *testing.T) {
 			{
 				Hostname: "confirm-me",
 				Labels: map[string]string{
-					teleport.LabelManagedBy: teleport.LabelManagedByValue,
+					teleport.LabelManagedBy: "nke-cloud-workflow-engine",
 					teleport.LabelNodeID:    node1.ID.String(),
 				},
 			},
 			{
 				Hostname: "steady",
 				Labels: map[string]string{
-					teleport.LabelManagedBy: teleport.LabelManagedByValue,
+					teleport.LabelManagedBy: "nke-cloud-workflow-engine",
 					teleport.LabelNodeID:    node2.ID.String(),
 				},
 			},

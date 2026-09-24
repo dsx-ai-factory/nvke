@@ -736,13 +736,16 @@ func testTemplateLessForgeCAPICfg(t *testing.T) config.Config {
 	require.NoError(t, os.WriteFile(filepath.Join(osProfileDir, "userData.tmpl"), []byte("#cloud-config\nhostname: {{ .Hostname }}\n"), 0o644))
 
 	return config.Config{
-		ProfilesDir:           profilesDir,
-		DgxcTenantUser:        "nvidia",
-		DgxcTenantPassword:    "password",
-		NodeAgentPort:         "15005",
-		SpireServerAddress:    "spire-server",
-		SpireServerPort:       "9091",
-		NKESiteControllerName: "site-a",
+		ProfilesDir:                        profilesDir,
+		DgxcTenantUser:                     "nvidia",
+		DgxcTenantPassword:                 "password",
+		NodeAgentPort:                      "15005",
+		SpireServerAddress:                 "spire-server",
+		SpireServerPort:                    "9091",
+		NKESiteControllerName:              "site-a",
+		FieldManagerName:                   "cloud-workflow-engine",
+		FieldManagerRebootMachineName:      "cloud-workflow-engine-reboot-machine",
+		FieldManagerMachineHealthIssueName: "cloud-workflow-engine-machine-health-issue",
 	}
 }
 

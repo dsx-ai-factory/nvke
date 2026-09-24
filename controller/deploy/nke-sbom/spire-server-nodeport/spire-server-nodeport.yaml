@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# spire-server-nodeport, copied from this repository per manifests/spire-server-nodeport.pin.yaml. Applied with kubectl apply --server-side.
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: spire-server-np
+    namespace: spire-server
+spec:
+    ports:
+        - name: grpc
+          nodePort: 30440
+          port: 443
+          protocol: TCP
+          targetPort: grpc
+    selector:
+        app.kubernetes.io/name: server
+    type: NodePort

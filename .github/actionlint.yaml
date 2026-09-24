@@ -12,10 +12,6 @@ self-hosted-runner:
     - linux-amd64-cpu16
     - linux-arm64-cpu16
     - linux-amd64-gpu-l4-latest-1
-    # Scale sets on the self-hosted fleet; the name is the size.
-    - nke-arm64-8c16g
-    - nke-arm64-4c32g
-    - nke-arm64-16c64g
     # Scale sets on the RelEng EKS cluster (dgxc-eks-use1-rel-prd1).
     # Both amd64 sizes share one node pool; the two KVM sizes share the
     # bare-metal pool, which is the only one with /dev/kvm.
@@ -24,3 +20,9 @@ self-hosted-runner:
     - arc-arm64-cpu16
     - arc-arm64-kvm
     - arc-arm64-kvm-8c16g
+
+paths:
+  .github/workflows/agent-deb-publish.yml:
+    ignore:
+      # actionlint 1.7.12 lacks cache-mode support; lint-workflows validates read-only values.
+      - '^unexpected key "cache-mode" for "job" section\.'

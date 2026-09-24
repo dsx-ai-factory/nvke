@@ -106,7 +106,7 @@ sudo -n true 2>/dev/null || fail "passwordless sudo is required to create the br
 
 # Lifted from setup-linux.sh:66-82. Resolving the package by architecture turns
 # an obscure apt failure into a clear one, and both architectures need it now:
-# the arm64 scale set nke-arm64-16c64g gives its runners nested KVM.
+# the arm64 scale set arc-arm64-kvm gives its runners nested KVM.
 # UEFI_PKG is arm64-only: aarch64 has no BIOS, so domain_xml.go:35-36 emits
 # <os firmware='efi'> for every aarch64 guest whatever the UEFI flag says.
 # Without the firmware libvirt refuses the domain with "Unable to find 'efi'
