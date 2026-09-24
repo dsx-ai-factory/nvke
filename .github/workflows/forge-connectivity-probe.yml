@@ -142,6 +142,31 @@ jobs:
             echo "     sshd did not name its authentication methods"
           fi
 
+      # The iPXE chain the node boots from. The node fetches these, not this
+      # runner, and the node is on the site network -- so a failure here is
+      # not proof the boot fails. What it does prove is that the objects
+      # still exist: these URLs are dated 2026-06-25 and are the ones the
+      # az61 SBOM run used. CloudFront answers "Request blocked" to egress it
+      # does not recognise, which is indistinguishable from a dead URL
+      # anywhere outside the VPC.
+      - name: OS image URLs
+        shell: bash
+        env:
+          BOOTLOADER: ${{ vars.FORGE_E2E_OS_IMAGE_BOOTLOADER }}
+          IMAGE: ${{ vars.FORGE_E2E_OS_IMAGE }}
+        run: |
+          set -Eeuo pipefail
+          for url in "${BOOTLOADER}" "${IMAGE}"; do
+            [ -n "${url}" ] || continue
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 60 \
+              -r 0-0 "${url}" || echo "000")"
+            case "${code}" in
+              200 | 206) echo "OK   ${code} $(basename "${url}")" ;;
+              403)       echo "NOTE 403 $(basename "${url}") -- blocked for this egress, object may still be fine" ;;
+              *)         echo "FAIL ${code} $(basename "${url}")" ;;
+            esac
+          done
+
       # ----------------------------------------------------------------
       # Question 4: the Teleport route, end to end. Everything below is
       # advisory in the same way as the checks above -- the auth step is
