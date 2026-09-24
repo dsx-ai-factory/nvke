@@ -163,7 +163,10 @@ jobs:
               echo "     The join below will fail, and that is the token's rule, not a network result." ;;
           esac
 
-      - name: Install tsh
+      # tbot as well as tsh: teleport-actions/auth does not ship a binary, it
+      # shells out to tbot and fails with "Unable to locate executable file"
+      # if one is not already on PATH. Both come out of the same tarball.
+      - name: Install tsh and tbot
         if: env.FORGE_TELEPORT_PROXY != ''
         shell: bash
         env:
@@ -175,9 +178,11 @@ jobs:
           curl -fsSL --connect-timeout 20 --max-time 300 \
             -o /tmp/teleport.tar.gz \
             "https://cdn.teleport.dev/teleport-v${TELEPORT_VERSION}-linux-amd64-bin.tar.gz"
-          tar -C /tmp -xzf /tmp/teleport.tar.gz teleport/tsh
+          tar -C /tmp -xzf /tmp/teleport.tar.gz teleport/tsh teleport/tbot
           sudo install -m 0755 /tmp/teleport/tsh /usr/local/bin/tsh
+          sudo install -m 0755 /tmp/teleport/tbot /usr/local/bin/tbot
           tsh version
+          tbot version
 
       - name: Teleport join
         id: join
