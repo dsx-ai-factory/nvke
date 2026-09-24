@@ -141,8 +141,13 @@ jobs:
     timeout-minutes: 180
     permissions:
       contents: read
+      # Both GHCR pulls: the runner's, and the node's through the
+      # imagePullSecret the deploy path renders. No PAT, matching every other
+      # workflow here -- github.actor with GITHUB_TOKEN. The token dies with
+      # the job, which is shorter than any credential we could store.
+      packages: read
       # The Teleport join, and only that. The join token's allow rules are
-      # what actually bound it -- see the auth step.
+      # what actually bound it -- see the daemon step.
       id-token: write
     env:
       # Every knob, resolved once. A workflow_dispatch fills `inputs`; a
@@ -334,17 +339,15 @@ jobs:
           tsh --proxy "${FORGE_TELEPORT_PROXY}" --identity "${TBOT_DIR}/identity" status
 
       # site-inputs pulls the controller and capi-provisioned images, both
-      # private. The suite's own GHCR credential is separate and passed as
-      # environment below -- it is what the *node* pulls CAPNICo with, through
-      # the ghcr-imagepull Secret the deploy path renders.
+      # private. The same credential is handed to the suite below, which is
+      # what the *node* pulls CAPNICo with, through the ghcr-imagepull Secret
+      # the deploy path renders.
       - name: Log in to GHCR
-        shell: bash
-        env:
-          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-        run: |
-          set -Eeuo pipefail
-          printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # nkectl for the node's architecture, the three image archives, and the
       # deploy path fetched from #812. The node has no access to this
@@ -411,8 +414,12 @@ jobs:
         working-directory: controller/test/e2e
         env:
           FORGE_API_KEY: ${{ secrets.FORGE_API_KEY }}
-          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          # The suite names the variables, not the credential: locally these
+          # are a person's PAT, here they are the job's own token. It lives
+          # only as long as the job, so nothing outlives the run it pulled
+          # for.
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # JUMP_HOST_PASSWORD is deliberately absent: its presence is what
           # switches the suite off the Teleport relay and onto plain SSH.
         run: |
