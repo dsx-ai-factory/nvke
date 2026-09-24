@@ -400,6 +400,33 @@ func TestDialPinsHostKey(t *testing.T) {
 	_ = h.dial(t)
 }
 
+// A node being imaged answers on its address long before it is the node we
+// asked for, and the sshd that answers first has a host key the installed OS
+// will not have. Pinning that one locked the machine out of its own run for
+// the twenty minutes waitReachable spends polling.
+func TestDialDoesNotPinAFailedHandshake(t *testing.T) {
+	h := newHarness(t)
+
+	// Whatever answers first does not authorize this run's key.
+	h.node.client = newSigner(t).PublicKey()
+	if _, err := h.dialer.Dial(context.Background(), h.target); err == nil {
+		t.Fatal("a node that does not authorize the run's key should fail")
+	}
+
+	// The installed OS comes up with its own host key and cloud-init's
+	// authorized_keys. It must not be refused for the first sshd's key.
+	h.node.hostKey = newSigner(t)
+	h.node.client = h.target.Signer.PublicKey()
+	_ = h.dial(t)
+
+	// And the pin takes effect from there.
+	h.node.hostKey = newSigner(t)
+	_, err := h.dialer.Dial(context.Background(), h.target)
+	if err == nil || !strings.Contains(err.Error(), "host key") {
+		t.Errorf("err = %v, want a changed host key refused", err)
+	}
+}
+
 func TestDialTimesOut(t *testing.T) {
 	d := &Dialer{
 		HandshakeTimeout: 50 * time.Millisecond,

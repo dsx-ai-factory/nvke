@@ -92,10 +92,11 @@ func (d *Dialer) Dial(ctx context.Context, target Target) (*Client, error) {
 		return nil, fmt.Errorf("teleport: relaying to %s through %s: %w", target.Address, target.JumpHost, err)
 	}
 
+	hostKey, pin := d.pinHostKey(target)
 	cfg := &ssh.ClientConfig{
 		User:            target.User,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(target.Signer)},
-		HostKeyCallback: d.pinHostKey(target),
+		HostKeyCallback: hostKey,
 	}
 	type handshake struct {
 		conn  ssh.Conn
@@ -127,6 +128,7 @@ func (d *Dialer) Dial(ctx context.Context, target Target) (*Client, error) {
 			_ = stream.Close()
 			return nil, fmt.Errorf("teleport: ssh to %s@%s through %s: %w%s", target.User, target.Address, target.JumpHost, hs.err, relayDiagnostics(stream))
 		}
+		pin()
 		return &Client{ssh: ssh.NewClient(hs.conn, hs.chans, hs.reqs), stream: stream}, nil
 	case <-ctx.Done():
 		return nil, fail(ctx.Err())
@@ -135,29 +137,45 @@ func (d *Dialer) Dial(ctx context.Context, target Target) (*Client, error) {
 	}
 }
 
-// pinHostKey trusts the first host key a machine presents and holds it to
-// that key on every later dial. There is nothing better to check against:
-// the machine was created moments ago and its key generated on first boot.
-// The pin is per target key as well as address, because a later machine in
-// the same run can be handed the same address.
-func (d *Dialer) pinHostKey(target Target) ssh.HostKeyCallback {
+// pinHostKey trusts the host key of the first dial that succeeds and holds a
+// machine to that key on every later dial. There is nothing better to check
+// against: the machine was created moments ago and its key generated on first
+// boot. The pin is per target key as well as address, because a later machine
+// in the same run can be handed the same address.
+//
+// The pin is committed by the returned func, not by the callback, and callers
+// must only call it once the whole handshake has succeeded. A caller dialing a
+// machine that is still being imaged reaches several different sshds on the
+// way -- whatever answers on a recycled address, then the imager, then the
+// installed OS -- and pinning the first key any of them presents locks the
+// machine out of its own run. Authentication is the signal that the right one
+// answered: the key is generated per run and placed by cloud-init, so only the
+// machine that ran this run's cloud-init can complete a handshake.
+func (d *Dialer) pinHostKey(target Target) (ssh.HostKeyCallback, func()) {
 	id := target.Address + " " + ssh.FingerprintSHA256(target.Signer.PublicKey())
-	return func(_ string, _ net.Addr, key ssh.PublicKey) error {
+	var offered []byte
+	callback := func(_ string, _ net.Addr, key ssh.PublicKey) error {
 		d.mu.Lock()
 		defer d.mu.Unlock()
-		if d.hostKeys == nil {
-			d.hostKeys = map[string][]byte{}
-		}
+		offered = key.Marshal()
 		known, ok := d.hostKeys[id]
-		if !ok {
-			d.hostKeys[id] = key.Marshal()
-			return nil
-		}
-		if !bytes.Equal(known, key.Marshal()) {
+		if ok && !bytes.Equal(known, offered) {
 			return fmt.Errorf("host key for %s changed since the first connection (now %s)", target.Address, ssh.FingerprintSHA256(key))
 		}
 		return nil
 	}
+	commit := func() {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		if _, ok := d.hostKeys[id]; ok || offered == nil {
+			return
+		}
+		if d.hostKeys == nil {
+			d.hostKeys = map[string][]byte{}
+		}
+		d.hostKeys[id] = offered
+	}
+	return callback, commit
 }
 
 func relayDiagnostics(stream net.Conn) string {
