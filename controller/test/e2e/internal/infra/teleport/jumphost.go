@@ -86,7 +86,8 @@ func (j SSHJumpHost) validate() error {
 		if len(fp) != len(fingerprintPrefix)+43 {
 			problems = append(problems, fmt.Sprintf(
 				"host key fingerprint %q is not a SHA256 fingerprint; "+
-					"read one with `ssh-keyscan -t ed25519 <host> | ssh-keygen -lf -`", j.HostKeyFingerprint))
+					"read one with `ssh-keyscan -t ed25519 <host> | ssh-keygen -lf -`", j.HostKeyFingerprint,
+			))
 		}
 	}
 	if len(problems) > 0 {

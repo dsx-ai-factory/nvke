@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -84,6 +85,32 @@ type executorFactory func(string, *url.URL) (remotecommand.Executor, error)
 // TenantClientFactoryOption configures a TenantClientFactory.
 type TenantClientFactoryOption func(*TenantClientFactory) error
 
+// EndpointRelay maps a tenant API server's published host:port to one the
+// caller can reach, and returns the substitute. Called once per REST config,
+// so an implementation that opens a tunnel should reuse an existing one for
+// an address it has already been asked about.
+type EndpointRelay func(ctx context.Context, hostPort string) (string, error)
+
+// WithEndpointRelay routes every tenant API server through relay.
+//
+// A tenant's published kubeconfig names its own VIP, which is right for
+// anything inside the site and wrong for a test process outside it. On Forge
+// that address is unroutable from CI: run 36051890151 brought up a tenant
+// whose nodes CWE reported Ready, then spent its whole budget failing to
+// dial 10.91.194.69:6443 to confirm it from the cluster side.
+//
+// Left unset every tenant client talks to the published address directly,
+// which is what the lanes that share a network with their clusters need.
+func WithEndpointRelay(relay EndpointRelay) TenantClientFactoryOption {
+	return func(factory *TenantClientFactory) error {
+		if relay == nil {
+			return errors.New("endpoint relay is nil")
+		}
+		factory.relay = relay
+		return nil
+	}
+}
+
 // WithJWTExchangeCABundle adds PEM-encoded roots used to verify an HTTPS JWT
 // exchange endpoint declared by a published tenant kubeconfig.
 func WithJWTExchangeCABundle(bundle []byte) TenantClientFactoryOption {
@@ -122,6 +149,10 @@ type TenantClientFactory struct {
 	newExecutor    executorFactory
 	exchangeClient *http.Client
 	now            func() time.Time
+
+	// relay, when set, substitutes a reachable address for each tenant API
+	// server. See WithEndpointRelay.
+	relay EndpointRelay
 }
 
 // BuildTenantClientFactory returns a factory backed by the management cluster.
@@ -206,6 +237,38 @@ func newTenantClient(restConfig *rest.Config, clusterName string) (client.Client
 	return tenantClient, nil
 }
 
+// relayEndpoint points cfg at the relay's substitute address and pins the TLS
+// server name to the host the kubeconfig published.
+//
+// The server name matters as much as the address. A tenant API server's
+// certificate covers its VIP and not the loopback a tunnel listens on, so
+// without it every request fails verification instead of connecting -- the
+// same reason the site's kubeconfig rewrite sets tls-server-name, and the
+// reason RelEng's manual procedure calls for it too.
+func (f *TenantClientFactory) relayEndpoint(ctx context.Context, cfg *rest.Config) error {
+	if f.relay == nil {
+		return nil
+	}
+	published, err := url.Parse(cfg.Host)
+	if err != nil {
+		return fmt.Errorf("parsing the published API server %q: %w", cfg.Host, err)
+	}
+	hostPort := published.Host
+	if published.Port() == "" {
+		hostPort = net.JoinHostPort(published.Hostname(), "443")
+	}
+	local, err := f.relay(ctx, hostPort)
+	if err != nil {
+		return err
+	}
+	if cfg.ServerName == "" {
+		cfg.ServerName = published.Hostname()
+	}
+	published.Host = local
+	cfg.Host = published.String()
+	return nil
+}
+
 func (f *TenantClientFactory) tenantRESTConfig(ctx context.Context, clusterName string) (*rest.Config, error) {
 	return f.tenantRESTConfigAs(ctx, clusterName, cweSPIFFEPath)
 }
@@ -233,6 +296,13 @@ func (f *TenantClientFactory) tenantRESTConfigAs(ctx context.Context, clusterNam
 	publishedConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("parsing tenant kubeconfig for %q: %w", clusterName, err)
+	}
+
+	// Before the branch below, so both the published config and the
+	// AnonymousClientConfig copy the SPIRE path derives from it carry the
+	// substituted address.
+	if err = f.relayEndpoint(ctx, publishedConfig); err != nil {
+		return nil, fmt.Errorf("relaying the tenant API server for %q: %w", clusterName, err)
 	}
 
 	if !isSPIREExecConfig(publishedConfig.ExecProvider) {

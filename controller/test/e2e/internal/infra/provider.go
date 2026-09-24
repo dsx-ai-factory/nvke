@@ -60,9 +60,13 @@ type Session interface {
 	// writes is readable by nobody else.
 	Fetch(ctx context.Context, path string) ([]byte, error)
 
-	// Forward forwards remotePort on the node to a local listener and returns
-	// its address. The forward lives until Teardown.
-	Forward(ctx context.Context, remotePort int) (string, error)
+	// Forward forwards remote, a host:port the node can reach, to a local
+	// listener and returns its address. The forward lives until Teardown.
+	//
+	// The host is named rather than assumed to be the node's loopback: a
+	// tenant cluster's API server has its own VIP, reachable from the node
+	// and not from here.
+	Forward(ctx context.Context, remote string) (string, error)
 
 	// Teardown closes every forward, drops the connection, and releases the
 	// machine. It must be safe to call more than once and on a session whose

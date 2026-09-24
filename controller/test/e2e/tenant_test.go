@@ -410,7 +410,12 @@ var nicoForgeTenant = testSpec{
 	// Generous next to the simulator lanes: these timeouts cover a bare
 	// machine booting an OS image over the network and installing packages,
 	// none of which a container does.
-	options:  nke.Options{Provision: 90 * time.Minute, Delete: 30 * time.Minute, Poll: 30 * time.Second},
+	//
+	// Delete is 45 minutes because Forge takes 20 to 40 to actually release
+	// a machine, and the cluster is not gone until both of its machines are.
+	// Run 36051890151 failed the delete at 1800.306s against the 30 minutes
+	// this used to be, while the instances were still reporting Terminating.
+	options:  nke.Options{Provision: 90 * time.Minute, Delete: 45 * time.Minute, Poll: 30 * time.Second},
 	validate: validations{provisioningOnly: true},
 }
 
@@ -759,6 +764,12 @@ type managementCluster struct {
 	// TrustDomain is the SPIRE trust domain. Empty derives it from a kind
 	// context name, which is all a simulator lane has to go on.
 	TrustDomain string
+
+	// Relay reaches a tenant's API server when the test process cannot route
+	// to the address the tenant publishes. Only the Forge site lane sets it:
+	// every other lane shares a network with its clusters, and nil leaves
+	// them talking to the published address directly.
+	Relay kube.EndpointRelay
 }
 
 // managementResolver names the management cluster when a tenant lane starts.
@@ -808,6 +819,9 @@ func setupTenantTest(ctx context.Context, mgmt managementCluster, timeouts nke.O
 	}
 
 	var tenantClientOptions []kube.TenantClientFactoryOption
+	if mgmt.Relay != nil {
+		tenantClientOptions = append(tenantClientOptions, kube.WithEndpointRelay(mgmt.Relay))
+	}
 	if os.Getenv(dsxIdentityExchangeEnv) == "true" {
 		var exchangeCA corev1.ConfigMap
 		if getErr := k8sClient.Get(ctx, client.ObjectKey{

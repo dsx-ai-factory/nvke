@@ -54,7 +54,7 @@ type Conn interface {
 	Run(ctx context.Context, cmd string) (string, error)
 	Put(ctx context.Context, path string, data []byte, mode uint32) error
 	Fetch(ctx context.Context, path string) ([]byte, error)
-	Forward(ctx context.Context, remotePort int) (string, error)
+	Forward(ctx context.Context, remote string) (string, error)
 	Close() error
 }
 

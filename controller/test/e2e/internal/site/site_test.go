@@ -52,7 +52,7 @@ type fakeSession struct {
 	runs     []string
 	puts     map[string]put
 	fetch    map[string][]byte
-	forwards []int
+	forwards []string
 	fail     func(cmd string) (string, error)
 }
 
@@ -90,8 +90,8 @@ func (f *fakeSession) Fetch(_ context.Context, p string) ([]byte, error) {
 	return data, nil
 }
 
-func (f *fakeSession) Forward(_ context.Context, port int) (string, error) {
-	f.forwards = append(f.forwards, port)
+func (f *fakeSession) Forward(_ context.Context, remote string) (string, error) {
+	f.forwards = append(f.forwards, remote)
 	return "127.0.0.1:40000", nil
 }
 
@@ -285,8 +285,10 @@ func TestBootstrap(t *testing.T) {
 		t.Errorf("deployer target = %+v", d.target)
 	}
 
-	if len(s.forwards) != 1 || s.forwards[0] != 6443 {
-		t.Errorf("forwards = %v, want [6443]", s.forwards)
+	// Loopback, because the site's own API server runs on the node this
+	// session is connected to. A tenant's does not; see sessionRelay.
+	if len(s.forwards) != 1 || s.forwards[0] != "127.0.0.1:6443" {
+		t.Errorf("forwards = %v, want [127.0.0.1:6443]", s.forwards)
 	}
 	cfg, err := clientcmd.LoadFromFile(res.Kubeconfig)
 	if err != nil {

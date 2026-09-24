@@ -276,6 +276,117 @@ func TestTenantRESTConfigReplacesSPIREExecCredentials(t *testing.T) {
 	}
 }
 
+func TestRelayEndpoint(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		host       string
+		serverName string
+		want       string
+		wantAsked  string
+		wantServer string
+	}{
+		{
+			name: "substitutes the address and pins the published host",
+			host: "https://10.91.194.69:6443", wantAsked: "10.91.194.69:6443",
+			want: "https://127.0.0.1:40000", wantServer: "10.91.194.69",
+		},
+		{
+			// A kubeconfig may leave the port implicit. The relay is asked
+			// for a host:port either way, so it never has to guess.
+			name: "supplies the default port when the URL omits it",
+			host: "https://tenant.example", wantAsked: "tenant.example:443",
+			want: "https://127.0.0.1:40000", wantServer: "tenant.example",
+		},
+		{
+			// A published tls-server-name is the cluster's own statement
+			// about which name its certificate covers, and beats inference.
+			name: "leaves an explicit server name alone",
+			host: "https://10.91.194.69:6443", serverName: "tenant.example",
+			wantAsked: "10.91.194.69:6443",
+			want:      "https://127.0.0.1:40000", wantServer: "tenant.example",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var asked string
+			factory := &TenantClientFactory{relay: func(_ context.Context, hostPort string) (string, error) {
+				asked = hostPort
+				return "127.0.0.1:40000", nil
+			}}
+			config := &rest.Config{Host: tc.host}
+			config.ServerName = tc.serverName
+
+			if err := factory.relayEndpoint(context.Background(), config); err != nil {
+				t.Fatalf("relayEndpoint() error = %v", err)
+			}
+			if asked != tc.wantAsked {
+				t.Errorf("relay asked for %q, want %q", asked, tc.wantAsked)
+			}
+			if config.Host != tc.want {
+				t.Errorf("Host = %q, want %q", config.Host, tc.want)
+			}
+			if config.ServerName != tc.wantServer {
+				t.Errorf("ServerName = %q, want %q", config.ServerName, tc.wantServer)
+			}
+		})
+	}
+}
+
+func TestRelayEndpointWithoutARelay(t *testing.T) {
+	// The lanes that share a network with their clusters set no relay, and
+	// must keep talking to the address the tenant published.
+	factory := &TenantClientFactory{}
+	config := &rest.Config{Host: "https://tenant.example:6443"}
+
+	if err := factory.relayEndpoint(context.Background(), config); err != nil {
+		t.Fatalf("relayEndpoint() error = %v", err)
+	}
+	if config.Host != "https://tenant.example:6443" || config.ServerName != "" {
+		t.Errorf("config changed without a relay: %q, server name %q", config.Host, config.ServerName)
+	}
+}
+
+func TestRelayEndpointFailureNamesTheCluster(t *testing.T) {
+	factory := newTestTenantClientFactory(t, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: tenantKubeconfigNamespace, Name: "tenant-a-kubeconfig"},
+		Data:       map[string][]byte{tenantKubeconfigKey: testSPIREKubeconfig(t, "tenant-a")},
+	})
+	factory.relay = func(context.Context, string) (string, error) {
+		return "", errors.New("the tunnel is shut")
+	}
+
+	_, err := factory.tenantRESTConfig(context.Background(), "tenant-a")
+	if err == nil || !strings.Contains(err.Error(), "tenant-a") || !strings.Contains(err.Error(), "the tunnel is shut") {
+		t.Fatalf("error = %v, want one naming the cluster and the cause", err)
+	}
+}
+
+func TestTenantRESTConfigRelaysTheSPIREEndpoint(t *testing.T) {
+	// The SPIRE path rebuilds the config with AnonymousClientConfig, so this
+	// is the one that would silently drop the substitution.
+	factory := newTestTenantClientFactory(t,
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Namespace: tenantKubeconfigNamespace, Name: "tenant-a-kubeconfig"},
+			Data:       map[string][]byte{tenantKubeconfigKey: testSPIREKubeconfig(t, "tenant-a")},
+		},
+		spireServerConfigMapObject(`{"server":{"trust_domain":"test.nke.local"}}`),
+	)
+	factory.relay = func(context.Context, string) (string, error) { return "127.0.0.1:40000", nil }
+
+	config, err := factory.tenantRESTConfig(context.Background(), "tenant-a")
+	if err != nil {
+		t.Fatalf("tenantRESTConfig() error = %v", err)
+	}
+	if config.Host != "https://127.0.0.1:40000" {
+		t.Errorf("Host = %q, want the relayed address", config.Host)
+	}
+	if config.ServerName != "tenant.example" {
+		t.Errorf("ServerName = %q, want the published host", config.ServerName)
+	}
+	if string(config.CAData) != "tenant-ca" {
+		t.Errorf("CAData = %q, want the published tenant CA", config.CAData)
+	}
+}
+
 func TestTenantRESTConfigExchangesSPIREJWTCredentials(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	sourceToken := testJWT(now.Add(time.Hour), "source")

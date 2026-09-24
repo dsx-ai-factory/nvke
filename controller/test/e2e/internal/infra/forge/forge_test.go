@@ -90,7 +90,7 @@ func (c *fakeConn) Run(_ context.Context, cmd string) (string, error) {
 }
 func (c *fakeConn) Put(context.Context, string, []byte, uint32) error { return nil }
 func (c *fakeConn) Fetch(context.Context, string) ([]byte, error)     { return nil, nil }
-func (c *fakeConn) Forward(context.Context, int) (string, error)      { return "127.0.0.1:0", nil }
+func (c *fakeConn) Forward(context.Context, string) (string, error)   { return "127.0.0.1:0", nil }
 func (c *fakeConn) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -151,10 +152,14 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 
 	if siteStage == siteStageFull {
 		DescribeTableSubtree("tenant on the built site", tenantSubtree(func() (managementCluster, error) {
-			if built.Kubeconfig == "" {
+			if built.Kubeconfig == "" || session == nil {
 				return managementCluster{}, errors.New("the site controller was not built")
 			}
-			return managementCluster{Kubeconfig: built.Kubeconfig, TrustDomain: site.TrustDomain(lane.name)}, nil
+			return managementCluster{
+				Kubeconfig:  built.Kubeconfig,
+				TrustDomain: site.TrustDomain(lane.name),
+				Relay:       sessionRelay(session),
+			}, nil
 		}),
 			// Not labeled nico-forge: that label selects the lane against an
 			// existing site, which must not start building one.
@@ -286,6 +291,32 @@ func newSiteLane() (siteLane, error) {
 		cfg: cfg, name: name, env: env, site: forgeSite, instanceType: instanceType,
 		capabilities: capabilities, apiKey: apiKey, provider: provider,
 	}, nil
+}
+
+// sessionRelay tunnels a tenant's API server through the site node, which is
+// the only machine in the run that can reach it.
+//
+// One tunnel per address, kept for the life of the session. Every tenant
+// client asks for a REST config of its own -- twenty-odd specs do, some of
+// them repeatedly inside an Eventually -- and a tunnel each would leak
+// listeners for the hour the lane runs.
+func sessionRelay(session infra.Session) kube.EndpointRelay {
+	var mu sync.Mutex
+	forwards := map[string]string{}
+	return func(ctx context.Context, hostPort string) (string, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if local, ok := forwards[hostPort]; ok {
+			return local, nil
+		}
+		local, err := session.Forward(ctx, hostPort)
+		if err != nil {
+			return "", fmt.Errorf("forward the tenant API server at %s through the site node: %w", hostPort, err)
+		}
+		GinkgoLogr.Info("relaying the tenant API server", "published", hostPort, "local", local)
+		forwards[hostPort] = local
+		return local, nil
+	}
 }
 
 // siteDiagnostics is written next to site-e2e.log, in the directory the

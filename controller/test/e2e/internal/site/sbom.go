@@ -249,8 +249,6 @@ func (d SBOM) commands(t DeployTarget, sbomDir, valuesDir string) []step {
 
 // render produces the per-site values files and the BootstrapConfig the
 // deploy path's template items render against.
-//
-//nolint:goconst // the keys are each chart's values schema, repeated because the charts repeat them
 func (d SBOM) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, error) {
 	vip := t.Node.IP
 	domains, err := oidcDomains(spireOverlay, vip)

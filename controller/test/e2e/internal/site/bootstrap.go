@@ -149,10 +149,18 @@ const (
 	diagnosticsDir = workDir + "/diagnostics"
 )
 
-// diagnosticsArchive is where CollectDiagnostics stages its tarball on the
-// node. Beside the directory rather than inside it, so the archive does not
-// try to contain itself.
-const diagnosticsArchive = workDir + "/diagnostics.tar.gz"
+const (
+	// diagnosticsArchive is where CollectDiagnostics stages its tarball on
+	// the node. Beside the directory rather than inside it, so the archive
+	// does not try to contain itself.
+	diagnosticsArchive = workDir + "/diagnostics.tar.gz"
+
+	// noDiagnosticsMarker is echoed by the remote shell instead of relying
+	// on an exit status: `test -d X && tar` exits non-zero both when the
+	// directory is missing and when tar fails, which are the two cases
+	// worth telling apart.
+	noDiagnosticsMarker = "nke-e2e-no-diagnostics"
+)
 
 // ErrNoDiagnostics is returned when the node has no diagnostics directory,
 // which is the ordinary case: nkectl writes one when it fails, so its absence
@@ -163,11 +171,6 @@ const diagnosticsArchive = workDir + "/diagnostics.tar.gz"
 // that did not exist. Distinguished from a real failure to archive or fetch,
 // which means diagnostics do exist and are being lost.
 var ErrNoDiagnostics = errors.New("the node has no diagnostics directory")
-
-// noDiagnosticsMarker is echoed by the remote shell instead of relying on an
-// exit status: `test -d X && tar` exits non-zero both when the directory is
-// missing and when tar fails, which are the two cases worth telling apart.
-const noDiagnosticsMarker = "nke-e2e-no-diagnostics"
 
 // CollectDiagnostics copies the cluster diagnostics nkectl writes on failure
 // off the node and into dest.
@@ -194,7 +197,7 @@ func CollectDiagnostics(ctx context.Context, s infra.Session, dest string) error
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dest, data, 0o644)
+	return os.WriteFile(dest, data, 0o600)
 }
 
 func (b bootstrap) stageNkectl(ctx context.Context) error {

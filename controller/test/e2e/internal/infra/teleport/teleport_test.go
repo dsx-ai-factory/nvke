@@ -339,14 +339,36 @@ func TestFetch(t *testing.T) {
 	}
 }
 
+func TestForwardRejectsUnusableTargets(t *testing.T) {
+	c := newHarness(t).dial(t)
+
+	for _, remote := range []string{
+		"127.0.0.1",       // no port at all
+		":6443",           // no host, which a relay caller could produce
+		"127.0.0.1:0",     // not a port a listener can be on
+		"127.0.0.1:70000", // past the end of the range
+		"127.0.0.1:https", // a name where the code wants a number
+	} {
+		if _, err := c.Forward(context.Background(), remote); err == nil {
+			t.Errorf("Forward(%q) succeeded, want a rejection before anything is dialed", remote)
+		}
+	}
+}
+
 func TestForward(t *testing.T) {
 	c := newHarness(t).dial(t)
 
-	if _, err := c.Forward(context.Background(), 9999); err == nil {
+	if _, err := c.Forward(context.Background(), "127.0.0.1:9999"); err == nil {
 		t.Error("a forward to a closed port should fail when it is set up")
 	}
 
-	addr, err := c.Forward(context.Background(), 6443)
+	// A host other than loopback is the tenant case: the address belongs to
+	// the far side of the connection, not to the machine running the test.
+	if _, err := c.Forward(context.Background(), "10.91.194.69:6443"); err == nil {
+		t.Error("a forward to an address the machine cannot reach should fail when it is set up")
+	}
+
+	addr, err := c.Forward(context.Background(), "127.0.0.1:6443")
 	if err != nil {
 		t.Fatalf("forward: %v", err)
 	}

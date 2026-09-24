@@ -34,7 +34,8 @@ func (b bootstrap) forwardKubeconfig(ctx context.Context, outputDir string) (str
 	if err != nil {
 		return "", err
 	}
-	local, err := b.session.Forward(ctx, port)
+	// The site's API server is on the node itself, so this one is loopback.
+	local, err := b.session.Forward(ctx, net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 	if err != nil {
 		return "", err
 	}
