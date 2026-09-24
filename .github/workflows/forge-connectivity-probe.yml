@@ -286,7 +286,100 @@ jobs:
               echo "FAIL the relay command returned: ${banner}" ;;
           esac
 
-      - name: Remove the Teleport identity
-        if: always() && steps.join.outcome == 'success'
+      # ----------------------------------------------------------------
+      # Question 5: can the 2h cap be renewed away?
+      #
+      # teleport-actions/auth mints one certificate and stamps it
+      # `disallow-reissue`, so it cannot be extended -- and the cluster caps
+      # it at the shortest role TTL, 2h, whatever is asked for. A run longer
+      # than that loses the ability to open new relays.
+      #
+      # tbot in daemon mode is the alternative: it re-mints on an interval
+      # and rewrites the same identity file. The dialer starts a fresh `tsh`
+      # per dial, so it picks up the new file with no coordination. Already
+      # established sessions are unaffected either way -- nv-prd-dgxc sets no
+      # disconnect_expired_cert, and Teleport's default is off.
+      #
+      # Proven here, against the real cluster, before the site lane depends
+      # on it: tbot's configuration schema has moved across versions
+      # (outputs -> services, certificate_ttl -> credential_lifetime) and a
+      # one-minute job is the cheap way to find out which one 18.11 wants.
+      # ----------------------------------------------------------------
+      - name: Teleport identity daemon
+        id: tbot
+        if: env.FORGE_TELEPORT_PROXY != ''
+        continue-on-error: true
         shell: bash
-        run: rm -f "${TELEPORT_IDENTITY_FILE}"
+        env:
+          TBOT_DIR: ${{ runner.temp }}/tbot
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "${TBOT_DIR}"
+          cat > "${RUNNER_TEMP}/tbot.yaml" <<EOF
+          version: v2
+          proxy_server: ${FORGE_TELEPORT_PROXY}
+          onboarding:
+            join_method: github
+            token: rg-nke-arc-runners-github-join
+          # Nothing on disk to protect or clean up, and nothing to persist:
+          # the bot re-joins with the runner's OIDC token every time.
+          storage:
+            type: memory
+          # Asks for 4h and will be given 2h. renewal_interval is what
+          # matters -- it is far shorter than the cap, so the file on disk is
+          # never close to expiring.
+          credential_lifetime:
+            ttl: 4h
+            renewal_interval: 20m
+          services:
+            - type: identity
+              destination:
+                type: directory
+                path: ${TBOT_DIR}
+          EOF
+
+          tbot start -c "${RUNNER_TEMP}/tbot.yaml" >"${RUNNER_TEMP}/tbot.log" 2>&1 &
+          echo $! > "${RUNNER_TEMP}/tbot.pid"
+
+          for _ in $(seq 1 30); do
+            [ -s "${TBOT_DIR}/identity" ] && break
+            sleep 2
+          done
+          if [ ! -s "${TBOT_DIR}/identity" ]; then
+            echo "FAIL tbot wrote no identity in 60s:"
+            sed 's/^/     /' "${RUNNER_TEMP}/tbot.log"
+            exit 1
+          fi
+          echo "OK   tbot wrote ${TBOT_DIR}/identity"
+          sed 's/^/     /' "${RUNNER_TEMP}/tbot.log" | tail -20
+
+      # The point of the daemon is a file the relay can use, so use it the
+      # same way the dialer does rather than merely inspecting it.
+      - name: Relay on the renewed identity
+        if: steps.tbot.outcome == 'success' && env.FORGE_JUMP_HOST != ''
+        shell: bash
+        env:
+          TBOT_IDENTITY: ${{ runner.temp }}/tbot/identity
+        run: |
+          set -Eeuo pipefail
+          tsh --proxy "${FORGE_TELEPORT_PROXY}" --identity "${TBOT_IDENTITY}" status || true
+          banner="$(timeout 60 tsh --proxy "${FORGE_TELEPORT_PROXY}" --identity "${TBOT_IDENTITY}" \
+            ssh "root@${FORGE_JUMP_HOST}" \
+            'bash -c '"'"'exec 3<>/dev/tcp/127.0.0.1/22 && head -c 4 <&3'"'"'' 2>&1 || true)"
+          case "${banner}" in
+            SSH-*) echo "OK   the renewed identity relays: read '${banner}'" ;;
+            *)     echo "FAIL the renewed identity did not relay: ${banner}" ;;
+          esac
+
+      - name: Stop tbot
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [ -f "${RUNNER_TEMP}/tbot.pid" ] || exit 0
+          kill "$(cat "${RUNNER_TEMP}/tbot.pid")" 2>/dev/null || true
+
+      - name: Remove the Teleport identity
+        if: always()
+        shell: bash
+        run: rm -rf -- "${TELEPORT_IDENTITY_FILE:-}" "${RUNNER_TEMP}/tbot"
