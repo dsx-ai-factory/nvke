@@ -29,8 +29,6 @@ on:
   # anything merges. push reads the workflow from the ref being pushed.
   push:
     branches: [feat/e2e-forge-site-controller]
-    paths:
-      - '.github/workflows/forge-connectivity-probe.yml'
 
 permissions: {}
 
