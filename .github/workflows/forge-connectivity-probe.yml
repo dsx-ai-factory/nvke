@@ -1,0 +1,128 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Answers, in about a minute and with no credentials, the three questions the
+# Forge site controller lane is blocked on:
+#
+#   1. Can an ARC runner reach the Forge API? It is public, but "public" and
+#      "reachable from the corpnet VPC" are not the same claim.
+#   2. Can it reach the Teleport proxy? Everything about the intended route
+#      assumes so, and nothing has tested it.
+#   3. Can it reach the jump host's sshd directly, and does that sshd offer
+#      password authentication? This decides whether the interim
+#      `jump-auth: password` route is possible at all -- the documented
+#      procedure only ever reaches that host through `tsh ssh`.
+#
+# It also prints the jump host's SHA256 host key, which is the value
+# `site.jumpHostKeyFingerprint` wants.
+#
+# Every check is advisory: the job reports rather than fails, because a red
+# result here is the finding, not an error. Delete this workflow once the
+# answers are written down.
+name: Forge connectivity probe
+
+on:
+  workflow_dispatch:
+  # SCAFFOLDING -- remove before merge. workflow_dispatch reads its trigger
+  # from the default branch, so this cannot be dispatched until it is there,
+  # and the whole point of the probe is to answer these questions before
+  # anything merges. push reads the workflow from the ref being pushed.
+  push:
+    branches: [feat/e2e-forge-site-controller]
+    paths:
+      - '.github/workflows/forge-connectivity-probe.yml'
+
+permissions: {}
+
+concurrency:
+  group: Forge connectivity probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: probe from the ARC fleet
+    runs-on: arc-amd64-cpu16
+    if: github.repository == 'dsx-ai-factory/nke'
+    timeout-minutes: 10
+    permissions: {}
+    env:
+      # Hostnames, not credentials, and not checked in. Same variables the
+      # site controller lane reads.
+      FORGE_JUMP_HOST: ${{ vars.FORGE_JUMP_HOST }}
+      FORGE_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
+      FORGE_API_ENDPOINT: ${{ vars.FORGE_API_ENDPOINT || 'https://api.ngc.nvidia.com' }}
+    steps:
+      # No checkout: nothing here reads the repository.
+      - name: Forge API
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Any HTTP status proves TCP and TLS completed, which is the whole
+          # question. Unauthenticated, so 401 is a pass.
+          code="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 30 \
+            "${FORGE_API_ENDPOINT}/v2/org" || echo "000")"
+          if [ "${code}" = "000" ]; then
+            echo "FAIL ${FORGE_API_ENDPOINT} unreachable"
+          else
+            echo "OK   ${FORGE_API_ENDPOINT} answered HTTP ${code}"
+          fi
+
+      - name: Teleport proxy
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "${FORGE_TELEPORT_PROXY}" || {
+            echo "SKIP the FORGE_TELEPORT_PROXY repository variable is unset"
+            exit 0
+          }
+          # /webapi/ping needs no credential and reports server_version, which
+          # is also how to confirm the tsh pin in the site lane still matches.
+          if body="$(curl -sS --connect-timeout 10 --max-time 30 \
+              "https://${FORGE_TELEPORT_PROXY%%/*}/webapi/ping")"; then
+            echo "OK   ${FORGE_TELEPORT_PROXY} answered:"
+            echo "${body}"
+          else
+            echo "FAIL ${FORGE_TELEPORT_PROXY} unreachable"
+          fi
+
+      - name: Jump host sshd
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "${FORGE_JUMP_HOST}" || {
+            echo "SKIP the FORGE_JUMP_HOST repository variable is unset"
+            exit 0
+          }
+
+          if ! timeout 10 bash -c "exec 3<>/dev/tcp/${FORGE_JUMP_HOST}/22" 2>/dev/null; then
+            echo "FAIL ${FORGE_JUMP_HOST}:22 is not reachable from this runner."
+            echo "     The jump-auth=password route is not possible; Teleport is the only way in."
+            exit 0
+          fi
+          echo "OK   ${FORGE_JUMP_HOST}:22 accepted a connection"
+
+          # The value site.jumpHostKeyFingerprint wants.
+          if key="$(ssh-keyscan -T 10 -t ed25519 "${FORGE_JUMP_HOST}" 2>/dev/null)" && [ -n "${key}" ]; then
+            echo "     host key: $(printf '%s' "${key}" | ssh-keygen -lf - | awk '{print $2}')"
+          fi
+
+          # sshd names the methods it will accept when offered none. This is
+          # what says whether a password can be used, without trying one.
+          methods="$(ssh -o BatchMode=yes \
+                         -o StrictHostKeyChecking=no \
+                         -o UserKnownHostsFile=/dev/null \
+                         -o PreferredAuthentications=none \
+                         -o ConnectTimeout=10 \
+                         "probe@${FORGE_JUMP_HOST}" true 2>&1 |
+                     sed -n 's/.*(\(.*\)).*/\1/p' | head -1)"
+          if [ -n "${methods}" ]; then
+            echo "     sshd offers: ${methods}"
+            case "${methods}" in
+              *password* | *keyboard-interactive*)
+                echo "     -> jump-auth=password is possible, given an account and its password" ;;
+              *)
+                echo "     -> sshd accepts no password method; jump-auth=password cannot work" ;;
+            esac
+          else
+            echo "     sshd did not name its authentication methods"
+          fi
