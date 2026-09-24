@@ -200,3 +200,12 @@ jobs:
         run: |
           set -euo pipefail
           oras manifest fetch --pretty "${REPO}:sha-${GITHUB_SHA}"
+
+      # This publisher captured no digest at all: the index is assembled from
+      # the per-arch tag names rather than their digests, so nothing in the
+      # run ever learned what it published.
+      - name: Record the published digest
+        uses: ./.github/actions/record-digest
+        with:
+          references: ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}
+          component: nke-agent-nvcr

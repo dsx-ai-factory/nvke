@@ -191,5 +191,5 @@ jobs:
       - name: Record the published digest
         uses: ./.github/actions/record-digest
         with:
-          reference: ghcr.io/dsx-ai-factory/nke/charts/nke-controller:${{ steps.meta.outputs.version }}
+          references: ghcr.io/dsx-ai-factory/nke/charts/nke-controller:${{ steps.meta.outputs.version }}
           component: nke-controller-chart

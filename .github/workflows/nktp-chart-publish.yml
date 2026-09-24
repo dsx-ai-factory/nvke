@@ -121,6 +121,26 @@ jobs:
           ( cd dist && sha256sum -- "nktp-${VERSION}.tgz" > checksums.txt )
           cat dist/checksums.txt
 
+      # helm keeps its own registry config rather than writing docker's, so
+      # the login in the step above is invisible to crane. record-digest
+      # needs a credential it can see; same token, in the usual place.
+      - name: Log in to GHCR for crane
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # checksums.txt hashes the local .tgz, which is a different claim from
+      # the digest GHCR serves -- and the reuse branch above can publish
+      # nothing at all, leaving a checksum of a file that was never pushed.
+      # This records what is actually addressable, on both branches.
+      - name: Record the published digest
+        uses: ./.github/actions/record-digest
+        with:
+          references: ghcr.io/dsx-ai-factory/nke/charts/nktp:${{ steps.version.outputs.version }}
+          component: nktp-chart
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nktp-chart-${{ github.run_id }}-${{ github.run_attempt }}

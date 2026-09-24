@@ -24,16 +24,23 @@ name: Record a published digest
 description: Resolve what a registry serves for a reference, and keep it as an artifact
 
 inputs:
-  reference:
+  references:
     description: >-
-      The full registry reference that was just published, including the tag,
-      for example nvcr.io/org/nke-controller:v1.2.3. Resolved as-is.
+      The full registry references that were just published, including tags,
+      one per line. Resolved as-is.
+
+      Usually one -- an image or a chart is a single manifest, and a
+      multi-arch component is its index. The CLI publishers are the reason
+      this is a list: they tag by OS and architecture and build no index, so
+      four references are one component with no single thing to point at.
     required: true
   component:
     description: >-
-      Names this artifact in the candidate, and names the uploaded file. One
-      per published thing, unique within a release: nke-controller,
-      nke-controller-chart, nke-agent-deb-amd64.
+      Names this component in the candidate, and names the uploaded file.
+      Unique within a release, which for a workflow with a destination matrix
+      means including the destination: nke-controller-chart-nke and
+      nke-controller-chart-dsx publish the same chart to two registries and
+      would otherwise collide on the artifact name.
     required: true
   retention_days:
     description: >-
@@ -44,11 +51,6 @@ inputs:
     required: false
     default: "90"
 
-outputs:
-  digest:
-    description: The resolved digest, as sha256:...
-    value: ${{ steps.resolve.outputs.digest }}
-
 runs:
   using: composite
   steps:
@@ -57,50 +59,78 @@ runs:
     - id: resolve
       shell: bash
       env:
-        REFERENCE: ${{ inputs.reference }}
+        REFERENCES: ${{ inputs.references }}
         COMPONENT: ${{ inputs.component }}
       run: |
         set -euo pipefail
 
-        # Fails the publisher when the reference does not resolve. That is the
-        # intended behaviour: a publish whose result cannot be addressed by
-        # digest has not produced something the release layer can qualify, and
-        # finding that out here is cheaper than finding it out at promotion.
-        if ! digest="$(crane digest "${REFERENCE}" 2>&1)"; then
-          echo "::error::${REFERENCE} did not resolve after publishing: ${digest}"
+        # Checked up front, not discovered mid-loop. Seven of the nine
+        # callers are on ubuntu-latest where jq is standard, but two run on
+        # the self-hosted linux-amd64-cpu8 class, and these are publish
+        # workflows: the run that finds out is a release.
+        command -v jq >/dev/null || {
+          echo "::error::jq is not on this runner, so the digest record cannot be written"
           exit 1
-        fi
-
-        case "${digest}" in
-          sha256:*) ;;
-          *) echo "::error::crane digest returned ${digest} for ${REFERENCE}, which is not a digest"; exit 1 ;;
-        esac
+        }
 
         dir="${RUNNER_TEMP}/release-digests"
         mkdir -p "${dir}"
-        # The reference is kept whole alongside the digest. A digest on its own
-        # says what the bytes are but not where they were published, and the
-        # same bytes reach several registries on the promotion paths.
-        cat > "${dir}/${COMPONENT}.json" <<EOF
-        {
-          "component": "${COMPONENT}",
-          "reference": "${REFERENCE}",
-          "digest": "${digest}",
-          "revision": "${GITHUB_SHA}",
-          "ref": "${GITHUB_REF_NAME}",
-          "run": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-        }
-        EOF
+        record="${dir}/${COMPONENT}.json"
 
-        echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+        # jq builds the record rather than a heredoc: a reference reaches this
+        # action through a workflow expression, and a stray quote in one would
+        # turn a heredoc into malformed JSON that nothing notices until
+        # assemble parses it weeks later.
+        artifacts="[]"
+        count=0
+        while IFS= read -r reference; do
+          reference="$(echo "${reference}" | tr -d '[:space:]')"
+          [ -n "${reference}" ] || continue
+
+          # Fails the publisher when the reference does not resolve. That is
+          # deliberate: a publish whose result cannot be addressed by digest
+          # has not produced something the release layer can qualify, and
+          # finding that out here is far cheaper than at promotion.
+          if ! digest="$(crane digest "${reference}" 2>&1)"; then
+            echo "::error::${reference} did not resolve after publishing: ${digest}"
+            exit 1
+          fi
+          case "${digest}" in
+            sha256:*) ;;
+            *) echo "::error::crane digest returned ${digest} for ${reference}, which is not a digest"; exit 1 ;;
+          esac
+
+          # The reference is kept whole beside the digest. A digest alone says
+          # what the bytes are but not where they were published, and the same
+          # bytes reach several registries on the promotion paths.
+          artifacts="$(jq -c --arg r "${reference}" --arg d "${digest}" \
+            '. + [{reference: $r, digest: $d}]' <<< "${artifacts}")"
+          count=$((count + 1))
+          echo "${reference} -> ${digest}"
+        done <<< "${REFERENCES}"
+
+        if [ "${count}" -eq 0 ]; then
+          echo "::error::no references were given for ${COMPONENT}"
+          exit 1
+        fi
+
+        jq -n \
+          --arg component "${COMPONENT}" \
+          --arg revision "${GITHUB_SHA}" \
+          --arg ref "${GITHUB_REF_NAME}" \
+          --arg run "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+          --argjson artifacts "${artifacts}" \
+          '{component: $component, revision: $revision, ref: $ref, run: $run, artifacts: $artifacts}' \
+          > "${record}"
+
         echo "record_dir=${dir}" >> "${GITHUB_OUTPUT}"
 
         {
-          echo "### Digest recorded"
+          echo "### Digests recorded for \`${COMPONENT}\`"
           echo
-          echo "\`${REFERENCE}\`"
-          echo
-          echo "\`${digest}\`"
+          echo '```'
+          jq -r '.artifacts[] | "\(.reference)  \(.digest)"' "${record}"
+          echo '```'
         } >> "${GITHUB_STEP_SUMMARY}"
 
     # release-digest-* is the prefix `assemble` globs for. Renaming it is a

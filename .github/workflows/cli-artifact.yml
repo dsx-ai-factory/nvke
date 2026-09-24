@@ -161,3 +161,17 @@ jobs:
         run: |
           set -euo pipefail
           oras manifest fetch --pretty "${REPO}:sha-${GITHUB_SHA}-linux-amd64"
+
+      # Four references, because this publisher builds no index: the four
+      # platform tags are the whole of what it published, and a candidate
+      # that pinned only one would claim a coverage it does not have. The
+      # list has to track the platform loop above.
+      - name: Record the published digests
+        uses: ./.github/actions/record-digest
+        with:
+          references: |
+            ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}-linux-amd64
+            ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}-linux-arm64
+            ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}-darwin-amd64
+            ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}-darwin-arm64
+          component: nkectl

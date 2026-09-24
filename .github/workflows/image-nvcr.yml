@@ -278,7 +278,7 @@ jobs:
       - name: Record the published digest
         uses: ./.github/actions/record-digest
         with:
-          reference: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+          references: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
           component: nke-controller
 
   # NVCR needs an NGC account to pull from, so the controller image is not
