@@ -307,7 +307,11 @@ func collectSiteDiagnostics(ctx context.Context, session infra.Session) {
 	// that is already done, which is exactly when the diagnostics matter.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
 	defer cancel()
-	if err := site.CollectDiagnostics(ctx, session, siteDiagnostics); err != nil {
+	switch err := site.CollectDiagnostics(ctx, session, siteDiagnostics); {
+	case errors.Is(err, site.ErrNoDiagnostics):
+		GinkgoLogr.Info("the node wrote no diagnostics, so the failure is after the deploy")
+		return
+	case err != nil:
 		GinkgoLogr.Error(err, "could not collect the node's diagnostics")
 		return
 	}

@@ -154,6 +154,21 @@ const (
 // try to contain itself.
 const diagnosticsArchive = workDir + "/diagnostics.tar.gz"
 
+// ErrNoDiagnostics is returned when the node has no diagnostics directory,
+// which is the ordinary case: nkectl writes one when it fails, so its absence
+// usually means the deploy worked and the run failed somewhere after it. Run
+// 36045936723 did exactly that -- the stack came up and the suite tripped on
+// a version-string comparison -- and reporting "could not collect the node's
+// diagnostics" as an error there sent the reader looking for a second fault
+// that did not exist. Distinguished from a real failure to archive or fetch,
+// which means diagnostics do exist and are being lost.
+var ErrNoDiagnostics = errors.New("the node has no diagnostics directory")
+
+// noDiagnosticsMarker is echoed by the remote shell instead of relying on an
+// exit status: `test -d X && tar` exits non-zero both when the directory is
+// missing and when tar fails, which are the two cases worth telling apart.
+const noDiagnosticsMarker = "nke-e2e-no-diagnostics"
+
 // CollectDiagnostics copies the cluster diagnostics nkectl writes on failure
 // off the node and into dest.
 //
@@ -163,10 +178,15 @@ const diagnosticsArchive = workDir + "/diagnostics.tar.gz"
 // from the cluster side at all. A tarball rather than a file at a time
 // because the directory's contents are nkectl's to decide.
 func CollectDiagnostics(ctx context.Context, s infra.Session, dest string) error {
-	cmd := fmt.Sprintf("test -d %s && tar -czf %s -C %s diagnostics",
-		shellQuote(diagnosticsDir), shellQuote(diagnosticsArchive), shellQuote(workDir))
-	if out, err := s.Run(ctx, asRoot(cmd)); err != nil {
+	cmd := fmt.Sprintf("if test -d %s; then tar -czf %s -C %s diagnostics; else echo %s; fi",
+		shellQuote(diagnosticsDir), shellQuote(diagnosticsArchive), shellQuote(workDir),
+		shellQuote(noDiagnosticsMarker))
+	out, err := s.Run(ctx, asRoot(cmd))
+	if err != nil {
 		return fmt.Errorf("archive the diagnostics on the node: %w\n%s", err, tail(out))
+	}
+	if strings.Contains(out, noDiagnosticsMarker) {
+		return ErrNoDiagnostics
 	}
 	// Fetch, not Run: it reads into its own buffer, so the bytes arrive
 	// unmixed with anything the shell says.

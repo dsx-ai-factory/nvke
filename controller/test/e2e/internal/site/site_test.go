@@ -119,11 +119,30 @@ func TestCollectDiagnostics(t *testing.T) {
 // where the real ones would be.
 func TestCollectDiagnosticsWithoutADirectory(t *testing.T) {
 	s := newFakeSession()
-	s.fail = func(string) (string, error) { return "", errors.New("exit status 1") }
+	// fail is the Run hook; a nil error here is the point. This is what the
+	// remote `if test -d ...; else echo ...; fi` prints when nkectl wrote
+	// nothing, which is what a deploy that worked leaves behind.
+	s.fail = func(string) (string, error) { return noDiagnosticsMarker + "\n", nil }
 	dest := filepath.Join(t.TempDir(), "site-diagnostics.tar.gz")
 
-	if err := CollectDiagnostics(context.Background(), s, dest); err == nil {
-		t.Fatal("a missing diagnostics directory should be reported")
+	if err := CollectDiagnostics(context.Background(), s, dest); !errors.Is(err, ErrNoDiagnostics) {
+		t.Fatalf("an absent directory should be ErrNoDiagnostics, got %v", err)
+	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Errorf("wrote a file anyway: %v", err)
+	}
+}
+
+// A directory that exists but cannot be archived is a different finding: the
+// diagnostics are there and are being lost, which is worth an error.
+func TestCollectDiagnosticsWhenArchivingFails(t *testing.T) {
+	s := newFakeSession()
+	s.fail = func(string) (string, error) { return "tar: permission denied", errors.New("exit status 2") }
+	dest := filepath.Join(t.TempDir(), "site-diagnostics.tar.gz")
+
+	err := CollectDiagnostics(context.Background(), s, dest)
+	if err == nil || errors.Is(err, ErrNoDiagnostics) {
+		t.Fatalf("a failed archive should be an error, got %v", err)
 	}
 	if _, err := os.Stat(dest); !os.IsNotExist(err) {
 		t.Errorf("wrote a file anyway: %v", err)
