@@ -8,16 +8,30 @@
 # the runner. The runner builds the inputs, then drives a bare-metal Forge
 # instance through the site's jump host: stage nkectl, stage the checkout,
 # import the images, `nkectl bootstrap site`, install the deploy path, create
-# a tenant, tear it all down. The runner only needs egress to the Forge API,
-# the jump host and ghcr.io -- all public -- which is why this sits on
-# `ubuntu-latest` rather than competing for the self-hosted pool.
+# a tenant, tear it all down.
 #
-# THE JUMP HOST HOP IS INTERIM. Teleport is where this is going, and the
-# `teleport` value of the `jump-auth` input is already wired for it. Until the
-# jump host is enrolled, `password` logs into it with an account password from
-# secrets and asks its sshd to forward. Nothing else differs: either way the
-# jump host only relays bytes, and the SSH session to the node beyond it is
-# negotiated on the runner. Switching is changing one input, not any code.
+# It runs on the ARC fleet because that is the sanctioned fleet for this
+# repository's hardware lanes, not because it has to. Measured by
+# `forge-connectivity-probe.yml` on 2026-09-23: the Forge API answers, and so
+# does the Teleport proxy, which is Teleport Cloud and therefore public. A
+# GitHub-hosted runner would reach both. What no runner reaches is the jump
+# host directly -- see the `password` note below.
+#
+# EITHER ROUTE TO THE JUMP HOST, chosen by the `jump-auth` input:
+#
+#   teleport  The default. tbot joins with this repository's GitHub OIDC
+#             identity, so there is no stored credential, and `tsh` relays.
+#   password  For a jump host that is not Teleport-enrolled. Logs in with an
+#             account password from secrets and asks its sshd to forward.
+#             KNOWN NOT TO WORK FOR az61: the probe found no route from the
+#             ARC fleet to rel-eng-az61-jump-host:22 on 2026-09-23, so this
+#             host is reachable only through the Teleport proxy. Kept for a
+#             future site whose jump host is not enrolled; re-run the probe
+#             against that host before choosing it.
+#
+# Nothing else differs: either way the jump host only relays bytes, and the
+# SSH session to the node beyond it is negotiated on the runner. Switching is
+# changing one input, not any code.
 #
 # MANUAL ONLY, deliberately, on three separate grounds:
 #
@@ -69,13 +83,13 @@ on:
         type: string
         required: true
       jump-auth:
-        description: How to reach the jump host. password is the interim route; teleport takes over once the jump host is enrolled.
+        description: How to reach the jump host. teleport joins as the ARC bot; password is the interim route for a jump host that is not enrolled.
         type: choice
         required: true
-        default: password
+        default: teleport
         options:
-          - password
           - teleport
+          - password
       keep-site:
         description: Keep the node after the run, for debugging. Remember to delete it by hand.
         type: boolean
@@ -95,7 +109,11 @@ concurrency:
 jobs:
   site:
     name: site controller (${{ inputs.stage }})
-    runs-on: ubuntu-latest
+    # The ARC fleet on the RelEng EKS cluster: 16 vCPU / 64 GiB with dind, on
+    # a runner image built to stand in for ubuntu-latest. In the corpnet VPC,
+    # which is what makes the jump host reachable at all. Capped at two
+    # runners for the whole class, another reason this lane is manual.
+    runs-on: arc-amd64-cpu16
     if: github.repository == 'dsx-ai-factory/nke'
     # Measured phases from the az61 SBOM run: ~17 min to create the instance,
     # ~10 to stage assets, ~5 to bootstrap, ~8 to install the management
@@ -109,17 +127,21 @@ jobs:
     timeout-minutes: 180
     permissions:
       contents: read
+      # The Teleport join, and only that. Granted unconditionally because
+      # permissions cannot be keyed on an input; the password route simply
+      # does not mint a token. The join token's allow rules are what actually
+      # bound this -- see the auth step.
+      id-token: write
     env:
       # Where `make site-inputs` writes nkectl and the three image archives.
       # Left at the Makefile default so the paths in the config below match
       # e2e-config-example.yaml verbatim.
       SITE_INPUTS: ${{ github.workspace }}/.site-inputs
-      # tsh reads both, and ignores them on the password route. The dialer
-      # passes neither explicitly -- config.go leaves an empty
-      # teleportIdentityFile to $TELEPORT_IDENTITY_FILE, which is what a CI
-      # bot has instead of a login session.
-      TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
-      TELEPORT_IDENTITY_FILE: ${{ github.workspace }}/.teleport-identity
+      # The proxy for the auth step. It also exports TELEPORT_PROXY and
+      # TELEPORT_IDENTITY_FILE for tsh, which is how the dialer is configured
+      # -- config.go leaves teleportIdentityFile empty and tsh reads the
+      # environment, which is what a bot has instead of a login session.
+      FORGE_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
       # Not checked in: the jump host names internal topology. Repository
       # variables rather than secrets, because a hostname, a login and a
       # public key's fingerprint are not credentials -- the credential is the
@@ -143,23 +165,18 @@ jobs:
         with:
           persist-credentials: true
 
-      # Three `docker save` archives of multi-hundred-megabyte images, on a
-      # runner that starts with ~14 GB free. Cheap insurance, and it logs the
-      # headroom for when a run does fail on space.
-      - name: Free disk space
+      # Three `docker save` archives of multi-hundred-megabyte images, written
+      # to the workspace and read back by dind. Reported rather than freed:
+      # the ubuntu-latest trick of deleting /usr/share/dotnet and friends has
+      # nothing to delete in a runner container, and the space that matters
+      # is the pod's, not the node's. This is here so a run that fails on
+      # space says so in its first thirty seconds.
+      - name: Report disk space
         shell: bash
         run: |
           set -Eeuo pipefail
-          echo "Disk space before cleanup:"
-          df -h /
-          sudo rm -rf -- \
-            /usr/local/lib/android \
-            /usr/share/dotnet \
-            /opt/ghc \
-            /usr/local/.ghcup \
-            /opt/hostedtoolcache/CodeQL
-          echo "Disk space after cleanup:"
-          df -h /
+          df -h "${GITHUB_WORKSPACE}" /tmp
+          docker system df || true
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -174,35 +191,71 @@ jobs:
       # stream to the node's sshd through the jump host. Pinned, and checked,
       # because an unpinned client against a pinned cluster is a failure mode
       # that surfaces as an unexplained relay error deep in a 40-minute run.
-      - name: Install tsh
+      # Matched to nv-prd-dgxc's server version rather than merely within the
+      # supported skew.
+      # tbot as well as tsh. The harness only ever runs tsh, but
+      # teleport-actions/auth below ships no binary of its own: it shells out
+      # to tbot, and fails with "Unable to locate executable file" if one is
+      # not already on PATH. Both come out of the same tarball, so the version
+      # pin covers the join as well as the relay.
+      - name: Install tsh and tbot
         if: inputs.jump-auth == 'teleport'
         shell: bash
         env:
-          TELEPORT_VERSION: "17.4.2"
+          TELEPORT_VERSION: "18.11.0"
         run: |
           set -Eeuo pipefail
           curl -fsSL --connect-timeout 20 --max-time 300 \
             -o /tmp/teleport.tar.gz \
             "https://cdn.teleport.dev/teleport-v${TELEPORT_VERSION}-linux-amd64-bin.tar.gz"
-          tar -C /tmp -xzf /tmp/teleport.tar.gz teleport/tsh
+          tar -C /tmp -xzf /tmp/teleport.tar.gz teleport/tsh teleport/tbot
           sudo install -m 0755 /tmp/teleport/tsh /usr/local/bin/tsh
+          sudo install -m 0755 /tmp/teleport/tbot /usr/local/bin/tbot
           tsh version
 
-      # Written to a file rather than passed as an argument: an identity on a
-      # command line is in the process table and in every `set -x` line.
-      - name: Write the Teleport identity
+      # The join token allows two refs per repository, refs/heads/main and
+      # refs/pull/*/merge, so a workflow_dispatch from any other branch mints
+      # nothing. Checked here because the join failure names neither the ref
+      # nor the rule, and this lane is dispatched by hand from a branch
+      # picker that offers every branch.
+      - name: Check the dispatch ref
         if: inputs.jump-auth == 'teleport'
         shell: bash
         env:
-          TELEPORT_IDENTITY: ${{ secrets.FORGE_TELEPORT_IDENTITY }}
+          REF: ${{ github.ref }}
         run: |
           set -Eeuo pipefail
-          test -n "${TELEPORT_IDENTITY}" || {
-            echo "::error::FORGE_TELEPORT_IDENTITY is empty; the run cannot reach the jump host"
-            exit 1
-          }
-          umask 077
-          printf '%s' "${TELEPORT_IDENTITY}" > "${TELEPORT_IDENTITY_FILE}"
+          case "${REF}" in
+            refs/heads/main | refs/pull/*/merge) ;;
+            *)
+              echo "::error::dispatched from ${REF}; the Teleport join token allows only" \
+                   "refs/heads/main and refs/pull/*/merge. Dispatch from main, or use jump-auth=password."
+              exit 1
+              ;;
+          esac
+
+      # No stored identity: tbot joins with the repository's OIDC token
+      # against rg-nke-arc-runners-github-join, whose bot holds
+      # rg-k8aas-bot-ssh-root -- root on the four jump hosts labelled
+      # tbot-root-allowed=true, one of which is the az61 one this lane uses.
+      # The action exports TELEPORT_PROXY and TELEPORT_IDENTITY_FILE, which
+      # is exactly what the dialer's tsh relay reads.
+      #
+      # certificate-ttl is requested, not granted: Teleport issues the
+      # shortest max_session_ttl across the bot's roles, and rg-nke-ssh-sudo
+      # caps that at 2h today -- a role that matches no node and is carried
+      # only for parity with the GitLab bot. A `full` run can outlast it, so
+      # until that role is dropped from the bot or given an explicit TTL,
+      # expect relay failures past the two-hour mark. Teardown itself is a
+      # Forge API call and does not go through here, so the machine is still
+      # released.
+      - name: Authenticate to Teleport
+        if: inputs.jump-auth == 'teleport'
+        uses: teleport-actions/auth@3b365df2b4f64891358392a444ff34929ba0d0b1 # v2.1.2
+        with:
+          proxy: ${{ env.FORGE_TELEPORT_PROXY }}
+          token: rg-nke-arc-runners-github-join
+          certificate-ttl: 4h
 
       # Fails here rather than 20 minutes in, after a node has been created
       # and can no longer be reached to be torn down. Only the presence of
@@ -217,6 +270,13 @@ jobs:
           set -Eeuo pipefail
           test -n "${JUMP_HOST_PASSWORD}" || {
             echo "::error::FORGE_JUMP_HOST_PASSWORD is empty; the run cannot reach the jump host"
+            exit 1
+          }
+          # No fallback on this route: teleportLogin is left empty below,
+          # because root is the Teleport bot's login and not necessarily an
+          # account the jump host accepts a password for.
+          test -n "${FORGE_JUMP_HOST_USER}" || {
+            echo "::error::the FORGE_JUMP_HOST_USER repository variable is unset; the password has no account to go with"
             exit 1
           }
           test -n "${FORGE_JUMP_HOST_KEY_FINGERPRINT}" || echo "::warning::\
@@ -257,6 +317,7 @@ jobs:
         shell: bash
         env:
           SITE_CONTROLLER_VERSION: ${{ inputs.controller-version }}
+          TELEPORT_LOGIN: ${{ inputs.jump-auth == 'teleport' && 'root' || '' }}
         run: |
           set -Eeuo pipefail
           test -n "${FORGE_JUMP_HOST}" || {
@@ -267,6 +328,10 @@ jobs:
           # Generated by .github/workflows/forge-site-controller-e2e.yml.
           site:
             jumpHost: "${FORGE_JUMP_HOST}"
+            # root because that is the only login rg-k8aas-bot-ssh-root
+            # grants; empty on the password route, where the account comes
+            # from jumpHostUser instead.
+            teleportLogin: "${TELEPORT_LOGIN}"
             # Both ignored on the Teleport route, which takes its login from
             # the identity and its host key from the cluster CA.
             jumpHostUser: "${FORGE_JUMP_HOST_USER}"
@@ -293,6 +358,11 @@ jobs:
       #                         and the instance leaks -- reaching this means
       #                         Ginkgo itself is wedged.
       #   timeout-minutes 180   the runner is killed. Same leak, no log.
+      #
+      # A fourth clock is not ours: on the Teleport route the bot certificate
+      # expires after the shortest max_session_ttl among its roles, 2h today.
+      # It is shorter than the Ginkgo timeout, so a long `full` run can lose
+      # the relay before it finishes. See the auth step.
       #
       # environments/forge.yaml declares one site (az61), so the suite
       # resolves it without being told which.
@@ -343,10 +413,10 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      # The runner is ephemeral, so this is belt and braces -- but a
-      # Teleport identity sitting in a workspace that a later step could read
-      # is not worth the saving.
+      # The runner is ephemeral, so this is belt and braces -- but an identity
+      # good for hours, sitting where a later step could read it, is not worth
+      # the saving. The auth action chooses the path; hence the indirection.
       - name: Remove the Teleport identity
-        if: always()
+        if: always() && inputs.jump-auth == 'teleport'
         shell: bash
-        run: rm -f -- "${TELEPORT_IDENTITY_FILE}"
+        run: rm -f -- "${TELEPORT_IDENTITY_FILE:-}"

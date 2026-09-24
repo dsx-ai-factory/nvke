@@ -427,8 +427,12 @@ merges; `site-inputs` fetches it.
 
 ### Reaching the jump host
 
-Teleport is the intended route: `tsh login` to the cluster the jump host is
-enrolled in, or `TELEPORT_PROXY` and `TELEPORT_IDENTITY_FILE` in CI.
+Teleport is the intended route. Locally that is a `tsh login` to the cluster
+the jump host is enrolled in. In CI it is a bot identity in `TELEPORT_PROXY`
+and `TELEPORT_IDENTITY_FILE`, which
+`.github/workflows/forge-site-controller-e2e.yml` obtains by joining with the
+repository's GitHub OIDC token — nothing is stored. The bot's login is `root`,
+so set `site.teleportLogin` accordingly.
 
 Until a site's jump host is enrolled, set `JUMP_HOST_PASSWORD` and the lane logs
 into it over plain SSH and asks its sshd to forward, instead of shelling out to
