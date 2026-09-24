@@ -174,6 +174,13 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			return
 		}
 		detached := context.WithoutCancel(ctx)
+		// The bootstrap spec collects these itself, and this is a no-op when it
+		// did. It is here for everything after it: a tenant that never reaches
+		// Ready is a failure of the site's control plane, and the node holding
+		// that evidence is released three lines down.
+		if failed {
+			collectSiteDiagnostics(detached, session)
+		}
 		if built.Kubeconfig != "" {
 			if err := sweepSiteTenants(detached, built.Kubeconfig); err != nil {
 				GinkgoLogr.Error(err, "tenant sweep failed; releasing the site anyway, and its tenants' instances may need releasing by hand")
@@ -286,10 +293,16 @@ func newSiteLane() (siteLane, error) {
 const siteDiagnostics = "site-diagnostics.tar.gz"
 
 // collectSiteDiagnostics pulls the node's diagnostics off before teardown
-// releases it. Best effort and never fails the spec: the bootstrap failure
-// is the finding, and losing the diagnostics must not replace it with a
-// second, less useful one.
+// releases it. Best effort and never fails the spec: the failure that
+// prompted it is the finding, and losing the diagnostics must not replace it
+// with a second, less useful one.
+//
+// Callable twice -- the bootstrap spec and the teardown both reach it -- and
+// the first archive wins, since it was written closest to the failure.
 func collectSiteDiagnostics(ctx context.Context, session infra.Session) {
+	if _, err := os.Stat(siteDiagnostics); err == nil {
+		return
+	}
 	// Detached, because a spec that failed on its own timeout has a context
 	// that is already done, which is exactly when the diagnostics matter.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
