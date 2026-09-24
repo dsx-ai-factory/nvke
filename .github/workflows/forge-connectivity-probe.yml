@@ -12,9 +12,14 @@
 #      password authentication? This decides whether the interim
 #      `jump-auth: password` route is possible at all -- the documented
 #      procedure only ever reaches that host through `tsh ssh`.
+#   4. Does the whole Teleport route work end to end: does the GitHub OIDC
+#      join mint a certificate, does that certificate reach the jump host as
+#      root, and does the exact relay command the Go dialer runs there
+#      actually move bytes? Reaching the proxy answers none of these.
 #
 # It also prints the jump host's SHA256 host key, which is the value
-# `site.jumpHostKeyFingerprint` wants.
+# `site.jumpHostKeyFingerprint` wants, and the certificate's real expiry,
+# which is how to see the shortest-role TTL clamp rather than assume it.
 #
 # Every check is advisory: the job reports rather than fails, because a red
 # result here is the finding, not an error. Delete this workflow once the
@@ -29,11 +34,20 @@ on:
   # anything merges. push reads the workflow from the ref being pushed.
   push:
     branches: [feat/e2e-forge-site-controller]
+  # Also scaffolding, and the only way to answer question 4. The join token
+  # allows refs/heads/main and refs/pull/*/merge and nothing else, so a push
+  # to a feature branch mints no certificate however reachable the proxy is.
+  # A pull_request run carries refs/pull/<n>/merge, which the token accepts.
+  pull_request:
+    branches: [main]
 
 permissions: {}
 
 concurrency:
-  group: Forge connectivity probe
+  # Keyed by event because push and pull_request both fire on the same commit
+  # while the scaffolding triggers are in place, and they ask different
+  # questions: only the pull_request run has a joinable ref.
+  group: Forge connectivity probe ${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -42,7 +56,10 @@ jobs:
     runs-on: arc-amd64-cpu16
     if: github.repository == 'dsx-ai-factory/nke'
     timeout-minutes: 10
-    permissions: {}
+    permissions:
+      # The OIDC token the Teleport join consumes. Nothing else is needed:
+      # there is no checkout, and no step reads the repository.
+      id-token: write
     env:
       # Hostnames, not credentials, and not checked in. Same variables the
       # site controller lane reads.
@@ -124,3 +141,122 @@ jobs:
           else
             echo "     sshd did not name its authentication methods"
           fi
+
+      # ----------------------------------------------------------------
+      # Question 4: the Teleport route, end to end. Everything below is
+      # advisory in the same way as the checks above -- the auth step is
+      # allowed to fail, and the steps after it read its outcome rather than
+      # its success, so one red link still reports the rest.
+      # ----------------------------------------------------------------
+
+      - name: Report the ref
+        shell: bash
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -Eeuo pipefail
+          case "${REF}" in
+            refs/heads/main | refs/pull/*/merge)
+              echo "OK   ${REF} is a ref the join token accepts" ;;
+            *)
+              echo "NOTE ${REF} is not one of refs/heads/main or refs/pull/*/merge."
+              echo "     The join below will fail, and that is the token's rule, not a network result." ;;
+          esac
+
+      - name: Install tsh
+        if: env.FORGE_TELEPORT_PROXY != ''
+        shell: bash
+        env:
+          # Matches the pin in forge-site-controller-e2e.yml, and the
+          # server_version the proxy reports above.
+          TELEPORT_VERSION: "18.11.0"
+        run: |
+          set -Eeuo pipefail
+          curl -fsSL --connect-timeout 20 --max-time 300 \
+            -o /tmp/teleport.tar.gz \
+            "https://cdn.teleport.dev/teleport-v${TELEPORT_VERSION}-linux-amd64-bin.tar.gz"
+          tar -C /tmp -xzf /tmp/teleport.tar.gz teleport/tsh
+          sudo install -m 0755 /tmp/teleport/tsh /usr/local/bin/tsh
+          tsh version
+
+      - name: Teleport join
+        id: join
+        if: env.FORGE_TELEPORT_PROXY != ''
+        continue-on-error: true
+        uses: teleport-actions/auth@3b365df2b4f64891358392a444ff34929ba0d0b1 # v2.1.2
+        with:
+          proxy: ${{ env.FORGE_TELEPORT_PROXY }}
+          token: rg-nke-arc-runners-github-join
+          # Deliberately the same 4h the site lane asks for. The point is to
+          # see what comes back, not to get a long certificate: Teleport
+          # clamps to the shortest max_session_ttl across the bot's roles, and
+          # rg-nke-ssh-sudo has the module default of 2h.
+          certificate-ttl: 4h
+
+      - name: Teleport identity
+        if: steps.join.outcome == 'success'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "OK   the join minted a certificate"
+          # "Valid until" against the 4h asked for is the TTL clamp, measured.
+          tsh --proxy "${TELEPORT_PROXY}" --identity "${TELEPORT_IDENTITY_FILE}" status || true
+
+      - name: Teleport nodes
+        if: steps.join.outcome == 'success'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # What the bot's roles actually let it see. If the jump host is not
+          # in this list, no amount of network reachability will help.
+          if nodes="$(tsh --proxy "${TELEPORT_PROXY}" --identity "${TELEPORT_IDENTITY_FILE}" \
+                ls --format=text 2>&1)"; then
+            echo "${nodes}"
+            if printf '%s' "${nodes}" | grep -q -- "${FORGE_JUMP_HOST}"; then
+              echo "OK   ${FORGE_JUMP_HOST} is visible to this identity"
+            else
+              echo "FAIL ${FORGE_JUMP_HOST} is not in the node list"
+            fi
+          else
+            echo "FAIL tsh ls: ${nodes}"
+          fi
+
+      - name: Relay rehearsal
+        if: steps.join.outcome == 'success' && env.FORGE_JUMP_HOST != ''
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          tsh_run() {
+            timeout 60 tsh --proxy "${TELEPORT_PROXY}" --identity "${TELEPORT_IDENTITY_FILE}" \
+              ssh "root@${FORGE_JUMP_HOST}" "$@"
+          }
+
+          if who="$(tsh_run 'id -un; uname -n' 2>&1)"; then
+            echo "OK   tsh ssh root@${FORGE_JUMP_HOST} ran a command: $(echo "${who}" | tr '\n' ' ')"
+          else
+            echo "FAIL tsh ssh root@${FORGE_JUMP_HOST}: ${who}"
+            exit 0
+          fi
+
+          # The Go dialer prefers nc and falls back to bash's /dev/tcp. Which
+          # one it will get is worth knowing before a run depends on it.
+          echo "     relay tools: $(tsh_run 'command -v nc || echo "nc absent"' 2>&1 | tr -d '\r')"
+
+          # The relay command's exact shape, bounded so it terminates: open a
+          # socket from the jump host and read four bytes. Against the jump
+          # host's own sshd that is "SSH-", which is the same proof a real
+          # node's :22 would give, without needing a node.
+          banner="$(tsh_run 'bash -c '"'"'exec 3<>/dev/tcp/127.0.0.1/22 && head -c 4 <&3'"'"'' 2>&1 || true)"
+          case "${banner}" in
+            SSH-*)
+              echo "OK   the relay command moved bytes: read '${banner}' from a socket opened on the jump host"
+              echo "     The Teleport route is proven as far as the jump host; only the last hop to a"
+              echo "     Forge node's :22 is untested, and that needs hardware." ;;
+            *)
+              echo "FAIL the relay command returned: ${banner}" ;;
+          esac
+
+      - name: Remove the Teleport identity
+        if: always() && steps.join.outcome == 'success'
+        shell: bash
+        run: rm -f "${TELEPORT_IDENTITY_FILE}"
