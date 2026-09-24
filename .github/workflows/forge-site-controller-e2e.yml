@@ -475,7 +475,13 @@ jobs:
             keep=(-e2e.keep-site)
             echo "::warning::-e2e.keep-site is set; the Forge instance survives this run and must be deleted by hand"
           fi
-          go test -timeout 165m . -args \
+          # -v so a green run keeps its output. Without it `go test` buffers a
+          # passing package's stdout and throws it away, which is what run
+          # 36033032946 did: the first successful bootstrap on hardware, and
+          # the artifact came back 1.7 KB with no Ginkgo log in it. The upload
+          # step below calls a green run the reference for diagnosing the next
+          # red one, and that only holds if it is kept.
+          go test -v -timeout 165m . -args \
             -ginkgo.label-filter=site-controller \
             -ginkgo.timeout=150m \
             -ginkgo.v \
