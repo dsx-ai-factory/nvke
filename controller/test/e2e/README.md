@@ -434,10 +434,10 @@ and `TELEPORT_IDENTITY_FILE`, which
 repository's GitHub OIDC token — nothing is stored. The bot's login is `root`,
 so set `site.teleportLogin` accordingly.
 
-Until a site's jump host is enrolled, set `JUMP_HOST_PASSWORD` and the lane logs
-into it over plain SSH and asks its sshd to forward, instead of shelling out to
-`tsh`. The jump host needs `AllowTcpForwarding` on; the error names it if not.
-Set `site.jumpHostUser` (defaults to `site.teleportLogin`) and
+For a site whose jump host is *not* enrolled, set `JUMP_HOST_PASSWORD` and the
+harness logs into it over plain SSH and asks its sshd to forward, instead of
+shelling out to `tsh`. The jump host needs `AllowTcpForwarding` on; the error
+names it if not. Set `site.jumpHostUser` (defaults to `site.teleportLogin`) and
 `site.jumpHostKeyFingerprint`, which comes from:
 
 ```bash
@@ -448,3 +448,8 @@ Without the fingerprint the run still works and warns on every dial that it
 accepted the key unchecked -- which means it offered the password to whatever
 answered on port 22. The password is the jump host's alone: the node beyond it
 is reached with the ed25519 key the run generates, never with a password.
+
+This route is for a future site, and the CI lane no longer offers it. There is
+no network path from the ARC fleet to az61's jump host on port 22 at all —
+only the Teleport proxy reaches it — so `forge-site-controller-e2e.yml` always
+goes through `tsh`.

@@ -14,35 +14,34 @@
 # repository's hardware lanes, not because it has to. Measured by
 # `forge-connectivity-probe.yml` on 2026-09-23: the Forge API answers, and so
 # does the Teleport proxy, which is Teleport Cloud and therefore public. A
-# GitHub-hosted runner would reach both. What no runner reaches is the jump
-# host directly -- see the `password` note below.
+# GitHub-hosted runner would reach both.
 #
-# EITHER ROUTE TO THE JUMP HOST, chosen by the `jump-auth` input:
+# TELEPORT IS THE ONLY ROUTE TO THE JUMP HOST. tbot joins with this
+# repository's GitHub OIDC identity, so there is no stored credential, and
+# `tsh` relays bytes to the node's sshd. The jump host itself does nothing
+# else: the SSH session beyond it is negotiated on the runner.
 #
-#   teleport  The default. tbot joins with this repository's GitHub OIDC
-#             identity, so there is no stored credential, and `tsh` relays.
-#   password  For a jump host that is not Teleport-enrolled. Logs in with an
-#             account password from secrets and asks its sshd to forward.
-#             KNOWN NOT TO WORK FOR az61: the probe found no route from the
-#             ARC fleet to rel-eng-az61-jump-host:22 on 2026-09-23, so this
-#             host is reachable only through the Teleport proxy. Kept for a
-#             future site whose jump host is not enrolled; re-run the probe
-#             against that host before choosing it.
+# There was a second route, a plain-SSH login with an account password. The
+# same probe found no route at all from the ARC fleet to
+# rel-eng-az61-jump-host:22, so it could never have worked here, and it is
+# gone from this file. `teleport.SSHJumpHost` stays in the harness, with its
+# tests, for a future site whose jump host is not Teleport-enrolled; giving
+# the suite a JUMP_HOST_PASSWORD is still what selects it.
 #
-# Nothing else differs: either way the jump host only relays bytes, and the
-# SSH session to the node beyond it is negotiated on the runner. Switching is
-# changing one input, not any code.
-#
-# MANUAL ONLY, deliberately, on three separate grounds:
+# NEVER AUTOMATIC. A run takes a bare-metal machine for up to an hour, so it
+# starts only when a person asks: a workflow_dispatch, or the `forge-e2e`
+# label on a pull request from this repository. Three reasons it is not on a
+# schedule and not on every push:
 #
 #   Capacity.  az61's cpu.himem.t1 pool went from 8 allocated / 7 in use to
 #   8/8 after a single site controller, which forced that run's tenant onto
-#   the GPU pool. A lane that takes a machine for an hour cannot run on a
-#   schedule until there is a capacity plan, and it must never run per-pull-
-#   request. See the site-controller plan's "Capacity is a hard constraint".
+#   the GPU pool. See the site-controller plan's "Capacity is a hard
+#   constraint".
 #
-#   Secrets.  A fork pull request cannot reach FORGE_API_KEY or the jump host
-#   credential, so a `pull_request` trigger would fail for every contributor.
+#   Secrets.  A fork pull request cannot reach FORGE_API_KEY, and the
+#   Teleport join token deliberately does not cover forks either. The label
+#   gate below requires the head repository to be this one, so a fork PR
+#   carrying the label still does not run.
 #
 #   Cost of a leak.  Teardown is the suite's, from a defer. If the job is
 #   cancelled or hits `timeout-minutes`, the runner dies before teardown and
@@ -50,12 +49,11 @@
 #   `cancel-in-progress: false` and the go-test timeout below both exist for
 #   that reason, and a cancelled run still needs someone to check Forge.
 #
-# NO NODE PASSWORD, on either route. The image's baked `dgxc-admin` account
-# is how a person reaches these nodes, and how the manual procedure does it.
-# The harness does not: `forge.go` generates an ed25519 key per run,
-# cloud-init writes the public half to `authorized_keys`, and the dialer
-# authenticates with the private half, which never leaves the runner.
-# FORGE_JUMP_HOST_PASSWORD is the jump host's, and only the jump host's.
+# NO NODE PASSWORD. The image's baked `dgxc-admin` account is how a person
+# reaches these nodes, and how the manual procedure does it. The harness does
+# not: `forge.go` generates an ed25519 key per run, cloud-init writes the
+# public half to `authorized_keys`, and the dialer authenticates with the
+# private half, which never leaves the runner.
 name: Forge site controller e2e
 
 on:
@@ -82,19 +80,27 @@ on:
         description: HTTPS URL of the NKE qcow2.
         type: string
         required: true
-      jump-auth:
-        description: How to reach the jump host. teleport joins as the ARC bot; password is the interim route for a jump host that is not enrolled.
-        type: choice
-        required: true
-        default: teleport
-        options:
-          - teleport
-          - password
       keep-site:
         description: Keep the node after the run, for debugging. Remember to delete it by hand.
         type: boolean
         required: false
         default: false
+  # The only way to run this lane against a change before that change is on
+  # main, and for now the only way to run it at all: workflow_dispatch reads
+  # its definition from the default branch, so this file is not dispatchable
+  # until it merges. A pull_request run also carries refs/pull/<n>/merge,
+  # which is one of the two refs the Teleport join token accepts.
+  #
+  # `labeled` and nothing else. Adding `forge-e2e` is the request to run;
+  # `synchronize` is deliberately absent so that pushing to a labelled PR
+  # does not quietly take another machine. To run again, remove the label and
+  # add it back, or use the re-run button.
+  #
+  # A pull_request event has no `inputs`, so the four dispatch inputs fall
+  # back to FORGE_E2E_* repository variables. See the job env below.
+  pull_request:
+    types: [labeled]
+    branches: [main]
 
 permissions: {}
 
@@ -108,13 +114,21 @@ concurrency:
 
 jobs:
   site:
-    name: site controller (${{ inputs.stage }})
+    name: site controller (${{ inputs.stage || vars.FORGE_E2E_STAGE || 'provision' }})
     # The ARC fleet on the RelEng EKS cluster: 16 vCPU / 64 GiB with dind, on
     # a runner image built to stand in for ubuntu-latest. In the corpnet VPC,
     # which is what makes the jump host reachable at all. Capped at two
     # runners for the whole class, another reason this lane is manual.
     runs-on: arc-amd64-cpu16
-    if: github.repository == 'dsx-ai-factory/nke'
+    # A dispatch is already a deliberate act. A pull_request run has to be
+    # asked for with the `forge-e2e` label, and has to come from a branch in
+    # this repository -- a fork PR reaches neither the secrets nor the join
+    # token, so it would burn a runner to fail.
+    if: >-
+      github.repository == 'dsx-ai-factory/nke' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        contains(github.event.pull_request.labels.*.name, 'forge-e2e')))
     # Measured phases from the az61 SBOM run: ~17 min to create the instance,
     # ~10 to stage assets, ~5 to bootstrap, ~8 to install the management
     # plane, ~20 per tenant. Call it 60 for `full`, doubled for a cold run and
@@ -127,12 +141,20 @@ jobs:
     timeout-minutes: 180
     permissions:
       contents: read
-      # The Teleport join, and only that. Granted unconditionally because
-      # permissions cannot be keyed on an input; the password route simply
-      # does not mint a token. The join token's allow rules are what actually
-      # bound this -- see the auth step.
+      # The Teleport join, and only that. The join token's allow rules are
+      # what actually bound it -- see the auth step.
       id-token: write
     env:
+      # Every knob, resolved once. A workflow_dispatch fills `inputs`; a
+      # pull_request run has none, so it takes the FORGE_E2E_* repository
+      # variables instead. The guard step checks the result rather than
+      # letting an empty image URL surface twenty minutes into a run.
+      SITE_STAGE: ${{ inputs.stage || vars.FORGE_E2E_STAGE || 'provision' }}
+      SITE_CONTROLLER_VERSION: ${{ inputs.controller-version || vars.FORGE_E2E_CONTROLLER_VERSION }}
+      OS_IMAGE_BOOTLOADER: ${{ inputs.os-image-bootloader || vars.FORGE_E2E_OS_IMAGE_BOOTLOADER }}
+      OS_IMAGE: ${{ inputs.os-image || vars.FORGE_E2E_OS_IMAGE }}
+      # A label cannot carry a boolean, so a PR run never keeps its node.
+      KEEP_SITE: ${{ inputs.keep-site || false }}
       # Where `make site-inputs` writes nkectl and the three image archives.
       # Left at the Makefile default so the paths in the config below match
       # e2e-config-example.yaml verbatim.
@@ -142,17 +164,10 @@ jobs:
       # -- config.go leaves teleportIdentityFile empty and tsh reads the
       # environment, which is what a bot has instead of a login session.
       FORGE_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
-      # Not checked in: the jump host names internal topology. Repository
-      # variables rather than secrets, because a hostname, a login and a
-      # public key's fingerprint are not credentials -- the credential is the
-      # Teleport identity or FORGE_JUMP_HOST_PASSWORD.
+      # Not checked in: the jump host names internal topology. A repository
+      # variable rather than a secret, because a hostname is not a
+      # credential -- the credential is the Teleport identity.
       FORGE_JUMP_HOST: ${{ vars.FORGE_JUMP_HOST }}
-      FORGE_JUMP_HOST_USER: ${{ vars.FORGE_JUMP_HOST_USER }}
-      # `ssh-keyscan -t ed25519 <jump host> | ssh-keygen -lf -`, the SHA256:
-      # field. Unset still runs, and warns on every dial that it accepted the
-      # key unchecked -- which on a password route means the password was
-      # offered to whatever answered.
-      FORGE_JUMP_HOST_KEY_FINGERPRINT: ${{ vars.FORGE_JUMP_HOST_KEY_FINGERPRINT }}
     steps:
       # persist-credentials: true, against the convention in the other lanes.
       # `make site-inputs` runs `git fetch --no-tags origin refs/pull/812/head`
@@ -199,7 +214,6 @@ jobs:
       # not already on PATH. Both come out of the same tarball, so the version
       # pin covers the join as well as the relay.
       - name: Install tsh and tbot
-        if: inputs.jump-auth == 'teleport'
         shell: bash
         env:
           TELEPORT_VERSION: "18.11.0"
@@ -213,26 +227,40 @@ jobs:
           sudo install -m 0755 /tmp/teleport/tbot /usr/local/bin/tbot
           tsh version
 
-      # The join token allows two refs per repository, refs/heads/main and
-      # refs/pull/*/merge, so a workflow_dispatch from any other branch mints
-      # nothing. Checked here because the join failure names neither the ref
-      # nor the rule, and this lane is dispatched by hand from a branch
-      # picker that offers every branch.
-      - name: Check the dispatch ref
-        if: inputs.jump-auth == 'teleport'
+      # Two checks that each cost a second and each save a run: the ref the
+      # join token will see, and the four values a pull_request event does
+      # not supply. Both fail here rather than after a machine exists.
+      - name: Check the run is viable
         shell: bash
         env:
           REF: ${{ github.ref }}
         run: |
           set -Eeuo pipefail
+
+          # The join token allows refs/heads/main and refs/pull/*/merge and
+          # nothing else, so a dispatch from any other branch mints nothing.
+          # Checked here because the join failure names neither the ref nor
+          # the rule, and the dispatch UI offers every branch.
           case "${REF}" in
             refs/heads/main | refs/pull/*/merge) ;;
             *)
-              echo "::error::dispatched from ${REF}; the Teleport join token allows only" \
-                   "refs/heads/main and refs/pull/*/merge. Dispatch from main, or use jump-auth=password."
+              echo "::error::running from ${REF}; the Teleport join token allows only" \
+                   "refs/heads/main and refs/pull/*/merge. Dispatch from main, or label a pull request."
               exit 1
               ;;
           esac
+
+          # Empty on a pull_request run whose FORGE_E2E_* variable is unset.
+          missing=()
+          for name in SITE_STAGE SITE_CONTROLLER_VERSION OS_IMAGE_BOOTLOADER OS_IMAGE; do
+            [ -n "${!name}" ] || missing+=("${name}")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::no value for ${missing[*]}. A dispatch takes these from its inputs;" \
+                 "a labelled pull request takes them from the FORGE_E2E_* repository variables."
+            exit 1
+          fi
+          echo "stage=${SITE_STAGE} controller=${SITE_CONTROLLER_VERSION}"
 
       # No stored identity: tbot joins with the repository's OIDC token
       # against rg-nke-arc-runners-github-join, whose bot holds
@@ -250,39 +278,11 @@ jobs:
       # Forge API call and does not go through here, so the machine is still
       # released.
       - name: Authenticate to Teleport
-        if: inputs.jump-auth == 'teleport'
         uses: teleport-actions/auth@3b365df2b4f64891358392a444ff34929ba0d0b1 # v2.1.2
         with:
           proxy: ${{ env.FORGE_TELEPORT_PROXY }}
           token: rg-nke-arc-runners-github-join
           certificate-ttl: 4h
-
-      # Fails here rather than 20 minutes in, after a node has been created
-      # and can no longer be reached to be torn down. Only the presence of
-      # the password is checked -- whether it is the right one is the jump
-      # host's answer, on the first dial.
-      - name: Check the jump host credential
-        if: inputs.jump-auth == 'password'
-        shell: bash
-        env:
-          JUMP_HOST_PASSWORD: ${{ secrets.FORGE_JUMP_HOST_PASSWORD }}
-        run: |
-          set -Eeuo pipefail
-          test -n "${JUMP_HOST_PASSWORD}" || {
-            echo "::error::FORGE_JUMP_HOST_PASSWORD is empty; the run cannot reach the jump host"
-            exit 1
-          }
-          # No fallback on this route: teleportLogin is left empty below,
-          # because root is the Teleport bot's login and not necessarily an
-          # account the jump host accepts a password for.
-          test -n "${FORGE_JUMP_HOST_USER}" || {
-            echo "::error::the FORGE_JUMP_HOST_USER repository variable is unset; the password has no account to go with"
-            exit 1
-          }
-          test -n "${FORGE_JUMP_HOST_KEY_FINGERPRINT}" || echo "::warning::\
-          the FORGE_JUMP_HOST_KEY_FINGERPRINT repository variable is unset, so the jump host's \
-          key is accepted unchecked and the password is offered to whatever answers on port 22. \
-          Set it from \`ssh-keyscan -t ed25519 \${FORGE_JUMP_HOST} | ssh-keygen -lf -\`."
 
       # site-inputs pulls the controller and capi-provisioned images, both
       # private. The suite's own GHCR credential is separate and passed as
@@ -302,8 +302,6 @@ jobs:
       # repository, so everything it runs has to be built here and staged.
       - name: Build the site inputs
         shell: bash
-        env:
-          SITE_CONTROLLER_VERSION: ${{ inputs.controller-version }}
         run: |
           set -Eeuo pipefail
           make -C controller/test/e2e site-inputs \
@@ -315,9 +313,6 @@ jobs:
       # at the top of site_controller_test.go.
       - name: Write the e2e config
         shell: bash
-        env:
-          SITE_CONTROLLER_VERSION: ${{ inputs.controller-version }}
-          TELEPORT_LOGIN: ${{ inputs.jump-auth == 'teleport' && 'root' || '' }}
         run: |
           set -Eeuo pipefail
           test -n "${FORGE_JUMP_HOST}" || {
@@ -329,13 +324,10 @@ jobs:
           site:
             jumpHost: "${FORGE_JUMP_HOST}"
             # root because that is the only login rg-k8aas-bot-ssh-root
-            # grants; empty on the password route, where the account comes
-            # from jumpHostUser instead.
-            teleportLogin: "${TELEPORT_LOGIN}"
-            # Both ignored on the Teleport route, which takes its login from
-            # the identity and its host key from the cluster CA.
-            jumpHostUser: "${FORGE_JUMP_HOST_USER}"
-            jumpHostKeyFingerprint: "${FORGE_JUMP_HOST_KEY_FINGERPRINT}"
+            # grants, and the probe confirmed the certificate carries it.
+            # No jumpHostUser or jumpHostKeyFingerprint: Teleport takes the
+            # login from the identity and the host key from the cluster CA.
+            teleportLogin: "root"
             images:
               - ${SITE_INPUTS}/controller.tar
               - ${SITE_INPUTS}/capi-provisioned.tar
@@ -373,15 +365,8 @@ jobs:
           FORGE_API_KEY: ${{ secrets.FORGE_API_KEY }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-          # Presence is the switch: the suite relays over plain SSH when this
-          # is set and over tsh when it is not, so the Teleport route is an
-          # empty value here rather than a second code path.
-          JUMP_HOST_PASSWORD: ${{ inputs.jump-auth == 'password' && secrets.FORGE_JUMP_HOST_PASSWORD || '' }}
-          SITE_STAGE: ${{ inputs.stage }}
-          SITE_CONTROLLER_VERSION: ${{ inputs.controller-version }}
-          OS_IMAGE_BOOTLOADER: ${{ inputs.os-image-bootloader }}
-          OS_IMAGE: ${{ inputs.os-image }}
-          KEEP_SITE: ${{ inputs.keep-site }}
+          # JUMP_HOST_PASSWORD is deliberately absent: its presence is what
+          # switches the suite off the Teleport relay and onto plain SSH.
         run: |
           set -Eeuo pipefail
           keep=()
@@ -408,7 +393,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: forge-site-${{ inputs.stage }}-${{ github.run_id }}
+          name: forge-site-${{ env.SITE_STAGE }}-${{ github.run_id }}
           path: controller/test/e2e/site-e2e.log
           if-no-files-found: warn
           retention-days: 7
@@ -417,6 +402,6 @@ jobs:
       # good for hours, sitting where a later step could read it, is not worth
       # the saving. The auth action chooses the path; hence the indirection.
       - name: Remove the Teleport identity
-        if: always() && inputs.jump-auth == 'teleport'
+        if: always()
         shell: bash
         run: rm -f -- "${TELEPORT_IDENTITY_FILE:-}"
