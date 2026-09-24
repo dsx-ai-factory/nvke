@@ -43,7 +43,7 @@ type Site struct {
 	// paths below resolve against. Empty is the clone the suite runs from.
 	Repo string `json:"repo"`
 	// DeployPathRef is the commit the deploy path is exported from. Empty is
-	// the pinned one the suite knows.
+	// the commit under test.
 	DeployPathRef string `json:"deployPathRef"`
 
 	// Nkectl is a linux nkectl for the node. Empty is what

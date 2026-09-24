@@ -24,7 +24,7 @@ import (
 // these catch a value the charts do not read, which on a live site fails
 // silently or an hour in.
 //
-// They need bash, python3 and helm, and DeployPathRef in the local clone.
+// They need bash, python3 and helm, and a clone DeployPathRef resolves in.
 // The SPIRE chart is fetched from its repository and is skipped offline.
 
 // deployPath exports the pinned deploy path, or skips.
@@ -44,7 +44,7 @@ func deployPath(t *testing.T) string {
 	}
 	repo := strings.TrimSpace(string(top))
 	if exec.CommandContext(context.Background(), "git", "-C", repo, "cat-file", "-e", DeployPathRef+"^{commit}").Run() != nil {
-		t.Skipf("%s is not in this clone; fetch %s", DeployPathRef, DeployPathFetchRef)
+		t.Skipf("%s does not resolve in this clone", DeployPathRef)
 	}
 	dir, err := ExportRef(context.Background(), repo, DeployPathRef, DeployAssetPaths())
 	if err != nil {

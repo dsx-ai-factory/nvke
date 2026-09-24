@@ -422,8 +422,9 @@ go test -timeout 5h . -args \
   -e2e.versions=controller=v0.1.1-rc.8,os-image-bootloader=<url>,os-image=<url>
 ```
 
-The deploy path is exported from a pinned commit (`site.DeployPathRef`) until it
-merges; `site-inputs` fetches it.
+The deploy path is exported from the commit under test, tracked files only, so
+nothing in the working tree reaches the node. Set `site.deployPathRef` in the
+config to stage an older deploy path against a newer suite.
 
 ### Reaching the jump host
 

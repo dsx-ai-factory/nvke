@@ -17,14 +17,13 @@ import (
 )
 
 const (
-	// DeployPathRef is the commit the nke-sbom deploy path is staged from
-	// while it exists only on its pull request. Once it reaches main, a run
-	// stages from the commit under test instead and this goes away.
-	DeployPathRef = "c7af104057d12f360fbe3504efe26b3ef497be01"
-
-	// DeployPathFetchRef is where DeployPathRef can be fetched from when the
-	// runner's clone does not have it.
-	DeployPathFetchRef = "refs/pull/812/head"
+	// DeployPathRef is what the nke-sbom deploy path is staged from: the
+	// commit under test. It was pinned to the head of pull request 812 while
+	// the deploy path existed only there; 812 was squash-merged, so that
+	// commit is on no branch and a clone without `refs/pull/812/head` cannot
+	// resolve it. Config's deployPathRef overrides this to stage an older
+	// deploy path against a newer suite.
+	DeployPathRef = "HEAD"
 
 	// scriptsDir holds the install script and its helpers, deployDir the
 	// deploy paths and the charts they install by relative path, and hackDir
@@ -50,8 +49,7 @@ func ExportRef(ctx context.Context, repo, ref string, paths []string) (string, e
 	verify := exec.CommandContext(ctx, "git", "-C", repo, "cat-file", "-e", ref+"^{commit}")
 	verify.Stderr = &stderr
 	if err := verify.Run(); err != nil {
-		return "", fmt.Errorf("export ref: %s is not in %s; fetch it with `git -C %s fetch origin %s`: %w",
-			ref, repo, repo, DeployPathFetchRef, err)
+		return "", fmt.Errorf("export ref: %s is not a commit in %s: %w", ref, repo, err)
 	}
 
 	dir, err := os.MkdirTemp("", "nke-e2e-assets-")

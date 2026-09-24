@@ -69,8 +69,10 @@ func TestExportRef(t *testing.T) {
 func TestExportRefMissingCommit(t *testing.T) {
 	repo := t.TempDir()
 	git(t, repo, "init", "-q")
+	// An empty repository has no HEAD commit, so DeployPathRef does not
+	// resolve and the error has to name the ref rather than the git plumbing.
 	_, err := ExportRef(context.Background(), repo, DeployPathRef, DeployAssetPaths())
-	if err == nil || !strings.Contains(err.Error(), DeployPathFetchRef) {
+	if err == nil || !strings.Contains(err.Error(), DeployPathRef) || !strings.Contains(err.Error(), "is not a commit") {
 		t.Fatalf("err = %v", err)
 	}
 }
