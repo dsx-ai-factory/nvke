@@ -174,16 +174,10 @@ jobs:
       # credential -- the credential is the Teleport identity.
       FORGE_JUMP_HOST: ${{ vars.FORGE_JUMP_HOST }}
     steps:
-      # persist-credentials: true, against the convention in the other lanes.
-      # `make site-inputs` runs `git fetch --no-tags origin refs/pull/812/head`
-      # to get the deploy path, and this repository is private, so the fetch
-      # needs the token left in the remote. Delete both this comment and the
-      # `with:` block when #812 merges: the deploy path is then on main and
-      # SITE_DEPLOY_PATH_FETCH has nothing to fetch.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: true
+          persist-credentials: false
 
       # Three `docker save` archives of multi-hundred-megabyte images, written
       # to the workspace and read back by dind. Reported rather than freed:
@@ -350,7 +344,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # nkectl for the node's architecture, the three image archives, and the
-      # deploy path fetched from #812. The node has no access to this
+      # deploy path out of the checkout. The node has no access to this
       # repository, so everything it runs has to be built here and staged.
       - name: Build the site inputs
         shell: bash

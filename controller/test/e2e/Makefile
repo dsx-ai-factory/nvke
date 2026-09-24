@@ -32,14 +32,12 @@ SITE_CONTROLLER_VERSION ?=
 SITE_CONTROLLER_IMAGE ?= ghcr.io/dsx-ai-factory/nke/nke-controller:$(SITE_CONTROLLER_VERSION)
 SITE_PROVISIONED_IMAGE ?= ghcr.io/dsx-ai-factory/nke/cluster-api-provider-provisioned:v0.1.0-rc.1
 SITE_PROFILES_IMAGE ?= nke-e2e-profiles:local
-SITE_DEPLOY_PATH_FETCH ?= refs/pull/812/head
 
 .PHONY: site-inputs
 site-inputs: ## Build the nkectl and image archives the site lane stages. Needs SITE_CONTROLLER_VERSION and a docker login to ghcr.io.
 	@test -n "$(SITE_CONTROLLER_VERSION)" || { echo "SITE_CONTROLLER_VERSION is required, e.g. v0.1.1-rc.8" >&2; exit 1; }
 	@mkdir -p "$(SITE_INPUTS)"
 	$(MAKE) -C "$(REPO_ROOT)/cli" build-cross NKECTL_PLATFORMS=linux/$(SITE_ARCH)
-	git -C "$(REPO_ROOT)" fetch --no-tags origin $(SITE_DEPLOY_PATH_FETCH)
 	docker pull --platform linux/$(SITE_ARCH) $(SITE_CONTROLLER_IMAGE)
 	docker pull --platform linux/$(SITE_ARCH) $(SITE_PROVISIONED_IMAGE)
 	docker buildx build --platform linux/$(SITE_ARCH) --load -t $(SITE_PROFILES_IMAGE) ../fixtures
