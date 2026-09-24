@@ -415,12 +415,24 @@ read only from the environment. Build the inputs, then fill in the `site:`
 block of `e2e-config-example.yaml`:
 
 ```bash
-gmake site-inputs SITE_CONTROLLER_VERSION=v0.1.1-rc.8
+gmake site-inputs SITE_CONTROLLER_VERSION=$(git rev-parse --short=12 HEAD)
 go test -timeout 5h . -args \
   -ginkgo.label-filter=site-controller -ginkgo.v \
   -e2e.config=e2e-config.yaml -e2e.environment=forge -e2e.site-stage=full \
-  -e2e.versions=controller=v0.1.1-rc.8,os-image-bootloader=<url>,os-image=<url>
+  -e2e.versions=controller=<the same value>,os-image-bootloader=<url>,os-image=<url>
 ```
+
+`SITE_CONTROLLER_VERSION` has to be the same string in three places — the
+archive `site-inputs` writes, `site.bootstrapEnv.NKECTL_CWE_IMAGE`, and
+`-e2e.versions=controller=` — because they all name one image, which the node
+resolves out of its own containerd rather than a registry.
+
+`site-inputs` builds that image from the checkout. nkectl is built here too and
+is a client of the CWE it bootstraps, so the two have to be one commit; the
+newest CWE on GHCR predates #850 and rejects this checkout's nkectl at
+"creating the site cluster". `SITE_CONTROLLER_BUILD=0` pulls
+`SITE_CONTROLLER_VERSION` as a published tag instead, for qualifying a release
+once one is cut past #850.
 
 The deploy path is exported from the commit under test, tracked files only, so
 nothing in the working tree reaches the node. Set `site.deployPathRef` in the
