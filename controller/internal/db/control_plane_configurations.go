@@ -111,6 +111,21 @@ func (c ControlPlaneConfigSpec) LaunchLayerProvider() (LaunchLayerControlPlanePr
 	return *cloneLaunchLayerControlPlaneProvider(c.LaunchLayer), nil
 }
 
+// activeProvider returns the single provider set on the spec as an opaque
+// value, or nil when none is set. It is the one place that knows the provider
+// union; capability accessors like ScaleDownRanker type-assert against it.
+func (c ControlPlaneConfigSpec) activeProvider() any {
+	switch {
+	case c.Nico != nil:
+		return *c.Nico
+	case c.Capi != nil:
+		return *c.Capi
+	case c.LaunchLayer != nil:
+		return *c.LaunchLayer
+	}
+	return nil
+}
+
 // ControlPlaneConfig is the cluster control plane configuration shape used by
 // API and controller logic. It contains cluster-level fields (configuration ID,
 // desired count, max surge) plus the current snapshot spec loaded from
