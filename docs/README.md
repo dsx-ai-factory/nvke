@@ -80,6 +80,10 @@ Deeper module documentation:
 | Document | Contents |
 |---|---|
 | [../controller/test/e2e/README.md](../controller/test/e2e/README.md) | The end to end suite |
+| [qualification/overview.md](qualification/overview.md) | Release qualification: what it is, what a run proves, and what is not covered yet |
+| [qualification/hardware-lane.md](qualification/hardware-lane.md) | How a candidate is qualified on real hardware, layer by layer |
+| [qualification/environments.md](qualification/environments.md) | Declaring the infrastructure a run can execute against |
+| [qualification/triage.md](qualification/triage.md) | Telling a site fault from a code defect on a failed hardware run |
 | [../controller/integration-test/README.md](../controller/integration-test/README.md) | The integration tests |
 | [../controller/nico-sim/docs/e2e-testing.md](../controller/nico-sim/docs/e2e-testing.md) | End-to-end testing for nico-sim's VM backend |
 | [nktp/kind-validation.md](nktp/kind-validation.md) | Ad hoc validation of the NKTP chart's default values on a Kind cluster |
