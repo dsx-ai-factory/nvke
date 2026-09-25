@@ -438,6 +438,97 @@ jobs:
           echo "--- e2e-config.yaml ---"
           cat controller/test/e2e/e2e-config.yaml
 
+      # The job log already carries these values, but scattered across every
+      # step's env block and only for as long as GitHub keeps the log. A run
+      # that qualified something has to be able to say what it qualified
+      # after the log is gone, so this collects them once, in one file,
+      # uploaded beside site-e2e.log.
+      #
+      # Provenance, not just the value. The same `full` can arrive from a
+      # dispatch input, a repository variable, or the default below, and
+      # which one it was is usually what an operator is trying to confirm.
+      - name: Record the resolved inputs
+        shell: bash
+        env:
+          WORKFLOW: .github/workflows/forge-site-controller-e2e.yml
+          OUT: ${{ runner.temp }}/run-inputs.txt
+          IN_STAGE: ${{ inputs.stage }}
+          IN_CONTROLLER_VERSION: ${{ inputs.controller-version }}
+          IN_OS_IMAGE_BOOTLOADER: ${{ inputs.os-image-bootloader }}
+          IN_OS_IMAGE: ${{ inputs.os-image }}
+          IN_KEEP_SITE: ${{ inputs.keep-site }}
+          VAR_STAGE: ${{ vars.FORGE_E2E_STAGE }}
+          VAR_CONTROLLER_VERSION: ${{ vars.FORGE_E2E_CONTROLLER_VERSION }}
+          VAR_OS_IMAGE_BOOTLOADER: ${{ vars.FORGE_E2E_OS_IMAGE_BOOTLOADER }}
+          VAR_OS_IMAGE: ${{ vars.FORGE_E2E_OS_IMAGE }}
+          VAR_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
+          VAR_JUMP_HOST: ${{ vars.FORGE_JUMP_HOST }}
+        run: |
+          set -Eeuo pipefail
+
+          # label | resolved | dispatch input | repository variable | variable name
+          rows=(
+            "stage|SITE_STAGE|IN_STAGE|VAR_STAGE|FORGE_E2E_STAGE"
+            "controller version|SITE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|FORGE_E2E_CONTROLLER_VERSION"
+            "OS image bootloader|OS_IMAGE_BOOTLOADER|IN_OS_IMAGE_BOOTLOADER|VAR_OS_IMAGE_BOOTLOADER|FORGE_E2E_OS_IMAGE_BOOTLOADER"
+            "OS image|OS_IMAGE|IN_OS_IMAGE|VAR_OS_IMAGE|FORGE_E2E_OS_IMAGE"
+            "keep the node|KEEP_SITE|IN_KEEP_SITE||"
+            "Teleport proxy|FORGE_TELEPORT_PROXY||VAR_TELEPORT_PROXY|FORGE_TELEPORT_PROXY"
+            "jump host|FORGE_JUMP_HOST||VAR_JUMP_HOST|FORGE_JUMP_HOST"
+          )
+
+          # A row nobody remembers to add is the whole failure mode: the
+          # summary then reports what its last editor recalled rather than
+          # what the run resolved. Derive the expected set from the workflow
+          # itself so a new input or variable fails here instead of going
+          # unrecorded.
+          missing=()
+          while read -r name; do
+            printf '%s\n' "${rows[@]}" | cut -d'|' -f5 | grep -qx "${name}" || missing+=("vars.${name}")
+          done < <(grep -o 'vars\.FORGE_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
+          while read -r name; do
+            printf '%s\n' "${rows[@]}" | cut -d'|' -f3 |
+              grep -qx "IN_$(printf '%s' "${name}" | tr 'a-z-' 'A-Z_')" || missing+=("inputs.${name}")
+          # The leading [^a-z-] keeps this off its own artifact name: a bare
+          # `inputs\.` also matches the `run-inputs.txt` two lines above.
+          done < <(grep -oE '[^a-z-]inputs\.[a-z0-9-]+' "${WORKFLOW}" | sed 's/.*inputs\.//' | sort -u)
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::the resolved-inputs table does not cover ${missing[*]}; add a row"
+            exit 1
+          fi
+
+          {
+            echo "=== Resolved inputs — ${GITHUB_WORKFLOW} ==="
+            printf '  %-22s = %s\n' "repository"  "${GITHUB_REPOSITORY}"
+            printf '  %-22s = %s\n' "event"       "${GITHUB_EVENT_NAME}"
+            printf '  %-22s = %s\n' "ref"         "${GITHUB_REF}"
+            printf '  %-22s = %s\n' "checkout"    "$(git rev-parse HEAD)"
+            printf '  %-22s = %s\n' "run"         "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            for row in "${rows[@]}"; do
+              IFS='|' read -r label resolved input var varname <<<"${row}"
+              value="${!resolved:-}"
+              [ -n "${value}" ] || value="<unset>"
+              if [ -n "${input}" ] && [ -n "${!input:-}" ]; then
+                source="dispatch input"
+              elif [ -n "${var}" ] && [ -n "${!var:-}" ]; then
+                source="repository variable ${varname}"
+              else
+                source="workflow default"
+              fi
+              # The resolve step fills this one in from the checkout when no
+              # published tag was asked for, so neither arm above named it.
+              if [ "${resolved}" = "SITE_CONTROLLER_VERSION" ] && [ "${SITE_CONTROLLER_BUILD}" = "1" ]; then
+                source="built from this checkout"
+              fi
+              printf '  %-22s = %s\n' "${label}" "${value}"
+              printf '  %-22s   [%s]\n' "" "${source}"
+            done
+            echo
+            echo "--- e2e-config.yaml (what the suite reads) ---"
+            cat controller/test/e2e/e2e-config.yaml
+          } | tee "${OUT}"
+
       # Three nested timeouts, shortest first, because only the shortest one
       # tears the node down:
       #
@@ -507,6 +598,7 @@ jobs:
           path: |
             controller/test/e2e/site-e2e.log
             controller/test/e2e/site-diagnostics.tar.gz
+            ${{ runner.temp }}/run-inputs.txt
             ${{ runner.temp }}/tbot.log
           if-no-files-found: warn
           retention-days: 7
