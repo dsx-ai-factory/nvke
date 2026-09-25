@@ -429,6 +429,12 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			test    tenantTest
 			failed  bool
 			deleted bool
+			// Set once the delete spec has asked CWE to delete and waited out
+			// its budget, whether or not the cluster went. deleted alone cannot
+			// carry that: it means the wait succeeded, so a timed-out wait left
+			// it false and the AfterAll below spent a second full budget on the
+			// same cluster.
+			deleteWaited bool
 		)
 
 		// Record any spec failure so the cluster delete can honor preserveOnFailure.
@@ -565,6 +571,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				Skip("Preserving the cluster after a failure")
 			}
 
+			deleteWaited = true
 			test.deleteClusterAndWait(ctx)
 			deleted = true
 		}, Label("lifecycle"), NodeTimeout(1*time.Hour))
@@ -619,6 +626,18 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			switch {
 			case deleted, test.cluster == nil:
 			case keepCluster:
+			case deleteWaited:
+				// The delete spec already asked CWE to delete this cluster and
+				// waited the full budget without it going. Asking again changes
+				// nothing, and waiting again spends the suite's remaining time
+				// on a cluster that is not moving -- time the site teardown
+				// needs, because releasing the site is what stops its Forge
+				// instance leaking. Run 36147423536 waited three times on one
+				// stuck tenant, 112 minutes of a 150-minute suite, and the
+				// suite timeout then killed the teardown before it released the
+				// site.
+				GinkgoLogr.Info("tenant delete already timed out; leaving it to the site sweep rather than waiting again",
+					"cluster", test.cluster.ID)
 			default:
 				test.deleteClusterAndWait(ctx)
 			}

@@ -473,16 +473,30 @@ func probeAPIServer(_ context.Context, kubeconfig string) (string, error) {
 	return "", nil
 }
 
+// Budgets for the teardown sweep, sized against the AfterAll's 45-minute
+// NodeTimeout that contains it. They were 40 and 30 minutes, which left the
+// site release five minutes of that node -- so a slow sweep starved the one
+// step that must not be skipped. Releasing the site is what stops its Forge
+// instance leaking, and a leaked site is worse than a leaked tenant: it is the
+// larger instance, and its CWE is the only thing that can still delete the
+// tenants. Waiting at all is still right, because releasing the site while a
+// tenant delete is in flight strands that tenant's instances with nothing left
+// to release them.
+const (
+	sweepBudget       = 20 * time.Minute // whole sweep, all tenants
+	sweepDeleteBudget = 15 * time.Minute // any one tenant within it
+)
+
 func sweepSiteTenants(ctx context.Context, kubeconfig string) error {
 	restConfig, err := kube.RESTConfig(kubeconfig, "")
 	if err != nil {
 		return err
 	}
-	client, err := nke.NewClient(ctx, restConfig, nke.Options{Delete: 30 * time.Minute, Poll: 30 * time.Second})
+	client, err := nke.NewClient(ctx, restConfig, nke.Options{Delete: sweepDeleteBudget, Poll: 30 * time.Second})
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 40*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, sweepBudget)
 	defer cancel()
 	return site.SweepTenants(ctx, client)
 }
