@@ -31,8 +31,16 @@ func loggingMiddleware(next http.Handler, logger *slog.Logger) http.Handler {
 			level = slog.LevelError
 		}
 
+		// HTTP completion is separate from the later asynchronous workflow outcome.
+		outcome := "succeeded"
+		if wrapped.status >= 400 {
+			outcome = "failed"
+		}
+
 		// Log the completed request
 		logger.Log(r.Context(), level, "Request completed",
+			"event", "http.completed",
+			"outcome", outcome,
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", wrapped.status,

@@ -11,17 +11,20 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
+
+	"github.com/dsx-ai-factory/nke/controller/internal/otelx"
 )
 
 type WorkflowOutbox struct {
 	bun.BaseModel `bun:"table:workflow_outbox"`
 
-	ID            uuid.UUID       `bun:"type:uuid,pk,default:gen_random_uuid()"`
-	WorkflowType  string          `bun:"type:text,notnull"`
-	WorkflowID    string          `bun:"type:text,notnull"`
-	WorkflowInput json.RawMessage `bun:"type:jsonb,notnull"`
-	CreatedAt     time.Time       `bun:"type:timestamptz,notnull,default:current_timestamp"`
-	ProcessedAt   *time.Time      `bun:"type:timestamptz"`
+	ID            uuid.UUID         `bun:"type:uuid,pk,default:gen_random_uuid()"`
+	WorkflowType  string            `bun:"type:text,notnull"`
+	WorkflowID    string            `bun:"type:text,notnull"`
+	TraceContext  map[string]string `bun:"type:jsonb"`
+	WorkflowInput json.RawMessage   `bun:"type:jsonb,notnull"`
+	CreatedAt     time.Time         `bun:"type:timestamptz,notnull,default:current_timestamp"`
+	ProcessedAt   *time.Time        `bun:"type:timestamptz"`
 }
 
 type WorkflowOutboxQueries interface {
@@ -45,6 +48,7 @@ func (q *queriesImpl) CreateWorkflowOutboxEntry(
 		WorkflowType:  workflowType,
 		WorkflowID:    workflowID,
 		WorkflowInput: inputJSON,
+		TraceContext:  otelx.Capture(ctx),
 	}
 
 	err = q.db.NewInsert().Model(&entry).Scan(ctx)

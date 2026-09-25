@@ -232,3 +232,87 @@ jobs:
         env:
           CGO_ENABLED: "1"
         run: ${{ matrix.run }}
+
+  tracing-poc:
+    name: Tracing POC (API to Temporal)
+    runs-on: ubuntu-latest
+    if: github.repository == 'dsx-ai-factory/nke'
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      - name: Start isolated tracing services
+        working-directory: controller
+        run: bash hack/tracing-poc/run.sh up
+
+      - name: Trace success, retry, and failure through the real API
+        working-directory: controller
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p .local/tracing-poc
+          bash hack/tracing-poc/run.sh test 2>&1 | tee .local/tracing-poc/test-output.log
+
+      - name: Show correlated request and workflow logs
+        if: always()
+        working-directory: controller
+        run: |
+          if [[ -f .local/tracing-poc/logs.jsonl ]]; then
+            echo '::group::Correlated HTTP, SQL, workflow, and activity logs'
+            jq -c 'select(.operation_id != null) |
+              {time, level, msg, event, outcome, trace_id, span_id, operation_id,
+               workflow_id, run_id, activity_id, attempt, operation, error}' \
+              .local/tracing-poc/logs.jsonl
+            echo '::endgroup::'
+            {
+              echo '### CWE tracing POC'
+              echo 'Download the cwe-tracing-poc artifact for JSON logs and exported traces.'
+              echo '```json'
+              jq -c 'select(.event == "workflow.returned" or .event == "activity.returned") |
+                {event, outcome, trace_id, operation_id, workflow_id, attempt, error}' \
+                .local/tracing-poc/logs.jsonl
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Capture exported traces and service diagnostics
+        if: always()
+        working-directory: controller
+        run: |
+          mkdir -p .local/tracing-poc
+          curl --fail --silent --show-error --max-time 15 \
+            'http://127.0.0.1:16686/api/traces?service=cwe-tracing-poc&limit=20' \
+            -o .local/tracing-poc/traces.json || true
+          for service in postgres temporal jaeger; do
+            docker logs "cwe-tracing-poc-${service}" \
+              > ".local/tracing-poc/${service}.log" 2>&1 || true
+          done
+
+      - name: Upload tracing POC logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cwe-tracing-poc-${{ github.run_id }}-${{ github.run_attempt }}
+          path: controller/.local/tracing-poc/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Stop tracing services
+        if: always()
+        working-directory: controller
+        run: bash hack/tracing-poc/run.sh stop

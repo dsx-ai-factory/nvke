@@ -83,9 +83,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error parsing configured log level: %v\n", err)
 		os.Exit(1)
 	}
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: logLevel,
-	}))
+	logger := slog.New(otelx.LogHandler{Handler: slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level:       logLevel,
+		ReplaceAttr: otelx.NormalizeLogAttr,
+	})})
 
 	if cfg.RunbooksDir != "" {
 		if err := runbook.ValidateProfileReferences(cfg.ProfilesDir, cfg.EffectiveRunbooksDir()); err != nil {

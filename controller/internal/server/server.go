@@ -23,6 +23,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/auth"
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nke/controller/internal/version"
 )
 
@@ -132,7 +133,7 @@ func NewServer(
 	if authn != nil {
 		handler = authn.Wrap(handler)
 	}
-	handler = loggingMiddleware(handler, logger)
+	handler = otelx.CorrelateHTTP(loggingMiddleware(handler, logger))
 	if cfg.Tracing.Enabled {
 		handler = otelhttp.NewHandler(handler, "cloud-workflow-engine",
 			otelhttp.WithFilter(func(r *http.Request) bool {

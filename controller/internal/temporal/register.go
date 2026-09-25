@@ -25,6 +25,7 @@ import (
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/worker"
+	"go.temporal.io/sdk/workflow"
 	"google.golang.org/protobuf/types/known/durationpb"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -90,9 +91,10 @@ func NewClient(cfg config.Config, logger *slog.Logger) (client.Client, error) {
 			GetSystemInfoTimeout: 10 * time.Second, // Found this helps when local dev over slow SSH tunnel
 			TLS:                  tlsConfig,
 		},
-		Logger:         log.NewStructuredLogger(logger.With("temporalClient", "cwe")),
-		MetricsHandler: sdktally.NewMetricsHandler(newPrometheusScope()), // Adding a metrics handler gets the built in temporal metrics for the CWE temporal worker.
-		DataConverter:  NewDataConverter(),
+		Logger:             log.NewStructuredLogger(logger.With("temporalClient", "cwe")),
+		MetricsHandler:     sdktally.NewMetricsHandler(newPrometheusScope()), // Adding a metrics handler gets the built in temporal metrics for the CWE temporal worker.
+		DataConverter:      NewDataConverter(),
+		ContextPropagators: []workflow.ContextPropagator{OperationPropagator{}},
 	}
 
 	if cfg.Tracing.Enabled {
@@ -163,15 +165,9 @@ func NewWorker(
 		controllerClientCABundle = string(caPEM)
 	}
 
-	workerOpts := worker.Options{}
-	if cfg.Tracing.Enabled {
-		tracingInterceptor, err := newTracingInterceptor()
-		if err != nil {
-			return nil, err
-		}
-		workerOpts.Interceptors = []interceptor.WorkerInterceptor{tracingInterceptor}
-	}
-
+	// The SDK inherits the client's tracing interceptor for its worker side.
+	// Installing it again here creates duplicate workflow/activity spans.
+	workerOpts := worker.Options{Interceptors: []interceptor.WorkerInterceptor{&OutcomeInterceptor{}}}
 	w := worker.New(temporalClient, cfg.TemporalTaskQueue, workerOpts)
 
 	w.RegisterActivity(activities.NewActivities(
