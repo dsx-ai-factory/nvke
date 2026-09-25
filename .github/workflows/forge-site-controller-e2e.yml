@@ -572,10 +572,27 @@ jobs:
           # the artifact came back 1.7 KB with no Ginkgo log in it. The upload
           # step below calls a green run the reference for diagnosing the next
           # red one, and that only holds if it is kept.
+          # Three flags every other e2e lane already passes, via
+          # backend-e2e-lib.sh:
+          #
+          #   fail-on-empty  a filter matching nothing is otherwise a pass.
+          #                  This lane spends half an hour of bare metal
+          #                  before its first assertion, so "green having
+          #                  tested nothing" is the one result it must not
+          #                  be able to report -- rename the site-controller
+          #                  label and that is exactly what you would get.
+          #   no-color       the log is an artifact people read, and Ginkgo's
+          #                  escapes survive the tee into it.
+          #   junit-report   machine-readable beside the human-readable log.
+          #                  A qualification run should be able to say which
+          #                  specs it ran to something that is not a person.
           go test -v -timeout 165m . -args \
             -ginkgo.label-filter=site-controller \
             -ginkgo.timeout=150m \
             -ginkgo.v \
+            -ginkgo.fail-on-empty \
+            -ginkgo.no-color \
+            -ginkgo.junit-report=site-e2e.junit.xml \
             -e2e.config=e2e-config.yaml \
             -e2e.environment=forge \
             -e2e.site-stage="${SITE_STAGE}" \
@@ -597,6 +614,7 @@ jobs:
           name: forge-site-${{ env.SITE_STAGE }}-${{ github.run_id }}
           path: |
             controller/test/e2e/site-e2e.log
+            controller/test/e2e/site-e2e.junit.xml
             controller/test/e2e/site-diagnostics.tar.gz
             ${{ runner.temp }}/run-inputs.txt
             ${{ runner.temp }}/tbot.log
