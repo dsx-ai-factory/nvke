@@ -6,6 +6,7 @@ package site
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"os"
 	"os/exec"
@@ -54,6 +55,23 @@ func deployPath(t *testing.T) string {
 	return dir
 }
 
+// databasePassword is what renderValues gives SBOM, and wantDBSecret is how a
+// chart's Secret carries it once rendered.
+const databasePassword = "db-secret"
+
+var wantDBSecret = base64.StdEncoding.EncodeToString([]byte(databasePassword))
+
+// skipOffline skips when helm could not reach a chart repository, since these
+// tests are about what the charts read and not about the network.
+func skipOffline(t *testing.T, chart string, err error) {
+	t.Helper()
+	for _, offline := range []string{"dial tcp", "no such host", "cannot be reached"} {
+		if strings.Contains(err.Error(), offline) {
+			t.Skipf("%s chart unreachable: %v", chart, err)
+		}
+	}
+}
+
 // renderValues writes what SBOM renders for sbomTarget into a directory.
 func renderValues(t *testing.T, assets string) string {
 	t.Helper()
@@ -62,7 +80,7 @@ func renderValues(t *testing.T, assets string) string {
 		t.Fatal(err)
 	}
 	d := testSBOM().withDefaults()
-	d.DatabasePassword = "db-secret"
+	d.DatabasePassword = databasePassword
 	files, err := d.render(sbomTarget, overlay)
 	if err != nil {
 		t.Fatal(err)
@@ -235,10 +253,7 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 		}
 		manifest, err := helmTemplate(t, install)
 		if err != nil {
-			if strings.Contains(err.Error(), "dial tcp") || strings.Contains(err.Error(), "no such host") ||
-				strings.Contains(err.Error(), "cannot be reached") {
-				t.Skipf("SPIRE chart unreachable: %v", err)
-			}
+			skipOffline(t, "SPIRE", err)
 			t.Fatal(err)
 		}
 		for _, want := range []string{
@@ -250,6 +265,50 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 		} {
 			if !strings.Contains(manifest, want) {
 				t.Errorf("SPIRE chart does not render %s", want)
+			}
+		}
+	})
+
+	// The database password reaches three releases under two different keys,
+	// and a key no chart reads is silent at install time: the Bitnami chart
+	// generates a superuser password of its own, and the mismatch surfaces
+	// later as the Temporal schema job crash-looping on "password
+	// authentication failed". These assert the value arrives in the charts,
+	// which is what the unit tests on render cannot see.
+	t.Run("postgres chart", func(t *testing.T) {
+		install, ok := installs["postgres"]
+		if !ok {
+			t.Skip("no postgres install")
+		}
+		manifest, err := helmTemplate(t, install)
+		if err != nil {
+			skipOffline(t, "PostgreSQL", err)
+			t.Fatal(err)
+		}
+		secret := find(t, documents(t, manifest), "Secret", "postgres-postgresql")
+		if got := dig(t, secret, "data", "postgres-password"); got != wantDBSecret {
+			t.Errorf("postgres-password = %v, want %s: the chart generated one of its own, so nothing "+
+				"connecting as postgres holds what the other releases were given", got, wantDBSecret)
+		}
+	})
+
+	t.Run("temporal chart", func(t *testing.T) {
+		install, ok := installs["temporal"]
+		if !ok {
+			t.Skip("no temporal install")
+		}
+		manifest, err := helmTemplate(t, install)
+		if err != nil {
+			skipOffline(t, "Temporal", err)
+			t.Fatal(err)
+		}
+		docs := documents(t, manifest)
+		// One assertion per store rather than a search of the manifest:
+		// setting the password on only one of the two is the specific mistake
+		// the deploy path warns about.
+		for _, name := range []string{"temporal-default-store", "temporal-visibility-store"} {
+			if got := dig(t, find(t, docs, "Secret", name), "data", "password"); got != wantDBSecret {
+				t.Errorf("%s password = %v, want %s", name, got, wantDBSecret)
 			}
 		}
 	})

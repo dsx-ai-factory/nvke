@@ -267,7 +267,12 @@ func (d SBOM) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, er
 	for _, k := range sortedKeys(d.ControllerEnv) {
 		env = append(env, envVar{Name: k, Value: d.ControllerEnv[k]})
 	}
-	password := map[string]any{"password": d.DatabasePassword}
+	// One value, three places, under two different keys. Temporal's datastores
+	// take sql.password; the Bitnami chart takes auth.postgresPassword, and
+	// only falls back to auth.password when auth.username is postgres -- so
+	// auth.password renders a randomly generated superuser password the moment
+	// the deploy path gives CWE and Temporal an account of their own.
+	sqlPassword := map[string]any{"password": d.DatabasePassword}
 
 	docs := map[string]any{
 		valuesFile(releaseController): map[string]any{
@@ -293,11 +298,13 @@ func (d SBOM) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, er
 				"tls": map[string]any{"certManager": map[string]any{"certificate": map[string]any{"ipAddresses": []string{vip}}}},
 			},
 		},
-		valuesFile(releasePostgreSQL): map[string]any{"auth": password},
+		valuesFile(releasePostgreSQL): map[string]any{
+			"auth": map[string]any{"postgresPassword": d.DatabasePassword},
+		},
 		valuesFile(releaseTemporal): map[string]any{
 			"server": map[string]any{"config": map[string]any{"persistence": map[string]any{
-				"default":    map[string]any{"sql": password},
-				"visibility": map[string]any{"sql": password},
+				"default":    map[string]any{"sql": sqlPassword},
+				"visibility": map[string]any{"sql": sqlPassword},
 			}}},
 		},
 	}

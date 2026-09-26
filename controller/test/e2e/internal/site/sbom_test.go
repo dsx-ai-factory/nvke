@@ -124,12 +124,18 @@ func TestSBOMRender(t *testing.T) {
 		t.Errorf("clusterName = %v", got)
 	}
 
-	for file, keys := range map[string][]string{
-		"postgresql.yaml": {"auth", "password"},
-		"temporal.yaml":   {"server", "config", "persistence", "visibility", "sql", "password"},
+	// Both Temporal datastores, not just one: setting the password on only
+	// one leaves the schema job crash-looping on password authentication.
+	for _, want := range []struct {
+		file string
+		keys []string
+	}{
+		{"postgresql.yaml", []string{"auth", "postgresPassword"}},
+		{"temporal.yaml", []string{"server", "config", "persistence", "default", "sql", "password"}},
+		{"temporal.yaml", []string{"server", "config", "persistence", "visibility", "sql", "password"}},
 	} {
-		if got := dig(t, decode(t, files[file]), keys...); got != "db-secret" {
-			t.Errorf("%s password = %v", file, got)
+		if got := dig(t, decode(t, files[want.file]), want.keys...); got != "db-secret" {
+			t.Errorf("%s %v = %v", want.file, want.keys, got)
 		}
 	}
 
@@ -171,7 +177,7 @@ func TestSBOMDeploy(t *testing.T) {
 		}
 	}
 	pg := decode(t, s.puts[path.Join(valuesDir, "postgresql.yaml")].data)
-	if pw, _ := dig(t, pg, "auth", "password").(string); len(pw) < 32 {
+	if pw, _ := dig(t, pg, "auth", "postgresPassword").(string); len(pw) < 32 {
 		t.Errorf("generated password %q is too short", pw)
 	}
 
