@@ -123,6 +123,16 @@ diagnostics directory" — the ordinary case, meaning the deploy worked and the
 run failed later — from a real failure to archive, which means diagnostics
 exist and are being lost.
 
+The archive is uploaded as a workflow artifact, so it outlives both the node
+and the scope of the credentials the run put there. Every such value — the
+Forge API key, the registry token, the generated tenant and database
+passwords — is substituted out of the archive on the runner before it is
+written, in its plain and base64 forms, because a journal line or a dumped
+Secret is a plausible place for one to surface. Redaction works by exact
+value rather than by pattern: the suite generated or was handed each of them
+and knows them precisely, which is also why a credential the suite did not
+place is not covered.
+
 ## 3. Tenant clusters
 
 The architectural point worth stating plainly: **tenant clusters are created

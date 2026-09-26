@@ -114,6 +114,32 @@ func TestCollectDiagnostics(t *testing.T) {
 	}
 }
 
+// The archive is uploaded as a CI artifact, so what the run put on the node
+// must not be in the file that lands on disk.
+func TestCollectDiagnosticsRedacts(t *testing.T) {
+	s := newFakeSession()
+	s.fetch[diagnosticsArchive] = tarGz(t, map[string]string{
+		"diagnostics/journal.log": "authenticating with " + testForgeToken + "\n",
+	})
+	dest := filepath.Join(t.TempDir(), "site-diagnostics.tar.gz")
+
+	if err := CollectDiagnostics(context.Background(), s, dest, testForgeToken); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Against the file, not the tar member: a secret that survived anywhere
+	// in the bytes on disk is a secret that shipped.
+	if bytes.Contains(got, []byte(testForgeToken)) {
+		t.Error("the written archive still carries the token")
+	}
+	if body := readTarGz(t, got)["diagnostics/journal.log"]; !strings.Contains(body, redactedMarker) {
+		t.Errorf("the journal was not redacted: %q", body)
+	}
+}
+
 // A run that failed before nkectl wrote anything has no diagnostics
 // directory, and that must be reported rather than leaving an empty file
 // where the real ones would be.

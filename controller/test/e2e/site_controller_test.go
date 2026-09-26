@@ -143,7 +143,7 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			var err error
 			built, err = site.Bootstrap(ctx, node, session, candidate, opts)
 			if err != nil {
-				collectSiteDiagnostics(ctx, session)
+				collectSiteDiagnostics(ctx, session, lane.placedSecrets()...)
 			}
 			Expect(err).NotTo(HaveOccurred(), "should build the site controller")
 			GinkgoLogr.Info("site controller", "kubeconfig", built.Kubeconfig, "cweVersion", built.Version)
@@ -184,7 +184,7 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		// Ready is a failure of the site's control plane, and the node holding
 		// that evidence is released three lines down.
 		if failed {
-			collectSiteDiagnostics(detached, session)
+			collectSiteDiagnostics(detached, session, lane.placedSecrets()...)
 		}
 		if built.Kubeconfig != "" {
 			if err := sweepSiteTenants(detached, built.Kubeconfig); err != nil {
@@ -206,6 +206,19 @@ type siteLane struct {
 	capabilities map[string]string
 	apiKey       string
 	provider     infra.Provider
+	// Generated once for the lane rather than at deploy time, so that
+	// everything the run puts on the node is known to placedSecrets and can
+	// be taken back out of the diagnostics.
+	tenantPassword string
+	dbPassword     string
+}
+
+// placedSecrets is every credential the run writes onto the node, for
+// redacting the diagnostics archive before it is uploaded. Only values worth
+// hiding: the tenant login's user name travels with them but is not a
+// credential, and redacting it would only make the journal harder to read.
+func (l siteLane) placedSecrets() []string {
+	return []string{l.apiKey, os.Getenv(envRegistryToken), l.tenantPassword, l.dbPassword}
 }
 
 func newSiteLane() (siteLane, error) {
@@ -240,6 +253,14 @@ func newSiteLane() (siteLane, error) {
 			return siteLane{}, rerr
 		}
 		name = "nke-e2e-site-" + suffix
+	}
+	tenantPassword, err := randomHex(16)
+	if err != nil {
+		return siteLane{}, err
+	}
+	dbPassword, err := randomHex(16)
+	if err != nil {
+		return siteLane{}, err
 	}
 
 	kubernetesVersion := defaultString(optionalVersion("kube"), forgeDefaultKubernetesVersion)
@@ -290,6 +311,7 @@ func newSiteLane() (siteLane, error) {
 	return siteLane{
 		cfg: cfg, name: name, env: env, site: forgeSite, instanceType: instanceType,
 		capabilities: capabilities, apiKey: apiKey, provider: provider,
+		tenantPassword: tenantPassword, dbPassword: dbPassword,
 	}, nil
 }
 
@@ -330,7 +352,11 @@ const siteDiagnostics = "site-diagnostics.tar.gz"
 //
 // Callable twice -- the bootstrap spec and the teardown both reach it -- and
 // the first archive wins, since it was written closest to the failure.
-func collectSiteDiagnostics(ctx context.Context, session infra.Session) {
+//
+// secrets is what the run wrote onto the node, taken back out of the archive
+// before it is saved: the workflow uploads it as an artifact, so it outlives
+// the node and the credentials' scope.
+func collectSiteDiagnostics(ctx context.Context, session infra.Session, secrets ...string) {
 	if _, err := os.Stat(siteDiagnostics); err == nil {
 		return
 	}
@@ -338,7 +364,7 @@ func collectSiteDiagnostics(ctx context.Context, session infra.Session) {
 	// that is already done, which is exactly when the diagnostics matter.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
 	defer cancel()
-	switch err := site.CollectDiagnostics(ctx, session, siteDiagnostics); {
+	switch err := site.CollectDiagnostics(ctx, session, siteDiagnostics, secrets...); {
 	case errors.Is(err, site.ErrNoDiagnostics):
 		GinkgoLogr.Info("the node wrote no diagnostics, so the failure is after the deploy")
 		return
@@ -429,10 +455,6 @@ func (l siteLane) sbom(node infra.Node, arch string) (site.SBOM, string, error) 
 	if user == "" || token == "" {
 		return site.SBOM{}, "", fmt.Errorf("%s and %s are required to pull the private images", envRegistryUser, envRegistryToken)
 	}
-	tenantPassword, err := randomHex(16)
-	if err != nil {
-		return site.SBOM{}, "", err
-	}
 	unameArch := map[string]string{"amd64": "x86_64", "arm64": "arm64"}[arch]
 	GinkgoLogr.Info("deploying the stack", "node", node.Name, "controller", version, "profiles", l.cfg.Site.ProfilesImage)
 	return site.SBOM{
@@ -446,8 +468,11 @@ func (l siteLane) sbom(node infra.Node, arch string) (site.SBOM, string, error) 
 		Registry: site.Registry{Server: l.cfg.Site.RegistryServer, Username: user, Token: token},
 		// The login baked into tenant nodes' user-data; nothing outside the
 		// run needs it.
-		Tenant: site.Tenant{User: "nke-tenant", Password: tenantPassword},
-		Arch:   unameArch,
+		Tenant: site.Tenant{User: "nke-tenant", Password: l.tenantPassword},
+		// Set here rather than left for the deployer to generate, so the
+		// value is one placedSecrets can name.
+		DatabasePassword: l.dbPassword,
+		Arch:             unameArch,
 	}, version, nil
 }
 

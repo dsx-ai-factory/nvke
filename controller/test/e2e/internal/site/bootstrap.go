@@ -180,7 +180,12 @@ var ErrNoDiagnostics = errors.New("the node has no diagnostics directory")
 // minutes reaching a 30-minute "Provisioning" timeout and kept no evidence
 // from the cluster side at all. A tarball rather than a file at a time
 // because the directory's contents are nkectl's to decide.
-func CollectDiagnostics(ctx context.Context, s infra.Session, dest string) error {
+//
+// secrets are the values the run placed on the node, removed from the archive
+// before it is written. The archive is uploaded as a CI artifact and a
+// journal is a plausible place for a credential to surface, so a caller that
+// put one on the machine is expected to name it here.
+func CollectDiagnostics(ctx context.Context, s infra.Session, dest string, secrets ...string) error {
 	cmd := fmt.Sprintf("if test -d %s; then tar -czf %s -C %s diagnostics; else echo %s; fi",
 		shellQuote(diagnosticsDir), shellQuote(diagnosticsArchive), shellQuote(workDir),
 		shellQuote(noDiagnosticsMarker))
@@ -197,7 +202,11 @@ func CollectDiagnostics(ctx context.Context, s infra.Session, dest string) error
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dest, data, 0o600)
+	redacted, err := redactArchive(data, secrets)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dest, redacted, 0o600)
 }
 
 func (b bootstrap) stageNkectl(ctx context.Context) error {
