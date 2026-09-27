@@ -215,6 +215,6 @@ meaningful GPU test:
   node would come up Ready without advertising `nvidia.com/gpu`. A test written
   today would prove the machine schedules, not that a GPU workload runs.
 
-Site capacity also constrains this: az61 offers no GB200. That capacity is at
-ytl, which attaches by VPC prefix rather than subnet, and the environment
-schema has no prefix alternative yet.
+Site capacity also constrains this: the declared site offers no GB200. The
+sites that have that capacity attach an interface by VPC prefix rather than by
+subnet, and the environment schema has no prefix alternative yet.

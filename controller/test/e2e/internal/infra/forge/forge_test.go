@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	testOrg      = "0996499333036436"
+	testOrg      = "org-uuid"
 	testTenant   = "tenant-uuid"
 	testInstance = "instance-uuid"
 	testJumpHost = "jump.example"
@@ -117,8 +117,8 @@ func testEnv() *environment.Forge {
 	return &environment.Forge{
 		Org: environment.ForgeOrg{ID: testOrg},
 		Sites: map[string]environment.ForgeSite{
-			"az61": {
-				Key:           "az61",
+			"default": {
+				Key:           "default",
 				ID:            "site-uuid",
 				VpcID:         "vpc-uuid",
 				SubnetID:      "subnet-uuid",

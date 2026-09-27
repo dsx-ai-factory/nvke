@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 
 	"sigs.k8s.io/yaml"
@@ -70,6 +72,11 @@ func loadPath(name, path string) (*Environment, error) {
 		return nil, fmt.Errorf("reading environment %q from %s: %w", name, path, err)
 	}
 
+	data, err = expand(data)
+	if err != nil {
+		return nil, fmt.Errorf("resolving environment %q from %s: %w", name, path, err)
+	}
+
 	env := Environment{Name: name}
 	if err := yaml.UnmarshalStrict(data, &env); err != nil {
 		return nil, fmt.Errorf("parsing environment %s: %w", path, err)
@@ -79,6 +86,51 @@ func loadPath(name, path string) (*Environment, error) {
 	}
 
 	return &env, nil
+}
+
+// reference matches ${NAME}. Only the braced form is recognized: a bare $NAME
+// would also match prose in a comment, and expansion happens before the YAML
+// is parsed, so a comment is not yet a comment when this runs.
+var reference = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+// expand substitutes ${NAME} from the process environment.
+//
+// The structure of an environment -- which sites exist, which machine shapes
+// they offer and what those shapes provide -- is engineering content and lives
+// in the file. The identifiers of the account it all sits in are not: they
+// name one organization's real infrastructure, and this repository is the
+// staging ground for a public one. So they are supplied at run time from
+// repository variables, which is already how the Teleport proxy and the jump
+// host reach a run.
+//
+// An unset variable is an error rather than an empty string. Substituting
+// nothing would produce a file that parses, so the run would fail later
+// against an API that was asked to create a cluster in org "" -- and the
+// premise of this package is that an environment cannot be defaulted. Every
+// missing name is collected, so one run reports the whole list.
+func expand(data []byte) ([]byte, error) {
+	missing := make(map[string]struct{})
+
+	expanded := reference.ReplaceAllFunc(data, func(match []byte) []byte {
+		name := string(reference.FindSubmatch(match)[1])
+		value, ok := os.LookupEnv(name)
+		if !ok {
+			missing[name] = struct{}{}
+			return match
+		}
+		return []byte(value)
+	})
+
+	if len(missing) > 0 {
+		names := make([]string, 0, len(missing))
+		for name := range missing {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		return nil, fmt.Errorf("unset: %s", strings.Join(names, ", "))
+	}
+
+	return expanded, nil
 }
 
 // decodeInfrastructure decodes the opaque block into a provider's own shape. It

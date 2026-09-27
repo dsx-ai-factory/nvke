@@ -4,6 +4,7 @@
 package environment
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -26,6 +27,8 @@ func TestCheckedInEnvironmentsParse(t *testing.T) {
 	for _, path := range paths {
 		name := strings.TrimSuffix(filepath.Base(path), ".yaml")
 		t.Run(name, func(t *testing.T) {
+			setSynthetic(t, path)
+
 			env, err := loadPath(name, path)
 			if err != nil {
 				t.Fatalf("loading %s: %v", path, err)
@@ -58,6 +61,44 @@ func TestCheckedInEnvironmentsParse(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// setSynthetic gives every ${NAME} an environment file references a value, so
+// the structural checks run wherever this test does -- on a laptop, or in a
+// pipeline that has no business holding one organization's identifiers. Read
+// from the file rather than listed here, so adding a reference does not need a
+// matching edit in the test that would be discovered by a failure.
+func setSynthetic(t *testing.T, path string) {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	for _, match := range reference.FindAllSubmatch(data, -1) {
+		name := string(match[1])
+		t.Setenv(name, "synthetic-"+strings.ToLower(name))
+	}
+}
+
+// An unset reference has to fail here. Expanding it to an empty string would
+// leave a file that still parses, so the run would reach Forge and ask it to
+// create a cluster in org "", and the failure would name Forge's field rather
+// than the variable nobody set.
+func TestLoadRejectsUnsetReference(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gap.yaml")
+	body := "provider: forge\ninfrastructure:\n  org:\n    id: \"${FORGE_ABSENT_ORG}\"\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("writing %s: %v", path, err)
+	}
+
+	_, err := loadPath("gap", path)
+	if err == nil {
+		t.Fatal("loading an environment with an unset reference should have failed")
+	}
+	if !strings.Contains(err.Error(), "FORGE_ABSENT_ORG") {
+		t.Errorf("error should name the unset variable, got: %v", err)
 	}
 }
 

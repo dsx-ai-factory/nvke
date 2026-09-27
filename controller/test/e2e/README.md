@@ -478,6 +478,6 @@ answered on port 22. The password is the jump host's alone: the node beyond it
 is reached with the ed25519 key the run generates, never with a password.
 
 This route is for a future site, and the CI lane no longer offers it. There is
-no network path from the ARC fleet to az61's jump host on port 22 at all —
+no network path from the ARC fleet to the site's jump host on port 22 at all —
 only the Teleport proxy reaches it — so `forge-site-controller-e2e.yml` always
 goes through `tsh`.

@@ -1150,11 +1150,11 @@ func nicoSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec 
 	}
 }
 
-// Dependency versions that have carried a tenant on az61. Defaults rather than
+// Dependency versions that have carried a tenant on Forge. Defaults rather than
 // required inputs: they are not what a nico-forge run qualifies, and a resolved
 // combination from the qualify tool will supply them once the run verb exists.
 //
-// Kubernetes and the CNI are what the recorded az61 exercises ran. The SPIRE
+// Kubernetes and the CNI are what the recorded Forge exercises ran. The SPIRE
 // pin is weaker evidence — those runs installed spire-agent unpinned, so this
 // is the version the repo's own Forge scaffolding names rather than one
 // observed on the hardware.
@@ -1219,7 +1219,7 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.Cluster
 			Pools:         forgeNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", site, instanceType),
 			EtcdEncrypted: shape.etcdEncrypted,
 			// Empty unless an entry asks for one, which CWE reads as "do not
-			// configure kube-vip". The az61 tenants were created without one,
+			// configure kube-vip". The Forge tenants were created without one,
 			// and so is every Forge create in this repository. The simulator
 			// backends advertise theirs through a BGP speaker the runner
 			// hosts, and a real site has no equivalent to borrow from.

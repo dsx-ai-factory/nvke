@@ -8,6 +8,20 @@ import (
 	"testing"
 )
 
+// Synthetic identifiers. Nothing here reaches Forge -- these are carried
+// through a request builder and read back out of it -- so a fixture only has
+// to be distinguishable from its neighbors in a failure message. UUID-shaped
+// because BuildCreateRequest parses them, which is a check worth keeping:
+// nico-forge rejects a malformed id here rather than at the API.
+const (
+	testOrgID          = "0000000000000000"
+	testSiteID         = "00000000-0000-4000-8000-000000000001"
+	testVpcID          = "00000000-0000-4000-8000-000000000002"
+	testInstanceTypeID = "00000000-0000-4000-8000-000000000003"
+	testSubnetID       = "00000000-0000-4000-8000-000000000004"
+	testSSHKeyGroupID  = "00000000-0000-4000-8000-000000000005"
+)
+
 func completeForgeInputs() ForgeNodeInputs {
 	return ForgeNodeInputs{
 		BootLoaderURL:     "https://example.invalid/qcow-imager.efi",
@@ -102,9 +116,9 @@ func TestBuildNicoForgeRequestRequiresPayloads(t *testing.T) {
 		Name:              "forge",
 		Backend:           BackendNicoForge,
 		KubernetesVersion: "1.34.2",
-		OrgID:             "0996499333036436",
-		SiteID:            "7aecd73d-ac9a-4148-a7ad-f3d031a79665",
-		VpcID:             "e1c4cb64-7d77-4532-89bc-6f7c32ece209",
+		OrgID:             testOrgID,
+		SiteID:            testSiteID,
+		VpcID:             testVpcID,
 	}
 
 	if _, err := BuildCreateRequest(spec); err == nil {
@@ -130,15 +144,15 @@ func TestBuildNicoForgeRequestCarriesThePayloads(t *testing.T) {
 		Backend:           BackendNicoForge,
 		KubernetesVersion: "1.34.2",
 		CNIPlugin:         "ovn-kubernetes",
-		OrgID:             "0996499333036436",
-		SiteID:            "7aecd73d-ac9a-4148-a7ad-f3d031a79665",
-		VpcID:             "e1c4cb64-7d77-4532-89bc-6f7c32ece209",
+		OrgID:             testOrgID,
+		SiteID:            testSiteID,
+		VpcID:             testVpcID,
 		NodePayloads:      &payloads,
 		ControlPlane: singlePoolControlPlane(NodePoolSpec{
 			Name: "control-plane", NodeNamePrefix: "controlplane", ControlPlane: true, DesiredNodeCount: 1,
-			InstanceTypeID: "9040815f-c04d-4254-bc6f-02180780eb4d",
-			SubnetIDs:      []string{"9354ab14-b7f3-412c-9070-2d16f7a60c83"},
-			SSHKeyGroupIDs: []string{"b4a78ea3-9bc9-4702-889f-7a66472420c0"},
+			InstanceTypeID: testInstanceTypeID,
+			SubnetIDs:      []string{testSubnetID},
+			SSHKeyGroupIDs: []string{testSSHKeyGroupID},
 		}),
 	})
 	if err != nil {

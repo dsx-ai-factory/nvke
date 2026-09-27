@@ -79,10 +79,12 @@ console:
   nearly empty.
 
 Carrier up and no address is the tell. That is DHCP, which is the site's, and
-no amount of retrying from our side fixes it. File it against Forge with the
-instance id, the MAC, and the switch the LLDP peer names — for that run,
-instance `eac4f3aa-8c0a-4b54-ae47-c5966d47ee6a`, MAC `5c:25:73:79:fe:ba`,
-switch `10-91-69-85.az61.frg.nvidia.com`.
+no amount of retrying from our side fixes it. File it against Forge with three
+things, all of which the diagnostics bundle already contains: the instance id,
+the MAC of the interface that got no lease, and the switch its LLDP peer names.
+The switch matters most — it is what tells the site which DHCP scope to look
+at, and it is the one field an operator cannot reconstruct after the instance
+is gone.
 
 Reaching the console at all goes through the site's SSH key group, which
 governs Serial-over-LAN and not `authorized_keys`. It gives you a console on a
@@ -146,8 +148,9 @@ with a quiet log has not failed.
 
 ## Capacity
 
-az61 offers 8 `cpu.himem.t1` slots and a `full` run needs 3: one site node, one
-tenant control plane, one tenant worker. A create that fails immediately with a
+A `full` run needs three `cpu.himem.t1` machines: one site node, one tenant
+control plane, one tenant worker. The site's pool of that type is small enough
+that two concurrent runs contend for it. A create that fails immediately with a
 capacity error, rather than timing out, means the slots are taken — often by
 instances from an earlier run that are still `Terminating`.
 

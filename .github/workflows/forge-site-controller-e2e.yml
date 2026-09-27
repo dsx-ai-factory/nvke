@@ -22,9 +22,9 @@
 # else: the SSH session beyond it is negotiated on the runner.
 #
 # There was a second route, a plain-SSH login with an account password. The
-# same probe found no route at all from the ARC fleet to
-# rel-eng-az61-jump-host:22, so it could never have worked here, and it is
-# gone from this file. `teleport.SSHJumpHost` stays in the harness, with its
+# same probe found no route at all from the ARC fleet to the site's jump host
+# on port 22, so it could never have worked here, and it is gone from this
+# file. `teleport.SSHJumpHost` stays in the harness, with its
 # tests, for a future site whose jump host is not Teleport-enrolled; giving
 # the suite a JUMP_HOST_PASSWORD is still what selects it.
 #
@@ -33,10 +33,9 @@
 # label on a pull request from this repository. Three reasons it is not on a
 # schedule and not on every push:
 #
-#   Capacity.  az61's cpu.himem.t1 pool went from 8 allocated / 7 in use to
-#   8/8 after a single site controller, which forced that run's tenant onto
-#   the GPU pool. See the site-controller plan's "Capacity is a hard
-#   constraint".
+#   Capacity.  The site's cpu.himem.t1 pool was fully allocated by a single
+#   site controller, which forced that run's tenant onto the GPU pool. See
+#   the site-controller plan's "Capacity is a hard constraint".
 #
 #   Secrets.  A fork pull request cannot reach FORGE_API_KEY, and the
 #   Teleport join token deliberately does not cover forks either. The label
@@ -106,7 +105,7 @@ permissions: {}
 
 concurrency:
   # One at a time across the whole repository, and never cancelled. Two
-  # concurrent runs would exhaust az61, and cancelling one mid-flight leaks
+  # concurrent runs would exhaust the site, and cancelling one mid-flight leaks
   # its instance. Not keyed on ref: the constraint is the hardware, which is
   # shared by every branch.
   group: Forge site controller e2e
@@ -129,7 +128,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' ||
        (github.event.pull_request.head.repo.full_name == github.repository &&
         contains(github.event.pull_request.labels.*.name, 'forge-e2e')))
-    # Measured phases from the az61 SBOM run: ~17 min to create the instance,
+    # Measured phases from the recorded SBOM run: ~17 min to create the instance,
     # ~10 to stage assets, ~5 to bootstrap, ~8 to install the management
     # plane, ~20 per tenant. Call it 60 for `full`, doubled for a cold run and
     # for bootstrap's 30-45 minute worst case -- the missing-kubeadm failure
@@ -177,6 +176,19 @@ jobs:
       # variable rather than a secret, because a hostname is not a
       # credential -- the credential is the Teleport identity.
       FORGE_JUMP_HOST: ${{ vars.FORGE_JUMP_HOST }}
+      # The identifiers environments/forge.yaml references. Not checked in for
+      # the same reason as the jump host and not secrets for the same reason
+      # either: an org or subnet id names infrastructure rather than granting
+      # anything, and the credential is the Forge API key. The loader fails on
+      # an unset one, so a missing variable stops the run at the environment
+      # file instead of asking Forge to build in org "".
+      FORGE_ORG_ID: ${{ vars.FORGE_ORG_ID }}
+      FORGE_SITE_ID: ${{ vars.FORGE_SITE_ID }}
+      FORGE_VPC_ID: ${{ vars.FORGE_VPC_ID }}
+      FORGE_SUBNET_ID: ${{ vars.FORGE_SUBNET_ID }}
+      FORGE_SSH_KEY_GROUP_ID: ${{ vars.FORGE_SSH_KEY_GROUP_ID }}
+      FORGE_INSTANCE_TYPE_CPU_ID: ${{ vars.FORGE_INSTANCE_TYPE_CPU_ID }}
+      FORGE_INSTANCE_TYPE_GPU_ID: ${{ vars.FORGE_INSTANCE_TYPE_GPU_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -299,7 +311,7 @@ jobs:
       # No stored identity: tbot joins with the repository's OIDC token
       # against rg-nke-arc-runners-github-join, whose bot holds
       # rg-k8aas-bot-ssh-root -- root on the four jump hosts labelled
-      # tbot-root-allowed=true, one of which is the az61 one this lane uses.
+      # tbot-root-allowed=true, one of which is the one this lane uses.
       #
       # A DAEMON, NOT teleport-actions/auth. That action mints exactly one
       # certificate and stamps it disallow-reissue, and the cluster caps
@@ -422,7 +434,7 @@ jobs:
             # SPIRE with tpmThumbprints=0, so no TPM attestor was deployed,
             # the agent could never attest, and the cluster sat in
             # Provisioning for its full 30 minutes without an error. The
-            # procedure that has actually built a site on az61 bootstraps
+            # procedure that has actually built a site on Forge bootstraps
             # this way too, and turns SPIRE and TPM on in the deploy path
             # afterwards -- which the full stage still exercises.
             disableMTLS: true
@@ -544,8 +556,8 @@ jobs:
       # tbot rewrites it every twenty minutes for as long as the job runs --
       # see the daemon step. Before that it was a real limit on `full`.
       #
-      # environments/forge.yaml declares one site (az61), so the suite
-      # resolves it without being told which.
+      # environments/forge.yaml declares one site, so the suite resolves it
+      # without being told which.
       - name: Run the site controller lane
         shell: bash
         working-directory: controller/test/e2e

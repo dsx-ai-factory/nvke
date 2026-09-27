@@ -50,7 +50,7 @@ const (
 )
 
 // Host tools the node installs for nkectl, pinned to what has built a site on
-// az61. Each can be overridden through -e2e.versions.
+// the Forge hardware. Each can be overridden through -e2e.versions.
 const (
 	siteDefaultNerdctlVersion    = "2.3.5"
 	siteDefaultKindVersion       = "v0.30.0"

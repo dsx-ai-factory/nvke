@@ -26,19 +26,19 @@ provider: forge
 
 infrastructure:          # opaque to the loader; the forge provider decodes it
   org:
-    id: "…"
+    id: "${FORGE_ORG_ID}"
   sites:
-    az61:
-      id:            "…"
-      vpcID:         "…"
-      subnetID:      "…"
-      sshKeyGroupID: "…"
+    default:
+      id:            "${FORGE_SITE_ID}"
+      vpcID:         "${FORGE_VPC_ID}"
+      subnetID:      "${FORGE_SUBNET_ID}"
+      sshKeyGroupID: "${FORGE_SSH_KEY_GROUP_ID}"
       instanceTypes:
         - name: cpu.himem.t1
-          id: "…"
+          id: "${FORGE_INSTANCE_TYPE_CPU_ID}"
           provides: {machineType: cpu, arch: amd64}
         - name: gpu.l40sx8
-          id: "…"
+          id: "${FORGE_INSTANCE_TYPE_GPU_ID}"
           provides: {machineType: gpu, arch: amd64, gpu: l40}
 ```
 
@@ -87,13 +87,36 @@ Every field is the identifier the API takes, not the human-facing name. This is
 a deliberate departure from the original design, which used names and resolved
 them at run time.
 
-The reason is concrete: **az61 and ytl both have a VPC named `rel-eng-tests`,
-and they are different VPCs.** Names are unique per site, not per org, so
-name-based lookup is ambiguous in exactly the case we would hit. Checking in
+The reason is concrete: **two of our sites have a VPC of the same name, and
+they are different VPCs.** A VPC name is unique per site rather than per org,
+so name-based lookup is ambiguous in exactly the case we would hit. Using
 identifiers also removes a resolution API call from the hot path of every run.
 
-The cost is that the file is unreadable without a lookup, which is what the
-comments in `forge.yaml` are for.
+## Where the identifiers come from
+
+Not from the file. Every `${NAME}` above is read from the process environment
+when the environment loads, and an unset one fails the run before anything is
+created. CI supplies them from repository variables, which is the same route
+`FORGE_TELEPORT_PROXY` and `FORGE_JUMP_HOST` already take.
+
+The split is between engineering and account. Which sites exist, which machine
+shapes they offer, and what those shapes `provides` is engineering: it is
+reviewed, it explains why a run matched the machine it did, and it belongs in
+the file. An org, site, VPC or subnet id is not — it names one organization's
+real infrastructure, and this repository is the staging ground for a public
+one.
+
+To run against the site from a laptop, export the variables first:
+
+```bash
+export FORGE_ORG_ID=… FORGE_SITE_ID=… FORGE_VPC_ID=… FORGE_SUBNET_ID=…
+export FORGE_SSH_KEY_GROUP_ID=… FORGE_INSTANCE_TYPE_CPU_ID=… FORGE_INSTANCE_TYPE_GPU_ID=…
+```
+
+Their values are on the repository's Actions variables page. Unit tests need
+none of this: they substitute synthetic values, so
+`TestCheckedInEnvironmentsParse` still checks that this file is well-formed
+wherever it runs.
 
 ## What is deliberately absent
 
@@ -131,19 +154,20 @@ input. Those arrive as `-e2e.versions`.
 
 Two things will stop you, and both are worth knowing before you start.
 
-**Network attachment differs by site.** az61 is `ETHERNET_VIRTUALIZER`, so an
-interface attaches by subnet, which is what `subnetID` carries. ytl is FNN and
-attaches by **VPC prefix** instead. The schema has no prefix alternative, so
-**ytl cannot currently be declared.** Adding it means adding that arm to the
-schema and to `interfaces()` in the provider.
+**Network attachment differs by site.** The declared site's fabric attaches an
+interface by subnet, which is what `subnetID` carries. Other fabrics attach by
+**VPC prefix** instead. The schema has no prefix alternative, so a
+prefix-attached site **cannot currently be declared.** Adding one means adding
+that arm to the schema and to `interfaces()` in the provider.
 
-This matters beyond ytl: ytl is where the GB200 capacity is. A stream asking
-for `{gpu: gb200}` has nothing to run on until the prefix work is done.
+This is on the critical path for GPU qualification: the sites with GB200
+capacity are the prefix-attached ones, so a stream asking for `{gpu: gb200}`
+has nothing to run on until that work is done.
 
 **Enumerating instance types is awkward.** A Forge instance-type list caps at
 twenty rows and ignores every filter, so discovering the rest means reading
 them by id. `forge.yaml` declares only the two types that have actually carried
-a workload at az61, rather than everything the site offers.
+a workload, rather than everything the site offers.
 
 ## Adding a provider
 
