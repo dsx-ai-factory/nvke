@@ -75,8 +75,8 @@ func (c *Client) Fetch(ctx context.Context, p string) ([]byte, error) {
 //
 // The host is a parameter rather than always the machine's loopback because a
 // tenant cluster's API server is not on the site node. It has its own VIP,
-// which the node can reach and the runner cannot, and run 36051890151 timed
-// out dialing 10.91.194.69:6443 direct for exactly that reason.
+// which the node can reach and the runner cannot: a run that dialled that VIP
+// direct from the runner timed out for exactly that reason.
 func (c *Client) Forward(ctx context.Context, remote string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err

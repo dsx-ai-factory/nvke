@@ -364,7 +364,9 @@ func TestForward(t *testing.T) {
 
 	// A host other than loopback is the tenant case: the address belongs to
 	// the far side of the connection, not to the machine running the test.
-	if _, err := c.Forward(context.Background(), "10.91.194.69:6443"); err == nil {
+	// 192.0.2.0/24 is TEST-NET-1, reserved for documentation, so the fixture
+	// cannot name a machine anyone runs.
+	if _, err := c.Forward(context.Background(), "192.0.2.10:6443"); err == nil {
 		t.Error("a forward to an address the machine cannot reach should fail when it is set up")
 	}
 
