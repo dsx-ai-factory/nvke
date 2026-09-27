@@ -1,8 +1,8 @@
 {
   "nodeNamePrefix": "w",
   "nico": {
-    "subnetIDs": ["3bf3d3fc-8b0e-4005-a20d-58bb03bbea99", "53c42b79-3dbf-40e8-9363-75228d7b6e1b"],
-    "instanceTypeID": "3b7bc0c3-9fd4-49b9-8c08-357d84cdb456",
+    "subnetIDs": ["3bf3d3fc-8b0e-4005-a20d-58bb03bbea99", "00000000-0000-4000-8000-000000000003"],
+    "instanceTypeID": "00000000-0000-4000-8000-000000000009",
     "osProfile": "nke-1.31.9-250505",
     "configProfile": "nvcf-w-L40-v2"
   },
