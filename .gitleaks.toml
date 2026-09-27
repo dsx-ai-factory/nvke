@@ -30,6 +30,28 @@ paths = [
 ]
 
 [[allowlists]]
+description = """environments/forge.yaml carried the RelEng Forge account's
+identifiers until they moved to repository variables. generic-api-key matches
+the SSH key group id on entropy -- it is a UUID, not a key, and a key group
+governs Serial-over-LAN console access rather than granting anything. The
+values are gone from the tree; these two commits are where they were. The
+repository squash-merges and deletes the branch, so neither commit reaches
+main's history.
+
+Scoped to that one file in those two commits, so a credential elsewhere in
+either is still caught, and so this expires by itself when they do. Note that
+one of the two values is still on main in
+controller/hack/create-forge-nico-cluster.sh, which this does not cover."""
+condition = "AND"
+commits = [
+  "dd354d4c2605f3a217e332808f62dab84d18c866",
+  "0cb2879fe0326cb841b643dd81edf2a4170f509e",
+]
+paths = [
+  '''^controller/test/e2e/environments/forge\.yaml$''',
+]
+
+[[allowlists]]
 description = """The redaction test needs strings that look exactly like the
 secrets redaction is supposed to remove, because what it asserts is that they
 are absent from the archive afterwards. A fixture that did not look like a
