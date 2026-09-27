@@ -405,6 +405,21 @@ without it the lane is skipped:
 - `bootstrap`: also run `nkectl bootstrap site` and wait for the API server.
 - `full`: also deploy the SBOM stack, wait for CWE, then create and delete a tenant.
 
+Both lanes create the same `nico-forge` tenant and both entries carry that
+label, so pick between them with `site-controller`, which only the lane that
+builds a site carries. Measured against this tree with `-ginkgo.dry-run` and
+`-e2e.site-stage=full`:
+
+| label filter | specs | which |
+|---|---|---|
+| `nico-forge && !site-controller` | 4 | the tenant, against the site controller in the kube context |
+| `site-controller` | 7 | the lane that builds a site, tenant included |
+| `nico-forge` | 8 | both |
+
+`-e2e.site-stage`, not the label, is what decides whether a machine is
+provisioned: the site lane's tenant entries are built only when it is set, so
+a bare `nico-forge` without it selects 4 specs and reaches no hardware.
+
 The node is torn down afterwards (tenants are deleted first). `-e2e.keep-site`, or
 `lifecycle.preserveOnFailure` with a failed spec, keeps it.
 

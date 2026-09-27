@@ -395,28 +395,37 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	// provisioningOnly to start with. Create, node readiness and delete are
 	// what a first run on Forge has to get through before any deeper
 	// assertion is worth attempting.
-	Entry("nico-forge", Ordered, ContinueOnFailure, Label("nico-forge"), nicoForgeTenant),
+	Entry("nico-forge", Ordered, ContinueOnFailure, Label("nico-forge"), nicoForgeTenant()),
 )...)
 
 // nicoForgeTenant is the Forge tenant both the nico-forge lane and the site
 // lane create, so a site the suite built is held to the same tenant as a site
 // that already existed.
-var nicoForgeTenant = testSpec{
-	buildSpec: nicoForgeSpec,
-	shape: clusterShape{
-		controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
-		workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
-	},
-	// Generous next to the simulator lanes: these timeouts cover a bare
-	// machine booting an OS image over the network and installing packages,
-	// none of which a container does.
-	//
-	// Delete is 45 minutes because Forge takes 20 to 40 to actually release
-	// a machine, and the cluster is not gone until both of its machines are.
-	// Run 36051890151 failed the delete at 1800.306s against the 30 minutes
-	// this used to be, while the instances were still reporting Terminating.
-	options:  nke.Options{Provision: 90 * time.Minute, Delete: 45 * time.Minute, Poll: 30 * time.Second},
-	validate: validations{provisioningOnly: true},
+//
+// A function rather than a package variable because two trees use it. Entry
+// copies the struct, but the copy is shallow: a shared value would hand both
+// lanes the same pool slices and the same capabilities map, and a builder
+// that ever wrote a default into one would change the other lane with nothing
+// in either file to show why.
+func nicoForgeTenant() testSpec {
+	return testSpec{
+		buildSpec: nicoForgeSpec,
+		shape: clusterShape{
+			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+		},
+		// Generous next to the simulator lanes: these timeouts cover a bare
+		// machine booting an OS image over the network and installing
+		// packages, none of which a container does.
+		//
+		// Delete is 45 minutes because Forge takes 20 to 40 to actually
+		// release a machine, and the cluster is not gone until both of its
+		// machines are. Run 36051890151 failed the delete at 1800.306s
+		// against the 30 minutes this used to be, while the instances were
+		// still reporting Terminating.
+		options:  nke.Options{Provision: 90 * time.Minute, Delete: 45 * time.Minute, Poll: 30 * time.Second},
+		validate: validations{provisioningOnly: true},
+	}
 }
 
 // tenantSubtree is one backend's tenant lifecycle against the management

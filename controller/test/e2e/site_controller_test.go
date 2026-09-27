@@ -161,9 +161,16 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 				Relay:       sessionRelay(session),
 			}, nil
 		}),
-			// Not labeled nico-forge: that label selects the lane against an
-			// existing site, which must not start building one.
-			Entry("nico-forge", nicoForgeTenant),
+			// Labeled nico-forge because it is: the same tenant the
+			// standalone lane creates, on a site this lane built rather than
+			// one that already existed. Selecting between the two is
+			// site-controller, which accumulates from the container above and
+			// so is on this entry and not on that one.
+			//
+			// What keeps a stray label filter from building a site is
+			// -e2e.site-stage, not the absence of a label: unset, BeforeAll
+			// skips this whole container before any machine is asked for.
+			Entry("nico-forge", Label("nico-forge"), nicoForgeTenant()),
 		)
 	}
 
