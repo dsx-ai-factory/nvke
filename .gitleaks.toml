@@ -28,3 +28,21 @@ which is scanned on its own; only this one generated file is exempt, not
 paths = [
   '''^controller/api/server\.gen\.go$''',
 ]
+
+[[allowlists]]
+description = """The redaction test needs strings that look exactly like the
+secrets redaction is supposed to remove, because what it asserts is that they
+are absent from the archive afterwards. A fixture that did not look like a
+credential would not exercise the thing under test. Both are plainly
+synthetic: the token is the nvapi- prefix followed by a counting sequence, and
+the password is the MD5 of "12345". Scoped to these two literals in this one
+file rather than to the file as a whole, so a real credential added beside
+them is still caught."""
+condition = "AND"
+paths = [
+  '''^controller/test/e2e/internal/site/redact_test\.go$''',
+]
+regexes = [
+  '''nvapi-0123456789abcdefghij''',
+  '''8f14e45fceea167a5a36dedd4bea2543''',
+]
