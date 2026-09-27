@@ -21,6 +21,20 @@ difference is what the tests run against.
 | What it proves | the code is correct | the code is correct **on the path a customer takes** |
 | Cost | minutes, free | around 80 minutes, real hardware |
 
+Three concerns, kept apart on purpose, and it is worth knowing which one you
+are reading about:
+
+```mermaid
+flowchart LR
+    Q["qualification<br/>decides what to prove,<br/>records what was proven"]
+    E["environment provisioning<br/>makes a real system exist,<br/>then releases it<br/>this document, hardware-lane.md"]
+    S["the e2e suite<br/>asserts behaviour, identically<br/>on every backend<br/>controller/test/e2e/README.md"]
+
+    Q -->|"a cell: versions and capabilities"| E
+    E -->|"a live system under test"| S
+    S -.->|"ginkgo reports"| Q
+```
+
 The CI lanes run on every pull request and are where defects are normally
 caught. Qualification runs when someone asks, because everything a
 Tilt-built cluster proves about the engine, it proves about the engine running
@@ -28,7 +42,7 @@ somewhere no customer runs it.
 
 ## What a run does
 
-Four layers, each built on the one before:
+Four steps, each built on the one before:
 
 1. **Provision** a bare machine from Forge — iPXE boot, the OS image under
    qualification written to disk, reachable over the site's jump host.
@@ -40,7 +54,7 @@ Four layers, each built on the one before:
 4. **Bring up its node pools** on real machines, assert every node reaches
    Ready, then tear everything down.
 
-[hardware-lane.md](hardware-lane.md) explains each layer and why the awkward
+[hardware-lane.md](hardware-lane.md) explains each step and why the awkward
 parts are the way they are.
 
 ## Running one
@@ -101,7 +115,7 @@ through create, node readiness, and delete.
 
 | Document | Read it when |
 |---|---|
-| [hardware-lane.md](hardware-lane.md) | you want to know how a run works, layer by layer, and what it deliberately does not cover |
+| [hardware-lane.md](hardware-lane.md) | you want to know how a run works, step by step, and what it deliberately does not cover |
 | [environments.md](environments.md) | you are adding a site, an instance type, or a second infrastructure provider |
 | [triage.md](triage.md) | a run went red and you need to know whether it is ours or the site's |
 

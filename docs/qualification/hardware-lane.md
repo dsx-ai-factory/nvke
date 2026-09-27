@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Qualifying a candidate on real hardware
 
-How the site controller lane works, layer by layer. The
+How the site controller lane works, step by step. The
 [e2e README](../../controller/test/e2e/README.md#site-controller-lane) says how
 to run it and what to set; this says what it does and why it does it that way.
 
@@ -16,28 +16,94 @@ Alongside this: [environments.md](environments.md) for declaring the hardware
 a run can execute against, and [triage.md](triage.md) for working out whether
 a red run is our defect or the site's.
 
-Everything below describes the `nico-forge` path — the only one in the suite
-that touches real machines. The CAPD, nico-containers and nico-vms backends
-simulate the infrastructure layer entirely and skip straight to
+## What this part of the workflow is called
+
+The responsibility documented here is **environment provisioning**: taking a
+declaration of infrastructure that already exists plus a request for
+capabilities, producing a live system under test, and releasing it again. That
+is the vocabulary the code settled on by itself — `internal/environment` loads
+the declaration, `infra.Provider.ProvisionNode` creates the machine, and
+`Session.Teardown` "closes every forward, drops the connection, and releases
+the machine."
+
+**The hardware lane** is the informal name for the lane that does this on real
+machines, and the name used below. It is a lane in the same sense as the capd
+and nico lanes: a CI path that stands up an environment and runs the e2e suite
+inside it. What distinguishes it is not the specs, which are identical, but
+that its environment has to be acquired and given back.
+
+So three words, three jobs. The **hardware lane** is the whole CI path. The
+**Forge lane** is its only implementation today. **Provision** is the first
+step alone, not the whole thing.
+
+Everything below describes the `nico-forge` path, the only backend that touches
+real machines. The CAPD, nico-containers and nico-vms backends simulate the
+infrastructure step entirely and skip straight to
 [Tenant clusters](#3-tenant-clusters).
 
-A run stacks four layers, each built on the one before it:
+## The four steps
 
-| Layer | Owned by | What it produces |
+Each is built on the one before it, and `-e2e.site-stage` decides how far a run
+goes:
+
+```mermaid
+flowchart TB
+    S1["1 — Infrastructure<br/>a bare machine, booted and reachable"]
+    S2K["2a — Kubernetes<br/>nkectl bootstrap site"]
+    S2N["2b — the NKE stack<br/>deployed from the staged assets"]
+    S3["3 — Tenant cluster<br/>created through CWE, not through Forge"]
+    S4["4 — Node pools<br/>the machines that cluster runs on"]
+
+    S1 --> S2K --> S2N --> S3 --> S4
+
+    P["site-stage=provision"] -.->|stops here| S1
+    B["site-stage=bootstrap"] -.->|stops here| S2K
+    F["site-stage=full"] -.->|runs everything| S4
+```
+
+`bootstrap` is the one worth noticing: it stops after vanilla Kubernetes and
+*before* the NKE stack, so it proves `nkectl` can build a cluster on this
+hardware without spending the rest of the run on the product.
+
+| Step | Owned by | What it produces |
 |---|---|---|
 | [Infrastructure](#1-forge-infrastructure) | `internal/infra/forge` | One bare machine, booted and reachable |
 | [Site controller](#2-the-site-controller) | `internal/site` | Kubernetes plus the NKE stack on that machine |
 | [Tenant cluster](#3-tenant-clusters) | `tenant_test.go`, CWE | A tenant cluster created through the product API |
 | [Node pools](#4-node-pools) | `forgeNodePoolSpecs` | The machines that tenant cluster runs on |
 
-`-e2e.site-stage` decides how far it goes: `provision` stops after layer 1,
-`bootstrap` after Kubernetes, and `full` runs all four.
-
 ## 1. Forge infrastructure
 
 `internal/infra/forge` provisions the machine through the
 `ncx-infra-controller-rest` SDK against NGC, with `cfg.SetAPIName("forge")`
 rewriting the generated `carbide` paths.
+
+The whole handshake, because almost every surprise in this lane happens inside
+it:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant R as the runner
+    participant F as the Forge API
+    participant M as the machine
+    participant J as the jump host
+
+    R->>F: InstanceCreateRequest: instance type, a custom iPXE<br/>script, cloud-init, alwaysBootWithCustomIpxe=true
+    F->>M: power on, boot the custom iPXE script
+    M->>M: chain the qcow imager, write the OS image under qualification
+    M->>M: cloud-init injects this run's ed25519 public key
+    R->>F: waitReady, polling by id because the list endpoint<br/>caps at twenty rows and ignores every filter
+    F-->>R: Ready, and an interface that reports an address
+    R->>J: waitReachable, dialling through the jump host
+    J->>M: ssh, on the generated keypair
+    M-->>R: a session
+    R->>M: cloud-init status --wait
+    note over R,M: Ready does not imply cloud-init finished, because<br/>phoneHomeEnabled is false, so the provider waits again
+```
+
+Steps 5 and 7 are the "two waits" below, and step 10 exists only because of
+step 1's `phoneHomeEnabled=false`.
 
 **Where the identifiers come from.** `environments/forge.yaml` declares the
 org, site, VPC, subnet, SSH key group and instance types. Nothing secret is in
@@ -87,7 +153,24 @@ a successful run.
 ## 2. The site controller
 
 `site.Bootstrap` runs six ordered steps over the single session opened in
-layer 1:
+step 1:
+
+```mermaid
+flowchart TB
+    B1["1 stage nkectl<br/>the binary built from the commit under test"] --> B2
+    B2["2 stage assets<br/>the deploy path as a tarball, tracked files only"] --> B3
+
+    subgraph root [steps 3 to 6 run as root in a login shell, sudo -n -i]
+        direction TB
+        B3["3 import images<br/>into both containerd namespaces, k8s.io and default"] --> B4
+        B4["4 generate site spec<br/>a hosts CSV plus --set for Kubernetes, CNI, SPIRE"] --> B5
+        B5["5 bootstrap site<br/>nkectl bootstrap site"] --> B6
+        B6["6 deploy<br/>the NKE stack from the staged assets"]
+    end
+```
+
+A *login* shell, not a plain `sudo`, and the subgraph label is the reason: the
+step titles alone would not tell you why.
 
 1. **stage nkectl** — upload the binary built from the commit under test and
    run `nkectl version`.
@@ -141,6 +224,18 @@ posts an `nke.ClusterSpec` with `Backend: BackendNicoForge` naming the org,
 site and VPC; CAPNico inside the cluster is what calls Forge. That keeps the
 lane on the product's own front door rather than a test-only path.
 
+```mermaid
+flowchart LR
+    SUITE["the suite<br/>posts an nke.ClusterSpec with<br/>Backend: BackendNicoForge"] --> CWE["CWE<br/>on the site controller"]
+    CWE --> CAPN["CAPNico<br/>inside that cluster"]
+    CAPN --> FORGE["the Forge API"]
+    SUITE --x FORGE
+```
+
+The blocked arrow is the point. The suite *could* create tenant machines
+through Forge directly, and a lane that did would pass while the product's own
+path was broken.
+
 What the suite passes down is `NodePayloads` — the iPXE script and
 `preKubeadmCommands` rendered by the same `BuildForgeNodePayloads` the site
 node was built from, so tenant nodes are constructed the same way. The
@@ -166,6 +261,26 @@ covers every tenant spec. It substitutes a local forward address carried
 through the site node and pins `tls-server-name` to the published host, because
 the API server certificate has no `127.0.0.1` SAN. Lanes that share a network
 with their clusters set no relay and talk to the published address directly.
+
+Every hop, since this is the part that reads as magic until you have seen it:
+
+```mermaid
+flowchart LR
+    RUN["the CI runner<br/>outside the site entirely"]
+    JH["the jump host<br/>the only Teleport-enrolled hop"]
+    SN["the site node<br/>not enrolled, so reachable only through the jump host"]
+    TCP["a tenant's API server<br/>on its own control-plane node, no VIP to borrow"]
+
+    RUN -->|Teleport| JH
+    JH -->|ssh| SN
+    SN -->|"routes to it"| TCP
+    RUN --x TCP
+    SN -.->|"Session.Forward, with tls-server-name<br/>pinned to the published host"| RUN
+```
+
+The blocked arrow from the runner is why the relay exists at all, and the
+dotted edge is the relay: a local address on the runner whose traffic comes out
+of the site node.
 
 **Teardown.** `SweepTenants` deletes every tenant cluster CWE knows about
 before the site node is released, so a tenant is never orphaned by the machine

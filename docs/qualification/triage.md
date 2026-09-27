@@ -32,9 +32,28 @@ distinguishes this case (`ErrNoDiagnostics`) from a real failure to archive,
 because reporting "could not collect diagnostics" for the ordinary case sends
 the reader hunting a second fault that does not exist.
 
-## Which layer failed
+## Which step failed
 
-Work down. Each layer has a different owner.
+Work down. Each step has a different owner.
+
+```mermaid
+flowchart TB
+    R{"a red run"} --> A{"did the run reach Forge at all?"}
+
+    A -->|"no: it failed in a step before the lane"| NEVER["configuration or credentials, ours"]
+    A -->|yes| B{"how far did it get?"}
+
+    B -->|"the instance never became usable"| P{"which way?"}
+    B -->|"the node came up, the cluster did not"| BOOT["bootstrap, ours<br/>read the nkectl diagnostics tarball"]
+    B -->|"the cluster exists and<br/>something cannot reach it"| TEN["tenant: usually the relay,<br/>or the missing control-plane VIP"]
+
+    P -->|"no machine was ever offered"| CAP["capacity: unschedulable,<br/>not a defect"]
+    P -->|"never got an address"| DHCP["the DHCP fault"]
+    P -->|"Ready, but cloud-init never finished"| META["the metadata endpoint,<br/>broken by design right now"]
+```
+
+Only the bootstrap and tenant branches are usually ours, which is why naming
+the step matters more than the stack trace.
 
 ### The run never reached the hardware
 
