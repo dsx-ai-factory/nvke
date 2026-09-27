@@ -156,6 +156,15 @@ jobs:
     permissions:
       contents: read
 
+  # Identifiers of internal infrastructure in the tree. Not a credential
+  # scan -- the Secrets workflow is that, and finds nothing here, because an
+  # org or subnet id grants nothing. What it protects is the property that
+  # this repository can become public.
+  internal-config-check:
+    uses: ./.github/workflows/internal-config-check.yml
+    permissions:
+      contents: read
+
   lint:
     uses: ./.github/workflows/lint.yml
     permissions:
@@ -209,6 +218,7 @@ jobs:
       - actionlint
       - shellcheck
       - docs-check
+      - internal-config-check
       - lint
       - gofail
       - notices

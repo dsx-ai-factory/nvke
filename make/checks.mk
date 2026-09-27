@@ -43,6 +43,13 @@ lint-shell: ## Lint every tracked shell script. (run by the merge gate)
 docs-check: ## Check the documented facts against the repository. (run by the merge gate)
 	@./hack/docs-check.sh
 
+# Identifiers of infrastructure only NVIDIA can see. Not credentials, which
+# is why they read as safe and are not: this repository is the staging ground
+# for a public one, and an org, site, VPC or subnet id is a map of a real
+# account. Matched by digest so this check does not publish what it forbids.
+internal-config-check: ## Check the tree names no internal infrastructure. (run by the merge gate)
+	@./hack/internal-config-check.sh
+
 # helm lint and helm template both pass on a manifest Kubernetes would reject, so
 # kubeconform parses what was rendered. A chart that renders nothing also passes
 # helm template silently, hence the count.
@@ -217,6 +224,7 @@ gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory lint-workflows
 	@$(MAKE) --no-print-directory lint-shell
 	@$(MAKE) --no-print-directory docs-check
+	@$(MAKE) --no-print-directory internal-config-check
 	@$(MAKE) --no-print-directory chart-check
 	@$(MAKE) --no-print-directory nktp-chart-check
 	@$(MAKE) --no-print-directory -C controller generate-check
