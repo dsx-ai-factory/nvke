@@ -34,21 +34,29 @@ description = """environments/forge.yaml carried the RelEng Forge account's
 identifiers until they moved to repository variables. generic-api-key matches
 the SSH key group id on entropy -- it is a UUID, not a key, and a key group
 governs Serial-over-LAN console access rather than granting anything. The
-values are gone from the tree; these two commits are where they were. The
-repository squash-merges and deletes the branch, so neither commit reaches
-main's history.
+values are gone from the tree; the commits behind this branch are where they
+were. The repository squash-merges and deletes the branch, so none of that
+reaches main's history.
 
-Scoped to that one file in those two commits, so a credential elsewhere in
-either is still caught, and so this expires by itself when they do. Note that
-one of the two values is still on main in
-controller/hack/create-forge-nico-cluster.sh, which this does not cover."""
+Scoped by shape rather than by commit. Naming the two commits was tighter, but
+it could not survive a rebase: the workflow scans origin/main..HEAD, a rebase
+gives every commit on the branch a new sha, and the allowlist would then point
+at commits that do not exist -- turning the scan red for a reason unrelated to
+anything it found. Listing the values instead is not open to us either,
+because writing them here publishes the identifiers
+hack/internal-config-check.sh exists to keep out of the tree.
+
+So: a UUID, in that one file, and nothing else. That a UUID is not a
+credential is the argument above; a secret of any other shape in that file is
+still caught, as is anything at all in any other file. The tree is held to the
+stronger rule by internal-config-check, which fails the merge gate if a known
+identifier comes back."""
 condition = "AND"
-commits = [
-  "dd354d4c2605f3a217e332808f62dab84d18c866",
-  "0cb2879fe0326cb841b643dd81edf2a4170f509e",
-]
 paths = [
   '''^controller/test/e2e/environments/forge\.yaml$''',
+]
+regexes = [
+  '''[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}''',
 ]
 
 [[allowlists]]
