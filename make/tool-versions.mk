@@ -28,6 +28,15 @@ SHELLCHECK_SHA256  ?= 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e
 GITLEAKS_VERSION   ?= 8.30.1
 GITLEAKS_SHA256_AMD64 ?= 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
 
+# tsh and tbot for the Forge site-controller lane, out of one tarball. This
+# pin is not free to move: it is matched to the Teleport cluster's server
+# version rather than merely kept within the supported skew, because an
+# unpinned client against a pinned cluster surfaces as an unexplained relay
+# error deep in a 40-minute run. Bump it when the cluster is upgraded.
+# teleport-v<version>-linux-amd64-bin.tar.gz.
+TELEPORT_VERSION   ?= 18.11.0
+TELEPORT_SHA256_AMD64 ?= 8d3dba03ea6b6e0d72c97e190da0595e8f0d70f5573c3a26b1908cf60caf6e3f
+
 KUBECONFORM_VERSION ?= v0.7.0
 # .github/actions/setup-kubeconform installs it for chart.yml and nktp-chart.yml,
 # both on ubuntu-latest, so amd64 is the only platform needed.

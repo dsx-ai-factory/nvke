@@ -230,23 +230,44 @@ jobs:
       # because an unpinned client against a pinned cluster is a failure mode
       # that surfaces as an unexplained relay error deep in a 40-minute run.
       # Matched to the cluster's server version rather than merely within the
-      # supported skew.
+      # supported skew. The version and its digest live in
+      # make/tool-versions.mk, which is where every other pinned tool's do.
       # tbot as well as tsh: the harness relays with tsh, and the step below
       # runs tbot as the daemon that keeps the identity fresh. Both come out
       # of the same tarball, so one pin covers the join and the relay.
       - name: Install tsh and tbot
         shell: bash
-        env:
-          TELEPORT_VERSION: "18.11.0"
         run: |
           set -Eeuo pipefail
+          version="$(make --no-print-directory print-TELEPORT_VERSION)"
+          # A committed digest, not the CDN's own .sha256 -- same host, so the
+          # same compromise boundary. make/tool-versions.mk owns both, next to
+          # each other, so a bump cannot move one without the other.
+          expected="$(make --no-print-directory print-TELEPORT_SHA256_AMD64)"
+          tar="teleport-v${version}-linux-amd64-bin.tar.gz"
+          tmp="$(mktemp -d)"
+
           curl -fsSL --connect-timeout 20 --max-time 300 \
-            -o /tmp/teleport.tar.gz \
-            "https://cdn.teleport.dev/teleport-v${TELEPORT_VERSION}-linux-amd64-bin.tar.gz"
-          tar -C /tmp -xzf /tmp/teleport.tar.gz teleport/tsh teleport/tbot
-          sudo install -m 0755 /tmp/teleport/tsh /usr/local/bin/tsh
-          sudo install -m 0755 /tmp/teleport/tbot /usr/local/bin/tbot
-          tsh version
+            -o "${tmp}/${tar}" "https://cdn.teleport.dev/${tar}"
+          if [ -z "${expected}" ]; then
+            echo "::error::no checksum entry for ${tar}"
+            exit 1
+          fi
+          actual="$(sha256sum "${tmp}/${tar}" | awk '{print $1}')"
+          if [ "${actual}" != "${expected}" ]; then
+            echo "::error::checksum mismatch for ${tar}"
+            exit 1
+          fi
+
+          tar -C "${tmp}" -xzf "${tmp}/${tar}" teleport/tsh teleport/tbot
+          # /usr/local/bin is not writable by the runner user on the
+          # self-hosted runners, so it goes somewhere that always is -- the
+          # same place secrets.yml puts gitleaks. GITHUB_PATH reaches the
+          # steps after this one, so the version check below uses the path.
+          mkdir -p "${HOME}/.local/bin"
+          install -m 0755 "${tmp}/teleport/tsh" "${tmp}/teleport/tbot" "${HOME}/.local/bin/"
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+          "${HOME}/.local/bin/tsh" version
 
       # nkectl is built from this checkout and is a client of the CWE it
       # bootstraps, so the two have to be one commit. No published tag gives

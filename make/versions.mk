@@ -38,6 +38,7 @@ show-versions: ## Print every pinned tool version.
 		"ACTIONLINT_VERSION"     "$(ACTIONLINT_VERSION)" \
 		"SHELLCHECK_VERSION"     "$(SHELLCHECK_VERSION)" \
 		"GITLEAKS_VERSION"       "$(GITLEAKS_VERSION)" \
+		"TELEPORT_VERSION"       "$(TELEPORT_VERSION)" \
 		"KUBECONFORM_VERSION"    "$(KUBECONFORM_VERSION)" \
 		"HELM_VERSION"           "$(HELM_VERSION)" \
 		"KIND_VERSION"           "$(KIND_VERSION)" \
