@@ -37,6 +37,12 @@ type fakeForge struct {
 	statuses []string // served in order by GetInstance; the last repeats
 	polls    int
 	deleted  int
+
+	// createDelay holds the create response back, standing in for a Forge
+	// that has built the instance but is slow to say so.
+	createDelay time.Duration
+	// createStatus replaces 201 on create when non-zero.
+	createStatus int
 }
 
 func (f *fakeForge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +61,12 @@ func (f *fakeForge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && r.URL.Path == base+"/instance":
 		if err := json.NewDecoder(r.Body).Decode(&f.created); err != nil {
 			f.t.Errorf("decoding the create request: %v", err)
+		}
+		time.Sleep(f.createDelay)
+		if f.createStatus != 0 {
+			w.WriteHeader(f.createStatus)
+			_, _ = w.Write([]byte(`{"message":"forge said no"}`))
+			return
 		}
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"id":"` + testInstance + `","status":"Pending"}`))
@@ -293,6 +305,83 @@ func TestProvisionNodeRejectsUnmatchedCapabilities(t *testing.T) {
 	}
 	if forge.created != nil {
 		t.Error("nothing should be created when no instance type matches")
+	}
+}
+
+// newSlowCreateProvider is newTestProvider with the two timeouts that matter
+// here set apart: everything runs under a cap shorter than the create delay,
+// and create runs under one longer than it.
+func newSlowCreateProvider(t *testing.T, forge *fakeForge, dialer Dialer, perRequest, create time.Duration) *Provider {
+	t.Helper()
+	srv := httptest.NewServer(forge)
+	t.Cleanup(srv.Close)
+	client := srv.Client()
+	client.Timeout = perRequest
+	p, err := New(Options{
+		Env:      testEnv(),
+		APIKey:   "nvapi-test",
+		Endpoint: srv.URL,
+		Images: func(version string) (string, string, error) {
+			return "https://example.invalid/imager.efi", "https://example.invalid/nke-" + version + ".qcow2", nil
+		},
+		Dialer:   dialer,
+		JumpHost: testJumpHost,
+		Node: nke.ForgeNodeInputs{
+			KubernetesVersion: "1.34.2",
+			CNIVersion:        "1.4.0",
+			SpireVersion:      "1.14.1+tpm1.9.0",
+		},
+		Tools:         completeTools(),
+		HTTPClient:    client,
+		ReadyTimeout:  5 * time.Second,
+		ReachTimeout:  5 * time.Second,
+		PollInterval:  time.Millisecond,
+		CreateTimeout: create,
+	})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+	return p
+}
+
+// A create slower than the cap every other call runs under must still be
+// waited out. Giving up on it loses the id, and the id is the only handle on
+// an instance Forge has already built.
+func TestSlowCreateIsNotAbandoned(t *testing.T) {
+	forge := &fakeForge{t: t, statuses: []string{"Ready"}, createDelay: 300 * time.Millisecond}
+	dialer := &fakeDialer{conn: &fakeConn{}}
+	p := newSlowCreateProvider(t, forge, dialer, 50*time.Millisecond, 5*time.Second)
+
+	node, session, err := p.ProvisionNode(context.Background(), testRequest())
+	if err != nil {
+		t.Fatalf("a create slower than the per-request cap was abandoned: %v", err)
+	}
+	if session == nil {
+		t.Fatal("no session")
+	}
+	if node.IP != "10.0.0.7" {
+		t.Errorf("node.IP = %q, want 10.0.0.7", node.IP)
+	}
+	if forge.deleted != 0 {
+		t.Errorf("the instance was deleted %d times; the create succeeded", forge.deleted)
+	}
+}
+
+// A create that fails cannot be reported as though nothing was built, because
+// nothing here can establish that either way.
+func TestCreateFailureSaysTheInstanceMayExist(t *testing.T) {
+	forge := &fakeForge{t: t, statuses: []string{"Ready"}, createStatus: http.StatusInternalServerError}
+	dialer := &fakeDialer{conn: &fakeConn{}}
+	p := newSlowCreateProvider(t, forge, dialer, time.Second, 5*time.Second)
+
+	_, _, err := p.ProvisionNode(context.Background(), testRequest())
+	if err == nil {
+		t.Fatal("a 500 on create returned no error")
+	}
+	for _, want := range []string{"e2e-site-1", "may exist", "Forge console"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error does not mention %q, so nobody will go looking for the instance:\n%v", want, err)
+		}
 	}
 }
 

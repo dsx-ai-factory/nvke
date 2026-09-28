@@ -41,6 +41,20 @@ const (
 	// part-way. It runs detached from the caller's context, so it needs a
 	// bound of its own.
 	releaseTimeout = 5 * time.Minute
+
+	// defaultCreateTimeout bounds the create call alone, and is deliberately
+	// far longer than the timeout the polls run under. Losing the response to
+	// a create is the one unrecoverable failure here: the id it carries is
+	// the only handle on the instance, and Forge has built the machine
+	// whether or not the answer arrives.
+	defaultCreateTimeout = 10 * time.Minute
+
+	// createMayHaveLanded is appended to every create failure. Nothing in
+	// this process can clean up after one -- the list endpoint caps at twenty
+	// rows and ignores every filter, so an instance whose id was never
+	// returned cannot be found again. Say so rather than report a tidy
+	// failure over a machine that is still running and still billing.
+	createMayHaveLanded = "\nthe instance may exist even so: Forge builds it before it answers, and without the id in that answer nothing here can delete it -- check the Forge console for this name"
 )
 
 // Images resolves the Node version under qualification to the two URLs the
@@ -112,14 +126,23 @@ type Options struct {
 	ReadyTimeout time.Duration
 	ReachTimeout time.Duration
 	PollInterval time.Duration
+
+	// CreateTimeout bounds the create call, separately from HTTPClient's
+	// timeout, which bounds everything else. See defaultCreateTimeout.
+	CreateTimeout time.Duration
 }
 
 // Provider creates Forge instances ready for `nkectl bootstrap site`.
 type Provider struct {
-	opts   Options
-	site   environment.ForgeSite
+	opts Options
+	site environment.ForgeSite
+	// client serves everything but create. Its short per-request timeout is
+	// what makes a hung poll fail and retry rather than stall.
 	client *standard.APIClient
-	token  *tokenSource
+	// createClient serves create alone, under a far longer timeout, because
+	// that call's response cannot be given up on. See defaultCreateTimeout.
+	createClient *standard.APIClient
+	token        *tokenSource
 }
 
 var (
@@ -170,19 +193,46 @@ func New(opts Options) (*Provider, error) {
 	if opts.PollInterval == 0 {
 		opts.PollInterval = defaultPollInterval
 	}
+	if opts.CreateTimeout == 0 {
+		opts.CreateTimeout = defaultCreateTimeout
+	}
+
+	endpoint := strings.TrimRight(opts.Endpoint, "/")
+	// Taken before either SetAPIName below, which wraps the transport of the
+	// client it is given: a copy made afterwards would be wrapped twice.
+	createHTTP := withTimeout(opts.HTTPClient, opts.CreateTimeout)
 
 	cfg := standard.NewConfiguration()
-	cfg.Servers = standard.ServerConfigurations{{URL: strings.TrimRight(opts.Endpoint, "/")}}
+	cfg.Servers = standard.ServerConfigurations{{URL: endpoint}}
 	cfg.HTTPClient = opts.HTTPClient
 	// After HTTPClient, because it wraps that client's transport.
 	cfg.SetAPIName(apiName)
 
+	// Its own Servers value rather than a shared slice, so neither
+	// configuration can be reached through the other's.
+	createCfg := standard.NewConfiguration()
+	createCfg.Servers = standard.ServerConfigurations{{URL: endpoint}}
+	createCfg.HTTPClient = createHTTP
+	createCfg.SetAPIName(apiName)
+
 	return &Provider{
-		opts:   opts,
-		site:   site,
-		client: standard.NewAPIClient(cfg),
-		token:  newTokenSource(opts.HTTPClient, opts.APIKey, opts.Env.Org.ID, opts.AuthURL),
+		opts:         opts,
+		site:         site,
+		client:       standard.NewAPIClient(cfg),
+		createClient: standard.NewAPIClient(createCfg),
+		token:        newTokenSource(opts.HTTPClient, opts.APIKey, opts.Env.Org.ID, opts.AuthURL),
 	}, nil
+}
+
+// withTimeout copies c with at least the given timeout, raising a shorter one
+// and leaving an absent one absent. A copy rather than a mutation: the caller
+// keeps its client, and a test that injected a transport keeps that too.
+func withTimeout(c *http.Client, timeout time.Duration) *http.Client {
+	copied := *c
+	if copied.Timeout != 0 && copied.Timeout < timeout {
+		copied.Timeout = timeout
+	}
+	return &copied
 }
 
 // ProvisionNode creates one instance and returns once a session to it can run
@@ -233,13 +283,13 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 		create.SetLabels(req.Labels)
 	}
 
-	inst, resp, err := p.client.InstanceAPI.CreateInstance(ctx, p.opts.Env.Org.ID).InstanceCreateRequest(*create).Execute()
+	inst, resp, err := p.createClient.InstanceAPI.CreateInstance(ctx, p.opts.Env.Org.ID).InstanceCreateRequest(*create).Execute()
 	closeBody(resp)
 	if err != nil {
-		return infra.Node{}, nil, fmt.Errorf("forge: creating instance %s: %w", req.Name, apiError(err))
+		return infra.Node{}, nil, fmt.Errorf("forge: creating instance %s: %w%s", req.Name, apiError(err), createMayHaveLanded)
 	}
 	if inst.GetId() == "" {
-		return infra.Node{}, nil, fmt.Errorf("forge: creating instance %s returned no id", req.Name)
+		return infra.Node{}, nil, fmt.Errorf("forge: creating instance %s returned no id%s", req.Name, createMayHaveLanded)
 	}
 	id := inst.GetId()
 
