@@ -13,7 +13,7 @@ blank_issues_enabled: true
 
 contact_links:
   - name: Report a security vulnerability
-    url: https://www.nvidia.com/en-us/security/report-vulnerability/
+    url: https://www.nvidia.com/object/submit-security-vulnerability.html
     about: Do not open a public issue. Report through NVIDIA PSIRT, as described in SECURITY.md.
   - name: Ask a question
     url: https://github.com/dsx-ai-factory/nke/discussions/categories/q-a

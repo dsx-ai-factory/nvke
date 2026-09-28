@@ -48,13 +48,10 @@ ADDLICENSE       ?= $(GO) run github.com/google/addlicense@v1.1.1
 # The exclusions cover vendored and generated trees, testdata, fixtures, build
 # tooling, and the chart templates the chart ships. Files under hack/ are
 # deliberately included: they are source and must carry the repository licence.
-LICENSE_FILES = git ls-files -- '*.go' '*.sh' '*.py' '*.js' '*.css' '*.html' '*.yaml' '*.yml' \
-	| grep -vE '(^|/)vendor/' \
-	| grep -vE '(^|/)testdata/' \
-	| grep -vE '^generated/' \
-	| grep -vE '\.pb\.go$$' \
-	| grep -vE '^controller/deploy/charts/' \
-	| grep -vE '^controller/test/fixtures/'
+LICENSE_TRACKED_FILES = git ls-files -- '*.go' '*.sh' '*.py' '*.js' '*.css' '*.html' '*.yaml' '*.yml'
+LICENSE_SOURCE_FILTER = awk '!/(^|\/)vendor\// && !/(^|\/)testdata\// && !/^generated\// \
+	&& !/\.pb\.go$$/ && !/^controller\/deploy\/charts\// && !/^controller\/test\/fixtures\//'
+LICENSE_FILES = $(LICENSE_TRACKED_FILES) | $(LICENSE_SOURCE_FILTER)
 
 # Modules in go.work — every module in the repository. Building needs no NVIDIA
 # credentials and no network: every dependency is carried in the committed
@@ -727,10 +724,16 @@ license-header-check: ## Verify every source file carries the Apache-2.0 SPDX he
 	@# two together reports a module download as a file with no licence header,
 	@# which is exactly how the first CI run of this check failed while passing
 	@# on a developer machine whose cache was already warm.
-	@files=$$($(LICENSE_FILES)); \
-	 files_rc=$$?; \
-	 if [ $$files_rc -ne 0 ] || [ -z "$$files" ]; then \
+	@tracked=$$($(LICENSE_TRACKED_FILES)); \
+	 tracked_rc=$$?; \
+	 if [ $$tracked_rc -ne 0 ]; then \
 		echo "ERROR: could not enumerate source files for the licence-header check."; \
+		exit 1; \
+	 fi; \
+	 files=$$(printf '%s\n' "$$tracked" | $(LICENSE_SOURCE_FILTER)); \
+	 filter_rc=$$?; \
+	 if [ $$filter_rc -ne 0 ] || [ -z "$$files" ]; then \
+		echo "ERROR: could not filter source files for the licence-header check."; \
 		exit 1; \
 	 fi; \
 	 missing=$$(printf '%s\n' "$$files" | xargs $(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)); \
@@ -744,8 +747,8 @@ license-header-check: ## Verify every source file carries the Apache-2.0 SPDX he
 		echo "ERROR: these files carry no licence header. Run 'make license':"; \
 		printf '%s\n' "$$missing" | sed 's/^/    /'; \
 		exit 1; \
-	 fi
-	@wrong=$$($(LICENSE_FILES) | while read -r f; do \
+	 fi; \
+	 wrong=$$(printf '%s\n' "$$files" | while read -r f; do \
 		grep -qE '^.{0,3} ?Code generated .* DO NOT EDIT\.$$' "$$f" && continue; \
 		head -20 "$$f" | grep -q 'SPDX-License-Identifier: Apache-2.0' || echo "$$f"; \
 	 done); \

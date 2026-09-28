@@ -47,7 +47,8 @@ body:
   - type: textarea
     id: reproduction
     attributes:
-      label: Steps to reproduce
+      label: Reproduction steps or observed pattern
+      description: Provide reliable reproduction steps, or for an intermittent failure, its observed frequency and conditions.
       placeholder: |
         1. Configure ...
         2. Run ...

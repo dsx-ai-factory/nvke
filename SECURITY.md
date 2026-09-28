@@ -12,7 +12,7 @@ policy routes every external vulnerability report through PSIRT so that
 disclosure is coordinated across all affected NVIDIA products, not just this
 repository.
 
-- **Web:** [Report a Security Vulnerability or NVIDIA AI Concern](https://www.nvidia.com/en-us/security/report-vulnerability/)
+- **Web:** [Security Vulnerability Submission Form](https://www.nvidia.com/object/submit-security-vulnerability.html)
 - **Email:** psirt@nvidia.com — encrypt with the [NVIDIA public PGP key](https://www.nvidia.com/en-us/security/pgp-key)
 
 Include as much of the following as you have:
