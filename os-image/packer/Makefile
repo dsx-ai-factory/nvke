@@ -57,6 +57,19 @@ export NKE_PACKAGE_BUILDER ?= auto
 # stable identifier instead of depending on a partition or device path.
 ROOT_FS_LABEL ?= cloudimg-rootfs
 
+# Serial console the INSTALLED system directs kernel output to. Empty keeps the
+# architecture default (ttyS0 on amd64, ttyAMA0 on arm64), which is what Forge
+# and tenant nodes expect. Set it when the target board puts SOL on a different
+# UART -- CSC control-plane hardware uses the second one:
+#
+#     make os-image-non-fde SERIAL_CONSOLE=ttyS1
+#
+# This moves the installed system only. The installer's own console stays on
+# the first UART because the build VM captures it there (see boot_command and
+# the -serial argument in the variant templates), so a build with this set
+# still produces a readable install log.
+SERIAL_CONSOLE ?=
+
 # amd64 or arm64. Drives the ISO default, source package preparation, and the
 # explicit Packer architecture variable that selects QEMU, firmware, console,
 # and NVIDIA kernel behavior.
@@ -537,6 +550,7 @@ _os-image-fde: prepare-image-build
 		-var "ssh_timeout=$(SSH_TIMEOUT)" \
 		-var "boot_wait=$(BOOT_WAIT)" \
 		-var "root_fs_label=$(ROOT_FS_LABEL)" \
+		-var "serial_console=$(SERIAL_CONSOLE)" \
 		"$(PACKER_PROJECT)"
 	mkdir "$(CURDIR)/output-fde"
 	mv "$(PACKER_OUTPUT_DIRECTORY_FDE)/fde/nke-node.qcow2" \
@@ -575,6 +589,7 @@ _os-image-non-fde: prepare-image-build
 		-var "ssh_timeout=$(SSH_TIMEOUT)" \
 		-var "boot_wait=$(BOOT_WAIT)" \
 		-var "root_fs_label=$(ROOT_FS_LABEL)" \
+		-var "serial_console=$(SERIAL_CONSOLE)" \
 		"$(PACKER_PROJECT)"
 	mkdir "$(CURDIR)/output-non-fde"
 	mv "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)/non-fde/nke-node.qcow2" \

@@ -65,6 +65,47 @@ grep -F "Invalid index" <<<"${output}" >/dev/null || {
   exit 1
 }
 
+# serial_console reaches a shell command in the autoinstall late-commands, so
+# its validation is a boundary, not a typo check. An accepted payload would run
+# in the target. A legitimate second-UART value must still pass: CSC
+# control-plane hardware exposes SOL there.
+for bad in "ttyS0; rm -rf /" "tty S0" "../../etc/passwd" "\$(id)"; do
+  if output="$("${packer_bin}" validate \
+    -only=nke-node-non-fde.qemu.nke-non-fde \
+    -var "architecture=amd64" \
+    -var "material_manifest=${work}/amd64/material-manifest.json" \
+    -var "output_directory=${work}/amd64/output" \
+    -var "build_log_directory=${work}/amd64/logs" \
+    -var "ssh_private_key_file=${work}/id_ed25519" \
+    -var "ssh_public_key_file=${work}/id_ed25519.pub" \
+    -var "serial_console=${bad}" \
+    "${project_root}" 2>&1)"; then
+    echo "Packer accepted serial_console=${bad}, which reaches a shell command in the guest" >&2
+    exit 1
+  fi
+  grep -F "bare tty device name" <<<"${output}" >/dev/null || {
+    printf '%s\n' "${output}" >&2
+    echo "Packer rejected serial_console=${bad} for the wrong reason" >&2
+    exit 1
+  }
+done
+
+for good in ttyS0 ttyS1 ttyAMA0 ""; do
+  "${packer_bin}" validate \
+    -only=nke-node-non-fde.qemu.nke-non-fde \
+    -var "architecture=amd64" \
+    -var "material_manifest=${work}/amd64/material-manifest.json" \
+    -var "output_directory=${work}/amd64/output" \
+    -var "build_log_directory=${work}/amd64/logs" \
+    -var "ssh_private_key_file=${work}/id_ed25519" \
+    -var "ssh_public_key_file=${work}/id_ed25519.pub" \
+    -var "serial_console=${good}" \
+    "${project_root}" >/dev/null || {
+    echo "Packer rejected the legitimate serial_console=${good:-<default>}" >&2
+    exit 1
+  }
+done
+
 # Direct runners supply an authenticated plugin closure and must be able to
 # validate the project without packer init or any write beneath the source.
 readonly_source="${work}/read-only-source"
