@@ -13,6 +13,7 @@ import (
 	"encoding/pem"
 	"math/big"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,15 +23,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// writeControllerCA returns the path to a PEM bundle holding a freshly minted
-// CA, along with a client certificate it signed.
-func writeControllerCA(t *testing.T) (string, tls.Certificate) {
+// controllerCA stands in for the externally operated CA that issues the
+// controller's client certificate. It signs more than one certificate so a
+// test can tell "wrong CA" apart from "right CA, wrong service".
+type controllerCA struct {
+	certificate *x509.Certificate
+	key         *ecdsa.PrivateKey
+	bundlePath  string
+	serial      int64
+}
+
+// newControllerCA mints a CA and writes its PEM bundle, returning the handle
+// whose bundlePath ServerConfig reads.
+func newControllerCA(t *testing.T) *controllerCA {
 	t.Helper()
 
-	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
-	caTemplate := x509.Certificate{
+	template := x509.Certificate{
 		SerialNumber:          big.NewInt(1),
 		Subject:               pkix.Name{CommonName: "test-controller-ca"},
 		NotBefore:             time.Now().Add(-time.Hour),
@@ -39,42 +50,59 @@ func writeControllerCA(t *testing.T) (string, tls.Certificate) {
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 	}
-	caDER, err := x509.CreateCertificate(rand.Reader, &caTemplate, &caTemplate, &caKey.PublicKey, caKey)
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
 	require.NoError(t, err)
-	caCert, err := x509.ParseCertificate(caDER)
-	require.NoError(t, err)
-
-	clientKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	certificate, err := x509.ParseCertificate(der)
 	require.NoError(t, err)
 
-	clientTemplate := x509.Certificate{
-		SerialNumber: big.NewInt(2),
+	bundlePath := filepath.Join(t.TempDir(), "controller-ca.crt")
+	require.NoError(t, os.WriteFile(bundlePath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600))
+
+	return &controllerCA{certificate: certificate, key: key, bundlePath: bundlePath, serial: 1}
+}
+
+// issueClient signs a client certificate carrying uri as its only URI SAN. An
+// empty uri issues one with none, which is what a certificate from the right
+// CA but the wrong issuing process looks like.
+func (ca *controllerCA) issueClient(t *testing.T, uri string) tls.Certificate {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	ca.serial++
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(ca.serial),
 		Subject:      pkix.Name{CommonName: "test-controller"},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
-	clientDER, err := x509.CreateCertificate(rand.Reader, &clientTemplate, caCert, &clientKey.PublicKey, caKey)
+	if uri != "" {
+		parsed, parseErr := url.Parse(uri)
+		require.NoError(t, parseErr)
+		template.URIs = []*url.URL{parsed}
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, &template, ca.certificate, &key.PublicKey, ca.key)
 	require.NoError(t, err)
 
-	bundlePath := filepath.Join(t.TempDir(), "controller-ca.crt")
-	require.NoError(t, os.WriteFile(bundlePath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER}), 0o600))
-
-	return bundlePath, tls.Certificate{Certificate: [][]byte{clientDER}, PrivateKey: clientKey}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
 }
 
 func TestServerConfig_RequiresAndVerifiesTheControllerCertificate(t *testing.T) {
 	t.Parallel()
 
-	bundlePath, _ := writeControllerCA(t)
-
-	cfg, err := ServerConfig(bundlePath)
+	cfg, err := ServerConfig(newControllerCA(t).bundlePath)
 	require.NoError(t, err)
 
 	assert.Equal(t, uint16(tls.VersionTLS12), cfg.MinVersion)
 	assert.Equal(t, tls.RequireAndVerifyClientCert, cfg.ClientAuth)
 	require.NotNil(t, cfg.ClientCAs)
+	// Chaining to the bundle is not sufficient on its own; the peer's identity
+	// is checked too.
+	require.NotNil(t, cfg.VerifyConnection)
 	// The agent serves a certificate the controller does not verify, but it
 	// still has to present one for the handshake to complete.
 	require.Len(t, cfg.Certificates, 1)
@@ -85,7 +113,7 @@ func TestServerConfig_RequiresAndVerifiesTheControllerCertificate(t *testing.T) 
 func TestServerConfig_GeneratesADistinctCertificateEachTime(t *testing.T) {
 	t.Parallel()
 
-	bundlePath, _ := writeControllerCA(t)
+	bundlePath := newControllerCA(t).bundlePath
 
 	first, err := ServerConfig(bundlePath)
 	require.NoError(t, err)
@@ -134,22 +162,39 @@ func TestServerConfig_RejectsAnUnusableBundle(t *testing.T) {
 }
 
 // TestServerConfig_HandshakeAcceptsSignedAndRejectsUnsigned drives a real TLS
-// handshake, so the pool wiring is proven rather than asserted on.
+// handshake, so the pool wiring and the identity check are proven rather than
+// asserted on.
 func TestServerConfig_HandshakeAcceptsSignedAndRejectsUnsigned(t *testing.T) {
 	t.Parallel()
 
-	bundlePath, signed := writeControllerCA(t)
-	_, foreign := writeControllerCA(t)
+	ca := newControllerCA(t)
 
-	serverCfg, err := ServerConfig(bundlePath)
+	serverCfg, err := ServerConfig(ca.bundlePath)
 	require.NoError(t, err)
 
 	tests := map[string]struct {
 		clientCertificate tls.Certificate
 		wantErr           bool
 	}{
-		"certificate from the configured ca": {clientCertificate: signed, wantErr: false},
-		"certificate from another ca":        {clientCertificate: foreign, wantErr: true},
+		"certificate from the configured ca": {
+			clientCertificate: ca.issueClient(t, controllerURI),
+			wantErr:           false,
+		},
+		"certificate from another ca": {
+			clientCertificate: newControllerCA(t).issueClient(t, controllerURI),
+			wantErr:           true,
+		},
+		// The case the CA pool cannot catch: the bundle is an externally
+		// operated CA, so a certificate it issued to something other than the
+		// controller still chains.
+		"certificate from the configured ca with another uri san": {
+			clientCertificate: ca.issueClient(t, controllerURI+":other"),
+			wantErr:           true,
+		},
+		"certificate from the configured ca with no uri san": {
+			clientCertificate: ca.issueClient(t, ""),
+			wantErr:           true,
+		},
 	}
 
 	for name, test := range tests {
@@ -190,4 +235,16 @@ func TestServerConfig_HandshakeAcceptsSignedAndRejectsUnsigned(t *testing.T) {
 			require.NoError(t, <-serverErr)
 		})
 	}
+}
+
+// TestVerifyControllerIdentity_RejectsAnEmptyPeerChain covers the guard the
+// handshake cannot reach: RequireAndVerifyClientCert fails a certificateless
+// connection before VerifyConnection runs, so the branch is only reachable if
+// that setting is ever relaxed.
+func TestVerifyControllerIdentity_RejectsAnEmptyPeerChain(t *testing.T) {
+	t.Parallel()
+
+	err := verifyControllerIdentity(tls.ConnectionState{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "presented no certificate")
 }

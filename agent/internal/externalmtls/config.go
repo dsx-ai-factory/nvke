@@ -27,10 +27,19 @@ const serverCertificateLifetime = 10 * 365 * 24 * time.Hour
 // its NKEAuth record instead.
 const serverCertificateSubject = "nke-agent"
 
+// controllerURI is the URI SAN the controller's client certificate must carry.
+// Chaining to the bundle is not enough on its own: the bundle is an externally
+// operated CA, so anything it has ever issued would otherwise be able to drive
+// the agent. This is the external-mTLS counterpart to callerPathPrefixes on the
+// SPIFFE path, and is fixed for the same reason -- one identity names the
+// caller, and a deployment that needs a different one has to say so in code.
+const controllerURI = "urn:nvidia:nke:controller"
+
 // ServerConfig returns the TLS configuration for an agent whose controller
 // authenticates with an externally issued client certificate. Every connection
-// must present a certificate chaining to caBundlePath; the certificate the
-// agent serves is generated here and is not verified by the controller.
+// must present a certificate that chains to caBundlePath and carries the
+// controller's URI SAN; the certificate the agent serves is generated here and
+// is not verified by the controller.
 func ServerConfig(caBundlePath string) (*tls.Config, error) {
 	clientCAs, err := loadClientCAs(caBundlePath)
 	if err != nil {
@@ -43,11 +52,27 @@ func ServerConfig(caBundlePath string) (*tls.Config, error) {
 	}
 
 	return &tls.Config{
-		MinVersion:   tls.VersionTLS12,
-		Certificates: []tls.Certificate{certificate},
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		ClientCAs:    clientCAs,
+		MinVersion:       tls.VersionTLS12,
+		Certificates:     []tls.Certificate{certificate},
+		ClientAuth:       tls.RequireAndVerifyClientCert,
+		ClientCAs:        clientCAs,
+		VerifyConnection: verifyControllerIdentity,
 	}, nil
+}
+
+// verifyControllerIdentity rejects a peer that chains to the controller CA but
+// is not the controller. ClientAuth has already proved the chain by the time
+// this runs, so only the leaf's URI SANs are examined.
+func verifyControllerIdentity(state tls.ConnectionState) error {
+	if len(state.PeerCertificates) == 0 {
+		return errors.New("unauthorized: the controller presented no certificate")
+	}
+	for _, uri := range state.PeerCertificates[0].URIs {
+		if uri.String() == controllerURI {
+			return nil
+		}
+	}
+	return fmt.Errorf("unauthorized: the controller certificate carries no %q URI SAN", controllerURI)
 }
 
 // loadClientCAs reads the controller CA bundle. An unreadable or empty bundle
