@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"time"
 
 	"sigs.k8s.io/yaml"
 
@@ -35,6 +36,10 @@ const (
 	spireServerAPIAddress = "spire-server.spire-server.svc.cluster.local:443"
 
 	defaultNicoAPIName = "forge"
+
+	// valuesCleanupTimeout bounds removing the rendered values files. Short on
+	// purpose: it is one rm over a session that was answering a moment ago.
+	valuesCleanupTimeout = 2 * time.Minute
 )
 
 // The deploy path's releases. Each gets a values file named after it, passed
@@ -158,14 +163,24 @@ func (d SBOM) Deploy(ctx context.Context, s infra.Session, t DeployTarget) error
 	}
 
 	valuesDir := path.Join(workDir, "values")
+	// Registered before the first Put rather than after the loop. Every one of
+	// these files carries the bootstrap tokens and the database password, so a
+	// Put that fails halfway has already written one to the node, and the map
+	// is walked in random order -- which would make the exposure intermittent
+	// and the bug hard to see.
+	defer func() {
+		// Detached, because the failure that brings us here is often a
+		// cancellation and that is when the files matter most. Bounded,
+		// because a wedged session must not hold the spec open.
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), valuesCleanupTimeout)
+		defer cancel()
+		_, _ = s.Run(cctx, asRoot("rm -rf "+shellQuote(valuesDir)))
+	}()
 	for name, data := range files {
 		if err := s.Put(ctx, path.Join(valuesDir, name), data, 0o600); err != nil {
 			return err
 		}
 	}
-	defer func() {
-		_, _ = s.Run(context.WithoutCancel(ctx), asRoot("rm -rf "+shellQuote(valuesDir)))
-	}()
 
 	for _, step := range d.commands(t, sbomDir, valuesDir) {
 		if out, err := s.Run(ctx, asRoot(step.cmd)); err != nil {
