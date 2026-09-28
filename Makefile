@@ -727,7 +727,19 @@ license-header-check: ## Verify every source file carries the Apache-2.0 SPDX he
 	@# two together reports a module download as a file with no licence header,
 	@# which is exactly how the first CI run of this check failed while passing
 	@# on a developer machine whose cache was already warm.
-	@missing=$$($(LICENSE_FILES) | xargs $(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE) | grep -v '^$$' || true); \
+	@files=$$($(LICENSE_FILES)); \
+	 files_rc=$$?; \
+	 if [ $$files_rc -ne 0 ] || [ -z "$$files" ]; then \
+		echo "ERROR: could not enumerate source files for the licence-header check."; \
+		exit 1; \
+	 fi; \
+	 missing=$$(printf '%s\n' "$$files" | xargs $(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)); \
+	 rc=$$?; \
+	 if [ $$rc -ne 0 ] && [ -z "$$missing" ]; then \
+		echo "ERROR: addlicense could not check licence headers."; \
+		exit 1; \
+	 fi; \
+	 missing=$$(printf '%s\n' "$$missing" | grep -v '^$$' || true); \
 	 if [ -n "$$missing" ]; then \
 		echo "ERROR: these files carry no licence header. Run 'make license':"; \
 		printf '%s\n' "$$missing" | sed 's/^/    /'; \
