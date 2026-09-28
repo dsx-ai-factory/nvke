@@ -12,6 +12,8 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../.." && pwd)"
+# shellcheck source=../../../hack/read-tool-version.sh
+. "$(cd "${script_dir}/../../.." && pwd)/hack/read-tool-version.sh"
 
 : "${CAPD_KINDEST_NODE_IMAGE:=cwe-capd-kindest-node:local}"
 : "${CAPD_KINDEST_NODE_TAG:=v1.34.8}"
@@ -36,8 +38,16 @@ fi
 #   bundle - download the pre-assembled bundle from BUNDLE_SERVER_URL
 # Downstream builds that want the internal bundle set SPIRE_AGENT_SOURCE=bundle.
 : "${SPIRE_AGENT_SOURCE:=github}"
-: "${SPIRE_AGENT_VERSION:=1.14.1}"
-: "${TPM_ATTESTOR_VERSION:=1.9.0}"
+# The same two upstream releases the node .deb wraps and that
+# hack/ci/prepare-capd-bundles.sh assembles the CAPD bundle from: the image
+# built here has to attest against the versions the nodes actually run. Read
+# from make/tool-versions.mk rather than restated, so bumping it there reaches
+# all three. Assigning unconditionally first means a missing pin fails loudly
+# here instead of defaulting a download to an empty version.
+spire_version_pin="$(read_tool_version SPIRE_VERSION)"
+tpm_plugin_version_pin="$(read_tool_version TPM_PLUGIN_VERSION)"
+: "${SPIRE_AGENT_VERSION:=${spire_version_pin}}"
+: "${TPM_ATTESTOR_VERSION:=${tpm_plugin_version_pin}}"
 : "${SPIRE_RELEASE_BASE_URL:=https://github.com/spiffe/spire/releases/download}"
 : "${TPM_ATTESTOR_RELEASE_BASE_URL:=https://github.com/spiffe/spire-tpm-plugin/releases/download}"
 # Retry budget for every artifact download.

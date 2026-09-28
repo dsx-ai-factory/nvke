@@ -11,15 +11,10 @@ OUTPUT_DIR="${1:?usage: prepare-capd-bundles.sh OUTPUT_DIR}"
 # has to attest against the versions the nodes actually run. They were literals
 # here under a comment asking whoever bumped one to remember the other; the
 # pinned checksums below are what made that expensive to get wrong.
-TOOL_VERSIONS="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/make/tool-versions.mk"
-read_pin() {
-  local value
-  value="$(sed -nE "s/^$1[[:space:]]*\\??=[[:space:]]*([^[:space:]#]+).*/\\1/p" "${TOOL_VERSIONS}" | tail -1)"
-  [[ -n "${value}" ]] || { printf '%s is not declared in %s\n' "$1" "${TOOL_VERSIONS}" >&2; exit 1; }
-  printf '%s' "${value}"
-}
-SPIRE_AGENT_VERSION="$(read_pin SPIRE_VERSION)"
-TPM_PLUGIN_VERSION="$(read_pin TPM_PLUGIN_VERSION)"
+# shellcheck source=../../../hack/read-tool-version.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/hack/read-tool-version.sh"
+SPIRE_AGENT_VERSION="$(read_tool_version SPIRE_VERSION)"
+TPM_PLUGIN_VERSION="$(read_tool_version TPM_PLUGIN_VERSION)"
 # SPIRE and the TPM plugin ship real binaries, so they follow the node image's
 # architecture. amd64 keeps the CI runners on the bytes they already used.
 BUNDLE_ARCH="${BUNDLE_ARCH:-amd64}"

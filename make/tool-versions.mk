@@ -102,12 +102,25 @@ ENVTEST_K8S_VERSION      ?= 1.34.1
 
 # The upstream SPIRE artifacts os-image/packages/spire-agent wraps into a .deb.
 # Not a development tool, but the same one-owner rule applies for the same
-# reason: TPM_PLUGIN_VERSION also selects the bundle that
-# controller/hack/ci/prepare-capd-bundles.sh downloads for the CAPD e2e, and
-# that script restated it as a literal under a comment asking a human to keep
-# the two in step. It now reads this file. The server-side attestor in
-# controller/Tiltfile, cli/internal/bootstrap/manifest/bootstrap-manifest.yaml
-# and the tpm-direct checksums in cli/internal/bootstrap/cwedeploy/cwedeploy.go
-# track TPM_PLUGIN_VERSION too; move them with it.
+# reason: these two also select the server-side attestor and the bundles the
+# CAPD and NICo flows build against, and every consumer has to agree with the
+# version the nodes actually run.
+#
+# Reading this file (enforced -- a literal re-declaration fails the check):
+#   os-image/packages/spire-agent/Makefile        the node .deb
+#   controller/hack/ci/prepare-capd-bundles.sh    CAPD e2e bundle
+#   controller/hack/capd-kindest-node/build-image.sh  CAPD/NICo node image
+#
+# NOT reachable by the check, because these embed the version inside an image
+# tag or a package spec rather than assigning it. Bump them by hand, here, in
+# the same commit:
+#   controller/Tiltfile                      spire-tpm-plugin image tag + the
+#                                            sha256 of the binary inside it
+#   hack/mirror-bootstrap-images.sh          spire-tpm-plugin image tag
+#   controller/hack/create-forge-nico-cluster.sh  apt spire-agent=<v>+tpm<v>
+#
+# `git grep -n '1\.14\.1\|1\.9\.0' -- controller hack os-image` finds the whole
+# set; the lock under os-image/packages/spire-agent/lock/ holds the digests and
+# is regenerated with `make lock`, never hand-edited.
 SPIRE_VERSION      ?= 1.14.1
 TPM_PLUGIN_VERSION ?= 1.9.0

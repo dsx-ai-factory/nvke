@@ -62,7 +62,6 @@ ARCHES := amd64 arm64
 include ../make/tool-versions.mk
 include ../make/golangci.mk
 
-
 GIT_HOOKS_DIR := $(shell git rev-parse --git-path hooks 2>/dev/null || echo .git/hooks)
 
 BIN_DIR ?= $(CURDIR)/bin

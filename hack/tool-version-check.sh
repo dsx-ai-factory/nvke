@@ -25,9 +25,12 @@ cd "$(dirname "$0")/.."
 OWNER="make/tool-versions.mk"
 [[ -f "${OWNER}" ]] || { echo "ERROR: ${OWNER} is missing" >&2; exit 2; }
 
-# golangci-lint is the documented exception: make/golangci.mk carries the pin
-# beside the bootstrap logic that consumes it, and is included by every module
-# for exactly that. One owner, a different file.
+# golangci-lint has a different owner: make/golangci.mk carries the pin beside
+# the bootstrap logic that consumes it, and is included by every module for
+# exactly that. It is not a hole in this check -- GOLANGCI_LINT_VERSION is not
+# declared in ${OWNER}, so the check never looks for it at all. This exemption
+# exists so that moving the pin here later does not immediately fail on the
+# file that legitimately still defines it.
 EXEMPT_FILES="^make/golangci\.mk$"
 
 fail=0
@@ -52,18 +55,31 @@ for name in ${names}; do
 		text="${rest#*:}"
 		[[ "${file}" == "${OWNER}" ]] && continue
 		[[ "${file}" =~ ${EXEMPT_FILES} ]] && continue
-		got="$(printf '%s' "${text}" | sed -E "s/^[[:space:]]*(export[[:space:]]+)?${name}[[:space:]]*[:?]?=[[:space:]]*\"?([^\"[:space:]#]*).*/\2/")"
+		got="$(printf '%s' "${text}" \
+			| sed -E "s/^[[:space:]]*(export[[:space:]]+)?${name}[[:space:]]*([:?]?=|:)[[:space:]]*//" \
+			| tr -d "\"'" | awk '{print $1}')"
 		# A derivation is the wanted shape, not a second declaration: a `$`
 		# on the right-hand side means the value is being read from somewhere
 		# (make, another variable, this file) rather than restated. Only a
 		# literal can disagree with the owner, so only a literal is an error.
+		# A bare `#` is the rest of a comment, not a value.
 		case "${got}" in
-		'' | *'$'*) continue ;;
+		'' | '#'* | *'$'*) continue ;;
 		esac
 		echo "ERROR: ${file}:${line} declares ${name}=${got}; ${OWNER} declares ${want}" >&2
 		fail=1
-	done < <(git grep -nE "^[[:space:]]*(export[[:space:]]+)?${name}[[:space:]]*[:?]?=" \
-		-- ':(exclude)vendor' ':(exclude)*.md' || true)
+	done < <({
+		git grep -nE "^[[:space:]]*(export[[:space:]]+)?${name}[[:space:]]*[:?]?=" \
+			-- ':(exclude)vendor' ':(exclude)*.md' || true
+		# A workflow or composite action declares its pins as `NAME: value`,
+		# which is the same second declaration in another syntax. Restricted to
+		# YAML, so a makefile target sharing a pin's name is not read as one.
+		# Only catches a value on the same line as the key; a pin folded onto
+		# the next line is out of reach and is why the comment in ${OWNER}
+		# names the places nothing can check.
+		git grep -nE "^[[:space:]]*${name}:[[:space:]]*[^[:space:]]" \
+			-- '*.yml' '*.yaml' ':(exclude)vendor' || true
+	})
 done
 
 if (( fail )); then
@@ -80,5 +96,5 @@ if (( fail )); then
 	exit 1
 fi
 
-n="$(printf '%s\n' ${names} | wc -l | tr -d ' ')"
+n="$(printf '%s' "${names}" | wc -w | tr -d ' ')"
 echo "Tool versions: ${n} pins, each declared once in ${OWNER}."
