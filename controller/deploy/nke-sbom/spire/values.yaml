@@ -61,6 +61,12 @@ spire-agent:
     namespaceOverride: spire-server
   workloadAttestors:
     k8s:
+      # Already the chart default at 0.30.1, restated so an upstream change of
+      # heart cannot remove Kubernetes workload attestation without this file
+      # showing a conflict. Nothing below works if this is false: the k8s
+      # attestor stops rendering entirely and disableContainerSelectors has no
+      # plugin to apply to.
+      enabled: true
       # Every site controller node is a control-plane node and the taint is
       # removed before anything installs, so management workloads land on
       # nodes that run Kata. A Kata workload runs inside a VM, where the agent
