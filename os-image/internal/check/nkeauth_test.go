@@ -98,28 +98,61 @@ func TestClientHandshakeFailsClosed(t *testing.T) {
 	t.Parallel()
 	baseErr := errors.New("certificate rejected")
 	cases := []struct {
-		name    string
-		base    *stubBaseCredentials
-		agent   func(net.Conn)
-		wantErr string
+		name  string
+		base  *stubBaseCredentials
+		agent func(net.Conn)
+		// wantErrAny lists the error substrings that are acceptable for the
+		// case. More than one entry means the handshake has more than one
+		// legitimate place to notice the same failure, not that the assertion
+		// is soft: every listed message still proves it failed closed.
+		wantErrAny []string
+		// closeAgentFirst closes the agent end and waits for it before the
+		// handshake starts, pinning the ordering the racy case can only reach
+		// by luck.
+		closeAgentFirst bool
 	}{
 		{
-			name:    "base handshake failure",
-			base:    &stubBaseCredentials{err: baseErr},
-			agent:   func(net.Conn) {},
-			wantErr: baseErr.Error(),
+			name:       "base handshake failure",
+			base:       &stubBaseCredentials{err: baseErr},
+			agent:      func(net.Conn) {},
+			wantErrAny: []string{baseErr.Error()},
 		},
 		{
-			name:    "agent sends http/2 without a record",
-			base:    &stubBaseCredentials{},
-			agent:   func(conn net.Conn) { _, _ = conn.Write([]byte("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")) },
-			wantErr: "invalid protocol magic",
+			name:       "agent sends http/2 without a record",
+			base:       &stubBaseCredentials{},
+			agent:      func(conn net.Conn) { _, _ = conn.Write([]byte("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")) },
+			wantErrAny: []string{"invalid protocol magic"},
 		},
 		{
-			name:    "agent closes before the record",
-			base:    &stubBaseCredentials{},
-			agent:   func(conn net.Conn) { _ = conn.Close() },
-			wantErr: "reading header",
+			// The agent goroutine closes its end concurrently with
+			// ClientHandshake, so which call notices is a genuine race and
+			// depends on machine load -- this failed deterministically on a
+			// loaded runner and passed 30/30 on a warm one.
+			//
+			// net.Pipe.SetDeadline returns io.ErrClosedPipe when *either* end
+			// is done, so if the close lands first the handshake aborts at the
+			// deadline call; otherwise it reaches the record read and fails
+			// there. Both orderings are correct fail-closed behaviour, and the
+			// observed() assertion below is what actually pins the security
+			// property: no token is recorded either way.
+			name:  "agent closes before the record",
+			base:  &stubBaseCredentials{},
+			agent: func(conn net.Conn) { _ = conn.Close() },
+			wantErrAny: []string{
+				"reading header",
+				"setting authentication record deadline",
+			},
+		},
+		{
+			// The deterministic half of the case above: with the close already
+			// complete, SetDeadline always loses. Without this, the
+			// close-wins-the-race path is only ever covered by accident, which
+			// is how it reached CI as a red build instead of as a test case.
+			name:            "agent already closed when the handshake starts",
+			base:            &stubBaseCredentials{},
+			agent:           func(net.Conn) {},
+			closeAgentFirst: true,
+			wantErrAny:      []string{"setting authentication record deadline"},
 		},
 	}
 	for _, tc := range cases {
@@ -127,15 +160,19 @@ func TestClientHandshakeFailsClosed(t *testing.T) {
 			t.Parallel()
 			clientConn, agentConn := net.Pipe()
 			t.Cleanup(func() { _ = agentConn.Close() })
-			go tc.agent(agentConn)
+			if tc.closeAgentFirst {
+				_ = agentConn.Close()
+			} else {
+				go tc.agent(agentConn)
+			}
 
 			creds := newAuthRecordCredentials(tc.base)
 			_, _, err := creds.ClientHandshake(context.Background(), "agent", clientConn)
 			if err == nil {
 				t.Fatal("expected ClientHandshake to fail")
 			}
-			if !strings.Contains(err.Error(), tc.wantErr) {
-				t.Fatalf("error = %v, want it to contain %q", err, tc.wantErr)
+			if !containsAny(err.Error(), tc.wantErrAny) {
+				t.Fatalf("error = %v, want it to contain one of %q", err, tc.wantErrAny)
 			}
 			if seen, _ := creds.observed(); seen {
 				t.Fatal("a failed handshake must not record a token")
@@ -210,4 +247,14 @@ func TestInfoReportsTLSJWT(t *testing.T) {
 	if got := creds.Info().SecurityProtocol; got != "tls-jwt" {
 		t.Fatalf("SecurityProtocol = %q, want %q", got, "tls-jwt")
 	}
+}
+
+// containsAny reports whether got contains at least one of the substrings.
+func containsAny(got string, want []string) bool {
+	for _, w := range want {
+		if strings.Contains(got, w) {
+			return true
+		}
+	}
+	return false
 }
