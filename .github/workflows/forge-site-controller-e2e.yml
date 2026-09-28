@@ -167,8 +167,12 @@ jobs:
       # A label cannot carry a boolean, so a PR run never keeps its node.
       KEEP_SITE: ${{ inputs.keep-site || false }}
       # Where `make site-inputs` writes nkectl and the three image archives.
-      # Left at the Makefile default so the paths in the config below match
-      # e2e-config-example.yaml verbatim.
+      # Deliberately not the Makefile default, which is a $HOME cache: that
+      # survives between jobs on a self-hosted runner, and a stale archive
+      # sitting in it would be staged in place of the one this run built.
+      # Under the workspace it goes with the checkout. The config below
+      # interpolates this, so the paths keep the shape
+      # e2e-config-example.yaml documents even though the prefix differs.
       SITE_INPUTS: ${{ github.workspace }}/.site-inputs
       # The proxy for the auth step. It also exports TELEPORT_PROXY and
       # TELEPORT_IDENTITY_FILE for tsh, which is how the dialer is configured
