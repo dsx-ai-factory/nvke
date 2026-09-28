@@ -249,6 +249,15 @@ func (s *NodeAgentServer) openVSwitchNetplanPaths(strict bool) ([]string, error)
 func validateOpenVSwitchNetplanMembership(documents []openVSwitchNetplanDocument, uplink, bridgeName string) error {
 	for _, document := range documents {
 		network, _ := document.root["network"].(map[string]any)
+		// Migration does not handle VLANs that depend on the uplink. Refuse
+		// this topology before changing their parent interface's configuration.
+		vlans, _ := network["vlans"].(map[string]any)
+		for name, raw := range vlans {
+			vlan, _ := raw.(map[string]any)
+			if parent, _ := vlan["link"].(string); parent == uplink {
+				return fmt.Errorf("netplan interface %s is the parent link of vlan %s", uplink, name)
+			}
+		}
 		for _, kind := range []string{"bridges", "bonds"} {
 			devices, _ := network[kind].(map[string]any)
 			for name, raw := range devices {

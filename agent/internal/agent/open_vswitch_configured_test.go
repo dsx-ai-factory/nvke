@@ -233,6 +233,34 @@ func TestConfiguredOpenVSwitchRejectsUnsafeHostBeforeMutation(t *testing.T) {
 	}
 }
 
+func TestConfiguredOpenVSwitchRejectsDependentVLANBeforeMutation(t *testing.T) {
+	server, runner, path := newConfiguredOVSServer(t)
+	vlanPath := filepath.Join(filepath.Dir(path), "70-management-vlan.yaml")
+	const vlanConfig = `network:
+  version: 2
+  vlans:
+    management-vlan:
+      id: 100
+      link: 01-fabric
+      addresses: [192.0.2.10/24]
+`
+	require.NoError(t, os.WriteFile(vlanPath, []byte(vlanConfig), 0o600))
+	_, _, err := server.reconcileConfiguredOpenVSwitchLocked(t.Context(), configuredOpenVSwitchInput{"eth1", "br-eth1"})
+	require.Error(t, err)
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
+	assert.Contains(t, err.Error(), "netplan interface 01-fabric is the parent link of vlan management-vlan")
+	for _, command := range []string{
+		"systemctl enable --now openvswitch-switch", "systemctl restart ovs-vswitchd", "netplan generate", "netplan apply",
+	} {
+		assert.NotContains(t, runner.commands(), command)
+	}
+	for file, original := range map[string]string{path: configuredOVSNetplan, vlanPath: vlanConfig} {
+		data, err := os.ReadFile(file)
+		require.NoError(t, err)
+		assert.Equal(t, original, string(data))
+	}
+}
+
 func TestConfiguredOpenVSwitchChecksIfupdownContent(t *testing.T) {
 	for _, test := range []struct {
 		name, main, fragment string

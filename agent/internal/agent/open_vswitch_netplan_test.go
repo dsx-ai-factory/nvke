@@ -105,6 +105,11 @@ func TestConfiguredOpenVSwitchNetplanPreservesFabricIdentityAndManagement(t *tes
       match:
         name: "*"
       dhcp4: true
+  vlans:
+    management:
+      id: 100
+      link: 00-mgmt0
+      addresses: [192.0.2.10/24]
 `
 	server, paths := newOpenVSwitchNetplanTestServer(t, map[string]string{"10-fabric.yaml": config})
 	writeOpenVSwitchTestDriver(t, server.RootPath, "eth1", "virtio_net")
@@ -123,6 +128,7 @@ func TestConfiguredOpenVSwitchNetplanPreservesFabricIdentityAndManagement(t *tes
 	require.NoError(t, err)
 	assert.Equal(t, original.ethernets["00-mgmt0"], result.ethernets["00-mgmt0"])
 	assert.Equal(t, original.ethernets["all-en"], result.ethernets["all-en"])
+	assert.Equal(t, original.root["network"].(map[string]any)["vlans"], result.root["network"].(map[string]any)["vlans"])
 	assert.NotContains(t, result.ethernets, "eth1")
 	physical := result.ethernets["01-eth1"].(map[string]any)
 	assert.Equal(t, map[string]any{"macaddress": link.Address, "driver": "virtio_net"}, physical["match"])
@@ -296,6 +302,28 @@ func TestConfiguredOpenVSwitchNetplanRejectsUnsafeLayouts(t *testing.T) {
       interfaces: [01-eth1, eth2]
 `,
 			errorString: "already belongs to bonds bond0",
+		},
+		{
+			name: "uplink is a VLAN parent by logical ID",
+			config: exactUplink + `  vlans:
+    management:
+      id: 100
+      link: 01-eth1
+      addresses: [192.0.2.10/24]
+`,
+			errorString: "netplan interface 01-eth1 is the parent link of vlan management",
+		},
+		{
+			name:   "uplink is a VLAN parent in another file",
+			config: exactUplink,
+			additional: `network:
+  vlans:
+    management:
+      id: 100
+      link: 01-eth1
+      addresses: [192.0.2.10/24]
+`,
+			errorString: "netplan interface 01-eth1 is the parent link of vlan management",
 		},
 		{
 			name: "target is a Linux bridge",
