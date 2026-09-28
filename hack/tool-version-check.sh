@@ -56,7 +56,7 @@ for name in ${names}; do
 		[[ "${file}" == "${OWNER}" ]] && continue
 		[[ "${file}" =~ ${EXEMPT_FILES} ]] && continue
 		got="$(printf '%s' "${text}" \
-			| sed -E "s/^[[:space:]]*(export[[:space:]]+)?${name}[[:space:]]*([:?]?=|:)[[:space:]]*//" \
+			| sed -E "s/^[[:space:]]*(export[[:space:]]+)?${name}[[:space:]]*([:+?]?=|:)[[:space:]]*//" \
 			| tr -d "\"'" | awk '{print $1}')"
 		# A derivation is the wanted shape, not a second declaration: a `$`
 		# on the right-hand side means the value is being read from somewhere
@@ -69,7 +69,10 @@ for name in ${names}; do
 		echo "ERROR: ${file}:${line} declares ${name}=${got}; ${OWNER} declares ${want}" >&2
 		fail=1
 	done < <({
-		git grep -nE "^[[:space:]]*(export[[:space:]]+)?${name}[[:space:]]*[:?]?=" \
+		# `+=` is in here with the rest: appending to a pin the owner already
+		# set produces a two-word value that no consumer can use, and it is a
+		# second declaration by any reading.
+		git grep -nE "^[[:space:]]*(export[[:space:]]+)?${name}[[:space:]]*[:+?]?=" \
 			-- ':(exclude)vendor' ':(exclude)*.md' || true
 		# A workflow or composite action declares its pins as `NAME: value`,
 		# which is the same second declaration in another syntax. Restricted to

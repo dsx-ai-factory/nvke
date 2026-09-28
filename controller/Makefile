@@ -78,7 +78,7 @@ fixture-releases: ## Regenerate test/fixtures/releases from test/fixtures/profil
 
 .PHONY: license
 license: ## Ensure license headers at code.
-	go run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" -ignore '.local/**' -ignore 'hack/**' -ignore 'test/fixtures/profiles/**' -ignore 'test/fixtures/capnico-crds/**' -ignore '**/testUserData.yaml' -ignore 'internal/kubeadmconfig/testdata/**' -ignore 'internal/controllers/tenantaccess/testdata/**' -ignore 'nico-sim/ui/vendor/**' -ignore 'nico-sim/test/integration/testutil/testdata/**' -ignore 'nico-sim/.dev/**' -ignore 'deploy/charts/**' .
+	go run github.com/google/addlicense@$(ADDLICENSE_VERSION) -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" -ignore '.local/**' -ignore 'hack/**' -ignore 'test/fixtures/profiles/**' -ignore 'test/fixtures/capnico-crds/**' -ignore '**/testUserData.yaml' -ignore 'internal/kubeadmconfig/testdata/**' -ignore 'internal/controllers/tenantaccess/testdata/**' -ignore 'nico-sim/ui/vendor/**' -ignore 'nico-sim/test/integration/testutil/testdata/**' -ignore 'nico-sim/.dev/**' -ignore 'deploy/charts/**' .
 
 # Expected to be run on clean working directory.
 .PHONY: file-license-check

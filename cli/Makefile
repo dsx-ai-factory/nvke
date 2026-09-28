@@ -241,7 +241,7 @@ lint: check-no-docker ## Run golangci-lint over this module. (run by the merge g
 	@$(GOLANGCI_LINT_RUN) run --timeout 10m --max-same-issues 0 --max-issues-per-linter 0 ./...
 
 license: ## Ensure license headers at code.
-	$(GO) run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" .
+	$(GO) run github.com/google/addlicense@$(ADDLICENSE_VERSION) -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" .
 
 # nkectl is a redistributed binary, so it carries its own attribution. It reuses
 # the controller's generator rather than copying it: the script discovers the

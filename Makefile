@@ -37,7 +37,7 @@ BIN_DIR ?= $(CURDIR)/bin
 # proprietary identifier into a repository that ships Apache-2.0.
 LICENSE_HOLDER   ?= NVIDIA CORPORATION & AFFILIATES
 LICENSE_TEMPLATE ?= $(CURDIR)/hack/license-header.tmpl
-ADDLICENSE       ?= $(GO) run github.com/google/addlicense@v1.1.1
+ADDLICENSE       ?= $(GO) run github.com/google/addlicense@$(ADDLICENSE_VERSION)
 
 # The files that carry a licence header.
 #

@@ -33,6 +33,8 @@ ifeq (,$(GOBIN))
 GOBIN = $(shell $(GO) env GOPATH)/bin
 endif
 
+# ADDLICENSE_VERSION comes from make/tool-versions.mk, which owns it.
+include ../make/tool-versions.mk
 # golangci-lint pin and bootstrap, shared with every other module.
 include ../make/golangci.mk
 
@@ -84,7 +86,7 @@ lint: ## Run golangci-lint over this module. (run by the merge gate)
 	@$(GOLANGCI_LINT_RUN) run --timeout 10m --max-same-issues 0 --max-issues-per-linter 0 ./...
 
 license: ## Ensure license headers at code.
-	$(GO) run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" .
+	$(GO) run github.com/google/addlicense@$(ADDLICENSE_VERSION) -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" .
 
 file-license-check: license ## Verify all files have license headers.
 	@if ! git diff --exit-code -- . > /dev/null 2>&1; then \
