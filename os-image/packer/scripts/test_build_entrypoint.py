@@ -116,6 +116,31 @@ output.mkdir(parents=True, exist_ok=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("package builder: nix", result.stdout)
 
+    def test_host_newer_than_the_target_release_cannot_build_packages(self):
+        # The agent .deb declares a bare `Depends: libc6`, so an agent built on a
+        # newer Ubuntu installs into the image and then fails to exec.
+        self.script("go", "#!/bin/sh\nexit 0\n")
+        self.script("nix", "#!/bin/sh\nexit 0\n")
+        for host, mode, expected in (
+            ("26.04", "auto", "package builder: nix"),
+            ("24.04", "auto", "package builder: host"),
+            ("22.04", "auto", "package builder: host"),
+            ("24.04", "host", "package builder: host"),
+        ):
+            with self.subTest(host=host, mode=mode):
+                self.env["NKE_HOST_UBUNTU_SERIES"] = host
+                result = self.make(
+                    "check-deps", f"NKE_PACKAGE_BUILDER={mode}", "UBUNTU_RELEASE=24.04.5"
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn(expected, result.stdout)
+
+        self.env["NKE_HOST_UBUNTU_SERIES"] = "26.04"
+        result = self.make("check-deps", "NKE_PACKAGE_BUILDER=host", "UBUNTU_RELEASE=24.04.5")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot build packages for an Ubuntu 24.04 image", result.stderr)
+        del self.env["NKE_HOST_UBUNTU_SERIES"]
+
     def test_explicit_host_builder_rejects_mismatched_linux(self):
         self.script("uname", '#!/bin/sh\ncase "$1" in -m) echo x86_64;; -s) echo Linux;; esac\n')
         result = self.make("check-deps", "NKE_PACKAGE_BUILDER=host")

@@ -67,13 +67,13 @@ make -C os-image/packer os-image-non-fde ARCH=amd64 UBUNTU_RELEASE=24.04.5
 The point release lands in the output filename, so the two flavors never
 collide on disk (`nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2`). Pass the same
 `UBUNTU_RELEASE` to `collect-qcow2-*`, which re-derives that expected name.
-Building 24.04 needs a package builder no newer than 24.04: the `nke-agent`
-.deb declares a bare `Depends: libc6` with no version, so an agent compiled
-against a newer glibc installs cleanly and then fails to exec.
-`NKE_PACKAGE_BUILDER=nix` targets the glibc 2.39 baseline and is safe for either
-flavor; a host build is only safe on a host at or below the target release.
-`boot-smoke` runs `nke-agent -version` inside the booted guest, so a mismatch
-fails the build rather than reaching a published image.
+A package builder newer than the target release cannot build the image: the
+`nke-agent` .deb declares a bare `Depends: libc6`, so an agent compiled against a
+newer glibc installs cleanly and then fails to exec. The builder enforces this —
+`auto` selects the Nix VM when the host's Ubuntu is newer than the target, and
+an explicit `NKE_PACKAGE_BUILDER=host` is rejected before packaging. An older
+host is fine, since older glibc runs on newer Ubuntu. `boot-smoke` also runs
+`nke-agent -version` inside the guest as a backstop.
 
 `SERIAL_CONSOLE` selects the UART the **installed** system sends kernel output
 to. Empty (the default) keeps the architecture default — `ttyS0` on amd64,

@@ -351,6 +351,7 @@ prepare-artifacts: preflight
 	trap 'exit 1' 1 2 15; \
 	ARTIFACTS_DIR="$$stage" \
 	ARCH="$(ARCH)" \
+	NKE_TARGET_UBUNTU_SERIES="$(UBUNTU_SERIES)" \
 	"$(PACKER_ROOT)/scripts/fetch-artifacts.sh"; \
 	if [ -L "$$artifacts" ] || { [ -e "$$artifacts" ] && [ ! -d "$$artifacts" ]; }; then \
 		echo "refusing unsafe artifact staging path: $$artifacts" >&2; \
@@ -401,7 +402,7 @@ check-deps:
 		echo "ssh-keygen is required to prepare the Packer SSH key pair" >&2; \
 		exit 1; \
 	}
-	@ARCH=$(ARCH) bash ./scripts/package-builder.sh --check
+	@ARCH=$(ARCH) NKE_TARGET_UBUNTU_SERIES=$(UBUNTU_SERIES) bash ./scripts/package-builder.sh --check
 	@command -v $(PYTHON) >/dev/null 2>&1 || { \
 		echo "Python 3.10 or newer is required to validate the compressed QCOW2" >&2; \
 		exit 1; \
