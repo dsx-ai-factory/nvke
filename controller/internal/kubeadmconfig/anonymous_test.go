@@ -51,7 +51,22 @@ func TestAnonymousProbeAuthConfigCoversTheProbeEndpoints(t *testing.T) {
 	for _, condition := range anonymous.Conditions {
 		paths = append(paths, condition.Path)
 	}
-	assert.Equal(t, []string{"/livez", "/readyz", "/healthz", clusterInfoPath}, paths)
+	assert.Equal(t, []string{"/livez", "/readyz", "/healthz", "/version", "/version/", clusterInfoPath}, paths)
+}
+
+// /version is on the list because upstream's system:public-info-viewer
+// ClusterRole -- bound to system:unauthenticated in every kubeadm cluster --
+// already grants it alongside the probe endpoints. Unauthenticated version
+// discovery (external LB health checks, credential-less client-go discovery)
+// fails with a bare 401 if it is dropped. Conditions match the path exactly,
+// so the trailing-slash form needs its own entry.
+func TestAnonymousProbeAuthConfigCoversPublicInfoViewerPaths(t *testing.T) {
+	paths := anonymousProbeAuthConfigPaths()
+
+	for _, want := range []string{"/healthz", "/livez", "/readyz", "/version", "/version/"} {
+		assert.Contains(t, paths, want,
+			"system:public-info-viewer grants %s to system:unauthenticated; the config must not be stricter", want)
+	}
 }
 
 // Bootstrap token discovery reads kube-public/cluster-info before the joining
@@ -59,12 +74,18 @@ func TestAnonymousProbeAuthConfigCoversTheProbeEndpoints(t *testing.T) {
 // `kubeadm join` at preflight, which surfaces as control-plane nodes that never
 // leave "Not yet provisioned" rather than as an auth error.
 func TestAnonymousProbeAuthConfigAllowsClusterInfoDiscovery(t *testing.T) {
+	assert.Contains(t, anonymousProbeAuthConfigPaths(), "/api/v1/namespaces/kube-public/configmaps/cluster-info")
+}
+
+// anonymousProbeAuthConfigPaths flattens the rendered conditions to the paths
+// they allow, in order.
+func anonymousProbeAuthConfigPaths() []string {
 	conditions := anonymousProbeAuthConfig().Conditions
 	paths := make([]string, 0, len(conditions))
 	for _, condition := range conditions {
 		paths = append(paths, condition.Path)
 	}
-	assert.Contains(t, paths, "/api/v1/namespaces/kube-public/configmaps/cluster-info")
+	return paths
 }
 
 // The anonymous restriction is folded in at render time, so a config that

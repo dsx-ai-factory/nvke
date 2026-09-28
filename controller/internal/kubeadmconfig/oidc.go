@@ -33,10 +33,30 @@ const (
 	clusterInfoPath = "/api/v1/namespaces/kube-public/configmaps/cluster-info"
 )
 
+// publicInfoPaths are the non-resource URLs upstream's own bootstrap policy
+// already exposes to system:anonymous: the system:public-info-viewer
+// ClusterRole is bound to both system:authenticated and system:unauthenticated
+// and grants exactly /healthz, /livez, /readyz, /version and /version/.
+//
+// The first three are also what kubeadm points the kube-apiserver static Pod's
+// startup, liveness and readiness probes at. /version is here because RBAC
+// already allowed it and unauthenticated version discovery is load-bearing off
+// the probe path -- external load-balancer health checks and client-go
+// discovery clients built without a credential both hit it. Dropping it turns
+// those into a bare 401 with nothing in the audit log to explain why, which is
+// a poor trade for no security gain: the endpoint leaks only the server's
+// version string, which the TLS handshake and the probe endpoints already
+// imply. Conditions match the request path exactly, so /version and /version/
+// need separate entries.
+func publicInfoPaths() []string {
+	return []string{"/livez", "/readyz", "/healthz", "/version", "/version/"}
+}
+
 // anonymousProbeAuthConfig denies anonymous requests everywhere except the
-// three endpoints kubeadm points the kube-apiserver static Pod's startup,
-// liveness and readiness probes at, plus the cluster-info ConfigMap every
-// control-plane and worker join reads before it has a credential.
+// paths upstream's default RBAC already exposes to system:anonymous (see
+// publicInfoPaths -- the probe endpoints plus /version), and the cluster-info
+// ConfigMap every control-plane and worker join reads before it has a
+// credential.
 //
 // This is deliberately not `--anonymous-auth=false`. The two are mutually
 // exclusive -- see the `Anonymous` field on AuthenticationConfiguration:
@@ -57,15 +77,14 @@ const (
 // signed), and kubeadm's own kubeadm:bootstrap-signer-clusterinfo RoleBinding
 // already grants system:anonymous the read.
 func anonymousProbeAuthConfig() *apiserverv1.AnonymousAuthConfig {
-	return &apiserverv1.AnonymousAuthConfig{
-		Enabled: true,
-		Conditions: []apiserverv1.AnonymousAuthCondition{
-			{Path: "/livez"},
-			{Path: "/readyz"},
-			{Path: "/healthz"},
-			{Path: clusterInfoPath},
-		},
+	paths := publicInfoPaths()
+	conditions := make([]apiserverv1.AnonymousAuthCondition, 0, len(paths)+1)
+	for _, path := range paths {
+		conditions = append(conditions, apiserverv1.AnonymousAuthCondition{Path: path})
 	}
+	conditions = append(conditions, apiserverv1.AnonymousAuthCondition{Path: clusterInfoPath})
+
+	return &apiserverv1.AnonymousAuthConfig{Enabled: true, Conditions: conditions}
 }
 
 // apiServerAuthenticationConfig synthesizes an anonymous-only document when

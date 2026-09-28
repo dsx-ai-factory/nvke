@@ -123,7 +123,9 @@ func (config *InitConfig) Render() (*BootstrapArtifacts, error) {
 
 	if needsAuthenticationConfig(cfg.KubernetesVersion, cfg.AuthenticationConfig) {
 		file, err := GenerateAPIServerAuthenticationConfig(
-			apiServerAuthenticationConfig(cfg.AuthenticationConfig), cfg.KubernetesVersion)
+			apiServerAuthenticationConfig(cfg.AuthenticationConfig),
+			cfg.KubernetesVersion,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("building AuthenticationConfig file: %w", err)
 		}

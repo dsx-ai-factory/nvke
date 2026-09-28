@@ -169,7 +169,9 @@ func (config *JoinConfig) Render() (*BootstrapArtifacts, error) {
 	}
 	if config.ControlPlane && needsAuthenticationConfig(config.KubernetesVersion, config.AuthenticationConfig) {
 		file, fileErr := GenerateAPIServerAuthenticationConfig(
-			apiServerAuthenticationConfig(config.AuthenticationConfig), config.KubernetesVersion)
+			apiServerAuthenticationConfig(config.AuthenticationConfig),
+			config.KubernetesVersion,
+		)
 		if fileErr != nil {
 			return nil, fmt.Errorf("building AuthenticationConfig file: %w", fileErr)
 		}
