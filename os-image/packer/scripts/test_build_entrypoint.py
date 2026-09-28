@@ -76,17 +76,9 @@ output.mkdir(parents=True, exist_ok=True)
                     self.assertIn(value, args)
 
     def test_serial_console_defaults_to_empty_and_passes_an_override_through(self):
-        # Empty is not "unset": it is how Make says "use the architecture
-        # default", which locals.pkr.hcl resolves to ttyS0 or ttyAMA0. The
-        # override has to reach Packer rather than being resolved here, because
-        # the template validates it before it reaches a shell in the guest.
-        #
-        # ttyS1 is the case that matters: CSC control-plane hardware exposes SOL
-        # on the second UART, while Forge and tenant nodes use the first.
-        # A variant each, not the same one twice: the build target refuses a
-        # pre-existing output directory, so a second run of one variant in this
-        # temp root would fail for an unrelated reason. Both variants pass the
-        # same variable, so this still covers the default and the override.
+        # Empty means "use the architecture default", resolved in the template
+        # rather than in Make. A variant each, not the same one twice: the build
+        # target refuses a pre-existing output directory.
         for variant, extra, expected in (
             ("non-fde", [], "serial_console="),
             ("fde", ["SERIAL_CONSOLE=ttyS1"], "serial_console=ttyS1"),

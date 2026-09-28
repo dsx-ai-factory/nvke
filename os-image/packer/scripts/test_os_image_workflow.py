@@ -74,10 +74,9 @@ class OSImageWorkflowTest(unittest.TestCase):
         self.assertNotIn("finalize-qcow2.py", self.workflow)
 
     def test_every_name_keyed_on_arch_alone_also_takes_the_ubuntu_flavor(self):
-        # The qcow2 filename already carries the Ubuntu point release, so disks
-        # and S3 object keys never collided between flavors. Tags and artifact
-        # names did: they were keyed on (variant, arch) alone, so a second
-        # flavor would have moved the first's rather than landing beside it.
+        # Disks and S3 keys never collided (the filename carries the release),
+        # but tags and artifact names did: a second flavor would have moved the
+        # first's rather than landing beside it.
         for start, end in (
             (
                 "- name: Build the FDE node image",
@@ -87,8 +86,6 @@ class OSImageWorkflowTest(unittest.TestCase):
                 "- name: Build the non-FDE node image",
                 "- name: Boot-smoke the non-FDE qcow2",
             ),
-            # Collection re-derives the expected filename from ISO_URL, so it
-            # needs the release as much as the bake that produced it does.
             (
                 "- name: Collect the finalized qcow2s",
                 "- name: Push the qcow2s to GHCR",
@@ -110,9 +107,8 @@ class OSImageWorkflowTest(unittest.TestCase):
             "- name: Upload release assets",
         )
         self.assertIn("assets/checksums-${ARCH}${SUFFIX}.txt", release_assets)
-        # Two legs now share an arch, so the checker binary and
-        # release-meta.env -- which the release job merges exactly once -- are
-        # pinned to the default flavor's leg rather than to amd64 alone.
+        # Two legs share an arch now, so the two files the release job merges
+        # once are pinned to the default flavor's leg, not to amd64 alone.
         self.assertIn(
             'if [[ "${ARCH}" == "amd64" && -z "${SUFFIX}" ]]; then',
             release_assets,
@@ -126,10 +122,8 @@ class OSImageWorkflowTest(unittest.TestCase):
             self.assertIn(artifact, self.workflow)
 
     def test_default_ubuntu_flavor_is_unsuffixed_and_matches_the_makefile(self):
-        # The default flavor publishes under the tags that existed before a
-        # second flavor did, so nothing downstream has to move -- and because
-        # that same leg carries the shared release assets, it has to be the
-        # release the Makefile builds when no one passes UBUNTU_RELEASE.
+        # The unsuffixed leg carries the shared release assets, so it has to be
+        # the release the Makefile builds by default.
         makefile = (
             Path(__file__).resolve().parents[1] / "Makefile"
         ).read_text(encoding="utf-8")

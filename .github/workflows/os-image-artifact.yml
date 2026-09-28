@@ -146,16 +146,11 @@ jobs:
             arm64) arches="[${arm64}]" ;;
             *)     arches="[${amd64},${arm64}]" ;;
           esac
-          # One leg per (arch, Ubuntu release). 26.04 is the default flavor:
-          # its tag_suffix is empty, so every tag, asset and artifact name it
-          # publishes is byte-identical to what this workflow produced before
-          # 24.04 existed, and no consumer of those names has to change. 24.04
-          # publishes alongside it under -ubuntu24.04.
-          #
-          # ubuntu_release is passed straight through to the packer Makefile's
-          # UBUNTU_RELEASE; keep the default one here in step with the default
-          # there, because that leg is also the one that carries the shared
-          # release assets (the checker binary and release-meta.env).
+          # One leg per (arch, Ubuntu release). The default flavor's tag_suffix
+          # is empty, so its tags and artifact names stay byte-identical to what
+          # this workflow published before 24.04 existed. Keep that default in
+          # step with UBUNTU_RELEASE in the packer Makefile: the unsuffixed leg
+          # also carries the shared release assets.
           legs="$(jq -c -n --argjson arches "${arches}" '
             [{ubuntu_release:"26.04.1",tag_suffix:""},
              {ubuntu_release:"24.04.5",tag_suffix:"-ubuntu24.04"}] as $flavors

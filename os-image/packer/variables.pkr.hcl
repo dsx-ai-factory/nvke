@@ -111,12 +111,10 @@ variable "serial_console" {
   default     = ""
   description = "Serial console the INSTALLED system directs kernel output to. Empty selects the architecture default (ttyS0 on amd64, ttyAMA0 on arm64)."
 
-  # Not cosmetic. This value is interpolated into a shell command in
-  # cidata/autoinstall-lvm.pkrtpl's late-commands, so anything accepted here
-  # runs in the target. Constrain it to a bare tty device name -- that rejects
-  # a quoted or chained payload before libguestfs, QEMU or the installer is
-  # ever involved, and a typo fails validation instead of silently producing an
-  # image whose console goes nowhere.
+  # A boundary, not a typo check: this is interpolated into a shell command in
+  # autoinstall-lvm.pkrtpl's late-commands, so anything accepted runs in the
+  # target. A bare tty name rejects a quoted or chained payload before QEMU or
+  # the installer is involved.
   validation {
     condition     = var.serial_console == "" || can(regex("^tty[A-Za-z0-9]+$", var.serial_console))
     error_message = "The serial_console value must be empty or a bare tty device name such as ttyS0, ttyS1 or ttyAMA0."

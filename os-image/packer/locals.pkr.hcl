@@ -39,15 +39,10 @@ locals {
   # ARM uses virt, AAVMF, the PL011 serial console, and the NVIDIA 64K-page
   # kernel. AMD64 uses q35, OVMF, ttyS0, and linux-nvidia.
   nvidia_kernel_package = local.architecture == "arm64" ? "linux-nvidia-64k" : "linux-nvidia"
-  # The INSTALLED system's console. The installer's own console is separate and
-  # deliberately not driven by this: boot_command below hardcodes ttyS0/ttyAMA0
-  # because the build VM's QEMU maps `-serial file:` to the first UART, so
-  # moving the installer console would blank the build log this project relies
-  # on for diagnosing a stuck bake.
-  #
-  # Overridable because SOL is not on the same UART on every machine: CSC
-  # control-plane hardware exposes it on the second one (ttyS1), while Forge
-  # and tenant nodes use the first. The default keeps those unchanged.
+  # The INSTALLED system's console only. boot_command below keeps the installer
+  # on the first UART, because the build VM maps `-serial file:` there and
+  # moving it would blank the log used to diagnose a stuck bake. Overridable
+  # because SOL is not on the same UART on every board.
   default_serial_console = local.architecture == "arm64" ? "ttyAMA0" : "ttyS0"
   serial_console         = var.serial_console != "" ? var.serial_console : local.default_serial_console
   qemu_binary            = local.architecture == "arm64" ? "qemu-system-aarch64" : "qemu-system-x86_64"

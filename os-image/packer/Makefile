@@ -57,17 +57,11 @@ export NKE_PACKAGE_BUILDER ?= auto
 # stable identifier instead of depending on a partition or device path.
 ROOT_FS_LABEL ?= cloudimg-rootfs
 
-# Serial console the INSTALLED system directs kernel output to. Empty keeps the
-# architecture default (ttyS0 on amd64, ttyAMA0 on arm64), which is what Forge
-# and tenant nodes expect. Set it when the target board puts SOL on a different
-# UART -- CSC control-plane hardware uses the second one:
-#
-#     make os-image-non-fde SERIAL_CONSOLE=ttyS1
-#
-# This moves the installed system only. The installer's own console stays on
-# the first UART because the build VM captures it there (see boot_command and
-# the -serial argument in the variant templates), so a build with this set
-# still produces a readable install log.
+# Serial console the INSTALLED system uses. Empty keeps the architecture default
+# (ttyS0 on amd64, ttyAMA0 on arm64), which is what Forge and tenant nodes
+# expect; CSC control-plane hardware puts SOL on the second UART, so it wants
+# SERIAL_CONSOLE=ttyS1. The installer's own console stays on the first UART
+# either way, because the build VM captures its log there.
 SERIAL_CONSOLE ?=
 
 # amd64 or arm64. Drives the ISO default, source package preparation, and the
@@ -90,20 +84,15 @@ ARCH ?= amd64
 # Use 26.04.1 to avoid the GA installer's intermittent overlayfs crash
 # during curtin extraction. Reproduction details: PR #737.
 #
-# UBUNTU_RELEASE picks the point release, and with it the image flavor. 24.04
-# LTS is built and published alongside 26.04 because the DSX CSC DPU stack
-# installs Ubuntu 24.04 host packages onto the node (doca-host ...ubuntu2404,
-# plus noble-pinned libfuse2t64/freeipmi/readline/ipmitool); no ubuntu2604
-# DOCA host package exists to pin instead.
+# UBUNTU_RELEASE picks the point release, and with it the image flavor. 24.04 is
+# published alongside 26.04 because the DSX CSC DPU stack installs Ubuntu 24.04
+# host packages onto the node and no ubuntu2604 DOCA host package exists.
+# Nothing else is per-release: linux-nvidia(-64k) and the split linux-firmware-*
+# packages are in noble-updates too, and the FDE variant's initramfs-tools
+# install is a no-op on 24.04.
 #
-# Both flavors need nothing else per-release: linux-nvidia, linux-nvidia-64k
-# and the split linux-firmware-* vendor packages that provision.sh prunes are
-# all in noble-updates as well as 26.04, and the FDE variant's explicit
-# initramfs-tools install is a no-op on 24.04, which already defaults to it.
-#
-# The archive directory is the major.minor of this value. An explicit ISO_URL
-# still wins and still names the output, because UBUNTU_VERSION below is read
-# back out of the URL rather than taken from UBUNTU_RELEASE.
+# The archive directory is this value's major.minor. An explicit ISO_URL still
+# wins and still names the output: UBUNTU_VERSION is read back out of the URL.
 UBUNTU_RELEASE ?= 26.04.1
 override UBUNTU_SERIES := $(word 1,$(subst ., ,$(UBUNTU_RELEASE))).$(word 2,$(subst ., ,$(UBUNTU_RELEASE)))
 ifeq ($(ARCH),arm64)

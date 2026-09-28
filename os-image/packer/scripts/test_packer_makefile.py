@@ -1485,14 +1485,8 @@ exec "${REAL_MV:?}" "$@"
             self.assertIn("source checkout is dirty", dirty.stderr)
 
     def test_ubuntu_release_selects_the_installer_iso_for_both_flavors(self):
-        # The default flavor's values are asserted literally rather than
-        # derived: 26.04's URLs, and the filenames that follow from them, are
-        # what every current consumer of this build already pins, so a change
-        # to the derivation must not be able to move them quietly.
-        #
-        # releases.ubuntu.com carries only amd64 and cdimage carries the rest,
-        # for 24.04 exactly as for 26.04 -- the series directory is the only
-        # thing that moves between them.
+        # Literal, not derived: 26.04's URLs are what consumers already pin, so
+        # a change to the derivation must not move them quietly.
         cases = (
             ("26.04.1", "amd64",
              "https://releases.ubuntu.com/26.04/ubuntu-26.04.1-live-server-amd64.iso",
@@ -1522,10 +1516,8 @@ exec "${REAL_MV:?}" "$@"
                     self.assertEqual(result.stdout.strip(), expected)
 
     def test_explicit_iso_url_still_names_the_image_over_ubuntu_release(self):
-        # ISO_URL stays authoritative: UBUNTU_VERSION, and with it the output
-        # filename and everything collection checks it against, is read back
-        # out of the URL rather than taken from UBUNTU_RELEASE. An override
-        # therefore cannot produce an image labelled as a release it is not.
+        # ISO_URL stays authoritative, so an override cannot produce an image
+        # labelled as a release it is not.
         result = self.run_make(
             "print-UBUNTU_VERSION",
             cwd=PACKER_DIR,
@@ -1539,9 +1531,8 @@ exec "${REAL_MV:?}" "$@"
         self.assertEqual(result.stdout.strip(), "24.04.9")
 
     def test_collection_copies_exact_bytes_and_prints_one_basename(self):
-        # Collection re-derives the expected filename from ISO_URL, so a leg
-        # building the 24.04 flavor has to pass the same UBUNTU_RELEASE here or
-        # collection looks for the default flavor's name and refuses.
+        # Collection re-derives the expected filename from ISO_URL, so a 24.04
+        # leg must pass the same UBUNTU_RELEASE or collection refuses.
         cases = (
             ("fde", "amd64", "26.04.1"),
             ("non-fde", "arm64", "26.04.1"),

@@ -76,31 +76,27 @@ flavor; a host build is only safe on a host at or below the target release.
 fails the build rather than reaching a published image.
 
 `SERIAL_CONSOLE` selects the UART the **installed** system sends kernel output
-to. It defaults to empty, which keeps the architecture default — `ttyS0` on
-amd64 and `ttyAMA0` on arm64 — so Forge and tenant nodes are unaffected. Set it
-when the target board puts serial-over-LAN somewhere else; CSC control-plane
-hardware uses the second UART:
+to. Empty (the default) keeps the architecture default — `ttyS0` on amd64,
+`ttyAMA0` on arm64 — so Forge and tenant nodes are unaffected. CSC
+control-plane hardware uses the second UART:
 
 ```bash
 make -C os-image/packer os-image-non-fde SERIAL_CONSOLE=ttyS1
 ```
 
 The image writes `console=tty0 console=<value>,115200` to
-`/etc/default/grub.d/99-console.cfg`. Both consoles receive output and the
-**last** `console=` owns `/dev/console`, so the serial one is the owner and the
-getty follows it.
+`/etc/default/grub.d/99-console.cfg`. The **last** `console=` owns
+`/dev/console`, so the serial one is the owner and the getty follows it.
 
-This moves the installed system only — the installer's own console stays on the
-first UART, because the build VM captures it there into `packer/build-logs/`.
-Setting this therefore does not blank the install log. It does mean a locally
-built `SERIAL_CONSOLE=ttyS1` image prints nothing to `run-vm`/`boot-smoke`'s
-serial view, since QEMU gives the guest one UART; those tools check over SSH, so
-they still pass.
+Only the installed system moves; the installer keeps the first UART, where the
+build VM captures its log. A locally built `ttyS1` image therefore shows nothing
+in `run-vm`/`boot-smoke`'s serial view — QEMU gives the guest one UART — but
+those tools check over SSH and still pass.
 
-Packer validates the value against `^tty[A-Za-z0-9]+$` before a build starts.
-That is a boundary, not a typo check: the value is interpolated into a shell
-command in the autoinstall late-commands, so anything accepted would run in the
-target. Image baking uses the existing package Make targets.
+Packer validates against `^tty[A-Za-z0-9]+$`. That is a boundary, not a typo
+check: the value reaches a shell command in the autoinstall late-commands.
+
+Image baking uses the existing package Make targets.
 `NKE_PACKAGE_BUILDER=auto|host|nix` picks the package builder: `auto` builds on
 a matching Linux host and otherwise uses the
 [NixOS package-builder VM](nix/README.md), which returns the packages to the
