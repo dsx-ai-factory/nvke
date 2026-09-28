@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -356,6 +357,21 @@ func migrateOpenVSwitchNetplanInterface(selected openVSwitchNetplanCandidate, li
 	for _, key := range []string{"renderer", "optional", "optional-addresses", "critical", "activation-mode", "ignore-carrier"} {
 		if value, exists := stanza[key]; exists {
 			bridge[key] = value
+		}
+	}
+	// OVS does not inherit locally administered MACs. Preserve the uplink's
+	// configured MAC, or its observed local MAC, through the OVS bridge setting.
+	configuredMAC, _ := stanza["macaddress"].(string)
+	if configuredMAC == "" && openVSwitchMACIsLocallyAdministered(link.Address) {
+		configuredMAC = link.Address
+	}
+	if configuredMAC != "" {
+		mac, err := net.ParseMAC(configuredMAC)
+		if err != nil || len(mac) != 6 {
+			return 0, fmt.Errorf("netplan interface %s requires a literal Ethernet MAC address for Open vSwitch migration", selected.uplinkName)
+		}
+		bridge["openvswitch"] = map[string]any{
+			"other-config": map[string]any{"hwaddr": configuredMAC},
 		}
 	}
 	physical["mtu"] = mtu

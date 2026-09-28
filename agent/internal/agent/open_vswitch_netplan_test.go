@@ -188,7 +188,7 @@ func TestConfiguredOpenVSwitchNetplanMovesDHCPAndPreservesObservedMTU(t *testing
       renderer: networkd
 `})
 
-	plan, err := server.buildConfiguredOpenVSwitchNetplanPlan(openVSwitchLink{Name: "eth0", MTU: 8500}, "breth0")
+	plan, err := server.buildConfiguredOpenVSwitchNetplanPlan(openVSwitchLink{Name: "eth0", Address: "02:11:22:33:44:55", MTU: 8500}, "breth0")
 
 	require.NoError(t, err)
 	result, err := parseOpenVSwitchNetplanDocument(plan.config)
@@ -199,6 +199,7 @@ func TestConfiguredOpenVSwitchNetplanMovesDHCPAndPreservesObservedMTU(t *testing
 	assert.Equal(t, float64(8500), bridge["mtu"])
 	assert.Equal(t, "00:11:22:33:44:55", physical["macaddress"])
 	assert.NotContains(t, bridge, "macaddress")
+	assert.Equal(t, map[string]any{"other-config": map[string]any{"hwaddr": "00:11:22:33:44:55"}}, bridge["openvswitch"])
 	assert.Equal(t, "networkd", physical["renderer"])
 	assert.Equal(t, "networkd", bridge["renderer"])
 	assert.Equal(t, true, bridge["dhcp4"])
@@ -210,6 +211,45 @@ func TestConfiguredOpenVSwitchNetplanMovesDHCPAndPreservesObservedMTU(t *testing
 	assert.NotContains(t, physical, "dhcp4-overrides")
 	assert.NotContains(t, physical, "dhcp6-overrides")
 	assert.NotContains(t, physical, "link-local")
+}
+
+func TestConfiguredOpenVSwitchNetplanPreservesObservedLocalMAC(t *testing.T) {
+	for _, test := range []struct {
+		name, address, wantMAC string
+	}{
+		{name: "locally administered", address: "02:11:22:33:44:55", wantMAC: "02:11:22:33:44:55"},
+		{name: "globally unique", address: "00:11:22:33:44:55"},
+		{name: "unavailable"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server, paths := newOpenVSwitchNetplanTestServer(t, map[string]string{"10-uplink.yaml": `network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: true
+      dhcp-identifier: mac
+`})
+			link := openVSwitchLink{Name: "eth0", Address: test.address, MTU: 1500}
+			plan, err := server.buildConfiguredOpenVSwitchNetplanPlan(link, "breth0")
+			require.NoError(t, err)
+			document, err := parseOpenVSwitchNetplanDocument(plan.config)
+			require.NoError(t, err)
+			bridge := document.bridges["breth0"].(map[string]any)
+			assert.NotContains(t, bridge, "macaddress")
+			ovs := bridge["openvswitch"].(map[string]any)
+			if test.wantMAC == "" {
+				assert.Empty(t, ovs)
+			} else {
+				assert.Equal(t, map[string]any{"hwaddr": test.wantMAC}, ovs["other-config"])
+			}
+
+			require.NoError(t, os.WriteFile(paths["10-uplink.yaml"], plan.config, 0o600))
+			recovered, err := server.buildConfiguredOpenVSwitchNetplanPlan(link, "breth0")
+			require.NoError(t, err)
+			assert.True(t, recovered.configMatchesPlan)
+			assert.Equal(t, plan.config, recovered.config)
+		})
+	}
 }
 
 func TestConfiguredOpenVSwitchNetplanRejectsUnsafeLayouts(t *testing.T) {
@@ -343,6 +383,11 @@ func TestConfiguredOpenVSwitchNetplanRejectsUnsafeLayouts(t *testing.T) {
       openvswitch: {}
 `,
 			errorString: "defined outside the uplink configuration",
+		},
+		{
+			name:        "MAC policy cannot be used as an OVS hardware address",
+			config:      exactUplink + "      macaddress: random\n",
+			errorString: "requires a literal Ethernet MAC address",
 		},
 		{
 			name:        "MTU is not a positive integer",
