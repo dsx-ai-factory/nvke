@@ -97,7 +97,7 @@ func Load(path string) (Config, error) {
 	case err == nil:
 		// Strict, as the environment file is parsed: an unknown key is
 		// otherwise dropped in silence and the run proceeds on the default,
-		// which surfaces half an hour into bare metal as behaviour nobody
+		// which surfaces half an hour into bare metal as behavior nobody
 		// asked for, over a file that reads correctly.
 		//
 		// Not case-sensitive, though. This decodes through encoding/json,
