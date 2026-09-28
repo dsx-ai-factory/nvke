@@ -16,6 +16,7 @@ import (
 
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/environment"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/qualification"
 )
 
 var (
@@ -41,62 +42,43 @@ func init() {
 	flag.StringVar(&capabilitiesFlag, "e2e.capabilities", "", "capabilities the run requires, e.g. gpu=gb200,arch=amd64,kube=1.37")
 }
 
-// parseAssignments reads the comma-separated key=value form both -e2e.versions
-// and -e2e.capabilities take. An empty string is an empty set, not an error.
-func parseAssignments(flagName, raw string) (map[string]string, error) {
-	out := map[string]string{}
-	if strings.TrimSpace(raw) == "" {
-		return out, nil
-	}
-
-	for _, pair := range strings.Split(raw, ",") {
-		pair = strings.TrimSpace(pair)
-		if pair == "" {
-			continue
-		}
-		key, value, found := strings.Cut(pair, "=")
-		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
-		if !found || key == "" || value == "" {
-			return nil, fmt.Errorf("%s: %q is not key=value", flagName, pair)
-		}
-		if _, duplicate := out[key]; duplicate {
-			return nil, fmt.Errorf("%s: %q given twice", flagName, key)
-		}
-		out[key] = value
-	}
-	return out, nil
-}
-
 // The flags are parsed once and shared. Specs read them through the accessors
 // below rather than re-parsing, so a malformed flag is one failure rather than
 // one per entry in the table.
 var (
-	versionsOnce     sync.Once
-	versionsValue    map[string]string
-	errVersions      error
-	capabilitiesOnce sync.Once
-	capabilitiesVal  map[string]string
-	errCapabilities  error
-	forgeOnce        sync.Once
-	forgeValue       *environment.Forge
-	errForge         error
+	selectionOnce  sync.Once
+	selectionValue qualification.Selection
+	errSelection   error
+	forgeOnce      sync.Once
+	forgeValue     *environment.Forge
+	errForge       error
 )
+
+// runSelection is what this run was asked to qualify.
+//
+// Parsed by internal/qualification rather than here: the format is a contract
+// with the qualify tool that emits it, and a suite-local parser is a second
+// place for the two sides to drift apart. Lazily rather than in BeforeSuite,
+// because specs read the versions while building their tables.
+func runSelection() (qualification.Selection, error) {
+	selectionOnce.Do(func() {
+		selectionValue, errSelection = qualification.Parse(versionsFlag, capabilitiesFlag)
+		selectionValue.Environment = envName
+	})
+	return selectionValue, errSelection
+}
 
 // runVersions is what this run is qualifying, keyed by component name.
 func runVersions() (map[string]string, error) {
-	versionsOnce.Do(func() {
-		versionsValue, errVersions = parseAssignments("-e2e.versions", versionsFlag)
-	})
-	return versionsValue, errVersions
+	s, err := runSelection()
+	return s.Versions, err
 }
 
 // runCapabilities is what this run needs to execute on. Infrastructure keys
 // select a machine; the rest, such as kube, are software and select nothing.
 func runCapabilities() (map[string]string, error) {
-	capabilitiesOnce.Do(func() {
-		capabilitiesVal, errCapabilities = parseAssignments("-e2e.capabilities", capabilitiesFlag)
-	})
-	return capabilitiesVal, errCapabilities
+	s, err := runSelection()
+	return s.Capabilities, err
 }
 
 // forgeEnvironment resolves -e2e.environment as a Forge declaration. Loaded on
