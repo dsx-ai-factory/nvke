@@ -72,6 +72,11 @@ type ForgeInstanceType struct {
 	Provides map[string]string `json:"provides"`
 }
 
+// Arch is the architecture this type provides, or empty if it declares none.
+// A method rather than a caller reaching into Provides, so the capability key
+// stays in the package that defines it.
+func (t ForgeInstanceType) Arch() string { return t.Provides[capabilityArch] }
+
 func isInfrastructureCapability(key string) bool {
 	switch key {
 	case capabilityMachineType, capabilityArch, capabilityGPU:

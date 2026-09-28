@@ -318,7 +318,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 		return fail(fmt.Errorf("forge: cloud-init on %s did not finish cleanly, and node preflight would reject it: %w\n%s", req.Name, err, out))
 	}
 
-	return infra.Node{Name: req.Name, IP: address}, &session{Conn: conn, release: release}, nil
+	return infra.Node{Name: req.Name, IP: address, Arch: instanceType.Arch()}, &session{Conn: conn, release: release}, nil
 }
 
 // payloads returns the iPXE script and the cloud-init user data, in that

@@ -208,8 +208,6 @@ type siteLane struct {
 	cfg          config.Config
 	name         string
 	env          *environment.Forge
-	site         environment.ForgeSite
-	instanceType environment.ForgeInstanceType
 	capabilities map[string]string
 	apiKey       string
 	provider     infra.Provider
@@ -245,9 +243,12 @@ func newSiteLane() (siteLane, error) {
 	if err != nil {
 		return siteLane{}, err
 	}
-	instanceType, err := forgeSite.MatchInstanceType(capabilities)
-	if err != nil {
-		return siteLane{}, err
+	// Resolved for the error, not for the value: the provider matches again
+	// when it creates the machine, and the node reports its own architecture.
+	// Matching here is what makes capabilities nothing can satisfy fail before
+	// a machine exists rather than a minute into provisioning.
+	if _, matchErr := forgeSite.MatchInstanceType(capabilities); matchErr != nil {
+		return siteLane{}, matchErr
 	}
 	apiKey := os.Getenv(envForgeAPIKey)
 	if apiKey == "" {
@@ -316,7 +317,7 @@ func newSiteLane() (siteLane, error) {
 		return siteLane{}, err
 	}
 	return siteLane{
-		cfg: cfg, name: name, env: env, site: forgeSite, instanceType: instanceType,
+		cfg: cfg, name: name, env: env,
 		capabilities: capabilities, apiKey: apiKey, provider: provider,
 		tenantPassword: tenantPassword, dbPassword: dbPassword,
 	}, nil
@@ -411,8 +412,7 @@ func (l siteLane) candidate(node infra.Node) (site.Candidate, site.Options, erro
 		}
 		repo = strings.TrimSpace(string(top))
 	}
-	arch := l.instanceType.Provides["arch"]
-	nkectl := defaultString(l.cfg.Site.Nkectl, filepath.Join("cli", "dist", "nkectl-linux-"+arch))
+	nkectl := defaultString(l.cfg.Site.Nkectl, filepath.Join("cli", "dist", "nkectl-linux-"+node.Arch))
 	images := make([]string, 0, len(l.cfg.Site.Images))
 	for _, image := range l.cfg.Site.Images {
 		images = append(images, inRepo(repo, image))
@@ -441,7 +441,7 @@ func (l siteLane) candidate(node infra.Node) (site.Candidate, site.Options, erro
 		return c, site.Options{Probe: probeAPIServer}, nil
 	}
 
-	deployer, version, err := l.sbom(node, arch)
+	deployer, version, err := l.sbom(node)
 	if err != nil {
 		return site.Candidate{}, site.Options{}, err
 	}
@@ -449,7 +449,7 @@ func (l siteLane) candidate(node infra.Node) (site.Candidate, site.Options, erro
 	return c, site.Options{}, nil
 }
 
-func (l siteLane) sbom(node infra.Node, arch string) (site.SBOM, string, error) {
+func (l siteLane) sbom(node infra.Node) (site.SBOM, string, error) {
 	version, err := requireVersion("controller")
 	if err != nil {
 		return site.SBOM{}, "", err
@@ -462,7 +462,7 @@ func (l siteLane) sbom(node infra.Node, arch string) (site.SBOM, string, error) 
 	if user == "" || token == "" {
 		return site.SBOM{}, "", fmt.Errorf("%s and %s are required to pull the private images", envRegistryUser, envRegistryToken)
 	}
-	unameArch := map[string]string{"amd64": "x86_64", "arm64": "arm64"}[arch]
+	unameArch := map[string]string{"amd64": "x86_64", "arm64": "arm64"}[node.Arch]
 	GinkgoLogr.Info("deploying the stack", "node", node.Name, "controller", version, "profiles", l.cfg.Site.ProfilesImage)
 	return site.SBOM{
 		Controller: site.Image{Repository: l.cfg.Site.ControllerRepository, Tag: version},

@@ -38,6 +38,12 @@ type Node struct {
 	Name string
 	IP   string
 
+	// Arch is the machine's architecture, as the provider's own catalog
+	// names it. The provider knows it when it picks a machine to satisfy the
+	// request, and a caller that had to ask the provider's types for it would
+	// be holding a provider-specific value to learn a property of the node.
+	Arch string
+
 	// TPMEkThumbprint is optional, and gates TPM attestation: an empty one
 	// deploys no TPM attestor for this node.
 	TPMEkThumbprint string

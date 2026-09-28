@@ -194,6 +194,11 @@ func TestProvisionNode(t *testing.T) {
 	if node.IP != "10.0.0.7" {
 		t.Errorf("IP = %q, want the address without its prefix length", node.IP)
 	}
+	// From the matched instance type, so a caller learns the architecture from
+	// the node rather than by holding a Forge type to ask.
+	if node.Arch != "amd64" {
+		t.Errorf("Arch = %q, want the matched instance type's amd64", node.Arch)
+	}
 
 	created := forge.created
 	for field, want := range map[string]any{
