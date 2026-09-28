@@ -308,8 +308,18 @@ if [[ -n "${LOCAL_NKE_E2E_LABEL_FILTER:-}" ]]; then
   sequential_modes=false
 fi
 # The cp-controller leg needs a flag-on CWE, so deploy flag-on when sequential.
+# A single-filter run deploys one CWE and never redeploys, so it has to state
+# the mode rather than inherit it: CWE's own default is now true (#1054), and an
+# unset flag used to mean "node-pool control plane". Left unset, the node-pool
+# specs get a flag-on CWE, which rejects control-plane node pools outright --
+# `control-plane node pools are not allowed when control-plane controller
+# provisioning is enabled`. Defaulted, not forced, so an explicit
+# PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true still selects the
+# cp-controller specs.
 if [[ "${sequential_modes}" == "true" ]]; then
   export PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true
+else
+  export PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-false}"
 fi
 
 log "deploying local CWE through Tilt"
