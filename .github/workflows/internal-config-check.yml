@@ -21,8 +21,9 @@
 # deliberately does not flag -- a check that goes red for reasons nobody can
 # act on is ignored within a week.
 #
-# Runs on ubuntu-latest and installs nothing: the script needs bash, ripgrep
-# and shasum.
+# The script needs bash, shasum and a PCRE2-enabled ripgrep. Only the first two
+# are on the runner image, so ripgrep is installed below. The script refuses to
+# run without it rather than reporting a clean tree it never read.
 #
 # Deliberately NOT path-filtered, for the reason recorded in actionlint.yml: a
 # filtered check does not report on a pull request that misses the filter, and
@@ -61,6 +62,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Install ripgrep
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ripgrep
 
       - name: Check the tree for internal identifiers
         run: make --no-print-directory internal-config-check

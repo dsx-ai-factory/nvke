@@ -37,6 +37,22 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT}"
 
+# A check that cannot scan has to say so. Absent this, a runner without
+# ripgrep -- which is every GitHub-hosted Ubuntu image -- reads as a clean
+# tree, and the gate passes having looked at nothing.
+for tool in rg shasum; do
+  if ! command -v "${tool}" >/dev/null 2>&1; then
+    printf 'internal-config-check: %s is not installed, so nothing was scanned\n' "${tool}" >&2
+    exit 2
+  fi
+done
+# The shape checks below need PCRE2, which is a build option rather than a
+# given.
+if ! printf 'a\n' | rg --pcre2 --quiet -- 'a'; then
+  printf 'internal-config-check: this ripgrep was built without PCRE2, so the shape checks cannot run\n' >&2
+  exit 2
+fi
+
 # SHA-256 of each internal identifier, with what it is. The label is what the
 # failure prints, so it says enough to act on and no more.
 declare -a DIGESTS=(
@@ -97,9 +113,17 @@ printf 'internal-config-check: %s\n\n' "${ROOT}"
 # Every UUID in the tree, as path:line:value. Hashing happens per distinct
 # value rather than per occurrence, so a fixture repeated a hundred times costs
 # one hash.
+rg_status=0
 candidates="$(rg --hidden --no-heading --line-number --only-matching \
   "${EXCLUDES[@]}" --glob '!hack/internal-config-check.sh' \
-  -- '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' . 2>/dev/null || true)"
+  -- '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' .)" || rg_status=$?
+# 1 is "the tree holds no identifier-shaped token", which is a pass. Anything
+# above that is ripgrep itself failing, and a scan that did not run is not a
+# clean tree.
+if (( rg_status > 1 )); then
+  printf 'internal-config-check: ripgrep exited %d while scanning for identifiers\n' "${rg_status}" >&2
+  exit 2
+fi
 
 matched=""
 while IFS= read -r value; do
@@ -126,13 +150,22 @@ for entry in "${SHAPES[@]}"; do
   pattern="${entry%|*}"
   label="${entry##*|}"
 
-  if hits="$(rg --pcre2 --hidden --no-heading --line-number "${EXCLUDES[@]}" -- "${pattern}" . 2>/dev/null)"; then
+  rg_status=0
+  hits="$(rg --pcre2 --hidden --no-heading --line-number "${EXCLUDES[@]}" -- "${pattern}" .)" || rg_status=$?
+  case "${rg_status}" in
+  0)
     printf '  FAIL  %s\n' "${label}"
     printf '%s\n' "${hits}" | sed 's/^/        /'
     FAILED=1
-  else
+    ;;
+  1)
     printf '  ok    no %s\n' "${label}"
-  fi
+    ;;
+  *)
+    printf 'internal-config-check: ripgrep exited %d while checking for %s\n' "${rg_status}" "${label}" >&2
+    exit 2
+    ;;
+  esac
 done
 
 printf '\n'
