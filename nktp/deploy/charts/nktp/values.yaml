@@ -1083,7 +1083,7 @@ cluster_events:
 # Default in-cluster backend. MUST be disabled for production use.
 otel-lgtm:
   enabled: true
-  image: grafana/otel-lgtm:0.32.0
+  image: grafana/otel-lgtm:0.34.0
 
 # Kubernetes object state metrics, partitioned by resource type.
 kube-state-metrics:
