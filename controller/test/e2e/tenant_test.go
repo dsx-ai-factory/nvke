@@ -650,7 +650,20 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			default:
 				test.deleteClusterAndWait(ctx)
 			}
-		}, NodeTimeout(1*time.Hour))
+			// Sized to what this node can actually contain rather than to the
+			// suite: WaitForClusterDeleted is bounded by the entry's
+			// nke.Options.Delete, which is 5 or 10 minutes everywhere above,
+			// so fifteen leaves half again over the largest of them.
+			//
+			// It was an hour, and that is the number that matters on the
+			// interrupt path. A cleanup node entered after the suite is
+			// already interrupted gets its whole NodeTimeout over again, so an
+			// hour here plus the site's forty-five minutes is a teardown that
+			// cannot fit between -ginkgo.timeout and the go-test backstop --
+			// and that backstop panics without unwinding, which leaks the
+			// site's instance. See the three nested timeouts in
+			// forge-site-controller-e2e.yml.
+		}, NodeTimeout(15*time.Minute))
 	}
 }
 

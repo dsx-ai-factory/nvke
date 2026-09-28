@@ -136,8 +136,11 @@ jobs:
     #
     # The go-test timeout below is 15 minutes shorter on purpose. Ginkgo
     # unwinds and tears the node down when it fires; `timeout-minutes` kills
-    # the runner and leaks the instance. The gap is teardown's budget.
-    timeout-minutes: 180
+    # the runner and leaks the instance. The gap is teardown's budget, and it
+    # is sized against the cleanup nodes' NodeTimeouts -- see the note on the
+    # three nested timeouts at the run step. This bound is only ever reached
+    # by a run that has already gone wrong; a healthy `full` is about an hour.
+    timeout-minutes: 235
     permissions:
       contents: read
       # Both GHCR pulls: the runner's, and the node's through the
@@ -551,11 +554,20 @@ jobs:
       #
       #   -ginkgo.timeout 150m  fails the suite and runs its cleanup, which
       #                         is what releases the Forge instance.
-      #   -timeout        165m  go's own backstop. It panics rather than
+      #   -timeout        220m  go's own backstop. It panics rather than
       #                         unwinding, so deferred teardown does NOT run
       #                         and the instance leaks -- reaching this means
       #                         Ginkgo itself is wedged.
-      #   timeout-minutes 180   the runner is killed. Same leak, no log.
+      #   timeout-minutes 235   the runner is killed. Same leak, no log.
+      #
+      # The 70 minutes between the first two is cleanup's, and it is sized
+      # against cleanup rather than picked. A cleanup node entered after the
+      # suite is already interrupted is granted its whole NodeTimeout again,
+      # so the worst case is every one of them end to end: the tenant
+      # AfterAll's 15 minutes and the site AfterAll's 45, which is 60, plus
+      # ten for the unwind itself. Shorten this gap below that sum and the
+      # backstop starts firing during a teardown that was going to succeed --
+      # which is the one failure that leaks the instance.
       #
       # There is no fourth clock. The bot certificate expires in an hour, but
       # tbot rewrites it every twenty minutes for as long as the job runs --
@@ -603,7 +615,7 @@ jobs:
           #   junit-report   machine-readable beside the human-readable log.
           #                  A qualification run should be able to say which
           #                  specs it ran to something that is not a person.
-          go test -v -timeout 165m . -args \
+          go test -v -timeout 220m . -args \
             -ginkgo.label-filter=site-controller \
             -ginkgo.timeout=150m \
             -ginkgo.v \
