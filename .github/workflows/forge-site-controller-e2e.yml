@@ -648,7 +648,7 @@ jobs:
           # the artifact came back 1.7 KB with no Ginkgo log in it. The upload
           # step below calls a green run the reference for diagnosing the next
           # red one, and that only holds if it is kept.
-          # Three flags every other e2e lane already passes, via
+          # Four flags every other e2e lane already passes, via
           # backend-e2e-lib.sh:
           #
           #   fail-on-empty  a filter matching nothing is otherwise a pass.
@@ -662,6 +662,14 @@ jobs:
           #   junit-report   machine-readable beside the human-readable log.
           #                  A qualification run should be able to say which
           #                  specs it ran to something that is not a person.
+          #   json-report    what `qualify summarise` reads; JUnit has no
+          #                  equivalent of PreRunStats, and without those a
+          #                  leg's skip count is the size of the suite rather
+          #                  than the size of the run. Written but not
+          #                  uploaded: a Ginkgo report carries captured spec
+          #                  output, which on this lane is remote command
+          #                  output, so it stays on the runner for a
+          #                  summarise step to reduce to an outcome.
           go test -v -timeout 220m . -args \
             -ginkgo.label-filter=site-controller \
             -ginkgo.timeout=150m \
@@ -669,6 +677,7 @@ jobs:
             -ginkgo.fail-on-empty \
             -ginkgo.no-color \
             -ginkgo.junit-report=site-e2e.junit.xml \
+            -ginkgo.json-report=report.json \
             -e2e.config=e2e-config.yaml \
             -e2e.environment=forge \
             -e2e.site-stage="${SITE_STAGE}" \
