@@ -112,8 +112,11 @@ updates:
       - dependency-name: "dns/k8s-dns-node-cache"
       - dependency-name: "kube-state-metrics/kube-state-metrics"
       # Keep the Go minor version fixed. Patch bumps such as 1.26.6 to 1.26.7
-      # still come through. A minor bump such as 1.26 to 1.27 also needs the
-      # go directive in every go.mod to move, so we do that by hand.
+      # still come through, and land red: go.work owns the version, so a bump
+      # here fails `make go-version-check` until go.work moves with it. Run
+      # `make go-version-sync` to carry it into every go.mod. A minor bump such
+      # as 1.26 to 1.27 is the same mechanics plus a decision, so we do that by
+      # hand. See docs/go-workspace.md, "The Go version".
       - dependency-name: "golang"
         update-types:
           - "version-update:semver-major"

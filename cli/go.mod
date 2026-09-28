@@ -1,6 +1,6 @@
 module github.com/dsx-ai-factory/nke/cli
 
-go 1.26.5
+go 1.27.1
 
 require (
 	github.com/dsx-ai-factory/nke/controller/api v0.0.0-00010101000000-000000000000

@@ -238,9 +238,12 @@ lint: ## Lint every module. (run by the merge gate)
 
 # One merge-gate job needs live services, and is listed below alongside the
 # advisory lanes that are not part of the gate at all.
+# WORK_MODULES and PRIVATE_MODULES are passed in rather than repeated in the
+# script: they are already the list the workspace and the sync are built from,
+# and a second copy is the drift this check exists to catch.
 .PHONY: go-version-check
 go-version-check: ## Verify every hand-kept Go version matches go.work.
-	@./hack/go-version-check.sh
+	@./hack/go-version-check.sh --modules "$(WORK_MODULES)" --private "$(PRIVATE_MODULES)"
 
 # A tag is mutable, so an image built from one is not reproducible and not the
 # thing that was scanned. The script also carries the list of development-only
@@ -249,6 +252,13 @@ go-version-check: ## Verify every hand-kept Go version matches go.work.
 .PHONY: base-image-check
 base-image-check: ## Verify release-relevant Dockerfiles pin base images by digest.
 	@./hack/base-image-check.sh
+
+# Not read-only. A Go bump moves go.work and then eleven `go` directives, and a
+# fix you have to apply by hand eleven times is a fix that gets applied ten
+# times.
+.PHONY: go-version-sync
+go-version-sync: ## Rewrite every go.mod `go` directive to match go.work.
+	@./hack/go-version-check.sh --fix --modules "$(WORK_MODULES)" --private "$(PRIVATE_MODULES)"
 
 gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory tool-version-check
