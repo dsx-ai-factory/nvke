@@ -193,7 +193,11 @@ docs/               # Design and security context docs
 
 ## Dependencies
 
-- **Go 1.26+** (see the root `go.work`)
+- **Go** — the floor is the `go` directive in the root `go.work`, not this
+  module's `go.mod`. `agent/go.mod` is lower, but every build resolves through
+  the workspace, so a toolchain below the workspace floor fails with
+  `go.work requires go >= <version>`. Read the current value with
+  `awk '/^go /{print $2; exit}' ../go.work` rather than trusting a number here.
 - **buf** (for proto generation; see `BUF_VERSION` in Makefile)
 - **protoc** plugins via buf remote plugins (`protoc-gen-go`, `protoc-gen-go-grpc`)
 

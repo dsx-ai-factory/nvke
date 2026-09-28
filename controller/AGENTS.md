@@ -5,7 +5,11 @@
 Cloud Workflow Engine (CWE) orchestrates NKE (NVIDIA Kubernetes Engine) cluster creation and lifecycle operations. The system uses Temporal for workflow orchestration and provides a REST API for cluster management operations.
 
 ### Key Technologies
-- **Language**: Go 1.26+
+- **Language**: Go — the floor is the `go` directive in the root `go.work`, not
+  this module's `go.mod`. `controller/go.mod` is lower, but every build resolves
+  through the workspace, so a toolchain below the workspace floor fails with
+  `go.work requires go >= <version>`. Read the current value with
+  `awk '/^go /{print $2; exit}' ../go.work` rather than trusting a number here.
 - **Workflow Engine**: Temporal
 - **Database**: PostgreSQL with Bun ORM
 - **API**: OpenAPI 3.0 with oapi-codegen for Go server/client generation
