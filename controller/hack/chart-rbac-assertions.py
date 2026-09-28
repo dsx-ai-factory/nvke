@@ -156,6 +156,12 @@ def main():
         ("", "nodes", "delete", None, "node teardown"),
         ("", "nodes/status", "patch", None, "ApplyNodeCondition"),
         ("", "pods/eviction", "create", None, "node drain"),
+        ("", "namespaces", "get", "kube-system", "InstallKubeLocalDNS"),
+        ("", "namespaces", "patch", "kube-system", "InstallKubeLocalDNS"),
+        ("", "namespaces", "get", "tigera-operator", "InstallKubeLocalDNS"),
+        ("", "namespaces", "patch", "tigera-operator", "InstallKubeLocalDNS"),
+        ("", "namespaces", "get", "ovn-kubernetes", "InstallKubeLocalDNS"),
+        ("", "namespaces", "patch", "ovn-kubernetes", "InstallKubeLocalDNS"),
         (
             "certificates.k8s.io",
             "certificatesigningrequests",

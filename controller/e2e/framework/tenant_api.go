@@ -27,13 +27,14 @@ import (
 )
 
 const (
-	coreDNSDeploymentPath = "/apis/apps/v1/namespaces/kube-system/deployments/coredns"
-	coreDNSDaemonSetPath  = "/apis/apps/v1/namespaces/kube-system/daemonsets/coredns"
-	coreDNSPodPath        = "/api/v1/namespaces/kube-system/pods/coredns-0"
-	coreDNSPodsPath       = "/api/v1/namespaces/kube-system/pods"
-	kubeDNSServicePath    = "/api/v1/namespaces/kube-system/services/kube-dns"
-	nodeLocalDNSPath      = "/apis/apps/v1/namespaces/kube-system/daemonsets/node-local-dns"
-	secretCollectionPath  = "/api/v1/namespaces/nke-system/secrets"
+	coreDNSDeploymentPath   = "/apis/apps/v1/namespaces/kube-system/deployments/coredns"
+	coreDNSDaemonSetPath    = "/apis/apps/v1/namespaces/kube-system/daemonsets/coredns"
+	coreDNSPodPath          = "/api/v1/namespaces/kube-system/pods/coredns-0"
+	coreDNSPodsPath         = "/api/v1/namespaces/kube-system/pods"
+	kubeDNSServicePath      = "/api/v1/namespaces/kube-system/services/kube-dns"
+	kubeSystemNamespacePath = "/api/v1/namespaces/kube-system"
+	nodeLocalDNSPath        = "/apis/apps/v1/namespaces/kube-system/daemonsets/node-local-dns"
+	secretCollectionPath    = "/api/v1/namespaces/nke-system/secrets"
 
 	// fixtureResourceVersion is shared by every stored object. The fixture never
 	// replays incremental watch events, so a single version is enough for
@@ -60,6 +61,7 @@ func StartTenantAPIServer(t testing.TB) *TenantAPIServer {
 	fixture.store(coreDNSDeploymentPath, newGofailCoreDNSDeployment())
 	fixture.store(coreDNSPodPath, newGofailCoreDNSPod())
 	fixture.store(kubeDNSServicePath, newGofailKubeDNSService())
+	fixture.store(kubeSystemNamespacePath, newGofailKubeSystemNamespace())
 	fixture.server = httptest.NewServer(fixture)
 	t.Cleanup(fixture.server.Close)
 	return fixture
@@ -141,6 +143,7 @@ func (s *TenantAPIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			GroupVersion: "v1",
 			APIResources: []metav1.APIResource{
 				namespacedAPIResource("configmaps", "configmap", "ConfigMap"),
+				clusterScopedAPIResource("namespaces", "namespace", "Namespace"),
 				namespacedAPIResource("pods", "pod", "Pod"),
 				namespacedAPIResource("secrets", "secret", "Secret"),
 				namespacedAPIResource("serviceaccounts", "serviceaccount", "ServiceAccount"),
@@ -195,6 +198,16 @@ func namespacedAPIResource(name, singularName, kind string) metav1.APIResource {
 		Name:         name,
 		SingularName: singularName,
 		Namespaced:   true,
+		Kind:         kind,
+		Verbs:        metav1.Verbs{"create", "get", "list", "patch", "update", "watch"},
+	}
+}
+
+func clusterScopedAPIResource(name, singularName, kind string) metav1.APIResource {
+	return metav1.APIResource{
+		Name:         name,
+		SingularName: singularName,
+		Namespaced:   false,
 		Kind:         kind,
 		Verbs:        metav1.Verbs{"create", "get", "list", "patch", "update", "watch"},
 	}
@@ -451,6 +464,13 @@ func newGofailCoreDNSPod() *corev1.Pod {
 				Status: corev1.ConditionTrue,
 			}},
 		},
+	}
+}
+
+func newGofailKubeSystemNamespace() *corev1.Namespace {
+	return &corev1.Namespace{
+		TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Namespace"},
+		ObjectMeta: metav1.ObjectMeta{Name: metav1.NamespaceSystem},
 	}
 }
 

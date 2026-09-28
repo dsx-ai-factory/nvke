@@ -145,6 +145,10 @@ If you deploy or operate nke:
 - **Updates.** Apply security releases promptly and read the release notes for
   the supported-version policy in force at the time.
 - **Dependencies.** Review Dependabot alerts and keep pinned versions current.
+- **Pod Security Admission.** NKE labels its own system namespaces
+  `privileged` — kube-proxy, the CNI, and node-local-dns all need host
+  access, which is standard practice for these namespaces. Applying Pod
+  Security Admission to your own namespaces is your responsibility.
 
 ## NVIDIA Product Security
 
