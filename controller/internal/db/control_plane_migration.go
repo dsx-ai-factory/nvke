@@ -21,8 +21,9 @@ type pooledControlPlaneCluster struct {
 	HasSnapshotSource bool      `bun:"has_snapshot_source"`
 }
 
-// deprecatedControlPlaneNodeSet is a control-plane node set that is no longer
-// its pool's current node set but still owns pooled control-plane nodes.
+// deprecatedControlPlaneNodeSet owns pooled control-plane nodes and is either
+// no longer its pool's current node set or has explicit network intent that
+// differs from the merged cluster snapshot.
 type deprecatedControlPlaneNodeSet struct {
 	NodeSetID         uuid.UUID `bun:"node_set_id"`
 	ClusterID         uuid.UUID `bun:"cluster_id"`
@@ -109,8 +110,9 @@ func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB, logger 
 	}
 	defer tx.Rollback() //nolint:errcheck // Rollback is a no-op after a successful Commit; tx errors are handled at Commit.
 
-	// 1. Enumerate deprecated control-plane node sets (not their pool's current
-	//    set but still owning pooled CP nodes) so each keeps a distinct snapshot.
+	// 1. Enumerate control-plane node sets with pooled CP nodes that are either
+	//    deprecated or have different network intent from the cluster's current
+	//    snapshot so each keeps a distinct snapshot.
 	var deprecated []deprecatedControlPlaneNodeSet
 	if err := tx.NewRaw(`
 		SELECT ns.id                 AS node_set_id,
@@ -122,9 +124,12 @@ func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB, logger 
 		FROM node_sets ns
 		JOIN node_pools p ON p.id = ns.node_pool_id
 		JOIN clusters c ON c.id = p.cluster_id
+		JOIN control_plane_configurations cfg ON cfg.id = c.configuration_id
 		WHERE p.control_plane = TRUE
 		  AND p.current_node_set_id IS NOT NULL
-		  AND ns.id <> p.current_node_set_id
+		  AND (ns.id <> p.current_node_set_id
+		       OR COALESCE(ns.open_v_switch, 'null'::jsonb) IS DISTINCT FROM
+		          COALESCE(cfg.config->'open_v_switch', 'null'::jsonb))
 		  AND c.configuration_id IS NOT NULL
 		  AND COALESCE(c.conditions->'deleting'->>'status', '') <> 'True'
 		  AND EXISTS (
@@ -146,7 +151,9 @@ func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB, logger 
 			INSERT INTO control_plane_configurations (cluster_id, config, change_reason)
 			SELECT ?,
 			       cur.config
-			         || jsonb_build_object('kubernetes_version', ?::text)
+			         || jsonb_build_object(
+			                'kubernetes_version', ?::text,
+			                'open_v_switch', (SELECT open_v_switch FROM node_sets WHERE id = ?))
 			         || CASE WHEN jsonb_typeof(cur.config->'nico') = 'object'
 			                 THEN jsonb_build_object('nico',
 			                        cur.config->'nico' || jsonb_build_object(
@@ -159,7 +166,7 @@ func MigrateControlPlaneToController(ctx context.Context, bunDB *bun.DB, logger 
 			FROM control_plane_configurations cur
 			WHERE cur.id = ?
 			RETURNING id
-		`, d.ClusterID, d.KubernetesVersion, d.Release, d.Release, d.ConfigProfile,
+		`, d.ClusterID, d.KubernetesVersion, d.NodeSetID, d.Release, d.Release, d.ConfigProfile,
 			"control-plane migration: preserve deprecated node generation for rollout",
 			d.CurrentConfigID).Scan(ctx, &newConfigID); err != nil {
 			return fmt.Errorf("snapshot deprecated control-plane node set %s: %w", d.NodeSetID, err)

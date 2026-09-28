@@ -49,6 +49,8 @@ type FakeClient struct {
 	ReconfigureKubeletAPIServerErr      error
 	StartOpenVSwitchCalls               []uuid.UUID
 	StartOpenVSwitchHook                func(db.Node, *nvkeproto.StartOpenVSwitchReconciliationRequest) (*nvkeproto.StartOpenVSwitchReconciliationResponse, error)
+	StartConfiguredOpenVSwitchCalls     []uuid.UUID
+	StartConfiguredOpenVSwitchHook      func(db.Node, *nvkeproto.StartConfiguredOpenVSwitchReconciliationRequest) (*nvkeproto.StartOpenVSwitchReconciliationResponse, error)
 	GetOpenVSwitchStatusCalls           []uuid.UUID
 	GetOpenVSwitchStatusHook            func(db.Node, *nvkeproto.GetOpenVSwitchReconciliationStatusRequest) (*nvkeproto.GetOpenVSwitchReconciliationStatusResponse, error)
 
@@ -204,6 +206,19 @@ func (f *FakeClient) StartOpenVSwitchReconciliation(
 		return nil, errors.New("StartOpenVSwitchHook is nil")
 	}
 	return f.StartOpenVSwitchHook(node, req)
+}
+
+// StartConfiguredOpenVSwitchReconciliation records and dispatches an explicit networking request.
+func (f *FakeClient) StartConfiguredOpenVSwitchReconciliation(
+	_ context.Context,
+	node db.Node,
+	req *nvkeproto.StartConfiguredOpenVSwitchReconciliationRequest,
+) (*nvkeproto.StartOpenVSwitchReconciliationResponse, error) {
+	f.StartConfiguredOpenVSwitchCalls = append(f.StartConfiguredOpenVSwitchCalls, node.ID)
+	if f.StartConfiguredOpenVSwitchHook == nil {
+		return nil, errors.New("StartConfiguredOpenVSwitchHook is nil")
+	}
+	return f.StartConfiguredOpenVSwitchHook(node, req)
 }
 
 func (f *FakeClient) GetOpenVSwitchReconciliationStatus(

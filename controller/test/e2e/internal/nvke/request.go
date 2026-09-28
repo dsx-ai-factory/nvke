@@ -759,6 +759,7 @@ func nodePoolRequest(clusterID uuid.UUID, pool api.NodePoolCreateConfig) api.Cre
 		Description:                 pool.Description,
 		Nico:                        pool.Nico,
 		NodeNamePrefix:              pool.NodeNamePrefix,
+		OpenVSwitch:                 pool.OpenVSwitch,
 		AutoProvisionDisabled:       pool.AutoProvisionDisabled,
 		AutoModeDisabled:            pool.AutoModeDisabled,
 		ProvisioningMonitorDisabled: pool.ProvisioningMonitorDisabled,

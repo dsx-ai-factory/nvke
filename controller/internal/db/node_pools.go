@@ -131,6 +131,7 @@ type NodePool struct {
 	Description          *string            `bun:"type:text"`
 	SystemReservedMemory string             `bun:"type:text,notnull,default:'16Gi'"`
 	KubeReservedMemory   string             `bun:"type:text,notnull,default:''"`
+	OpenVSwitch          *OpenVSwitchConfig `bun:"open_v_switch,type:jsonb"`
 	ControlPlane         bool               `bun:"type:boolean,notnull"`
 	NodeLabels           map[string]string  `bun:"type:jsonb,notnull,default:'{}'"`
 	NodeTaints           []NodeTaint        `bun:"type:jsonb,notnull,default:'[]'"`

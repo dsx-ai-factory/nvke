@@ -4,12 +4,13 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"sigs.k8s.io/yaml"
@@ -17,7 +18,11 @@ import (
 	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 )
 
-const openVSwitchNetplanDir = "/etc/netplan"
+const (
+	openVSwitchNetplanDir       = "/etc/netplan"
+	openVSwitchNetplanMatchName = "name"
+	openVSwitchNetplanAddresses = "addresses"
+)
 
 // openVSwitchNetplanDocument holds validated views into a parsed netplan tree.
 // Maps are intentional because netplan is extensible and unknown fields must
@@ -32,7 +37,6 @@ type openVSwitchNetplanCandidate struct {
 	path       string
 	document   openVSwitchNetplanDocument
 	uplinkName string
-	pending    bool
 }
 
 func parseOpenVSwitchNetplanDocument(data []byte) (openVSwitchNetplanDocument, error) {
@@ -81,17 +85,30 @@ func openVSwitchNetplanSectionOrCreate(network map[string]any, name string) (map
 }
 
 func (s *NodeAgentServer) buildOpenVSwitchNetplanPlan(link openVSwitchLink, gateway, bridgeName string) (openVSwitchPlan, error) {
-	paths, err := filepath.Glob(filepath.Join(s.rootedPath(openVSwitchNetplanDir), "*.yaml"))
+	return s.buildOpenVSwitchNetplanPlanWithMode(link, gateway, bridgeName, false)
+}
+
+func (s *NodeAgentServer) buildConfiguredOpenVSwitchNetplanPlan(link openVSwitchLink, bridgeName string) (openVSwitchPlan, error) {
+	return s.buildOpenVSwitchNetplanPlanWithMode(link, "", bridgeName, true)
+}
+
+func (s *NodeAgentServer) buildOpenVSwitchNetplanPlanWithMode(link openVSwitchLink, gateway, bridgeName string, strict bool) (openVSwitchPlan, error) {
+	paths, err := s.openVSwitchNetplanPaths(strict)
 	if err != nil {
-		return openVSwitchPlan{}, fmt.Errorf("list netplan files: %w", err)
+		return openVSwitchPlan{}, err
 	}
 	if len(paths) == 0 {
 		return openVSwitchPlan{}, errors.New("neither ifupdown nor netplan configuration is present")
 	}
 
-	var candidates []openVSwitchNetplanCandidate
-	var allENCandidates []openVSwitchNetplanCandidate
+	var candidates, wildcardCandidates, legacyCandidates []openVSwitchNetplanCandidate
+	var documents []openVSwitchNetplanDocument
+	interfaceDefinitions := map[string]int{}
+	fileDefinitions := map[string]int{}
+	var bridgePaths []string
+	var driver string
 	for _, path := range paths {
+		fileDefinitions[filepath.Base(path)]++
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
 			return openVSwitchPlan{}, fmt.Errorf("read %s: %w", path, readErr)
@@ -100,78 +117,265 @@ func (s *NodeAgentServer) buildOpenVSwitchNetplanPlan(link openVSwitchLink, gate
 		if parseErr != nil {
 			return openVSwitchPlan{}, fmt.Errorf("parse %s: %w", path, parseErr)
 		}
-		// Netplan may have been written before the connection dropped. Treat
-		// that bridge stanza as pending desired state and retry activation.
-		if openVSwitchBridgeUsesInterface(document.bridges[bridgeName], link.Name) {
-			candidates = append(candidates, openVSwitchNetplanCandidate{
-				path:       path,
-				document:   document,
-				uplinkName: link.Name,
-				pending:    true,
-			})
-			continue
+		documents = append(documents, document)
+		if _, exists := document.bridges[bridgeName]; exists {
+			bridgePaths = append(bridgePaths, path)
 		}
 		for name, raw := range document.ethernets {
+			interfaceDefinitions[name]++
 			stanza, ok := raw.(map[string]any)
 			if !ok {
 				continue
 			}
+			match, _ := stanza["match"].(map[string]any)
+			if _, hasDriver := match["driver"]; hasDriver && driver == "" {
+				target, err := os.Readlink(s.rootedPath(filepath.Join("/sys/class/net", link.Name, "device/driver")))
+				if err != nil {
+					return openVSwitchPlan{}, fmt.Errorf("read driver for netplan interface %s: %w", link.Name, err)
+				}
+				driver = filepath.Base(target)
+			}
 			candidate := openVSwitchNetplanCandidate{path: path, document: document, uplinkName: name}
-			if name == link.Name || openVSwitchStanzaMatchesLink(stanza, link) {
+			exact, wildcard := openVSwitchNetplanMatchesLink(name, stanza, link, driver)
+			if exact {
 				candidates = append(candidates, candidate)
 			}
-			if name == "all-en" {
-				allENCandidates = append(allENCandidates, candidate)
+			if wildcard {
+				wildcardCandidates = append(wildcardCandidates, candidate)
+			}
+			if name == "all-en" && wildcard {
+				legacyCandidates = append(legacyCandidates, candidate)
 			}
 		}
 	}
-	if len(candidates) == 0 {
-		candidates = allENCandidates
+	if !strict && len(candidates) == 0 && len(legacyCandidates) == 1 {
+		selected, splitErr := splitOpenVSwitchNetplanWildcard(legacyCandidates[0], link, interfaceDefinitions)
+		if splitErr != nil {
+			return openVSwitchPlan{}, splitErr
+		}
+		candidates = append(candidates, selected)
+		interfaceDefinitions[selected.uplinkName] = 1
 	}
 	if len(candidates) != 1 {
 		return openVSwitchPlan{}, fmt.Errorf("expected one netplan configuration for %s, got %d", link.Name, len(candidates))
 	}
 
 	selected := candidates[0]
-	if !selected.pending {
-		rawStanza, ok := selected.document.ethernets[selected.uplinkName]
-		if !ok {
-			return openVSwitchPlan{}, fmt.Errorf("netplan interface %s disappeared during reconciliation", selected.uplinkName)
+	if strict {
+		if filepath.Dir(selected.path) != s.rootedPath(openVSwitchNetplanDir) {
+			return openVSwitchPlan{}, fmt.Errorf("selected netplan interface %s requires a persistent definition under %s", selected.uplinkName, openVSwitchNetplanDir)
 		}
-		bridgeStanza, ok := rawStanza.(map[string]any)
-		if !ok {
-			return openVSwitchPlan{}, fmt.Errorf("netplan interface %s is not an object", selected.uplinkName)
+		// A higher-priority directory shadows the entire same-named file, even
+		// when that file does not mention the selected interface. Reject this
+		// layout rather than edit a definition Netplan may never read.
+		if fileDefinitions[filepath.Base(selected.path)] != 1 {
+			return openVSwitchPlan{}, fmt.Errorf("selected netplan file %s exists in multiple configuration directories", filepath.Base(selected.path))
 		}
-		// Move the complete L3 stanza to the bridge so DHCP, static addresses,
-		// routes, and DNS survive. The physical NIC keeps only its L2 identity.
-		bridgeStanza = cloneStringMap(bridgeStanza)
-		delete(bridgeStanza, "match")
-		delete(bridgeStanza, "set-name")
-		delete(bridgeStanza, "macaddress")
-		bridgeStanza["interfaces"] = []string{link.Name}
-		bridgeStanza["openvswitch"] = map[string]any{}
-		selected.document.bridges[bridgeName] = bridgeStanza
-		delete(selected.document.ethernets, selected.uplinkName)
-		physical := map[string]any{"mtu": link.MTU}
-		if link.Address != "" {
-			physical["match"] = map[string]any{"macaddress": link.Address}
+	}
+	if interfaceDefinitions[bridgeName] != 0 {
+		return openVSwitchPlan{}, fmt.Errorf("netplan bridge %s conflicts with an ethernet definition", bridgeName)
+	}
+	if interfaceDefinitions[selected.uplinkName] != 1 {
+		return openVSwitchPlan{}, fmt.Errorf("netplan interface %s is defined in multiple files", selected.uplinkName)
+	}
+	if err := validateOpenVSwitchNetplanMembership(documents, selected.uplinkName, bridgeName); err != nil {
+		return openVSwitchPlan{}, err
+	}
+	// networkd uses the first matching .network file. Keeping the logical ID
+	// preserves that ordering; migrating a wildcard group would affect other
+	// NICs, and an earlier wildcard would shadow this interface's configuration.
+	for _, candidate := range wildcardCandidates {
+		if candidate.uplinkName < selected.uplinkName {
+			return openVSwitchPlan{}, fmt.Errorf("netplan wildcard %s precedes interface %s", candidate.uplinkName, selected.uplinkName)
 		}
-		selected.document.ethernets[link.Name] = physical
+	}
+	if len(bridgePaths) > 1 || (len(bridgePaths) == 1 && bridgePaths[0] != selected.path) {
+		return openVSwitchPlan{}, fmt.Errorf("netplan bridge %s is defined outside the uplink configuration", bridgeName)
+	}
+	// Render before changing the parsed document so formatting differences in
+	// the file do not count as configuration changes.
+	original, err := yaml.Marshal(selected.document.root)
+	if err != nil {
+		return openVSwitchPlan{}, fmt.Errorf("render %s: %w", selected.path, err)
+	}
+	mtu, err := migrateOpenVSwitchNetplanInterface(selected, link, bridgeName)
+	if err != nil {
+		return openVSwitchPlan{}, err
 	}
 	data, err := yaml.Marshal(selected.document.root)
 	if err != nil {
 		return openVSwitchPlan{}, fmt.Errorf("render %s: %w", selected.path, err)
 	}
+	var expected *openVSwitchNetworkExpectation
+	if strict {
+		bridge, _ := selected.document.bridges[bridgeName].(map[string]any)
+		expected, err = configuredOpenVSwitchExpectation(bridge, bridgeName)
+		if err != nil {
+			return openVSwitchPlan{}, fmt.Errorf("validate preserved network configuration: %w", err)
+		}
+	}
 	return openVSwitchPlan{
-		backend:        pb.OpenVSwitchReconciliationResult_NETWORK_BACKEND_NETPLAN,
-		bridgeName:     bridgeName,
-		uplinkName:     link.Name,
-		uplinkMAC:      link.Address,
-		uplinkMTU:      link.MTU,
-		defaultGateway: gateway,
-		configPath:     selected.path,
-		config:         data,
+		backend:           pb.OpenVSwitchReconciliationResult_NETWORK_BACKEND_NETPLAN,
+		bridgeName:        bridgeName,
+		uplinkName:        link.Name,
+		uplinkMAC:         link.Address,
+		uplinkMTU:         mtu,
+		defaultGateway:    gateway,
+		configPath:        selected.path,
+		config:            data,
+		configMatchesPlan: bytes.Equal(original, data),
+		expected:          expected,
 	}, nil
+}
+
+func (s *NodeAgentServer) openVSwitchNetplanPaths(strict bool) ([]string, error) {
+	directories := []string{openVSwitchNetplanDir}
+	if strict {
+		// Netplan combines these directories. Inspect runtime and vendor input
+		// for conflicts, but only a persistent /etc definition may be modified.
+		directories = append(directories, "/run/netplan", "/lib/netplan")
+	}
+	var paths []string
+	for _, directory := range directories {
+		files, err := filepath.Glob(filepath.Join(s.rootedPath(directory), "*.yaml"))
+		if err != nil {
+			return nil, fmt.Errorf("list netplan files in %s: %w", directory, err)
+		}
+		paths = append(paths, files...)
+	}
+	return paths, nil
+}
+
+func validateOpenVSwitchNetplanMembership(documents []openVSwitchNetplanDocument, uplink, bridgeName string) error {
+	for _, document := range documents {
+		network, _ := document.root["network"].(map[string]any)
+		for _, kind := range []string{"bridges", "bonds"} {
+			devices, _ := network[kind].(map[string]any)
+			for name, raw := range devices {
+				if kind == "bridges" && name == bridgeName {
+					continue
+				}
+				device, _ := raw.(map[string]any)
+				interfaces, _ := device["interfaces"].([]any)
+				for _, member := range interfaces {
+					if member == uplink {
+						return fmt.Errorf("netplan interface %s already belongs to %s %s", uplink, kind, name)
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func splitOpenVSwitchNetplanWildcard(candidate openVSwitchNetplanCandidate, link openVSwitchLink, definitions map[string]int) (openVSwitchNetplanCandidate, error) {
+	// Preserve the historical all-en fallback without moving L3 configuration
+	// off every device in that group. The new narrow definition must sort ahead
+	// of all-en so networkd applies it only to this uplink.
+	name := "00-nvke-" + link.Name
+	if definitions[name] != 0 {
+		return openVSwitchNetplanCandidate{}, fmt.Errorf("netplan interface %s already exists", name)
+	}
+	stanza, ok := candidate.document.ethernets[candidate.uplinkName].(map[string]any)
+	if !ok {
+		return openVSwitchNetplanCandidate{}, errors.New("netplan all-en interface is not an object")
+	}
+	physical := cloneStringMap(stanza)
+	match, _ := physical["match"].(map[string]any)
+	match = cloneStringMap(match)
+	match[openVSwitchNetplanMatchName] = link.Name
+	if link.Address != "" {
+		match["macaddress"] = link.Address
+	}
+	physical["match"] = match
+	candidate.document.ethernets[name] = physical
+	candidate.uplinkName = name
+	return candidate, nil
+}
+
+func migrateOpenVSwitchNetplanInterface(selected openVSwitchNetplanCandidate, link openVSwitchLink, bridgeName string) (int, error) {
+	stanza, ok := selected.document.ethernets[selected.uplinkName].(map[string]any)
+	if !ok {
+		return 0, fmt.Errorf("netplan interface %s is not an object", selected.uplinkName)
+	}
+	mtu, err := openVSwitchNetplanMTU(stanza, link.MTU)
+	if err != nil {
+		return 0, err
+	}
+	if rawBridge, exists := selected.document.bridges[bridgeName]; exists {
+		// Resolve the bridge member through its Netplan ID, which need not be
+		// the kernel interface name, when recovering an interrupted apply.
+		bridge, isMapping := rawBridge.(map[string]any)
+		if !isMapping || !openVSwitchBridgeUsesInterface(rawBridge, selected.uplinkName) {
+			return 0, fmt.Errorf("netplan bridge %s does not exclusively use interface %s", bridgeName, selected.uplinkName)
+		}
+		if _, isOVS := bridge["openvswitch"].(map[string]any); !isOVS {
+			return 0, fmt.Errorf("netplan bridge %s is not an Open vSwitch bridge", bridgeName)
+		}
+		bridgeMTU, mtuErr := openVSwitchNetplanMTU(bridge, mtu)
+		if mtuErr != nil {
+			return 0, mtuErr
+		}
+		if _, configured := stanza["mtu"]; configured && bridgeMTU != mtu {
+			return 0, fmt.Errorf("netplan bridge %s MTU differs from interface %s", bridgeName, selected.uplinkName)
+		}
+		physical := cloneStringMap(stanza)
+		bridge = cloneStringMap(bridge)
+		physical["mtu"], bridge["mtu"] = bridgeMTU, bridgeMTU
+		selected.document.ethernets[selected.uplinkName] = physical
+		selected.document.bridges[bridgeName] = bridge
+		return bridgeMTU, nil
+	}
+
+	// Keep the logical ID, match rules, rename, and device settings on the
+	// physical NIC. Move only L3 configuration; unknown device properties must
+	// not be copied to a bridge where Netplan may reject them.
+	physical := cloneStringMap(stanza)
+	bridge := map[string]any{
+		"interfaces":  []string{selected.uplinkName},
+		"openvswitch": map[string]any{},
+		"mtu":         mtu,
+	}
+	for key, value := range stanza {
+		if openVSwitchNetplanL3Key(key) {
+			bridge[key] = value
+			delete(physical, key)
+		}
+	}
+	// These common link settings apply to both links, including a per-device
+	// renderer override and boot-time wait-online behavior.
+	for _, key := range []string{"renderer", "optional", "optional-addresses", "critical", "activation-mode", "ignore-carrier"} {
+		if value, exists := stanza[key]; exists {
+			bridge[key] = value
+		}
+	}
+	physical["mtu"] = mtu
+	selected.document.ethernets[selected.uplinkName] = physical
+	selected.document.bridges[bridgeName] = bridge
+	return mtu, nil
+}
+
+func openVSwitchNetplanL3Key(key string) bool {
+	switch key {
+	case openVSwitchNetplanAddresses, "nameservers", "routes", "routing-policy", "gateway4", openVSwitchNetplanGateway6,
+		"dhcp4", "dhcp6", "dhcp-identifier", "dhcp4-overrides", "dhcp6-overrides",
+		"accept-ra", "ra-overrides", "ipv6-address-generation", "ipv6-address-token", "ipv6-privacy", "ipv6-mtu", "link-local":
+		return true
+	default:
+		return false
+	}
+}
+
+func openVSwitchNetplanMTU(stanza map[string]any, observed int) (int, error) {
+	raw, exists := stanza["mtu"]
+	if !exists {
+		return observed, nil
+	}
+	mtu, ok := raw.(float64)
+	if !ok || mtu <= 0 || mtu > math.MaxInt32 || math.Trunc(mtu) != mtu {
+		return 0, fmt.Errorf("netplan interface MTU %v must be a positive integer", raw)
+	}
+	return int(mtu), nil
 }
 
 func (s *NodeAgentServer) applyOpenVSwitchNetplanPlan(ctx context.Context, plan openVSwitchPlan) error {
@@ -195,16 +399,54 @@ func cloneStringMap(source map[string]any) map[string]any {
 	return cloned
 }
 
-func openVSwitchStanzaMatchesLink(stanza map[string]any, link openVSwitchLink) bool {
-	match, _ := stanza["match"].(map[string]any)
-	if name, _ := match["name"].(string); name != "" {
-		matched, err := filepath.Match(name, link.Name)
-		if err == nil && matched {
+func openVSwitchNetplanMatchesLink(name string, stanza map[string]any, link openVSwitchLink, driver string) (bool, bool) {
+	match, hasMatch := stanza["match"].(map[string]any)
+	if !hasMatch {
+		return name == link.Name, false
+	}
+	mac, _ := match["macaddress"].(string)
+	if mac != "" && (link.Address == "" || !strings.EqualFold(mac, link.Address)) {
+		return false, false
+	}
+	if patterns, exists := match["driver"]; exists && !openVSwitchNetplanDriverMatches(patterns, driver) {
+		return false, false
+	}
+	renamed, _ := stanza["set-name"].(string)
+	if renamed != "" && renamed != link.Name {
+		return false, false
+	}
+	matchName, _ := match[openVSwitchNetplanMatchName].(string)
+	// A renamed interface no longer has the name used by its original match.
+	if renamed != link.Name && matchName != "" {
+		matches, err := filepath.Match(matchName, link.Name)
+		if err != nil || !matches {
+			return false, false
+		}
+	}
+	if mac != "" || renamed == link.Name || matchName == link.Name {
+		return true, false
+	}
+	return false, true
+}
+
+func openVSwitchNetplanDriverMatches(raw any, driver string) bool {
+	if driver == "" {
+		return false
+	}
+	patterns, ok := raw.([]any)
+	if !ok {
+		patterns = []any{raw}
+	}
+	for _, rawPattern := range patterns {
+		pattern, ok := rawPattern.(string)
+		if !ok {
+			continue
+		}
+		if matches, err := filepath.Match(pattern, driver); err == nil && matches {
 			return true
 		}
 	}
-	mac, _ := match["macaddress"].(string)
-	return link.Address != "" && strings.EqualFold(mac, link.Address)
+	return false
 }
 
 func openVSwitchBridgeUsesInterface(raw any, interfaceName string) bool {
@@ -215,14 +457,9 @@ func openVSwitchBridgeUsesInterface(raw any, interfaceName string) bool {
 	interfaces, ok := stanza["interfaces"].([]any)
 	if !ok {
 		if typed, typedOK := stanza["interfaces"].([]string); typedOK {
-			return slices.Contains(typed, interfaceName)
+			return len(typed) == 1 && typed[0] == interfaceName
 		}
 		return false
 	}
-	for _, current := range interfaces {
-		if current == interfaceName {
-			return true
-		}
-	}
-	return false
+	return len(interfaces) == 1 && interfaces[0] == interfaceName
 }

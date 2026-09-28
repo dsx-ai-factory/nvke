@@ -1063,6 +1063,10 @@ components:
       additionalProperties: false
       description: The control-plane configuration in effect, including the desired node-agent version.
       properties:
+        openVSwitch:
+          $ref: "#/components/schemas/OpenVSwitchConfig"
+          x-go-name: OpenVSwitch
+          description: Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
         configurationId:
           type: string
           format: uuid
@@ -1197,6 +1201,10 @@ components:
         `nico` carries the NICo settings for the control-plane nodes; it is required
         for a NICo cluster.
       properties:
+        openVSwitch:
+          $ref: "#/components/schemas/OpenVSwitchConfig"
+          x-go-name: OpenVSwitch
+          description: Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
         desiredCount:
           type: integer
           minimum: 1
@@ -1247,6 +1255,10 @@ components:
         Rollout-triggering changes require controlPlaneVIP. maxSurge alone does not
         trigger a rollout and remains mutable without a VIP.
       properties:
+        openVSwitch:
+          $ref: "#/components/schemas/OpenVSwitchConfig"
+          x-go-name: OpenVSwitch
+          description: Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
         desiredCount:
           type: integer
           minimum: 1
@@ -1499,6 +1511,28 @@ components:
               x-order: 0
         - $ref: "#/components/schemas/NodePoolCreateConfig"
 
+    OpenVSwitchConfig:
+      type: object
+      additionalProperties: false
+      description: Explicit Open vSwitch selection for OVN Kubernetes. Existing uplink addressing, routes and MTU are preserved; management interfaces are not selected implicitly.
+      required:
+        - uplinkInterface
+        - bridgeName
+      properties:
+        uplinkInterface:
+          $ref: "#/components/schemas/HostInterfaceName"
+        bridgeName:
+          $ref: "#/components/schemas/HostInterfaceName"
+
+    HostInterfaceName:
+      type: string
+      minLength: 1
+      maxLength: 15
+      pattern: '^[A-Za-z0-9_.][A-Za-z0-9_.-]{0,14}$'
+      not:
+        enum: [".", "..", "lo"]
+      description: Linux interface name; uplinkInterface and bridgeName must differ.
+
     NodeNamePrefix:
       type: string
       minLength: 1
@@ -1555,6 +1589,10 @@ components:
               - not:
                   required: [infra]
       properties:
+        openVSwitch:
+          $ref: "#/components/schemas/OpenVSwitchConfig"
+          x-go-name: OpenVSwitch
+          description: Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
         name:
           type: string
           pattern: '^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$'
@@ -1656,6 +1694,10 @@ components:
         and remains mutable without a VIP.
       # No required fields since all fields are optional
       properties:
+        openVSwitch:
+          $ref: "#/components/schemas/OpenVSwitchConfig"
+          x-go-name: OpenVSwitch
+          description: Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
         autoProvisionDisabled:
           type: boolean
           description: Disables automatic provisioning for the pool.
@@ -1725,6 +1767,10 @@ components:
         - provisioningMonitorDisabled
         - recycleBudget
       properties:
+        openVSwitch:
+          $ref: "#/components/schemas/OpenVSwitchConfig"
+          x-go-name: OpenVSwitch
+          description: Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
         id:
           type: string
           format: uuid
@@ -1939,6 +1985,10 @@ components:
         - kubernetesVersion
         - systemReservedMemory
       properties:
+        openVSwitch:
+          $ref: "#/components/schemas/OpenVSwitchConfig"
+          x-go-name: OpenVSwitch
+          description: Explicit OVN host uplink and bridge. Omit on creation to retain default-route selection; updates replace the pair and apply to replacement nodes.
         id:
           type: string
           format: uuid
@@ -2049,7 +2099,7 @@ components:
       properties:
         field:
           type: string
-          description: The rollout-relevant field that changed (e.g. kubernetesVersion, release).
+          description: The rollout-relevant field that changed (e.g. kubernetesVersion, release, openVSwitch).
           x-order: 1
         from:
           type: string
@@ -2063,9 +2113,9 @@ components:
     ControlPlaneRolloutStatus:
       type: object
       description: |
-        Control-plane nodes only. Drift is computed on the release and
-        the Kubernetes version. Resolve pinnedConfigurationID and desiredConfigurationID
-        with GET /clusters/{clusterID}/control-plane/configHistory.
+        Control-plane nodes only. Drift is computed on the release,
+        Kubernetes version and Open vSwitch configuration. Resolve pinnedConfigurationID
+        and desiredConfigurationID with GET /clusters/{clusterID}/control-plane/configHistory.
       required:
         - pending
         - actionable
@@ -2081,7 +2131,7 @@ components:
         changes:
           type: array
           description: |
-            Each with field, from, to as plain strings. Drift is computed on the release and the Kubernetes version.
+            Each with field, from, to as plain strings. Drift is computed on the release, Kubernetes version and Open vSwitch configuration.
           items:
             $ref: "#/components/schemas/ControlPlaneRolloutChange"
           x-go-type-skip-optional-pointer: true

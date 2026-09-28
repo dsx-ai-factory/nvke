@@ -156,6 +156,9 @@ func validateCreateClusterLevelControlPlane(
 	if ccpc == nil {
 		return fmt.Errorf("controlPlaneConfig is required")
 	}
+	if err := validateOpenVSwitchConfig(db.CniPlugin(req.CniPlugin), dbOpenVSwitchFromAPI(ccpc.OpenVSwitch)); err != nil {
+		return err
+	}
 	if ccpc.DesiredCount < 1 {
 		return fmt.Errorf("controlPlaneConfig.desiredCount must be at least 1")
 	}
@@ -227,6 +230,9 @@ func validateCreateForgeControlPlaneConfigFields(c *api.CreateClusterControlPlan
 // invariants over the merged spec of a PATCH, so an update cannot clear a required
 // field or persist a ControlPlaneConfigSpec that would be rejected on create.
 func validateMergedClusterControlPlaneSpec(cluster db.Cluster, spec db.ControlPlaneConfigSpec) error {
+	if err := validateOpenVSwitchConfig(cluster.CniPlugin, spec.OpenVSwitch); err != nil {
+		return newBadRequestErrorf("%s", err)
+	}
 	switch cluster.ProviderType {
 	case db.ProviderTypeNico:
 		return validateMergedForgeControlPlaneSpec(spec)
@@ -297,6 +303,7 @@ func controlPlaneConfigSpecFromCreateAPI(
 
 	spec := db.ControlPlaneConfigSpec{
 		SystemReservedMemory:        c.SystemReservedMemory,
+		OpenVSwitch:                 dbOpenVSwitchFromAPI(c.OpenVSwitch),
 		NodeLabels:                  db.CloneStringMap(c.NodeLabels),
 		TeleportEnabled:             teleportEnabled,
 		ProvisioningMonitorDisabled: provisioningMonitorDisabled,

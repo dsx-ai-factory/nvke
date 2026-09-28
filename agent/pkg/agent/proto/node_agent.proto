@@ -38,6 +38,17 @@ service NodeAgent {
   // default route moves does not start duplicate work.
   rpc StartOpenVSwitchReconciliation(StartOpenVSwitchReconciliationRequest) returns (StartOpenVSwitchReconciliationResponse) {}
 
+  // StartConfiguredOpenVSwitchReconciliation moves one explicitly selected
+  // interface's existing Netplan configuration onto the requested OVS bridge.
+  // Other interfaces and their default routes are preserved. Explicit selection
+  // requires this RPC: callers must not fall back to default-route discovery
+  // when an older agent returns Unimplemented. Only Netplan is supported.
+  // Repeated starts return the operation's existing status; callers must reuse
+  // operation_id only with the same settings. Poll with
+  // GetOpenVSwitchReconciliationStatus. If an agent restart interrupts the
+  // operation, start and status return FailedPrecondition.
+  rpc StartConfiguredOpenVSwitchReconciliation(StartConfiguredOpenVSwitchReconciliationRequest) returns (StartOpenVSwitchReconciliationResponse) {}
+
   // GetOpenVSwitchReconciliationStatus returns the persisted state of a
   // previously accepted Open vSwitch reconciliation.
   rpc GetOpenVSwitchReconciliationStatus(GetOpenVSwitchReconciliationStatusRequest) returns (GetOpenVSwitchReconciliationStatusResponse) {}
@@ -1230,6 +1241,14 @@ message OpenVSwitchReconciliationResult {
 
 message StartOpenVSwitchReconciliationRequest {
   string operation_id = 1;
+}
+
+message StartConfiguredOpenVSwitchReconciliationRequest {
+  string operation_id = 1;
+  // Required, existing Linux interface name. No default-route discovery.
+  string uplink_interface = 2;
+  // Required Linux interface name, distinct from uplink_interface.
+  string bridge_name = 3;
 }
 
 message StartOpenVSwitchReconciliationResponse {

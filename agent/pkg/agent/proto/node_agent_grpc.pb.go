@@ -30,6 +30,7 @@ const (
 	NodeAgent_ExecuteKubeadmReset_FullMethodName                          = "/proto.NodeAgent/ExecuteKubeadmReset"
 	NodeAgent_ReconfigureKubeletAPIServer_FullMethodName                  = "/proto.NodeAgent/ReconfigureKubeletAPIServer"
 	NodeAgent_StartOpenVSwitchReconciliation_FullMethodName               = "/proto.NodeAgent/StartOpenVSwitchReconciliation"
+	NodeAgent_StartConfiguredOpenVSwitchReconciliation_FullMethodName     = "/proto.NodeAgent/StartConfiguredOpenVSwitchReconciliation"
 	NodeAgent_GetOpenVSwitchReconciliationStatus_FullMethodName           = "/proto.NodeAgent/GetOpenVSwitchReconciliationStatus"
 	NodeAgent_KubeadmUpgradeApply_FullMethodName                          = "/proto.NodeAgent/KubeadmUpgradeApply"
 	NodeAgent_ReconcileKubeVip_FullMethodName                             = "/proto.NodeAgent/ReconcileKubeVip"
@@ -100,6 +101,16 @@ type NodeAgentClient interface {
 	// operation_id is an idempotency key, so losing this RPC response while the
 	// default route moves does not start duplicate work.
 	StartOpenVSwitchReconciliation(ctx context.Context, in *StartOpenVSwitchReconciliationRequest, opts ...grpc.CallOption) (*StartOpenVSwitchReconciliationResponse, error)
+	// StartConfiguredOpenVSwitchReconciliation moves one explicitly selected
+	// interface's existing Netplan configuration onto the requested OVS bridge.
+	// Other interfaces and their default routes are preserved. Explicit selection
+	// requires this RPC: callers must not fall back to default-route discovery
+	// when an older agent returns Unimplemented. Only Netplan is supported.
+	// Repeated starts return the operation's existing status; callers must reuse
+	// operation_id only with the same settings. Poll with
+	// GetOpenVSwitchReconciliationStatus. If an agent restart interrupts the
+	// operation, start and status return FailedPrecondition.
+	StartConfiguredOpenVSwitchReconciliation(ctx context.Context, in *StartConfiguredOpenVSwitchReconciliationRequest, opts ...grpc.CallOption) (*StartOpenVSwitchReconciliationResponse, error)
 	// GetOpenVSwitchReconciliationStatus returns the persisted state of a
 	// previously accepted Open vSwitch reconciliation.
 	GetOpenVSwitchReconciliationStatus(ctx context.Context, in *GetOpenVSwitchReconciliationStatusRequest, opts ...grpc.CallOption) (*GetOpenVSwitchReconciliationStatusResponse, error)
@@ -365,6 +376,16 @@ func (c *nodeAgentClient) StartOpenVSwitchReconciliation(ctx context.Context, in
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StartOpenVSwitchReconciliationResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_StartOpenVSwitchReconciliation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) StartConfiguredOpenVSwitchReconciliation(ctx context.Context, in *StartConfiguredOpenVSwitchReconciliationRequest, opts ...grpc.CallOption) (*StartOpenVSwitchReconciliationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartOpenVSwitchReconciliationResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_StartConfiguredOpenVSwitchReconciliation_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -865,6 +886,16 @@ type NodeAgentServer interface {
 	// operation_id is an idempotency key, so losing this RPC response while the
 	// default route moves does not start duplicate work.
 	StartOpenVSwitchReconciliation(context.Context, *StartOpenVSwitchReconciliationRequest) (*StartOpenVSwitchReconciliationResponse, error)
+	// StartConfiguredOpenVSwitchReconciliation moves one explicitly selected
+	// interface's existing Netplan configuration onto the requested OVS bridge.
+	// Other interfaces and their default routes are preserved. Explicit selection
+	// requires this RPC: callers must not fall back to default-route discovery
+	// when an older agent returns Unimplemented. Only Netplan is supported.
+	// Repeated starts return the operation's existing status; callers must reuse
+	// operation_id only with the same settings. Poll with
+	// GetOpenVSwitchReconciliationStatus. If an agent restart interrupts the
+	// operation, start and status return FailedPrecondition.
+	StartConfiguredOpenVSwitchReconciliation(context.Context, *StartConfiguredOpenVSwitchReconciliationRequest) (*StartOpenVSwitchReconciliationResponse, error)
 	// GetOpenVSwitchReconciliationStatus returns the persisted state of a
 	// previously accepted Open vSwitch reconciliation.
 	GetOpenVSwitchReconciliationStatus(context.Context, *GetOpenVSwitchReconciliationStatusRequest) (*GetOpenVSwitchReconciliationStatusResponse, error)
@@ -1076,6 +1107,9 @@ func (UnimplementedNodeAgentServer) ReconfigureKubeletAPIServer(context.Context,
 }
 func (UnimplementedNodeAgentServer) StartOpenVSwitchReconciliation(context.Context, *StartOpenVSwitchReconciliationRequest) (*StartOpenVSwitchReconciliationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartOpenVSwitchReconciliation not implemented")
+}
+func (UnimplementedNodeAgentServer) StartConfiguredOpenVSwitchReconciliation(context.Context, *StartConfiguredOpenVSwitchReconciliationRequest) (*StartOpenVSwitchReconciliationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartConfiguredOpenVSwitchReconciliation not implemented")
 }
 func (UnimplementedNodeAgentServer) GetOpenVSwitchReconciliationStatus(context.Context, *GetOpenVSwitchReconciliationStatusRequest) (*GetOpenVSwitchReconciliationStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetOpenVSwitchReconciliationStatus not implemented")
@@ -1356,6 +1390,24 @@ func _NodeAgent_StartOpenVSwitchReconciliation_Handler(srv interface{}, ctx cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodeAgentServer).StartOpenVSwitchReconciliation(ctx, req.(*StartOpenVSwitchReconciliationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_StartConfiguredOpenVSwitchReconciliation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartConfiguredOpenVSwitchReconciliationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).StartConfiguredOpenVSwitchReconciliation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_StartConfiguredOpenVSwitchReconciliation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).StartConfiguredOpenVSwitchReconciliation(ctx, req.(*StartConfiguredOpenVSwitchReconciliationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2165,6 +2217,10 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StartOpenVSwitchReconciliation",
 			Handler:    _NodeAgent_StartOpenVSwitchReconciliation_Handler,
+		},
+		{
+			MethodName: "StartConfiguredOpenVSwitchReconciliation",
+			Handler:    _NodeAgent_StartConfiguredOpenVSwitchReconciliation_Handler,
 		},
 		{
 			MethodName: "GetOpenVSwitchReconciliationStatus",

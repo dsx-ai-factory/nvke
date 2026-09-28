@@ -134,15 +134,16 @@ func TestOpenVSwitchReconciliationTransformsNetplanAndVerifiesBridge(t *testing.
 	network := config["network"].(map[string]any)
 	ethernets := network["ethernets"].(map[string]any)
 	bridges := network["bridges"].(map[string]any)
-	assert.NotContains(t, ethernets, "uplink")
-	physical := ethernets["eth0"].(map[string]any)
+	assert.NotContains(t, ethernets, "eth0")
+	physical := ethernets["uplink"].(map[string]any)
+	assert.Equal(t, "eth0", physical["set-name"])
 	assert.Equal(t, float64(9000), physical["mtu"])
 	bridge := bridges["breth0"].(map[string]any)
 	assert.Equal(t, true, bridge["dhcp4"])
 	assert.NotContains(t, bridge, "match")
 	assert.NotContains(t, bridge, "set-name")
 	assert.Contains(t, bridge, "openvswitch")
-	assert.Equal(t, []any{"eth0"}, bridge["interfaces"])
+	assert.Equal(t, []any{"uplink"}, bridge["interfaces"])
 	assert.Equal(t, map[string]any{"addresses": []any{"10.0.0.53"}}, bridge["nameservers"])
 }
 
@@ -160,7 +161,8 @@ func TestOpenVSwitchNetplanMatchNamePatterns(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			stanza := map[string]any{"match": map[string]any{"name": test.name}}
-			assert.Equal(t, test.want, openVSwitchStanzaMatchesLink(stanza, link))
+			exact, wildcard := openVSwitchNetplanMatchesLink("", stanza, link, "")
+			assert.Equal(t, test.want, exact || wildcard)
 		})
 	}
 }

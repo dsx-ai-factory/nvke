@@ -32,6 +32,7 @@ type Client interface {
 	ExecuteKubeadmReset(ctx context.Context, node db.Node, req *nvkeproto.KubeadmResetRequest) (*nvkeproto.KubeadmResetStatusResponse, error)
 	ReconfigureKubeletAPIServer(ctx context.Context, node db.Node, req *nvkeproto.ReconfigureKubeletAPIServerRequest) (*nvkeproto.ReconfigureKubeletAPIServerResponse, error)
 	StartOpenVSwitchReconciliation(ctx context.Context, node db.Node, req *nvkeproto.StartOpenVSwitchReconciliationRequest) (*nvkeproto.StartOpenVSwitchReconciliationResponse, error)
+	StartConfiguredOpenVSwitchReconciliation(ctx context.Context, node db.Node, req *nvkeproto.StartConfiguredOpenVSwitchReconciliationRequest) (*nvkeproto.StartOpenVSwitchReconciliationResponse, error)
 	GetOpenVSwitchReconciliationStatus(ctx context.Context, node db.Node, req *nvkeproto.GetOpenVSwitchReconciliationStatusRequest) (*nvkeproto.GetOpenVSwitchReconciliationStatusResponse, error)
 	KubeadmUpgradeApply(ctx context.Context, node db.Node, req *nvkeproto.KubeadmUpgradeApplyRequest) (*nvkeproto.KubeadmUpgradeApplyResponse, error)
 	ReconcileKubeVip(ctx context.Context, node db.Node, req *nvkeproto.ReconcileKubeVipRequest) (*nvkeproto.ReconcileKubeVipResponse, error)
@@ -275,6 +276,24 @@ func (c *NodeAgentClient) StartOpenVSwitchReconciliation(
 	resp, err := nvkeproto.NewNodeAgentClient(conn).StartOpenVSwitchReconciliation(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start Open vSwitch reconciliation on node %s: %w", node.Name, err)
+	}
+	return resp, nil
+}
+
+// StartConfiguredOpenVSwitchReconciliation starts an explicit host-network operation.
+func (c *NodeAgentClient) StartConfiguredOpenVSwitchReconciliation(
+	ctx context.Context,
+	node db.Node,
+	req *nvkeproto.StartConfiguredOpenVSwitchReconciliationRequest,
+) (*nvkeproto.StartOpenVSwitchReconciliationResponse, error) {
+	conn, cleanup, err := c.getGRPCConnection(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node agent to configure Open vSwitch on node %s: %w", node.Name, err)
+	}
+	defer cleanup()
+	resp, err := nvkeproto.NewNodeAgentClient(conn).StartConfiguredOpenVSwitchReconciliation(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start configured Open vSwitch reconciliation on node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }

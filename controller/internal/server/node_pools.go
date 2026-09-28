@@ -217,6 +217,9 @@ func validateCloudInitFiles(files []api.CloudInitFile) error {
 }
 
 func (s *nodePoolService) validateCreateNodePoolRequest(cluster db.Cluster, req *api.CreateNodePoolRequest) error {
+	if err := validateOpenVSwitchConfig(cluster.CniPlugin, dbOpenVSwitchFromAPI(req.OpenVSwitch)); err != nil {
+		return err
+	}
 	if err := naming.ValidateNodeNamePrefix(cluster.Name, req.NodeNamePrefix); err != nil {
 		return err
 	}
@@ -469,6 +472,9 @@ func applyUpdateNodePoolRequest(cluster db.Cluster, dbNodePool *db.NodePool, req
 	if req.SystemReservedMemory != nil {
 		dbNodePool.SystemReservedMemory = *req.SystemReservedMemory
 	}
+	if req.OpenVSwitch != nil {
+		dbNodePool.OpenVSwitch = dbOpenVSwitchFromAPI(req.OpenVSwitch)
+	}
 	if req.KubeReservedMemory != nil {
 		dbNodePool.KubeReservedMemory = *req.KubeReservedMemory
 	}
@@ -591,6 +597,11 @@ func validateUpdatedForgeNodePool(_ db.Cluster, dbNodePool *db.NodePool) error {
 
 // validateUpdateNodePoolRequest validates cluster-type-specific update fields before the request is applied.
 func (s *nodePoolService) validateUpdateNodePoolRequest(cluster db.Cluster, req *api.UpdateNodePoolRequest) error {
+	if req != nil {
+		if err := validateOpenVSwitchConfig(cluster.CniPlugin, dbOpenVSwitchFromAPI(req.OpenVSwitch)); err != nil {
+			return err
+		}
+	}
 	switch cluster.ProviderType {
 	case db.ProviderTypeCAPI:
 		if req != nil && (req.Infra != nil || req.Nico != nil) {
@@ -732,6 +743,7 @@ func apiNodePoolFromDB(dbNodePool *db.NodePool) api.NodePool {
 		KubernetesVersion:           dbNodePool.KubernetesVersion,
 		SystemReservedMemory:        &dbNodePool.SystemReservedMemory,
 		KubeReservedMemory:          kubeReservedMemory,
+		OpenVSwitch:                 apiOpenVSwitchFromDB(dbNodePool.OpenVSwitch),
 		ControlPlane:                dbNodePool.ControlPlane,
 		NodeLabels:                  maps.Clone(dbNodePool.NodeLabels),
 		NodeTaints:                  apiNodeTaintsFromDB(dbNodePool.NodeTaints),
@@ -849,6 +861,7 @@ func dbNodePoolFromAPI(
 		KubernetesVersion:    kubernetesVersion,
 		SystemReservedMemory: req.SystemReservedMemory,
 		KubeReservedMemory:   req.KubeReservedMemory,
+		OpenVSwitch:          dbOpenVSwitchFromAPI(req.OpenVSwitch),
 		ControlPlane:         req.ControlPlane,
 		NodeLabels:           nodeLabels,
 		NodeTaints:           nodeTaints,

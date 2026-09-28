@@ -28,6 +28,8 @@ const (
 	openVSwitchInstallUUIDPath    = "/etc/openvswitch/install_uuid.conf"
 	openVSwitchBridgePrefix       = "br"
 	openVSwitchIPCommand          = "ip"
+	openVSwitchLinkAction         = "link"
+	openVSwitchShowAction         = "show"
 	openVSwitchDeviceFlag         = "dev"
 	openVSwitchDefaultRoute       = "default"
 	openVSwitchDefaultMTU         = 1500
@@ -51,25 +53,33 @@ type openVSwitchRoute struct {
 	Destination string `json:"dst"`
 	Gateway     string `json:"gateway"`
 	Device      string `json:"dev"`
+	Metric      int    `json:"metric"`
+	Table       any    `json:"table"`
+	Family      string `json:"family,omitempty"`
 }
 
 type openVSwitchLink struct {
-	Name    string `json:"ifname"`
-	Address string `json:"address"`
-	MTU     int    `json:"mtu"`
+	Name     string `json:"ifname"`
+	Address  string `json:"address"`
+	MTU      int    `json:"mtu"`
+	LinkInfo struct {
+		Kind string `json:"info_kind"`
+	} `json:"linkinfo"`
 }
 
 type openVSwitchPlan struct {
-	backend        pb.OpenVSwitchReconciliationResult_NetworkBackend
-	bridgeName     string
-	uplinkName     string
-	uplinkMAC      string
-	uplinkMTU      int
-	defaultGateway string
-	configPath     string
-	config         []byte
-	address        string
-	netmask        string
+	backend           pb.OpenVSwitchReconciliationResult_NetworkBackend
+	bridgeName        string
+	uplinkName        string
+	uplinkMAC         string
+	uplinkMTU         int
+	defaultGateway    string
+	configPath        string
+	config            []byte
+	configMatchesPlan bool
+	address           string
+	netmask           string
+	expected          *openVSwitchNetworkExpectation
 }
 
 type persistedOpenVSwitchResult struct {
@@ -142,17 +152,25 @@ func (s *NodeAgentServer) runOpenVSwitchReconciliation(
 	ctx context.Context,
 	progress nodeAgentOperationProgress,
 ) error {
+	return s.runOpenVSwitchOperation(ctx, progress, s.reconcileOpenVSwitchLocked)
+}
+
+func (s *NodeAgentServer) runOpenVSwitchOperation(
+	ctx context.Context,
+	progress nodeAgentOperationProgress,
+	reconcile func(context.Context) (*pb.OpenVSwitchReconciliationResult, *openVSwitchPlan, error),
+) error {
 	progress.SetStep("reconciling")
 	s.openVSwitchMu.Lock()
 	defer s.openVSwitchMu.Unlock()
 
-	result, plan, err := s.reconcileOpenVSwitchLocked(ctx)
+	result, plan, err := reconcile(ctx)
 	for errors.Is(err, errOpenVSwitchDefaultRouteMissing) && plan == nil {
 		progress.SetStep("waiting_for_default_route")
 		if err = sleepOrDone(ctx, s.openVSwitchConvergenceDelayOrDefault()); err != nil {
 			return err
 		}
-		result, plan, err = s.reconcileOpenVSwitchLocked(ctx)
+		result, plan, err = reconcile(ctx)
 	}
 	if errors.Is(err, errOpenVSwitchNotConverged) && plan != nil {
 		progress.SetStep("waiting_for_network")
@@ -345,7 +363,7 @@ func (s *NodeAgentServer) ensureOpenVSwitchService() error {
 }
 
 func (s *NodeAgentServer) readOpenVSwitchDefaultRoute() (openVSwitchRoute, error) {
-	output, err := s.runOpenVSwitchCommand(openVSwitchIPCommand, "-j", "route", "show", "default")
+	output, err := s.runOpenVSwitchCommand(openVSwitchIPCommand, ipJSONFlag, "route", openVSwitchShowAction, "default")
 	if err != nil {
 		return openVSwitchRoute{}, err
 	}
@@ -362,7 +380,15 @@ func (s *NodeAgentServer) readOpenVSwitchDefaultRoute() (openVSwitchRoute, error
 }
 
 func (s *NodeAgentServer) readOpenVSwitchLink(name string) (openVSwitchLink, error) {
-	output, err := s.runOpenVSwitchCommand(openVSwitchIPCommand, "-j", "link", "show", openVSwitchDeviceFlag, name)
+	return s.readOpenVSwitchLinkDetails(name, false)
+}
+
+func (s *NodeAgentServer) readOpenVSwitchLinkDetails(name string, detailed bool) (openVSwitchLink, error) {
+	args := []string{ipJSONFlag, openVSwitchLinkAction, openVSwitchShowAction, openVSwitchDeviceFlag, name}
+	if detailed {
+		args = append([]string{"-d"}, args...)
+	}
+	output, err := s.runOpenVSwitchCommand(openVSwitchIPCommand, args...)
 	if err != nil {
 		return openVSwitchLink{}, err
 	}
@@ -424,6 +450,9 @@ func (s *NodeAgentServer) applyOpenVSwitchPlan(ctx context.Context, plan openVSw
 }
 
 func (s *NodeAgentServer) verifyOpenVSwitchPlan(plan openVSwitchPlan) error {
+	if plan.expected != nil {
+		return s.verifyConfiguredOpenVSwitchPlan(plan)
+	}
 	bridges, err := s.listOpenVSwitchBridges()
 	if err != nil {
 		return err

@@ -29,9 +29,10 @@ type NodeSet struct {
 	// contains the desired count for the entire NodePool.
 	DesiredCount int `bun:"type:integer,notnull,default:0"`
 
-	KubernetesVersion    string `bun:"type:text,notnull,default:''"`
-	SystemReservedMemory string `bun:"type:text,notnull,default:'16Gi'"`
-	KubeReservedMemory   string `bun:"type:text,notnull,default:''"`
+	KubernetesVersion    string             `bun:"type:text,notnull,default:''"`
+	SystemReservedMemory string             `bun:"type:text,notnull,default:'16Gi'"`
+	KubeReservedMemory   string             `bun:"type:text,notnull,default:''"`
+	OpenVSwitch          *OpenVSwitchConfig `bun:"open_v_switch,type:jsonb"`
 
 	CreatedAt       time.Time `bun:"type:timestamptz,notnull,default:current_timestamp"`
 	UpdatedAt       time.Time `bun:"type:timestamptz,notnull,default:current_timestamp"`
@@ -47,6 +48,7 @@ func NodePoolNeedsNewNodeSet(nodePool NodePool, current NodeSet) bool {
 		nodePool.KubernetesVersion != current.KubernetesVersion ||
 		nodePool.SystemReservedMemory != current.SystemReservedMemory ||
 		nodePool.KubeReservedMemory != current.KubeReservedMemory ||
+		!nodePool.OpenVSwitch.Equal(current.OpenVSwitch) ||
 		nodePool.TeleportEnabled != current.TeleportEnabled {
 		return true
 	}

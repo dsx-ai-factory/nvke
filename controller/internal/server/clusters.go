@@ -394,6 +394,9 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 	}
 
 	for _, nodePool := range nodePools {
+		if err := validateOpenVSwitchConfig(dbCniPlugin, dbOpenVSwitchFromAPI(nodePool.OpenVSwitch)); err != nil {
+			return fmt.Errorf("invalid node pool %q: %w", nodePool.Name, err)
+		}
 		if err := naming.ValidateNodeNamePrefix(req.Name, nodePool.NodeNamePrefix); err != nil {
 			return fmt.Errorf("invalid node pool %q: %w", nodePool.Name, err)
 		}
@@ -447,6 +450,7 @@ func (s *clusterService) createInitialNodePools(ctx context.Context, tx db.Tx, c
 			NodeNamePrefix:              nodePoolConfig.NodeNamePrefix,
 			SystemReservedMemory:        nodePoolConfig.SystemReservedMemory,
 			KubeReservedMemory:          nodePoolConfig.KubeReservedMemory,
+			OpenVSwitch:                 nodePoolConfig.OpenVSwitch,
 			NodeLabels:                  nodePoolConfig.NodeLabels,
 			NodeTaints:                  nodePoolConfig.NodeTaints,
 			ControlPlane:                nodePoolConfig.ControlPlane,
@@ -849,6 +853,7 @@ func hasClusterLevelControlPlaneUpdate(req *api.UpdateClusterControlPlaneConfig)
 	if req.NodeAgentConfig != nil ||
 		req.DesiredCount != nil ||
 		req.SystemReservedMemory != nil ||
+		req.OpenVSwitch != nil ||
 		req.TeleportEnabled != nil ||
 		req.Infra != nil {
 		return true
@@ -905,6 +910,9 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 			return newBadRequestErrorf("nodeAgent.updateMethod is required for agent convergence")
 		}
 		spec.NodeAgentConfig.Version = version
+	}
+	if req.OpenVSwitch != nil {
+		spec.OpenVSwitch = dbOpenVSwitchFromAPI(req.OpenVSwitch)
 	}
 	if req.SystemReservedMemory != nil {
 		spec.SystemReservedMemory = *req.SystemReservedMemory
@@ -1010,6 +1018,7 @@ func apiControlPlaneConfigFromDB(cfg db.ControlPlaneConfig) *api.ControlPlaneCon
 		MaxSurge:                    &maxSurge,
 		ProvisioningMonitorDisabled: &provisioningMonitorDisabled,
 		SystemReservedMemory:        cfg.SystemReservedMemory,
+		OpenVSwitch:                 apiOpenVSwitchFromDB(cfg.OpenVSwitch),
 		NodeLabels:                  maps.Clone(cfg.NodeLabels),
 		TeleportEnabled:             &teleportEnabled,
 		Nico:                        apiNicoControlPlaneProviderFromDB(cfg.Nico),

@@ -234,6 +234,7 @@ func buildBaseNodeSet(nodePool db.NodePool) *db.NodeSet {
 		KubernetesVersion:    nodePool.KubernetesVersion,
 		SystemReservedMemory: nodePool.SystemReservedMemory,
 		KubeReservedMemory:   nodePool.KubeReservedMemory,
+		OpenVSwitch:          nodePool.OpenVSwitch.Clone(),
 		TeleportEnabled:      nodePool.TeleportEnabled,
 	}
 }

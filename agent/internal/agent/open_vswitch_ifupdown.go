@@ -122,9 +122,9 @@ func (s *NodeAgentServer) applyOpenVSwitchIfupdownPlan(plan openVSwitchPlan) err
 	}
 	commands := [][]string{
 		{openVSwitchIPCommand, openVSwitchIPAddrCommand, "replace", plan.address + "/" + strconv.Itoa(prefix), openVSwitchDeviceFlag, plan.bridgeName},
-		{openVSwitchIPCommand, "link", "set", plan.bridgeName, "up"},
-		{openVSwitchIPCommand, "link", "set", plan.bridgeName, "mtu", strconv.Itoa(plan.uplinkMTU)},
-		{openVSwitchIPCommand, "route", "replace", "default", "via", plan.defaultGateway, openVSwitchDeviceFlag, plan.bridgeName, "onlink"},
+		{openVSwitchIPCommand, openVSwitchLinkAction, "set", plan.bridgeName, "up"},
+		{openVSwitchIPCommand, openVSwitchLinkAction, "set", plan.bridgeName, "mtu", strconv.Itoa(plan.uplinkMTU)},
+		{openVSwitchIPCommand, "route", "replace", "default", openVSwitchRouteVia, plan.defaultGateway, openVSwitchDeviceFlag, plan.bridgeName, "onlink"},
 		{openVSwitchIPCommand, openVSwitchIPAddrCommand, "flush", openVSwitchDeviceFlag, plan.uplinkName},
 	}
 	for _, command := range commands {

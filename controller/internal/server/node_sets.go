@@ -94,6 +94,7 @@ func apiNodeSetFromDB(dbNodeSet *db.NodeSet) (api.NodeSet, error) {
 		NodePoolID:           dbNodeSet.NodePoolID,
 		DesiredCount:         dbNodeSet.DesiredCount,
 		SystemReservedMemory: dbNodeSet.SystemReservedMemory,
+		OpenVSwitch:          apiOpenVSwitchFromDB(dbNodeSet.OpenVSwitch),
 		KubeReservedMemory:   kubeReservedMemory,
 		KubernetesVersion:    dbNodeSet.KubernetesVersion,
 		TeleportEnabled:      &dbNodeSet.TeleportEnabled,

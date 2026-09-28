@@ -63,6 +63,7 @@ func ControlPlaneConfigNodeContext(cluster db.Cluster, node db.Node, snapshotCfg
 		NodePoolID:           uuid.Nil,
 		SystemReservedMemory: snapshotCfg.SystemReservedMemory,
 		KubeReservedMemory:   snapshotCfg.KubeReservedMemory,
+		OpenVSwitch:          snapshotCfg.OpenVSwitch.Clone(),
 		KubernetesVersion:    snapshotCfg.KubernetesVersion,
 		TeleportEnabled:      snapshotCfg.TeleportEnabled,
 	}
@@ -77,6 +78,7 @@ func ControlPlaneConfigNodeContext(cluster db.Cluster, node db.Node, snapshotCfg
 		MaxSurge:                    cluster.ControlPlaneConfig.MaxSurge,
 		SystemReservedMemory:        snapshotCfg.SystemReservedMemory,
 		KubeReservedMemory:          snapshotCfg.KubeReservedMemory,
+		OpenVSwitch:                 snapshotCfg.OpenVSwitch.Clone(),
 		TeleportEnabled:             snapshotCfg.TeleportEnabled,
 		ProvisioningMonitorDisabled: snapshotCfg.ProvisioningMonitorDisabled,
 	}

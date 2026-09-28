@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/temporal"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -18,6 +19,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
 const (
@@ -27,8 +29,8 @@ const (
 	legacyOpenVSwitchRunbookPath  = "legacy_runbook"
 )
 
-// ConfigureOpenVSwitchInput identifies the node whose default-route interface
-// should be moved onto an Open vSwitch bridge.
+// ConfigureOpenVSwitchInput identifies the node whose pinned network intent
+// should be reconciled onto an Open vSwitch bridge.
 type ConfigureOpenVSwitchInput struct {
 	NodeID      uuid.UUID
 	OperationID string
@@ -44,9 +46,8 @@ type ConfigureOpenVSwitchResult struct {
 }
 
 // ConfigureOpenVSwitch starts a durable node-agent operation and polls its
-// observed state. Only Unimplemented selects an older execution mechanism: an
-// availability or timeout error may mean the accepted operation is moving the
-// live connection onto the bridge.
+// observed state. Explicit intent requires the configured RPC. Only an
+// unconfigured request may fall back when its RPC is Unimplemented.
 func (a *Activities) ConfigureOpenVSwitch(
 	ctx context.Context,
 	input ConfigureOpenVSwitchInput,
@@ -73,29 +74,50 @@ func (a *Activities) configureOpenVSwitchOnNode(
 	node db.Node,
 ) (ConfigureOpenVSwitchResult, string, error) {
 	path := openVSwitchReconciliationPath
+	nodeSet, _, err := nodes.GetNodeContext(ctx, a.db, node)
+	if err != nil {
+		return ConfigureOpenVSwitchResult{}, path, fmt.Errorf("failed to resolve Open vSwitch node configuration: %w", err)
+	}
+	desired := nodeSet.OpenVSwitch
+	// Pool managed nodes use their NodeSet's configuration snapshot. Control-plane
+	// nodes without a pool instead pin a snapshot via ControlPlaneConfigurationID.
+	// Older nodes can lack that ID, so GetNodeContext falls back to the current
+	// cluster settings. Reject explicit OVS intent here to avoid applying a newer
+	// network layout to a node whose original configuration is unknown.
+	if desired != nil && node.ControlPlane && !node.IsManagedByNodePool() && node.ControlPlaneConfigurationID == uuid.Nil {
+		return ConfigureOpenVSwitchResult{}, path, temporal.NewNonRetryableApplicationError(
+			fmt.Sprintf("control-plane node %s has no pinned configuration; explicit Open vSwitch intent requires a replacement with a configuration snapshot", node.Name),
+			"OpenVSwitchConfigurationUnpinned", nil,
+		)
+	}
 	heartbeatCancel := startActivityHeartbeat(ctx)
 	defer heartbeatCancel()
 
-	startResponse, err := a.nodeAgentClient.StartOpenVSwitchReconciliation(
-		ctx,
-		node,
-		&nvkeproto.StartOpenVSwitchReconciliationRequest{OperationId: input.OperationID},
-	)
+	startResponse, err := a.startOpenVSwitchRPC(ctx, input.OperationID, node, desired)
 	if err != nil {
 		if status.Code(err) == codes.Unimplemented {
-			result, fallbackErr := a.configureOpenVSwitchWithLegacyRunbook(ctx, input, node)
-			return result, legacyOpenVSwitchRunbookPath, fallbackErr
+			if desired == nil {
+				result, fallbackErr := a.configureOpenVSwitchWithLegacyRunbook(ctx, input, node)
+				return result, legacyOpenVSwitchRunbookPath, fallbackErr
+			}
+			err = temporal.NewNonRetryableApplicationError(
+				fmt.Sprintf("node %s requires an agent supporting StartConfiguredOpenVSwitchReconciliation for explicit uplink %s", node.Name, desired.UplinkInterface),
+				"OpenVSwitchConfigurationUnsupported", err,
+			)
 		}
 		return ConfigureOpenVSwitchResult{}, path, fmt.Errorf("failed to start Open vSwitch reconciliation on node %s: %w", node.Name, err)
 	}
 	if startResponse == nil || startResponse.GetOperation() == nil {
-		return ConfigureOpenVSwitchResult{}, path, errors.New("node agent returned an empty Open vSwitch operation")
+		return ConfigureOpenVSwitchResult{}, path, errors.New("node agent returned an empty Open vSwitch reconciliation status")
 	}
 
 	operation := startResponse.GetOperation()
 	for {
 		result, done, resultErr := openVSwitchTerminalResult(input.OperationID, operation)
 		if resultErr != nil || done {
+			if resultErr == nil && desired != nil {
+				resultErr = validateConfiguredOpenVSwitchResult(result, desired)
+			}
 			result.Path = path
 			return result, path, resultErr
 		}
@@ -110,7 +132,7 @@ func (a *Activities) configureOpenVSwitchOnNode(
 		if statusErr != nil {
 			if ctx.Err() == nil && status.Code(statusErr) == codes.Unavailable {
 				activity.GetLogger(ctx).Debug(
-					"Open vSwitch status temporarily unavailable while the default route moves",
+					"Open vSwitch status temporarily unavailable during network reconciliation",
 					"nodeID", node.ID,
 					"operationID", input.OperationID,
 				)
@@ -123,6 +145,35 @@ func (a *Activities) configureOpenVSwitchOnNode(
 		}
 		operation = statusResponse.GetOperation()
 	}
+}
+
+func (a *Activities) startOpenVSwitchRPC(
+	ctx context.Context,
+	operationID string,
+	node db.Node,
+	desired *db.OpenVSwitchConfig,
+) (*nvkeproto.StartOpenVSwitchReconciliationResponse, error) {
+	if desired == nil {
+		return a.nodeAgentClient.StartOpenVSwitchReconciliation(ctx, node,
+			&nvkeproto.StartOpenVSwitchReconciliationRequest{OperationId: operationID})
+	}
+	return a.nodeAgentClient.StartConfiguredOpenVSwitchReconciliation(ctx, node,
+		&nvkeproto.StartConfiguredOpenVSwitchReconciliationRequest{
+			OperationId:     operationID,
+			UplinkInterface: desired.UplinkInterface,
+			BridgeName:      desired.BridgeName,
+		})
+}
+
+func validateConfiguredOpenVSwitchResult(result ConfigureOpenVSwitchResult, desired *db.OpenVSwitchConfig) error {
+	if result.UplinkInterface == desired.UplinkInterface && result.BridgeName == desired.BridgeName {
+		return nil
+	}
+	return temporal.NewNonRetryableApplicationError(
+		fmt.Sprintf("node agent reported Open vSwitch bridge %q, uplink %q; expected bridge %q, uplink %q",
+			result.BridgeName, result.UplinkInterface, desired.BridgeName, desired.UplinkInterface),
+		"OpenVSwitchConfigurationMismatch", nil,
+	)
 }
 
 func (a *Activities) configureOpenVSwitchWithLegacyRunbook(
@@ -177,6 +228,10 @@ func openVSwitchTerminalResult(
 			NetworkBackend:  result.GetNetworkBackend().String(),
 		}, true, nil
 	case nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_FAILED:
+		// The agent saves failures. Temporal retries with the same operation ID
+		// will receive this failure again without rerunning OVS setup. The agent
+		// needs to report whether the failure can be retried. Do not bypass this
+		// limitation by creating new operation IDs here.
 		return ConfigureOpenVSwitchResult{}, true, fmt.Errorf(
 			"open vSwitch operation %s failed at %s: %s",
 			operationStatus.GetOperationId(),

@@ -38,6 +38,7 @@ type ControlPlaneConfigSpec struct {
 	Nico                        *NicoControlPlaneProvider `json:"nico,omitempty" bun:"-"`
 	Capi                        *CAPIControlPlaneProvider `json:"capi,omitempty" bun:"-"`
 	NodeAgentConfig             NodeAgentConfig           `json:"node_agent_config,omitempty" bun:"-"`
+	OpenVSwitch                 *OpenVSwitchConfig        `json:"open_v_switch,omitempty" bun:"-"`
 }
 
 type NicoControlPlaneProvider struct {
@@ -156,6 +157,7 @@ func (c ControlPlaneConfigSpec) Equal(other ControlPlaneConfigSpec) bool {
 
 func normalizeConfigSpec(cfg ControlPlaneConfigSpec) ControlPlaneConfigSpec {
 	out := cfg
+	out.OpenVSwitch = cfg.OpenVSwitch.Clone()
 	out.NodeLabels = CloneStringMap(cfg.NodeLabels)
 	out.Nico = cloneNicoControlPlaneProvider(cfg.Nico)
 	out.Capi = cloneCAPIControlPlaneProvider(cfg.Capi)
@@ -203,7 +205,7 @@ func cloneRawMessages(in []json.RawMessage) []json.RawMessage {
 // ControlPlaneRolloutChange is a single rollout-relevant field that differs
 // between two control-plane config snapshots.
 type ControlPlaneRolloutChange struct {
-	Field string // "kubernetesVersion", "release", or "configProfile"
+	Field string // "kubernetesVersion", "release", "configProfile", or "openVSwitch"
 	From  string
 	To    string
 }
@@ -216,6 +218,16 @@ type ControlPlaneRolloutChange struct {
 // pick it up.
 func ComputeControlPlaneRolloutChanges(pinned, desired ControlPlaneConfigSpec) []ControlPlaneRolloutChange {
 	var changes []ControlPlaneRolloutChange
+	if !pinned.OpenVSwitch.Equal(desired.OpenVSwitch) {
+		var before, after OpenVSwitchConfig
+		if pinned.OpenVSwitch != nil {
+			before = *pinned.OpenVSwitch
+		}
+		if desired.OpenVSwitch != nil {
+			after = *desired.OpenVSwitch
+		}
+		changes = append(changes, ControlPlaneRolloutChange{Field: "openVSwitch", From: before.UplinkInterface + "/" + before.BridgeName, To: after.UplinkInterface + "/" + after.BridgeName})
+	}
 	if pinned.KubernetesVersion != desired.KubernetesVersion {
 		changes = append(changes, ControlPlaneRolloutChange{Field: "kubernetesVersion", From: pinned.KubernetesVersion, To: desired.KubernetesVersion})
 	}
@@ -234,7 +246,7 @@ func ComputeControlPlaneRolloutChanges(pinned, desired ControlPlaneConfigSpec) [
 
 // IsControlPlaneRolloutRequired reports whether two control-plane config snapshots
 // differ in a field that requires replacing (recycling) a control-plane node: the
-// Kubernetes version, the release, or the config profile. It is a thin
+// Kubernetes version, release, config profile, or Open vSwitch intent. It is a thin
 // predicate over ComputeControlPlaneRolloutChanges, so the boolean and the
 // reported diff can never disagree. The common (unchanged) case allocates nothing,
 // since ComputeControlPlaneRolloutChanges returns a nil slice when the snapshots
