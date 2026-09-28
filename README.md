@@ -112,7 +112,7 @@ The entire repository builds from a clean checkout with no network access:
 GOPROXY=off make build
 ```
 
-This compiles all nine modules and links six binaries into `bin/`. It is the quickest way to confirm your toolchain is correct.
+This compiles all eleven modules and links six binaries into `bin/`. It is the quickest way to confirm your toolchain is correct.
 
 **Build and test the agent:**
 
