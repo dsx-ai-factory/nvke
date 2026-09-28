@@ -12,6 +12,20 @@ global:
   deleteHooks:
     enabled: false
 
+spire-agent:
+  workloadAttestors:
+    k8s:
+      # Both already the chart defaults at 0.30.1. Restated to match the deploy
+      # paths under controller/deploy, which need them because site
+      # control-plane nodes run Kata and container-scoped selectors cannot
+      # resolve inside the VM. This Kind cluster runs runc and lives for about
+      # five minutes, so neither changes anything here -- they are set so every
+      # values file this repository owns attests identically, and so an
+      # upstream change of either default shows up as a conflict rather than
+      # silently.
+      enabled: true
+      disableContainerSelectors: true
+
 spire-server:
   controllerManager:
     # The chart applies its ClusterSPIFFEID objects as part of the same release
