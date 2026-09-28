@@ -16,14 +16,20 @@ See [Pre-Provisioned Nodes](../site-bootstrap/pre-provisioned-nodes.md) for the 
 
 ### Bootstrap fails with "bootstrap cluster … from an earlier run is still running"
 
-Before deleting the leftover Kind cluster, export the etcd encryption key if it was generated during the failed run — it may be the only recoverable copy:
+Before deleting the leftover Kind cluster, export the etcd encryption key if it was generated during the failed run — it may be the only recoverable copy. The key is in the `cloud-workflow-engine` namespace of the bootstrap cluster, not the default kubeconfig:
 
 ```bash
-kubectl get secret -n kube-system -l nke.io/role=etcd-encryption-key \
-  -o yaml --kubeconfig ~/.kube/config > etcd-encryption-key-backup.yaml
+umask 077
+export KIND_EXPERIMENTAL_PROVIDER=nerdctl
+kind get kubeconfig --name nkectl-bootstrap > bootstrap.kubeconfig
+kubectl --kubeconfig bootstrap.kubeconfig -n cloud-workflow-engine \
+  get secrets | grep etcd-encryption-key-
+# Save the Secret identified above:
+kubectl --kubeconfig bootstrap.kubeconfig -n cloud-workflow-engine \
+  get secret <etcd-encryption-key-name> -o yaml > etcd-encryption-key-backup.yaml
 ```
 
-Store this file somewhere safe, then delete the cluster. Use `nerdctl` explicitly — a bare `kind delete cluster` looks for the cluster using the Docker provider and exits 0 without deleting anything:
+Store `etcd-encryption-key-backup.yaml` somewhere safe, then delete the cluster. Use `nerdctl` explicitly — a bare `kind delete cluster` looks for the cluster using the Docker provider and exits 0 without deleting anything:
 
 ```bash
 KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nkectl-bootstrap
