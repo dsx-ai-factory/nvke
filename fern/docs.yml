@@ -27,6 +27,10 @@ experimental:
   mdx-components:
     - ./components
 
+check:
+  rules:
+    broken-links: error
+
 products:
   - display-name: NVIDIA Kubernetes Engine
     path: ../docs/index.yml
