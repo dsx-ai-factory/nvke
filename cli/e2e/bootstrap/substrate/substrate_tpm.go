@@ -27,7 +27,7 @@ const (
 
 	// DefaultSpireServerPort is the node port cwedeploy's external-service
 	// manifest publishes SPIRE on
-	// (internal/cwedeploy/manifests/spire-server-nodeport.yaml). It is fixed
+	// (internal/bootstrap/cwedeploy/manifests/spire-server-nodeport.yaml). It is fixed
 	// rather than allocated because the agents are configured with it before
 	// the cluster exists, so the two have to agree — and this is the other
 	// half of that pair.

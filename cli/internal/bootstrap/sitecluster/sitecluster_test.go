@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/sitespec"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitespec"
 	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 

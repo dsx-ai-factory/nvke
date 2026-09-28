@@ -13,8 +13,8 @@ import (
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nke/cli/internal/clusterstate"
-	"github.com/dsx-ai-factory/nke/cli/internal/sitespec"
 	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 

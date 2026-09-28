@@ -3,7 +3,7 @@
 
 // Package cwedeploy stands up Postgres, Temporal, SPIRE, and the CWE worker onto a
 // Kubernetes cluster (the ephemeral bootstrap Kind cluster
-// cli/internal/bootstrapengine creates), then waits for CWE to report
+// cli/internal/bootstrap/engine creates), then waits for CWE to report
 // healthy on /readyz.
 //
 // It reuses controller/deploy/charts/controller (the real,
@@ -16,7 +16,7 @@
 //
 // Every helm/kubectl invocation goes through the CommandRunner seam so unit
 // tests can substitute a fake, the same pattern
-// cli/internal/bootstrapengine uses for kind/kubectl.
+// cli/internal/bootstrap/engine uses for kind/kubectl.
 package cwedeploy
 
 import (

@@ -22,14 +22,15 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/bootstrapengine"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/cwedeploy"
+	// Aliased: this file has a local variable named engine.
+	bootstrapengine "github.com/dsx-ai-factory/nke/cli/internal/bootstrap/engine"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/etcdkey"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitecluster"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitespec"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/spireentrydump"
 	"github.com/dsx-ai-factory/nke/cli/internal/clients"
 	"github.com/dsx-ai-factory/nke/cli/internal/config"
-	"github.com/dsx-ai-factory/nke/cli/internal/cwedeploy"
-	"github.com/dsx-ai-factory/nke/cli/internal/etcdkey"
-	"github.com/dsx-ai-factory/nke/cli/internal/sitecluster"
-	"github.com/dsx-ai-factory/nke/cli/internal/sitespec"
-	"github.com/dsx-ai-factory/nke/cli/internal/spireentrydump"
 )
 
 const (

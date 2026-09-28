@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package bootstrapengine drives the lifecycle of the ephemeral Kind cluster
+// Package engine drives the lifecycle of the ephemeral Kind cluster
 // that `nkectl bootstrap site` runs CWE on: create it, wait for it to be
 // Ready, load images into it, and tear it down.
 //
@@ -17,7 +17,7 @@
 // exporting KIND_EXPERIMENTAL_PROVIDER on every kind invocation. That matches
 // the runtime the target platform runs, and means a host needs no Docker
 // daemon to bootstrap a site.
-package bootstrapengine
+package engine
 
 import (
 	"bufio"

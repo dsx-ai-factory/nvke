@@ -26,18 +26,18 @@ func threeNodes() []Node {
 // the two are allowed to differ in wording, and pinning bytes would make every
 // edit to one a failure in the other.
 func TestExampleMatchesTemplate(t *testing.T) {
-	fromExample, err := Load(filepath.Join("..", "..", "examples", "sitespec.yaml"))
+	fromExample, err := Load(filepath.Join("..", "..", "..", "examples", "sitespec.yaml"))
 	if err != nil {
 		t.Fatalf("load cli/examples/sitespec.yaml: %v", err)
 	}
 	fromTemplate, err := decodeBytes(templateYAML)
 	if err != nil {
-		t.Fatalf("decode cli/internal/sitespec/template.yaml: %v", err)
+		t.Fatalf("decode cli/internal/bootstrap/sitespec/template.yaml: %v", err)
 	}
 	fromTemplate.SetDefaults()
 
 	if diff := specDiff(fromTemplate, fromExample); diff != "" {
-		t.Errorf("cli/internal/sitespec/template.yaml and cli/examples/sitespec.yaml describe different site specs.\n"+
+		t.Errorf("cli/internal/bootstrap/sitespec/template.yaml and cli/examples/sitespec.yaml describe different site specs.\n"+
 			"Update both, or the generated file stops matching the documented example.%s", diff)
 	}
 }

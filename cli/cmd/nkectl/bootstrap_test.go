@@ -25,9 +25,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/bootstrapengine"
-	"github.com/dsx-ai-factory/nke/cli/internal/cwedeploy"
-	"github.com/dsx-ai-factory/nke/cli/internal/sitespec"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/cwedeploy"
+	bootstrapengine "github.com/dsx-ai-factory/nke/cli/internal/bootstrap/engine"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitespec"
 	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 

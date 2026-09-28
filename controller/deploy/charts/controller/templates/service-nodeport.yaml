@@ -7,7 +7,7 @@
 # Two Services may select the same pods, and neither knows about the other.
 #
 # Before this field the only way to get one was a hand-applied manifest
-# alongside the release (cli/internal/cwedeploy/manifests/cwe-nodeport.yaml),
+# alongside the release (cli/internal/bootstrap/cwedeploy/manifests/cwe-nodeport.yaml),
 # which a deploy path built from this chart has no way to carry.
 apiVersion: v1
 kind: Service

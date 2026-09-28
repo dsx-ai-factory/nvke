@@ -6,9 +6,9 @@ package main
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/cwedeploy"
 	"github.com/dsx-ai-factory/nke/cli/internal/cwe/clusters"
 	"github.com/dsx-ai-factory/nke/cli/internal/cwe/nodepools"
-	"github.com/dsx-ai-factory/nke/cli/internal/cwedeploy"
 	"github.com/dsx-ai-factory/nke/cli/internal/mgmtcluster"
 	mgmtcommand "github.com/dsx-ai-factory/nke/cli/internal/mgmtcluster/command"
 	providercmd "github.com/dsx-ai-factory/nke/cli/internal/providers/command"
