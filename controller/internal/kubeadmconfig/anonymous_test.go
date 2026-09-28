@@ -106,10 +106,14 @@ func TestRenderAuthenticationConfigStillRequiresAJWTProvider(t *testing.T) {
 }
 
 // The AuthenticationConfiguration this package renders is only parseable from
-// 1.32 on: earlier releases serve the type under a different API version and
-// keep the anonymous conditions behind an alpha gate or lack them entirely.
-// Staging it anyway leaves kube-apiserver unable to start, which is how the
-// fleet's 1.29 and 1.31 profiles would have seen this change.
+// 1.34 on, because renderAuthenticationConfig stamps apiserver.config.k8s.io/v1
+// and the kind only joins that group version in 1.34. Through 1.33 it exists
+// solely as v1alpha1 (1.29) and v1beta1 (1.30-1.33), so a 1.32 or 1.33
+// kube-apiserver cannot decode the file and does not start.
+//
+// 1.33.6 is the boundary that matters: AnonymousAuthConfigurableEndpoints is
+// already beta and on by default there, so a gate-only reading of the
+// constraint would wrongly admit it. The floor tracks the API version instead.
 func TestSupportsAnonymousAuthConfig(t *testing.T) {
 	for _, tt := range []struct {
 		version string
@@ -118,8 +122,14 @@ func TestSupportsAnonymousAuthConfig(t *testing.T) {
 		{version: "v1.29.7", want: false},
 		{version: "v1.30.0", want: false},
 		{version: "v1.31.12", want: false},
-		{version: "v1.32.0", want: true},
+		// Anonymous conditions exist here, the v1 API version does not.
+		{version: "v1.32.0", want: false},
+		{version: "v1.33.6", want: false},
+		{version: "v1.33.99", want: false},
+		// 1.34 is where AuthenticationConfiguration joins v1.
+		{version: "v1.34.0", want: true},
 		{version: "v1.34.2", want: true},
+		{version: "v1.36.0", want: true},
 		{version: "", want: false},
 		{version: "not-a-version", want: false},
 	} {

@@ -161,12 +161,20 @@ func needsImageVolumeFeatureGate(kubernetesVersion string) bool {
 }
 
 // anonymousAuthConfigMinVersion is the first release that can consume the
-// AuthenticationConfiguration this package renders: apiserver.config.k8s.io/v1
-// and the AnonymousAuthConfigurableEndpoints conditions both reach GA there.
-// Earlier releases serve the document under a different API version (v1alpha1
-// on 1.29, v1beta1 on 1.30 and 1.31) and keep the anonymous conditions behind a
-// gate that is alpha or absent.
-func anonymousAuthConfigMinVersion() *version.Version { return version.MustParseGeneric("1.32.0") }
+// AuthenticationConfiguration this package renders. The gating fact is the API
+// version, not the feature gate: renderAuthenticationConfig always stamps
+// apiserver.config.k8s.io/v1, and AuthenticationConfiguration only joins that
+// group version in 1.34. Through 1.33 the kind exists solely as v1alpha1 (1.29)
+// and v1beta1 (1.30-1.33) -- 1.33's apiserver.config.k8s.io/v1 reference lists
+// only AdmissionConfiguration, AuthorizationConfiguration and
+// EncryptionConfiguration. Handing a 1.32 or 1.33 kube-apiserver a v1
+// AuthenticationConfiguration means it cannot decode the file and does not
+// start, which is the bringup break this whole change exists to avoid.
+//
+// AnonymousAuthConfigurableEndpoints is beta and on by default from 1.32, so it
+// is not the binding constraint; the API version is. Lowering this floor
+// therefore requires rendering v1beta1 for 1.32-1.33, not just a gate check.
+func anonymousAuthConfigMinVersion() *version.Version { return version.MustParseGeneric("1.34.0") }
 
 // supportsAnonymousAuthConfig reports whether kubernetesVersion understands the
 // anonymous-restricted AuthenticationConfiguration.

@@ -18,10 +18,12 @@ const (
 	// the anonymous-restricted AuthenticationConfiguration, so the golden
 	// fixtures render the wiring the way production sees it.
 	supportedK8sVersion = "v1.34.2"
-	// unsupportedK8sVersion is an in-fleet release below the floor: it serves
-	// AuthenticationConfiguration under a different API version and has no
-	// generally available anonymous conditions.
-	unsupportedK8sVersion = "v1.31.9"
+	// unsupportedK8sVersion is an in-fleet release below the floor. 1.33 is the
+	// sharpest case on purpose: AnonymousAuthConfigurableEndpoints is already
+	// beta and on by default there, so the conditions themselves are fine --
+	// what it cannot do is decode apiserver.config.k8s.io/v1
+	// AuthenticationConfiguration, which only joins that group version in 1.34.
+	unsupportedK8sVersion = "v1.33.6"
 )
 
 // updateGolden rewrites the testdata fixtures from the rendered output instead
