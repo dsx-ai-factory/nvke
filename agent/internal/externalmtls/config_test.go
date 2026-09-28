@@ -177,18 +177,18 @@ func TestServerConfig_HandshakeAcceptsSignedAndRejectsUnsigned(t *testing.T) {
 		wantErr           bool
 	}{
 		"certificate from the configured ca": {
-			clientCertificate: ca.issueClient(t, controllerURI),
+			clientCertificate: ca.issueClient(t, ControllerURI),
 			wantErr:           false,
 		},
 		"certificate from another ca": {
-			clientCertificate: newControllerCA(t).issueClient(t, controllerURI),
+			clientCertificate: newControllerCA(t).issueClient(t, ControllerURI),
 			wantErr:           true,
 		},
 		// The case the CA pool cannot catch: the bundle is an externally
 		// operated CA, so a certificate it issued to something other than the
 		// controller still chains.
 		"certificate from the configured ca with another uri san": {
-			clientCertificate: ca.issueClient(t, controllerURI+":other"),
+			clientCertificate: ca.issueClient(t, ControllerURI+":other"),
 			wantErr:           true,
 		},
 		"certificate from the configured ca with no uri san": {

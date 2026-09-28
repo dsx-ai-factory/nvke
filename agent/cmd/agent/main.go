@@ -391,7 +391,8 @@ func main() {
 		"controller-client-ca-bundle",
 		envOr("NKE_CONTROLLER_CLIENT_CA_BUNDLE", ""),
 		fmt.Sprintf("PEM CA bundle verifying the controller's client certificate. Setting it selects external mTLS "+
-			"instead of SPIFFE mTLS and requires --grpc-auth-mode=%s. Also set via NKE_CONTROLLER_CLIENT_CA_BUNDLE", authModeTLSJWT),
+			"instead of SPIFFE mTLS and requires --grpc-auth-mode=%s. The controller's certificate must also carry "+
+			"the URI SAN %s. Also set via NKE_CONTROLLER_CLIENT_CA_BUNDLE", authModeTLSJWT, externalmtls.ControllerURI),
 	)
 	versionFlag := flag.Bool("version", false, "Print the version and exit")
 	auditLogFileName := flag.String(

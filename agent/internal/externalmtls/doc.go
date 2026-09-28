@@ -12,4 +12,14 @@
 // identity afterwards, through the NKEAuth record written by the tlsjwt
 // package, which is why this mode is only accepted alongside
 // --grpc-auth-mode=tls-jwt.
+//
+// # Requirement on the controller certificate
+//
+// The controller's certificate must carry the URI SAN
+// urn:nvidia:nke:controller. Chaining to the bundle is not enough: the bundle
+// names an externally operated CA, so without an identity check anything that
+// CA has ever issued could drive the agent. An operator enabling this mode has
+// to request the SAN when the certificate is issued; a certificate that chains
+// but omits it is rejected at the handshake, and the agent logs
+// "the controller certificate carries no ... URI SAN".
 package externalmtls

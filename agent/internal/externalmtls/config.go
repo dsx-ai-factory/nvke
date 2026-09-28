@@ -27,13 +27,16 @@ const serverCertificateLifetime = 10 * 365 * 24 * time.Hour
 // its NKEAuth record instead.
 const serverCertificateSubject = "nke-agent"
 
-// controllerURI is the URI SAN the controller's client certificate must carry.
+// ControllerURI is the URI SAN the controller's client certificate must carry.
 // Chaining to the bundle is not enough on its own: the bundle is an externally
 // operated CA, so anything it has ever issued would otherwise be able to drive
 // the agent. This is the external-mTLS counterpart to callerPathPrefixes on the
 // SPIFFE path, and is fixed for the same reason -- one identity names the
 // caller, and a deployment that needs a different one has to say so in code.
-const controllerURI = "urn:nvidia:nke:controller"
+//
+// It is exported so the flag help can state the requirement an operator has to
+// meet when the controller's certificate is issued.
+const ControllerURI = "urn:nvidia:nke:controller"
 
 // ServerConfig returns the TLS configuration for an agent whose controller
 // authenticates with an externally issued client certificate. Every connection
@@ -68,11 +71,11 @@ func verifyControllerIdentity(state tls.ConnectionState) error {
 		return errors.New("unauthorized: the controller presented no certificate")
 	}
 	for _, uri := range state.PeerCertificates[0].URIs {
-		if uri.String() == controllerURI {
+		if uri.String() == ControllerURI {
 			return nil
 		}
 	}
-	return fmt.Errorf("unauthorized: the controller certificate carries no %q URI SAN", controllerURI)
+	return fmt.Errorf("unauthorized: the controller certificate carries no %q URI SAN", ControllerURI)
 }
 
 // loadClientCAs reads the controller CA bundle. An unreadable or empty bundle
