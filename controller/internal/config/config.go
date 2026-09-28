@@ -289,7 +289,10 @@ type Config struct {
 	// pending nodes for control-plane node pools so the two controllers never both
 	// create control-plane nodes. When false, control-plane nodes continue to be
 	// created by the node set controller from their node pool.
-	ProvisionControlPlaneWithControlPlaneController bool `env:"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER" default:"false"`
+	//
+	// On by default: the control-plane controller path is now the standard way to
+	// provision control-plane nodes.
+	ProvisionControlPlaneWithControlPlaneController bool `env:"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER" default:"true"`
 
 	// InstallCNIAfterInit installs CNI after kubeadm init, from a Debian package
 	// rather than a bundle server. It needs the charts package on the node, which
