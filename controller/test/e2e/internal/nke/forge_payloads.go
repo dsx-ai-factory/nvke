@@ -17,11 +17,16 @@ var (
 	nicoForgePreKubeadmTmpl string
 )
 
-// ForgeNodeInputs is everything a Forge node needs that a qualification run
-// decides rather than the site. Each field names something under test, which
-// is why none of them has a default: a run that did not say which OS image to
-// boot has not said what it is qualifying.
-type ForgeNodeInputs struct {
+// NodeInputs is everything building an NKE node from an image needs that a
+// qualification run decides rather than the site. None of these fields is
+// specific to a provider -- they describe any such node -- which is why the
+// type is not named for one. What is provider-specific is the rendering, and
+// that lives in BuildForgeNodePayloads below.
+//
+// Each field names something under test, which is why none of them has a
+// default: a run that did not say which OS image to boot has not said what it
+// is qualifying.
+type NodeInputs struct {
 	// BootLoaderURL and ImageURL are the qcow imager and the OS image it
 	// writes. They are separate because the imager is versioned on its own and
 	// neither URL can be derived from the other.
@@ -59,7 +64,7 @@ const (
 	AgentArgsNoMTLS = defaultAgentArgs + " --disable-mtls"
 )
 
-func (i ForgeNodeInputs) validate() error {
+func (i NodeInputs) validate() error {
 	missing := make([]string, 0, 5)
 	for _, field := range []struct {
 		name  string
@@ -83,7 +88,7 @@ func (i ForgeNodeInputs) validate() error {
 
 // BuildForgeNodePayloads renders the iPXE script and the pre-kubeadm commands
 // a Forge node boots and installs with.
-func BuildForgeNodePayloads(inputs ForgeNodeInputs) (NodePayloads, error) {
+func BuildForgeNodePayloads(inputs NodeInputs) (NodePayloads, error) {
 	if err := inputs.validate(); err != nil {
 		return NodePayloads{}, err
 	}

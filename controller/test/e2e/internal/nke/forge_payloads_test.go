@@ -22,8 +22,8 @@ const (
 	testSSHKeyGroupID  = "00000000-0000-4000-8000-000000000005"
 )
 
-func completeForgeInputs() ForgeNodeInputs {
-	return ForgeNodeInputs{
+func completeForgeInputs() NodeInputs {
+	return NodeInputs{
 		BootLoaderURL:     "https://example.invalid/qcow-imager.efi",
 		ImageURL:          "https://example.invalid/nke-24.04.qcow2",
 		KubernetesVersion: "1.34.2",
@@ -98,7 +98,7 @@ func TestBuildForgeNodePayloadsAgentArgs(t *testing.T) {
 }
 
 func TestBuildForgeNodePayloadsNamesEveryMissingInput(t *testing.T) {
-	_, err := BuildForgeNodePayloads(ForgeNodeInputs{})
+	_, err := BuildForgeNodePayloads(NodeInputs{})
 	if err == nil {
 		t.Fatal("empty inputs should not render")
 	}

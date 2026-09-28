@@ -387,8 +387,8 @@ func collectSiteDiagnostics(ctx context.Context, session infra.Session, secrets 
 // --disable-mtls, which comes from the same config field: the two sides
 // negotiate with each other, and a mismatch surfaces as an opaque TLS
 // handshake error rather than as a configuration problem.
-func nodeInputs(cfg config.Config, kubernetesVersion string) nke.ForgeNodeInputs {
-	inputs := nke.ForgeNodeInputs{
+func nodeInputs(cfg config.Config, kubernetesVersion string) nke.NodeInputs {
+	inputs := nke.NodeInputs{
 		KubernetesVersion: kubernetesVersion,
 		CNIVersion:        defaultString(optionalVersion("nke-cni-ovn"), forgeDefaultCNIVersion),
 		SpireVersion:      defaultString(optionalVersion("spire-agent"), forgeDefaultSpireVersion),

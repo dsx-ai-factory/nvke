@@ -1208,7 +1208,7 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.Cluster
 	imageURL, err := requireVersion("os-image")
 	Expect(err).NotTo(HaveOccurred(), "should be told which OS image to qualify")
 
-	payloads, err := nke.BuildForgeNodePayloads(nke.ForgeNodeInputs{
+	payloads, err := nke.BuildForgeNodePayloads(nke.NodeInputs{
 		BootLoaderURL:     bootLoaderURL,
 		ImageURL:          imageURL,
 		KubernetesVersion: kubernetesVersion,

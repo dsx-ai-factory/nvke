@@ -156,7 +156,7 @@ func newTestProvider(t *testing.T, forge *fakeForge, dialer Dialer) *Provider {
 		},
 		Dialer:   dialer,
 		JumpHost: testJumpHost,
-		Node: nke.ForgeNodeInputs{
+		Node: nke.NodeInputs{
 			KubernetesVersion: "1.34.2",
 			CNIVersion:        "1.4.0",
 			SpireVersion:      "1.14.1+tpm1.9.0",
@@ -326,7 +326,7 @@ func newSlowCreateProvider(t *testing.T, forge *fakeForge, dialer Dialer, perReq
 		},
 		Dialer:   dialer,
 		JumpHost: testJumpHost,
-		Node: nke.ForgeNodeInputs{
+		Node: nke.NodeInputs{
 			KubernetesVersion: "1.34.2",
 			CNIVersion:        "1.4.0",
 			SpireVersion:      "1.14.1+tpm1.9.0",

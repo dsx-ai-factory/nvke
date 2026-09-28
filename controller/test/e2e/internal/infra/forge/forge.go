@@ -114,7 +114,7 @@ type Options struct {
 
 	// Node carries the package versions under qualification. Its image URLs
 	// are filled from Images, so any set here are ignored.
-	Node  nke.ForgeNodeInputs
+	Node  nke.NodeInputs
 	Tools HostTools
 
 	// DisableMTLS runs the node agent without SPIFFE. nkectl bootstrap site
