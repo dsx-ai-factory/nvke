@@ -770,7 +770,6 @@ components:
           x-go-type-skip-optional-pointer: true
         teleportEnabled:
           type: boolean
-          default: true
           description: Whether Teleport SSH enrollment is enabled for control plane nodes.
         nico:
           $ref: "#/components/schemas/NicoControlPlaneProvider"
