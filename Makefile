@@ -51,7 +51,6 @@ ADDLICENSE       ?= $(GO) run github.com/google/addlicense@v1.1.1
 LICENSE_TRACKED_FILES = git ls-files -- '*.go' '*.sh' '*.py' '*.js' '*.css' '*.html' '*.yaml' '*.yml'
 LICENSE_SOURCE_FILTER = awk '!/(^|\/)vendor\// && !/(^|\/)testdata\// && !/^generated\// \
 	&& !/\.pb\.go$$/ && !/^controller\/deploy\/charts\// && !/^controller\/test\/fixtures\//'
-LICENSE_FILES = $(LICENSE_TRACKED_FILES) | $(LICENSE_SOURCE_FILTER)
 
 # Modules in go.work — every module in the repository. Building needs no NVIDIA
 # credentials and no network: every dependency is carried in the committed
@@ -732,8 +731,12 @@ license-header-check: ## Verify every source file carries the Apache-2.0 SPDX he
 	 fi; \
 	 files=$$(printf '%s\n' "$$tracked" | $(LICENSE_SOURCE_FILTER)); \
 	 filter_rc=$$?; \
-	 if [ $$filter_rc -ne 0 ] || [ -z "$$files" ]; then \
+	 if [ $$filter_rc -ne 0 ]; then \
 		echo "ERROR: could not filter source files for the licence-header check."; \
+		exit 1; \
+	 fi; \
+	 if [ -z "$$files" ]; then \
+		echo "ERROR: no source files found for the licence-header check."; \
 		exit 1; \
 	 fi; \
 	 missing=$$(printf '%s\n' "$$files" | xargs $(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)); \

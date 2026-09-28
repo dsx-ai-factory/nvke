@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 name: Feature Request
-description: Propose an NKE feature or enhancement
-title: "[Feature]: "
+description: Propose an NKE feature
+title: "[FEATURE]: "
 labels: ["feature"]
 
 body:
@@ -47,7 +47,9 @@ body:
         - Controller
         - Node agent or updater
         - nkectl CLI
-        - Cluster API provider
+        - Cluster API provider (provisioned)
+        - Helm charts or deployment (nke-stack)
+        - nico-sim (development simulator)
         - OS image or image checker
         - NKTP telemetry pipeline
         - Build, packaging, or release automation
@@ -66,12 +68,13 @@ body:
     id: compatibility
     attributes:
       label: Compatibility and operational considerations
-      description: Note migrations, API compatibility, upgrades, security boundaries, or operational impact.
+      description: Note migrations, API compatibility, upgrades, security boundaries, or operational impact. Report suspected vulnerabilities to NVIDIA PSIRT through the [security policy](https://github.com/dsx-ai-factory/nke/blob/main/SECURITY.md), not in a public feature request.
 
   - type: dropdown
     id: contribute
     attributes:
       label: Are you willing to contribute?
+      description: See [CONTRIBUTING.md](https://github.com/dsx-ai-factory/nke/blob/main/CONTRIBUTING.md) for contribution guidance.
       options:
         - Yes, I can open a pull request
         - Maybe, with maintainer guidance
