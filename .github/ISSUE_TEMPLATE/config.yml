@@ -4,23 +4,11 @@
 # Configures the issue template chooser.
 # https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository#configuring-the-template-chooser
 #
-# The Q&A category is linked rather than the Discussions landing page, so a
-# question lands somewhere it can be answered and marked as answered.
-
-# Keep the blank issue available. Not every report fits a template, and a
-# contributor who cannot file at all usually does not come back.
-blank_issues_enabled: true
+# Limit public issue intake to the approved forms. Maintainers with write
+# access can still open a blank issue when a report does not fit a form.
+blank_issues_enabled: false
 
 contact_links:
   - name: Report a security vulnerability
     url: https://www.nvidia.com/object/submit-security-vulnerability.html
     about: Do not open a public issue. Report through NVIDIA PSIRT, as described in SECURITY.md.
-  - name: Ask a question
-    url: https://github.com/dsx-ai-factory/nke/discussions/categories/q-a
-    about: For usage questions and anything that is not a bug or a feature request.
-  - name: Getting help
-    url: https://github.com/dsx-ai-factory/nke/blob/main/SUPPORT.md
-    about: Where to ask questions and what to check before opening an issue.
-  - name: Cluster API documentation
-    url: https://cluster-api.sigs.k8s.io/
-    about: Upstream Cluster API concepts, provider contracts and glossary.
