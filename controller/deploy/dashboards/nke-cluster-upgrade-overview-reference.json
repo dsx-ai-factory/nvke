@@ -859,7 +859,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count by (version) (group by (k8s_cluster_name,version) (label_replace(kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:.*\"}, \"version\", \"$1\", \"image\", \".*:v?([^@:+-]+).*$\") or label_replace(kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:.*\"}, \"version\", \"$1\", \"image_spec\", \".*:v?([^@:+-]+).*$\")))",
+          "expr": "count by (version) (group by (k8s_cluster_name,version) (label_replace(kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:.*\"}, \"version\", \"$1\", \"image\", \".*/calico/node:v?([^@:+-]+).*$\") or label_replace(kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:.*\"}, \"version\", \"$1\", \"image_spec\", \".*/calico/node:v?([^@:+-]+).*$\")))",
           "legendFormat": "{{version}}",
           "instant": true,
           "range": false
@@ -983,7 +983,7 @@
       "targets": [
         {
           "refId": "B",
-          "expr": "count by (k8s_cluster_name,version) (max by (k8s_cluster_name,node,version) (label_replace(kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:.*\"}, \"version\", \"$1\", \"image\", \".*:v?([^@:+-]+).*$\") or label_replace(kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:.*\"}, \"version\", \"$1\", \"image_spec\", \".*:v?([^@:+-]+).*$\")))",
+          "expr": "count by (k8s_cluster_name,version) (max by (k8s_cluster_name,node,version) (label_replace(kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image=~\".*/calico/node:.*\"}, \"version\", \"$1\", \"image\", \".*/calico/node:v?([^@:+-]+).*$\") or label_replace(kube_pod_container_info{k8s_cluster_name=~\"$cluster\",image_spec=~\".*/calico/node:.*\"}, \"version\", \"$1\", \"image_spec\", \".*/calico/node:v?([^@:+-]+).*$\")))",
           "format": "table",
           "instant": true,
           "range": false
