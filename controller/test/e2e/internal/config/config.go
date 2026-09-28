@@ -95,7 +95,15 @@ func Load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	switch {
 	case err == nil:
-		if uerr := yaml.Unmarshal(data, &cfg); uerr != nil {
+		// Strict, as the environment file is parsed: an unknown key is
+		// otherwise dropped in silence and the run proceeds on the default,
+		// which surfaces half an hour into bare metal as behaviour nobody
+		// asked for, over a file that reads correctly.
+		//
+		// Not case-sensitive, though. This decodes through encoding/json,
+		// whose field matching is not, so jumphost still binds to jumpHost.
+		// That is a match rather than a miss, so nothing is lost.
+		if uerr := yaml.UnmarshalStrict(data, &cfg); uerr != nil {
 			return Config{}, fmt.Errorf("parsing config %s: %w", path, uerr)
 		}
 	case os.IsNotExist(err):
