@@ -8,22 +8,20 @@
 #
 # The nico-containers spec was one of 60 Ginkgo specs no workflow selected. It
 # needs CAPNICo, which lives in dsx-ai-factory/cluster-api-provider-nico.
-# NKE_INTERNAL_RO_TOKEN reads it, the same secret go-work-check.yml uses. That
-# repository is public now, so the token is no longer required here -- dropping
-# it is what would let this lane run on a fork pull request, where secrets are
-# not available. Not done yet: it needs a run to prove.
+# The provider repository is public; checking out its source needs no
+# repository-specific token.
 #
 # nico-sim's nico-containers backend provisions kind-style node containers, so
 # this needs no real infrastructure and reuses the CAPD kindest node image the
 # CAPD lane already builds.
 #
 # NOT in merge-gate.yml, and deliberately so. This lane needs an NVIDIA runner
-# and the internal CAPNICo source token, so it remains behind the vetted mirror
-# branch trust boundary even though the pull-request workload is now bounded.
+# runner, so it remains behind the vetted mirror branch trust boundary even
+# though the pull-request workload is now bounded.
 #
 # Self-hosted runners do not receive pull_request events, so this triggers on the
 # copy-pr-bot mirror branch like the CAPD lane. That also puts the run on a push
-# to an in-repo branch, which is what makes NKE_INTERNAL_RO_TOKEN available.
+# to an in-repo branch for the existing runner trust boundary.
 
 name: NICo E2E
 
@@ -95,8 +93,6 @@ jobs:
     uses: ./.github/workflows/backend-e2e.yml
     permissions:
       contents: read
-    secrets:
-      NKE_INTERNAL_RO_TOKEN: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
     with:
       backend: nico
       arch: ${{ matrix.arch }}

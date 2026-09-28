@@ -29,17 +29,8 @@ on:
       - 'controller/**'
       - 'go.work'
       - 'go.work.sum'
-      - 'vendor/**'
       - '.github/workflows/gofail-e2e.yml'
   workflow_call:
-    secrets:
-      NKE_INTERNAL_RO_TOKEN:
-        description: >-
-          Read-only token for internal NVIDIA repositories. Optional: the suite
-          reads the CAPNICo CRDs from a committed fixture, so a fork run without
-          the token still passes. Used only by the drift check, which runs on
-          the base repo's own events, never on a called pull_request.
-        required: false
   # Also twice a day, so a break the paths above filtered out, or one a flake
   # hid, still surfaces within twelve hours. A schedule ignores those paths, so
   # these runs always exercise the whole suite.
@@ -161,20 +152,16 @@ jobs:
           CWE_GOFAIL_E2E_CAPNICO_CRDS: ${{ github.workspace }}/controller/test/fixtures/capnico-crds
         run: make e2e-gofail
 
-      # The fixture is a pinned copy of the private provider's CRDs. Verify it
-      # against the version go.mod pins, on the events that carry the token
-      # (push to main, the schedule, dispatch) -- never a called pull_request,
-      # where forks have no token. github.event_name is the caller's event, so
-      # this is skipped when merge-gate.yml calls this workflow.
+      # The fixture is a pinned copy of the public provider's CRDs. Verify it
+      # against the version go.mod pins on the base repo's own events.
       - name: Verify the CAPNICo CRD fixture is current
         # amd64 only: the fixture is architecture-independent, so the second
         # leg would just double the gh api calls and the chance of a flake.
         if: matrix.arch == 'amd64' && github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
         env:
-          GH_TOKEN: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          [[ -n "${GH_TOKEN}" ]] || { echo "::notice::no internal token on this run; skipping the CAPNICo CRD drift check"; exit 0; }
           ver="$(cd controller && go list -m -f '{{.Version}}' github.com/dsx-ai-factory/cluster-api-provider-nico)"
           echo "checking controller/test/fixtures/capnico-crds against cluster-api-provider-nico ${ver}"
           drift=0

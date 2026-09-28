@@ -74,14 +74,13 @@ The full set, if you would rather run everything:
 
 ```bash
 make build test           # compile and test every module
-make work-check-offline   # vendor/ agrees with every go.mod, no network needed
+make work-check           # workspace and module manifests agree
 make license-header-check # every source file carries the Apache-2.0 header
 ```
 
 Run `make work-sync` and commit everything it changes whenever you touch a
-`go.mod`. It is the only target that needs NVIDIA-internal access, because
-re-vendoring reaches `cluster-api-provider-nico`. Everything else builds from the
-committed `vendor/` tree with no credentials at all.
+`go.mod`. Dependencies are public and downloaded into the Go module cache as
+needed; no NVIDIA-internal repository access is required.
 
 ## What you cannot reproduce locally
 
@@ -102,5 +101,4 @@ These are the checks where a local answer will differ from CI, and why:
 ## Documentation
 
 `docs/` holds the longer-form guides. [`go-workspace.md`](go-workspace.md) is the
-one to read first if a workspace or vendoring check fails: it indexes the failures
-by the message you saw rather than by target name.
+one to read first if a workspace or module check fails.

@@ -59,9 +59,8 @@ Nothing to set. Every dependency of this module is public: the
 is public now and served by `proxy.golang.org`. `GOPRIVATE` is no longer needed
 for any of it.
 
-`GOPROXY=off make build` from the repository root still compiles every module
-with no credentials and no network, because the committed `vendor/` tree carries
-everything.
+`make build` from the repository root compiles every module with no internal
+credentials. A cold build downloads public dependencies into the Go cache.
 
 ### API module (for consumers)
 

@@ -53,8 +53,8 @@ jobs:
           persist-credentials: false
 
       # WHAT THIS ACTUALLY COVERS. The action reviews what GitHub's dependency
-      # graph resolved, which is not obviously all nine modules in a monorepo
-      # with a committed vendor/ tree. Measured on 2026-09-20, it is:
+      # graph resolved, which is not obviously all modules in a monorepo.
+      # Measured on 2026-09-20, it was:
       #
       #   65 manifests = 9 go.mod + 56 workflow files
       #

@@ -10,7 +10,7 @@ WORKDIR /workspace
 COPY . /workspace
 WORKDIR /workspace/controller
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
-    go build -mod=vendor -o /out/dsx-identity-exchange-mock ./hack/dsx-identity-exchange-mock
+    go build -o /out/dsx-identity-exchange-mock ./hack/dsx-identity-exchange-mock
 
 FROM ${BASE_REGISTRY}/alpine:3.24.1
 COPY --from=builder /out/dsx-identity-exchange-mock /usr/local/bin/dsx-identity-exchange-mock

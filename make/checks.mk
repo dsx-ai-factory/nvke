@@ -134,13 +134,12 @@ nktp-chart-lint: nktp-chart-deps ## Lint and render the NKTP chart, then validat
 
 nktp-chart-check: nktp-chart-lint ## Run every NKTP chart check enforced by CI. (run by the merge gate)
 
-# Use the same tool, Go version, offline scan, waiver, and stale-waiver guard as
+# Use the same tool, Go version, waiver, and stale-waiver guard as
 # CI. The helper returns 3 for an unwaived finding and preserves tool failures.
 vulncheck: ## Report vulnerabilities reachable from each module. (run by the merge gate)
 	@$(call require_tool,govulncheck,$(GOVULNCHECK_VERSION))
 	@echo "- govulncheck under Go $(GOVULNCHECK_GO_VERSION), the version CI uses"
-	@# The scan runs with GOPROXY=off, and a toolchain switch fetches through the
-	@# proxy. Download the toolchain first, or a machine that does not already
+	@# Download the toolchain first, or a machine that does not already
 	@# have it fails inside the scan with an error naming neither GOPROXY nor
 	@# this pin. CI is unaffected: setup-go leaves the toolchain in place.
 	@GOTOOLCHAIN=go$(GOVULNCHECK_GO_VERSION) go version >/dev/null 2>&1 || { \

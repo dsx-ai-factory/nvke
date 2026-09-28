@@ -26,8 +26,8 @@ import (
 // client-go rather than shelling out to kubectl, which is what the GitLab
 // original does. Three reasons: the runner has no kubectl and this lane
 // deliberately does not install one; client-go is already a direct dependency
-// of the controller module and fully vendored, so this adds nothing to go.mod
-// or vendor/; and the vendored client is v0.36.3 against a v1.36.3 cluster, so
+// of the controller module, so this adds nothing to go.mod; and the pinned
+// client is v0.36.3 against a v1.36.3 cluster, so
 // the version-skew problem the GitLab script solves by parsing a version out of
 // a package name does not arise at all.
 //

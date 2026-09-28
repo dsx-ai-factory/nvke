@@ -98,7 +98,7 @@ jobs:
             echo "::endgroup::"
           }
           # The controller Dockerfile builds from the repository root: the
-          # module lives in the root Go workspace and needs go.work + vendor/.
+          # module lives in the root Go workspace and needs go.work.
           check controller/Dockerfile                    .
           check cluster-api-provider-provisioned/Dockerfile .
           check controller/hack/capd-reboot-controller/Dockerfile controller/hack/capd-reboot-controller
@@ -159,10 +159,9 @@ jobs:
         run: docker image inspect nke/capd-reboot-controller:ci --format 'built {{.RepoTags}} {{.Size}} bytes'
 
       # A real end-to-end controller image build: it compiles the controller
-      # inside the build, resolving every dependency from the committed
-      # workspace vendor/ tree, so it needs no credentials. The context is the
+      # inside the build, resolving public Go modules without credentials. The context is the
       # repository root because the controller is a workspace member (it needs
-      # go.work, vendor/ and the sibling modules). Verification only — the
+      # go.work and the sibling modules). Verification only — the
       # local tag is never pushed.
       - name: Build controller image (amd64 and arm64)
         shell: bash

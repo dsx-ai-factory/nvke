@@ -13,7 +13,7 @@
 * @dsx-ai-factory/nke-write
 
 # area/deps
-# First, so a module rule wins for its own go.mod. vendor/ repeats at the end.
+# First, so a module rule wins for its own go.mod.
 go.mod @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
 go.sum @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
 /go.work @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
@@ -65,9 +65,7 @@ docs/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris @jedimt
 /nktp/ @dsx-ai-factory/nke-write @vineeth-bandi
 /.github/workflows/nktp-*.yml @dsx-ai-factory/nke-write @vineeth-bandi
 
-# area/deps again: vendor/ beats the bare `docs/` rule, dependabot.yml
-# beats /.github/.
-/vendor/ @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
+# area/deps again: dependabot.yml beats /.github/.
 /.github/dependabot.yml @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
 
 # SECURITY.md, GOVERNANCE.md, MAINTAINERS.md, CODE_OF_CONDUCT.md and LICENSE are

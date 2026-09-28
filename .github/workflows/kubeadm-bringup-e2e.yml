@@ -129,7 +129,7 @@ jobs:
       # Boots two stock Ubuntu VMs and proves they can reach each other. Installs
       # nothing, so it depends on no NKE infrastructure and answers "does
       # nico-vms work on this runner" on its own. -C controller because the suite
-      # lives in that module, which keeps go.work, every go.mod and vendor/ out
+      # lives in that module, which keeps go.work and other modules' go.mod out
       # of this change. NICO_VMS_LIBVIRT_NETWORK is deliberately absent: setting
       # it at all selects libvirt-network mode, which is for shared hosts.
       - name: Smoke test nico-vms (2 VMs, no NKE packages)

@@ -32,9 +32,7 @@ endif
 
 # golangci-lint pin and bootstrap, shared with every other module.
 #
-# Empty, not "off", because this module lints against the root vendor/ tree, so
-# the workspace stays on. .golangci.yml says the same with
-# modules-download-mode: vendor, and lint.yml:92 does the same for this job.
+# Keep the workspace on so lint resolves the same module graph as builds.
 GOLANGCI_LINT_GOWORK :=
 include ../make/tool-versions.mk
 include ../make/golangci.mk
@@ -92,8 +90,7 @@ generate: ## Run every generator in this module and in api/.
 # Split out from `generate` so it can run without the rest of the module.
 # Every //go:generate directive in the controller currently lives in
 # api/generate.go, but `go generate ./...` above still has to load this
-# module's package graph -- which reaches cluster-api-provider-nico and
-# therefore needs either the network or the workspace vendor/ tree. The api
+# module's package graph -- which may need public module downloads. The api
 # module has neither problem: it is self-contained, so this target is the half
 # that CI can run.
 .PHONY: generate-api
@@ -128,8 +125,7 @@ print-%:
 	@echo '$($*)'
 
 .PHONY: build
-# -buildvcs=false because the version comes from the -X ldflag below. See the note
-# on work-check-offline in the root Makefile.
+# -buildvcs=false because the version comes from the -X ldflag below.
 build: ## Build controller into bin/.
 	CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags "-X github.com/dsx-ai-factory/nke/controller/internal/version.Version=${BUILD_VERSION} $(RELEASE_LDFLAGS)" -o ./bin/$(WORKER_BIN_NAME) ./cmd/worker/
 
@@ -279,9 +275,8 @@ e2e-gofail: ## Execute gofail e2e tests against a local Temporal dev server.
 .PHONY: docker-build-local
 docker-build-local: ## Build the controller image for amd64 and load it into the local daemon
 	@# The build context is the repository root: the controller is a member of
-	@# the root Go workspace, and the image build needs go.work, the committed
-	@# vendor/ tree, and the sibling modules. Every dependency comes from
-	@# vendor/, so the build needs no git credentials.
+	@# the root Go workspace, and the image build needs go.work and sibling
+	@# modules. Go downloads public dependencies into the builder cache.
 	@# amd64 only because --load does not support multi-platform images.
 	@# Use docker-build-multiarch to build both architectures.
 	DOCKER_BUILDKIT=1 docker build -f Dockerfile --platform linux/amd64 \

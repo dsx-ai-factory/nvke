@@ -51,7 +51,6 @@ on:
       - 'agent/**'
       - 'go.work'
       - 'go.work.sum'
-      - 'vendor/**'
       - '.github/workflows/deb.yml'
   pull_request:
     branches: [main]
@@ -59,7 +58,6 @@ on:
       - 'agent/**'
       - 'go.work'
       - 'go.work.sum'
-      - 'vendor/**'
       - '.github/workflows/deb.yml'
   workflow_dispatch:
 

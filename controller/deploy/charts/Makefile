@@ -12,9 +12,8 @@ ifeq (,$(GOBIN))
 GOBIN = $(shell $(GO) env GOPATH)/bin
 endif
 
-# Empty, not "off", for the reason controller/api/Makefile gives: this module
-# has no .golangci.yml of its own and inherits controller/.golangci.yml, whose
-# vendor mode only agrees with the root vendor/ tree when the workspace is on.
+# This module inherits controller/.golangci.yml; keep workspace mode on to
+# match the other module builds.
 GOLANGCI_LINT_GOWORK :=
 include ../../../make/golangci.mk
 

@@ -51,7 +51,7 @@ CRD types, and test and development tooling.
 | `os-image/` | `nke-os-image-check` | OS image checks |
 
 `go.work` is the list of record. See [go-workspace.md](go-workspace.md) for how
-the workspace fits together and why `vendor/` is committed.
+the workspace fits together and how public dependencies are resolved.
 
 ## controller (Cloud Workflow Engine)
 
@@ -137,7 +137,7 @@ provisioned so that Cluster API can bootstrap them.
 
 ## Further reading
 
-- `docs/go-workspace.md` — the workspace, and why `vendor/` is committed
+- `docs/go-workspace.md` — the workspace and dependency-management workflow
 - `controller/docs/authenticating-to-the-api.md` — API authentication
 - `controller/docs/byo-os.md` — bring your own OS image
 - `controller/AGENTS.md` — AI agent development guide for CWE

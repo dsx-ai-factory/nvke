@@ -5,7 +5,7 @@
 # thin callers; everything they had in common lives here once.
 #
 # What differs between backends is small: the ginkgo label filter, the Tilt
-# provider list, and whether the run needs the internal CAPNICo checkout. What
+# provider list, and whether the run needs the public CAPNICo source checkout. What
 # they share is not: runner setup, inotify tuning, and about 60 lines of
 # redaction-gated diagnostics collection. That block was the reason to factor
 # this out rather than copy it.
@@ -80,8 +80,7 @@ on:
         default: false
       needs-capnico-source:
         description: >-
-          Check out dsx-ai-factory/cluster-api-provider-nico next to the monorepo. It is
-          an internal repository, so this needs NKE_INTERNAL_RO_TOKEN.
+          Check out public dsx-ai-factory/cluster-api-provider-nico next to the monorepo.
         required: false
         type: boolean
         default: false
@@ -131,10 +130,6 @@ on:
         required: false
         type: string
         default: ''
-    secrets:
-      NKE_INTERNAL_RO_TOKEN:
-        description: Read-only token for internal NVIDIA repositories.
-        required: false
 
 permissions: {}
 
@@ -171,7 +166,6 @@ jobs:
       # one runner/cluster and drives the per-leg label filter and flag itself.
       NKE_E2E_SINGLE_RUNNER_CONTROL_PLANE_MODES: ${{ inputs.single-runner-control-plane-modes }}
       KIND_CLUSTER_NAME: cwe-${{ inputs.backend }}-${{ github.run_id }}-${{ github.run_attempt }}
-      GOPROXY: "off"
       # Empty unless the caller asked for CAPNICo. The script stages the tree
       # into the runner container only when this is set, so every other backend
       # skips that work. This is the HOST path; the container path is a constant
@@ -211,7 +205,6 @@ jobs:
         with:
           repository: dsx-ai-factory/cluster-api-provider-nico
           ref: ${{ steps.capnico_version.outputs.ref }}
-          token: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
           path: .capnico/cluster-api-provider-nico
           persist-credentials: false
 

@@ -1,8 +1,0 @@
-coverage.txt
-*.out
-*.test
-/bin
-/gen
-/vendor
-/DATA
-/internal/phash
