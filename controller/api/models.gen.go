@@ -48,6 +48,12 @@ const (
 	NodeTaintEffectPreferNoSchedule NodeTaintEffect = "PreferNoSchedule"
 )
 
+// Defines values for OVNKubernetesConfigGatewayMode.
+const (
+	OVNKubernetesConfigGatewayModeLocal  OVNKubernetesConfigGatewayMode = "local"
+	OVNKubernetesConfigGatewayModeShared OVNKubernetesConfigGatewayMode = "shared"
+)
+
 // Defines values for UpdateInProgressType.
 const (
 	UpdateInProgressTypeCpNodesRecycling UpdateInProgressType = "cp_nodes_recycling"
@@ -103,14 +109,14 @@ type Cluster struct {
 	// TeleportEnabled Whether Teleport SSH enrollment is enabled for nodes in this cluster.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
 
+	// CreatedAt Creation time.
+	CreatedAt time.Time `json:"createdAt"`
+
 	// Conditions Lifecycle conditions.
 	Conditions ClusterConditions `json:"conditions"`
 
 	// ControlPlaneConfig Current control-plane configuration.
 	ControlPlaneConfig *ControlPlaneConfig `json:"controlPlaneConfig,omitempty"`
-
-	// CreatedAt Creation time.
-	CreatedAt time.Time `json:"createdAt"`
 
 	// Infra Infra provider fields.
 	Infra *InfraClusterProvider `json:"infra,omitempty"`
@@ -120,6 +126,9 @@ type Cluster struct {
 
 	// Nico NICo identifiers.
 	Nico *NicoClusterProvider `json:"nico,omitempty"`
+
+	// OVNKubernetes Immutable OVN Kubernetes settings supplied at cluster creation.
+	OVNKubernetes *OVNKubernetesConfig `json:"ovnKubernetes,omitempty"`
 }
 
 // ClusterConditions Lifecycle conditions of a cluster. Each is a Condition.
@@ -409,6 +418,9 @@ type CreateClusterRequest struct {
 	// TeleportEnabled Enable Teleport SSH enrollment for nodes in this cluster. When omitted, the server-side default for the site is applied.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
 
+	// NodePools Initial worker node pools.
+	NodePools *[]NodePoolCreateConfig `json:"nodePools,omitempty"`
+
 	// ControlPlaneConfig Writable cluster-level control plane configuration supplied at cluster creation.
 	// Required when you create a cluster.
 	// `nico` carries the NICo settings for the control-plane nodes; it is required
@@ -426,8 +438,8 @@ type CreateClusterRequest struct {
 	// Nico NICo identifiers for the cluster. Fixed at creation.
 	Nico *NicoClusterProvider `json:"nico,omitempty"`
 
-	// NodePools Initial worker node pools.
-	NodePools *[]NodePoolCreateConfig `json:"nodePools,omitempty"`
+	// OVNKubernetes Immutable OVN Kubernetes settings. Omit to retain packaged chart defaults.
+	OVNKubernetes *OVNKubernetesConfig `json:"ovnKubernetes,omitempty"`
 }
 
 // CreateClusterRequestCniPlugin CNI plugin. Defaults to ovn-kubernetes when omitted. calico is an explicit override.
@@ -1078,6 +1090,29 @@ type OSProfile struct {
 	// Name The name of the OS profile
 	Name string `json:"name"`
 }
+
+// OVNKubernetesConfig Optional cluster-wide OVN Kubernetes settings. Requires cniPlugin to be
+// ovn-kubernetes and is immutable after cluster creation. Omitting this
+// object retains packaged chart defaults. Supplying gatewayInterface or
+// allowNoUplink replaces the chart's combined gateway options; gatewayMode
+// and mtu override their respective chart values only when supplied.
+// This configuration does not create host interfaces or Open vSwitch bridges.
+type OVNKubernetesConfig struct {
+	// AllowNoUplink Allow a local-mode gateway without a matching physical uplink or default route. Ignored in shared mode.
+	AllowNoUplink *bool `json:"allowNoUplink,omitempty"`
+
+	// GatewayInterface Gateway interface or existing Open vSwitch bridge name. It must exist with the same name on every node.
+	GatewayInterface *string `json:"gatewayInterface,omitempty"`
+
+	// GatewayMode OVN gateway mode.
+	GatewayMode *OVNKubernetesConfigGatewayMode `json:"gatewayMode,omitempty"`
+
+	// MTU Pod network MTU in bytes. The underlay must also accommodate encapsulation overhead.
+	MTU *int `json:"mtu,omitempty"`
+}
+
+// OVNKubernetesConfigGatewayMode OVN gateway mode.
+type OVNKubernetesConfigGatewayMode string
 
 // UpdateClusterControlPlaneConfig Changes to `osProfile` or the Kubernetes version start a control-plane
 // rollout. All fields are optional. A provider payload that does not match the

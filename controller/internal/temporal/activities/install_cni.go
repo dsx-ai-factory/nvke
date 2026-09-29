@@ -6,6 +6,7 @@ package activities
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -148,18 +149,42 @@ func installCNIRequest(cluster db.Cluster, cniImageRegistry string) (*nvkeproto.
 		return nil, fmt.Errorf("CNI plugin %s has no post-init install path", cluster.CniPlugin)
 	}
 
-	// KubeadmInit sets this too, but the agent ignores it when it skips its own
-	// CNI install, so repeat it here.
-	var cniConfig map[string]string
-	if cniImageRegistry != "" {
-		cniConfig = map[string]string{cniRegistryHelmValue: cniImageRegistry}
-	}
-
 	return &nvkeproto.InstallCNIRequest{
 		CniVariant:     variant,
-		CniConfig:      cniConfig,
+		CniConfig:      cniHelmConfig(cluster, cniImageRegistry),
 		Version:        postInitCNIVersion(cluster),
 		PodNetworkCidr: cluster.PodCIDR,
 		ServiceCidr:    cluster.ServiceCIDR,
 	}, nil
+}
+
+// cniHelmConfig maps persisted settings for both the in-init and post-init paths.
+// Only configured Helm values are overridden.
+func cniHelmConfig(cluster db.Cluster, imageRegistry string) map[string]string {
+	values := make(map[string]string)
+	if imageRegistry != "" {
+		values[cniRegistryHelmValue] = imageRegistry
+	}
+	if ovn := cluster.OVNKubernetes; ovn != nil {
+		var gatewayOptions []string
+		if ovn.GatewayInterface != nil {
+			gatewayOptions = append(gatewayOptions, "--gateway-interface="+*ovn.GatewayInterface)
+		}
+		if ovn.AllowNoUplink != nil {
+			gatewayOptions = append(gatewayOptions, "--allow-no-uplink="+strconv.FormatBool(*ovn.AllowNoUplink))
+		}
+		if len(gatewayOptions) != 0 {
+			values["global.gatewayOpts"] = strings.Join(gatewayOptions, " ")
+		}
+		if ovn.GatewayMode != nil {
+			values["global.gatewayMode"] = *ovn.GatewayMode
+		}
+		if ovn.MTU != nil {
+			values["mtu"] = strconv.Itoa(*ovn.MTU)
+		}
+	}
+	if len(values) == 0 {
+		return nil
+	}
+	return values
 }

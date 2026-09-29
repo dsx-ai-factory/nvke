@@ -50,6 +50,7 @@ indexes both.
 | [../controller/docs/authenticating-to-the-api.md](../controller/docs/authenticating-to-the-api.md) | Authenticating to the API |
 | [../controller/docs/configuring-api-authentication.md](../controller/docs/configuring-api-authentication.md) | Turning API authentication on, including RBAC for `nvkectl` |
 | [../controller/docs/byo-os.md](../controller/docs/byo-os.md) | Bringing your own OS image |
+| [../controller/docs/configuring-ovn-kubernetes.md](../controller/docs/configuring-ovn-kubernetes.md) | OVN gateway interface, gateway mode, and pod MTU |
 
 ## Operating a site
 

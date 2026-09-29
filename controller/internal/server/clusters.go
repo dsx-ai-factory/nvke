@@ -395,6 +395,9 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 			return fmt.Errorf("invalid CNI version: %s, expected semver version core X.Y.Z without leading v", *req.CniVersion)
 		}
 	}
+	if err := validateOVNKubernetesConfig(dbCniPlugin, req.OVNKubernetes); err != nil {
+		return err
+	}
 
 	for _, nodePool := range nodePools {
 		if err := naming.ValidateNodeNamePrefix(req.Name, nodePool.NodeNamePrefix); err != nil {
@@ -1164,6 +1167,7 @@ func APIClusterFromDB(dbCluster *db.Cluster) api.Cluster {
 		Name:                          dbCluster.Name,
 		CniPlugin:                     string(dbCluster.CniPlugin),
 		CniVersion:                    db.EffectiveCNIVersion(dbCluster.CniPlugin, strings.TrimSpace(dbCluster.CniVersion)),
+		OVNKubernetes:                 apiOVNKubernetesConfig(dbCluster.OVNKubernetes),
 		EtcdEncrypted:                 dbCluster.EtcdEncrypted,
 		ControlPlaneKubernetesVersion: dbCluster.KubernetesVersion,
 		ControlPlaneVIP:               controlPlaneVIP,
@@ -1221,6 +1225,7 @@ func DBClusterFromAPI(req *api.CreateClusterRequest) (db.Cluster, error) {
 		Name:              req.Name,
 		CniPlugin:         cniPlugin,
 		CniVersion:        db.EffectiveCNIVersion(cniPlugin, cniVersion),
+		OVNKubernetes:     dbOVNKubernetesConfig(req.OVNKubernetes),
 		EtcdEncrypted:     req.EtcdEncrypted,
 		KubernetesVersion: req.ControlPlaneKubernetesVersion,
 		ControlPlaneVIP:   controlPlaneVIP,

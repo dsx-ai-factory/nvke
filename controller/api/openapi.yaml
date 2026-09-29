@@ -984,6 +984,11 @@ components:
           example: "1.4.0"
           description: CNI version, as X.Y.Z. Defaults to 3.30.1 for calico or 1.4.0 for ovn-kubernetes.
           x-order: 7
+        ovnKubernetes:
+          allOf:
+            - $ref: "#/components/schemas/OVNKubernetesConfig"
+          x-go-name: OVNKubernetes
+          description: Immutable OVN Kubernetes settings. Omit to retain packaged chart defaults.
         etcdEncrypted:
           type: boolean
           example: true
@@ -1275,6 +1280,11 @@ components:
           type: string
           description: CNI version.
           x-order: 8
+        ovnKubernetes:
+          allOf:
+            - $ref: "#/components/schemas/OVNKubernetesConfig"
+          x-go-name: OVNKubernetes
+          description: Immutable OVN Kubernetes settings supplied at cluster creation.
         etcdEncrypted:
           type: boolean
           example: true
@@ -1367,6 +1377,39 @@ components:
           description: |
             The cluster network cannot be changed after creation; any network value in an
             update is rejected.
+
+    OVNKubernetesConfig:
+      type: object
+      additionalProperties: false
+      description: |
+        Optional cluster-wide OVN Kubernetes settings. Requires cniPlugin to be
+        ovn-kubernetes and is immutable after cluster creation. Omitting this
+        object retains packaged chart defaults. Supplying gatewayInterface or
+        allowNoUplink replaces the chart's combined gateway options; gatewayMode
+        and mtu override their respective chart values only when supplied.
+        This configuration does not create host interfaces or Open vSwitch bridges.
+      properties:
+        gatewayInterface:
+          type: string
+          minLength: 1
+          maxLength: 15
+          pattern: '^[A-Za-z0-9_.][A-Za-z0-9_.-]{0,14}$'
+          not:
+            enum: [".", "..", "lo"]
+          description: Gateway interface or existing Open vSwitch bridge name. It must exist with the same name on every node.
+        allowNoUplink:
+          type: boolean
+          description: Allow a local-mode gateway without a matching physical uplink or default route. Ignored in shared mode.
+        gatewayMode:
+          type: string
+          enum: [shared, local]
+          description: OVN gateway mode.
+        mtu:
+          type: integer
+          x-go-name: MTU
+          minimum: 576
+          maximum: 65535
+          description: Pod network MTU in bytes. The underlay must also accommodate encapsulation overhead.
 
     ClusterNetworkCreateConfig:
       type: object

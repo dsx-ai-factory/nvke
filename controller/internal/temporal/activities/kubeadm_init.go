@@ -138,9 +138,7 @@ func (a *Activities) kubeadmInit(ctx context.Context, input KubeadmInitInput) er
 	// agent just ignores them when this is true.
 	req.NoCniInstall = input.InstallCNIAfterInit
 
-	if a.cfg.CNIImageRegistry != "" {
-		req.CniConfig = map[string]string{cniRegistryHelmValue: a.cfg.CNIImageRegistry} //nolint:staticcheck // Deprecated in-init CNI path still consumes CniConfig for registry overrides.
-	}
+	req.CniConfig = cniHelmConfig(cluster, a.cfg.CNIImageRegistry) //nolint:staticcheck // Deprecated in-init CNI path still consumes CniConfig.
 
 	// Use the cluster's configured CNI version (falling back to the plugin default when unset) so the
 	// in-init CNI manifests match the CNI image package pinned in the node's user-data. See

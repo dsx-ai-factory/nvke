@@ -48,19 +48,20 @@ type CAPIClusterProvider struct {
 }
 
 type Cluster struct {
-	ID                    uuid.UUID  `bun:"type:uuid,pk,default:gen_random_uuid()"`
-	Name                  string     `bun:"type:text,notnull"`
-	CniPlugin             CniPlugin  `bun:"type:text"`
-	CniVersion            string     `bun:"type:text"`
-	EtcdEncrypted         bool       `bun:"type:boolean,notnull,default:false"`
-	KubernetesVersion     string     `bun:"type:text,notnull"`
-	ControlPlaneVIP       string     `bun:"type:text"`
-	EnableCPNodeRecycling bool       `bun:"type:boolean,notnull,default:false"`
-	TeleportEnabled       bool       `bun:"type:boolean,notnull,default:false"`
-	PodCIDR               string     `bun:"pod_cidr,type:text,notnull,default:'192.168.0.0/16'"`
-	ServiceCIDR           string     `bun:"service_cidr,type:text,notnull,default:'10.96.0.0/12'"`
-	OIDCAuthEnabled       bool       `bun:"type:boolean,notnull,default:false"`
-	NextCertRenewalDue    *time.Time `bun:"type:timestamptz"`
+	ID                    uuid.UUID            `bun:"type:uuid,pk,default:gen_random_uuid()"`
+	Name                  string               `bun:"type:text,notnull"`
+	CniPlugin             CniPlugin            `bun:"type:text"`
+	CniVersion            string               `bun:"type:text"`
+	OVNKubernetes         *OVNKubernetesConfig `bun:"ovn_kubernetes,type:jsonb"`
+	EtcdEncrypted         bool                 `bun:"type:boolean,notnull,default:false"`
+	KubernetesVersion     string               `bun:"type:text,notnull"`
+	ControlPlaneVIP       string               `bun:"type:text"`
+	EnableCPNodeRecycling bool                 `bun:"type:boolean,notnull,default:false"`
+	TeleportEnabled       bool                 `bun:"type:boolean,notnull,default:false"`
+	PodCIDR               string               `bun:"pod_cidr,type:text,notnull,default:'192.168.0.0/16'"`
+	ServiceCIDR           string               `bun:"service_cidr,type:text,notnull,default:'10.96.0.0/12'"`
+	OIDCAuthEnabled       bool                 `bun:"type:boolean,notnull,default:false"`
+	NextCertRenewalDue    *time.Time           `bun:"type:timestamptz"`
 
 	ProviderType ProviderType         `bun:"provider_type,type:text,notnull"`
 	Nico         *NicoClusterProvider `bun:"nico,type:jsonb"`

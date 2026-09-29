@@ -16,6 +16,7 @@ import (
 	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 func TestInstallCNIRequest(t *testing.T) {
@@ -72,6 +73,59 @@ func TestInstallCNIRequest(t *testing.T) {
 			registry:    "registry.example.com/nvke",
 			wantVariant: nvkeproto.CniVariant_CNI_VARIANT_CALICO,
 			wantConfig:  map[string]string{cniRegistryHelmValue: "registry.example.com/nvke"},
+		},
+		{
+			name:        "empty ovn settings leave chart defaults unchanged",
+			cluster:     db.Cluster{CniPlugin: db.CNIOvnKubernetes, OVNKubernetes: &db.OVNKubernetesConfig{}},
+			wantVariant: nvkeproto.CniVariant_CNI_VARIANT_OVN,
+		},
+		{
+			name:        "empty ovn settings preserve the registry override",
+			cluster:     db.Cluster{CniPlugin: db.CNIOvnKubernetes, OVNKubernetes: &db.OVNKubernetesConfig{}},
+			registry:    "registry.example.com/nvke",
+			wantVariant: nvkeproto.CniVariant_CNI_VARIANT_OVN,
+			wantConfig:  map[string]string{cniRegistryHelmValue: "registry.example.com/nvke"},
+		},
+		{
+			name: "ovn settings and registry reach the install request together",
+			cluster: db.Cluster{CniPlugin: db.CNIOvnKubernetes, OVNKubernetes: &db.OVNKubernetesConfig{
+				GatewayInterface: testutil.PtrTo("brfab0"),
+				AllowNoUplink:    testutil.PtrTo(true),
+				GatewayMode:      testutil.PtrTo("local"),
+				MTU:              testutil.PtrTo(8900),
+			}},
+			registry:    "registry.example.com/nvke",
+			wantVariant: nvkeproto.CniVariant_CNI_VARIANT_OVN,
+			wantConfig: map[string]string{
+				cniRegistryHelmValue: "registry.example.com/nvke",
+				"global.gatewayOpts": "--gateway-interface=brfab0 --allow-no-uplink=true",
+				"global.gatewayMode": "local",
+				"mtu":                "8900",
+			},
+		},
+		{
+			name: "explicit false is passed without overriding other settings",
+			cluster: db.Cluster{CniPlugin: db.CNIOvnKubernetes, OVNKubernetes: &db.OVNKubernetesConfig{
+				AllowNoUplink: testutil.PtrTo(false),
+			}},
+			wantVariant: nvkeproto.CniVariant_CNI_VARIANT_OVN,
+			wantConfig:  map[string]string{"global.gatewayOpts": "--allow-no-uplink=false"},
+		},
+		{
+			name: "gateway interface does not imply a gateway mode or MTU",
+			cluster: db.Cluster{CniPlugin: db.CNIOvnKubernetes, OVNKubernetes: &db.OVNKubernetesConfig{
+				GatewayInterface: testutil.PtrTo("brfab0"),
+			}},
+			wantVariant: nvkeproto.CniVariant_CNI_VARIANT_OVN,
+			wantConfig:  map[string]string{"global.gatewayOpts": "--gateway-interface=brfab0"},
+		},
+		{
+			name: "MTU does not override gateway settings",
+			cluster: db.Cluster{CniPlugin: db.CNIOvnKubernetes, OVNKubernetes: &db.OVNKubernetesConfig{
+				MTU: testutil.PtrTo(8900),
+			}},
+			wantVariant: nvkeproto.CniVariant_CNI_VARIANT_OVN,
+			wantConfig:  map[string]string{"mtu": "8900"},
 		},
 		{
 			name:        "a version other than the default selects that stream",
