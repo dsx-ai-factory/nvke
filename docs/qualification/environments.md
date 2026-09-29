@@ -125,10 +125,12 @@ read from the environment and never written to this file, a values file, or a
 command line.
 
 **The jump host.** It is a repository variable rather than a declared field, so
-the access path is not published alongside the site. Note the tension: VPC and
-subnet identifiers *are* checked in, so the line between "identifier" and
-"access path" is a judgement rather than a rule, and worth revisiting
-deliberately.
+the access path is not published alongside the site. It is not a special case:
+the org, site, VPC and subnet identifiers are variables too, as "Where the
+identifiers come from" above describes, so the same rule covers the access path
+and the identifiers it reaches. Keeping them as `${NAME}` references rather than
+literals was raised in review and settled deliberately; a site added later
+declares its own references under `sites:` and the variable list grows with it.
 
 **The org's human-facing name.** Recorded in a comment. The field lands when
 something reads it, rather than being accepted and silently dropped by a

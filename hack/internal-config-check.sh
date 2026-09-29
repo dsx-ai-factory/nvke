@@ -105,11 +105,6 @@ shipped_files() {
     [[ -f "${path}" ]] || continue
     case "${path}" in
     vendor/* | *.sum | *.lock | hack/internal-config-check.sh) continue ;;
-    # An NGC org appears in the chart repository URL this installs from, which
-    # a consumer of the dev charts needs in order to resolve them. Tracked to
-    # move to a variable with the rest; exempt by path so the check is
-    # actionable today rather than red for something nobody is about to change.
-    controller/hack/nico-provider/install-capnico.sh) continue ;;
     esac
     printf './%s\0' "${path}"
   done
