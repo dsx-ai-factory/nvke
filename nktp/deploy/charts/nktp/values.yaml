@@ -1370,6 +1370,8 @@ kube-state-metrics:
     repository: kube-state-metrics/kube-state-metrics
     tag: v2.20.0
   namespaces: [] # All namespaces. Each workload can override this list.
+  # Kubernetes labels exposed by KSM, using entries such as pods=[app.kubernetes.io/name].
+  metricLabelsAllowlist: []
   # Shared Kubernetes defaults. Each workload can override these fields.
   kubernetes:
     resources:

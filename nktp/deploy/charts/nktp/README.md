@@ -253,7 +253,10 @@ read by the Collector through `${env:NAME}` substitution, never in values.
   count grows. Secret metrics stay opt-in because they need list
   and watch access to whole Secret objects; add `secrets` to a group's
   `resource_types` and scope its `namespaces` list to enable them.
-  `kube-state-metrics.enabled: false` removes all of it.
+  Kubernetes labels are not exposed as series labels by default;
+  `kube-state-metrics.metricLabelsAllowlist` selects some, with entries such
+  as `pods=[app.kubernetes.io/name]`. `kube-state-metrics.enabled: false`
+  removes all of it.
 - `node-exporter` runs the upstream DaemonSet on host port 9100.
   `node-exporter.enabled: false` when the cluster already runs one.
 - `otel-lgtm` is the development backend described above.
