@@ -411,8 +411,18 @@ func nicoForgeTenant() testSpec {
 	return testSpec{
 		buildSpec: nicoForgeSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			// Cluster-level rather than a control-plane node pool, because the
+			// site's own CWE rejects such a pool at create. #1054 turned
+			// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER on by
+			// default, and the controller chart does not set the variable, so
+			// that default is what a site CWE runs with.
+			//
+			// Not nkectl, despite it forcing the same flag on: that one
+			// reaches only the ephemeral Kind bootstrap CWE, which builds the
+			// site cluster. The tenant is created against the site's CWE,
+			// which cwedeploy never touches.
+			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
+			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
 		// Generous next to the simulator lanes: these timeouts cover a bare
 		// machine booting an OS image over the network and installing
@@ -709,8 +719,8 @@ type clusterShape struct {
 	controlPlaneVIP   string
 	// controlPlaneConfig, when set, provisions the control plane through the
 	// cluster-level control-plane controller (no control-plane node pool) instead
-	// of controlPlanePools. Consumed by capdControlPlaneControllerSpec and
-	// nicoVMSControlPlaneControllerSpec.
+	// of controlPlanePools. Consumed by the *ControlPlaneControllerSpec builders
+	// and by nicoForgeSpec, whose site CWE runs with the flag on by default.
 	controlPlaneConfig *nke.ControlPlaneConfigSpec
 }
 
@@ -1230,6 +1240,7 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.Cluster
 		NodePayloads: &payloads,
 		ControlPlane: nke.ControlPlane{
 			Pools:         forgeNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", site, instanceType),
+			Config:        forgeControlPlaneConfig(shape.controlPlaneConfig, site, instanceType),
 			EtcdEncrypted: shape.etcdEncrypted,
 			// Empty unless an entry asks for one, which CWE reads as "do not
 			// configure kube-vip". The Forge tenants were created without one,
@@ -1240,6 +1251,28 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.Cluster
 		},
 		Workers: forgeNodePoolSpecs(shape.workerPools, "worker", "w", site, instanceType),
 	}
+}
+
+// forgeControlPlaneConfig fills a cluster-level control-plane config from the
+// environment, the same defaults forgeNodePoolSpecs applies to a pool: a
+// control-plane node is the same machine as a pool node, so it is chosen by
+// the same capability match. Returns nil for an entry that asks for a
+// control-plane node pool instead, which CWE reads as "no cluster-level
+// control plane".
+func forgeControlPlaneConfig(
+	cfg *nke.ControlPlaneConfigSpec,
+	site environment.ForgeSite,
+	instanceType environment.ForgeInstanceType,
+) *nke.ControlPlaneConfigSpec {
+	if cfg == nil {
+		return nil
+	}
+	out := *cfg
+	out.SystemReservedMemory = defaultString(out.SystemReservedMemory, "16Gi")
+	out.InstanceTypeID = defaultString(out.InstanceTypeID, instanceType.ID)
+	out.SubnetIDs = defaultStrings(out.SubnetIDs, site.SubnetID)
+	out.SSHKeyGroupIDs = defaultStrings(out.SSHKeyGroupIDs, site.SSHKeyGroupID)
+	return &out
 }
 
 // forgeNodePoolSpecs fills each pool from the environment. A pool naming its
