@@ -2,9 +2,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Download, verify and stage the three upstream binaries the spire-agent .deb
-# ships: SPIRE's agent, and the TPM node attestor plugin's agent-side binary
-# and its EK-reading helper.
+# Download, verify and stage the upstream binaries the spire-agent .deb ships:
+# SPIRE's agent, the TPM node attestor plugin's agent-side binary and its
+# EK-reading helper, and the DSX IMDS node attestor plugin.
 #
 # Usage:
 #   bundle.sh [--write-lock] --spire-version X.Y.Z --tpm-version X.Y.Z \
@@ -17,12 +17,13 @@ set -euo pipefail
 
 # URL bases, overridable so the tests can point every fetch at a local server.
 GITHUB_URL="${BUNDLE_GITHUB_URL:-https://github.com}"
+ASSETS_URL="${BUNDLE_ASSETS_URL:-https://nke-prod-assets.s3.us-west-2.amazonaws.com}"
 
 # 256 MiB: well above the largest artifact here, which is ~40 MiB.
 MAX_ARTIFACT_BYTES=268435456
 
 ARCHES=(amd64 arm64)
-COMPONENTS=(spire-agent tpm_attestor_agent get_tpm_pubhash)
+COMPONENTS=(spire-agent tpm_attestor_agent get_tpm_pubhash dsx-imds-node-attestor-agent)
 
 die() { echo "bundle.sh: $*" >&2; exit 1; }
 
@@ -60,7 +61,19 @@ component_url() {
   case "$1" in
     spire-agent) echo "${GITHUB_URL}/spiffe/spire/releases/download/v${SPIRE_VERSION}/spire-${SPIRE_VERSION}-linux-${2}-musl.tar.gz" ;;
     tpm_attestor_agent | get_tpm_pubhash) echo "${GITHUB_URL}/spiffe/spire-tpm-plugin/releases/download/v${TPM_VERSION}/spire_tpm_plugin_${1}_linux_${2}_v${TPM_VERSION}.tar.gz" ;;
+    # Unversioned on purpose: the publisher replaces these objects in place.
+    # The lock digest is what stops a replaced object from entering a build.
+    dsx-imds-node-attestor-agent) echo "${ASSETS_URL}/dsx-imds-node-attestor-agent/linux-${2}/dsx-imds-node-attestor-agent" ;;
     *) die "no URL for component $1" ;;
+  esac
+}
+
+# download_path prints where fetch stores component $1 for arch $2. The IMDS
+# plugin is published as a raw binary; every other component is a tarball.
+download_path() {
+  case "$1" in
+    dsx-imds-node-attestor-agent) echo "${WORK}/$1-$2" ;;
+    *) echo "${WORK}/$1-$2.tar.gz" ;;
   esac
 }
 
@@ -88,8 +101,9 @@ file_sha() { sha256sum "$1" | cut -d' ' -f1; }
 
 # publisher_sha prints the digest SPIRE advertises for its own tarball, from
 # the GNU-format `<name>_sha256sum.txt` sidecar beside the release asset.
-# spire-tpm-plugin publishes no checksum document at all, so for its two
-# artifacts the committed lock is the only pin -- see README.md.
+# spire-tpm-plugin publishes no checksum document at all, and the DSX IMDS
+# plugin is a raw binary with no checksum sidecar, so for those artifacts the
+# committed lock is the only pin -- see README.md.
 publisher_sha() {
   local url="$1" doc="${WORK}/checksum-doc" sum
   local checksum_url="${url%.tar.gz}_sha256sum.txt"
@@ -105,11 +119,11 @@ lock_sha() { awk -v c="$1" -v a="$2" '$1 == "artifact" && $2 == c && $3 == a { p
 # resolve downloads one artifact, checks it against the publisher where there
 # is one, and prints its digest.
 resolve() {
-  local component="$1" arch="$2" url got published tarball
+  local component="$1" arch="$2" url got published artifact
   url="$(component_url "$component" "$arch")"
-  tarball="${WORK}/${component}-${arch}.tar.gz"
-  fetch "$url" "$tarball"
-  got="$(file_sha "$tarball")"
+  artifact="$(download_path "$component" "$arch")"
+  fetch "$url" "$artifact"
+  got="$(file_sha "$artifact")"
   if [[ "$component" == spire-agent ]]; then
     published="$(publisher_sha "$url")"
     [[ "$got" == "$published" ]] ||
@@ -123,8 +137,10 @@ if ((WRITE_LOCK)); then
   {
     echo "# spire-agent lock for SPIRE ${SPIRE_VERSION} with spire-tpm-plugin ${TPM_VERSION}."
     echo "# Regenerate with \`make lock\`; review the diff before committing."
-    echo "# spire-tpm-plugin publishes no upstream checksum document, so these two"
-    echo "# rows are the only pin those artifacts have. See README.md."
+    echo "# spire-tpm-plugin publishes no upstream checksum document, so the TPM"
+    echo "# rows are the only pin those artifacts have. The DSX IMDS node attestor"
+    echo "# is an unversioned raw binary with no checksum sidecar, so its rows are"
+    echo "# the only pin that artifact has. See README.md."
     for component in "${COMPONENTS[@]}"; do
       for arch in "${ARCHES[@]}"; do
         # A standalone assignment, not inline in the echo: a `die` inside
@@ -150,20 +166,25 @@ for component in "${COMPONENTS[@]}"; do
   [[ "$locked" =~ ^[0-9a-f]{64}$ ]] ||
     die "${component}/${ARCH} is not in ${LOCK_FILE}: run 'make lock' and review the diff"
   dest="${OUT}/${component}"
-  # The staged binary's own digest is not the tarball's, so reuse is keyed on
-  # a sidecar naming the tarball digest it was extracted from.
+  # The staged binary's own digest is not the downloaded artifact's when that
+  # artifact is a tarball, so reuse is keyed on a sidecar naming the download
+  # digest it was staged from.
   if [[ -f "$dest" && "$(cat "${dest}.from" 2>/dev/null)" == "$locked" ]]; then
     continue
   fi
   got="$(resolve "$component" "$ARCH")"
   [[ "$got" == "$locked" ]] ||
     die "${component}/${ARCH}: downloaded ${got} but ${LOCK_FILE} has ${locked}; upstream changed the bytes behind $(component_url "$component" "$ARCH")"
-  member="$(member_path "$component")"
-  tar -xzf "${WORK}/${component}-${ARCH}.tar.gz" --no-same-owner -C "$WORK" "$member" ||
-    die "${component}/${ARCH}: its tarball has no ${member}"
   # An HTTP download and a tar extract both land at the archive's mode; the
   # .deb runs these, and SPIRE execs the plugin binary directly.
-  install -m 0755 "${WORK}/${member}" "$dest"
+  if [[ "$component" == dsx-imds-node-attestor-agent ]]; then
+    install -m 0755 "$(download_path "$component" "$ARCH")" "$dest"
+  else
+    member="$(member_path "$component")"
+    tar -xzf "$(download_path "$component" "$ARCH")" --no-same-owner -C "$WORK" "$member" ||
+      die "${component}/${ARCH}: its tarball has no ${member}"
+    install -m 0755 "${WORK}/${member}" "$dest"
+  fi
   printf '%s\n' "$locked" >"${dest}.from"
 done
 echo "staged ${COMPONENTS[*]} for ${ARCH} in ${OUT}"
