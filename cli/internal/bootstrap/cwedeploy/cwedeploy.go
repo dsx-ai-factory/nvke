@@ -6,13 +6,10 @@
 // cli/internal/bootstrap/engine creates), then waits for CWE to report
 // healthy on /readyz.
 //
-// It reuses controller/deploy/charts/controller (the real,
-// actively maintained Helm chart) for CWE itself, and the same Postgres/
-// Temporal shape controller/Tiltfile already drives for local development
-// (the Bitnami postgresql chart + the official go.temporal.io/helm-charts
-// chart) — see manifests/*.yaml for where each values file was ported from.
-// This is a deliberate reuse of existing patterns rather than a port of the
-// GitLab spike's raw kubectl-apply manifests.
+// It installs the controller and Postgres charts embedded in nkectl
+// (controller/deploy/charts), and the Temporal and SPIRE charts the
+// bootstrap manifest pins. See manifests/*.yaml for the values each release
+// gets.
 //
 // Every helm/kubectl invocation goes through the CommandRunner seam so unit
 // tests can substitute a fake, the same pattern
