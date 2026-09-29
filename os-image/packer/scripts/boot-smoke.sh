@@ -143,6 +143,13 @@ test "${root_bytes}" -ge "${minimum_root_bytes}"
 systemctl is-enabled nke-agent.service
 systemctl is-enabled spire-agent.service
 systemctl is-enabled nke-spire-configure.service
+# multipathd must stay masked, both units: it races Longhorn for newly
+# attached volumes and leaves them unformattable (see provision.sh for the
+# mechanism). is-enabled exits non-zero for a masked unit, so compare its
+# output rather than relying on its status.
+test "$(systemctl is-enabled multipathd.service)" = masked
+test "$(systemctl is-enabled multipathd.socket)" = masked
+! systemctl is-active --quiet multipathd.service
 test -x /usr/local/bin/nke-agent
 test -x /usr/local/bin/nke-agent-updater
 # The mode bits say nothing about whether the binary runs: -version exits 0
