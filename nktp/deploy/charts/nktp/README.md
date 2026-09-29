@@ -54,8 +54,10 @@ there too. The watchdog sends its own telemetry to the backend.
 | `metrics-server` | The resource metrics API the autoscalers read. Off by default, because most clusters already have a provider; see [Bundled components](#bundled-components). |
 | `otel-lgtm` | Grafana, Loki, Tempo and Prometheus in one container, with the NKTP dashboards in [dashboards/default](dashboards/README.md). On by default for evaluation; see [The backend](#the-backend). |
 
-Footprint with default values on three nodes, before the Operator, the three
-Target Allocators and the development backend:
+Footprint with default values on three nodes, before the Operator and the
+development backend. Requests are per workload; a Collector's are set under
+`<workload>.kubernetes.resources` and its Target Allocator's under
+`<workload>.kubernetes.targetAllocator.resources`.
 
 | Workload | Pods | CPU request | Memory request |
 |---|---|---|---|
@@ -64,6 +66,7 @@ Target Allocators and the development backend:
 | Gateways | 6 | 1200m | 3Gi |
 | Large-target pool | 2 | 1000m | 16Gi |
 | Cluster event reader | 2 | 400m | 1Gi |
+| Target Allocators | 3 | 750m | 4Gi |
 | node-exporter | 3 | none set | none set |
 | kube-state-metrics | 9 | 900m | 1.1Gi |
 

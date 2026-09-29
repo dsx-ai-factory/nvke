@@ -22,6 +22,11 @@ metrics-server:
 
 watchdog:
   kubernetes:
+    targetAllocator:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
     replicas: 1
     autoscaler:
       minReplicas: 1
@@ -58,6 +63,11 @@ gateway_traces:
 
 daemonset:
   kubernetes:
+    targetAllocator:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
     resources:
       requests:
         cpu: 50m
@@ -99,6 +109,11 @@ cluster_events:
 
 large_target_metrics:
   kubernetes:
+    targetAllocator:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
     resources:
       requests:
         cpu: 50m

@@ -38,6 +38,13 @@ watchdog:
       enabled: true # Assign each explicit scrape target to one watchdog replica.
       replicas: 1
       allocationStrategy: consistent-hashing
+      resources:
+        requests:
+          cpu: 250m
+          memory: 1Gi
+        limits:
+          cpu: "1"
+          memory: 2Gi
       env:
         - name: OTEL_SERVICE_NAME
           value: nktp-watchdog-targetallocator
@@ -622,6 +629,13 @@ daemonset:
       enabled: true
       replicas: 1
       allocationStrategy: per-node # Targets without a matching collector node stay unassigned.
+      resources:
+        requests:
+          cpu: 250m
+          memory: 2Gi
+        limits:
+          cpu: "2"
+          memory: 4Gi
       env:
         - name: OTEL_SERVICE_NAME
           value: nktp-targetallocator
@@ -1073,11 +1087,11 @@ large_target_metrics:
                     temporalityPreference: cumulative
       resources:
         requests:
-          cpu: 100m
-          memory: 256Mi # Discovery cache size depends on Kubernetes objects and target count.
+          cpu: 250m
+          memory: 1Gi # Discovery cache size depends on Kubernetes objects and target count.
         limits:
           cpu: "1"
-          memory: 1Gi
+          memory: 2Gi
       podSecurityContext:
         runAsNonRoot: true
         seccompProfile:
