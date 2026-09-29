@@ -128,11 +128,11 @@ site spec file rather than from flags or the environment. See
 
 `bootstrap site` deploys a SPIRE server, so nodes with a hardware identity have
 something to attest to and CWE gets a workload identity of its own. It comes
-from the SPIFFE project's own hardened charts, pinned alongside the Temporal pin
-in [`internal/bootstrap/cwedeploy/cwedeploy.go`](internal/bootstrap/cwedeploy/cwedeploy.go)
-and installed with `helm --repo`, so nothing is added to your global Helm
-repository list. Everything it names is public, so a bootstrap needs no registry
-credential.
+from the SPIFFE project's own hardened charts. The bootstrap manifest pins each
+chart's version, and `nkectl get bootstrap-manifest` prints it. Each chart is
+installed with `helm --repo`, so nothing is added to your global Helm
+repository list. Everything it names is public, so a bootstrap needs no
+registry credential.
 
 Everything static about the deployment lives in
 [`internal/bootstrap/cwedeploy/manifests/spire-values.yaml`](internal/bootstrap/cwedeploy/manifests/spire-values.yaml).
