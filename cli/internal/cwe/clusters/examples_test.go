@@ -13,9 +13,10 @@ import (
 )
 
 // TestExampleClusterSpecsDecode checks that every bundled example spec still
-// decodes into the request the API generates. YAMLToRequest disallows unknown
-// fields, so a field renamed in openapi.yaml fails here rather than in a user's
-// first create.
+// decodes into the request the API generates, and describes its control plane
+// as a cluster-level controlPlaneConfig with no control-plane node pool, the
+// shape CWE accepts by default. YAMLToRequest disallows unknown fields, so a
+// field renamed in openapi.yaml fails here rather than in a user's first create.
 func TestExampleClusterSpecsDecode(t *testing.T) {
 	t.Parallel()
 
@@ -45,6 +46,16 @@ func TestExampleClusterSpecsDecode(t *testing.T) {
 			}
 			if req.NodePools == nil || len(*req.NodePools) == 0 {
 				t.Error("NodePools is empty")
+			}
+			if req.ControlPlaneConfig == nil || req.ControlPlaneConfig.DesiredCount < 1 {
+				t.Error("ControlPlaneConfig is missing or asks for no control-plane nodes")
+			}
+			if req.NodePools != nil {
+				for _, pool := range *req.NodePools {
+					if pool.ControlPlane {
+						t.Errorf("node pool %q is a control-plane pool; describe the control plane in controlPlaneConfig", pool.Name)
+					}
+				}
 			}
 		})
 	}
