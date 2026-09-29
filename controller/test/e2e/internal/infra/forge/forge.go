@@ -333,11 +333,51 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 		return fail(err)
 	}
 	if out, err := conn.Run(ctx, "cloud-init status --wait"); err != nil {
+		diag := cloudInitDiagnostics(ctx, conn)
 		_ = conn.Close()
-		return fail(fmt.Errorf("forge: cloud-init on %s did not finish cleanly, and node preflight would reject it: %w\n%s", req.Name, err, out))
+		return fail(fmt.Errorf("forge: cloud-init on %s did not finish cleanly, and node preflight would reject it: %w\n%s%s", req.Name, err, out, diag))
 	}
 
 	return infra.Node{Name: req.Name, IP: address, Arch: instanceType.Arch()}, &session{Conn: conn, release: release}, nil
+}
+
+// cloudInitDiagnosticTimeout bounds the diagnostic collection. The context
+// that reached this point may already be at its deadline, and a node that has
+// stopped answering must not turn a reported failure into a hang.
+const cloudInitDiagnosticTimeout = 2 * time.Minute
+
+// cloudInitDiagnostics reports why cloud-init degraded. `cloud-init status
+// --wait` gives an exit code and the word "done", which is not enough to act
+// on once the run has deleted the instance.
+//
+// Best effort throughout: a probe that fails contributes its error rather
+// than replacing the failure being reported, since the caller already has the
+// only fact that must survive.
+func cloudInitDiagnostics(ctx context.Context, conn Conn) string {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cloudInitDiagnosticTimeout)
+	defer cancel()
+
+	probes := []struct{ label, cmd string }{
+		// --long carries the recoverable errors that set the exit code.
+		{"cloud-init status --long", "cloud-init status --long"},
+		// Where a failing runcmd prints. The usual answer is here.
+		{"cloud-init-output.log (tail)", "sudo -n tail -n 120 /var/log/cloud-init-output.log"},
+		// cloud-init's own warnings, for a module that failed before runcmd.
+		{"cloud-init.log (warnings)", "sudo -n grep -aE 'WARNING|ERROR|CRITICAL' /var/log/cloud-init.log | tail -n 40"},
+	}
+
+	var b strings.Builder
+	for _, probe := range probes {
+		out, err := conn.Run(ctx, probe.cmd)
+		b.WriteString("\n--- " + probe.label + " ---\n")
+		if err != nil {
+			b.WriteString("collecting failed: " + err.Error() + "\n")
+		}
+		if trimmed := strings.TrimSpace(out); trimmed != "" {
+			b.WriteString(trimmed + "\n")
+		}
+	}
+	return b.String()
 }
 
 // payloads returns the iPXE script and the cloud-init user data, in that
