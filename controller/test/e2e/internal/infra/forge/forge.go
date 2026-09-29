@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -332,13 +333,64 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 		}
 		return fail(err)
 	}
-	if out, err := conn.Run(ctx, "cloud-init status --wait"); err != nil {
-		diag := cloudInitDiagnostics(ctx, conn)
+	if err := awaitCloudInit(ctx, conn, req.Name); err != nil {
 		_ = conn.Close()
-		return fail(fmt.Errorf("forge: cloud-init on %s did not finish cleanly, and node preflight would reject it: %w\n%s%s", req.Name, err, out, diag))
+		return fail(err)
 	}
 
 	return infra.Node{Name: req.Name, IP: address, Arch: instanceType.Arch()}, &session{Conn: conn, release: release}, nil
+}
+
+// cloudInitStatusError is the status cloud-init reports when a module failed
+// outright, as opposed to the "degraded done" it reports for a warning.
+const cloudInitStatusError = "error"
+
+// cloudInitReport is the part of `cloud-init status --format=json` the node
+// preflight reads.
+type cloudInitReport struct {
+	Status         string   `json:"status"`
+	ExtendedStatus string   `json:"extended_status"`
+	Errors         []string `json:"errors"`
+	// RecoverableErrors are warnings. They set "degraded done" and a non-zero
+	// exit code without saying anything about whether the user data ran, so
+	// they are reported when something else fails rather than failing a node
+	// themselves.
+	RecoverableErrors map[string][]string `json:"recoverable_errors"`
+}
+
+// awaitCloudInit blocks until cloud-init settles, then reports whether the
+// node is fit to bootstrap on.
+//
+// The exit code of `cloud-init status` is not that verdict. An instance is
+// created with phone-home disabled and cannot reach the metadata service, so
+// cloud-init finds no datasource, falls back to DataSourceNone and finishes
+// "degraded done" -- exit 2 -- over a warning that says nothing about whether
+// the user data ran. `errors` is what carries a real failure, so that is what
+// the preflight reads.
+func awaitCloudInit(ctx context.Context, conn Conn, name string) error {
+	// The wait must not decide the outcome, so its exit code is discarded and
+	// the verdict comes from the report below.
+	if _, err := conn.Run(ctx, "cloud-init status --wait >/dev/null 2>&1 || true"); err != nil {
+		return fmt.Errorf("forge: waiting for cloud-init on %s: %w", name, err)
+	}
+
+	out, err := conn.Run(ctx, "cloud-init status --format=json || true")
+	if err != nil {
+		return fmt.Errorf("forge: reading cloud-init status on %s: %w", name, err)
+	}
+
+	var report cloudInitReport
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		return fmt.Errorf("forge: cloud-init status on %s is not the JSON the preflight reads: %w\n%s%s", name, err, out, cloudInitDiagnostics(ctx, conn))
+	}
+	if report.Status == cloudInitStatusError || len(report.Errors) > 0 {
+		detail := strings.Join(report.Errors, "; ")
+		if detail == "" {
+			detail = report.ExtendedStatus
+		}
+		return fmt.Errorf("forge: cloud-init on %s failed, and node preflight would reject it: %s%s", name, detail, cloudInitDiagnostics(ctx, conn))
+	}
+	return nil
 }
 
 // cloudInitDiagnosticTimeout bounds the diagnostic collection. The context

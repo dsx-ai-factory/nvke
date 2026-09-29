@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -87,17 +88,29 @@ func (f *fakeForge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// cleanCloudInit is what a node reports when nothing went wrong.
+const cleanCloudInit = `{"status":"done","extended_status":"done","errors":[]}`
+
 type fakeConn struct {
 	mu     sync.Mutex
 	ran    []string
 	runErr error
-	closed bool
+	// cloudInit is the JSON the status probe answers with. Empty is a node
+	// that finished clean.
+	cloudInit string
+	closed    bool
 }
 
 func (c *fakeConn) Run(_ context.Context, cmd string) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.ran = append(c.ran, cmd)
+	if strings.Contains(cmd, "--format=json") {
+		if c.cloudInit != "" {
+			return c.cloudInit, nil
+		}
+		return cleanCloudInit, nil
+	}
 	return "", c.runErr
 }
 func (c *fakeConn) Put(context.Context, string, []byte, uint32) error { return nil }
@@ -234,8 +247,12 @@ func TestProvisionNode(t *testing.T) {
 	if target.JumpHost != testJumpHost || target.Address != "10.0.0.7" || target.User != defaultNodeUser || target.Signer == nil {
 		t.Errorf("dial target = %+v", target)
 	}
-	if got := dialer.conn.ran; len(got) != 1 || got[0] != "cloud-init status --wait" {
-		t.Errorf("ran %q, want the node held until cloud-init finished", got)
+	wantRan := []string{
+		"cloud-init status --wait >/dev/null 2>&1 || true",
+		"cloud-init status --format=json || true",
+	}
+	if got := dialer.conn.ran; !slices.Equal(got, wantRan) {
+		t.Errorf("ran %q, want the node held until cloud-init finished and then read for errors", got)
 	}
 	if forge.deleted != 0 {
 		t.Fatal("a provisioned node must not be deleted")
@@ -258,8 +275,10 @@ func TestProvisionNodeReleasesOnFailure(t *testing.T) {
 		conn     *fakeConn
 		cancel   bool
 	}{
-		"instance errors":      {statuses: []string{"Provisioning", "Error"}, conn: &fakeConn{}},
-		"cloud-init degraded":  {statuses: []string{"Ready"}, conn: &fakeConn{runErr: errors.New("exit status 2")}},
+		"instance errors": {statuses: []string{"Provisioning", "Error"}, conn: &fakeConn{}},
+		"cloud-init failed": {statuses: []string{"Ready"}, conn: &fakeConn{
+			cloudInit: `{"status":"error","extended_status":"error","errors":["scripts-user failed"]}`,
+		}},
 		"never ready":          {statuses: []string{"Provisioning"}, conn: &fakeConn{}},
 		"run canceled waiting": {statuses: []string{"Provisioning"}, conn: &fakeConn{}, cancel: true},
 	} {
@@ -283,6 +302,24 @@ func TestProvisionNodeReleasesOnFailure(t *testing.T) {
 				t.Errorf("deleted %d times, want the instance released", forge.deleted)
 			}
 		})
+	}
+}
+
+// A Forge instance is created with phone-home disabled and cannot reach the
+// metadata service, so cloud-init finds no datasource, falls back to
+// DataSourceNone and finishes "degraded done" with a non-zero exit code. The
+// user data still ran, so the node is fit to bootstrap on and the preflight
+// must not reject it.
+func TestProvisionNodeAcceptsDegradedCloudInit(t *testing.T) {
+	forge := &fakeForge{t: t, statuses: []string{"Ready"}}
+	conn := &fakeConn{cloudInit: `{"status":"done","extended_status":"degraded done","errors":[],` +
+		`"recoverable_errors":{"WARNING":["Used fallback datasource"]}}`}
+
+	if _, _, err := newTestProvider(t, forge, &fakeDialer{conn: conn}).ProvisionNode(context.Background(), testRequest()); err != nil {
+		t.Fatalf("a node whose cloud-init only warned must be accepted: %v", err)
+	}
+	if forge.deleted != 0 {
+		t.Errorf("deleted %d times, want the instance kept", forge.deleted)
 	}
 }
 
