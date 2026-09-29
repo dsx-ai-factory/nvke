@@ -47,8 +47,22 @@ esac
 # lane has an inner runner, so the smoke drives the CLI inside it.
 NKECTL_SMOKE="${NKE_E2E_NKECTL_SMOKE:-false}"
 NKECTL_SMOKE_RUNNER="${RUNNER_NAME}"
+# Resolve the control-plane mode to a concrete value exactly once, here. The
+# sequential path drives the flag per leg, so it starts flag-on for the
+# cp-controller leg. The single-mode path deploys one CWE and never redeploys,
+# so it has to state the mode rather than inherit it: CWE's own default is now
+# true (#1054), and an unset flag used to mean "node-pool control plane". Left
+# unset, the node-pool specs would get a flag-on CWE, which rejects
+# control-plane node pools outright -- `control-plane node pools are not
+# allowed when control-plane controller provisioning is enabled`. Defaulted,
+# not forced, so an explicit
+# PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true still selects the
+# cp-controller specs. Every use below is then unconditional: the CWE deploy
+# and the e2e spec selection cannot diverge.
 if [[ "${SINGLE_RUNNER_CONTROL_PLANE_MODES}" == "true" ]]; then
   PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true
+else
+  PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-false}"
 fi
 TMP_DIR="$(mktemp -d)"
 MANAGEMENT_KUBECONFIG="${TMP_DIR}/management.kubeconfig"
@@ -1184,7 +1198,7 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
     CNPG_SUPERUSER_PASSWORD=example-password \
     CNPG_CLOUD_PASSWORD=example-password \
     CNPG_TEMPORAL_PASSWORD=example-password \
-    PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" \
+    PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER}" \
     NODE_REBOOT_SOFT_REBOOT_ENABLED="${NODE_REBOOT_SOFT_REBOOT_ENABLED:-}" \
     NODE_AGENT_SPIRE_ATTESTATION_METHOD="${CAPD_SPIRE_ATTESTATION_METHOD}" \
     SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM="${SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM:-}" \
@@ -1226,7 +1240,7 @@ fi
   NICO_VMS_VM_BACKEND=mock \
   NKE_E2E_TILT_MODE="${tilt_mode}" \
   INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}" \
-  PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" \
+  PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER}" \
   NODE_REBOOT_SOFT_REBOOT_ENABLED="${NODE_REBOOT_SOFT_REBOOT_ENABLED:-}" \
   NODE_AGENT_SPIRE_ATTESTATION_METHOD="${CAPD_SPIRE_ATTESTATION_METHOD}" \
   TILT_DISABLE_ANALYTICS=1 \
@@ -1272,7 +1286,7 @@ done
 # When the caller asked for control-plane-controller provisioning, confirm the
 # flag actually reached the CWE deployment. This catches a Tiltfile forwarding
 # regression before the cp-controller specs would mis-fail at cluster create.
-if [[ "${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" == "true" ]]; then
+if [[ "${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER}" == "true" ]]; then
   cp_flag_value="$(runner_exec kubectl -n cloud-workflow-engine get deployment/cloud-workflow-engine \
     -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER\")].value}")"
   if [[ "${cp_flag_value}" != "true" ]]; then
@@ -1339,7 +1353,7 @@ fi
 NKE_E2E_LABEL_FILTER="${NKE_E2E_LABEL_FILTER:-capd || health}"
 start_state_monitor
 e2e_rc=0
-run_ginkgo_leg "${NKE_E2E_LABEL_FILTER}" "${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" "" || e2e_rc=$?
+run_ginkgo_leg "${NKE_E2E_LABEL_FILTER}" "${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER}" "" || e2e_rc=$?
 stop_state_monitor
 
 if ((e2e_rc != 0)); then

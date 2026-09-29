@@ -157,11 +157,11 @@ jobs:
       NKE_E2E_STACK_VERSION: ${{ inputs.stack-version }}
       # Deploy CWE flag-on for the cp-controller lane; the CI script forwards this
       # to the Tilt deploy and the e2e binary. `false` keeps the node-pool control
-      # plane -- and it has to be that literal `false`, not an empty value: CWE's
-      # own default is now true (#1054), and both the Tiltfile and deploy-sbom.sh
-      # only set the container env when this is non-empty, so empty inherits the
-      # flag-on default and the node-pool specs are rejected at create. The input
-      # is a boolean defaulting to false, which renders as the needed "false".
+      # plane. Note this is the mode, not an override of CWE's default: CWE's own
+      # default is now true (#1054), and both the Tiltfile and deploy-sbom.sh only
+      # set the container env when the value is non-empty. An empty value would
+      # therefore mean flag-on. The CI script resolves empty to false before any
+      # use, so passing `''` here is safe -- but pass the mode you want.
       PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER: ${{ inputs.provision-cp-with-controller }}
       # These backends only observe a container restart, not a real boot: soft reboot can never
       # show a detectable change, so skip straight to hard.
