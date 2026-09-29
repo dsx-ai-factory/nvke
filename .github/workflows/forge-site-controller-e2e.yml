@@ -182,8 +182,11 @@ jobs:
       # way.
       SITE_IMAGE_REGISTRY: ${{ inputs.image-registry || vars.FORGE_E2E_IMAGE_REGISTRY || 'ghcr' }}
       # The only published capi-provisioned tag. One value for the archive
-      # site-inputs pulls and the reference the suite bootstraps with.
-      SITE_PROVISIONED_VERSION: v0.1.0-rc.1
+      # site-inputs pulls and the reference the suite bootstraps with. Named
+      # for the component, as -e2e.versions and the config field are; the
+      # make variable it feeds keeps the SITE_ prefix its siblings share, so
+      # the two names meet at the site-inputs step below.
+      CAPI_PROVISIONED_VERSION: v0.1.0-rc.1
       # The NGC org the NVCR images are published under. A repository
       # variable, not the nvcr environment's NKE_NGC_ORG: that environment
       # gates the publish jobs, and this job has no business entering it.
@@ -513,7 +516,7 @@ jobs:
             SITE_CONTROLLER_VERSION="${SITE_CONTROLLER_VERSION}" \
             SITE_CONTROLLER_BUILD="${SITE_CONTROLLER_BUILD}" \
             SITE_IMAGE_REGISTRY="${SITE_IMAGES}" \
-            SITE_PROVISIONED_VERSION="${SITE_PROVISIONED_VERSION}" \
+            SITE_PROVISIONED_VERSION="${CAPI_PROVISIONED_VERSION}" \
             SITE_INPUTS="${SITE_INPUTS}"
 
       # Where each staged image came from, and nothing else. Versions are
@@ -756,7 +759,7 @@ jobs:
             -e2e.config=e2e-config.yaml \
             -e2e.environment=forge \
             -e2e.site-stage="${SITE_STAGE}" \
-            -e2e.versions="controller=${SITE_CONTROLLER_VERSION},capi-provisioned=${SITE_PROVISIONED_VERSION},os-image-bootloader=${OS_IMAGE_BOOTLOADER},os-image=${OS_IMAGE}" \
+            -e2e.versions="controller=${SITE_CONTROLLER_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},os-image-bootloader=${OS_IMAGE_BOOTLOADER},os-image=${OS_IMAGE}" \
             "${keep[@]}" 2>&1 | tee site-e2e.log
 
       # The Ginkgo log carries every phase boundary, remote command and
