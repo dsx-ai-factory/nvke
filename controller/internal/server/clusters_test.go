@@ -822,6 +822,7 @@ func TestClusterService_GetCluster(t *testing.T) {
 
 func TestClusterService_DeleteCluster(t *testing.T) {
 	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
+	reachable := db.NewCondition(false, "Tenant API request failed")
 	tests := []struct {
 		name             string
 		clusterID        uuid.UUID
@@ -851,8 +852,9 @@ func TestClusterService_DeleteCluster(t *testing.T) {
 				},
 			},
 			setupMockCalls: func(tx *mockTx) {
-				tx.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
-					ID: clusterID,
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+					ID:         clusterID,
+					Conditions: db.ClusterConditions{APIServerReachable: &reachable},
 				}, nil)
 				tx.On("UpdateCluster", mock.Anything, mock.MatchedBy(func(c *db.Cluster) bool {
 					return c.ID == clusterID && c.Conditions.Deleting.Status == db.ConditionStatusTrue
@@ -865,6 +867,8 @@ func TestClusterService_DeleteCluster(t *testing.T) {
 			verifyConditions: func(t *testing.T, conditions db.ClusterConditions) {
 				t.Helper()
 				assert.Equal(t, db.ConditionStatusTrue, conditions.Deleting.Status)
+				require.NotNil(t, conditions.APIServerReachable)
+				assert.True(t, conditions.APIServerReachable.Equal(reachable))
 			},
 		},
 		{
@@ -873,7 +877,7 @@ func TestClusterService_DeleteCluster(t *testing.T) {
 			getClusterErr: db.ErrNotFound,
 			want404:       true,
 			setupMockCalls: func(tx *mockTx) {
-				tx.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{}, db.ErrNotFound)
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{}, db.ErrNotFound)
 			},
 		},
 		{
@@ -882,7 +886,7 @@ func TestClusterService_DeleteCluster(t *testing.T) {
 			updateErr: errors.New("update error"),
 			wantError: true,
 			setupMockCalls: func(tx *mockTx) {
-				tx.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
 					ID: clusterID,
 				}, nil)
 				tx.On("UpdateCluster", mock.Anything, mock.Anything).Return(db.Cluster{}, errors.New("update error"))
@@ -894,7 +898,7 @@ func TestClusterService_DeleteCluster(t *testing.T) {
 			workflowErr: errors.New("workflow error"),
 			wantError:   true,
 			setupMockCalls: func(tx *mockTx) {
-				tx.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
 					ID: clusterID,
 				}, nil)
 				tx.On("UpdateCluster", mock.Anything, mock.Anything).Return(db.Cluster{}, nil)

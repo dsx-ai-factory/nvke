@@ -1081,7 +1081,7 @@ func validateOIDCEnableCanStart(cluster db.Cluster) error {
 
 func (s *clusterService) DeleteCluster(ctx context.Context, req api.DeleteClusterRequestObject) (api.DeleteClusterResponseObject, error) {
 	err := s.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
-		dbCluster, err := tx.GetCluster(ctx, req.ClusterID)
+		dbCluster, err := tx.GetClusterForUpdate(ctx, req.ClusterID)
 		if err != nil {
 			if errors.Is(err, db.ErrNotFound) {
 				return err
