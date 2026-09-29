@@ -23,6 +23,11 @@ the package on afterwards does not recover the run. openvswitch-switch is here
 for the same reason — OVN runs Open vSwitch on the host, and the agent checks
 for ovs-vsctl before helm. Both were observed on real Forge hardware before
 they were read out of the agent source.
+
+spire-agent allows a downgrade because the OS image bakes its own, which can
+be newer than the version under qualification. Without it apt refuses with
+"Packages were downgraded and -y was used without --allow-downgrades" and the
+pinned version silently does not land.
 */ -}}
 install -d -m 0755 /etc/apt/keyrings
 curl -fsSL -o /etc/apt/keyrings/nke.asc https://nke-prod-assets.s3.us-west-2.amazonaws.com/nke-apt-public.key
@@ -31,7 +36,7 @@ apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y nke-agent nke-kubeadm-distro-{{ .KubernetesVersion }}
 DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-{{ .CNIVersion }} nke-cni-ovn-charts-{{ .CNIVersion }}
 DEBIAN_FRONTEND=noninteractive apt-get install -y openvswitch-switch
-DEBIAN_FRONTEND=noninteractive apt-get install -y spire-agent={{ .SpireVersion }}
+DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades spire-agent={{ .SpireVersion }}
 printf 'AGENT_ARGS="{{ .AgentArgs }}"\n' > /etc/default/nke-agent
 sysctl --system
 systemctl daemon-reload
