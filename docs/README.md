@@ -44,6 +44,7 @@ indexes both.
 |---|---|
 | [tenant-clusters/node-lifecycle.md](tenant-clusters/node-lifecycle.md) | What happens to a node through its life |
 | [tenant-clusters/kubernetes-api-access.md](tenant-clusters/kubernetes-api-access.md) | How operators, automation and Site Controller services reach and authenticate to tenant Kubernetes APIs |
+| [tenant-clusters/oidc-authentication.md](tenant-clusters/oidc-authentication.md) | Turning on OIDC authentication for tenant clusters, site-wide or per cluster |
 | [../controller/docs/authenticating-to-the-api.md](../controller/docs/authenticating-to-the-api.md) | Authenticating to the API |
 | [../controller/docs/configuring-api-authentication.md](../controller/docs/configuring-api-authentication.md) | Turning API authentication on, including RBAC for `nkectl` |
 | [../controller/docs/byo-os.md](../controller/docs/byo-os.md) | Bringing your own OS image |

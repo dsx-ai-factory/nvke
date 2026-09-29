@@ -48,6 +48,10 @@ navigation:
         contents:
           - page: Node Lifecycle
             path: tenant-clusters/node-lifecycle.md
+          - page: Kubernetes API Access
+            path: tenant-clusters/kubernetes-api-access.md
+          - page: OIDC Authentication
+            path: tenant-clusters/oidc-authentication.md
 
       - section: Operations
         contents:
