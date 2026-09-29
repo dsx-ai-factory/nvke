@@ -30,6 +30,17 @@ const drainProbeLabel = "e2e.nvidia.com/drain-probe"
 
 func validateNodePoolScale(test *tenantTest) {
 	It("scales a control-plane and worker node up and down", func(ctx context.Context) {
+		// A controller-managed control plane (cluster-level controlPlaneConfig) has
+		// no control-plane node pool to scale, and growing it means another
+		// control-plane VM; the dedicated cp-controller entries cover control-plane
+		// scale and delete on the cheaper container/CAPD backends, and nico-vms
+		// deliberately skips the four-node surge those delete specs need. So here we
+		// scale only the worker pool when the control plane is controller-managed.
+		if test.spec.ControlPlane.Config != nil {
+			scaleWorkerPoolUpAndDown(ctx, test)
+			return
+		}
+
 		controlPlanePool, workerPool := expectScalePools(ctx, test)
 		originalControlPlaneCount := controlPlanePool.DesiredNodeCount
 		originalWorkerCount := workerPool.DesiredNodeCount
@@ -71,6 +82,35 @@ func validateNodePoolScale(test *tenantTest) {
 		)
 		validateOVNLifecycleTraffic(ctx, test, "scale-down")
 	}, Label("lifecycle", "scale"), NodeTimeout(2*time.Hour))
+}
+
+// scaleWorkerPoolUpAndDown exercises worker node-pool scale-up and scale-down for
+// a cluster whose control plane is controller-managed (no control-plane node
+// pool). It mirrors the worker half of the node-pool scale spec.
+func scaleWorkerPoolUpAndDown(ctx context.Context, test *tenantTest) {
+	GinkgoHelper()
+
+	workerPool := expectWorkerPool(ctx, test)
+	originalWorkerCount := workerPool.DesiredNodeCount
+	originalWorkerNodes := expectNodeIDs(ctx, test, workerPool.ID)
+
+	By("Incrementing the desired count of the worker pool by 1")
+	expectSucceed(test.nke.UpdateNodePoolDesiredCount(ctx, workerPool.ID, originalWorkerCount+1))
+
+	By("Waiting for the worker pool to reach the new desired count")
+	waitForPoolCountsInParallel(ctx, test, poolScale{pool: workerPool, desired: originalWorkerCount + 1})
+	workerNode := expectNewNode(ctx, test, workerPool.ID, originalWorkerNodes)
+	validateOVNLifecycleTraffic(ctx, test, "scale-up", workerNode.Name)
+
+	By("Decrementing the desired count of the worker pool by 1")
+	expectSucceed(test.nke.UpdateNodePoolDesiredCount(ctx, workerPool.ID, originalWorkerCount))
+
+	By("Deleting the scaled-up worker node")
+	Expect(test.nke.DeleteNode(ctx, workerNode.ID)).To(Succeed(), "should delete the scaled-up worker node")
+
+	By("Waiting for the worker pool to reach the new desired count")
+	waitForPoolCountsInParallel(ctx, test, poolScale{pool: workerPool, desired: originalWorkerCount})
+	validateOVNLifecycleTraffic(ctx, test, "scale-down")
 }
 
 func validateWorkerDrainAndDeletion(ctx context.Context, test *tenantTest, worker api.Node) {
@@ -296,6 +336,25 @@ func expectScalePools(ctx context.Context, test *tenantTest) (api.NodePool, api.
 	Expect(workerPool).NotTo(BeNil(), "cluster should have a worker pool")
 
 	return *controlPlanePool, *workerPool
+}
+
+// expectWorkerPool returns the cluster's worker node pool. Used by the
+// controller-managed control-plane path, where there is no control-plane node
+// pool and expectScalePools would fail looking for one.
+func expectWorkerPool(ctx context.Context, test *tenantTest) api.NodePool {
+	GinkgoHelper()
+
+	pools, err := test.nke.ListNodePools(ctx, test.cluster.ID)
+	Expect(err).NotTo(HaveOccurred(), "should list node pools")
+
+	for i := range pools {
+		if !pools[i].ControlPlane {
+			return pools[i]
+		}
+	}
+
+	Fail("cluster should have a worker pool")
+	return api.NodePool{}
 }
 
 func expectNodeIDs(ctx context.Context, test *tenantTest, nodePoolID openapi_types.UUID) map[openapi_types.UUID]struct{} {

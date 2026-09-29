@@ -78,14 +78,19 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		AfterEach(func() { failed = failed || CurrentSpecReport().Failed() })
 
 		It("creates the cluster", func(ctx context.Context) {
-			// The cp-controller lane needs a flag-on CWE (a flag-off CWE rejects the
-			// cluster-level controlPlaneConfig at create). Skip the whole entry rather
-			// than fail when the flag is not set, so a default local `capd` run against
-			// a flag-off CWE simply skips it. CI selects this entry only in its flag-on
-			// lane.
-			if (spec.validate.controlPlaneController || spec.validate.controlPlaneControllerUpdate ||
-				spec.validate.controlPlaneControllerRollingUpdate || spec.validate.controlPlaneControllerDelete) &&
-				os.Getenv("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER") != "true" {
+			// The control-plane shape must match the flag the CWE under test was
+			// deployed with: a flag-on CWE requires the cluster-level
+			// controlPlaneConfig and rejects a control-plane node pool at create, and
+			// a flag-off CWE requires a control-plane node pool. Skip the mismatched
+			// entries rather than fail, so each lane runs only what fits it — the
+			// flag-on nico-vms lane runs the controlPlaneConfig entries, and every
+			// flag-off lane (default local `capd` included) runs the node-pool ones.
+			controllerManagedCP := spec.shape.controlPlaneConfig != nil
+			flagOn := os.Getenv("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER") == "true"
+			switch {
+			case flagOn && !controllerManagedCP:
+				Skip("flag-on CWE requires a cluster-level controlPlaneConfig; this entry provisions a control-plane node pool")
+			case !flagOn && controllerManagedCP:
 				Skip("requires CWE deployed with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true")
 			}
 			test = expectSucceed(setupTenantTest(ctx, spec.options))
@@ -471,9 +476,11 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			kubernetesVersion: "1.34.2",
 			// Calico, so no openVSwitch assertion here; the "nico-vms ovn" entry
 			// below carries it. Large instances kept: cpu2-mem2gb was sized
-			// against ovnkube-node.
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			// against ovnkube-node. Control plane through the cluster-level config
+			// (control-plane controller), the production default; scale exercises
+			// the worker pool only (see validateNodePoolScale).
+			controlPlaneConfig: nicoVMSCPConfig(3, nicoVMSLargeInstanceID),
+			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
 		options:  nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{scale: true, reboot: true},
@@ -481,9 +488,9 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	Entry("nico-vms k8s upgrade", Ordered, ContinueOnFailure, Label("nico-vms", "happy-path", "upgrade"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
-			kubernetesVersion: upgradeStartingKubernetesVersion,
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			kubernetesVersion:  upgradeStartingKubernetesVersion,
+			controlPlaneConfig: nicoVMSCPConfig(3, nicoVMSLargeInstanceID),
+			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
 		options:  nke.Options{Provision: 30 * time.Minute, Upgrade: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{upgrade: true},
@@ -500,8 +507,8 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			kubernetesVersion: "1.34.2",
 			cniPlugin:         CNIPluginOVN,
 			// Large instances: cpu2-mem2gb was sized against ovnkube-node.
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			controlPlaneConfig: nicoVMSCPConfig(1, nicoVMSLargeInstanceID),
+			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
 		options:  nke.Options{Provision: 45 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{openVSwitch: true, ovnNetworking: true},
@@ -534,8 +541,8 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	Entry("nico-vms OS profiles", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "os-profiles"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
-			cniPlugin:         CNIPluginCalico, // Simply to make this test run faster (520s vs 1011s).
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			cniPlugin:          CNIPluginCalico, // Simply to make this test run faster (520s vs 1011s).
+			controlPlaneConfig: nicoVMSCPConfig(1, ""),
 			workerPools: []nke.NodePoolSpec{
 				// Old agent image pins the agent version to 0.1.22, which is before the new nkeproto.CheckCloudInitStatus was introduced in version 0.1.24.
 				// So this osProfile test exists to prove that CWE can still provision nodePools that may still be pointed at older agent versions.
@@ -551,23 +558,28 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	Entry("nico-vms multi pod CIDRs", Ordered, ContinueOnFailure, Label("nico-vms", "multi-pod-cidrs"), testSpec{
 		buildSpec: nicoVMSMultiPodCIDRSpec,
 		shape: clusterShape{
-			kubernetesVersion: "1.34.2",
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			kubernetesVersion:  "1.34.2",
+			controlPlaneConfig: nicoVMSCPConfig(3, nicoVMSLargeInstanceID),
+			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
 		options: nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 30 * time.Second},
 	}),
 	Entry("nico-vms node pool lifecycle", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "nodepool"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			controlPlaneConfig: nicoVMSCPConfig(1, nicoVMSLargeInstanceID),
+			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
 		options:  nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{clusterConfig: true, nodeReplacement: true, manualScaleDown: true, nodePoolLifecycle: true, nodePoolCascade: true},
 	}),
 	// Opt-in via the "cp-rotation" label: it exercises a 2-to-1 etcd member
-	// transition while rotating a single-node control plane.
+	// transition while rotating a single-node control plane. This is inherently a
+	// node-pool control plane — the control-plane controller refuses any delete
+	// that would leave fewer than three joined nodes (the quorum floor), so it
+	// cannot rotate a single-node control plane down to one. Left on the node-pool
+	// path; the shape-based guard in the create spec self-skips it on the flag-on
+	// nico-vms lane, so it only runs against a flag-off CWE (manual dispatch).
 	Entry("nico-vms single-node control-plane rotation", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "cp-rotation"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
@@ -1066,26 +1078,52 @@ const (
 // profile has to match the runner. hack/ci/nico-vms-e2e.sh builds the same name.
 var nicoVMSOSProfile = "nke-nico-vms-24.04-" + runtime.GOARCH + "-fde"
 
+// nicoVMSCPConfig builds a cluster-level control-plane config for the nico-vms
+// backend, defaulting the emulator seed identifiers the control-plane controller
+// needs (mirroring nicoVMSNodePoolSpec's defaulting for the control-plane node
+// pool it replaces). It is how the nico-vms entries provision the control plane
+// once the lane deploys CWE flag-on. A blank instanceTypeID falls back to the
+// default (small) instance type; pass nicoVMSLargeInstanceID for the topologies
+// that need it.
+func nicoVMSCPConfig(desiredCount int, instanceTypeID string) *nke.ControlPlaneConfigSpec {
+	return &nke.ControlPlaneConfigSpec{
+		DesiredCount:   desiredCount,
+		InstanceTypeID: defaultString(instanceTypeID, nicoVMSInstanceTypeID),
+		OSProfile:      nicoVMSOSProfile,
+		ConfigProfile:  nicoVMSCPConfigProfile,
+		VpcPrefixIDs:   []string{nicoVMSVpcPrefixID},
+		SSHKeyGroupIDs: []string{nicoVMSSSHKeyGroupID},
+		// The node-pool control plane reserved 250Mi (nicoVMSNodePoolSpec), sized
+		// so the default instance type keeps enough allocatable memory; keep parity.
+		SystemReservedMemory: "250Mi",
+	}
+}
+
 // nicoVMSSpec builds a nico-vms topology using the local emulator's seed
 // identifiers. kube-vip is left enabled (the nico-vms BGP speaker advertises
-// the control-plane VIP), unlike the CAPD topology.
+// the control-plane VIP), unlike the CAPD topology. When the shape sets a
+// cluster-level controlPlaneConfig, the control plane is provisioned by the
+// control-plane controller and carries no control-plane node pool.
 func nicoVMSSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec {
+	controlPlane := nke.ControlPlane{
+		ControlPlaneVIP: shape.controlPlaneVIP,
+		EtcdEncrypted:   shape.etcdEncrypted,
+		Config:          shape.controlPlaneConfig,
+	}
+	if shape.controlPlaneConfig == nil {
+		controlPlane.Pools = nicoVMSNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", nicoVMSOSProfile, nicoVMSCPConfigProfile)
+	}
 	return nke.ClusterSpec{
 		Name:              name,
 		Backend:           nke.BackendNicoVMS,
 		KubernetesVersion: defaultString(shape.kubernetesVersion, defaultKubernetesVersion),
 		// OVN-Kubernetes unless the entry pins a CNI or NKE_E2E_NICO_VMS_CNI overrides it.
-		CNIPlugin: defaultString(shape.cniPlugin, defaultString(os.Getenv("NKE_E2E_NICO_VMS_CNI"), CNIPluginOVN)),
-		OrgID:     nicoVMSOrgID,
-		SiteID:    nicoVMSSiteID,
-		VpcID:     nicoVMSVpcID,
-		ControlPlane: nke.ControlPlane{
-			Pools:           nicoVMSNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", nicoVMSOSProfile, nicoVMSCPConfigProfile),
-			ControlPlaneVIP: shape.controlPlaneVIP,
-			EtcdEncrypted:   shape.etcdEncrypted,
-			Config:          shape.controlPlaneConfig,
-		},
-		Workers: nicoVMSNodePoolSpecs(shape.workerPools, "worker", "w", nicoVMSOSProfile, nicoVMSWConfigProfile),
+		CNIPlugin:    defaultString(shape.cniPlugin, defaultString(os.Getenv("NKE_E2E_NICO_VMS_CNI"), CNIPluginOVN)),
+		OrgID:        nicoVMSOrgID,
+		SiteID:       nicoVMSSiteID,
+		VpcID:        nicoVMSVpcID,
+		ControlPlane: controlPlane,
+		Workers:      nicoVMSNodePoolSpecs(shape.workerPools, "worker", "w", nicoVMSOSProfile, nicoVMSWConfigProfile),
 	}
 }
 

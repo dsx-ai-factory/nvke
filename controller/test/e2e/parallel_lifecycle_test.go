@@ -39,14 +39,14 @@ var _ = Describe("Parallel tenant cluster lifecycle", Ordered, ContinueOnFailure
 		shapes := []clusterShape{
 			{
 				// Needs an image carrying OVN debs; one built here has none.
-				cniPlugin:         CNIPluginOVN,
-				controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
-				workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+				cniPlugin:          CNIPluginOVN,
+				controlPlaneConfig: nicoVMSCPConfig(1, nicoVMSLargeInstanceID),
+				workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 			},
 			{
-				cniPlugin:         CNIPluginCalico,
-				controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
-				workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+				cniPlugin:          CNIPluginCalico,
+				controlPlaneConfig: nicoVMSCPConfig(1, nicoVMSLargeInstanceID),
+				workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 			},
 		}
 		timeouts := nke.Options{Provision: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second}
