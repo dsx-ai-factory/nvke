@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/uptrace/bun"
@@ -83,7 +85,7 @@ func NewBunDB(cfg config.Config, logger *slog.Logger) (*bun.DB, error) {
 
 	if cfg.Tracing.Enabled {
 		db.AddQueryHook(bunotel.NewQueryHook(
-			bunotel.WithDBName("cloud-workflow"),
+			bunotel.WithDBName(dbNameFromDSN(dsn)),
 		))
 	}
 
@@ -92,4 +94,19 @@ func NewBunDB(cfg config.Config, logger *slog.Logger) (*bun.DB, error) {
 	}
 
 	return db, nil
+}
+
+// dbNameFromDSN extracts the database name from a Postgres connection string,
+// for the OTel db.name span attribute. Reading it from the DSN rather than a
+// separately-configured value means it can never drift from the database the
+// connection actually targets, whichever of appDb.dbName or a Secret-sourced
+// DB_CONNECTION_STRING (see values.yaml dbConnectionString) set it. Returns
+// "" if the DSN does not parse, since a span attribute should degrade rather
+// than block startup.
+func dbNameFromDSN(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimPrefix(u.Path, "/")
 }
