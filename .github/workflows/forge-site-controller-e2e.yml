@@ -85,7 +85,7 @@ on:
         required: false
         default: false
       image-registry:
-        description: Where the published controller and capi-provisioned images are pulled from. nvcr needs the NGC_API_KEY secret and the FORGE_E2E_NGC_ORG variable.
+        description: Where the published controller and capi-provisioned images are pulled from. nvcr needs the NGC_API_KEY secret and the SITE_E2E_NGC_ORG variable.
         type: choice
         required: false
         default: ghcr
@@ -104,7 +104,7 @@ on:
   # add it back, or use the re-run button.
   #
   # A pull_request event has no `inputs`, so the dispatch inputs fall back to
-  # FORGE_E2E_* repository variables. See the job env below.
+  # SITE_E2E_* repository variables. See the job env below.
   pull_request:
     types: [labeled]
     branches: [main]
@@ -121,7 +121,7 @@ concurrency:
 
 jobs:
   site:
-    name: site controller (${{ inputs.stage || vars.FORGE_E2E_STAGE || 'provision' }})
+    name: site controller (${{ inputs.stage || vars.SITE_E2E_STAGE || vars.FORGE_E2E_STAGE || 'provision' }})
     # The ARC fleet on the RelEng EKS cluster: 16 vCPU / 64 GiB with dind, on
     # a runner image built to stand in for ubuntu-latest. In the corpnet VPC,
     # which is what makes the jump host reachable at all. Capped at two
@@ -163,24 +163,33 @@ jobs:
       id-token: write
     env:
       # Every knob, resolved once. A workflow_dispatch fills `inputs`; a
-      # pull_request run has none, so it takes the FORGE_E2E_* repository
+      # pull_request run has none, so it takes the SITE_E2E_* repository
       # variables instead. The guard step checks the result rather than
       # letting an empty image URL surface twenty minutes into a run.
-      SITE_STAGE: ${{ inputs.stage || vars.FORGE_E2E_STAGE || 'provision' }}
+      #
+      # Each of these also accepts the FORGE_E2E_* name it used to have.
+      # Nothing about a stage or an OS image is Forge's -- only the access
+      # path to the hardware is, which is why FORGE_JUMP_HOST and the
+      # Teleport and Forge resource variables below keep their prefix. The
+      # old names stay in the chain so the rename needs no flag day: a run
+      # works on either, the resolved-inputs summary says which one answered
+      # and names the replacement, and the fallback goes once no run reports
+      # a deprecated name.
+      SITE_STAGE: ${{ inputs.stage || vars.SITE_E2E_STAGE || vars.FORGE_E2E_STAGE || 'provision' }}
       # Empty asks for a build from this checkout; the resolve step fills it
       # in. Every use of it downstream -- the image site-inputs stages, the
       # NKECTL_CWE_IMAGE the bootstrap runs, and the tag the SBOM deploys --
       # reads this one value, which is what keeps them the same image.
-      SITE_CONTROLLER_VERSION: ${{ inputs.controller-version || vars.FORGE_E2E_CONTROLLER_VERSION }}
-      OS_IMAGE_BOOTLOADER: ${{ inputs.os-image-bootloader || vars.FORGE_E2E_OS_IMAGE_BOOTLOADER }}
-      OS_IMAGE: ${{ inputs.os-image || vars.FORGE_E2E_OS_IMAGE }}
+      SITE_CONTROLLER_VERSION: ${{ inputs.controller-version || vars.SITE_E2E_CONTROLLER_VERSION || vars.FORGE_E2E_CONTROLLER_VERSION }}
+      OS_IMAGE_BOOTLOADER: ${{ inputs.os-image-bootloader || vars.SITE_E2E_OS_IMAGE_BOOTLOADER || vars.FORGE_E2E_OS_IMAGE_BOOTLOADER }}
+      OS_IMAGE: ${{ inputs.os-image || vars.SITE_E2E_OS_IMAGE || vars.FORGE_E2E_OS_IMAGE }}
       # A label cannot carry a boolean, so a PR run never keeps its node.
       KEEP_SITE: ${{ inputs.keep-site || false }}
       # ghcr or nvcr. Only the runner pulls from it: every image it names is
       # staged onto the node as an archive. The node's own pull is CAPNICo,
       # which is published to GHCR alone, so the GHCR login below stays either
       # way.
-      SITE_IMAGE_REGISTRY: ${{ inputs.image-registry || vars.FORGE_E2E_IMAGE_REGISTRY || 'ghcr' }}
+      SITE_IMAGE_REGISTRY: ${{ inputs.image-registry || vars.SITE_E2E_IMAGE_REGISTRY || vars.FORGE_E2E_IMAGE_REGISTRY || 'ghcr' }}
       # The only published capi-provisioned tag. One value for the archive
       # site-inputs pulls and the reference the suite bootstraps with. Named
       # for the component, as -e2e.versions and the config field are; the
@@ -190,7 +199,7 @@ jobs:
       # The NGC org the NVCR images are published under. A repository
       # variable, not the nvcr environment's NKE_NGC_ORG: that environment
       # gates the publish jobs, and this job has no business entering it.
-      FORGE_E2E_NGC_ORG: ${{ vars.FORGE_E2E_NGC_ORG }}
+      SITE_E2E_NGC_ORG: ${{ vars.SITE_E2E_NGC_ORG || vars.FORGE_E2E_NGC_ORG }}
       # Where `make site-inputs` writes nkectl and the three image archives.
       # Deliberately not the Makefile default, which is a $HOME cache: that
       # survives between jobs on a self-hosted runner, and a stale archive
@@ -374,7 +383,7 @@ jobs:
               ;;
           esac
 
-          # Empty on a pull_request run whose FORGE_E2E_* variable is unset.
+          # Empty on a pull_request run whose SITE_E2E_* variable is unset.
           # SITE_CONTROLLER_VERSION is not here: the step above resolves it.
           missing=()
           for name in SITE_STAGE OS_IMAGE_BOOTLOADER OS_IMAGE; do
@@ -382,7 +391,8 @@ jobs:
           done
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "::error::no value for ${missing[*]}. A dispatch takes these from its inputs;" \
-                 "a labelled pull request takes them from the FORGE_E2E_* repository variables."
+                 "a labelled pull request takes them from the SITE_E2E_* repository variables" \
+                 "(or the FORGE_E2E_* names they replace)."
             exit 1
           fi
 
@@ -391,11 +401,11 @@ jobs:
           case "${SITE_IMAGE_REGISTRY}" in
             ghcr) images="ghcr.io/dsx-ai-factory/nke" ;;
             nvcr)
-              if [ -z "${FORGE_E2E_NGC_ORG}" ] || [ -z "${NGC_TOKEN}" ]; then
-                echo "::error::image-registry nvcr needs the FORGE_E2E_NGC_ORG repository variable and the NGC_API_KEY secret"
+              if [ -z "${SITE_E2E_NGC_ORG}" ] || [ -z "${NGC_TOKEN}" ]; then
+                echo "::error::image-registry nvcr needs the SITE_E2E_NGC_ORG repository variable and the NGC_API_KEY secret"
                 exit 1
               fi
-              images="nvcr.io/${FORGE_E2E_NGC_ORG}"
+              images="nvcr.io/${SITE_E2E_NGC_ORG}"
               ;;
             *)
               echo "::error::image-registry ${SITE_IMAGE_REGISTRY} is not ghcr or nvcr"
@@ -490,7 +500,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # An NGC key with pull access on the FORGE_E2E_NGC_ORG org's registry.
+      # An NGC key with pull access on the SITE_E2E_NGC_ORG org's registry.
       # Separate from FORGE_API_KEY because NGC cannot scope one key to both
       # the Forge tenant and the registry. The runner is the only thing that
       # pulls with it: nothing on the node pulls from NVCR.
@@ -578,36 +588,50 @@ jobs:
           IN_OS_IMAGE: ${{ inputs.os-image }}
           IN_KEEP_SITE: ${{ inputs.keep-site }}
           IN_IMAGE_REGISTRY: ${{ inputs.image-registry }}
-          VAR_IMAGE_REGISTRY: ${{ vars.FORGE_E2E_IMAGE_REGISTRY }}
-          VAR_NGC_ORG: ${{ vars.FORGE_E2E_NGC_ORG }}
-          VAR_STAGE: ${{ vars.FORGE_E2E_STAGE }}
-          VAR_CONTROLLER_VERSION: ${{ vars.FORGE_E2E_CONTROLLER_VERSION }}
-          VAR_OS_IMAGE_BOOTLOADER: ${{ vars.FORGE_E2E_OS_IMAGE_BOOTLOADER }}
-          VAR_OS_IMAGE: ${{ vars.FORGE_E2E_OS_IMAGE }}
+          VAR_IMAGE_REGISTRY: ${{ vars.SITE_E2E_IMAGE_REGISTRY }}
+          VAR_NGC_ORG: ${{ vars.SITE_E2E_NGC_ORG }}
+          VAR_STAGE: ${{ vars.SITE_E2E_STAGE }}
+          VAR_CONTROLLER_VERSION: ${{ vars.SITE_E2E_CONTROLLER_VERSION }}
+          VAR_OS_IMAGE_BOOTLOADER: ${{ vars.SITE_E2E_OS_IMAGE_BOOTLOADER }}
+          VAR_OS_IMAGE: ${{ vars.SITE_E2E_OS_IMAGE }}
+          # The names each of the six replaced, read separately so the
+          # summary can say a deprecated one answered instead of hiding it
+          # behind the value it supplied.
+          WAS_IMAGE_REGISTRY: ${{ vars.FORGE_E2E_IMAGE_REGISTRY }}
+          WAS_NGC_ORG: ${{ vars.FORGE_E2E_NGC_ORG }}
+          WAS_STAGE: ${{ vars.FORGE_E2E_STAGE }}
+          WAS_CONTROLLER_VERSION: ${{ vars.FORGE_E2E_CONTROLLER_VERSION }}
+          WAS_OS_IMAGE_BOOTLOADER: ${{ vars.FORGE_E2E_OS_IMAGE_BOOTLOADER }}
+          WAS_OS_IMAGE: ${{ vars.FORGE_E2E_OS_IMAGE }}
           VAR_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
           VAR_JUMP_HOST: ${{ vars.FORGE_JUMP_HOST }}
         run: |
           set -Eeuo pipefail
 
-          # label | resolved | dispatch input | repository variable | variable name
+          # label | resolved | dispatch input | repository variable | variable name |
+          #   deprecated variable | deprecated variable name
+          #
+          # The last two are set only for the six renamed away from FORGE_,
+          # and empty everywhere else. They exist so a run on an old name
+          # says so rather than reporting the new one it did not read.
           rows=(
-            "stage|SITE_STAGE|IN_STAGE|VAR_STAGE|FORGE_E2E_STAGE"
-            "controller version|SITE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|FORGE_E2E_CONTROLLER_VERSION"
-            "OS image bootloader|OS_IMAGE_BOOTLOADER|IN_OS_IMAGE_BOOTLOADER|VAR_OS_IMAGE_BOOTLOADER|FORGE_E2E_OS_IMAGE_BOOTLOADER"
-            "OS image|OS_IMAGE|IN_OS_IMAGE|VAR_OS_IMAGE|FORGE_E2E_OS_IMAGE"
-            "keep the node|KEEP_SITE|IN_KEEP_SITE||"
-            "image registry|SITE_IMAGE_REGISTRY|IN_IMAGE_REGISTRY|VAR_IMAGE_REGISTRY|FORGE_E2E_IMAGE_REGISTRY"
-            "NGC org|FORGE_E2E_NGC_ORG||VAR_NGC_ORG|FORGE_E2E_NGC_ORG"
-            "Teleport proxy|FORGE_TELEPORT_PROXY||VAR_TELEPORT_PROXY|FORGE_TELEPORT_PROXY"
-            "jump host|FORGE_JUMP_HOST||VAR_JUMP_HOST|FORGE_JUMP_HOST"
-            "Teleport join token|FORGE_TELEPORT_JOIN_TOKEN||FORGE_TELEPORT_JOIN_TOKEN|FORGE_TELEPORT_JOIN_TOKEN"
-            "Forge org|FORGE_ORG_ID||FORGE_ORG_ID|FORGE_ORG_ID"
-            "Forge site|FORGE_SITE_ID||FORGE_SITE_ID|FORGE_SITE_ID"
-            "Forge VPC|FORGE_VPC_ID||FORGE_VPC_ID|FORGE_VPC_ID"
-            "Forge subnet|FORGE_SUBNET_ID||FORGE_SUBNET_ID|FORGE_SUBNET_ID"
-            "Forge SSH key group|FORGE_SSH_KEY_GROUP_ID||FORGE_SSH_KEY_GROUP_ID|FORGE_SSH_KEY_GROUP_ID"
-            "CPU instance type|FORGE_INSTANCE_TYPE_CPU_ID||FORGE_INSTANCE_TYPE_CPU_ID|FORGE_INSTANCE_TYPE_CPU_ID"
-            "GPU instance type|FORGE_INSTANCE_TYPE_GPU_ID||FORGE_INSTANCE_TYPE_GPU_ID|FORGE_INSTANCE_TYPE_GPU_ID"
+            "stage|SITE_STAGE|IN_STAGE|VAR_STAGE|SITE_E2E_STAGE|WAS_STAGE|FORGE_E2E_STAGE"
+            "controller version|SITE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|SITE_E2E_CONTROLLER_VERSION|WAS_CONTROLLER_VERSION|FORGE_E2E_CONTROLLER_VERSION"
+            "OS image bootloader|OS_IMAGE_BOOTLOADER|IN_OS_IMAGE_BOOTLOADER|VAR_OS_IMAGE_BOOTLOADER|SITE_E2E_OS_IMAGE_BOOTLOADER|WAS_OS_IMAGE_BOOTLOADER|FORGE_E2E_OS_IMAGE_BOOTLOADER"
+            "OS image|OS_IMAGE|IN_OS_IMAGE|VAR_OS_IMAGE|SITE_E2E_OS_IMAGE|WAS_OS_IMAGE|FORGE_E2E_OS_IMAGE"
+            "keep the node|KEEP_SITE|IN_KEEP_SITE||||"
+            "image registry|SITE_IMAGE_REGISTRY|IN_IMAGE_REGISTRY|VAR_IMAGE_REGISTRY|SITE_E2E_IMAGE_REGISTRY|WAS_IMAGE_REGISTRY|FORGE_E2E_IMAGE_REGISTRY"
+            "NGC org|SITE_E2E_NGC_ORG||VAR_NGC_ORG|SITE_E2E_NGC_ORG|WAS_NGC_ORG|FORGE_E2E_NGC_ORG"
+            "Teleport proxy|FORGE_TELEPORT_PROXY||VAR_TELEPORT_PROXY|FORGE_TELEPORT_PROXY||"
+            "jump host|FORGE_JUMP_HOST||VAR_JUMP_HOST|FORGE_JUMP_HOST||"
+            "Teleport join token|FORGE_TELEPORT_JOIN_TOKEN||FORGE_TELEPORT_JOIN_TOKEN|FORGE_TELEPORT_JOIN_TOKEN||"
+            "Forge org|FORGE_ORG_ID||FORGE_ORG_ID|FORGE_ORG_ID||"
+            "Forge site|FORGE_SITE_ID||FORGE_SITE_ID|FORGE_SITE_ID||"
+            "Forge VPC|FORGE_VPC_ID||FORGE_VPC_ID|FORGE_VPC_ID||"
+            "Forge subnet|FORGE_SUBNET_ID||FORGE_SUBNET_ID|FORGE_SUBNET_ID||"
+            "Forge SSH key group|FORGE_SSH_KEY_GROUP_ID||FORGE_SSH_KEY_GROUP_ID|FORGE_SSH_KEY_GROUP_ID||"
+            "CPU instance type|FORGE_INSTANCE_TYPE_CPU_ID||FORGE_INSTANCE_TYPE_CPU_ID|FORGE_INSTANCE_TYPE_CPU_ID||"
+            "GPU instance type|FORGE_INSTANCE_TYPE_GPU_ID||FORGE_INSTANCE_TYPE_GPU_ID|FORGE_INSTANCE_TYPE_GPU_ID||"
           )
 
           # A row nobody remembers to add is the whole failure mode: the
@@ -615,10 +639,17 @@ jobs:
           # what the run resolved. Derive the expected set from the workflow
           # itself so a new input or variable fails here instead of going
           # unrecorded.
+          #
+          # The pattern has to name every prefix in use. It matched only
+          # FORGE_ when that was the only one, which means a variable
+          # renamed out of that prefix would have dropped out of this check
+          # silently -- no failure, just less coverage, which is the one
+          # thing this step exists to prevent. Both prefixes are listed, and
+          # a third would have to be added here too.
           missing=()
           while read -r name; do
-            printf '%s\n' "${rows[@]}" | cut -d'|' -f5 | grep -qx "${name}" || missing+=("vars.${name}")
-          done < <(grep -o 'vars\.FORGE_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
+            printf '%s\n' "${rows[@]}" | cut -d'|' -f5,7 | tr '|' '\n' | grep -qx "${name}" || missing+=("vars.${name}")
+          done < <(grep -oE 'vars\.(FORGE|SITE_E2E)_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
           while read -r name; do
             printf '%s\n' "${rows[@]}" | cut -d'|' -f3 |
               grep -qx "IN_$(printf '%s' "${name}" | tr 'a-z-' 'A-Z_')" || missing+=("inputs.${name}")
@@ -639,7 +670,7 @@ jobs:
             printf '  %-22s = %s\n' "run"         "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo
             for row in "${rows[@]}"; do
-              IFS='|' read -r label resolved input var varname <<<"${row}"
+              IFS='|' read -r label resolved input var varname wasvar wasvarname <<<"${row}"
               value="${!resolved:-}"
               [ -n "${value}" ] || value="<unset>"
               # The rows whose values are withheld. This file is an artifact
@@ -658,6 +689,11 @@ jobs:
                 source="dispatch input"
               elif [ -n "${var}" ] && [ -n "${!var:-}" ]; then
                 source="repository variable ${varname}"
+              elif [ -n "${wasvar}" ] && [ -n "${!wasvar:-}" ]; then
+                # Named rather than folded into the line above, because this
+                # is the only signal that the rename is unfinished. The
+                # fallback in the env block goes when no run prints this.
+                source="repository variable ${wasvarname} (deprecated, rename to ${varname})"
               else
                 source="workflow default"
               fi
