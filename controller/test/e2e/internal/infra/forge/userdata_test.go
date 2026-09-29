@@ -128,3 +128,76 @@ func TestRenderUserDataRejectsIncompleteInputs(t *testing.T) {
 		})
 	}
 }
+
+// TestRenderUserDataNodeUser covers the account the image bakes reaching every
+// place cloud-init writes it. Run 36540138816 failed as a publickey rejection
+// twenty minutes into provisioning because the harness assumed dgxc-admin and
+// the os-image release baked ubuntu, so the key went to a home directory for
+// an account that did not exist.
+func TestRenderUserDataNodeUser(t *testing.T) {
+	for _, tc := range []struct{ name, set, want string }{
+		{"empty is the os-image default", "", defaultNodeUser},
+		{"an internal-pipeline image", "dgxc-admin", "dgxc-admin"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := completeUserData()
+			in.NodeUser = tc.set
+			out, err := renderUserData(in)
+			if err != nil {
+				t.Fatalf("rendering: %v", err)
+			}
+			var cfg cloudConfig
+			if err := yaml.Unmarshal([]byte(out), &cfg); err != nil {
+				t.Fatalf("decoding: %v", err)
+			}
+
+			var sawKey, sawSudoers bool
+			for _, f := range cfg.WriteFiles {
+				switch f.Path {
+				case "/home/" + tc.want + "/.ssh/authorized_keys":
+					sawKey = true
+				case "/etc/sudoers.d/" + tc.want:
+					sawSudoers = true
+					if !strings.HasPrefix(f.Content, tc.want+" ") {
+						t.Errorf("sudoers grants %q, want %q", f.Content, tc.want)
+					}
+				}
+			}
+			if !sawKey {
+				t.Errorf("no authorized_keys under /home/%s", tc.want)
+			}
+			if !sawSudoers {
+				t.Errorf("no sudoers drop-in for %s", tc.want)
+			}
+
+			// The runcmd that creates .ssh has to name the same account, or
+			// the deferred key write lands in a directory sshd will refuse.
+			var chowned bool
+			for _, cmd := range cfg.RunCmd {
+				if strings.Contains(cmd, "/home/"+tc.want+"/.ssh") {
+					chowned = true
+				}
+				if tc.want != "dgxc-admin" && strings.Contains(cmd, "dgxc-admin") {
+					t.Errorf("runcmd still names dgxc-admin: %s", cmd)
+				}
+			}
+			if !chowned {
+				t.Errorf("no runcmd prepares /home/%s/.ssh", tc.want)
+			}
+		})
+	}
+}
+
+// The site node runs kind plus the whole stack on one machine, and the
+// 2026-09-29 ytl bootstrap needed this raised by hand before it completed.
+func TestRenderUserDataRaisesInotifyInstances(t *testing.T) {
+	out, err := renderUserData(completeUserData())
+	if err != nil {
+		t.Fatalf("rendering: %v", err)
+	}
+	for _, want := range []string{"fs.inotify.max_user_instances = 1024", "/etc/sysctl.d/", "sysctl --system"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("user data should carry %q", want)
+		}
+	}
+}

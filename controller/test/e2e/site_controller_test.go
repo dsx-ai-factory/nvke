@@ -239,10 +239,13 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 // siteLane is what the lane resolves once, before it creates anything, so a
 // missing input fails the run before a machine exists.
 type siteLane struct {
-	cfg          config.Config
-	name         string
-	env          *environment.Forge
-	site         environment.ForgeSite
+	cfg  config.Config
+	name string
+	env  *environment.Forge
+	site environment.ForgeSite
+	// capabilities is what the site node is provisioned with, which is a CPU
+	// machine of the configured architecture rather than what the run asked
+	// to qualify. The run's own capabilities pick the site, not this machine.
 	capabilities map[string]string
 	apiKey       string
 	provider     infra.Provider
@@ -266,11 +269,14 @@ func newSiteLane() (siteLane, error) {
 	if err != nil {
 		return siteLane{}, err
 	}
-	env, err := forgeEnvironment()
+	env, err := runEnvironment()
 	if err != nil {
 		return siteLane{}, err
 	}
-	forgeSite, err := env.Site("")
+	// Projected here rather than by the suite: this lane is one of the two
+	// places that speak Forge, and the suite only knows that -e2e.environment
+	// named a file.
+	forgeEnv, err := env.Forge()
 	if err != nil {
 		return siteLane{}, err
 	}
@@ -278,13 +284,28 @@ func newSiteLane() (siteLane, error) {
 	if err != nil {
 		return siteLane{}, err
 	}
-	// Resolved for the error, not for the value: the provider matches again
-	// when it creates the machine, and the node reports its own architecture.
-	// Matching here is what makes capabilities nothing can satisfy fail before
-	// a machine exists rather than a minute into provisioning.
-	if _, matchErr := forgeSite.MatchInstanceType(capabilities); matchErr != nil {
-		return siteLane{}, matchErr
+	// The run's capabilities choose the site, not a name: a stream asks for
+	// {gpu: gb200, arch: amd64} and which site owns both such machines is
+	// infrastructure. Resolving here also makes capabilities nothing can
+	// satisfy fail before a machine exists rather than a minute into
+	// provisioning.
+	selection, err := forgeEnv.Resolve(capabilities)
+	if err != nil {
+		return siteLane{}, err
 	}
+	forgeSite := selection.Site
+	// The site node is the run's CPU shape, never its GPU one. The site
+	// controller supports the tenants this site will host and runs no
+	// workload of its own, so passing the run's capabilities straight through
+	// would put it on a GB200. Its architecture is still the run's: Resolve
+	// matched this shape on the `arch` capability, so asking for what the
+	// shape provides asks for that architecture.
+	//
+	// The shape's own `provides` rather than a map rebuilt here. The provider
+	// matches again when it creates the machine, and handing it the matched
+	// shape's description is what makes the second match land on the first
+	// one's answer.
+	siteCapabilities := selection.CPU.Provides
 	apiKey := os.Getenv(envForgeAPIKey)
 	if apiKey == "" {
 		return siteLane{}, fmt.Errorf("%s is not set", envForgeAPIKey)
@@ -325,18 +346,16 @@ func newSiteLane() (siteLane, error) {
 		}
 	}
 	provider, err := forge.New(forge.Options{
-		Env:      env,
+		Env:      forgeEnv,
 		Site:     forgeSite.Key,
 		APIKey:   apiKey,
 		JumpHost: forgeSite.JumpHost,
-		// The site node boots the same OS image as the tenants it will host.
-		Images: func(string) (string, string, error) {
-			bootLoaderURL, berr := requireVersion("os-image-bootloader")
-			if berr != nil {
-				return "", "", berr
-			}
-			imageURL, ierr := requireVersion("os-image")
-			return bootLoaderURL, imageURL, ierr
+		NodeUser: cfg.Node.User,
+		// The site node boots the OS image built for its own architecture,
+		// which is the same image a tenant control plane of that architecture
+		// boots. A GPU tenant's workers boot a different one.
+		Images: func(_, arch string) (string, string, error) {
+			return requireNodeArtifacts(arch)
 		},
 		Dialer: forge.Teleport(dialer),
 		Node:   nodeInputs(kubernetesVersion),
@@ -351,8 +370,8 @@ func newSiteLane() (siteLane, error) {
 		return siteLane{}, err
 	}
 	return siteLane{
-		cfg: cfg, name: name, env: env, site: forgeSite,
-		capabilities: capabilities, apiKey: apiKey, provider: provider,
+		cfg: cfg, name: name, env: forgeEnv, site: forgeSite,
+		capabilities: siteCapabilities, apiKey: apiKey, provider: provider,
 		tenantPassword: tenantPassword, dbPassword: dbPassword,
 	}, nil
 }

@@ -28,6 +28,19 @@ type Config struct {
 		PreserveOnFailure bool   `json:"preserveOnFailure"`
 		ReuseCluster      string `json:"reuseCluster"` // non-empty -> skip create, verify this cluster
 	} `json:"lifecycle"`
+	// Node is what the machines an infrastructure provider creates are,
+	// rather than what is built on them. It is separate from Site because
+	// the same node shape is used for a site controller and for the tenant
+	// nodes it goes on to provision.
+	Node struct {
+		// User is the account the OS image bakes, and the login every
+		// session uses. Empty is what the OSS os-image releases bake;
+		// images from the internal pipeline bake dgxc-admin. It has to
+		// match the image named by -e2e.versions os-image, or cloud-init
+		// writes authorized_keys for an account that does not exist.
+		User string `json:"user"`
+	} `json:"node"`
+
 	// Site configures the lane that builds its own site controller. It holds
 	// identifiers and paths only: the Forge API key and the registry token
 	// are read from the environment and never written to a file.

@@ -11,10 +11,16 @@ import (
 )
 
 const (
-	// nodeUser is the account the NKE image bakes in. Cloud-init must not
-	// declare it: a users: block would shadow the baked account and lock
-	// everyone out of the node bootstrap has to run on.
-	nodeUser = "dgxc-admin"
+	// defaultNodeUser is the account the OSS os-image releases bake, from
+	// os-image/packer/cidata/autoinstall-lvm.pkrtpl. The internal image
+	// pipeline bakes dgxc-admin instead, which is why this is an input
+	// rather than a constant: a run against the wrong one gets no
+	// authorized_keys and fails as a publickey rejection twenty minutes in.
+	//
+	// Cloud-init must not declare the account either way: a users: block
+	// would shadow the baked one and lock everyone out of the node
+	// bootstrap has to run on.
+	defaultNodeUser = "ubuntu"
 )
 
 // HostTools are the programs `nkectl bootstrap site` needs on the host it
@@ -57,6 +63,8 @@ type userDataInputs struct {
 	Hostname      string
 	AuthorizedKey string
 	Arch          string
+	// NodeUser is the account the image bakes. Empty is defaultNodeUser.
+	NodeUser string
 	// NodeCommands install the agent stack, shared with tenant nodes so the
 	// package list exists once.
 	NodeCommands []string
@@ -97,6 +105,10 @@ func renderUserData(in userDataInputs) (string, error) {
 	if len(in.NodeCommands) == 0 {
 		return "", fmt.Errorf("no node commands: the agent stack would never be installed")
 	}
+	nodeUser := in.NodeUser
+	if strings.TrimSpace(nodeUser) == "" {
+		nodeUser = defaultNodeUser
+	}
 
 	run := make([]string, 0, len(in.NodeCommands)+13)
 
@@ -126,6 +138,19 @@ func renderUserData(in userDataInputs) (string, error) {
 	run = append(run, in.NodeCommands...)
 
 	run = append(run,
+		// The site node runs a kind cluster and then the whole NKE stack on
+		// one machine, and Ubuntu's default of 128 inotify instances is not
+		// enough for that many controllers: the 2026-09-29 ytl bootstrap had
+		// to be raised to 1024 by hand before it would complete. Written as a
+		// drop-in rather than set live, so it survives the reboots the
+		// bootstrap performs.
+		//
+		// Only the site node. A tenant node runs a kubelet and its workload,
+		// which is the ordinary load this default was chosen for, and no
+		// tenant has been observed to exhaust it.
+		"printf 'fs.inotify.max_user_instances = 1024\n' > /etc/sysctl.d/99-nke-e2e-inotify.conf",
+		"sysctl --system",
+
 		// nke-kubeadm-distro ships a containerd and declares Conflicts: runc,
 		// so installing Ubuntu's containerd aborts the whole apt transaction.
 		// Start the one already there.

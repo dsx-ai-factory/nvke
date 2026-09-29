@@ -151,8 +151,8 @@ func newTestProvider(t *testing.T, forge *fakeForge, dialer Dialer) *Provider {
 		Env:      testEnv(),
 		APIKey:   "nvapi-test",
 		Endpoint: srv.URL,
-		Images: func(version string) (string, string, error) {
-			return "https://example.invalid/imager.efi", "https://example.invalid/nke-" + version + ".qcow2", nil
+		Images: func(version, arch string) (string, string, error) {
+			return "https://example.invalid/imager.efi", "https://example.invalid/nke-node-non-fde-ubuntu-24.04.1-" + arch + "-" + version + ".qcow2", nil
 		},
 		Dialer:   dialer,
 		JumpHost: testJumpHost,
@@ -216,7 +216,7 @@ func TestProvisionNode(t *testing.T) {
 	if ifaces, _ := created["interfaces"].([]any); len(ifaces) != 1 || ifaces[0].(map[string]any)["subnetId"] != "subnet-uuid" {
 		t.Errorf("create interfaces = %v, want one on the site subnet", created["interfaces"])
 	}
-	if !strings.Contains(created["ipxeScript"].(string), "nke-1.2.0.qcow2") {
+	if !strings.Contains(created["ipxeScript"].(string), "amd64-1.2.0.qcow2") {
 		t.Error("iPXE script should boot the image for the requested node version")
 	}
 	userData := created["userData"].(string)
@@ -231,7 +231,7 @@ func TestProvisionNode(t *testing.T) {
 		t.Errorf("dialed %d times, want retries until the node answered", len(dialer.targets))
 	}
 	target := dialer.targets[len(dialer.targets)-1]
-	if target.JumpHost != testJumpHost || target.Address != "10.0.0.7" || target.User != nodeUser || target.Signer == nil {
+	if target.JumpHost != testJumpHost || target.Address != "10.0.0.7" || target.User != defaultNodeUser || target.Signer == nil {
 		t.Errorf("dial target = %+v", target)
 	}
 	if got := dialer.conn.ran; len(got) != 1 || got[0] != "cloud-init status --wait" {
@@ -326,8 +326,8 @@ func newSlowCreateProvider(t *testing.T, forge *fakeForge, dialer Dialer, perReq
 		Env:      testEnv(),
 		APIKey:   "nvapi-test",
 		Endpoint: srv.URL,
-		Images: func(version string) (string, string, error) {
-			return "https://example.invalid/imager.efi", "https://example.invalid/nke-" + version + ".qcow2", nil
+		Images: func(version, arch string) (string, string, error) {
+			return "https://example.invalid/imager.efi", "https://example.invalid/nke-node-non-fde-ubuntu-24.04.1-" + arch + "-" + version + ".qcow2", nil
 		},
 		Dialer:   dialer,
 		JumpHost: testJumpHost,
@@ -393,7 +393,7 @@ func TestCreateFailureSaysTheInstanceMayExist(t *testing.T) {
 func TestNewRequiresJumpHost(t *testing.T) {
 	_, err := New(Options{
 		Env: testEnv(), APIKey: "nvapi-test", Tools: completeTools(),
-		Images: func(string) (string, string, error) { return "", "", nil },
+		Images: func(string, string) (string, string, error) { return "", "", nil },
 		Dialer: &fakeDialer{},
 	})
 	if err == nil || !strings.Contains(err.Error(), "jump host") {

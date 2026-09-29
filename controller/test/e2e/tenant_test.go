@@ -1358,32 +1358,34 @@ const (
 func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec {
 	GinkgoHelper()
 
-	forge, err := forgeEnvironment()
+	env, err := runEnvironment()
 	Expect(err).NotTo(HaveOccurred(), "should load the environment named by -e2e.environment")
-	site, err := forge.Site("")
-	Expect(err).NotTo(HaveOccurred(), "should resolve a site in the environment")
+	forge, err := env.Forge()
+	Expect(err).NotTo(HaveOccurred(), "should read it as a Forge declaration")
 	capabilities, err := runCapabilities()
 	Expect(err).NotTo(HaveOccurred(), "should parse -e2e.capabilities")
-	instanceType, err := site.MatchInstanceType(capabilities)
-	Expect(err).NotTo(HaveOccurred(), "should find an instance type providing the requested capabilities")
+	// The same resolution the site lane made, so a tenant lands on the site
+	// hosting it rather than on whichever other site happens to offer a
+	// matching shape.
+	//
+	// The control plane takes the CPU shape and the workers take the GPU one,
+	// so a GB200 tenant is arm64 workers behind an amd64 control plane and
+	// each role boots the image built for its own machine.
+	//
+	// Which shape a control plane should take is not really fixed like this:
+	// it depends on what is scarce at the site, and a run ought to be able to
+	// choose. That choice is not built yet, so this is the one configuration
+	// the lane offers. A pool that names its own InstanceTypeID still
+	// overrides it, though its payloads follow the role rather than the pool,
+	// so an override that changes architecture would boot the wrong image.
+	selection, err := forge.Resolve(capabilities)
+	Expect(err).NotTo(HaveOccurred(), "should resolve a site offering the requested shapes")
+	site := selection.Site
+	controlPlaneType, workerType := selection.CPU, selection.WorkerType()
 
 	kubernetesVersion := cmp.Or(optionalVersion("kube"), shape.kubernetesVersion, forgeDefaultKubernetesVersion)
 
-	// The OS image is the component under qualification, so it is required and
-	// has no default: a run that did not name one has not said what it is
-	// qualifying. The imager is versioned separately and cannot be derived.
-	bootLoaderURL, err := requireVersion("os-image-bootloader")
-	Expect(err).NotTo(HaveOccurred(), "should be told which qcow imager to boot")
-	imageURL, err := requireVersion("os-image")
-	Expect(err).NotTo(HaveOccurred(), "should be told which OS image to qualify")
-
-	payloads, err := nke.BuildForgeNodePayloads(nke.NodeInputs{
-		BootLoaderURL:     bootLoaderURL,
-		ImageURL:          imageURL,
-		KubernetesVersion: kubernetesVersion,
-		CNIVersion:        cmp.Or(optionalVersion("nke-cni-ovn"), forgeDefaultCNIVersion),
-		SpireVersion:      cmp.Or(optionalVersion("spire-agent"), forgeDefaultSpireVersion),
-	})
+	payloads, err := forgeRolePayloads(controlPlaneType.Arch(), workerType.Arch(), kubernetesVersion)
 	Expect(err).NotTo(HaveOccurred(), "should render the Forge node payloads")
 
 	return nke.ClusterSpec{
@@ -1396,9 +1398,9 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.Cluster
 		OrgID:        forge.Org.ID,
 		SiteID:       site.ID,
 		VpcID:        site.VpcID,
-		NodePayloads: &payloads,
+		NodePayloads: payloads,
 		ControlPlane: nke.ControlPlane{
-			Pools:         forgeNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", site, instanceType),
+			Pools:         forgeNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", site, controlPlaneType),
 			EtcdEncrypted: shape.etcdEncrypted,
 			// Empty unless an entry asks for one, which CWE reads as "do not
 			// configure kube-vip". The Forge tenants were created without one,
@@ -1407,8 +1409,40 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.Cluster
 			// hosts, and a real site has no equivalent to borrow from.
 			ControlPlaneVIP: shape.controlPlaneVIP,
 		},
-		Workers: forgeNodePoolSpecs(shape.workerPools, "worker", "w", site, instanceType),
+		Workers: forgeNodePoolSpecs(shape.workerPools, "worker", "w", site, workerType),
 	}
+}
+
+// forgeRolePayloads renders one payload set per role. When both roles are the
+// same architecture the work is done once and shared, which is the ordinary
+// single-architecture cluster.
+func forgeRolePayloads(controlPlaneArch, workerArch, kubernetesVersion string) (*nke.RolePayloads, error) {
+	build := func(arch string) (nke.NodePayloads, error) {
+		bootLoaderURL, imageURL, err := requireNodeArtifacts(arch)
+		if err != nil {
+			return nke.NodePayloads{}, err
+		}
+		return nke.BuildForgeNodePayloads(nke.NodeInputs{
+			BootLoaderURL:     bootLoaderURL,
+			ImageURL:          imageURL,
+			Arch:              arch,
+			KubernetesVersion: kubernetesVersion,
+			CNIVersion:        cmp.Or(optionalVersion("nke-cni-ovn"), forgeDefaultCNIVersion),
+			SpireVersion:      cmp.Or(optionalVersion("spire-agent"), forgeDefaultSpireVersion),
+		})
+	}
+
+	controlPlane, err := build(controlPlaneArch)
+	if err != nil {
+		return nil, fmt.Errorf("control plane (%s): %w", controlPlaneArch, err)
+	}
+	worker := controlPlane
+	if workerArch != controlPlaneArch {
+		if worker, err = build(workerArch); err != nil {
+			return nil, fmt.Errorf("workers (%s): %w", workerArch, err)
+		}
+	}
+	return &nke.RolePayloads{ControlPlane: controlPlane, Worker: worker}, nil
 }
 
 // forgeNodePoolSpecs fills each pool from the environment. A pool naming its
@@ -1428,8 +1462,13 @@ func forgeNodePoolSpecs(
 			DesiredNodeCount:     pool.DesiredNodeCount,
 			SystemReservedMemory: cmp.Or(pool.SystemReservedMemory, "16Gi"),
 			InstanceTypeID:       cmp.Or(pool.InstanceTypeID, instanceType.ID),
-			SubnetIDs:            defaultStrings(pool.SubnetIDs, site.SubnetID),
-			SSHKeyGroupIDs:       defaultStrings(pool.SSHKeyGroupIDs, site.SSHKeyGroupID),
+			// Whichever of the two the site's fabric uses. The other has
+			// to stay an empty slice rather than a slice holding an empty
+			// string, which is what a plain default would produce and what
+			// Forge would reject as an unknown identifier.
+			SubnetIDs:      optionalStrings(pool.SubnetIDs, site.SubnetID),
+			VpcPrefixIDs:   optionalStrings(pool.VpcPrefixIDs, site.VpcPrefixID),
+			SSHKeyGroupIDs: defaultStrings(pool.SSHKeyGroupIDs, site.SSHKeyGroupID),
 		})
 	}
 	return out
@@ -1541,6 +1580,16 @@ func nicoVMSNodePoolSpec(pool nke.NodePoolSpec, defaultName, defaultNodeNamePref
 		ConfigProfile:         cmp.Or(pool.ConfigProfile, defaultConfigProfile),
 		DiskSelectionStrategy: cmp.Or(pool.DiskSelectionStrategy, "smallest"),
 	}
+}
+
+// optionalStrings is defaultStrings for a default that may legitimately be
+// unset, where the empty result has to stay empty rather than become a
+// one-element slice holding "".
+func optionalStrings(s []string, defaultValue string) []string {
+	if len(s) == 0 && defaultValue == "" {
+		return nil
+	}
+	return defaultStrings(s, defaultValue)
 }
 
 func defaultStrings(s []string, defaultValue string) []string {

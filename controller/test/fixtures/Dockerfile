@@ -17,7 +17,10 @@
 # runner, which cannot resolve that host at all.
 ARG BASE_REGISTRY=docker.io
 
+# No RUN: the COPY below creates /profiles, and a build with no RUN step needs
+# no emulation to target another architecture. That matters because the site
+# lane cross-builds this for an arm64 site node from an amd64 runner, where a
+# single RUN would require qemu-user-static and binfmt to be set up first.
 FROM ${BASE_REGISTRY}/alpine:3.24.1
-RUN mkdir -p /profiles
 COPY profiles/ /profiles/
 COPY runbooks/ /profiles/runbooks/
