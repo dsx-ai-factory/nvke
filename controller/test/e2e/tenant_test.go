@@ -912,10 +912,9 @@ func (t *tenantTest) availableControlPlaneVIP(ctx context.Context, preferred str
 const controlPlaneControllerEnv = "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER"
 
 // controlPlaneControllerEnabled reports whether the CWE under test provisions
-// control planes through the control-plane controller. Like CWE, it treats an
-// unset or empty value as on and parses anything else with strconv.ParseBool,
-// so the suite must see the value CWE was deployed with. It panics on a value
-// that does not parse, which CWE refuses to start with.
+// control planes through the control-plane controller, read from
+// controlPlaneControllerEnv. An unset or empty value means true, CWE's default.
+// It panics if the value is not a boolean.
 func controlPlaneControllerEnabled() bool {
 	value := os.Getenv(controlPlaneControllerEnv)
 	if value == "" {
