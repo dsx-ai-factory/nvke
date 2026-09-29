@@ -822,7 +822,7 @@ func TestClusterService_GetCluster(t *testing.T) {
 
 func TestClusterService_DeleteCluster(t *testing.T) {
 	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
-	reachable := db.NewCondition(false, "Tenant API request failed")
+	updateFailed := db.NewCondition(false, "Cluster update failed")
 	tests := []struct {
 		name             string
 		clusterID        uuid.UUID
@@ -854,7 +854,7 @@ func TestClusterService_DeleteCluster(t *testing.T) {
 			setupMockCalls: func(tx *mockTx) {
 				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
 					ID:         clusterID,
-					Conditions: db.ClusterConditions{APIServerReachable: &reachable},
+					Conditions: db.ClusterConditions{UpdateFailed: &updateFailed},
 				}, nil)
 				tx.On("UpdateCluster", mock.Anything, mock.MatchedBy(func(c *db.Cluster) bool {
 					return c.ID == clusterID && c.Conditions.Deleting.Status == db.ConditionStatusTrue
@@ -867,8 +867,8 @@ func TestClusterService_DeleteCluster(t *testing.T) {
 			verifyConditions: func(t *testing.T, conditions db.ClusterConditions) {
 				t.Helper()
 				assert.Equal(t, db.ConditionStatusTrue, conditions.Deleting.Status)
-				require.NotNil(t, conditions.APIServerReachable)
-				assert.True(t, conditions.APIServerReachable.Equal(reachable))
+				require.NotNil(t, conditions.UpdateFailed)
+				assert.True(t, conditions.UpdateFailed.Equal(updateFailed))
 			},
 		},
 		{

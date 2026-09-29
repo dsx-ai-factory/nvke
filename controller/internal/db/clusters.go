@@ -409,9 +409,6 @@ type ClusterConditions struct {
 	// UpdateCluster; legacy operation flags may still be populated by controllers.
 	UpdateInProgress *UpdateInProgress `json:"updateInProgress,omitempty"`
 	UpdateFailed     *Condition        `json:"updateFailed,omitempty"`
-	// APIServerReachable holds the last completed tenant API reachability observation.
-	// Nil means no observation has been recorded.
-	APIServerReachable *Condition `json:"apiServerReachable,omitempty"`
 }
 
 type ClusterFilters struct {

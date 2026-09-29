@@ -32,13 +32,13 @@ func TestClusterConditionLocking(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, bunDB.Close()) })
 	require.NoError(t, migrations.Migrate(t.Context(), bunDB))
 	database := db.NewDB(bunDB)
-	observed := db.Condition{Status: db.ConditionStatusFalse, Message: "Tenant API request failed", LastTransitionTime: time.Now().UTC()}
+	updateFailed := db.Condition{Status: db.ConditionStatusFalse, Message: "Cluster update failed", LastTransitionTime: time.Now().UTC()}
 	provisioned := db.Condition{Status: db.ConditionStatusTrue, Message: "Provisioned", LastTransitionTime: time.Now().UTC()}
 	writers := []struct {
 		name  string
 		apply func(*db.Cluster)
 	}{
-		{name: "reachability", apply: func(c *db.Cluster) { c.Conditions.APIServerReachable = &observed }},
+		{name: "update failure", apply: func(c *db.Cluster) { c.Conditions.UpdateFailed = &updateFailed }},
 		{name: "lifecycle", apply: func(c *db.Cluster) { c.Conditions.Provisioned = provisioned }},
 	}
 	for first := range writers {
@@ -103,8 +103,8 @@ func TestClusterConditionLocking(t *testing.T) {
 			require.NoError(t, <-secondDone)
 			row, err := database.GetCluster(ctx, cluster.ID)
 			require.NoError(t, err)
-			require.NotNil(t, row.Conditions.APIServerReachable)
-			require.True(t, row.Conditions.APIServerReachable.Equal(observed))
+			require.NotNil(t, row.Conditions.UpdateFailed)
+			require.True(t, row.Conditions.UpdateFailed.Equal(updateFailed))
 			require.True(t, row.Conditions.Provisioned.Equal(provisioned))
 		})
 	}

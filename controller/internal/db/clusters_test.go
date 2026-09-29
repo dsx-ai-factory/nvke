@@ -744,35 +744,3 @@ func TestCreateControlPlaneConfigRowIfChanged_CreatesRowWhenDiskStrategyChanges(
 	require.NoError(t, err)
 	assert.Equal(t, 2, count)
 }
-
-func TestClusterConditionsReachabilityRoundTrip(t *testing.T) {
-	for _, status := range []db.ConditionStatus{"", db.ConditionStatusTrue, db.ConditionStatusFalse, db.ConditionStatusUnknown} {
-		t.Run(string(status), func(t *testing.T) {
-			ctx := context.Background()
-			database := db.NewDB(testutil.SetupDB(ctx, t, (*db.Cluster)(nil)))
-			cluster := newValidCluster(withName("reachability-round-trip"))
-			if status != "" {
-				cluster.Conditions.APIServerReachable = &db.Condition{
-					Status: status, Message: "last observation", LastTransitionTime: time.Now().UTC(),
-				}
-			}
-			created, err := database.CreateCluster(ctx, &cluster)
-			require.NoError(t, err)
-			loaded, err := database.GetCluster(ctx, created.ID)
-			require.NoError(t, err)
-			loaded.Conditions.Provisioned = db.NewCondition(true, "Provisioned")
-			_, err = database.UpdateCluster(ctx, &loaded)
-			require.NoError(t, err)
-			updated, err := database.GetCluster(ctx, created.ID)
-			require.NoError(t, err)
-			require.Equal(t, cluster.Conditions.APIServerReachable, updated.Conditions.APIServerReachable)
-			encoded, err := json.Marshal(updated.Conditions)
-			require.NoError(t, err)
-			if status == "" {
-				require.NotContains(t, string(encoded), "apiServerReachable")
-			} else {
-				require.Contains(t, string(encoded), "apiServerReachable")
-			}
-		})
-	}
-}

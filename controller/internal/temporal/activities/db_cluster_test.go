@@ -22,16 +22,16 @@ func TestUpdateClusterConditionsLocksAndPreservesOtherConditions(t *testing.T) {
 	for _, status := range []db.ConditionStatus{db.ConditionStatusTrue, db.ConditionStatusFalse, db.ConditionStatusUnknown} {
 		t.Run(string(status), func(t *testing.T) {
 			clusterID := uuid.New()
-			reachable := db.Condition{Status: status, Message: "last observation", LastTransitionTime: time.Now()}
+			updateFailed := db.Condition{Status: status, Message: "previous update failure", LastTransitionTime: time.Now()}
 			upgrading := db.NewCondition(true, "Upgrade in progress")
 			database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
 			database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
 			database.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
 				ID:         clusterID,
-				Conditions: db.ClusterConditions{APIServerReachable: &reachable, ControlPlaneUpgrading: upgrading},
+				Conditions: db.ClusterConditions{UpdateFailed: &updateFailed, ControlPlaneUpgrading: upgrading},
 			}, nil).Once()
 			database.MockTx.On("UpdateCluster", mock.Anything, mock.MatchedBy(func(c *db.Cluster) bool {
-				return c.ID == clusterID && c.Conditions.APIServerReachable.Equal(reachable) &&
+				return c.ID == clusterID && c.Conditions.UpdateFailed.Equal(updateFailed) &&
 					c.Conditions.ControlPlaneUpgrading.Equal(upgrading) &&
 					c.Conditions.Provisioned.Status == db.ConditionStatusTrue && c.Conditions.Provisioned.Message == "Provisioned"
 			})).Return(db.Cluster{}, nil).Once()
