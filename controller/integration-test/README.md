@@ -6,10 +6,10 @@ The tests in this directory run against an existing deployment of NKE. They exer
 
 Before you begin you need a test environment and usable forge instances. Currently the tests only interact with the CWE API and allow you to configure the test cluster however you want. This means you can point the tests at any deployment of NKE (local, site-hosted, hybrid or other) and utilize forge resources from any site. The request files under `testdata/default` describe a cluster with a single cp node and a 1 node worker node pool, which the tests provision, scale and then tear down. Their site, VPC, subnet and instance-type IDs are placeholders (`00000000-0000-4000-8000-...`): real Forge identifiers are internal and are not kept in this repository (`hack/internal-config-check.sh` enforces this). A live run must supply its own request files:
 
-- Copy the two files under `testdata/default` outside the repository and replace the placeholder IDs with the target site's
+- Copy the two files under `testdata/default` outside the repository and replace every Forge identifier with the target site's -- the placeholder site, VPC, subnet and instance-type IDs in both files, and `nico.orgID`, which carries a dev default rather than a placeholder
 - Establish ssh tunnel to the site-controller
 - Port-forward cloud-workflow-engine service
-- `CREATE_CLUSTER_REQUEST_PATH=<copy> CREATE_NODE_POOL_REQUEST_PATH=<copy> go test -v -timeout=3h` (from within this directory)
+- `CREATE_CLUSTER_REQUEST_PATH=<copy> CREATE_NODE_POOL_REQUEST_PATH=<copy> go test -tags integration_test -v -timeout=3h` (from within this directory)
 
 ## Configuration
 
@@ -20,8 +20,12 @@ Before you begin you need a test environment and usable forge instances. Current
 | `CREATE_NODE_POOL_REQUEST_PATH` | Path to JSON file | `testdata/default/create-nodepool-request.json` (placeholder IDs; override for a live run) |
 | `SKIP_CLEANUP` | Don't tear down any provisioned resources | `false` |
 
-Example:
+Example. The package sits behind the `integration_test` build tag, so the tag is
+not optional: without it `go test` finds no tests and reports success.
+
 ```bash
-export CWE_API_URL=http://az24-nke-sc:8080/api
-go test -v -timeout=3h
+export CWE_API_URL=http://<site-controller>:8080/api
+export CREATE_CLUSTER_REQUEST_PATH=~/nke-integration/create-cluster-request.json
+export CREATE_NODE_POOL_REQUEST_PATH=~/nke-integration/create-nodepool-request.json
+go test -tags integration_test -v -timeout=3h
 ```
