@@ -98,9 +98,19 @@ func renderUserData(in userDataInputs) (string, error) {
 		return "", fmt.Errorf("no node commands: the agent stack would never be installed")
 	}
 
-	run := make([]string, 0, len(in.NodeCommands)+12)
+	run := make([]string, 0, len(in.NodeCommands)+13)
 
 	run = append(run,
+		// cloud-init runs these as one /bin/sh script and reports the exit
+		// status of its last command, and the last one here ends in
+		// `|| true`. Without this the script always succeeds: a timed-out
+		// route wait, a failed apt step or a missing clusterctl all let
+		// `cloud-init status --wait` pass a node that is not usable, and the
+		// run dies much later inside bootstrap instead. `set -u` is safe
+		// because every command below is fully rendered before it is sent --
+		// nothing here reads a shell variable.
+		"set -eu",
+
 		// BlueField hosts race cloud-init for the network, and apt fails
 		// without one. Bounded, so a node with no route fails here rather
 		// than silently.

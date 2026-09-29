@@ -69,6 +69,14 @@ func TestRenderUserData(t *testing.T) {
 		t.Errorf("authorized key = %q, want %q", key.Content, in.AuthorizedKey)
 	}
 
+	// First, not merely present: cloud-init reports the exit status of the
+	// script's last command, and the last one is a `|| true`. Anything above
+	// this line runs unguarded, so a failure there would still be reported as
+	// a node that came up clean.
+	if len(cfg.RunCmd) == 0 || cfg.RunCmd[0] != "set -eu" {
+		t.Error("run commands must begin with set -eu so a failed step fails cloud-init")
+	}
+
 	// A node command's quoting must survive marshaling byte for byte.
 	index := func(cmd string) int {
 		for i, c := range cfg.RunCmd {
