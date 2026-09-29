@@ -33,14 +33,14 @@
 # os-image-bootloader). The jump host and its login are the site's and live in
 # environments/<name>.yaml, from FORGE_JUMP_HOST and FORGE_TELEPORT_LOGIN.
 # site:
-#   repo: ""            # "" -> the clone the suite runs from
 #   deployPathRef: ""   # "" -> the controller version's commit, or its
 #                       #       controller/<version> release tag
 #   nkectl: ""          # "" -> cli/dist/nkectl-linux-<arch>
 #   # Each image the node stages: the reference it is bootstrapped and
 #   # deployed with, and the archive carrying it. Relative archive paths
-#   # resolve against repo. The controller and capi-provisioned tags are their
-#   # -e2e.versions keys, so they take none here.
+#   # resolve against the clone the suite runs from. The controller and
+#   # capi-provisioned tags are their -e2e.versions keys, so they take none
+#   # here.
 #   images:
 #     controller:
 #       repository: ghcr.io/dsx-ai-factory/nke/nke-controller   # or nvcr.io/<org>/nke-controller
@@ -52,5 +52,9 @@
 #       repository: nke-e2e-profiles
 #       tag: local
 #       archive: ~/.cache/nke-e2e/site/profiles.tar
+
+# What the machine running the suite supplies, rather than anything about the
+# site it reaches — which is why this is not under `site`.
+# runner:
 #   teleportIdentityFile: ""   # "" -> $TELEPORT_IDENTITY_FILE, else the runner's tsh profile
 #   (the Teleport proxy comes from $TELEPORT_PROXY or the tsh login profile)

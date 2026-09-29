@@ -32,6 +32,18 @@ type Config struct {
 	// identifiers and paths only: the Forge API key and the registry token
 	// are read from the environment and never written to a file.
 	Site Site `json:"site"`
+	// Runner is what the machine running the suite supplies.
+	Runner Runner `json:"runner"`
+}
+
+// Runner is the machine the suite runs from, as distinct from the site it
+// reaches. Nothing here describes what is under test; it is what this
+// particular runner has, which is where a CI bot and a laptop differ.
+type Runner struct {
+	// TeleportIdentityFile is a tsh identity file, as a CI bot has instead
+	// of a login session. Empty leaves it to tsh: $TELEPORT_IDENTITY_FILE,
+	// else the runner's tsh profile.
+	TeleportIdentityFile string `json:"teleportIdentityFile"`
 }
 
 // Site is where a site controller's artifacts come from. Only that: the run's
@@ -39,9 +51,6 @@ type Config struct {
 // -e2e.versions keys, and the jump host is the site's, declared in
 // environments/<name>.yaml.
 type Site struct {
-	// Repo is the clone the deploy path is exported from and that relative
-	// paths below resolve against. Empty is the clone the suite runs from.
-	Repo string `json:"repo"`
 	// DeployPathRef is the commit the deploy path is exported from. Empty
 	// follows the controller version: the commit itself when the controller
 	// was built from one, else its controller/<version> release tag. The
@@ -57,12 +66,6 @@ type Site struct {
 	// containerd, which is the cluster's, so they resolve with IfNotPresent
 	// and need no pull credential.
 	Images SiteImages `json:"images"`
-
-	// TeleportIdentityFile is a tsh identity file, as a CI bot has instead of
-	// a login session. Empty leaves it to tsh: $TELEPORT_IDENTITY_FILE, else
-	// the runner's tsh profile. The runner's, not the site's, so it is here
-	// rather than beside the jump host.
-	TeleportIdentityFile string `json:"teleportIdentityFile"`
 }
 
 // SiteImages names each image the site stages. Every field is required by
@@ -83,7 +86,8 @@ type SiteImages struct {
 type SiteImage struct {
 	Repository string `json:"repository"`
 	Tag        string `json:"tag"`
-	// Archive is a runner path; a relative one resolves against Repo.
+	// Archive is a runner path; a relative one resolves against the clone
+	// the suite runs from.
 	Archive string `json:"archive"`
 }
 

@@ -60,18 +60,32 @@ func TestLoadRejectsAnUnknownKey(t *testing.T) {
 }
 
 // The keys this block used to carry. Each now lives in test code, in
-// -e2e.versions or in the environment file, so a config still naming one is
-// out of date and has to say so rather than be half obeyed.
+// -e2e.versions, in the environment file or under another block, so a config
+// still naming one is out of date and has to say so rather than be half
+// obeyed. `repo` is the one with no replacement: the deploy path is always
+// exported from the clone the suite runs from.
 func TestLoadRejectsARetiredSiteKey(t *testing.T) {
 	for _, key := range []string{
 		"name: x", "cni: ovn-kubernetes", "disableMTLS: true",
 		"controllerRepository: x", "profilesImage: x:y", "registryServer: ghcr.io",
 		"bootstrapEnv: {}", "jumpHost: x", "teleportLogin: root",
-		"images: [a.tar]",
+		"images: [a.tar]", "repo: /a/clone", "teleportIdentityFile: /id",
 	} {
 		if _, err := Load(write(t, "site:\n  "+key+"\n")); err == nil {
 			t.Errorf("site.%s was accepted", key)
 		}
+	}
+}
+
+// The other half of rejecting site.teleportIdentityFile: the key still binds,
+// one block up.
+func TestRunnerTakesTheTeleportIdentityFile(t *testing.T) {
+	cfg, err := Load(write(t, "runner:\n  teleportIdentityFile: /tmp/identity\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Runner.TeleportIdentityFile != "/tmp/identity" {
+		t.Errorf("Runner.TeleportIdentityFile = %q, want the one written", cfg.Runner.TeleportIdentityFile)
 	}
 }
 

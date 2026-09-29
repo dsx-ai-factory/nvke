@@ -307,7 +307,7 @@ func newSiteLane() (siteLane, error) {
 	kubernetesVersion := defaultString(optionalVersion("kube"), forgeDefaultKubernetesVersion)
 	dialer := &teleport.Dialer{
 		Login:        forgeSite.TeleportLogin,
-		IdentityFile: cfg.Site.TeleportIdentityFile,
+		IdentityFile: cfg.Runner.TeleportIdentityFile,
 	}
 	// Teleport is the route; the password is the interim one, for a site
 	// whose jump host is not enrolled yet. Selected by the secret being
@@ -441,14 +441,11 @@ func nodeInputs(kubernetesVersion string) nke.NodeInputs {
 // Only the full stage deploys the stack; the bootstrap stage checks the API
 // server instead of CWE.
 func (l siteLane) candidate(node infra.Node) (site.Candidate, site.Options, error) {
-	repo := l.cfg.Site.Repo
-	if repo == "" {
-		top, err := exec.CommandContext(context.Background(), "git", "rev-parse", "--show-toplevel").Output()
-		if err != nil {
-			return site.Candidate{}, site.Options{}, fmt.Errorf("find the clone to export the deploy path from: %w", err)
-		}
-		repo = strings.TrimSpace(string(top))
+	top, err := exec.CommandContext(context.Background(), "git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return site.Candidate{}, site.Options{}, fmt.Errorf("find the clone to export the deploy path from: %w", err)
 	}
+	repo := strings.TrimSpace(string(top))
 	nkectl := defaultString(l.cfg.Site.Nkectl, filepath.Join("cli", "dist", "nkectl-linux-"+node.Arch))
 	version, err := requireVersion("controller")
 	if err != nil {
