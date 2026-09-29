@@ -5,6 +5,8 @@ into three categories:
 1. You want to report a bug, feature request, or documentation issue
     - File an [issue](https://github.com/dsx-ai-factory/nke/issues/new/choose)
     describing what you encountered or what you want to see changed.
+    - For usage questions, use [GitHub Discussions Q&A](https://github.com/dsx-ai-factory/nke/discussions/categories/q-a)
+    instead of an issue.
     - The maintainers will evaluate issues and triage them, scheduling
     them for a release. If you believe the issue needs priority attention,
     comment on the issue to notify the team.
