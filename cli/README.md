@@ -128,21 +128,21 @@ site spec file rather than from flags or the environment. See
 
 `bootstrap site` deploys a SPIRE server, so nodes with a hardware identity have
 something to attest to and CWE gets a workload identity of its own. It comes
-from the SPIFFE project's own hardened charts, pinned alongside the Temporal pin
-in [`internal/cwedeploy/cwedeploy.go`](internal/cwedeploy/cwedeploy.go)
-and installed with `helm --repo`, so nothing is added to your global Helm
-repository list. Everything it names is public, so a bootstrap needs no registry
-credential.
+from the SPIFFE project's own hardened charts. The bootstrap manifest pins each
+chart's version, and `nkectl get bootstrap-manifest` prints it. Each chart is
+installed with `helm --repo`, so nothing is added to your global Helm
+repository list. Everything it names is public, so a bootstrap needs no
+registry credential.
 
 Everything static about the deployment lives in
-[`internal/cwedeploy/manifests/spire-values.yaml`](internal/cwedeploy/manifests/spire-values.yaml).
+[`internal/bootstrap/cwedeploy/manifests/spire-values.yaml`](internal/bootstrap/cwedeploy/manifests/spire-values.yaml).
 `nkectl` sets only what it cannot know ahead of time: the trust domain and
 cluster name, CWE's admin identity, the CA to chain to, and the TPM thumbprints
 allowed to attest.
 
 Two of the values it sets have to agree with CWE and are wrong by default on
 both sides, so both halves are set from one constant in
-[`internal/cwedeploy/cwedeploy.go`](internal/cwedeploy/cwedeploy.go):
+[`internal/bootstrap/cwedeploy/cwedeploy.go`](internal/bootstrap/cwedeploy/cwedeploy.go):
 
 - **the controller-manager class.** CWE stamps its `ClusterStaticEntry` objects
   with its configured class and the SPIRE controller manager only acts on

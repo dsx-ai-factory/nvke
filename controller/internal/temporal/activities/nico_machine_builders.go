@@ -399,7 +399,7 @@ func (a *Activities) renderUserData(
 		Username              string
 	}
 
-	files, err := a.nodeAgentBootstrapFiles()
+	files, err := a.nodeAgentBootstrapFiles(node)
 	if err != nil {
 		return "", err
 	}

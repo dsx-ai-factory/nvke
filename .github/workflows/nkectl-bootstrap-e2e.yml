@@ -87,6 +87,10 @@ jobs:
           - arch: amd64
             runner: linux-amd64-cpu16
           - arch: arm64
+            # Stays on the self-hosted fleet. An arc-arm64-vtpm class exists
+            # and this lane gets as far as `kubeadm init` on it, but the
+            # nested control plane never becomes healthy -- see the writeup
+            # on the PR that moved the other lanes.
             runner: linux-arm64-cpu16
     # A full run takes 12-17 minutes on this pool, most of it the node image
     # build and CWE's three sequential control-plane joins. The margin covers

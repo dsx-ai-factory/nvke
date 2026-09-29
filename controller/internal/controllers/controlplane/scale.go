@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
 )
 
 const (
@@ -79,7 +80,6 @@ func (r *reconciler) createPendingNode(
 		ControlPlane:                true,
 		ControlPlaneConfigurationID: cluster.ControlPlaneConfig.ConfigurationID,
 		Name:                        generateControlPlaneNodeName(existingNodeNames, cluster.Name, defaultControlPlaneNodePrefix),
-		SpiffeEnabled:               r.cfg.SpiffeEnabled,
 		Conditions: db.NodeConditions{
 			Pending:                 db.NewCondition(true, "Pending control-plane node provisioning"),
 			Provisioning:            db.NewCondition(false, "Not yet provisioning"),
@@ -92,6 +92,7 @@ func (r *reconciler) createPendingNode(
 			NodeAgentReady:          db.NewCondition(false, "Status unknown"),
 		},
 	}
+	nodes.PinAgentProfile(&pendingNode, r.cfg)
 
 	if cluster.ProviderType == db.ProviderTypeNico {
 		// Every node on a Nico cluster carries a payload, which strict readers

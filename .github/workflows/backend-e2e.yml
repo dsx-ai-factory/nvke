@@ -144,7 +144,13 @@ jobs:
     env:
       NKE_E2E_BACKEND: ${{ inputs.backend }}
       NKE_E2E_RUN_ID: github-${{ inputs.backend }}-${{ inputs.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
-      NKE_E2E_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
+      # A public pull-through mirror, not dc.local.gha-runners.nvidia.com:
+      # that name only resolves on the self-hosted fleet, so the arm64 leg
+      # died on the PostgreSQL chart the moment it moved to ARC. Same
+      # reasoning and same host as os-image-artifact.yml, which had to make
+      # this change when it moved. Reachable from both fleets, and it serves
+      # bitnamicharts anonymously.
+      NKE_E2E_DOCKERHUB_MIRROR: mirror.gcr.io
       NKE_E2E_LABEL_FILTER: ${{ inputs.label-filter }}
       NKE_E2E_PROVIDERS: ${{ inputs.providers }}
       NKE_E2E_REQUIRE_AUTHN: ${{ inputs.require-authn }}
@@ -156,8 +162,12 @@ jobs:
       NKE_E2E_STACK_CHART: ${{ inputs.stack-chart }}
       NKE_E2E_STACK_VERSION: ${{ inputs.stack-version }}
       # Deploy CWE flag-on for the cp-controller lane; the CI script forwards this
-      # to the Tilt deploy and the e2e binary. Empty/false keeps the node-pool
-      # control plane (CWE's own default).
+      # to the Tilt deploy and the e2e binary. `false` keeps the node-pool control
+      # plane. Note this is the mode, not an override of CWE's default: CWE's own
+      # default is now true (#1054), and both the Tiltfile and deploy-sbom.sh only
+      # set the container env when the value is non-empty. An empty value would
+      # therefore mean flag-on. The CI script resolves empty to false before any
+      # use, so passing `''` here is safe -- but pass the mode you want.
       PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER: ${{ inputs.provision-cp-with-controller }}
       # These backends only observe a container restart, not a real boot: soft reboot can never
       # show a detectable change, so skip straight to hard.

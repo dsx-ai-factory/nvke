@@ -65,6 +65,8 @@ repository's `bin/`, and `make version-check` runs it with `--version`.
   `packages/spire-agent/` — `SPIRE_VERSION` / `TPM_PLUGIN_VERSION` in its
   `Makefile`, digests in its committed `lock/`. Do not float `latest`, and
   regenerate the lock with `make lock` rather than hand-editing it.
+  The DSX IMDS node attestor is pinned in that same lock. Its S3 objects are
+  unversioned and have no checksum sidecar, so the lock digest is the only pin.
   `TPM_PLUGIN_VERSION` also pins the server-side attestor in `controller/` and
   `cli/`; move both halves together.
 - Keep the generic image target's TCG development path. `image-native` requires

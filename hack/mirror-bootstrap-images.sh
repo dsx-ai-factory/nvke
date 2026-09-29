@@ -30,9 +30,8 @@
 # and changes that digest, so the pod's digest-pinned pull then fails with
 # "not found".
 #
-# Image versions track the chart pins in cli/internal/cwedeploy/cwedeploy.go
-# (postgresql 18.5.15, temporal 0.74.0, spire 0.30.1 / spire-crds 0.6.1) and the
-# tags those charts resolve. After a chart bump, refresh this list from
+# Image versions track the chart versions the bootstrap manifest pins
+# (`nkectl get bootstrap-manifest`) and the tags those charts resolve. After a chart bump, refresh this list from
 # `helm template <chart> --version <pin> | grep 'image:'`.
 
 set -Eeuo pipefail

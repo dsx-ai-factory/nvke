@@ -123,12 +123,15 @@ def register(ctx):
 
     node_endpoint = "http://%s:%d" % (ctx.site_controller_vip, DSX_IMDS_NODE_PORT)
     cwe_resource_deps = ["dsx-imds-attestation-mock"]
+    controller_method = ctx.cfg.get("controller_attestation_method", "dsxImds")
+    if controller_method not in ["tpm", "joinToken", "dsxImds"]:
+        fail("controller_attestation_method must be tpm, joinToken, or dsxImds")
     cwe_chart_flags = [
-        "--set-string", "nodeAgent.spireAttestationMethod=dsxImds",
+        "--set-string", "nodeAgent.spireAttestationMethod=%s" % controller_method,
         "--set-string", "nodeAgent.dsxImds.operatorTenant=operator-1",
         "--set-string", "nodeAgent.dsxImds.endpoint=%s" % node_endpoint,
     ]
-    if "dsx-identity-exchange" in ctx.provider_names:
+    if "dsx-identity-exchange" in ctx.provider_names and ctx.cfg.get("dsx_imds_tls_jwt", True):
         site_address = ctx.cfg.get("site_controller_vip", "")
         if site_address == "":
             fail("DSX IMDS node-agent TLS/JWT requires tilt_config.json field site_controller_vip")
@@ -161,11 +164,11 @@ def register(ctx):
             labels=["1-infra"],
             cmd=["bash", "-c", """
               set -euo pipefail
-              kubectl -n cloud-workflow-engine wait \
+              kubectl --context kind-%s -n cloud-workflow-engine wait \
                 --for=condition=Ready certificate/dsx-controller-client --timeout=180s
-              kubectl -n cloud-workflow-engine get secret dsx-controller-client -o json |
+              kubectl --context kind-%s -n cloud-workflow-engine get secret dsx-controller-client -o json |
                 jq -e '.data["tls.crt"] and .data["tls.key"] and .data["ca.crt"]' >/dev/null
-            """],
+            """ % (ctx.kind_cluster_name, ctx.kind_cluster_name)],
             resource_deps=["dsx-controller-client-certificate"],
         )
         cwe_resource_deps.append("dsx-controller-client-ready")

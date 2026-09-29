@@ -17,7 +17,7 @@ name: "spire-agent"
 arch: "${ARCH}"
 platform: "linux"
 version: "${DEB_VERSION}"
-# "1.14.1+tpm1.9.0-1" is a Debian version, not a semver one.
+# "1.14.1+tpm1.9.0-2" is a Debian version, not a semver one.
 version_schema: none
 section: admin
 priority: optional
@@ -26,14 +26,15 @@ maintainer: "NKE <nke-dev@exchange.nvidia.com>"
 # byte-identical .deb.
 mtime: "2026-01-01T00:00:00Z"
 description: |
-  SPIRE agent with the TPM node attestor (SPIRE ${SPIRE_VERSION}, spire-tpm-plugin ${TPM_PLUGIN_VERSION})
-  The upstream SPIRE agent release binary plus spire-tpm-plugin's
-  tpm_attestor_agent and get_tpm_pubhash, each pinned by sha256, together with
-  the NKE units that run them: spire-agent.service and the
-  nke-spire-configure.service that renders /etc/spire-agent/agent.conf from
-  cloud-init instance identity before it. postinst creates the system user the
-  agent runs as and adds it to the tss group so the TPM attestor can open
-  /dev/tpmrm0. Nothing here is unpacked or downloaded at install time.
+  SPIRE agent with the TPM and DSX IMDS node attestors (SPIRE ${SPIRE_VERSION}, spire-tpm-plugin ${TPM_PLUGIN_VERSION})
+  The upstream SPIRE agent release binary, spire-tpm-plugin's
+  tpm_attestor_agent and get_tpm_pubhash, and the DSX IMDS node attestor,
+  each pinned by sha256, together with the NKE units that run them:
+  spire-agent.service and the nke-spire-configure.service that renders
+  /etc/spire-agent/agent.conf from cloud-init instance identity before it.
+  postinst creates the system user the agent runs as, adds it to the tss
+  group so the TPM attestor can open /dev/tpmrm0, and records each plugin's
+  checksum for -expandEnv. Nothing here is unpacked or downloaded at install time.
 
 scripts:
   postinstall: "../bin/.nfpm-scripts/postinst"
@@ -49,6 +50,12 @@ contents:
   # the agent config's plugin_checksum.
   - src: "${SRC}/tpm_attestor_agent"
     dst: "/usr/local/lib/spire-agent/tpm_attestor_agent"
+    file_info: { mode: 0755 }
+    expand: true
+  # CAPI user-data selects this path and expands ${DSX_IMDS_PLUGIN_CHECKSUM}
+  # from the env file postinst writes. Same location the CAPD node image uses.
+  - src: "${SRC}/dsx-imds-node-attestor-agent"
+    dst: "/usr/local/lib/spire-agent/dsx-imds-node-attestor-agent"
     file_info: { mode: 0755 }
     expand: true
   - src: "${SRC}/get_tpm_pubhash"

@@ -66,9 +66,9 @@ kind create cluster
 make -C controller run-local
 ```
 
-- Swagger — <http://localhost:8080/api/docs/>. Keep the trailing slash.
+- Swagger — http://localhost:8080/api/docs/ (keep the trailing slash)
 - `curl http://localhost:8080/api/clusters` → `{"clusters":[]}`. No token here.
-- Temporal — <http://localhost:8233>.
+- Temporal — http://localhost:8233
 
 ## Path B — a tenant cluster with mock NICo
 

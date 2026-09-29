@@ -53,8 +53,8 @@ with network access to public Go modules:
 make build
 ```
 
-compiles all eleven modules and links six binaries. Go caches public modules
-after the first download.
+compiles all modules and links binaries. Go caches public modules after the
+first download.
 
 This changed in #76, which replaced the internal carbide SDK
 (`nvmetal/cloud-api-sdk-go`, reached through the Forge provider) with the public

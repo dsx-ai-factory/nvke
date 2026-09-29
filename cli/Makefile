@@ -74,7 +74,7 @@ NKECTL_LDFLAGS := \
 	-X '$(NKECTL_PKG).gitCommit=$(NKECTL_COMMIT)' \
 	-X '$(NKECTL_PKG).gitTreeState=$(NKECTL_TREE)' \
 	-X '$(NKECTL_PKG).buildDate=$(NKECTL_DATE)' \
-	-X 'github.com/dsx-ai-factory/nke/cli/internal/cwedeploy.capiVersion=$(CAPI_VERSION)' \
+	-X 'github.com/dsx-ai-factory/nke/cli/internal/bootstrap/cwedeploy.capiVersion=$(CAPI_VERSION)' \
 	$(RELEASE_LDFLAGS)
 
 .PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check check-no-docker \
@@ -173,7 +173,7 @@ ensure-capd-image:
 
 # The Cluster API infrastructure provider for hosts that already exist, which is
 # what makes a site cluster reconcile: `nkectl bootstrap site` installs it onto
-# the ephemeral bootstrap cluster (cli/internal/cwedeploy) and loads this image
+# the ephemeral bootstrap cluster (cli/internal/bootstrap/cwedeploy) and loads this image
 # into it. image-provisioned-nvcr.yml publishes the image, but this target
 # builds it from the checkout regardless: the e2e lane has to exercise the
 # provider the pull request changed, not the last one published.
@@ -239,7 +239,7 @@ license: ## Ensure license headers at code.
 # than edited: change the provider, `make -C cluster-api-provider-provisioned
 # manifests`, then this.
 PROVIDER_KUSTOMIZE := ../cluster-api-provider-provisioned/config/default
-PROVIDER_MANIFEST  := internal/cwedeploy/manifests/provisioned-provider.yaml
+PROVIDER_MANIFEST  := internal/bootstrap/cwedeploy/manifests/provisioned-provider.yaml
 
 provider-manifest: ## Regenerate the embedded provisioned-provider manifest.
 	@# Pinned kubectl: the rendered bytes are compared, so the renderer has to

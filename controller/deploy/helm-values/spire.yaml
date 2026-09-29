@@ -15,6 +15,19 @@ global:
   deleteHooks:
     enabled: false
 
+spire-agent:
+  workloadAttestors:
+    k8s:
+      # Already the chart default at 0.30.1, restated so an upstream change of
+      # heart cannot remove Kubernetes workload attestation silently.
+      enabled: true
+      # Mirrors nke-sbom, which needs this because its control-plane nodes run
+      # Kata and container-scoped selectors cannot resolve inside the VM. Tilt
+      # runs on kind under runc and would work either way, but attesting
+      # differently from the path on real hardware means a ClusterSPIFFEID
+      # that depends on container selectors passes locally and fails on a site.
+      disableContainerSelectors: true
+
 spire-server:
   adminIDs:
     - spiffe://example.org/nke-service/cloud-workflow-engine

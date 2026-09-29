@@ -4,6 +4,7 @@
 package e2e
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -304,7 +305,7 @@ func newSiteLane() (siteLane, error) {
 		return siteLane{}, err
 	}
 
-	kubernetesVersion := defaultString(optionalVersion("kube"), forgeDefaultKubernetesVersion)
+	kubernetesVersion := cmp.Or(optionalVersion("kube"), forgeDefaultKubernetesVersion)
 	dialer := &teleport.Dialer{
 		Login:        forgeSite.TeleportLogin,
 		IdentityFile: cfg.Runner.TeleportIdentityFile,
@@ -316,7 +317,7 @@ func newSiteLane() (siteLane, error) {
 	// are reached with the run's own key either way.
 	if password := os.Getenv(envJumpHostPassword); password != "" {
 		if jerr := dialer.JumpOverSSH(teleport.SSHJumpHost{
-			User:               defaultString(forgeSite.JumpHostUser, forgeSite.TeleportLogin),
+			User:               cmp.Or(forgeSite.JumpHostUser, forgeSite.TeleportLogin),
 			Password:           password,
 			HostKeyFingerprint: forgeSite.JumpHostKeyFingerprint,
 		}); jerr != nil {
@@ -340,9 +341,9 @@ func newSiteLane() (siteLane, error) {
 		Dialer: forge.Teleport(dialer),
 		Node:   nodeInputs(kubernetesVersion),
 		Tools: forge.HostTools{
-			NerdctlVersion:    defaultString(optionalVersion("nerdctl"), siteDefaultNerdctlVersion),
-			KindVersion:       defaultString(optionalVersion("kind"), siteDefaultKindVersion),
-			ClusterctlVersion: defaultString(optionalVersion("clusterctl"), siteDefaultClusterctlVersion),
+			NerdctlVersion:    cmp.Or(optionalVersion("nerdctl"), siteDefaultNerdctlVersion),
+			KindVersion:       cmp.Or(optionalVersion("kind"), siteDefaultKindVersion),
+			ClusterctlVersion: cmp.Or(optionalVersion("clusterctl"), siteDefaultClusterctlVersion),
 		},
 		DisableMTLS: siteDisableMTLS,
 	})
@@ -428,8 +429,8 @@ func collectSiteDiagnostics(ctx context.Context, session infra.Session, secrets 
 func nodeInputs(kubernetesVersion string) nke.NodeInputs {
 	inputs := nke.NodeInputs{
 		KubernetesVersion: kubernetesVersion,
-		CNIVersion:        defaultString(optionalVersion("nke-cni-ovn"), forgeDefaultCNIVersion),
-		SpireVersion:      defaultString(optionalVersion("spire-agent"), forgeDefaultSpireVersion),
+		CNIVersion:        cmp.Or(optionalVersion("nke-cni-ovn"), forgeDefaultCNIVersion),
+		SpireVersion:      cmp.Or(optionalVersion("spire-agent"), forgeDefaultSpireVersion),
 	}
 	if siteDisableMTLS {
 		inputs.AgentArgs = nke.AgentArgsNoMTLS
@@ -446,7 +447,7 @@ func (l siteLane) candidate(node infra.Node) (site.Candidate, site.Options, erro
 		return site.Candidate{}, site.Options{}, fmt.Errorf("find the clone to export the deploy path from: %w", err)
 	}
 	repo := strings.TrimSpace(string(top))
-	nkectl := defaultString(l.cfg.Site.Nkectl, filepath.Join("cli", "dist", "nkectl-linux-"+node.Arch))
+	nkectl := cmp.Or(l.cfg.Site.Nkectl, filepath.Join("cli", "dist", "nkectl-linux-"+node.Arch))
 	version, err := requireVersion("controller")
 	if err != nil {
 		return site.Candidate{}, site.Options{}, err
@@ -455,7 +456,7 @@ func (l siteLane) candidate(node infra.Node) (site.Candidate, site.Options, erro
 	controller := site.Image{Repository: images.Controller.Repository, Tag: version}
 	provisioned := site.Image{
 		Repository: images.CAPIProvisioned.Repository,
-		Tag:        defaultString(optionalVersion("capi-provisioned"), siteDefaultCAPIProvisionedVersion),
+		Tag:        cmp.Or(optionalVersion("capi-provisioned"), siteDefaultCAPIProvisionedVersion),
 	}
 
 	ref, err := deployPathRef(repo, l.cfg.Site.DeployPathRef, version)
@@ -478,7 +479,7 @@ func (l siteLane) candidate(node infra.Node) (site.Candidate, site.Options, erro
 			inRepo(repo, images.CAPIProvisioned.Archive),
 			inRepo(repo, images.Profiles.Archive),
 		},
-		KubernetesVersion: defaultString(optionalVersion("kube"), forgeDefaultKubernetesVersion),
+		KubernetesVersion: cmp.Or(optionalVersion("kube"), forgeDefaultKubernetesVersion),
 		CNI:               siteCNI,
 		DisableMTLS:       siteDisableMTLS,
 		// The references the archives carry, so the bootstrap's kind cluster

@@ -66,7 +66,7 @@ type ControlPlane struct {
 	// Config, when non-nil, provisions the control plane through the cluster-level
 	// control-plane controller (CreateClusterControlPlaneConfig) with no
 	// control-plane node pool. It is mutually exclusive with Pools and requires
-	// CWE deployed with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true.
+	// CWE with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER on (its default).
 	Config *ControlPlaneConfigSpec
 }
 
@@ -421,8 +421,9 @@ func buildCAPDRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 
 // buildCAPDControlPlaneConfig stamps the embedded control-plane-config skeleton
 // (a DockerMachineTemplate carrying the CAPD node image) with the caller's
-// desired count and surge. It is used for control-plane-controller provisioning,
-// where the control plane has no owning node pool.
+// desired count, surge and system-reserved memory. It is used for
+// control-plane-controller provisioning, where the control plane has no owning
+// node pool.
 func buildCAPDControlPlaneConfig(spec ClusterSpec) (*api.CreateClusterControlPlaneConfig, error) {
 	var cfg api.CreateClusterControlPlaneConfig
 	if err := json.Unmarshal(capdControlPlaneConfigJSON, &cfg); err != nil {
@@ -430,6 +431,9 @@ func buildCAPDControlPlaneConfig(spec ClusterSpec) (*api.CreateClusterControlPla
 	}
 	cfg.DesiredCount = spec.ControlPlane.Config.DesiredCount
 	cfg.MaxSurge = spec.ControlPlane.Config.MaxSurge
+	if spec.ControlPlane.Config.SystemReservedMemory != "" {
+		cfg.SystemReservedMemory = spec.ControlPlane.Config.SystemReservedMemory
+	}
 	if cfg.Infra == nil {
 		return nil, fmt.Errorf("CAPD control plane config skeleton is missing infra.machineTemplate")
 	}

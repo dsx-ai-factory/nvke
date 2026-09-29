@@ -10,6 +10,7 @@ below is on `main`; the steps the CLI does not cover are marked.
 |---|---|---|
 | `nkectl generate sitespec <name> --nodes hosts.csv` | Writes a site spec for `bootstrap site` from a node CSV. `--set path=value` fills in what the CSV does not carry. | Available |
 | `nkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running CWE, has CWE create the site cluster on the spec's hosts through `nke-agent`, writes `<name>.kubeconfig` and `<name>-etcd-encryption-key.json`, tears the Kind cluster down. `--dry-run` validates the spec only. | Available |
+| `nkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
 | Install an infrastructure provider on the new cluster | Install Cluster API and CAPNICo, before the site controller. See [Infrastructure Providers](../../docs/site-bootstrap/infrastructure-providers.md). No `nkectl` command. | Not in the CLI |
 | Install the site controller on the new cluster | Deploy the controller Helm chart (`controller/deploy/charts/controller`). No `nkectl` command yet. | Not in the CLI |
 | `nkectl config set-site --url <cwe-url> --kubeconfig <path>` | Points the CLI at a site controller. `use-site` switches between entries, `view` prints the config. | Available |

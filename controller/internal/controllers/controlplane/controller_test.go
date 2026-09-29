@@ -372,13 +372,14 @@ func createNodeSet(ctx context.Context, t *testing.T, database db.DB, nodePoolID
 func newNode(nodePool db.NodePool, nodeSetID uuid.UUID, name string, opts ...nodeOpt) db.Node {
 	poolNico, _ := nodePool.NicoProvider()
 	n := db.Node{
-		ID:           uuid.New(),
-		NodePoolID:   nodePool.ID,
-		NodeSetID:    nodeSetID,
-		ClusterID:    nodePool.ClusterID,
-		ControlPlane: nodePool.ControlPlane,
-		Name:         name,
-		IP:           "10.0.0.1",
+		ID:                     uuid.New(),
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+		NodePoolID:             nodePool.ID,
+		NodeSetID:              nodeSetID,
+		ClusterID:              nodePool.ClusterID,
+		ControlPlane:           nodePool.ControlPlane,
+		Name:                   name,
+		IP:                     "10.0.0.1",
 		Conditions: db.NodeConditions{
 			KubernetesReady: db.Condition{Status: db.ConditionStatusTrue},
 			Provisioned:     db.Condition{Status: db.ConditionStatusTrue},

@@ -90,6 +90,10 @@ jobs:
             runner: linux-amd64-cpu16
             install_cni_after_init: true
           - arch: arm64
+            # Stays on the self-hosted fleet. On ARC the stack needs a little
+            # over five minutes to converge and Tilt's readiness gate for
+            # port-forward-temporal-ui gives it exactly five -- see the
+            # writeup on the PR that moved the other lanes.
             runner: linux-arm64-cpu16
             install_cni_after_init: false
     env:
@@ -101,7 +105,8 @@ jobs:
       # Same override as backend-e2e.yml (capd-e2e, nico-e2e).
       NODE_REBOOT_SOFT_REBOOT_ENABLED: false
       # These runners reach Docker Hub through an NVIDIA mirror. backend-e2e.yml
-      # sets the same value; helm needs the shim below to honour it for OCI
+      # uses a public one instead, because its arm64 leg runs on ARC where this
+      # name does not resolve; helm needs the shim below to honour it for OCI
       # charts, which is how the CI entrypoint does it too.
       NKE_E2E_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
       # The Tiltfile refuses to render without these. The CI entrypoint passes

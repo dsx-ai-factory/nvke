@@ -30,8 +30,8 @@ ARCH ?= amd64
 OUT_DIR ?=
 
 # Debian packaging revision. Bump when the package content changes but neither
-# upstream version does.
-DEB_REVISION ?= 1
+# upstream version does. Revision 2 adds the DSX IMDS node attestor plugin.
+DEB_REVISION ?= 2
 
 BUNDLE_VERSION := $(SPIRE_VERSION)+tpm$(TPM_PLUGIN_VERSION)
 

@@ -133,12 +133,12 @@ RUN set -eux; \
     test -x /usr/local/bin/spire-agent || test -x /opt/spire/bin/spire-agent; \
     cd /tmp && rm -rf /tmp/spire-agent-src /tmp/spire-agent-bundle
 
-# DSX IMDS is opt-in for local CAPD images. Its checksum is calculated from
-# the exact plugin binary installed in this image and exposed through the same
-# environment file used by the TPM plugin.
+# DSX IMDS is opt-in for local CAPD images. Install it whenever supplied so a
+# TPM-capable image can also bootstrap new dsxImds nodes. Its checksum comes
+# from the exact installed binary, like the TPM plugin's checksum.
 COPY dsx-imds-node-attestor-agent /tmp/dsx-imds-node-attestor-agent
 RUN set -eux; \
-    if [ "${CAPD_SPIRE_ATTESTATION_METHOD}" = dsxImds ]; then \
+    if [ -s /tmp/dsx-imds-node-attestor-agent ]; then \
       install -m 0755 /tmp/dsx-imds-node-attestor-agent \
         /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent; \
       checksum="$(sha256sum /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent | cut -d' ' -f1)"; \

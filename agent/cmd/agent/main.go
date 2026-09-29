@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc/peer"
 
 	server "github.com/dsx-ai-factory/nke/agent/internal/agent"
+	"github.com/dsx-ai-factory/nke/agent/internal/externalmtls"
 	"github.com/dsx-ai-factory/nke/agent/internal/grpcserver"
 	"github.com/dsx-ai-factory/nke/agent/internal/tlsjwt"
 )
@@ -71,26 +72,41 @@ func envOr(key, fallback string) string {
 // TODO:  May want to move this and define it in the agent package, and just
 // pass the full config to NewAgent but for now beyond the scope of this commit :)
 type AgentConfig struct {
-	Version                string
-	NodeServerListenPort   string
-	MLX5Rescan             bool
-	BundleServerURL        string
-	IndexFileURL           string
-	CniImageRegistry       string
-	AuditLogger            *slog.Logger
-	ScriptExecutionLogger  *slog.Logger
-	DisableMTLS            bool
-	SPIFFESocketPath       string
-	GRPCAuthMode           string
-	DSXIdentityExchangeURL string
-	DSXIdentityCABundle    string
-	DSXIdentityTimeout     time.Duration
+	Version                  string
+	NodeServerListenPort     string
+	MLX5Rescan               bool
+	BundleServerURL          string
+	IndexFileURL             string
+	CniImageRegistry         string
+	AuditLogger              *slog.Logger
+	ScriptExecutionLogger    *slog.Logger
+	DisableMTLS              bool
+	SPIFFESocketPath         string
+	GRPCAuthMode             string
+	DSXIdentityExchangeURL   string
+	DSXIdentityCABundle      string
+	DSXIdentityTimeout       time.Duration
+	ControllerClientCABundle string
 }
 
 // validateAuthConfig rejects authentication settings that cannot work, so a
 // misconfigured agent fails at startup with a readable message instead of
 // failing every handshake.
 func validateAuthConfig(cfg AgentConfig) error {
+	if cfg.ControllerClientCABundle != "" {
+		if cfg.DisableMTLS {
+			return errors.New("--controller-client-ca-bundle cannot be combined with --disable-mtls: " +
+				"there is no TLS handshake in which to verify the controller certificate")
+		}
+		// The controller does not verify the self-signed certificate the agent
+		// serves in this mode, so without the identity token nothing
+		// authenticates the agent to the controller.
+		if cfg.GRPCAuthMode != authModeTLSJWT {
+			return fmt.Errorf("--controller-client-ca-bundle requires --grpc-auth-mode=%s: "+
+				"the controller cannot otherwise authenticate the agent", authModeTLSJWT)
+		}
+	}
+
 	switch cfg.GRPCAuthMode {
 	case authModeSPIFFEMTLS:
 		return nil
@@ -175,6 +191,19 @@ func authorizeClient(agentTrustDomain string) func(spiffeid.ID) error {
 		return fmt.Errorf("unauthorized: path %q does not start with one of %s",
 			clientID.Path(), strings.Join(callerPathPrefixes, ", "))
 	}
+}
+
+// buildServerTLSConfig selects how the agent authenticates the controller.
+// A controller client CA bundle means the controller presents an externally
+// issued certificate; otherwise the controller is a SPIFFE workload.
+func buildServerTLSConfig(ctx context.Context, cfg AgentConfig) (*tls.Config, error) {
+	if cfg.ControllerClientCABundle != "" {
+		slog.Info("setting up external mTLS for gRPC", "controller_client_ca_bundle", cfg.ControllerClientCABundle)
+		return externalmtls.ServerConfig(cfg.ControllerClientCABundle)
+	}
+
+	slog.Info("setting up SPIFFE mTLS for gRPC")
+	return buildSpiffeMtlsConfig(ctx, cfg.SPIFFESocketPath)
 }
 
 func buildSpiffeMtlsConfig(ctx context.Context, socketPath string) (*tls.Config, error) {
@@ -269,10 +298,10 @@ func startSecureServer(ctx context.Context, cfg AgentConfig, agentServer *server
 	}
 
 	if !cfg.DisableMTLS {
-		slog.Info("setting up SPIFFE mTLS for gRPC")
-		tlsCfg, err := buildSpiffeMtlsConfig(ctx, cfg.SPIFFESocketPath)
+		tlsCfg, err := buildServerTLSConfig(ctx, cfg)
 		if err != nil {
-			log.Fatalf("failed to build SPIFFE mTLS config: %v", err)
+			slog.Error("failed to build the gRPC server TLS config", "err", err)
+			os.Exit(1)
 		}
 
 		var transportCredentials credentials.TransportCredentials = credentials.NewTLS(tlsCfg)
@@ -358,6 +387,13 @@ func main() {
 		defaultDSXIdentityTimeout,
 		"Timeout for one DSX Identity token-exchange request",
 	)
+	controllerClientCABundle := flag.String(
+		"controller-client-ca-bundle",
+		envOr("NKE_CONTROLLER_CLIENT_CA_BUNDLE", ""),
+		fmt.Sprintf("PEM CA bundle verifying the controller's client certificate. Setting it selects external mTLS "+
+			"instead of SPIFFE mTLS and requires --grpc-auth-mode=%s. The controller's certificate must also carry "+
+			"the URI SAN %s. Also set via NKE_CONTROLLER_CLIENT_CA_BUNDLE", authModeTLSJWT, externalmtls.ControllerURI),
+	)
 	versionFlag := flag.Bool("version", false, "Print the version and exit")
 	auditLogFileName := flag.String(
 		"audit-log-file",
@@ -403,20 +439,21 @@ func main() {
 
 	// Build config from flags and build-time vars
 	cfg := AgentConfig{
-		Version:                VERSION,
-		NodeServerListenPort:   *secureServerPort,
-		MLX5Rescan:             !*disableMLX5Rescan,
-		BundleServerURL:        *bundleServerURL,
-		IndexFileURL:           *indexFileURL,
-		CniImageRegistry:       *cniImageRegistry,
-		AuditLogger:            auditLogger,
-		ScriptExecutionLogger:  scriptExecutionLogger,
-		DisableMTLS:            *disableMTLS,
-		SPIFFESocketPath:       *spiffeSocketPath,
-		GRPCAuthMode:           *grpcAuthMode,
-		DSXIdentityExchangeURL: *dsxIdentityExchangeURL,
-		DSXIdentityCABundle:    *dsxIdentityCABundle,
-		DSXIdentityTimeout:     *dsxIdentityTimeout,
+		Version:                  VERSION,
+		NodeServerListenPort:     *secureServerPort,
+		MLX5Rescan:               !*disableMLX5Rescan,
+		BundleServerURL:          *bundleServerURL,
+		IndexFileURL:             *indexFileURL,
+		CniImageRegistry:         *cniImageRegistry,
+		AuditLogger:              auditLogger,
+		ScriptExecutionLogger:    scriptExecutionLogger,
+		DisableMTLS:              *disableMTLS,
+		SPIFFESocketPath:         *spiffeSocketPath,
+		GRPCAuthMode:             *grpcAuthMode,
+		DSXIdentityExchangeURL:   *dsxIdentityExchangeURL,
+		DSXIdentityCABundle:      *dsxIdentityCABundle,
+		DSXIdentityTimeout:       *dsxIdentityTimeout,
+		ControllerClientCABundle: *controllerClientCABundle,
 	}
 
 	if err := validateAuthConfig(cfg); err != nil {

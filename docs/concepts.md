@@ -75,9 +75,11 @@ Database credentials are configured in your ArgoCD application manifests during 
 
 Cluster API is a Kubernetes sub-project that provides declarative APIs for provisioning and managing Kubernetes clusters. Instead of running scripts to create a cluster, you create Kubernetes custom resources (`Cluster`, `Machine`, `MachineDeployment`) and a controller reconciles the desired state.
 
-NKE uses CAPI with the [`cluster-api-provider-nico`](https://github.com/dsx-ai-factory/cluster-api-provider-nico) infrastructure provider, which integrates with [NVIDIA Infra Controller](https://github.com/NVIDIA/infra-controller) to allocate and manage bare-metal machines.
+NKE's primary CAPI infrastructure provider for production deployments is [`cluster-api-provider-nico`](https://github.com/dsx-ai-factory/cluster-api-provider-nico) (CAPNICo), which integrates with [NVIDIA Infra Controller (NICo)](https://github.com/dsx-ai-factory/infra-controller) to allocate and manage bare-metal machines. A working NICo site is a prerequisite for NKE day-2 operations — tenant cluster creation, node add/remove, and upgrades all go through NICo.
 
-**Learn more:** https://cluster-api.sigs.k8s.io/introduction
+**Learn more (CAPI):** https://cluster-api.sigs.k8s.io/introduction
+
+**NICo documentation:** https://docs.nvidia.com/infra-controller/documentation/home
 
 ---
 

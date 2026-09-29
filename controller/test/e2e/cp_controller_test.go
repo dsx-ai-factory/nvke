@@ -6,7 +6,6 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"os"
 	"slices"
 	"time"
 
@@ -26,8 +25,8 @@ import (
 // controlPlaneConfig at create); self-skips otherwise.
 func validateControllerManagedControlPlane(test *tenantTest) {
 	It("manages the control plane from the cluster-level config without a control-plane node pool", func(ctx context.Context) {
-		if os.Getenv("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER") != "true" {
-			Skip("requires CWE deployed with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true")
+		if !controlPlaneControllerEnabled() {
+			Skip("requires CWE deployed with " + controlPlaneControllerEnv + " on")
 		}
 
 		Expect(test.spec.ControlPlane.Config).NotTo(BeNil(),
@@ -65,8 +64,8 @@ const controlPlaneControllerUpdateDesiredCount = 3
 // flag-on CWE; self-skips otherwise.
 func validateControllerManagedControlPlaneUpdate(test *tenantTest) {
 	It("scales the controller-managed control plane to a new desired count", func(ctx context.Context) {
-		if os.Getenv("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER") != "true" {
-			Skip("requires CWE deployed with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true")
+		if !controlPlaneControllerEnabled() {
+			Skip("requires CWE deployed with " + controlPlaneControllerEnv + " on")
 		}
 
 		Expect(test.spec.ControlPlane.Config).NotTo(BeNil(),
@@ -105,8 +104,8 @@ const controlPlaneControllerRollKubernetesVersion = "1.34.8"
 // one-at-a-time roll. Requires flag-on CWE; self-skips otherwise.
 func validateControllerManagedControlPlaneRollingUpdate(test *tenantTest) {
 	It("rolls the controller-managed control plane on a control-plane config revision", func(ctx context.Context) {
-		if os.Getenv("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER") != "true" {
-			Skip("requires CWE deployed with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true")
+		if !controlPlaneControllerEnabled() {
+			Skip("requires CWE deployed with " + controlPlaneControllerEnv + " on")
 		}
 
 		Expect(test.spec.ControlPlane.Config).NotTo(BeNil(),
@@ -198,8 +197,8 @@ const controlPlaneControllerDeleteSurgeCount = 4
 // is deterministic because nothing asynchronous has to happen for it to hold.
 func validateControllerManagedControlPlaneDeleteRefused(test *tenantTest) {
 	It("refuses a control-plane node delete that would leave fewer than three", func(ctx context.Context) {
-		if os.Getenv("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER") != "true" {
-			Skip("requires CWE deployed with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true")
+		if !controlPlaneControllerEnabled() {
+			Skip("requires CWE deployed with " + controlPlaneControllerEnv + " on")
 		}
 
 		By("Confirming the control plane is at the three-node fault-tolerant floor")
@@ -255,8 +254,8 @@ func validateControllerManagedControlPlaneDeleteRefused(test *tenantTest) {
 // also the replacement-first shape operators are told to use.
 func validateControllerManagedControlPlaneSerializedDelete(test *tenantTest) {
 	It("serializes a quorum-safe control-plane node delete and gates joins on it", func(ctx context.Context) {
-		if os.Getenv("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER") != "true" {
-			Skip("requires CWE deployed with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true")
+		if !controlPlaneControllerEnabled() {
+			Skip("requires CWE deployed with " + controlPlaneControllerEnv + " on")
 		}
 
 		By(fmt.Sprintf("Growing the control plane to %d so the delete clears the quorum floor", controlPlaneControllerDeleteSurgeCount))
@@ -361,8 +360,8 @@ func validateControllerManagedControlPlaneSerializedDelete(test *tenantTest) {
 // teardown runs to completion is what the unit tests cannot cover.
 func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 	It("refuses deleting a healthy control-plane node but removes an unreachable one", func(ctx context.Context) {
-		if os.Getenv("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER") != "true" {
-			Skip("requires CWE deployed with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true")
+		if !controlPlaneControllerEnabled() {
+			Skip("requires CWE deployed with " + controlPlaneControllerEnv + " on")
 		}
 
 		By("Confirming the control plane is settled at the three-node fault-tolerant floor")

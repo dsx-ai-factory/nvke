@@ -30,7 +30,6 @@ import (
 
 	"github.com/dsx-ai-factory/nke/controller/api"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 )
 
 func validateEtcdEncryption(test *tenantTest) {
@@ -43,14 +42,7 @@ func validateBrownfieldEtcdEncryption(test *tenantTest) {
 		Expect(test.cluster.EtcdEncrypted).To(BeFalse(), "cluster should initially be unencrypted")
 
 		By("Waiting for every desired node to be ready")
-		Eventually(func(ctx context.Context) error {
-			return test.nke.AssertNodeConditions(
-				ctx,
-				test.cluster.ID,
-				expectedNodeCounts(test.spec),
-				nke.IsNodeReady,
-			)
-		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(1*time.Second).
+		Eventually(test.assertDesiredNodesReady).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(1*time.Second).
 			Should(Succeed(), "all desired nodes should be ready before enabling etcd encryption")
 
 		By("Enabling etcd encryption")
@@ -95,14 +87,7 @@ func validateEtcdEncryptionConfiguration(test *tenantTest) {
 func validateEtcdEncryptionKeyRotation(test *tenantTest) {
 	It("rotates the etcd encryption key through the operator Temporal workflow", func(ctx context.Context) {
 		By("Waiting for every desired node to be ready")
-		Eventually(func(ctx context.Context) error {
-			return test.nke.AssertNodeConditions(
-				ctx,
-				test.cluster.ID,
-				expectedNodeCounts(test.spec),
-				nke.IsNodeReady,
-			)
-		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(1*time.Second).
+		Eventually(test.assertDesiredNodesReady).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(1*time.Second).
 			Should(Succeed(), "all desired nodes should be ready before rotating the etcd encryption key")
 
 		beforeKey := expectSucceed(readEtcdEncryptionKeyState(ctx, test.k8sClient, test.cluster.ID.String()))
@@ -128,12 +113,7 @@ func validateEtcdEncryptionKeyRotation(test *tenantTest) {
 		By("Verifying the configuration update did not restart kube-apiserver")
 		afterRestarts := expectSucceed(readKubeAPIServerRestartCounts(ctx, test.k8sClient, adminKubeconfigSecret(ctx, test)))
 		Expect(afterRestarts).To(Equal(beforeRestarts))
-		Expect(test.nke.AssertNodeConditions(
-			ctx,
-			test.cluster.ID,
-			expectedNodeCounts(test.spec),
-			nke.IsNodeReady,
-		)).To(Succeed())
+		Expect(test.assertDesiredNodesReady(ctx)).To(Succeed())
 
 		By("Verifying Secrets remain encrypted in raw etcd after rotation")
 		Expect(runEtcdEncryptionVerifier(ctx, test.k8sClient, adminKubeconfigSecret(ctx, test))).To(Succeed())

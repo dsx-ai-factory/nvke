@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -41,11 +42,8 @@ func validatePostReadyClusterState(test *tenantTest) {
 	It("validates intended cluster state after all nodes are Ready", func(ctx context.Context) {
 		tenantClient := expectSucceed(test.tenantClients.GetClient(ctx, test.cluster.Name))
 		adminClient := expectSucceed(test.tenantClients.GetAdminClient(ctx, test.cluster.Name))
-		expectedNodes := totalExpectedNodes(expectedNodeCounts(test.spec))
-		expectedControlPlanes := 0
-		for _, pool := range test.spec.ControlPlane.Pools {
-			expectedControlPlanes += pool.DesiredNodeCount
-		}
+		expectedNodes := clusterNodeCount(test.spec)
+		expectedControlPlanes := controlPlaneNodeCount(test.spec)
 
 		By("Verifying node-local DNS is fully available on every Ready node")
 		Eventually(func(ctx context.Context) error {
@@ -258,8 +256,8 @@ func assertSystemReservedMemory(ctx context.Context, tenantClient client.Client,
 	if err := tenantClient.List(ctx, &nodes); err != nil {
 		return fmt.Errorf("listing tenant nodes: %w", err)
 	}
-	if len(nodes.Items) != totalExpectedNodes(expectedNodeCounts(spec)) {
-		return fmt.Errorf("found %d tenant nodes while checking memory reservation, want %d", len(nodes.Items), totalExpectedNodes(expectedNodeCounts(spec)))
+	if want := clusterNodeCount(spec); len(nodes.Items) != want {
+		return fmt.Errorf("found %d tenant nodes while checking memory reservation, want %d", len(nodes.Items), want)
 	}
 	for _, node := range nodes.Items {
 		if ready, detail := kubernetesNodeReady(&node); !ready {
@@ -280,7 +278,10 @@ func assertSystemReservedMemory(ctx context.Context, tenantClient client.Client,
 
 func expectedNodeMemoryReservation(spec nke.ClusterSpec) (resource.Quantity, error) {
 	systemReserved := ""
-	pools := append(append([]nke.NodePoolSpec{}, spec.ControlPlane.Pools...), spec.Workers...)
+	pools := slices.Concat(spec.ControlPlane.Pools, spec.Workers)
+	if cp := spec.ControlPlane.Config; cp != nil {
+		pools = append(pools, nke.NodePoolSpec{Name: "control-plane", SystemReservedMemory: cp.SystemReservedMemory})
+	}
 	for _, pool := range pools {
 		if systemReserved == "" {
 			systemReserved = pool.SystemReservedMemory

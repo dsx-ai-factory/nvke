@@ -47,6 +47,7 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 
 	type parameters struct {
 		config                config.Config
+		node                  *db.Node
 		provider              db.CAPINodePoolProvider
 		spireJoinToken        string
 		trustDomain           string
@@ -57,6 +58,28 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 		verify                func(*testing.T, string)
 	}
 	tests := map[string]parameters{
+		"existing TPM node ignores new deployment security modes": {
+			config: func() config.Config {
+				cfg := dsxIMDSSpiffeConfig
+				cfg.NodeAgentExternalMTLSEnabled = true
+				cfg.NodeAgent.TLSJWT.Enabled = true
+				return cfg
+			}(),
+			node: func() *db.Node {
+				node := nodeForBootstrapConfig(tpmSpiffeConfig)
+				return &node
+			}(),
+			trustDomain:           "example.org",
+			trustBundle:           "bundle",
+			expectTrustBundleCall: true,
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assert.Contains(t, userData, `NodeAttestor "tpm"`)
+				assert.NotContains(t, userData, `NodeAttestor "dsx_imds"`)
+				assert.NotContains(t, userData, "--grpc-auth-mode=tls-jwt")
+				assert.NotContains(t, userData, "--controller-client-ca-bundle")
+			},
+		},
 		"TPM attestor": {
 			config:                tpmSpiffeConfig,
 			provider:              customBootstrap,
@@ -197,9 +220,14 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 			}
 			var nodeSet db.NodeSet
 			nodeSet.SetCapi(params.provider)
+			node := nodeForBootstrapConfig(params.config)
+			if params.node != nil {
+				node = *params.node
+			}
 
 			userData, err := activities.renderCAPIBootstrapUserData(
 				context.Background(),
+				node,
 				nodeSet,
 				params.spireJoinToken,
 			)
@@ -239,7 +267,7 @@ func TestRenderCAPIBootstrapUserData_ExternalMTLS(t *testing.T) {
 		},
 		SpireAttestationMethod: db.SpireAttestationMethodTPM,
 	})
-	userData, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeSet, "")
+	userData, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeForBootstrapConfig(activities.cfg), nodeSet, "")
 	require.NoError(t, err)
 
 	var cloudConfig capiCloudInitConfig
@@ -278,7 +306,7 @@ func TestRenderCAPIBootstrapUserData_ExternalMTLSRequiresCA(t *testing.T) {
 
 	var nodeSet db.NodeSet
 	nodeSet.SetCapi(db.CAPINodePoolProvider{SpireAttestationMethod: db.SpireAttestationMethodTPM})
-	_, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeSet, "")
+	_, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeForBootstrapConfig(activities.cfg), nodeSet, "")
 	require.ErrorContains(t, err, "controller client CA bundle is required")
 }
 
@@ -309,7 +337,7 @@ func TestUnit_RenderCAPIBootstrapUserData_AllowsFileOverride(t *testing.T) {
 			nodeSet.SetCapi(db.CAPINodePoolProvider{
 				BootstrapFiles: []db.CloudInitFile{{Path: params.path, Content: "caller content"}},
 			})
-			userData, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeSet, "")
+			userData, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeForBootstrapConfig(activities.cfg), nodeSet, "")
 			require.NoError(t, err)
 			var rendered capiCloudInitConfig
 			require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
@@ -318,6 +346,19 @@ func TestUnit_RenderCAPIBootstrapUserData_AllowsFileOverride(t *testing.T) {
 			assert.Equal(t, "caller content", rendered.WriteFiles[0].Content)
 			assert.Equal(t, config.NodeAgentConfigPath, rendered.WriteFiles[len(rendered.WriteFiles)-1].Path)
 		})
+	}
+}
+
+func nodeForBootstrapConfig(cfg config.Config) db.Node {
+	method := db.SpireAttestationMethod(cfg.NodeAgent.SpireAttestationMethod)
+	if method == "" {
+		method = db.SpireAttestationMethodTPM
+	}
+	return db.Node{
+		SpiffeEnabled:                cfg.SpiffeEnabled,
+		SpireAttestationMethod:       method,
+		NodeAgentExternalMTLSEnabled: cfg.NodeAgentExternalMTLSEnabled,
+		NodeAgentTLSJWTEnabled:       cfg.NodeAgent.TLSJWT.Enabled,
 	}
 }
 

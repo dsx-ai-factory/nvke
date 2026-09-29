@@ -184,15 +184,18 @@ cp -R "${script_dir}/scripts" "${build_context}/scripts"
 cp -R "${script_dir}/systemd" "${build_context}/systemd"
 
 # Docker COPY requires the source to exist for every attestation mode. The
-# empty placeholder is never installed; dsxImds replaces it with the real
-# plugin after validating the caller-supplied path.
+# empty placeholder is never installed. A supplied plugin is installed even in
+# TPM image mode so one local image can bootstrap both old and new nodes.
 : > "${build_context}/dsx-imds-node-attestor-agent"
-if [[ "${CAPD_SPIRE_ATTESTATION_METHOD}" == "dsxImds" ]]; then
-  if [[ -z "${DSX_IMDS_AGENT_PLUGIN_PATH}" || ! -x "${DSX_IMDS_AGENT_PLUGIN_PATH}" ]]; then
-    echo "CAPD_SPIRE_ATTESTATION_METHOD=dsxImds requires an executable DSX_IMDS_AGENT_PLUGIN_PATH" >&2
+if [[ -n "${DSX_IMDS_AGENT_PLUGIN_PATH}" ]]; then
+  if [[ ! -x "${DSX_IMDS_AGENT_PLUGIN_PATH}" ]]; then
+    echo "DSX_IMDS_AGENT_PLUGIN_PATH must name an executable plugin" >&2
     exit 1
   fi
   cp "${DSX_IMDS_AGENT_PLUGIN_PATH}" "${build_context}/dsx-imds-node-attestor-agent"
+elif [[ "${CAPD_SPIRE_ATTESTATION_METHOD}" == "dsxImds" ]]; then
+  echo "CAPD_SPIRE_ATTESTATION_METHOD=dsxImds requires an executable DSX_IMDS_AGENT_PLUGIN_PATH" >&2
+  exit 1
 fi
 
 # The local identity-exchange endpoint uses a cert-manager-issued certificate.

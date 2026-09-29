@@ -1,13 +1,31 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Collector image used by all OTel workloads, in the same form as
-# OpenTelemetryCollector spec.image (repo:tag or repo@digest).
-otelcol_image: otel/opentelemetry-collector-k8s:0.159.0
+global:
+  # Override image registry for every image this chart and its dependencies pull.
+  #
+  # NOTE: metrics-server (disabled by default) and the opentelemetry-operator chart
+  # nested in opentelemetry-kube-stack do NOT read global.imageRegistry.
+  # Point them at a mirror explicitly instead:
+  #   metrics-server:
+  #     image:
+  #       repository: <mirror>/metrics-server/metrics-server
+  #   opentelemetry-kube-stack:
+  #     opentelemetry-operator:
+  #       manager:
+  #         image:
+  #           repository: <mirror>/open-telemetry/opentelemetry-operator/opentelemetry-operator
+  imageRegistry: ""
+
+# Collector image used by all OTel workloads. global.imageRegistry replaces registry.
+otelcol_image:
+  registry: "" # Empty pulls from the image's default registry (Docker Hub for this repository).
+  repository: otel/opentelemetry-collector-k8s
+  tag: 0.159.0
 
 # OTel workloads. Each workload uses the same structure:
 #   kubernetes:     Standard Kubernetes settings (resources, affinity, selectors, labels, ...).
-#   otelcol.image:  Set a custom image for this workload only.
+#   otelcol.image:  Set a custom image for this workload only, as a {registry, repository, tag} map.
 #   otelcol.config: Native OTel collector configuration as a YAML map.
 
 # Receives internal telemetry from all NKTP collectors.
@@ -15,18 +33,36 @@ otelcol_image: otel/opentelemetry-collector-k8s:0.159.0
 watchdog:
   kubernetes:
     mode: statefulset # Required by the operator's Target Allocator support.
-    replicas: 1
+    replicas: 2
     targetAllocator:
       enabled: true # Assign each explicit scrape target to one watchdog replica.
       replicas: 1
       allocationStrategy: consistent-hashing
+      env:
+        - name: OTEL_SERVICE_NAME
+          value: nktp-watchdog-targetallocator
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: service.instance.id=$(POD_NAME)
+      telemetry:
+        metrics:
+          readers:
+            - periodic:
+                interval: 30s
+                exporter:
+                  otlpHttp:
+                    endpoint: http://nktp-watchdog-collector:4318
+                    temporalityPreference: cumulative
       prometheusCR:
         enabled: false # The future metrics service owns monitor discovery.
       observability:
         metrics:
-          enableMetrics: false # Watchdog scrapes the allocator without a ServiceMonitor.
+          enableMetrics: false # Metrics are pushed over OTLP without a ServiceMonitor.
     autoscaler:
-      minReplicas: 1
+      minReplicas: 2
       maxReplicas: 16
       targetCPUUtilization: 75
       targetMemoryUtilization: 100
@@ -69,7 +105,10 @@ watchdog:
         drop: [ALL]
   otelcol:
     # Set a custom image for this workload only.
-    # image: otel/opentelemetry-collector-k8s:0.159.0
+    # image:
+    #   registry: ""
+    #   repository: otel/opentelemetry-collector-k8s
+    #   tag: 0.159.0
     config:
       extensions:
         health_check:
@@ -104,28 +143,6 @@ watchdog:
                     target_label: namespace
                   - source_labels: [__meta_kubernetes_endpointslice_address_target_name]
                     target_label: pod
-              # TODO: Replace both TA scrape jobs with native TA OTLP metrics export
-              # to watchdog after an aligned Operator, Target Allocator and CRD upgrade.
-              - job_name: nktp-watchdog-targetallocator
-                scrape_interval: 30s
-                static_configs:
-                  - targets: [nktp-watchdog-targetallocator:80]
-              # Watchdog's allocator assigns each TA Pod to one watchdog replica.
-              - job_name: nktp-large-target-metrics-targetallocator
-                scrape_interval: 30s
-                kubernetes_sd_configs:
-                  - role: pod
-                    namespaces:
-                      own_namespace: true
-                    selectors:
-                      - role: pod
-                        label: app.kubernetes.io/name=nktp-large-target-metrics-targetallocator,app.kubernetes.io/component=opentelemetry-targetallocator
-                relabel_configs:
-                  - source_labels: [__meta_kubernetes_pod_container_port_name]
-                    regex: http
-                    action: keep
-                  - source_labels: [__meta_kubernetes_pod_name]
-                    target_label: instance
       processors:
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
@@ -151,6 +168,7 @@ watchdog:
         telemetry:
           resource:
             service.name: nktp-watchdog
+            service.instance.id: ${env:POD_NAME}
           metrics:
             readers:
               - periodic:
@@ -166,6 +184,7 @@ watchdog:
                       protocol: http/protobuf
                       endpoint: http://lgtm:4318
           traces:
+            level: basic
             processors:
               - batch:
                   exporter:
@@ -190,9 +209,9 @@ watchdog:
 gateway_logs:
   kubernetes:
     mode: statefulset # Stable replica identities support per-replica volumes for optional persistent queues.
-    replicas: 1
+    replicas: 2
     autoscaler:
-      minReplicas: 1
+      minReplicas: 2
       maxReplicas: 64
       targetCPUUtilization: 75
       targetMemoryUtilization: 100
@@ -235,7 +254,10 @@ gateway_logs:
         drop: [ALL]
   otelcol:
     # Set a custom image for this workload only.
-    # image: otel/opentelemetry-collector-k8s:0.159.0
+    # image:
+    #   registry: ""
+    #   repository: otel/opentelemetry-collector-k8s
+    #   tag: 0.159.0
     config:
       extensions:
         health_check:
@@ -272,6 +294,7 @@ gateway_logs:
         telemetry:
           resource:
             service.name: nktp-gateway-logs
+            service.instance.id: ${env:POD_NAME}
           metrics:
             readers:
               - periodic:
@@ -287,6 +310,7 @@ gateway_logs:
                       protocol: http/protobuf
                       endpoint: http://nktp-watchdog-collector:4318
           traces:
+            level: basic
             processors:
               - batch:
                   exporter:
@@ -303,9 +327,9 @@ gateway_logs:
 gateway_metrics:
   kubernetes:
     mode: statefulset # Stable replica identities support per-replica volumes for optional persistent queues.
-    replicas: 1
+    replicas: 2
     autoscaler:
-      minReplicas: 1
+      minReplicas: 2
       maxReplicas: 64
       targetCPUUtilization: 75
       targetMemoryUtilization: 100
@@ -348,7 +372,10 @@ gateway_metrics:
         drop: [ALL]
   otelcol:
     # Set a custom image for this workload only.
-    # image: otel/opentelemetry-collector-k8s:0.159.0
+    # image:
+    #   registry: ""
+    #   repository: otel/opentelemetry-collector-k8s
+    #   tag: 0.159.0
     config:
       extensions:
         health_check:
@@ -385,6 +412,7 @@ gateway_metrics:
         telemetry:
           resource:
             service.name: nktp-gateway-metrics
+            service.instance.id: ${env:POD_NAME}
           metrics:
             readers:
               - periodic:
@@ -400,6 +428,7 @@ gateway_metrics:
                       protocol: http/protobuf
                       endpoint: http://nktp-watchdog-collector:4318
           traces:
+            level: basic
             processors:
               - batch:
                   exporter:
@@ -416,9 +445,9 @@ gateway_metrics:
 gateway_traces:
   kubernetes:
     mode: statefulset # Stable replica identities support per-replica volumes for optional persistent queues.
-    replicas: 1
+    replicas: 2
     autoscaler:
-      minReplicas: 1
+      minReplicas: 2
       maxReplicas: 64
       targetCPUUtilization: 75
       targetMemoryUtilization: 100
@@ -461,7 +490,10 @@ gateway_traces:
         drop: [ALL]
   otelcol:
     # Set a custom image for this workload only.
-    # image: otel/opentelemetry-collector-k8s:0.159.0
+    # image:
+    #   registry: ""
+    #   repository: otel/opentelemetry-collector-k8s
+    #   tag: 0.159.0
     config:
       extensions:
         health_check:
@@ -498,6 +530,7 @@ gateway_traces:
         telemetry:
           resource:
             service.name: nktp-gateway-traces
+            service.instance.id: ${env:POD_NAME}
           metrics:
             readers:
               - periodic:
@@ -513,6 +546,7 @@ gateway_traces:
                       protocol: http/protobuf
                       endpoint: http://nktp-watchdog-collector:4318
           traces:
+            level: basic
             processors:
               - batch:
                   exporter:
@@ -528,9 +562,51 @@ gateway_traces:
 # Node-level collector. Collects local telemetry and forwards received OTLP signals.
 daemonset:
   kubelet:
-    cadvisor: true # Also scrape /metrics/cadvisor from each local kubelet.
-    probes: false # Also scrape /metrics/probes from each local kubelet.
-    resource: false # Also scrape /metrics/resource from each local kubelet.
+    cadvisor:
+      enabled: true # Also scrape /metrics/cadvisor from each local kubelet.
+      # metricRelabelings drops samples after scraping and replaces the defaults when overridden.
+      metricRelabelings:
+        # The below relabelings were copied from
+        # https://github.com/prometheus-community/helm-charts/blob/4713c624771a48e99f16dec9eb55ec8204f06830/charts/kube-prometheus-stack/values.yaml#L1952
+        # Drop less useful container CPU metrics.
+        - sourceLabels: [__name__]
+          action: drop
+          regex: container_cpu_(cfs_throttled_seconds_total|load_average_10s|system_seconds_total|user_seconds_total)
+        # Drop less useful container / always zero filesystem metrics.
+        - sourceLabels: [__name__]
+          action: drop
+          regex: container_fs_(io_current|io_time_seconds_total|io_time_weighted_seconds_total|reads_merged_total|sector_reads_total|sector_writes_total|writes_merged_total)
+        # Drop less useful / always zero container memory metrics.
+        - sourceLabels: [__name__]
+          action: drop
+          regex: container_memory_(mapped_file|swap)
+        # Drop less useful container process metrics.
+        - sourceLabels: [__name__]
+          action: drop
+          regex: container_(file_descriptors|tasks_state|threads_max)
+        # Drop container_memory_failures_total{scope="hierarchy"} metrics,
+        # we only need the container scope.
+        - sourceLabels: [__name__, scope]
+          action: drop
+          regex: container_memory_failures_total;hierarchy
+        # Drop container_network_... metrics that match various interfaces that
+        # correspond to CNI and similar interfaces. This avoids capturing network
+        # metrics for host network containers.
+        - sourceLabels: [__name__, interface]
+          action: drop
+          regex: container_network_.*;(cali|cilium|cni|lxc|nodelocaldns|tunl).*
+        # Drop container spec metrics that overlap with kube-state-metrics.
+        - sourceLabels: [__name__]
+          action: drop
+          regex: container_spec.*
+        # Drop cgroup metrics with no pod.
+        - sourceLabels: [id, pod]
+          action: drop
+          regex: .+;
+    probes:
+      enabled: false # Also scrape /metrics/probes from each local kubelet.
+    resource:
+      enabled: false # Also scrape /metrics/resource from each local kubelet.
     tls:
       ca:
         # Set name to mount a ConfigMap containing the kubelet-serving CA and enable verification.
@@ -546,6 +622,27 @@ daemonset:
       enabled: true
       replicas: 1
       allocationStrategy: per-node # Targets without a matching collector node stay unassigned.
+      env:
+        - name: OTEL_SERVICE_NAME
+          value: nktp-targetallocator
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: service.instance.id=$(POD_NAME)
+      telemetry:
+        metrics:
+          readers:
+            - periodic:
+                interval: 30s
+                exporter:
+                  otlpHttp:
+                    endpoint: http://nktp-watchdog-collector:4318
+                    temporalityPreference: cumulative
+      observability:
+        metrics:
+          enableMetrics: false # Metrics are pushed over OTLP without a ServiceMonitor.
       prometheusCR:
         enabled: true
         denyFSAccessThroughSMs: true # Reject monitor endpoints that reference files in the Collector container.
@@ -603,9 +700,7 @@ daemonset:
       readOnlyRootFilesystem: true
       capabilities:
         drop: [ALL]
-        # For the hostmetrics process scraper: SYS_PTRACE reads /proc/<pid>/exe of other
-        # processes, DAC_READ_SEARCH reads their mode-0400 /proc/<pid>/io.
-        add: [SYS_PTRACE, DAC_READ_SEARCH]
+        add: [SYS_CHROOT] # Run the host journalctl with its own libraries.
     volumes:
       - name: pod-logs
         hostPath:
@@ -615,10 +710,32 @@ daemonset:
         hostPath:
           path: /proc
           type: Directory
-      - name: host-passwd
+      # journalctl and its libraries are supplied by the node. /lib64 can be absent on ARM.
+      - name: journalctl
         hostPath:
-          path: /etc/passwd
+          path: /usr/bin/journalctl
           type: File
+      - name: host-lib
+        hostPath:
+          path: /lib
+          type: Directory
+      - name: host-lib64
+        hostPath:
+          path: /lib64
+          type: DirectoryOrCreate
+      - name: host-usr-lib
+        hostPath:
+          path: /usr/lib
+          type: Directory
+      - name: host-machine-id
+        hostPath:
+          path: /etc/machine-id
+          type: File
+      # Mount the parent directory because audit files may be absent on workers.
+      - name: host-logs
+        hostPath:
+          path: /var/log
+          type: Directory
     volumeMounts:
       - name: pod-logs
         mountPath: /var/log/pods
@@ -626,12 +743,33 @@ daemonset:
       - name: host-proc
         mountPath: /hostfs/proc
         readOnly: true
-      - name: host-passwd
-        mountPath: /etc/passwd # The process scraper resolves owners through the container's passwd file; the image ships none.
+      - name: journalctl
+        mountPath: /hostfs/usr/bin/journalctl
+        readOnly: true
+      - name: host-lib
+        mountPath: /hostfs/lib
+        readOnly: true
+      - name: host-lib64
+        mountPath: /hostfs/lib64
+        readOnly: true
+      - name: host-lib64
+        mountPath: /hostfs/usr/lib64
+        readOnly: true
+      - name: host-usr-lib
+        mountPath: /hostfs/usr/lib
+        readOnly: true
+      - name: host-machine-id
+        mountPath: /hostfs/etc/machine-id
+        readOnly: true
+      - name: host-logs
+        mountPath: /hostfs/var/log
         readOnly: true
   otelcol:
     # Set a custom image for this workload only.
-    # image: otel/opentelemetry-collector-k8s:0.159.0
+    # image:
+    #   registry: ""
+    #   repository: otel/opentelemetry-collector-k8s
+    #   tag: 0.159.0
     config:
       extensions:
         health_check:
@@ -643,15 +781,91 @@ daemonset:
               endpoint: 0.0.0.0:4317
             http:
               endpoint: 0.0.0.0:4318
+        journald:
+          root_path: /hostfs
+          journalctl_path: /usr/bin/journalctl
+          directory: /var/log/journal # Relative to root_path. Override for nodes using runtime journals.
+          start_at: end
+          priority: info
+          retry_on_failure:
+            enabled: true
+            max_elapsed_time: 0
+          operators:
+            - id: identify-journal-producer
+              type: add
+              field: resource["service.name"]
+              value: journald
+            - id: classify-host-auth
+              type: add
+              if: 'body.SYSLOG_IDENTIFIER == "sshd" || body.SYSLOG_IDENTIFIER == "sudo"'
+              field: resource["nvidia.telemetry.class"]
+              value: system.auth
         filelog:
           include: [/var/log/pods/*/*/*.log]
-          # NKTP Collectors already send their own logs through watchdog.
-          exclude: ["/var/log/pods/${env:POD_NAMESPACE}_nktp-*-collector-*_*/*/*.log"]
+          exclude:
+            - "/var/log/pods/${env:POD_NAMESPACE}_nktp-*-collector-*_*/*/*.log" # Avoid duplicate logs already exported over OTLP.
+            - "/var/log/pods/${env:POD_NAMESPACE}_nktp-*-targetallocator-*_*/ta-container/*.log" # Collected separately by filelog/targetallocator.
+            - "/var/log/pods/${env:POD_NAMESPACE}_nktp-operator-*_*/manager/*.log" # Collected separately by filelog/operator.
           start_at: end
           include_file_path: true
           retry_on_failure:
             enabled: true
             max_elapsed_time: 0 # Retry downstream transient failures until recovery. Permanent errors are dropped.
+          operators:
+            - type: container
+            # Classify the existing reader's entries instead of reading the same
+            # control plane files a second time.
+            - id: classify-control-plane
+              type: add
+              if: >-
+                resource["k8s.namespace.name"] == "kube-system" &&
+                ((resource["k8s.container.name"] == "kube-apiserver" && resource["k8s.pod.name"] matches "^kube-apiserver-") ||
+                (resource["k8s.container.name"] == "kube-controller-manager" && resource["k8s.pod.name"] matches "^kube-controller-manager-") ||
+                (resource["k8s.container.name"] == "kube-scheduler" && resource["k8s.pod.name"] matches "^kube-scheduler-") ||
+                (resource["k8s.container.name"] == "etcd" && resource["k8s.pod.name"] matches "^etcd-"))
+              field: resource["nvidia.telemetry.class"]
+              value: k8s.control_plane
+        filelog/host-auth:
+          include: [/hostfs/var/log/auth.log, /hostfs/var/log/secure]
+          start_at: end
+          include_file_path: true
+          retry_on_failure: {enabled: true, max_elapsed_time: 0}
+          resource:
+            nvidia.telemetry.class: system.auth
+            service.name: auth
+        filelog/host-audit:
+          include: [/hostfs/var/log/audit/audit.log]
+          start_at: end
+          include_file_path: true
+          retry_on_failure: {enabled: true, max_elapsed_time: 0}
+          resource:
+            nvidia.telemetry.class: system.audit
+            service.name: auditd
+        filelog/kube-api-audit:
+          # Must match the API server's audit-log-path on the node.
+          include: [/hostfs/var/log/kubernetes/audit/audit.log]
+          start_at: end
+          include_file_path: true
+          retry_on_failure: {enabled: true, max_elapsed_time: 0}
+          resource:
+            nvidia.telemetry.class: k8s.api.audit
+            service.name: kube-apiserver
+        filelog/targetallocator:
+          include: ["/var/log/pods/${env:POD_NAMESPACE}_nktp-*-targetallocator-*_*/ta-container/*.log"]
+          start_at: beginning # Include allocator startup diagnostics.
+          include_file_path: true
+          retry_on_failure:
+            enabled: true
+            max_elapsed_time: 0
+          operators:
+            - type: container
+        filelog/operator:
+          include: ["/var/log/pods/${env:POD_NAMESPACE}_nktp-operator-*_*/manager/*.log"]
+          start_at: beginning # Include operator startup diagnostics.
+          include_file_path: true
+          retry_on_failure:
+            enabled: true
+            max_elapsed_time: 0
           operators:
             - type: container
         prometheus:
@@ -695,15 +909,9 @@ daemonset:
           collection_interval: 1m
           scrapers:
             process:
-              # SYS_PTRACE, DAC_READ_SEARCH and the mounted passwd file resolve executable
-              # paths, I/O counters and host users. Container-internal uids are not in the
-              # node's passwd, so that lookup is muted; those processes carry no owner.
-              mute_process_user_error: true
               resource_attributes:
                 process.command_line:
                   enabled: false # Do not export process arguments.
-                process.cgroup:
-                  enabled: true # Names the pod and container a process belongs to, which its uid cannot.
       processors:
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
@@ -714,6 +922,20 @@ daemonset:
             - key: k8s.node.name
               value: ${env:NODE_NAME}
               action: upsert
+        transform/targetallocator:
+          log_statements:
+            - context: resource
+              statements:
+                - set(attributes["service.instance.id"], attributes["k8s.pod.name"])
+                - set(attributes["service.name"], "nktp-targetallocator") where IsMatch(attributes["k8s.pod.name"], "^nktp-daemonset-targetallocator-")
+                - set(attributes["service.name"], "nktp-watchdog-targetallocator") where IsMatch(attributes["k8s.pod.name"], "^nktp-watchdog-targetallocator-")
+                - set(attributes["service.name"], "nktp-large-target-metrics-targetallocator") where IsMatch(attributes["k8s.pod.name"], "^nktp-large-target-metrics-targetallocator-")
+        transform/operator:
+          log_statements:
+            - context: resource
+              statements:
+                - set(attributes["service.name"], "nktp-operator")
+                - set(attributes["service.instance.id"], attributes["k8s.pod.name"])
       exporters:
         otlp_http/logs:
           endpoint: http://nktp-gateway-logs-collector:4318
@@ -757,11 +979,26 @@ daemonset:
               min_size: 1048576
               max_size: 2097152
               flush_timeout: 1s
+        otlp_http/watchdog:
+          endpoint: http://nktp-watchdog-collector:4318
+          retry_on_failure:
+            max_elapsed_time: 30m
+          sending_queue:
+            block_on_overflow: true
+            sizer: bytes
+            queue_size: 1048576
+            num_consumers: 2
+            batch:
+              sizer: bytes
+              min_size: 65536
+              max_size: 262144
+              flush_timeout: 1s
       service:
         extensions: [health_check]
         telemetry:
           resource:
             service.name: nktp-daemonset
+            service.instance.id: ${env:POD_NAME}
             k8s.node.name: ${env:NODE_NAME}
           metrics:
             readers:
@@ -778,6 +1015,7 @@ daemonset:
                       protocol: http/protobuf
                       endpoint: http://nktp-watchdog-collector:4318
           traces:
+            level: basic
             processors:
               - batch:
                   exporter:
@@ -786,9 +1024,17 @@ daemonset:
                       endpoint: http://nktp-watchdog-collector:4318
         pipelines:
           logs:
-            receivers: [filelog, otlp]
+            receivers: [filelog, journald, otlp, filelog/host-auth, filelog/host-audit, filelog/kube-api-audit]
             processors: [memory_limiter, resource/node]
             exporters: [otlp_http/logs]
+          logs/targetallocator:
+            receivers: [filelog/targetallocator]
+            processors: [memory_limiter, resource/node, transform/targetallocator]
+            exporters: [otlp_http/watchdog]
+          logs/operator:
+            receivers: [filelog/operator]
+            processors: [memory_limiter, resource/node, transform/operator]
+            exporters: [otlp_http/watchdog]
           metrics:
             receivers: [prometheus, prometheus/kubelet, hostmetrics, otlp]
             processors: [memory_limiter, resource/node]
@@ -802,11 +1048,29 @@ daemonset:
 large_target_metrics:
   kubernetes:
     mode: statefulset # The Target Allocator uses stable Collector identities.
-    replicas: 1
+    replicas: 2
     targetAllocator:
       enabled: true
       replicas: 1
       allocationStrategy: consistent-hashing
+      env:
+        - name: OTEL_SERVICE_NAME
+          value: nktp-large-target-metrics-targetallocator
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: service.instance.id=$(POD_NAME)
+      telemetry:
+        metrics:
+          readers:
+            - periodic:
+                interval: 30s
+                exporter:
+                  otlpHttp:
+                    endpoint: http://nktp-watchdog-collector:4318
+                    temporalityPreference: cumulative
       resources:
         requests:
           cpu: 100m
@@ -825,7 +1089,7 @@ large_target_metrics:
           drop: [ALL]
       observability:
         metrics:
-          enableMetrics: false # Watchdog owns the explicit TA scrape job.
+          enableMetrics: false # Metrics are pushed over OTLP without a ServiceMonitor.
       prometheusCR:
         enabled: true
         denyFSAccessThroughSMs: true # Reject monitor endpoints that reference files in the Collector container.
@@ -850,22 +1114,22 @@ large_target_metrics:
               operator: In
               values: ["true"]
     autoscaler:
-      minReplicas: 1
+      minReplicas: 2
       maxReplicas: 16
       targetCPUUtilization: 75
-      targetMemoryUtilization: 100 # Scale at 1Gi working set. The limiter checks Go heap separately.
+      targetMemoryUtilization: 100 # Scale at 8Gi working set. The limiter checks Go heap separately.
     resources:
       requests:
-        cpu: 100m
-        memory: 256Mi # Sized for a small cluster. Raise with the scrape volume kube-state-metrics adds.
+        cpu: 500m
+        memory: 8Gi # Reserve memory for parsing and retained scrape data.
       limits:
-        cpu: "1"
-        memory: 1Gi # Allow headroom for overlapping scrapes and the exporter queue.
+        cpu: "2"
+        memory: 16Gi # Allow headroom for overlapping scrapes and the exporter queue.
     env:
       - name: GOMEMLIMIT
         # Large responses allocate before the memory limiter, while earlier scrapes may remain queued.
         # Use half the container limit as a soft runtime target to leave room for overlapping allocations.
-        value: 512MiB
+        value: 8GiB
       - name: GOGC
         value: "50" # More frequent GC trades CPU for lower heap growth.
     podDisruptionBudget:
@@ -895,7 +1159,10 @@ large_target_metrics:
         drop: [ALL]
   otelcol:
     # Set a custom image for this workload only.
-    # image: otel/opentelemetry-collector-k8s:0.159.0
+    # image:
+    #   registry: ""
+    #   repository: otel/opentelemetry-collector-k8s
+    #   tag: 0.159.0
     config:
       extensions:
         health_check:
@@ -906,7 +1173,7 @@ large_target_metrics:
             global:
               # Defaults for allocator jobs. Monitor-specific limits can override them.
               sample_limit: 1000000 # Samples after metric relabeling, per scrape.
-              body_size_limit: 64MiB # Bound the uncompressed response buffer before parsing.
+              body_size_limit: 1GiB # Bound the uncompressed response buffer before parsing.
               label_limit: 64 # Bound label-map growth per sample.
               label_name_length_limit: 256 # Bytes per label name.
               label_value_length_limit: 4096 # Bytes per label value.
@@ -917,8 +1184,8 @@ large_target_metrics:
       processors:
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
-          limit_percentage: 80 # Hard heap threshold, 819.2Mi. The Go runtime target is 512MiB.
-          spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (563.2Mi).
+          limit_percentage: 80 # Hard heap threshold, 12.8Gi. The Go runtime target is 8GiB.
+          spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (8.8Gi).
       exporters:
         otlp_http:
           endpoint: http://nktp-gateway-metrics-collector:4318
@@ -927,7 +1194,7 @@ large_target_metrics:
           sending_queue:
             block_on_overflow: true
             sizer: bytes # Counts serialized bytes. Go heap use can be several times larger.
-            queue_size: 67108864 # 64MiB serialized. Whole scrapes enter before batch splitting.
+            queue_size: 2147483648 # 2GiB serialized. Whole scrapes enter before batch splitting.
             num_consumers: 32 # Export concurrency. Idle worker slots hold no batch payload.
             batch:
               sizer: bytes # Batch sizes use serialized bytes, matching queue accounting.
@@ -939,6 +1206,7 @@ large_target_metrics:
         telemetry:
           resource:
             service.name: nktp-large-target-metrics
+            service.instance.id: ${env:POD_NAME}
           metrics:
             readers:
               - periodic:
@@ -954,6 +1222,7 @@ large_target_metrics:
                       protocol: http/protobuf
                       endpoint: http://nktp-watchdog-collector:4318
           traces:
+            level: basic
             processors:
               - batch:
                   exporter:
@@ -970,7 +1239,7 @@ large_target_metrics:
 cluster_events:
   kubernetes:
     mode: statefulset # Stable replica identities support per-replica volumes for optional persistent queues.
-    replicas: 1 # A single reader. A second replica would only stand by; it does not increase watch throughput.
+    replicas: 2 # One active reader and one standby. More replicas do not increase watch throughput.
     resources:
       requests:
         cpu: 200m
@@ -1014,7 +1283,10 @@ cluster_events:
         drop: [ALL]
   otelcol:
     # Set a custom image for this workload only.
-    # image: otel/opentelemetry-collector-k8s:0.159.0
+    # image:
+    #   registry: ""
+    #   repository: otel/opentelemetry-collector-k8s
+    #   tag: 0.159.0
     config:
       extensions:
         health_check:
@@ -1053,6 +1325,7 @@ cluster_events:
         telemetry:
           resource:
             service.name: nktp-cluster-events
+            service.instance.id: ${env:POD_NAME}
           metrics:
             readers:
               - periodic:
@@ -1068,6 +1341,7 @@ cluster_events:
                       protocol: http/protobuf
                       endpoint: http://nktp-watchdog-collector:4318
           traces:
+            level: basic
             processors:
               - batch:
                   exporter:
@@ -1083,19 +1357,25 @@ cluster_events:
 # Default in-cluster backend. MUST be disabled for production use.
 otel-lgtm:
   enabled: true
-  image: grafana/otel-lgtm:0.32.0
+  image:
+    registry: "" # Empty pulls from the image's default registry (Docker Hub for this repository).
+    repository: grafana/otel-lgtm
+    tag: 0.32.0
 
 # Kubernetes object state metrics, partitioned by resource type.
 kube-state-metrics:
   enabled: true
-  image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0
+  image:
+    registry: registry.k8s.io
+    repository: kube-state-metrics/kube-state-metrics
+    tag: v2.20.0
   namespaces: [] # All namespaces. Each workload can override this list.
   # Shared Kubernetes defaults. Each workload can override these fields.
   kubernetes:
     resources:
       requests:
-        cpu: 25m
-        memory: 64Mi
+        cpu: 100m
+        memory: 128Mi
       limits:
         cpu: "1"
         memory: 512Mi
@@ -1127,10 +1407,34 @@ kube-state-metrics:
       track_unscheduled_pods: true # Requires resource_types to be exactly [pods].
       shards: 1
       kubernetes: {}
-    objects:
+    workloads:
+      enabled: true
+      resource_types: [deployments, statefulsets, daemonsets, replicasets, replicationcontrollers, jobs, cronjobs, horizontalpodautoscalers, poddisruptionbudgets]
+      track_unscheduled_pods: false
+      shards: 1
+      kubernetes: {}
+    networking:
+      enabled: true
+      resource_types: [services, endpointslices, ingresses, networkpolicies]
+      track_unscheduled_pods: false
+      shards: 1
+      kubernetes: {}
+    storage:
+      enabled: true
+      resource_types: [persistentvolumes, persistentvolumeclaims, volumeattachments]
+      track_unscheduled_pods: false
+      shards: 1
+      kubernetes: {}
+    configuration:
       enabled: true
       # Add secrets to opt in to Secret metrics and list/watch access to Secret contents.
-      resource_types: [deployments, statefulsets, daemonsets, replicasets, replicationcontrollers, jobs, cronjobs, horizontalpodautoscalers, poddisruptionbudgets, services, endpointslices, ingresses, networkpolicies, persistentvolumes, persistentvolumeclaims, volumeattachments, configmaps, nodes, namespaces, storageclasses, resourcequotas, limitranges, leases, certificatesigningrequests, mutatingwebhookconfigurations, validatingadmissionpolicies, validatingadmissionpolicybindings, validatingwebhookconfigurations]
+      resource_types: [configmaps]
+      track_unscheduled_pods: false
+      shards: 1
+      kubernetes: {}
+    cluster:
+      enabled: true
+      resource_types: [nodes, namespaces, storageclasses, resourcequotas, limitranges, leases, certificatesigningrequests, mutatingwebhookconfigurations, validatingadmissionpolicies, validatingadmissionpolicybindings, validatingwebhookconfigurations]
       track_unscheduled_pods: false
       shards: 1
       kubernetes: {}
@@ -1170,8 +1474,7 @@ node-exporter:
       # Declares the exporter as a scrape target, ready for a collector to pick up.
       enabled: true
 
-# Resource metrics API, which the autoscalers read. On by default because a
-# control-plane cluster has no other provider of it. Disable when the cluster
-# already serves metrics.k8s.io.
+# Resource metrics API, used for autoscaling. Disabled by default because it is installed
+# via other mechanisms in many clusters.
 metrics-server:
-  enabled: true
+  enabled: false

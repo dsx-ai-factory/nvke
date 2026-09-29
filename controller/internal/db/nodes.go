@@ -24,16 +24,19 @@ type Node struct {
 	// - worker nodes remain nodepool-managed with non-null node_pool_id/node_set_id
 	// Today active flows still create control-plane nodes with non-null node_pool_id/node_set_id;
 	// null values are reserved for the future no-nodepool control-plane path.
-	NodePoolID                  uuid.UUID      `bun:"type:uuid,nullzero"` // Denormalized for api/join performance, also Node's will never change NodePools.
-	NodeSetID                   uuid.UUID      `bun:"type:uuid,nullzero"`
-	ClusterID                   uuid.UUID      `bun:"type:uuid,notnull"`
-	ControlPlane                bool           `bun:"type:boolean,notnull,default:false"`
-	Name                        string         `bun:"type:text,notnull"`
-	IP                          string         `bun:"type:text,notnull"`
-	SpiffeEnabled               bool           `bun:"type:boolean,notnull,default:false"`
-	Conditions                  NodeConditions `bun:"type:jsonb"`
-	AgentVersion                string         `bun:"type:text,notnull,default:''"`
-	ControlPlaneConfigurationID uuid.UUID      `bun:"configuration_id,type:uuid,nullzero"`
+	NodePoolID                   uuid.UUID              `bun:"type:uuid,nullzero"` // Denormalized for api/join performance, also Node's will never change NodePools.
+	NodeSetID                    uuid.UUID              `bun:"type:uuid,nullzero"`
+	ClusterID                    uuid.UUID              `bun:"type:uuid,notnull"`
+	ControlPlane                 bool                   `bun:"type:boolean,notnull,default:false"`
+	Name                         string                 `bun:"type:text,notnull"`
+	IP                           string                 `bun:"type:text,notnull"`
+	SpiffeEnabled                bool                   `bun:"type:boolean,notnull,default:false"`
+	SpireAttestationMethod       SpireAttestationMethod `bun:"type:text,notnull"`
+	NodeAgentExternalMTLSEnabled bool                   `bun:"node_agent_external_mtls_enabled,type:boolean,notnull,default:false"`
+	NodeAgentTLSJWTEnabled       bool                   `bun:"node_agent_tls_jwt_enabled,type:boolean,notnull,default:false"`
+	Conditions                   NodeConditions         `bun:"type:jsonb"`
+	AgentVersion                 string                 `bun:"type:text,notnull,default:''"`
+	ControlPlaneConfigurationID  uuid.UUID              `bun:"configuration_id,type:uuid,nullzero"`
 	// DeleteRequest holds the TeardownNode input recorded when a delete was
 	// accepted but not yet started. It is set only on the control-plane-controller
 	// delete path, where the API records intent and the control-plane controller
@@ -48,6 +51,24 @@ type NicoNodeProvider struct {
 	ForgeInstanceID string    `json:"forge_instance_id,omitempty"`
 	ForgeMachineID  string    `json:"forge_machine_id,omitempty"`
 	InstanceTypeID  uuid.UUID `json:"instance_type_id,omitempty"`
+}
+
+// ValidateSecurityProfile rejects node records whose immutable connection and
+// attestation settings were not selected at creation time.
+func (n Node) ValidateSecurityProfile() error {
+	switch n.SpireAttestationMethod {
+	case SpireAttestationMethodTPM:
+	case SpireAttestationMethodJoinToken, SpireAttestationMethodDSXIMDS:
+		if !n.SpiffeEnabled {
+			return fmt.Errorf("node %s requires SPIFFE for %s attestation", n.ID, n.SpireAttestationMethod)
+		}
+	default:
+		return fmt.Errorf("node %s has invalid SPIRE attestation method %q", n.ID, n.SpireAttestationMethod)
+	}
+	if n.NodeAgentTLSJWTEnabled && !n.SpiffeEnabled && !n.NodeAgentExternalMTLSEnabled {
+		return fmt.Errorf("node %s requires a TLS transport for TLS/JWT", n.ID)
+	}
+	return nil
 }
 
 // IsManagedByNodePool reports whether the node is managed by a node pool controller.
@@ -440,13 +461,18 @@ func (q *queriesImpl) GetNodeForUpdate(ctx context.Context, id uuid.UUID) (Node,
 }
 
 func (q *queriesImpl) CreateNode(ctx context.Context, node *Node) (Node, error) {
+	if err := node.ValidateSecurityProfile(); err != nil {
+		return Node{}, err
+	}
 	_, err := q.db.NewInsert().Model(node).Exec(ctx)
 	return *node, err
 }
 
 func (q *queriesImpl) UpdateNode(ctx context.Context, node *Node) (Node, error) {
 	node.UpdatedAt = time.Now()
-	res, err := q.db.NewUpdate().Model(node).WherePK().Exec(ctx)
+	res, err := q.db.NewUpdate().Model(node).
+		ExcludeColumn("spiffe_enabled", "spire_attestation_method", "node_agent_external_mtls_enabled", "node_agent_tls_jwt_enabled").
+		WherePK().Returning("id, spiffe_enabled, spire_attestation_method, node_agent_external_mtls_enabled, node_agent_tls_jwt_enabled").Exec(ctx)
 	if err != nil {
 		return Node{}, err
 	}

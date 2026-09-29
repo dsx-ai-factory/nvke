@@ -1,34 +1,72 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+tabs:
+  documentation:
+    display-name: Documentation
+  api:
+    display-name: REST API Reference
+
 navigation:
-  - page: Overview
-    path: overview.md
-  - page: Key Concepts
-    path: concepts.md
-  - page: Architecture
-    path: architecture.md
-  - page: Your First Cluster
-    path: first-cluster.md
-
-  - section: Site Controller Bootstrap
-    contents:
+  - tab: documentation
+    layout:
       - page: Overview
-        path: site-bootstrap/overview.md
-      - page: Installation
-        path: site-bootstrap/installation.md
-      - page: Configuration
-        path: site-bootstrap/configuration.md
-      - page: Deploy Repository
-        path: site-bootstrap/deploy-repository.md
-      - page: Infrastructure Providers
-        path: site-bootstrap/infrastructure-providers.md
-      - page: Pre-Provisioned Nodes
-        path: site-bootstrap/pre-provisioned-nodes.md
-      - page: Custom Base OS
-        path: site-bootstrap/custom-base-os.md
+        path: overview.md
 
-  - section: Tenant Clusters
-    contents:
-      - page: Node Lifecycle
-        path: tenant-clusters/node-lifecycle.md
+      - page: NKE in the DSX Stack
+        path: dsx-stack.md
+
+      - section: Getting Started
+        contents:
+          - page: Your First Cluster
+            path: first-cluster.md
+          - page: Day 0 → Day 1 → Day 2 Lifecycle
+            path: lifecycle.md
+
+      - page: Key Concepts
+        path: concepts.md
+
+      - page: Architecture
+        path: architecture.md
+
+      - section: Site Controller Bootstrap
+        contents:
+          - page: Overview
+            path: site-bootstrap/overview.md
+          - page: Installation
+            path: site-bootstrap/installation.md
+          - page: Configuration
+            path: site-bootstrap/configuration.md
+          - page: Deploy Repository
+            path: site-bootstrap/deploy-repository.md
+          - page: Pre-Provisioned Nodes
+            path: site-bootstrap/pre-provisioned-nodes.md
+          - page: Custom Base OS
+            path: site-bootstrap/custom-base-os.md
+
+      - section: Tenant Clusters
+        contents:
+          - page: Node Lifecycle
+            path: tenant-clusters/node-lifecycle.md
+
+      - section: Operations
+        contents:
+          - page: Tenant Cluster Kubernetes Upgrades
+            path: operations/upgrade.md
+          - page: Observability
+            path: operations/observability.md
+          - page: Troubleshooting and FAQ
+            path: operations/faq.md
+
+      - section: Reference
+        contents:
+          - page: nkectl CLI
+            path: ../cli/docs/user-flow.md
+          - page: Site Spec
+            path: ../cli/docs/sitespec.md
+          - page: Configuring API Authentication
+            path: ../controller/docs/configuring-api-authentication.md
+
+  - tab: api
+    layout:
+      - api: REST API Reference

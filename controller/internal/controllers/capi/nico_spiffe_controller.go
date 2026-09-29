@@ -9,28 +9,41 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/google/uuid"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
+
+type nicoSpiffeNodeReader interface {
+	GetNode(ctx context.Context, id uuid.UUID) (db.Node, error)
+}
 
 type NicoSpiffeController struct {
 	cfg       config.Config
+	nodes     nicoSpiffeNodeReader
 	k8sClient client.Client
 	logger    *slog.Logger
 }
 
-func NewNicoSpiffeController(cfg config.Config, k8sClient client.Client, logger *slog.Logger) *NicoSpiffeController {
+func NewNicoSpiffeController(cfg config.Config, nodes nicoSpiffeNodeReader, k8sClient client.Client, logger *slog.Logger) *NicoSpiffeController {
 	return &NicoSpiffeController{
 		cfg:       cfg,
+		nodes:     nodes,
 		k8sClient: k8sClient,
 		logger:    logger,
 	}
@@ -39,8 +52,40 @@ func NewNicoSpiffeController(cfg config.Config, k8sClient client.Client, logger 
 func (c *NicoSpiffeController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&nicov1.NicoMachine{}).
+		Watches(
+			&clusterv1.Machine{},
+			handler.EnqueueRequestsFromMapFunc(nicoMachineRequestsForMachine),
+			builder.WithPredicates(machineHostIDWatchPredicate()),
+		).
 		Named("nico-spiffe").
 		Complete(c)
+}
+
+func machineHostIDWatchPredicate() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return e.Object.GetAnnotations()[constants.MachineAnnotationKeyHostID] != ""
+		},
+		// Ignore updates from this controller's own SPIRE agent-path annotation.
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return e.ObjectOld.GetAnnotations()[constants.MachineAnnotationKeyHostID] !=
+				e.ObjectNew.GetAnnotations()[constants.MachineAnnotationKeyHostID]
+		},
+		DeleteFunc:  func(event.DeleteEvent) bool { return false },
+		GenericFunc: func(event.GenericEvent) bool { return false },
+	}
+}
+
+func nicoMachineRequestsForMachine(_ context.Context, obj client.Object) []reconcile.Request {
+	machine, ok := obj.(*clusterv1.Machine)
+	if !ok || machine.Spec.InfrastructureRef.APIGroup != nicov1.GroupVersion.Group ||
+		machine.Spec.InfrastructureRef.Kind != "NicoMachine" || machine.Spec.InfrastructureRef.Name == "" {
+		return nil
+	}
+	return []reconcile.Request{{NamespacedName: client.ObjectKey{
+		Namespace: machine.Namespace,
+		Name:      machine.Spec.InfrastructureRef.Name,
+	}}}
 }
 
 func (c *NicoSpiffeController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -60,18 +105,34 @@ func (c *NicoSpiffeController) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
-	spireAgentSpiffeIDPath, expectedPathPrefix := c.spireAgentSpiffeIDPath(nicoMachine)
-	if spireAgentSpiffeIDPath == "" {
-		logger.Info("Waiting for SPIRE agent identity source on NicoMachine", "attestationMethod", c.cfg.NodeAgent.SpireAttestationMethod)
-		return ctrl.Result{}, nil
-	}
-
 	machine, err := util.GetOwnerMachine(ctx, c.k8sClient, nicoMachine.ObjectMeta)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get owner machine: %w", err)
 	}
 	if machine == nil {
 		logger.Info("Waiting for Machine controller to set OwnerRef on NicoMachine")
+		return ctrl.Result{}, nil
+	}
+	hostID := machine.GetAnnotations()[constants.MachineAnnotationKeyHostID]
+	if hostID == "" {
+		logger.Debug("Machine has no host-id annotation, skipping SPIRE agent path reconciliation")
+		return ctrl.Result{}, nil
+	}
+	nodeID, err := uuid.Parse(hostID)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("invalid host ID %q on Machine %s/%s: %w", hostID, machine.Namespace, machine.Name, err)
+	}
+	node, err := c.nodes.GetNode(ctx, nodeID)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("get node %s for Machine %s/%s: %w", nodeID, machine.Namespace, machine.Name, err)
+	}
+	method := node.SpireAttestationMethod
+	spireAgentSpiffeIDPath, expectedPathPrefix := c.spireAgentSpiffeIDPath(nicoMachine, method)
+	if spireAgentSpiffeIDPath == "" {
+		if method == db.SpireAttestationMethodJoinToken {
+			return ctrl.Result{}, nil // The join-token path is set when the Machine is created.
+		}
+		logger.Info("Waiting for SPIRE agent identity source on NicoMachine", "attestationMethod", method)
 		return ctrl.Result{}, nil
 	}
 
@@ -103,16 +164,16 @@ func (c *NicoSpiffeController) Reconcile(ctx context.Context, req ctrl.Request) 
 	return ctrl.Result{}, nil
 }
 
-func (c *NicoSpiffeController) spireAgentSpiffeIDPath(nicoMachine *nicov1.NicoMachine) (string, string) {
-	switch c.cfg.NodeAgent.SpireAttestationMethod {
-	case config.SpireAttestationMethodJoinToken:
+func (c *NicoSpiffeController) spireAgentSpiffeIDPath(nicoMachine *nicov1.NicoMachine, method db.SpireAttestationMethod) (string, string) {
+	switch method {
+	case db.SpireAttestationMethodJoinToken:
 		return "", ""
-	case config.SpireAttestationMethodTPM:
+	case db.SpireAttestationMethodTPM:
 		if nicoMachine.Status.TpmEkPubHash == "" {
 			return "", constants.TPMSpireAgentPath
 		}
 		return constants.TPMSpireAgentPath + nicoMachine.Status.TpmEkPubHash, constants.TPMSpireAgentPath
-	case config.SpireAttestationMethodDSXIMDS:
+	case db.SpireAttestationMethodDSXIMDS:
 		if nicoMachine.Status.PrimaryDPUMachineID == "" {
 			return "", constants.DSXIMDSSpireAgentPath
 		}

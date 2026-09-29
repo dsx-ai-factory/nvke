@@ -7,20 +7,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"reflect"
 
 	"github.com/google/uuid"
-	"github.com/spiffe/go-spiffe/v2/spiffegrpc/grpccredentials"
-	"github.com/spiffe/go-spiffe/v2/spiffeid"
-	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
-	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
@@ -78,52 +72,43 @@ func isNilDatabase(database db.DB) bool {
 }
 
 // NewSPIFFEDialer returns a nodeagent.Dialer that resolves the rollout node ID
-// to its current db.Node and dials its agent over SPIFFE x509 mTLS, mirroring
-// internal/agent.NodeAgentClient. Nodes with SpiffeEnabled=false fall back to an
-// insecure connection (tier-0 self-bootstrap). resolve is required; trustDomain
-// is required only for SPIFFE-enabled nodes. The returned client is the raw
-// agent gRPC client; callers invoke its RPCs directly.
-func NewSPIFFEDialer(cfg config.Config, trustDomain string, resolve NodeResolver) (nodeagent.Dialer, error) {
+// to its current db.Node and dials its agent over the transport the rest of the
+// controller uses, so a rollout reaches a node exactly the way every other
+// caller does. resolve and transport are both required. The returned client is
+// the raw agent gRPC client; callers invoke its RPCs directly.
+func NewSPIFFEDialer(transport *agent.Transport, resolve NodeResolver) (nodeagent.Dialer, error) {
+	if transport == nil {
+		return nil, errors.New("rollout cwe NewSPIFFEDialer: transport must be non-nil")
+	}
 	if resolve == nil {
 		return nil, errors.New("rollout cwe NewSPIFFEDialer: resolve must be non-nil")
 	}
 	return func(ctx context.Context, rolloutNode rollout.Node) (nkeproto.NodeAgentClient, func(), error) {
-		if rolloutNode == nil {
-			return nil, nil, errors.New("rollout cwe dialer: node must be non-nil")
-		}
-		node, err := resolve(ctx, rolloutNode.ID())
+		conn, cleanup, err := dial(ctx, transport, resolve, rolloutNode)
 		if err != nil {
-			return nil, nil, fmt.Errorf("resolve node %s: %w", rolloutNode.ID(), err)
-		}
-		conn, cleanup, err := dialNodeAgent(ctx, cfg, trustDomain, node)
-		if err != nil {
-			return nil, nil, fmt.Errorf("dial agent on node %s: %w", rolloutNode.Name(), err)
+			return nil, nil, err
 		}
 		return nkeproto.NewNodeAgentClient(conn), cleanup, nil
 	}, nil
 }
 
-// NewMethodSupportChecker returns a nodeagent.MethodSupportChecker that dials a
-// agent (over the same transport a rollout will use) and verifies method
-// support via gRPC server reflection. It translates an unsupported-method
-// reflection result into nodeagent.ErrMethodUnsupported so rollout consumers
-// branch on capability without importing the transport layer. resolve is
-// required; trustDomain is required only for SPIFFE-enabled nodes.
-func NewMethodSupportChecker(cfg config.Config, trustDomain string, resolve NodeResolver) (nodeagent.MethodSupportChecker, error) {
+// NewMethodSupportChecker returns a nodeagent.MethodSupportChecker that dials an
+// agent over the same transport a rollout will use and verifies method support
+// via gRPC server reflection. It translates an unsupported-method reflection
+// result into nodeagent.ErrMethodUnsupported so rollout consumers branch on
+// capability without importing the transport layer. resolve and transport are
+// both required.
+func NewMethodSupportChecker(transport *agent.Transport, resolve NodeResolver) (nodeagent.MethodSupportChecker, error) {
+	if transport == nil {
+		return nil, errors.New("rollout cwe NewMethodSupportChecker: transport must be non-nil")
+	}
 	if resolve == nil {
 		return nil, errors.New("rollout cwe NewMethodSupportChecker: resolve must be non-nil")
 	}
 	return func(ctx context.Context, rolloutNode rollout.Node, fullMethod string) error {
-		if rolloutNode == nil {
-			return errors.New("rollout cwe method-support checker: node must be non-nil")
-		}
-		node, err := resolve(ctx, rolloutNode.ID())
+		conn, cleanup, err := dial(ctx, transport, resolve, rolloutNode)
 		if err != nil {
-			return fmt.Errorf("resolve node %s: %w", rolloutNode.ID(), err)
-		}
-		conn, cleanup, err := dialNodeAgent(ctx, cfg, trustDomain, node)
-		if err != nil {
-			return fmt.Errorf("dial agent on node %s: %w", rolloutNode.Name(), err)
+			return err
 		}
 		defer cleanup()
 
@@ -137,76 +122,22 @@ func NewMethodSupportChecker(cfg config.Config, trustDomain string, resolve Node
 	}, nil
 }
 
-// dialNodeAgent replicates internal/agent.NodeAgentClient.getGRPCConnection:
-// an insecure dial for non-SPIFFE nodes, otherwise SPIFFE x509 mTLS with the
-// node's SPIFFE ID authorized. It returns the raw connection plus a cleanup the
-// caller must invoke.
-func dialNodeAgent(ctx context.Context, cfg config.Config, trustDomain string, node db.Node) (*grpc.ClientConn, func(), error) {
-	endpoint := net.JoinHostPort(node.IP, cfg.NodeAgent.Port)
-
-	var closeFuncs []func() error
-	cleanup := func() {
-		for _, f := range closeFuncs {
-			_ = f()
-		}
+func dial(
+	ctx context.Context,
+	transport *agent.Transport,
+	resolve NodeResolver,
+	rolloutNode rollout.Node,
+) (*grpc.ClientConn, func(), error) {
+	if rolloutNode == nil {
+		return nil, nil, errors.New("rollout cwe dialer: node must be non-nil")
 	}
-
-	// If SPIFFE is not enabled on the node, assume an insecure connection.
-	if !node.SpiffeEnabled {
-		conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to connect to node agent via insecure connection: %w", err)
-		}
-		closeFuncs = append(closeFuncs, conn.Close)
-		return conn, cleanup, nil
-	}
-
-	// SPIFFE is enabled, using SPIFFE x509 mTLS.
-	if trustDomain == "" {
-		return nil, nil, fmt.Errorf("trust domain is required for SPIFFE authentication")
-	}
-
-	workloadClient, err := workloadapi.New(ctx, workloadapi.WithAddr(cfg.SpiffeEndpointSocket))
+	node, err := resolve(ctx, rolloutNode.ID())
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create SPIFFE workload API client: %w", err)
+		return nil, nil, fmt.Errorf("resolve node %s: %w", rolloutNode.ID(), err)
 	}
-	closeFuncs = append(closeFuncs, workloadClient.Close)
-
-	x509Source, err := workloadapi.NewX509Source(ctx, workloadapi.WithClient(workloadClient))
+	conn, cleanup, err := transport.Dial(ctx, node)
 	if err != nil {
-		cleanup()
-		return nil, nil, fmt.Errorf("failed to create SPIFFE X509 source: %w", err)
+		return nil, nil, fmt.Errorf("dial agent on node %s: %w", rolloutNode.Name(), err)
 	}
-	closeFuncs = append(closeFuncs, x509Source.Close)
-
-	bundleSource, err := workloadapi.NewBundleSource(ctx, workloadapi.WithClient(workloadClient))
-	if err != nil {
-		cleanup()
-		return nil, nil, fmt.Errorf("failed to create SPIFFE bundle source: %w", err)
-	}
-	closeFuncs = append(closeFuncs, bundleSource.Close)
-
-	expectedID, err := spiffeid.FromString(node.GetSpiffeID(trustDomain))
-	if err != nil {
-		cleanup()
-		return nil, nil, fmt.Errorf("failed to parse node SPIFFE ID: %w", err)
-	}
-
-	conn, err := grpc.NewClient(
-		endpoint,
-		grpc.WithTransportCredentials(
-			grpccredentials.MTLSClientCredentials(
-				x509Source,
-				bundleSource,
-				tlsconfig.AuthorizeID(expectedID),
-			),
-		),
-	)
-	if err != nil {
-		cleanup()
-		return nil, nil, fmt.Errorf("failed to connect to node agent via SPIFFE: %w", err)
-	}
-	closeFuncs = append(closeFuncs, conn.Close)
-
 	return conn, cleanup, nil
 }

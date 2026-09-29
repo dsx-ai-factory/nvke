@@ -27,8 +27,9 @@ func TestUpdateNode_BumpsUpdatedAt(t *testing.T) {
 	database := db.NewDB(bunDB)
 
 	node := db.Node{
-		ID:   uuid.New(),
-		Name: "worker-1",
+		ID:                     uuid.New(),
+		Name:                   "worker-1",
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
 	}
 	created, err := database.CreateNode(ctx, &node)
 	require.NoError(t, err)
@@ -43,12 +44,70 @@ func TestUpdateNode_BumpsUpdatedAt(t *testing.T) {
 	_, err = database.UpdateNode(ctx, &created)
 	require.NoError(t, err)
 
-	// UpdateNode's return value doesn't round-trip UpdatedAt from the DB (no
-	// RETURNING clause), so re-fetch to see what was actually persisted.
+	// Re-fetch to verify the timestamp was persisted, not just changed in memory.
 	persisted, err := database.GetNode(ctx, node.ID)
 	require.NoError(t, err)
 	require.True(t, persisted.UpdatedAt.After(insertedAt),
 		"UpdatedAt should advance on update: before=%s after=%s", insertedAt.Format(time.RFC3339Nano), persisted.UpdatedAt.Format(time.RFC3339Nano))
+}
+
+func TestUnit_UpdateNodePreservesSecurityProfile(t *testing.T) {
+	ctx := context.Background()
+	bunDB := testutil.SetupDB(ctx, t, (*db.Node)(nil))
+	database := db.NewDB(bunDB)
+	node := db.Node{
+		ID:                     uuid.New(),
+		Name:                   "worker-1",
+		SpiffeEnabled:          true,
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+	}
+	created, err := database.CreateNode(ctx, &node)
+	require.NoError(t, err)
+
+	created.SpireAttestationMethod = db.SpireAttestationMethodDSXIMDS
+	created.NodeAgentExternalMTLSEnabled = true
+	created.NodeAgentTLSJWTEnabled = true
+	updated, err := database.UpdateNode(ctx, &created)
+	require.NoError(t, err)
+	require.Equal(t, db.SpireAttestationMethodTPM, updated.SpireAttestationMethod)
+	require.False(t, updated.NodeAgentExternalMTLSEnabled)
+	require.False(t, updated.NodeAgentTLSJWTEnabled)
+
+	stored, err := database.GetNode(ctx, node.ID)
+	require.NoError(t, err)
+	require.Equal(t, updated.SpireAttestationMethod, stored.SpireAttestationMethod)
+}
+
+func TestUnit_NodeValidateSecurityProfile(t *testing.T) {
+	t.Parallel()
+	type parameters struct {
+		node    db.Node
+		wantErr string
+	}
+	tests := map[string]parameters{
+		"TPM SPIFFE":         {node: db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodTPM}},
+		"TPM without SPIFFE": {node: db.Node{SpireAttestationMethod: db.SpireAttestationMethodTPM}},
+		"DSX IMDS with external mTLS and TLS JWT": {node: db.Node{
+			SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS,
+			NodeAgentExternalMTLSEnabled: true, NodeAgentTLSJWTEnabled: true,
+		}},
+		"missing attestation method": {node: db.Node{}, wantErr: "invalid SPIRE attestation method"},
+		"DSX IMDS without SPIFFE":    {node: db.Node{SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS}, wantErr: "requires SPIFFE"},
+		"TLS JWT without TLS": {node: db.Node{
+			SpireAttestationMethod: db.SpireAttestationMethodTPM, NodeAgentTLSJWTEnabled: true,
+		}, wantErr: "requires a TLS transport"},
+	}
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			err := params.node.ValidateSecurityProfile()
+			if params.wantErr != "" {
+				require.ErrorContains(t, err, params.wantErr)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestNode_NicoProvider(t *testing.T) {

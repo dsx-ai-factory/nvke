@@ -506,7 +506,7 @@ if [ -n "${CONTROL_PLANE_VIP}" ]; then
 fi
 
 # No chart is named here. What gets installed is pinned in
-# cli/internal/cwedeploy, which is the thing under test: the SPIFFE project's
+# cli/internal/bootstrap/cwedeploy, which is the thing under test: the SPIFFE project's
 # public hardened charts, needing no registry credential of their own.
 # The command never overwrites a key file and refuses to start over one, so a
 # leftover from an interrupted run has to go first.

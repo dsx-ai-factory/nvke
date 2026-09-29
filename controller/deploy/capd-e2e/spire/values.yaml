@@ -59,6 +59,17 @@ spire-agent:
     # no server Service exists -- the agent then fails attestation with
     # "no children to pick from" and the DaemonSet never becomes Available.
     namespaceOverride: spire-server
+  workloadAttestors:
+    k8s:
+      # Already the chart default at 0.30.1, restated so an upstream change of
+      # heart cannot remove Kubernetes workload attestation silently.
+      enabled: true
+      # Mirrors nke-sbom, which needs this because its control-plane nodes run
+      # Kata and container-scoped selectors cannot resolve inside the VM. This
+      # lane runs runc and would work either way, but attesting differently
+      # from the path on real hardware means a ClusterSPIFFEID that depends on
+      # container selectors passes here and fails on a site.
+      disableContainerSelectors: true
 spire-server:
   namespaceOverride: spire-server
   # The bundle ConfigMap the agent mounts must land where the agent runs, or
@@ -91,7 +102,7 @@ spire-server:
     # image. The webhook still validates once it is up; it just no longer
     # blocks admission while it is starting.
     #
-    # cli/internal/cwedeploy/manifests/spire-values.yaml sets the same thing
+    # cli/internal/bootstrap/cwedeploy/manifests/spire-values.yaml sets the same thing
     # for the same reason.
     validatingWebhookConfiguration:
       failurePolicy: Ignore

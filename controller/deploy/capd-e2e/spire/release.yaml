@@ -10,7 +10,7 @@
 # longer needed -- and build/spire-chart.sh, which existed only to clone and
 # `helm dependency build` that commit, is gone with it.
 #
-# 0.30.1 is also what cli/internal/cwedeploy installs, so the deploy path and
+# 0.30.1 is also what cli/internal/bootstrap/cwedeploy installs, so the deploy path and
 # nkectl now agree on the version.
 #
 # The only difference against the pinned commit is four ClusterSPIFFEIDs for

@@ -21,7 +21,7 @@ import (
 // one. This verifies that expected transition completes without API overrides.
 func validateSingleNodeControlPlaneRotation(test *tenantTest) {
 	It("rotates a single-node control plane", func(ctx context.Context) {
-		controlPlanePool, _ := expectScalePools(ctx, test)
+		controlPlanePool := expectControlPlanePool(ctx, test)
 		Expect(controlPlanePool.DesiredNodeCount).To(Equal(1),
 			"single-node control-plane rotation requires a 1-CP cluster")
 

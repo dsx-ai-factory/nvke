@@ -48,17 +48,10 @@ BODY=$(cat <<EOF
       }
     }
   },
-  "nodePools": [
-    {
-      "name": "control-plane",
-      "nodeNamePrefix": "cp",
-      "systemReservedMemory": "1Gi",
-      "desiredNodeCount": ${CONTROL_PLANE_DESIRED_COUNT},
-      "controlPlane": true,
-      "autoProvisionDisabled": false,
-      "autoModeDisabled": false,
-      "recycleBudget": 0,
-      "infra": {
+  "controlPlaneConfig": {
+    "desiredCount": ${CONTROL_PLANE_DESIRED_COUNT},
+    "systemReservedMemory": "1Gi",
+    "infra": {
         "machineTemplate": {
           "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
           "kind": "NicoMachineTemplate",
@@ -88,8 +81,9 @@ BODY=$(cat <<EOF
           "mkdir -p /run/cluster-api",
           "echo success > /run/cluster-api/bootstrap-success.complete"
         ]
-      }
-    },
+    }
+  },
+  "nodePools": [
     {
       "name": "worker",
       "nodeNamePrefix": "w",

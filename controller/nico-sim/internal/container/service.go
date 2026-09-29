@@ -41,16 +41,17 @@ fi
 mount --bind ` + mockBootIDPath + ` /proc/sys/kernel/random/boot_id
 exec /usr/local/bin/entrypoint /sbin/init`
 
-	labelManaged      = "nvidia.com/nico-containers.managed"
-	labelInstanceID   = "nvidia.com/nico-containers.instance-id"
-	labelInstanceName = "nvidia.com/nico-containers.instance-name"
-	labelSiteID       = "nvidia.com/nico-containers.site-id"
-	labelVPCID        = "nvidia.com/nico-containers.vpc-id"
-	labelTenantID     = "nvidia.com/nico-containers.tenant-id"
-	labelInstanceType = "nvidia.com/nico-containers.instance-type-id"
-	labelSubnetID     = "nvidia.com/nico-containers.subnet-id"
-	labelVPCPrefixID  = "nvidia.com/nico-containers.vpc-prefix-id"
-	labelMachineID    = "nvidia.com/nico-containers.machine-id"
+	labelManaged                = "nvidia.com/nico-containers.managed"
+	labelInstanceID             = "nvidia.com/nico-containers.instance-id"
+	labelInstanceName           = "nvidia.com/nico-containers.instance-name"
+	labelSiteID                 = "nvidia.com/nico-containers.site-id"
+	labelVPCID                  = "nvidia.com/nico-containers.vpc-id"
+	labelTenantID               = "nvidia.com/nico-containers.tenant-id"
+	labelInstanceType           = "nvidia.com/nico-containers.instance-type-id"
+	labelSubnetID               = "nvidia.com/nico-containers.subnet-id"
+	labelVPCPrefixID            = "nvidia.com/nico-containers.vpc-prefix-id"
+	labelMachineID              = "nvidia.com/nico-containers.machine-id"
+	labelSpireAttestationMethod = "nvidia.com/nico-containers.spire-attestation-method"
 
 	labelIpxeScript           = "nvidia.com/nico-containers.ipxe-script"
 	labelSSHKeyGroupIDs       = "nvidia.com/nico-containers.ssh-key-group-ids"
@@ -227,6 +228,7 @@ func (s *Service) createInstance(ctx context.Context, instanceID string, req nic
 	labels[labelTenantID] = req.GetTenantId()
 	labels[labelInstanceType] = firstNonEmpty(req.GetInstanceTypeId(), s.cfg.InstanceTypeID)
 	labels[labelMachineID] = machineID
+	labels[labelSpireAttestationMethod] = s.cfg.SpireAttestationMethod
 	if req.HasIpxeScript() {
 		labels[labelIpxeScript] = encodeLabelValue(req.GetIpxeScript())
 	}

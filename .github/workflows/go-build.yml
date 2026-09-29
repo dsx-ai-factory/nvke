@@ -12,7 +12,6 @@
 # public dependencies through the Go module cache, so this needs no NVIDIA
 # runner or credentials -- which means it also runs on fork pull requests
 # and on Dependabot's, where the repository currently has almost no coverage.
-# See docs/go-workspace.md.
 name: Go Build
 
 # workflow_call is what merge-gate.yml uses to call this as a reusable workflow.
@@ -120,9 +119,3 @@ jobs:
           CGO_ENABLED: "1"
           GO_TEST_FLAGS: -race
         run: make -C cluster-api-provider-provisioned test
-
-      # The management engine's only unit-test lane: it has no *-test.yml of its
-      # own, and lint.yml covers only linting. No -race, unlike the two above --
-      # the CRD schema and CEL validators these tests drive are single-threaded.
-      - name: Test management engine API
-        run: make -C management-engine test

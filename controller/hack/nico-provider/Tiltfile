@@ -65,7 +65,14 @@ def _register_node_image(ctx, labels):
     build_environment = {"INSTALL_CNI_AFTER_INIT": install_cni_after_init}
     resource_deps = ["check-management-cluster"]
     if dsx_imds_enabled:
-        build_environment["CAPD_SPIRE_ATTESTATION_METHOD"] = "dsxImds"
+        # TPM mode starts the Colima-backed swtpm; the separately supplied DSX
+        # plugin remains in the image for nodes created after a mode switch.
+        image_mode = ctx.cfg.get("node_image_attestation_method", "")
+        if image_mode not in ["tpm", "dsxImds"]:
+            fail("node_image_attestation_method must be tpm or dsxImds when dsx-imds-attestation is enabled")
+        if image_mode == "dsxImds" and ctx.cfg.get("controller_attestation_method", "dsxImds") == "tpm":
+            fail("node_image_attestation_method must be tpm when controller_attestation_method is tpm")
+        build_environment["CAPD_SPIRE_ATTESTATION_METHOD"] = image_mode
         build_environment["DSX_IMDS_AGENT_PLUGIN_PATH"] = dsx_imds_agent_plugin
         resource_deps.append("dsx-imds-agent-plugin")
     if dsx_imds_enabled and "dsx-identity-exchange" in ctx.provider_names:

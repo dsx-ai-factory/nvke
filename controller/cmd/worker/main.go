@@ -145,11 +145,14 @@ func main() {
 		logger.Error("Failed to get SPIFFE trust domain and bundle", "error", err)
 		os.Exit(1)
 	}
-	nodeAgentClient, err := agent.NewClient(ctx, cfg, trustDomain, logger)
+	// One transport for the whole worker: the node-agent client and the rollout
+	// subsystem must reach agents over the same authenticated connection.
+	nodeAgentTransport, err := agent.NewTransport(ctx, cfg, trustDomain, logger)
 	if err != nil {
-		logger.Error("Failed to create node-agent client", "error", err)
+		logger.Error("Failed to create node-agent transport", "error", err)
 		os.Exit(1)
 	}
+	nodeAgentClient := agent.NewClientWithTransport(nodeAgentTransport)
 
 	// Connect to the database, exit on fail.
 	dbLogger := logger.With("logger", "db")
@@ -338,6 +341,7 @@ func main() {
 		} else {
 			nicoSpiffeController := capi.NewNicoSpiffeController(
 				cfg,
+				dbInstance,
 				k8sControllerManager.GetClient(),
 				logger.With("logger", "nico-spiffe-controller"),
 			)
@@ -527,6 +531,7 @@ func main() {
 		dbInstance,
 		managementK8sClient,
 		nodeAgentClient,
+		nodeAgentTransport,
 		trustDomain,
 		tenantClientProvider,
 	)
