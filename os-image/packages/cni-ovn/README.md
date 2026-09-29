@@ -44,8 +44,8 @@ publishes no immutable image tag — there is no `release-X.Y.Z` and no `vX.Y.Z`
 only the branch tags — and `release-<X.Y>` moves with every merge to the branch.
 So the lock pins the resolved digest and builds fetch that digest, unlike
 Calico's immutable `vX.Y.Z` refs where tag and digest stay in step. Only `make
-lock` re-reads the tag, and a re-run adopts whatever has merged there since:
-diff the digest change on review.
+lock` lets the tag decide what is fetched, and a re-run adopts whatever has
+merged there since: diff the digest change on review.
 
 ## Building
 

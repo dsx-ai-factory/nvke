@@ -108,9 +108,15 @@ mirror_has_digest() {
 # digest either way. Upstream branch tags such as ovn-kubernetes' release-X.Y
 # move on every merge, which is a reason to review a lock refresh, not a reason
 # to fail a build that names a digest.
+# It reads the tag through the configured mirror: a build that cannot reach
+# Docker Hub directly should not be making this call to docker.io. A stale
+# pull-through cache can then report a tag that has not moved, or miss one that
+# has, which is a cost this can carry -- the digest it would name is never
+# fetched from here.
 warn_if_tag_moved() {
-  local ref="$1" want="$2" now
-  now="$("$CRANE" digest --platform "linux/${ARCH}" "$ref" 2>/dev/null || true)"
+  local ref="$1" want="$2" probe now
+  probe="$(image_transport_ref "$ref")"
+  now="$("$CRANE" digest --platform "linux/${ARCH}" "$probe" 2>/dev/null || true)"
   [[ -n "$now" && "$now" != "$want" ]] || return 0
   echo "${CNI}: note: ${ref} now resolves to ${now}, the lock pins ${want}; 'make lock' adopts it" >&2
 }

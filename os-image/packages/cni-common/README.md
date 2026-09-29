@@ -23,10 +23,11 @@ upstream, with the image list seeded by hand.
 A build fetches images at the digest the lock names and never resolves the tag,
 so what upstream has retagged since does not reach it. Fetched files are still
 verified by sha256 after download, because a URL has no digest to fetch by. A
-build does report a tag that has moved away from its locked digest, on stderr
-and without failing: that is a prompt to review a `make lock` refresh, not a
-broken build. Only `make lock` reads a tag, so only a reviewed commit can change
-what gets built.
+build does read the tag, through the configured mirror, to report one that has
+moved away from its locked digest — on stderr and without failing, as a prompt
+to review a `make lock` refresh rather than a broken build. Only `make lock`
+lets a tag decide what is fetched, so only a reviewed commit changes what gets
+built.
 
 One lock per architecture, because a digest resolves per platform. `make lock`
 takes the image list from the amd64 lock for every other architecture, so the

@@ -1729,16 +1729,26 @@ image_transport_ref docker.io/calico/node:v3.30.1
         )
         if modern_bash is None:
             self.skipTest("Bash 4 or newer is required for CNI bundle tests")
+        # `make lock` resolves the tag through the mirror, with retry and
+        # fallback. A build never resolves a tag to decide what to fetch: it
+        # probes the mirror once for the locked digest, and reads the tag only
+        # for the moved-tag notice.
         cases = (
-            ("digest miss", "1", "0", 3, 0),
-            ("transfer miss", "0", "1", 1, 3),
+            ("lock: digest miss", "--write-lock", "1", "0", "0", 3, 0, 0, True),
+            ("lock: transfer miss", "--write-lock", "0", "1", "0", 1, 3, 0, True),
+            ("build: mirror serves digest", "", "0", "0", "0", 1, 1, 1, False),
+            ("build: mirror lacks digest", "", "0", "0", "1", 1, 0, 1, True),
         )
         for (
             name,
+            lock_flag,
             digest_fails,
             pull_fails,
+            manifest_fails,
             mirror_digests,
             mirror_pulls,
+            mirror_manifests,
+            canonical_pull,
         ) in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
@@ -1763,6 +1773,13 @@ case "$operation" in
       exit 1
     fi
     printf '%s\\n' "${LOCKED_DIGEST:?}"
+    ;;
+  manifest)
+    ref="${@: -1}"
+    if [[ "$ref" == mirror.gcr.io/* && "${MIRROR_MANIFEST_FAIL:-0}" == 1 ]]; then
+      exit 1
+    fi
+    printf '{}\\n'
     ;;
   pull)
     output="${@: -1}"
@@ -1806,7 +1823,7 @@ if [[ "$(uname -s)" == Darwin ]]; then
 fi
 CNI=cni-test
 CNI_DOCKERHUB_MIRROR=mirror.gcr.io
-parse_bundle_args --version v1 --dist "$2/dist" --lock-dir "$2/locks" --crane "$3" --arch amd64
+parse_bundle_args --version v1 --dist "$2/dist" --lock-dir "$2/locks" --crane "$3" --arch amd64 ${4:+"$4"}
 stage_images
 """
 
@@ -1819,6 +1836,7 @@ stage_images
                         str(bundle_lib),
                         str(root),
                         str(crane),
+                        lock_flag,
                     ],
                     env={
                         **os.environ,
@@ -1826,6 +1844,7 @@ stage_images
                         "LOCKED_DIGEST": digest,
                         "MIRROR_DIGEST_FAIL": digest_fails,
                         "MIRROR_PULL_FAIL": pull_fails,
+                        "MIRROR_MANIFEST_FAIL": manifest_fails,
                     },
                     check=False,
                     capture_output=True,
@@ -1848,11 +1867,32 @@ stage_images
                     ),
                     mirror_pulls,
                 )
-                self.assertTrue(
+                self.assertEqual(
+                    sum(
+                        line.startswith("manifest ") and "mirror.gcr.io/" in line
+                        for line in call_lines
+                    ),
+                    mirror_manifests,
+                )
+                if not lock_flag:
+                    # A build pins from the lock: no tag is resolved to decide
+                    # what to fetch, and every pull names a digest.
+                    self.assertTrue(
+                        all(
+                            f"@{digest}" in line
+                            for line in call_lines
+                            if line.startswith("pull ")
+                        )
+                    )
+                # The canonical reference carries the transfer whenever the
+                # mirror did not; when the mirror served it, nothing should
+                # have reached docker.io.
+                self.assertEqual(
                     any(
                         line.startswith("pull ") and "docker.io/" in line
                         for line in call_lines
-                    )
+                    ),
+                    canonical_pull,
                 )
                 with tarfile.open(root / "dist/v1/images.tgz", "r:gz") as archive:
                     manifest_member = next(
