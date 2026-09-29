@@ -144,7 +144,7 @@ concurrency:
   # concurrently and could exhaust it. Today nothing does -- gb200 is ytl and
   # everything else is az61 -- but declaring a second GPU shape at an existing
   # site would break that, and the fix then is an explicit site input.
-  group: Forge site controller e2e ${{ inputs.arch || vars.FORGE_E2E_ARCH || 'amd64' }} ${{ inputs.gpu || vars.FORGE_E2E_GPU }}
+  group: Forge site controller e2e ${{ inputs.arch || vars.SITE_E2E_ARCH || 'amd64' }} ${{ inputs.gpu || vars.SITE_E2E_GPU }}
   cancel-in-progress: false
 
 jobs:
