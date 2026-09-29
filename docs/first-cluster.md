@@ -434,28 +434,29 @@ teardown cannot be helped along through the API.
 A tenant cluster's control plane is described once, at the cluster level, by
 `controlPlaneConfig`. The site controller's control-plane controller manages
 it: it creates control-plane hosts in parallel, joins them to the cluster one
-at a time, and deletes them one at a time. `nodePools` holds only workers.
+at a time, and deletes them one at a time. A create request carries
+`controlPlaneConfig` alongside a `nodePools` list that holds only workers:
 
-| Field | Meaning |
-|---|---|
-| `desiredCount` | How many control-plane nodes to run. At least 1; an odd count keeps an etcd quorum through a single failure. |
-| `maxSurge` | 0 or 1. With 1, a replacement joins before an old node is removed; with 0, the old node is removed first. |
-| `systemReservedMemory` | Memory reserved for system processes on each control-plane node. Defaults to `16Gi`. |
-| `nico` or `infra` | The provider payload. It must match the cluster's own top-level `nico` or `infra`; any other is rejected. |
+```yaml
+controlPlaneConfig:
+  desiredCount: 3            # >= 1; keep it odd so etcd holds a quorum
+  maxSurge: 1                # 0 or 1: 1 replaces before removing, 0 removes first
+  systemReservedMemory: "16Gi"
+  nico:
+    instanceTypePreference:  # ordered UUIDs; index 0 is tried first, the rest are fallback
+      - 00000000-0000-0000-0000-000000000000
+    vpcPrefixIDs:
+      - 00000000-0000-0000-0000-000000000000
+    sshKeyGroupIDs:
+      - 00000000-0000-0000-0000-000000000000
+    osProfile: nke-260625-24.04-x86-fde
+    configProfile: default-cp
+```
 
-[`nico-cluster.yaml`](../cli/examples/nico-cluster.yaml),
+`controlPlaneConfig` takes exactly one provider payload, `nico` or `infra`,
+matching the cluster's own. [`nico-cluster.yaml`](../cli/examples/nico-cluster.yaml),
 [`nico-mock-cluster.yaml`](../cli/examples/nico-mock-cluster.yaml) and
 [`capd-cluster.yaml`](../cli/examples/capd-cluster.yaml) are complete requests.
-
-Two behaviors to plan around:
-
-- **Deleting a control-plane node** is refused while it would leave fewer than
-  three joined control-plane nodes. Raise `desiredCount` first so a replacement
-  joins, or delete the cluster.
-- **Upgrading `controlPlaneKubernetesVersion`** replaces the control-plane
-  nodes, and waits until the cluster's `enableCPNodeRecycling` is `true`. It is
-  `false` by default: set it with
-  `nkectl patch cluster <name> --patch 'enableCPNodeRecycling: true'`.
 
 A site controller deployed with
 `PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=false` takes the older
