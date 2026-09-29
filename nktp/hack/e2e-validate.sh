@@ -29,6 +29,8 @@ CLUSTER="${CLUSTER:-nktp-e2e}"
 NAMESPACE="${NAMESPACE:-nktp}"
 CHART="${CHART:-nktp/deploy/charts/nktp}"
 VALUES="${VALUES:-nktp/hack/e2e-values.yaml}"
+# Pinned in make/tool-versions.mk: the version clusterctl init installs on a site.
+CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-$(make --no-print-directory print-CERT_MANAGER_VERSION)}"
 KIND_CONFIG="${KIND_CONFIG:-controller/hack/cwe-capi-kind.yaml}"
 KEEP_CLUSTER="${KEEP_CLUSTER:-0}"
 REUSE_CLUSTER="${REUSE_CLUSTER:-0}"
@@ -84,6 +86,14 @@ log "Installing the chart"
 # here, and it registers them in a temporary HELM_REPOSITORY_CONFIG so running
 # this does not edit the caller's helm repo list.
 make --no-print-directory nktp-chart-deps
+
+# The chart's certificates come from cert-manager: the Operator's webhook
+# certificate, and the mTLS between each Collector and its Target Allocator.
+helm upgrade --install cert-manager oci://quay.io/jetstack/charts/cert-manager \
+  --version "$CERT_MANAGER_VERSION" \
+  --namespace cert-manager --create-namespace \
+  --set crds.enabled=true \
+  --wait --timeout 5m
 
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 # The node Collector reads /var/log/pods and /proc from the host, so

@@ -130,7 +130,7 @@ nktp-chart-lint: nktp-chart-deps ## Lint and render the NKTP chart, then validat
 	@$(call require_tool,kubeconform,$(KUBECONFORM_VERSION))
 	@$(call require_command,yq)
 	@helm lint --strict $(NKTP_CHART)
-	@NKTP_CHART="$(NKTP_CHART)" ./nktp/hack/chart-validate.sh
+	@NKTP_CHART="$(NKTP_CHART)" CERT_MANAGER_VERSION="$(CERT_MANAGER_VERSION)" ./nktp/hack/chart-validate.sh
 
 nktp-chart-check: nktp-chart-lint ## Run every NKTP chart check enforced by CI. (run by the merge gate)
 

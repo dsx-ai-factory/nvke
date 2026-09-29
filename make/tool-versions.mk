@@ -49,6 +49,10 @@ KUBECTL_SHA256_ARM64 ?= 9f9d9c44a7b5264515ac9da5991584e2395bd50662e651132337e7b4
 # clusterctl and the CAPI core/kubeadm providers ship as one release, so one
 # pin covers the binary and everything `clusterctl init` installs.
 CAPI_VERSION    ?= v1.12.3
+# The cert-manager `clusterctl init` installs at CAPI_VERSION. The NKTP chart's
+# Kind e2e installs it, and its kubeconform check validates against its CRDs.
+# Move it with CAPI_VERSION.
+CERT_MANAGER_VERSION ?= v1.19.3
 
 ORAS_VERSION        ?= 1.3.3
 ORAS_SHA256_AMD64   ?= 9ce999f8d2de03fc03968b29d743077a58783e545e5eaa53917ca177352d0e59

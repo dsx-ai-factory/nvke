@@ -74,6 +74,9 @@ Target Allocators and the development backend:
   when building dependencies.
 - A cluster that accepts the `opentelemetry.io/v1beta1` API. The chart installs
   the OpenTelemetry and Prometheus Operator CRDs by default.
+- cert-manager. It issues the Operator's webhook certificate and the mTLS
+  certificates between each Collector and its Target Allocator; see
+  [Certificates](#certificates) to run without it.
 - A release namespace whose Pod Security admission level is `privileged`. The
   node Collector runs as root with `SYS_CHROOT`, and mounts `/var/log/pods`,
   `/proc`, `/var/log`, the node's `journalctl` with its libraries and
@@ -169,6 +172,70 @@ Other logs carry no class. The API server writes an audit log only where audit
 logging is on, and only at the path its `audit-log-path` sets; point
 `daemonset.otelcol.config.receivers.filelog/kube-api-audit.include` at that
 path when it differs.
+
+### Certificates
+
+cert-manager issues and renews two sets of certificates by default: the
+Operator's admission webhook certificate, and a CA with server and client
+certificates for each Collector and its Target Allocator, so the Collectors
+fetch their scrape assignments over mTLS. The Operator provisions the second
+set; see the Operator's
+[Target Allocator documentation](https://github.com/open-telemetry/opentelemetry-operator/blob/main/docs/target-allocator/README.md#with-cert-manager-default).
+
+A cluster without cert-manager turns both off. Helm then generates a
+self-signed webhook certificate, reuses it on upgrade, and never renews it; it
+expires after 365 days. Each allocator's `mtls` block can instead reference
+certificates that already exist in the release namespace, with
+`useCertManager: false` and a `tls` block, as the Operator's
+[user-provided certificate documentation](https://github.com/open-telemetry/opentelemetry-operator/blob/main/docs/target-allocator/README.md#without-cert-manager-user-provided-certificates)
+describes.
+
+```yaml
+opentelemetry-kube-stack:
+  opentelemetry-operator:
+    admissionWebhooks:
+      certManager:
+        enabled: false
+      autoGenerateCert:
+        recreate: false
+watchdog:
+  kubernetes:
+    targetAllocator:
+      mtls:
+        enabled: false
+daemonset:
+  kubernetes:
+    targetAllocator:
+      mtls:
+        enabled: false
+large_target_metrics:
+  kubernetes:
+    targetAllocator:
+      mtls:
+        enabled: false
+```
+
+### Monitor credentials
+
+With mTLS between them, the node Target Allocator can hand its Collectors the
+Secret-backed credentials a monitor references, such as a bearer token or a
+client certificate. It reads them only in the namespaces listed in
+`daemonset.kubernetes.targetAllocator.prometheusCR.secretNamespaces`:
+
+```yaml
+daemonset:
+  kubernetes:
+    targetAllocator:
+      prometheusCR:
+        secretNamespaces: [metrics-monitors]
+```
+
+For each listed namespace the chart creates a Role granting `get`, `list` and
+`watch` on Secrets and `get` on ConfigMaps, bound to the allocator's
+ServiceAccount. The grant covers every Secret in the namespace, so list only
+namespaces whose monitor authors are trusted. The namespaces must already
+exist. The list is empty by default, which creates nothing;
+`daemonset.rbac.create: false` leaves the grants to you.
 
 ### The backend
 
@@ -287,6 +354,5 @@ opentelemetry-kube-stack:
     installPrometheus: false
 ```
 
-Helm generates the Operator's webhook certificate and reuses it on upgrade. It
-is valid for 365 days and not renewed. On clusters with cert-manager, set
-`opentelemetry-kube-stack.opentelemetry-operator.admissionWebhooks.certManager.enabled: true`.
+The Operator's webhook certificate comes from cert-manager; see
+[Certificates](#certificates).
