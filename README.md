@@ -59,16 +59,16 @@ What distinguishes it from a generic CAPI distribution:
 | `nktp/` | NVIDIA Kubernetes Telemetry Pipeline (NKTP): a Helm chart that deploys an OpenTelemetry pipeline for cluster metrics, logs and traces. Versioned and released on its own. |
 
 **Eleven Go modules**, tied together by a workspace at the repository root, each
-independently buildable. `make build` links six binaries: `agent`, `updater`,
-`controller`, `nkectl`, `capd-reboot-controller` and
-`nke-os-image-check`.
-See [docs/go-workspace.md](docs/go-workspace.md) for how the workspace fits
-together and why `vendor/` is committed.
+independently buildable. `make build` links seven binaries: `agent`, `updater`,
+`controller`, `nkectl`, `capd-reboot-controller`, `nke-os-image-check` and
+`management-engine`.
+See [docs/go-workspace.md](docs/go-workspace.md) for workspace and dependency setup.
 
 What each binary is, and where it ends up running:
 
 | Binary | Module | What it does | Runs on |
 |---|---|---|---|
+| `management-engine` | `management-engine/` | Controller management engine for NKE resources, communicating directly with the management Kubernetes API | An operator-owned management cluster, or a development host with kubeconfig |
 | `controller` | `controller/` | The control plane: REST API, Temporal workflows, and the Kubernetes reconcilers | The site controller cluster |
 | `agent` | `agent/` | gRPC server the control plane drives to run `kubeadm`, install a CNI, and configure encryption | Every managed node |
 | `updater` | `agent/` | Independent helper that replaces the node agent without depending on the agent process | Every managed node |
@@ -106,13 +106,13 @@ git clone https://github.com/dsx-ai-factory/nke.git
 cd nke
 ```
 
-The entire repository builds from a clean checkout with no network access:
+Build the repository from a clean checkout with access to public Go modules:
 
 ```bash
-GOPROXY=off make build
+make build
 ```
 
-This compiles all eleven modules and links six binaries into `bin/`. It is the quickest way to confirm your toolchain is correct.
+This compiles the workspace modules and writes the binaries to `bin/`.
 
 **Build and test the agent:**
 

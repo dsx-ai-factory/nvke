@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package v1alpha1
+package v1
 
 import (
 	"context"
@@ -76,8 +76,8 @@ func loadResourceSchema(t *testing.T, resource string) resourceSchema {
 
 func storageVersionSchema(t *testing.T, crd apiextensions.CustomResourceDefinition) *apiextensions.JSONSchemaProps {
 	t.Helper()
-	if len(crd.Spec.Versions) != 1 || !crd.Spec.Versions[0].Served || !crd.Spec.Versions[0].Storage {
-		t.Fatal("expected one served storage version")
+	if len(crd.Spec.Versions) != 1 || !crd.Spec.Versions[0].Served || !crd.Spec.Versions[0].Storage || crd.Spec.Versions[0].Name != GroupVersion.Version {
+		t.Fatalf("expected one served storage version: %s", GroupVersion.Version)
 	}
 	validation := crd.Spec.Versions[0].Schema
 	if validation == nil {
@@ -168,7 +168,7 @@ func (s resourceSchema) runUpdate(t *testing.T, old map[string]any, cases []fiel
 // Minimal resources that pass admission: every required field and nothing else.
 var baseResources = map[string]string{
 	"nkeclusters": `{
-		"apiVersion": "internal.nke.nvidia.com/v1alpha1",
+		"apiVersion": "internal.nke.nvidia.com/v1",
 		"kind": "NKECluster",
 		"metadata": {"name": "demo", "namespace": "org-demo"},
 		"spec": {
@@ -183,7 +183,7 @@ var baseResources = map[string]string{
 		}
 	}`,
 	"nodepools": `{
-		"apiVersion": "internal.nke.nvidia.com/v1alpha1",
+		"apiVersion": "internal.nke.nvidia.com/v1",
 		"kind": "NodePool",
 		"metadata": {"name": "workers", "namespace": "org-demo"},
 		"spec": {

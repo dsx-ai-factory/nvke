@@ -76,6 +76,7 @@ WORK_MODULES := agent \
 # name. `build` delegates to controller/Makefile for it. controller/nico-sim
 # ships through its own Makefile and the container image.
 #
+# management-engine also delegates to its Makefile to name cmd/manager correctly.
 # cli is absent because its Makefile stamps four symbols, not one,
 # and asserts the stamp took. `build` delegates to cli/Makefile.
 CMD_MODULES := agent \
@@ -511,6 +512,8 @@ build: ## Build every workspace package, and the released commands into bin/.
 	@$(MAKE) --no-print-directory -C cli build >/dev/null || exit 1
 	@cp cli/bin/nkectl $(BIN_DIR)/ \
 		|| { echo "ERROR: cli/Makefile no longer produces bin/nkectl."; exit 1; }
+	@echo "- building management-engine"
+	@$(MAKE) --no-print-directory -C management-engine build BIN_DIR=$(BIN_DIR) VERSION=$(call cmd_version,management-engine) >/dev/null || exit 1
 	@echo "Built into $(BIN_DIR):"
 	@ls -1 $(BIN_DIR) | sed 's/^/    /'
 
@@ -522,6 +525,7 @@ build: ## Build every workspace package, and the released commands into bin/.
 VERSION_CMDS := agent:--version \
                 capd-reboot-controller:--version \
                 controller:--version \
+                management-engine:--version \
                 nke-os-image-check:--version \
                 nkectl:version \
                 updater:--version
