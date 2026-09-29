@@ -185,6 +185,14 @@ retry_until "scrape targets are up" \
 retry_until "no exporter send failures" \
   promql_empty 'sum by (service_name) ({__name__=~"otelcol_exporter_send_failed.*"}) > 0'
 
+# The API server and CoreDNS are scraped through the kube-stack monitors the
+# large-target pool selects. The scheduler, controller manager, etcd and
+# kube-proxy serve metrics on 127.0.0.1 on Kind, so their targets are down here.
+retry_until "API server metrics are scraped" \
+  promql_nonempty 'up{job="apiserver"} == 1'
+retry_until "CoreDNS metrics are scraped" \
+  promql_nonempty 'up{job="coredns"} == 1'
+
 # kube-state-metrics object state arrives through the large-target pool.
 retry_until "object-state metrics arrive" \
   promql_nonempty 'count(kube_pod_info) > 0 and count(kube_deployment_status_replicas_available) > 0'

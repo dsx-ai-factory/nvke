@@ -1123,7 +1123,8 @@ large_target_metrics:
           enableMetrics: false # Metrics are pushed over OTLP without a ServiceMonitor.
       prometheusCR:
         enabled: true
-        denyFSAccessThroughSMs: true # Reject monitor endpoints that reference files in the Collector container.
+        # The bundled Kubernetes component ServiceMonitors reference the Collector's service-account files.
+        denyFSAccessThroughSMs: false
         serviceMonitorSelector:
           matchExpressions:
             - key: nktp.nvidia.io/large-target
@@ -1481,6 +1482,42 @@ opentelemetry-kube-stack:
   crds:
     installOtel: true
     installPrometheus: true
+  # Declare Kubernetes control-plane and DNS metrics endpoints. These monitors
+  # require a Target Allocator with denyFSAccessThroughSMs disabled; see README.
+  kubernetesServiceMonitors:
+    enabled: true
+  kubeApiServer:
+    enabled: true
+    serviceMonitor:
+      additionalLabels:
+        nktp.nvidia.io/large-target: "true"
+  kubeControllerManager:
+    enabled: true
+    serviceMonitor:
+      additionalLabels:
+        nktp.nvidia.io/large-target: "true"
+  kubeScheduler:
+    enabled: true
+    serviceMonitor:
+      additionalLabels:
+        nktp.nvidia.io/large-target: "true"
+  kubeEtcd:
+    enabled: true
+    serviceMonitor:
+      additionalLabels:
+        nktp.nvidia.io/large-target: "true"
+  coreDns:
+    enabled: true
+    serviceMonitor:
+      additionalLabels:
+        nktp.nvidia.io/large-target: "true"
+  kubeProxy:
+    enabled: true
+    serviceMonitor:
+      additionalLabels:
+        nktp.nvidia.io/large-target: "true"
+  kubeDns:
+    enabled: false # CoreDNS is the supported cluster DNS metrics source.
   collectors:
     daemon:
       enabled: false

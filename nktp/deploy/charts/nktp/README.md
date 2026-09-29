@@ -176,6 +176,33 @@ logging is on, and only at the path its `audit-log-path` sets; point
 `daemonset.otelcol.config.receivers.filelog/kube-api-audit.include` at that
 path when it differs.
 
+### Kubernetes component metrics
+
+The chart turns on opentelemetry-kube-stack's monitors for the API server, the
+controller manager, the scheduler, etcd, CoreDNS and kube-proxy. They carry the
+large-target label, so the large-target pool scrapes them, and its Collectors'
+ServiceAccount may read the `/metrics` non-resource URL. The monitors reference
+the Collector's ServiceAccount token and CA files, so that pool's Target
+Allocator sets `denyFSAccessThroughSMs: false`; with `true` it drops those
+endpoints, as
+[opentelemetry-helm-charts#2408](https://github.com/open-telemetry/opentelemetry-helm-charts/issues/2408)
+describes.
+
+A monitor does not guarantee a reachable target. kubeadm binds the controller
+manager and the scheduler to `127.0.0.1` by default, some clusters do the same
+for etcd's metrics, and a cluster whose CNI replaces kube-proxy runs none.
+Turn off the monitors a cluster cannot serve:
+
+```yaml
+opentelemetry-kube-stack:
+  kubeScheduler:
+    enabled: false
+  kubeControllerManager:
+    enabled: false
+  kubeProxy:
+    enabled: false
+```
+
 ### Certificates
 
 cert-manager issues and renews two sets of certificates by default: the
