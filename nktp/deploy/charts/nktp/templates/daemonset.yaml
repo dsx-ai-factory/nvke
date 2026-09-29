@@ -76,11 +76,14 @@ service:
 {{- $config = mustMergeOverwrite $config $monitoring -}}
 {{- $workload := deepCopy .Values.daemonset.kubernetes -}}
 {{- $kubelet := .Values.daemonset.kubelet | default dict -}}
+{{- $cadvisor := $kubelet.cadvisor | default dict -}}
+{{- $probes := $kubelet.probes | default dict -}}
+{{- $resource := $kubelet.resource | default dict -}}
 {{- $kubeletCA := dig "tls" "ca" "configMap" dict $kubelet -}}
 {{- $optionalKubeletScrapes := list
-      (dict "enabled" ($kubelet.cadvisor | default false) "jobName" "kubelet-cadvisor" "metricsPath" "/metrics/cadvisor")
-      (dict "enabled" ($kubelet.probes | default false) "jobName" "kubelet-probes" "metricsPath" "/metrics/probes")
-      (dict "enabled" ($kubelet.resource | default false) "jobName" "kubelet-resource" "metricsPath" "/metrics/resource") -}}
+      (dict "enabled" ($cadvisor.enabled | default false) "jobName" "kubelet-cadvisor" "metricsPath" "/metrics/cadvisor")
+      (dict "enabled" ($probes.enabled | default false) "jobName" "kubelet-probes" "metricsPath" "/metrics/probes")
+      (dict "enabled" ($resource.enabled | default false) "jobName" "kubelet-resource" "metricsPath" "/metrics/resource") -}}
 {{- $hasOptionalKubeletScrapes := false -}}
 {{- range $optional := $optionalKubeletScrapes -}}
   {{- if $optional.enabled -}}{{- $hasOptionalKubeletScrapes = true -}}{{- end -}}
@@ -114,12 +117,28 @@ service:
     {{- if $optional.enabled -}}
       {{- range $scrapeConfig := $kubeletScrapeConfigs -}}
         {{- if eq ($scrapeConfig.job_name | default "") $optional.jobName -}}
-          {{- fail (printf "daemonset.otelcol.config.receivers[prometheus/kubelet].config.scrape_configs already contains job %s; disable daemonset.kubelet.%s or remove the manual job" $optional.jobName (trimPrefix "kubelet-" $optional.jobName)) -}}
+          {{- fail (printf "daemonset.otelcol.config.receivers[prometheus/kubelet].config.scrape_configs already contains job %s; disable daemonset.kubelet.%s.enabled or remove the manual job" $optional.jobName (trimPrefix "kubelet-" $optional.jobName)) -}}
         {{- end -}}
       {{- end -}}
       {{- $optionalJob := deepCopy $kubeletJob -}}
       {{- $_ := set $optionalJob "job_name" $optional.jobName -}}
       {{- $_ := set $optionalJob "metrics_path" $optional.metricsPath -}}
+      {{- if eq $optional.jobName "kubelet-cadvisor" -}}
+        {{- $metricRelabelConfigs := list -}}
+        {{- range $metricRelabeling := ($cadvisor.metricRelabelings | default list) -}}
+          {{- $metricRelabelConfig := deepCopy $metricRelabeling -}}
+          {{- if hasKey $metricRelabelConfig "sourceLabels" -}}
+            {{- $_ := set $metricRelabelConfig "source_labels" $metricRelabelConfig.sourceLabels -}}
+            {{- $_ := unset $metricRelabelConfig "sourceLabels" -}}
+          {{- end -}}
+          {{- if hasKey $metricRelabelConfig "targetLabel" -}}
+            {{- $_ := set $metricRelabelConfig "target_label" $metricRelabelConfig.targetLabel -}}
+            {{- $_ := unset $metricRelabelConfig "targetLabel" -}}
+          {{- end -}}
+          {{- $metricRelabelConfigs = append $metricRelabelConfigs $metricRelabelConfig -}}
+        {{- end -}}
+        {{- $_ := set $optionalJob "metric_relabel_configs" $metricRelabelConfigs -}}
+      {{- end -}}
       {{- range $relabelConfig := ($optionalJob.relabel_configs | default list) -}}
         {{- if eq ($relabelConfig.target_label | default "") "metrics_path" -}}
           {{- $_ := set $relabelConfig "replacement" $optional.metricsPath -}}
@@ -150,7 +169,7 @@ metadata:
     {{- /* The upstream pre-delete Job selects this label to delete the Collector before the Operator. */}}
     helm.sh/chart: {{ include "opentelemetry-kube-stack.chart" (index .Subcharts "opentelemetry-kube-stack") }}
 spec:
-  {{- $collector := dict "image" (.Values.daemonset.otelcol.image | default .Values.otelcol_image) }}
+  {{- $collector := dict "image" (include "nktp.image" (dict "imageRegistry" .Values.global.imageRegistry "image" (.Values.daemonset.otelcol.image | default .Values.otelcol_image))) }}
   {{- /* Kubernetes workload values override defaults. The resolved Collector image overrides any workload image. */}}
   {{- mustMergeOverwrite (dict "mode" "daemonset" "managementState" "managed" "upgradeStrategy" "automatic") (omit $workload "config") $collector | toYaml | nindent 2 }}
   config:

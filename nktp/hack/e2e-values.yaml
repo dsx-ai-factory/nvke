@@ -7,7 +7,7 @@
 # The defaults size NKTP for a multi-node cluster; one Kind node on the e2e
 # runner cannot schedule them. Lower replica counts, autoscaler floors and
 # requests keep it schedulable while collection behavior and limits stay the
-# chart's own. Adapted from the upstream NKTP project's tests/e2e/values.yaml.
+# chart's own.
 #
 # Two workloads keep their replica counts, because there the count is behavior:
 # cluster_events runs an elected reader and a standby, and large_target_metrics

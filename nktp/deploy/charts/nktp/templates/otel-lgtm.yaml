@@ -74,7 +74,7 @@ spec:
     spec:
       containers:
         - name: lgtm
-          image: {{ $lgtm.image }}
+          image: {{ include "nktp.image" (dict "imageRegistry" .Values.global.imageRegistry "image" $lgtm.image) }}
           env:
             - name: GF_AUTH_ANONYMOUS_ENABLED
               value: "true"

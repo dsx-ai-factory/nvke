@@ -44,7 +44,7 @@ to the watchdog; the watchdog sends its own to the backend.
 |---|---|
 | `watchdog` | Receives the other Collectors' own telemetry over OTLP at `nktp-watchdog-collector:4318` and forwards it to the backend. Scrapes the Operator and the Target Allocators. |
 | `gateway_logs`, `gateway_metrics`, `gateway_traces` | The OTLP entry points, one per signal, at `nktp-gateway-<signal>-collector:4317` (gRPC) and `:4318` (HTTP). Forward to the backend. Two replicas each by default, autoscaling up to 64. |
-| `daemonset` | One Collector per node. Reads pod logs under `/var/log/pods`, scrapes the local kubelet, collects per-process metrics from `/proc`, scrapes the targets a node-local Target Allocator assigns from every monitor in the cluster, and forwards each signal to its gateway. Runs as root because of the host log mount. |
+| `daemonset` | One Collector per node. Reads pod logs under `/var/log/pods`, scrapes the local kubelet and its cAdvisor endpoint, collects per-process metrics from `/proc`, scrapes the targets a node-local Target Allocator assigns from every monitor in the cluster, and forwards each signal to its gateway. Runs as root because of the host log mount. |
 | `large_target_metrics` | A pool with its own Target Allocator for monitors labelled `nktp.nvidia.io/large-target: "true"`, which is how kube-state-metrics is scraped. Two replicas by default, autoscaling up to 16. |
 | `cluster_events` | Turns Kubernetes Events into logs. Two replicas by default: a Lease the chart creates in the release namespace elects the reader, and the other stands by. |
 | `kube-state-metrics` | A DaemonSet for node-local Pod metrics, one Deployment for Pods awaiting a node, and five Deployments for the other object types, grouped as workloads, networking, storage, configuration and cluster-scoped objects. RBAC is derived from the resource types. Each group can be sharded for larger clusters. |
@@ -85,11 +85,51 @@ Top-level keys in [values.yaml](values.yaml):
 
 | Key | What it sets |
 |---|---|
-| `otelcol_image` | The Collector image every workload uses unless it sets `<workload>.otelcol.image`. |
-| `watchdog`, `gateway_logs`, `gateway_metrics`, `gateway_traces`, `daemonset`, `large_target_metrics`, `cluster_events` | One block per Collector. `otelcol.config` is the Collector configuration; `kubernetes` is the workload: replicas, resources, environment, Target Allocator, scheduling and, for every Collector but the node DaemonSet and the event reader, the `autoscaler` bounds. |
+| `global.imageRegistry` | A registry that replaces the registry of every image the chart and its dependencies pull, apart from two; see [Images](#images). |
+| `otelcol_image` | The Collector image every workload uses unless it sets `<workload>.otelcol.image`, as `registry`, `repository` and `tag`. |
+| `watchdog`, `gateway_logs`, `gateway_metrics`, `gateway_traces`, `daemonset`, `large_target_metrics`, `cluster_events` | One block per Collector. `otelcol.config` is the Collector configuration, and `daemonset.kubelet` selects the kubelet endpoints the node Collector scrapes; `kubernetes` is the workload: replicas, resources, environment, Target Allocator, scheduling and, for every Collector but the node DaemonSet and the event reader, the `autoscaler` bounds. |
 | `kube-state-metrics` | `enabled`, the node DaemonSet, the central `deployments` with their `resource_types`, `shards` and `namespaces`, and the image. |
 | `otel-lgtm` | The development backend: `enabled` and `image`. |
 | `opentelemetry-kube-stack`, `node-exporter`, `metrics-server` | Values passed through to the bundled charts. |
+
+### Images
+
+Every image is set as `registry`, `repository` and `tag`. An empty `registry`
+pulls from the image's default registry. `global.imageRegistry` replaces the
+registry of every image at once, for a mirror. Two images do not read it: the
+metrics-server dependency's and the OpenTelemetry Operator's, which is nested in
+opentelemetry-kube-stack. Point those at the mirror through their own values:
+
+```yaml
+metrics-server:
+  image:
+    repository: <mirror>/metrics-server/metrics-server
+opentelemetry-kube-stack:
+  opentelemetry-operator:
+    manager:
+      image:
+        repository: <mirror>/open-telemetry/opentelemetry-operator/opentelemetry-operator
+```
+
+### Kubelet endpoints
+
+The node Collector scrapes its kubelet's `/metrics` and `/metrics/cadvisor`.
+cAdvisor applies kube-prometheus-stack's metric relabelings, which drop
+always-zero, overlapping and host-network-interface series and cgroups with no
+Pod; `daemonset.kubelet.cadvisor.metricRelabelings` replaces them.
+`/metrics/probes` and `/metrics/resource` are off. Each endpoint is switched on
+or off independently:
+
+```yaml
+daemonset:
+  kubelet:
+    cadvisor:
+      enabled: false
+    probes:
+      enabled: true
+    resource:
+      enabled: true
+```
 
 ### The backend
 

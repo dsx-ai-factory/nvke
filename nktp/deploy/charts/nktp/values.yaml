@@ -1,13 +1,31 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Collector image used by all OTel workloads, in the same form as
-# OpenTelemetryCollector spec.image (repo:tag or repo@digest).
-otelcol_image: otel/opentelemetry-collector-k8s:0.159.0
+global:
+  # Override image registry for every image this chart and its dependencies pull.
+  #
+  # NOTE: metrics-server (disabled by default) and the opentelemetry-operator chart
+  # nested in opentelemetry-kube-stack do NOT read global.imageRegistry.
+  # Point them at a mirror explicitly instead:
+  #   metrics-server:
+  #     image:
+  #       repository: <mirror>/metrics-server/metrics-server
+  #   opentelemetry-kube-stack:
+  #     opentelemetry-operator:
+  #       manager:
+  #         image:
+  #           repository: <mirror>/open-telemetry/opentelemetry-operator/opentelemetry-operator
+  imageRegistry: ""
+
+# Collector image used by all OTel workloads. global.imageRegistry replaces registry.
+otelcol_image:
+  registry: "" # Empty pulls from the image's default registry (Docker Hub for this repository).
+  repository: otel/opentelemetry-collector-k8s
+  tag: 0.159.0
 
 # OTel workloads. Each workload uses the same structure:
 #   kubernetes:     Standard Kubernetes settings (resources, affinity, selectors, labels, ...).
-#   otelcol.image:  Set a custom image for this workload only.
+#   otelcol.image:  Set a custom image for this workload only, as a {registry, repository, tag} map.
 #   otelcol.config: Native OTel collector configuration as a YAML map.
 
 # Receives internal telemetry from all NKTP collectors.
@@ -69,7 +87,10 @@ watchdog:
         drop: [ALL]
   otelcol:
     # Set a custom image for this workload only.
-    # image: otel/opentelemetry-collector-k8s:0.159.0
+    # image:
+    #   registry: ""
+    #   repository: otel/opentelemetry-collector-k8s
+    #   tag: 0.159.0
     config:
       extensions:
         health_check:
@@ -235,7 +256,10 @@ gateway_logs:
         drop: [ALL]
   otelcol:
     # Set a custom image for this workload only.
-    # image: otel/opentelemetry-collector-k8s:0.159.0
+    # image:
+    #   registry: ""
+    #   repository: otel/opentelemetry-collector-k8s
+    #   tag: 0.159.0
     config:
       extensions:
         health_check:
@@ -348,7 +372,10 @@ gateway_metrics:
         drop: [ALL]
   otelcol:
     # Set a custom image for this workload only.
-    # image: otel/opentelemetry-collector-k8s:0.159.0
+    # image:
+    #   registry: ""
+    #   repository: otel/opentelemetry-collector-k8s
+    #   tag: 0.159.0
     config:
       extensions:
         health_check:
@@ -461,7 +488,10 @@ gateway_traces:
         drop: [ALL]
   otelcol:
     # Set a custom image for this workload only.
-    # image: otel/opentelemetry-collector-k8s:0.159.0
+    # image:
+    #   registry: ""
+    #   repository: otel/opentelemetry-collector-k8s
+    #   tag: 0.159.0
     config:
       extensions:
         health_check:
@@ -528,9 +558,51 @@ gateway_traces:
 # Node-level collector. Collects local telemetry and forwards received OTLP signals.
 daemonset:
   kubelet:
-    cadvisor: false # Also scrape /metrics/cadvisor from each local kubelet.
-    probes: false # Also scrape /metrics/probes from each local kubelet.
-    resource: false # Also scrape /metrics/resource from each local kubelet.
+    cadvisor:
+      enabled: true # Also scrape /metrics/cadvisor from each local kubelet.
+      # metricRelabelings drops samples after scraping and replaces the defaults when overridden.
+      metricRelabelings:
+        # The below relabelings were copied from
+        # https://github.com/prometheus-community/helm-charts/blob/4713c624771a48e99f16dec9eb55ec8204f06830/charts/kube-prometheus-stack/values.yaml#L1952
+        # Drop less useful container CPU metrics.
+        - sourceLabels: [__name__]
+          action: drop
+          regex: container_cpu_(cfs_throttled_seconds_total|load_average_10s|system_seconds_total|user_seconds_total)
+        # Drop less useful container / always zero filesystem metrics.
+        - sourceLabels: [__name__]
+          action: drop
+          regex: container_fs_(io_current|io_time_seconds_total|io_time_weighted_seconds_total|reads_merged_total|sector_reads_total|sector_writes_total|writes_merged_total)
+        # Drop less useful / always zero container memory metrics.
+        - sourceLabels: [__name__]
+          action: drop
+          regex: container_memory_(mapped_file|swap)
+        # Drop less useful container process metrics.
+        - sourceLabels: [__name__]
+          action: drop
+          regex: container_(file_descriptors|tasks_state|threads_max)
+        # Drop container_memory_failures_total{scope="hierarchy"} metrics,
+        # we only need the container scope.
+        - sourceLabels: [__name__, scope]
+          action: drop
+          regex: container_memory_failures_total;hierarchy
+        # Drop container_network_... metrics that match various interfaces that
+        # correspond to CNI and similar interfaces. This avoids capturing network
+        # metrics for host network containers.
+        - sourceLabels: [__name__, interface]
+          action: drop
+          regex: container_network_.*;(cali|cilium|cni|lxc|nodelocaldns|tunl).*
+        # Drop container spec metrics that overlap with kube-state-metrics.
+        - sourceLabels: [__name__]
+          action: drop
+          regex: container_spec.*
+        # Drop cgroup metrics with no pod.
+        - sourceLabels: [id, pod]
+          action: drop
+          regex: .+;
+    probes:
+      enabled: false # Also scrape /metrics/probes from each local kubelet.
+    resource:
+      enabled: false # Also scrape /metrics/resource from each local kubelet.
     tls:
       ca:
         # Set name to mount a ConfigMap containing the kubelet-serving CA and enable verification.
@@ -621,7 +693,10 @@ daemonset:
         readOnly: true
   otelcol:
     # Set a custom image for this workload only.
-    # image: otel/opentelemetry-collector-k8s:0.159.0
+    # image:
+    #   registry: ""
+    #   repository: otel/opentelemetry-collector-k8s
+    #   tag: 0.159.0
     config:
       extensions:
         health_check:
@@ -879,7 +954,10 @@ large_target_metrics:
         drop: [ALL]
   otelcol:
     # Set a custom image for this workload only.
-    # image: otel/opentelemetry-collector-k8s:0.159.0
+    # image:
+    #   registry: ""
+    #   repository: otel/opentelemetry-collector-k8s
+    #   tag: 0.159.0
     config:
       extensions:
         health_check:
@@ -998,7 +1076,10 @@ cluster_events:
         drop: [ALL]
   otelcol:
     # Set a custom image for this workload only.
-    # image: otel/opentelemetry-collector-k8s:0.159.0
+    # image:
+    #   registry: ""
+    #   repository: otel/opentelemetry-collector-k8s
+    #   tag: 0.159.0
     config:
       extensions:
         health_check:
@@ -1067,12 +1148,18 @@ cluster_events:
 # Default in-cluster backend. MUST be disabled for production use.
 otel-lgtm:
   enabled: true
-  image: grafana/otel-lgtm:0.32.0
+  image:
+    registry: "" # Empty pulls from the image's default registry (Docker Hub for this repository).
+    repository: grafana/otel-lgtm
+    tag: 0.32.0
 
 # Kubernetes object state metrics, partitioned by resource type.
 kube-state-metrics:
   enabled: true
-  image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0
+  image:
+    registry: registry.k8s.io
+    repository: kube-state-metrics/kube-state-metrics
+    tag: v2.20.0
   namespaces: [] # All namespaces. Each workload can override this list.
   # Shared Kubernetes defaults. Each workload can override these fields.
   kubernetes:
