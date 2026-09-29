@@ -80,6 +80,8 @@ later and the copy a disaster recovery needs. Move it off the host. On failure i
 diagnostics to `cluster-diagnostics/` first, and keeps the Kind cluster when
 the failure came after the site cluster was created, or when
 `--keep-bootstrap-cluster` is set; the error says how to clean up.
+[bootstrap-troubleshooting.md](bootstrap-troubleshooting.md) explains how to
+read a failure and fix the common ones.
 
 The Kind cluster runs Postgres, Temporal, SPIRE, Cluster API and CWE.
 `nkectl get bootstrap-manifest` lists the charts and images the bootstrap

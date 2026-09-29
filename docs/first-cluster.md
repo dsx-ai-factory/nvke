@@ -362,6 +362,10 @@ created it, so a bare `kind delete cluster` looks for the seed cluster in
 Docker, does not find it, and exits 0 without deleting anything — leaving the
 name clash this step exists to prevent.
 
+[Troubleshooting a Site Bootstrap](../cli/docs/bootstrap-troubleshooting.md)
+covers what is in `cluster-diagnostics/`, how to read the error, and the
+common failures with their fixes.
+
 ### 5. Install an infrastructure provider
 
 Install Cluster API and CAPNICo onto the site cluster **before** the site
