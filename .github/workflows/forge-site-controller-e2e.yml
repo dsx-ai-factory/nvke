@@ -128,14 +128,16 @@ jobs:
     # runners for the whole class, another reason this lane is manual.
     runs-on: arc-amd64-cpu16
     # A dispatch is already a deliberate act. A pull_request run has to be
-    # asked for with the `forge-e2e` label, and has to come from a branch in
+    # asked for by adding the `forge-e2e` label -- the label on this event,
+    # not any label the PR carries, so adding an unrelated label to a PR that
+    # already has `forge-e2e` does not take a machine -- and has to come from a branch in
     # this repository -- a fork PR reaches neither the secrets nor the join
     # token, so it would burn a runner to fail.
     if: >-
       github.repository == 'dsx-ai-factory/nke' &&
       (github.event_name == 'workflow_dispatch' ||
        (github.event.pull_request.head.repo.full_name == github.repository &&
-        contains(github.event.pull_request.labels.*.name, 'forge-e2e')))
+        github.event.label.name == 'forge-e2e'))
     # Measured phases from the recorded SBOM run: ~17 min to create the instance,
     # ~10 to stage assets, ~5 to bootstrap, ~8 to install the management
     # plane, ~20 per tenant. Call it 60 for `full`, doubled for a cold run and
@@ -595,6 +597,14 @@ jobs:
             "NGC org|FORGE_E2E_NGC_ORG||VAR_NGC_ORG|FORGE_E2E_NGC_ORG"
             "Teleport proxy|FORGE_TELEPORT_PROXY||VAR_TELEPORT_PROXY|FORGE_TELEPORT_PROXY"
             "jump host|FORGE_JUMP_HOST||VAR_JUMP_HOST|FORGE_JUMP_HOST"
+            "Teleport join token|FORGE_TELEPORT_JOIN_TOKEN||FORGE_TELEPORT_JOIN_TOKEN|FORGE_TELEPORT_JOIN_TOKEN"
+            "Forge org|FORGE_ORG_ID||FORGE_ORG_ID|FORGE_ORG_ID"
+            "Forge site|FORGE_SITE_ID||FORGE_SITE_ID|FORGE_SITE_ID"
+            "Forge VPC|FORGE_VPC_ID||FORGE_VPC_ID|FORGE_VPC_ID"
+            "Forge subnet|FORGE_SUBNET_ID||FORGE_SUBNET_ID|FORGE_SUBNET_ID"
+            "Forge SSH key group|FORGE_SSH_KEY_GROUP_ID||FORGE_SSH_KEY_GROUP_ID|FORGE_SSH_KEY_GROUP_ID"
+            "CPU instance type|FORGE_INSTANCE_TYPE_CPU_ID||FORGE_INSTANCE_TYPE_CPU_ID|FORGE_INSTANCE_TYPE_CPU_ID"
+            "GPU instance type|FORGE_INSTANCE_TYPE_GPU_ID||FORGE_INSTANCE_TYPE_GPU_ID|FORGE_INSTANCE_TYPE_GPU_ID"
           )
 
           # A row nobody remembers to add is the whole failure mode: the
@@ -629,11 +639,16 @@ jobs:
               IFS='|' read -r label resolved input var varname <<<"${row}"
               value="${!resolved:-}"
               [ -n "${value}" ] || value="<unset>"
-              # The one row whose value is withheld. This file is an artifact
+              # The rows whose values are withheld. This file is an artifact
               # and outlives the run; what an operator needs from it is that
-              # the jump host resolved and where it came from, both of which
-              # survive. Whether it was set is the part that is diagnostic.
-              if [ "${resolved}" = "FORGE_JUMP_HOST" ] && [ "${value}" != "<unset>" ]; then
+              # the jump host and join token resolved and where they came
+              # from, both of which survive. Whether each was set is the part
+              # that is diagnostic.
+              case "${resolved}" in
+                FORGE_JUMP_HOST|FORGE_TELEPORT_JOIN_TOKEN) withhold=1 ;;
+                *) withhold=0 ;;
+              esac
+              if [ "${withhold}" = 1 ] && [ "${value}" != "<unset>" ]; then
                 value="<set, withheld>"
               fi
               if [ -n "${input}" ] && [ -n "${!input:-}" ]; then

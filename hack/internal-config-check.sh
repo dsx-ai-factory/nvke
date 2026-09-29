@@ -40,7 +40,7 @@ cd "${ROOT}"
 # A check that cannot scan has to say so. Absent this, a runner without
 # ripgrep -- which is every GitHub-hosted Ubuntu image -- reads as a clean
 # tree, and the gate passes having looked at nothing.
-for tool in rg shasum; do
+for tool in git rg shasum; do
   if ! command -v "${tool}" >/dev/null 2>&1; then
     printf 'internal-config-check: %s is not installed, so nothing was scanned\n' "${tool}" >&2
     exit 2
@@ -88,21 +88,47 @@ declare -a SHAPES=(
   '\b10-[0-9]{1,3}-[0-9]{1,3}-[0-9]{1,3}\.[a-z]|management address embedded in a hostname'
 )
 
+# The scan covers what git would ship: every tracked file, plus untracked
+# files that no ignore rule covers. It is a file list rather than ripgrep's own
+# walk because the walk honors .gitignore even with --hidden, so a tracked file
+# under an ignored path would go unscanned while the gate reported clean.
+# Ignored untracked files stay out on purpose: that is where a local
+# e2e-config.yaml keeps the real identifiers this check keeps out of the tree.
+#
 # vendor/ is third-party source, verbatim. The sum and lock files are
-# content-addressed upstream artifacts. This file is excluded from the shape
-# pass because it describes the shapes it looks for.
-readonly -a EXCLUDES=(
-  --glob '!vendor/**'
-  --glob '!.git/**'
-  --glob '!**/*.sum'
-  --glob '!**/*.lock'
-  --glob '!hack/internal-config-check.sh'
-  # An NGC org appears in the chart repository URL this installs from, which a
-  # consumer of the dev charts needs in order to resolve them. Tracked to move
-  # to a variable with the rest; exempt by path so the check is actionable
-  # today rather than red for something nobody is about to change.
-  --glob '!controller/hack/nico-provider/install-capnico.sh'
-)
+# content-addressed upstream artifacts. This file is excluded because it
+# describes the shapes it looks for.
+shipped_files() {
+  local path
+  git ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' path; do
+    # Tracked but deleted in the working tree: there is nothing to read.
+    [[ -f "${path}" ]] || continue
+    case "${path}" in
+    vendor/* | *.sum | *.lock | hack/internal-config-check.sh) continue ;;
+    # An NGC org appears in the chart repository URL this installs from, which
+    # a consumer of the dev charts needs in order to resolve them. Tracked to
+    # move to a variable with the rest; exempt by path so the check is
+    # actionable today rather than red for something nobody is about to change.
+    controller/hack/nico-provider/install-capnico.sh) continue ;;
+    esac
+    printf './%s\0' "${path}"
+  done
+}
+
+# scan runs ripgrep with the given arguments over shipped_files, leaving its
+# output in SCAN_OUT and 0 (matches), 1 (none) or 2 (ripgrep failed) in
+# SCAN_STATUS. xargs may split the list across several ripgrep runs, and GNU
+# and BSD xargs report a run's "no match" with different statuses, so each run
+# maps its own 1 to success and only a real failure reaches xargs. Whether
+# anything matched is read from the output.
+scan() {
+  # shellcheck disable=SC2016
+  if SCAN_OUT="$(shipped_files | xargs -0 -r sh -c 'rg "$@"; s=$?; [ "${s}" -le 1 ] || exit 255' rg "$@")"; then
+    if [[ -n "${SCAN_OUT}" ]]; then SCAN_STATUS=0; else SCAN_STATUS=1; fi
+  else
+    SCAN_STATUS=2
+  fi
+}
 
 FAILED=0
 
@@ -112,18 +138,19 @@ printf 'internal-config-check: %s\n\n' "${ROOT}"
 
 # Every UUID in the tree, as path:line:value. Hashing happens per distinct
 # value rather than per occurrence, so a fixture repeated a hundred times costs
-# one hash.
-rg_status=0
-candidates="$(rg --hidden --no-heading --line-number --only-matching \
-  "${EXCLUDES[@]}" --glob '!hack/internal-config-check.sh' \
-  -- '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' .)" || rg_status=$?
+# one hash. UUIDs are case-insensitive and the digests are of the lowercase
+# spelling, so the value is lowercased before it is hashed: an identifier
+# written in capitals is the same identifier.
+scan --no-heading --with-filename --line-number --only-matching --ignore-case \
+  -e '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 # 1 is "the tree holds no identifier-shaped token", which is a pass. Anything
 # above that is ripgrep itself failing, and a scan that did not run is not a
 # clean tree.
-if (( rg_status > 1 )); then
-  printf 'internal-config-check: ripgrep exited %d while scanning for identifiers\n' "${rg_status}" >&2
+if (( SCAN_STATUS > 1 )); then
+  printf 'internal-config-check: ripgrep failed while scanning for identifiers\n' >&2
   exit 2
 fi
+candidates="$(printf '%s\n' "${SCAN_OUT}" | awk -F: 'BEGIN { OFS = ":" } NF { $NF = tolower($NF); print }')"
 
 matched=""
 while IFS= read -r value; do
@@ -150,19 +177,20 @@ for entry in "${SHAPES[@]}"; do
   pattern="${entry%|*}"
   label="${entry##*|}"
 
-  rg_status=0
-  hits="$(rg --pcre2 --hidden --no-heading --line-number "${EXCLUDES[@]}" -- "${pattern}" .)" || rg_status=$?
-  case "${rg_status}" in
+  scan --pcre2 --no-heading --with-filename --line-number --only-matching -e "${pattern}"
+  case "${SCAN_STATUS}" in
   0)
     printf '  FAIL  %s\n' "${label}"
-    printf '%s\n' "${hits}" | sed 's/^/        /'
+    # Locations only, as above. No shape here matches a colon, so the last
+    # field is the matched value and everything before it is path:line.
+    printf '%s\n' "${SCAN_OUT}" | sed 's/:[^:]*$//' | sort -u | sed 's/^/        /'
     FAILED=1
     ;;
   1)
     printf '  ok    no %s\n' "${label}"
     ;;
   *)
-    printf 'internal-config-check: ripgrep exited %d while checking for %s\n' "${rg_status}" "${label}" >&2
+    printf 'internal-config-check: ripgrep failed while checking for %s\n' "${label}" >&2
     exit 2
     ;;
   esac

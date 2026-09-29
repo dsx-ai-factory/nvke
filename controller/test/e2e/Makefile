@@ -59,10 +59,12 @@ SITE_CONTROLLER_BUILD ?= 1
 # and the build dies on `invalid tag "nvcr.io/j7sbcjl3qgta/nke-controller:"`.
 # image-nvcr.yml passes GITHUB_SHA for the same reason.
 #
-# Also passed as BUILD_VERSION, which is a different thing and has to agree.
-# GIT_VERSION only names the image; BUILD_VERSION is what the ldflags bake
-# into version.Version, so it is what the running CWE reports and what the
-# suite compares against. Left to itself the controller Makefile derives it
+# BUILD_VERSION is a different thing: GIT_VERSION only names the image, while
+# BUILD_VERSION is what the ldflags bake into version.Version, so it is what
+# the running CWE reports and what the suite compares against
+# -e2e.versions=controller= with. It is SITE_CONTROLLER_VERSION, the same
+# value the image is tagged with and the suite is told to expect, so the three
+# cannot disagree. Left to itself the controller Makefile derives it
 # from `git describe --always`, which abbreviates to seven characters on a
 # checkout with no controller/v* tag in reach -- so run 36045936723 deployed
 # the stack successfully and then failed on
@@ -77,7 +79,7 @@ site-inputs: ## Build the nkectl and image archives the site lane stages. Needs 
 	$(MAKE) -C "$(REPO_ROOT)/cli" build-cross NKECTL_PLATFORMS=linux/$(SITE_ARCH)
 ifeq ($(SITE_CONTROLLER_BUILD),1)
 	@test "$(SITE_ARCH)" = amd64 || { echo "SITE_CONTROLLER_BUILD=1 builds linux/amd64 only (docker build --load takes one platform); set SITE_CONTROLLER_BUILD=0 for $(SITE_ARCH)" >&2; exit 1; }
-	$(MAKE) -C "$(REPO_ROOT)/controller" docker-build-local IMG=$(SITE_CONTROLLER_IMAGE) GIT_VERSION=$(SITE_CONTROLLER_COMMIT) BUILD_VERSION=$(SITE_CONTROLLER_COMMIT)
+	$(MAKE) -C "$(REPO_ROOT)/controller" docker-build-local IMG=$(SITE_CONTROLLER_IMAGE) GIT_VERSION=$(SITE_CONTROLLER_COMMIT) BUILD_VERSION=$(SITE_CONTROLLER_VERSION)
 else
 	docker pull --platform linux/$(SITE_ARCH) $(SITE_CONTROLLER_IMAGE)
 endif

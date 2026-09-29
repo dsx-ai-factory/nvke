@@ -207,5 +207,5 @@ jobs:
       - name: Record the published digest
         uses: ./.github/actions/record-digest
         with:
-          references: ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}
+          references: ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}
           component: nke-agent-nvcr

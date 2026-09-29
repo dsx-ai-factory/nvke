@@ -245,6 +245,61 @@ func TestJumpOverSSHRejectsWrongPassword(t *testing.T) {
 	}
 }
 
+// A jump host that accepts TCP and never speaks SSH must not hang the relay:
+// nothing above it can interrupt a stalled handshake, so an unbounded one
+// holds ProvisionNode until the test binary's own backstop kills it.
+func TestJumpOverSSHBoundsAStalledHandshake(t *testing.T) {
+	stalled := make(chan struct{})
+	t.Cleanup(func() { close(stalled) })
+	silent := func(conn net.Conn) {
+		<-stalled
+		_ = conn.Close()
+	}
+	port := serveTCP(t, silent)
+
+	for name, tc := range map[string]struct {
+		timeout time.Duration
+		ctx     func() (context.Context, context.CancelFunc)
+	}{
+		"deadline": {
+			timeout: 200 * time.Millisecond,
+			ctx:     func() (context.Context, context.CancelFunc) { return context.WithCancel(context.Background()) },
+		},
+		"context": {
+			timeout: time.Minute,
+			ctx: func() (context.Context, context.CancelFunc) {
+				return context.WithTimeout(context.Background(), 200*time.Millisecond)
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			j := SSHJumpHost{
+				User: testJumpUser, Password: testJumpPassword,
+				Port: port, DialTimeout: tc.timeout, warnf: func(string, ...any) {},
+			}
+			ctx, cancel := tc.ctx()
+			defer cancel()
+
+			done := make(chan error, 1)
+			go func() {
+				conn, err := j.relay(ctx, "127.0.0.1", "10.0.0.7")
+				if conn != nil {
+					_ = conn.Close()
+				}
+				done <- err
+			}()
+			select {
+			case err := <-done:
+				if err == nil {
+					t.Fatal("relay succeeded against a jump host that never answered")
+				}
+			case <-time.After(10 * time.Second):
+				t.Fatal("relay did not return against a stalled jump host")
+			}
+		})
+	}
+}
+
 // Forwarding refused is indistinguishable from the machine not listening
 // unless the error says so, and the jump host's configuration is the more
 // likely cause on a first run.

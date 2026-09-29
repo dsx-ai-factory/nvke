@@ -130,6 +130,10 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		default:
 			Fail(fmt.Sprintf("-e2e.site-stage %q is not provision, bootstrap or full", siteStage))
 		}
+		// An archive an earlier run left behind describes another node.
+		if err := os.Remove(siteDiagnostics); err != nil && !errors.Is(err, os.ErrNotExist) {
+			Fail(fmt.Sprintf("removing a stale %s: %v", siteDiagnostics, err))
+		}
 		lane = expectSucceed(newSiteLane())
 	})
 
@@ -382,6 +386,9 @@ func sessionRelay(session infra.Session) kube.EndpointRelay {
 // suite runs from, so CI picks it up with the rest of the run's record.
 const siteDiagnostics = "site-diagnostics.tar.gz"
 
+// siteDiagnosticsCollected is set once this run has written siteDiagnostics.
+var siteDiagnosticsCollected bool
+
 // collectSiteDiagnostics pulls the node's diagnostics off before teardown
 // releases it. Best effort and never fails the spec: the failure that
 // prompted it is the finding, and losing the diagnostics must not replace it
@@ -394,7 +401,7 @@ const siteDiagnostics = "site-diagnostics.tar.gz"
 // before it is saved: the workflow uploads it as an artifact, so it outlives
 // the node and the credentials' scope.
 func collectSiteDiagnostics(ctx context.Context, session infra.Session, secrets ...string) {
-	if _, err := os.Stat(siteDiagnostics); err == nil {
+	if siteDiagnosticsCollected {
 		return
 	}
 	// Detached, because a spec that failed on its own timeout has a context
@@ -409,6 +416,7 @@ func collectSiteDiagnostics(ctx context.Context, session infra.Session, secrets 
 		GinkgoLogr.Error(err, "could not collect the node's diagnostics")
 		return
 	}
+	siteDiagnosticsCollected = true
 	GinkgoLogr.Info("collected the node's diagnostics", "path", siteDiagnostics)
 }
 

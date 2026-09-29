@@ -229,8 +229,8 @@ jobs:
         uses: ./.github/actions/record-digest
         with:
           references: |
-            ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}-linux-amd64
-            ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}-linux-arm64
-            ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}-darwin-amd64
-            ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}-darwin-arm64
+            ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}-linux-amd64
+            ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}-linux-arm64
+            ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}-darwin-amd64
+            ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}-darwin-arm64
           component: nkectl-nvcr-${{ matrix.destination }}

@@ -50,8 +50,8 @@ type SSHJumpHost struct {
 	// Port is the jump host's SSH port. Empty is 22.
 	Port string
 
-	// DialTimeout bounds reaching the jump host and completing its
-	// handshake. Zero is 30s.
+	// DialTimeout bounds reaching the jump host, and separately its SSH
+	// handshake plus opening the forwarded channel. Zero is 30s.
 	DialTimeout time.Duration
 
 	// warnf receives the unpinned-host-key warning. Nil writes to stderr,
@@ -109,11 +109,18 @@ func (j SSHJumpHost) relay(ctx context.Context, jumpHost, address string) (net.C
 		return nil, fmt.Errorf("dialing jump host %s: %w", addr, err)
 	}
 
+	// ClientConfig.Timeout is honored only by ssh.Dial, not NewClientConn, so
+	// a jump host that accepts TCP and then stalls would hang the handshake
+	// or the channel open with no limit. The deadline bounds both, and ctx
+	// can still cut them short by closing the connection underneath them.
+	_ = tcp.SetDeadline(time.Now().Add(j.timeout()))
+	stop := context.AfterFunc(ctx, func() { _ = tcp.Close() })
+	defer stop()
+
 	cfg := &ssh.ClientConfig{
 		User:            j.User,
 		Auth:            j.authMethods(),
 		HostKeyCallback: j.hostKeyCallback(),
-		Timeout:         j.timeout(),
 	}
 	conn, chans, reqs, err := ssh.NewClientConn(tcp, addr, cfg)
 	if err != nil {
@@ -131,6 +138,12 @@ func (j SSHJumpHost) relay(ctx context.Context, jumpHost, address string) (net.C
 			"(the jump host may have AllowTcpForwarding off, or the machine is not listening yet)",
 			jumpHost, address, sshPort, err)
 	}
+	if !stop() {
+		_ = client.Close()
+		return nil, fmt.Errorf("dialing through jump host %s: %w", addr, ctx.Err())
+	}
+	// The stream outlives the dial, so the setup deadline must not.
+	_ = tcp.SetDeadline(time.Time{})
 	return &jumpConn{Conn: stream, client: client}, nil
 }
 
