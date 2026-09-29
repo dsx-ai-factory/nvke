@@ -183,6 +183,11 @@ retry_until "object-state metrics arrive" \
 retry_until "pod logs reach Loki" \
   logql_nonempty 'sum by (k8s_namespace_name) (count_over_time({k8s_namespace_name=~"kube-system|nktp"}[15m]))'
 
+# The node's systemd journal reaches Loki through the node Collector's journald
+# receiver, which runs the node's own journalctl.
+retry_until "node journal logs reach Loki" \
+  logql_nonempty 'sum(count_over_time({service_name="journald"}[15m]))'
+
 # Kubernetes events reach Loki through the cluster-events Collector.
 retry_until "Kubernetes events reach Loki" \
   logql_nonempty 'sum(count_over_time({service_name="unknown_service"} | k8s_event_reason=~".+" [15m]))'

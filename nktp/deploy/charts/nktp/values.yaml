@@ -700,6 +700,7 @@ daemonset:
       readOnlyRootFilesystem: true
       capabilities:
         drop: [ALL]
+        add: [SYS_CHROOT] # Run the host journalctl with its own libraries.
     volumes:
       - name: pod-logs
         hostPath:
@@ -709,12 +710,59 @@ daemonset:
         hostPath:
           path: /proc
           type: Directory
+      # journalctl and its libraries are supplied by the node. /lib64 can be absent on ARM.
+      - name: journalctl
+        hostPath:
+          path: /usr/bin/journalctl
+          type: File
+      - name: host-lib
+        hostPath:
+          path: /lib
+          type: Directory
+      - name: host-lib64
+        hostPath:
+          path: /lib64
+          type: DirectoryOrCreate
+      - name: host-usr-lib
+        hostPath:
+          path: /usr/lib
+          type: Directory
+      - name: host-machine-id
+        hostPath:
+          path: /etc/machine-id
+          type: File
+      # Mount the parent directory because audit files may be absent on workers.
+      - name: host-logs
+        hostPath:
+          path: /var/log
+          type: Directory
     volumeMounts:
       - name: pod-logs
         mountPath: /var/log/pods
         readOnly: true
       - name: host-proc
         mountPath: /hostfs/proc
+        readOnly: true
+      - name: journalctl
+        mountPath: /hostfs/usr/bin/journalctl
+        readOnly: true
+      - name: host-lib
+        mountPath: /hostfs/lib
+        readOnly: true
+      - name: host-lib64
+        mountPath: /hostfs/lib64
+        readOnly: true
+      - name: host-lib64
+        mountPath: /hostfs/usr/lib64
+        readOnly: true
+      - name: host-usr-lib
+        mountPath: /hostfs/usr/lib
+        readOnly: true
+      - name: host-machine-id
+        mountPath: /hostfs/etc/machine-id
+        readOnly: true
+      - name: host-logs
+        mountPath: /hostfs/var/log
         readOnly: true
   otelcol:
     # Set a custom image for this workload only.
@@ -733,6 +781,25 @@ daemonset:
               endpoint: 0.0.0.0:4317
             http:
               endpoint: 0.0.0.0:4318
+        journald:
+          root_path: /hostfs
+          journalctl_path: /usr/bin/journalctl
+          directory: /var/log/journal # Relative to root_path. Override for nodes using runtime journals.
+          start_at: end
+          priority: info
+          retry_on_failure:
+            enabled: true
+            max_elapsed_time: 0
+          operators:
+            - id: identify-journal-producer
+              type: add
+              field: resource["service.name"]
+              value: journald
+            - id: classify-host-auth
+              type: add
+              if: 'body.SYSLOG_IDENTIFIER == "sshd" || body.SYSLOG_IDENTIFIER == "sudo"'
+              field: resource["nvidia.telemetry.class"]
+              value: system.auth
         filelog:
           include: [/var/log/pods/*/*/*.log]
           exclude:
@@ -746,6 +813,43 @@ daemonset:
             max_elapsed_time: 0 # Retry downstream transient failures until recovery. Permanent errors are dropped.
           operators:
             - type: container
+            # Classify the existing reader's entries instead of reading the same
+            # control plane files a second time.
+            - id: classify-control-plane
+              type: add
+              if: >-
+                resource["k8s.namespace.name"] == "kube-system" &&
+                ((resource["k8s.container.name"] == "kube-apiserver" && resource["k8s.pod.name"] matches "^kube-apiserver-") ||
+                (resource["k8s.container.name"] == "kube-controller-manager" && resource["k8s.pod.name"] matches "^kube-controller-manager-") ||
+                (resource["k8s.container.name"] == "kube-scheduler" && resource["k8s.pod.name"] matches "^kube-scheduler-") ||
+                (resource["k8s.container.name"] == "etcd" && resource["k8s.pod.name"] matches "^etcd-"))
+              field: resource["nvidia.telemetry.class"]
+              value: k8s.control_plane
+        filelog/host-auth:
+          include: [/hostfs/var/log/auth.log, /hostfs/var/log/secure]
+          start_at: end
+          include_file_path: true
+          retry_on_failure: {enabled: true, max_elapsed_time: 0}
+          resource:
+            nvidia.telemetry.class: system.auth
+            service.name: auth
+        filelog/host-audit:
+          include: [/hostfs/var/log/audit/audit.log]
+          start_at: end
+          include_file_path: true
+          retry_on_failure: {enabled: true, max_elapsed_time: 0}
+          resource:
+            nvidia.telemetry.class: system.audit
+            service.name: auditd
+        filelog/kube-api-audit:
+          # Must match the API server's audit-log-path on the node.
+          include: [/hostfs/var/log/kubernetes/audit/audit.log]
+          start_at: end
+          include_file_path: true
+          retry_on_failure: {enabled: true, max_elapsed_time: 0}
+          resource:
+            nvidia.telemetry.class: k8s.api.audit
+            service.name: kube-apiserver
         filelog/targetallocator:
           include: ["/var/log/pods/${env:POD_NAMESPACE}_nktp-*-targetallocator-*_*/ta-container/*.log"]
           start_at: beginning # Include allocator startup diagnostics.
@@ -920,7 +1024,7 @@ daemonset:
                       endpoint: http://nktp-watchdog-collector:4318
         pipelines:
           logs:
-            receivers: [filelog, otlp]
+            receivers: [filelog, journald, otlp, filelog/host-auth, filelog/host-audit, filelog/kube-api-audit]
             processors: [memory_limiter, resource/node]
             exporters: [otlp_http/logs]
           logs/targetallocator:

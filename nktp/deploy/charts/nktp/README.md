@@ -46,7 +46,7 @@ there too. The watchdog sends its own telemetry to the backend.
 |---|---|
 | `watchdog` | Receives the other Collectors' own telemetry over OTLP at `nktp-watchdog-collector:4318` and forwards it to the backend. Scrapes the Operator. |
 | `gateway_logs`, `gateway_metrics`, `gateway_traces` | The OTLP entry points, one per signal, at `nktp-gateway-<signal>-collector:4317` (gRPC) and `:4318` (HTTP). Forward to the backend. Two replicas each by default, autoscaling up to 64. |
-| `daemonset` | One Collector per node. Reads pod logs under `/var/log/pods`, scrapes the local kubelet and its cAdvisor endpoint, collects per-process metrics from `/proc`, scrapes the targets a node-local Target Allocator assigns from every monitor in the cluster, and forwards each signal to its gateway. Runs as root because of the host log mount. |
+| `daemonset` | One Collector per node. Reads pod logs under `/var/log/pods`, the node's systemd journal and its authentication and audit logs (see [Node logs](#node-logs)), scrapes the local kubelet and its cAdvisor endpoint, collects per-process metrics from `/proc`, scrapes the targets a node-local Target Allocator assigns from every monitor in the cluster, and forwards each signal to its gateway. Runs as root because of the host log mount. |
 | `large_target_metrics` | A pool with its own Target Allocator for monitors labelled `nktp.nvidia.io/large-target: "true"`, which is how kube-state-metrics is scraped. Two replicas by default, autoscaling up to 16. |
 | `cluster_events` | Turns Kubernetes Events into logs. Two replicas by default: a Lease the chart creates in the release namespace elects the reader, and the other stands by. |
 | `kube-state-metrics` | A DaemonSet for node-local Pod metrics, one Deployment for Pods awaiting a node, and five Deployments for the other object types, grouped as workloads, networking, storage, configuration and cluster-scoped objects. RBAC is derived from the resource types. Each group can be sharded for larger clusters. |
@@ -75,8 +75,9 @@ Target Allocators and the development backend:
 - A cluster that accepts the `opentelemetry.io/v1beta1` API. The chart installs
   the OpenTelemetry and Prometheus Operator CRDs by default.
 - A release namespace whose Pod Security admission level is `privileged`. The
-  node Collector runs as root and mounts `/var/log/pods` and `/proc` from the
-  host, which `baseline` rejects.
+  node Collector runs as root with `SYS_CHROOT`, and mounts `/var/log/pods`,
+  `/proc`, `/var/log`, the node's `journalctl` with its libraries and
+  `/etc/machine-id` from the host, which `baseline` rejects.
 - For anything beyond evaluation, a backend that accepts OTLP over HTTP for
   metrics, logs and traces. The bundled Collector image exports OTLP only. See
   [The backend](#the-backend).
@@ -132,6 +133,42 @@ daemonset:
     resource:
       enabled: true
 ```
+
+### Node logs
+
+The node Collector reads the systemd journal at `info` priority and above by
+running the node's own `/usr/bin/journalctl`, which is why it has `SYS_CHROOT`
+and read-only mounts of the node's libraries. It expects the journal in
+`/var/log/journal` and reads `/etc/machine-id`. Collection starts with new
+entries; journal cursors are not kept across Collector restarts.
+
+For a different host layout, set `root_path`, `journalctl_path` and `directory`
+under `daemonset.otelcol.config.receivers.journald`, and change
+`daemonset.kubernetes.volumes` and `volumeMounts` to match. Both are lists that
+replace the chart's whole list, so keep its other entries. A node that keeps
+its journal in memory needs a `/run/log/journal` host volume mounted at
+`/hostfs/run/log/journal` and the receiver's `directory` set to
+`/run/log/journal`, as [nktp/hack/e2e-values.yaml](../../../hack/e2e-values.yaml)
+does for Kind.
+
+### Log classification
+
+Logs from some sources carry a `nvidia.telemetry.class` resource attribute, so
+the backend can route them without parsing their content. Every record from a
+classified source gets the same class.
+
+| Source | Class | `service.name` | Recognized by |
+| --- | --- | --- | --- |
+| sudo and SSH journal entries | `system.auth` | `journald` | Journal identifier `sudo` or `sshd` |
+| `/var/log/auth.log`, `/var/log/secure` | `system.auth` | `auth` | Every record in the file |
+| `/var/log/audit/audit.log` | `system.audit` | `auditd` | Every record in the file |
+| Kubernetes control-plane Pods | `k8s.control_plane` | not set | `kube-apiserver`, `kube-controller-manager`, `kube-scheduler` and `etcd` containers in `kube-system` Pods with matching name prefixes |
+| `/var/log/kubernetes/audit/audit.log` | `k8s.api.audit` | `kube-apiserver` | Every record in the file |
+
+Other logs carry no class. The API server writes an audit log only where audit
+logging is on, and only at the path its `audit-log-path` sets; point
+`daemonset.otelcol.config.receivers.filelog/kube-api-audit.include` at that
+path when it differs.
 
 ### The backend
 
