@@ -4,13 +4,13 @@ NKE is a management plane. A **site controller** — one durable Kubernetes
 cluster, also called a cell — mints **tenant clusters** on demand, each with its
 own control plane, etcd and nodes. `nkectl` is how you drive it.
 
-Three paths. Start with A.
+Three paths — pick the one that matches what you have:
 
-| Path | Needs | Gets you |
-|---|---|---|
-| [**A — the API alone**](#path-a--the-api-alone) | Go, Docker, kind | CWE running and its API to explore, in minutes. No tenant clusters. |
-| [**B — a tenant cluster with mock NICo**](#path-b--a-tenant-cluster-with-mock-nico) | Docker, kind, ~16 GB free, and either a CAPNICo checkout or an NGC account | The real create-a-cluster loop against real CAPNICo, no hardware |
-| [**C — a real site**](#path-c--a-real-site) | Imaged nodes, nerdctl, a NICo site | A site controller minting CAPNICo-backed tenant clusters |
+| Path | Who it's for | Needs | Gets you |
+|---|---|---|---|
+| [**C — a real site**](#path-c--a-real-site) | **Operators** standing up a production NKE site | Imaged nodes, nerdctl, a NICo site | A site controller minting CAPNICo-backed tenant clusters |
+| [**B — a tenant cluster with mock NICo**](#path-b--a-tenant-cluster-with-mock-nico) | **Contributors** testing the full create-cluster loop without hardware | Docker, kind, ~16 GB free, and either a CAPNICo checkout or an NGC account | The real create-a-cluster loop against real CAPNICo, no hardware |
+| [**A — the API alone**](#path-a--the-api-alone) | **Contributors** exploring the CWE REST API | Go, Docker, kind | CWE running and its API to explore, in minutes. No tenant clusters. |
 
 ## Before you start
 
@@ -429,7 +429,7 @@ teardown cannot be helped along through the API.
 
 ## See also
 
-- [getting-started.md](getting-started.md) — building and testing the modules
+- [getting-started.md](getting-started.md) — building and testing the modules (contributor / local dev)
 - [concepts.md](concepts.md) — the vocabulary, one page
 - [architecture.md](architecture.md) — how CWE, the agent and CAPI fit together
 - [../cli/docs/sitespec.md](../cli/docs/sitespec.md) — every site spec field
