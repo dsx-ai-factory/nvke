@@ -413,7 +413,7 @@ func TestSiteRequiresAnIDOnEveryInstanceType(t *testing.T) {
 	if err == nil {
 		t.Fatal("a shape with no id should invalidate the site")
 	}
-	if !strings.Contains(err.Error(), `an id for instance type "cpu.amd"`) {
+	if !strings.Contains(err.Error(), "instanceTypes[cpu.amd].id") {
 		t.Errorf("error should name the shape, got %v", err)
 	}
 }
