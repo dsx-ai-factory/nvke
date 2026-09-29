@@ -45,9 +45,8 @@ type Component struct {
 	Images map[string]Image `yaml:"images,omitempty"`
 }
 
-// Chart names a Helm chart by repository, name and version, or by Ref.
+// Chart names a Helm chart by repository, name and version.
 type Chart struct {
-	Ref     string `yaml:"ref,omitempty"`
 	Repo    string `yaml:"repo,omitempty"`
 	Name    string `yaml:"name,omitempty"`
 	Version string `yaml:"version,omitempty"`
