@@ -130,11 +130,21 @@ on:
 permissions: {}
 
 concurrency:
-  # One at a time across the whole repository, and never cancelled. Two
-  # concurrent runs would exhaust the site, and cancelling one mid-flight leaks
-  # its instance. Not keyed on ref: the constraint is the hardware, which is
-  # shared by every branch.
-  group: Forge site controller e2e
+  # One at a time per site, and never cancelled. Two concurrent runs against
+  # one site would exhaust it -- az61 reserves three CPU machines and a run
+  # takes two -- and cancelling one mid-flight leaks its instance, because
+  # teardown is the suite's and the runner dies with the job.
+  #
+  # Not keyed on ref: the constraint is hardware, which every branch shares.
+  # Keyed on the capabilities instead, because those choose the site and are
+  # the only thing here that knows which one: the resolution itself happens in
+  # the suite, against environments/forge.yaml, long after this is evaluated.
+  # That makes this a proxy rather than the real key. Two runs asking for
+  # different capabilities that happen to resolve to the same site would run
+  # concurrently and could exhaust it. Today nothing does -- gb200 is ytl and
+  # everything else is az61 -- but declaring a second GPU shape at an existing
+  # site would break that, and the fix then is an explicit site input.
+  group: Forge site controller e2e ${{ inputs.arch || vars.FORGE_E2E_ARCH || 'amd64' }} ${{ inputs.gpu || vars.FORGE_E2E_GPU }}
   cancel-in-progress: false
 
 jobs:
