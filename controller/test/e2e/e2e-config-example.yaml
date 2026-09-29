@@ -20,6 +20,17 @@
 #   preserveOnFailure: false  # keep the cluster only when a spec fails
 #   reuseCluster: ""          # non-empty -> verify this existing cluster, skip create
 
+# The machines an infrastructure provider creates, rather than what is built
+# on them. The same shape carries a site controller and the tenant nodes it
+# goes on to provision, so this sits outside site.
+# node:
+#   # The account the OS image bakes, which is the login every session uses.
+#   # "" is what the OSS os-image releases bake; images from the internal
+#   # pipeline bake dgxc-admin. It has to match the image named by
+#   # -e2e.versions os-image, or cloud-init writes authorized_keys for an
+#   # account that does not exist.
+#   user: ""            # "" -> ubuntu
+
 # The site lane builds a site controller on a Forge node (-e2e.site-stage=
 # provision|bootstrap|full). `gmake site-inputs SITE_CONTROLLER_VERSION=...`
 # builds nkectl and the image archives below, pulling the published images
@@ -30,7 +41,11 @@
 #
 # This block names only where artifacts come from. Component versions are
 # -e2e.versions keys (controller, capi-provisioned, os-image,
-# os-image-bootloader). The jump host and its login are the site's and live in
+# os-image-bootloader). The two OS-image keys may be suffixed with an
+# architecture, as os-image-arm64, which is how one run boots two: a GB200
+# tenant puts arm64 workers behind an amd64 control plane, and each role boots
+# the image built for its own machine. The unsuffixed key is what a run on one
+# architecture passes, and is used when no suffixed one is given. The jump host and its login are the site's and live in
 # environments/<name>.yaml, from FORGE_JUMP_HOST and FORGE_TELEPORT_LOGIN.
 # site:
 #   deployPathRef: ""   # "" -> the controller version's commit, or its

@@ -60,7 +60,11 @@ const (
 // Images resolves the Node version under qualification to the two URLs the
 // iPXE script boots: the qcow imager and the image it writes. Both must be
 // plain HTTPS, since iPXE cannot pull an OCI artifact.
-type Images func(nodeVersion string) (bootLoaderURL, imageURL string, err error)
+//
+// The architecture is a parameter because a run can span two: the machine
+// being created decides which image it needs, and only the provider knows
+// which machine that is.
+type Images func(nodeVersion, arch string) (bootLoaderURL, imageURL string, err error)
 
 // Conn is a connection to a node. It is everything a Session does except
 // release the machine, which is the provider's.
@@ -106,6 +110,12 @@ type Options struct {
 
 	Images Images
 	Dialer Dialer
+	// NodeUser is the account the OS image bakes, and the login every
+	// session uses. Empty is the OSS os-image default; an internal-pipeline
+	// image needs its own. It must match the image or cloud-init writes
+	// authorized_keys for an account that does not exist.
+	NodeUser string
+
 	// JumpHost is the Teleport node the site's machines are reached through.
 	// They are not Teleport-enrolled themselves, so it is the only route to
 	// one. It comes from the runner, not the environment file, so the access
@@ -309,8 +319,17 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	if err != nil {
 		return fail(err)
 	}
-	conn, err := p.waitReachable(ctx, teleport.Target{JumpHost: p.opts.JumpHost, Address: address, User: nodeUser, Signer: signer})
+	conn, err := p.waitReachable(ctx, teleport.Target{JumpHost: p.opts.JumpHost, Address: address, User: p.nodeUser(), Signer: signer})
 	if err != nil {
+		// A key this run generated moments ago is not rejected by chance.
+		// sshd answering and refusing publickey means cloud-init wrote
+		// authorized_keys somewhere else, which is what a node.user that
+		// does not match the account the OS image bakes looks like. Say so
+		// here: the alternative is a bare auth error after the whole
+		// provisioning wait, with nothing naming the setting to change.
+		if strings.Contains(err.Error(), "unable to authenticate") {
+			err = fmt.Errorf("%w\n\tthe node answered but refused this run's key, so cloud-init likely wrote authorized_keys for a different account: check node.user (%q) against the account %s bakes", err, p.nodeUser(), req.Name)
+		}
 		return fail(err)
 	}
 	if out, err := conn.Run(ctx, "cloud-init status --wait"); err != nil {
@@ -324,12 +343,21 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 // payloads returns the iPXE script and the cloud-init user data, in that
 // order.
 func (p *Provider) payloads(req infra.NodeRequest, instanceType environment.ForgeInstanceType, authorizedKey string) (string, string, error) {
-	bootLoader, image, err := p.opts.Images(req.NodeVersion)
-	if err != nil {
-		return "", "", fmt.Errorf("forge: resolving the image for node version %q: %w", req.NodeVersion, err)
+	// Resolved first: it selects the image, the console and kernel parameters
+	// the iPXE script sets, and the host tools. The instance type is the only
+	// thing here that knows which machine is being created.
+	arch := instanceType.Arch()
+	if arch == "" {
+		return "", "", fmt.Errorf("forge: instance type %s declares no arch, so neither boot parameters nor host tools can be chosen for it", instanceType.Name)
 	}
+	bootLoader, image, err := p.opts.Images(req.NodeVersion, arch)
+	if err != nil {
+		return "", "", fmt.Errorf("forge: resolving the %s image for node version %q: %w", arch, req.NodeVersion, err)
+	}
+
 	inputs := p.opts.Node
 	inputs.BootLoaderURL, inputs.ImageURL = bootLoader, image
+	inputs.Arch = arch
 	if p.opts.DisableMTLS {
 		inputs.AgentArgs = "--secure-server-port 15005 --disable-mtls"
 	}
@@ -337,16 +365,12 @@ func (p *Provider) payloads(req infra.NodeRequest, instanceType environment.Forg
 	if err != nil {
 		return "", "", fmt.Errorf("forge: %w", err)
 	}
-
-	arch := instanceType.Provides["arch"]
-	if arch == "" {
-		return "", "", fmt.Errorf("forge: instance type %s declares no arch, so no host tools can be chosen for it", instanceType.Name)
-	}
 	userData, err := renderUserData(userDataInputs{
 		Hostname:      req.Name,
 		AuthorizedKey: authorizedKey,
 		Arch:          arch,
 		NodeCommands:  node.PreKubeadmCommands,
+		NodeUser:      p.nodeUser(),
 		Tools:         p.opts.Tools,
 	})
 	if err != nil {
@@ -355,12 +379,16 @@ func (p *Provider) payloads(req infra.NodeRequest, instanceType environment.Forg
 	return node.IPXEScript, userData, nil
 }
 
-// interfaces attaches the instance to the site's subnet. A VPC exposes
-// subnets or prefixes according to its network virtualization, never both;
-// only subnets are declared today.
+// interfaces attaches the instance to the site's network. A VPC exposes
+// subnets or prefixes according to its network virtualization, never both,
+// so the site declares whichever one its fabric uses and this follows it.
 func (p *Provider) interfaces() []standard.InterfaceCreateRequest {
 	iface := standard.NewInterfaceCreateRequest()
-	iface.SetSubnetId(p.site.SubnetID)
+	if p.site.VpcPrefixID != "" {
+		iface.SetVpcPrefixId(p.site.VpcPrefixID)
+	} else {
+		iface.SetSubnetId(p.site.SubnetID)
+	}
 	iface.SetIsPhysical(true)
 	return []standard.InterfaceCreateRequest{*iface}
 }
@@ -482,6 +510,16 @@ func instanceAddress(inst *standard.Instance) string {
 		}
 	}
 	return ""
+}
+
+// nodeUser is the login for this provider's machines, defaulted once so the
+// cloud-init that writes authorized_keys and the dial that uses them cannot
+// disagree.
+func (p *Provider) nodeUser() string {
+	if u := strings.TrimSpace(p.opts.NodeUser); u != "" {
+		return u
+	}
+	return defaultNodeUser
 }
 
 func newKey() (ssh.Signer, string, error) {

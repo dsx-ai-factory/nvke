@@ -46,12 +46,12 @@ func init() {
 // below rather than re-parsing, so a malformed flag is one failure rather than
 // one per entry in the table.
 var (
-	selectionOnce  sync.Once
-	selectionValue qualification.Selection
-	errSelection   error
-	forgeOnce      sync.Once
-	forgeValue     *environment.Forge
-	errForge       error
+	selectionOnce    sync.Once
+	selectionValue   qualification.Selection
+	errSelection     error
+	environmentOnce  sync.Once
+	environmentValue *environment.Environment
+	errEnvironment   error
 )
 
 // runSelection is what this run was asked to qualify.
@@ -81,19 +81,19 @@ func runCapabilities() (map[string]string, error) {
 	return s.Capabilities, err
 }
 
-// forgeEnvironment resolves -e2e.environment as a Forge declaration. Loaded on
-// first use so the simulator backends, which need no environment, keep running
-// with the flag unset.
-func forgeEnvironment() (*environment.Forge, error) {
-	forgeOnce.Do(func() {
-		env, err := environment.Load(envName)
-		if err != nil {
-			errForge = err
-			return
-		}
-		forgeValue, errForge = env.Forge()
+// runEnvironment is the infrastructure this run was pointed at, read once.
+//
+// It stops at the generic declaration and does not decode a provider's
+// dialect, because -e2e.environment names a file rather than a backend: which
+// provider wrote it is in the file, and the specs that speak one provider's
+// vocabulary are the ones that should project it. Loaded on first use so the
+// simulator backends, which need no environment, keep running with the flag
+// unset.
+func runEnvironment() (*environment.Environment, error) {
+	environmentOnce.Do(func() {
+		environmentValue, errEnvironment = environment.Load(envName)
 	})
-	return forgeValue, errForge
+	return environmentValue, errEnvironment
 }
 
 // requireVersion reads one component's version, naming the component when the
@@ -121,6 +121,45 @@ func requireVersion(component string) (string, error) {
 
 // optionalVersion reads one component's version, returning "" when the run did
 // not name it, for the versions a caller can sensibly default.
+// requireNodeArtifacts is the OS image and its imager for one architecture.
+//
+// Both are looked up as <component>-<arch> first and then unsuffixed, so a run
+// qualifying one architecture states two keys and a mixed run states four. The
+// unsuffixed form is not a default for the other architecture: it is what a
+// single-architecture run has always passed, and dropping it would mean
+// changing every existing invocation to say something it does not care about.
+//
+// Required rather than optional because the OS image is the component under
+// qualification. A run that named none for the architecture it is about to
+// boot has not said what it is qualifying.
+func requireNodeArtifacts(arch string) (bootLoaderURL, imageURL string, err error) {
+	for _, artifact := range []struct {
+		component string
+		into      *string
+	}{
+		{"os-image-bootloader", &bootLoaderURL},
+		{"os-image", &imageURL},
+	} {
+		value, err := requireVersionForArch(artifact.component, arch)
+		if err != nil {
+			return "", "", err
+		}
+		*artifact.into = value
+	}
+	return bootLoaderURL, imageURL, nil
+}
+
+func requireVersionForArch(component, arch string) (string, error) {
+	if value := optionalVersion(component + "-" + arch); value != "" {
+		return value, nil
+	}
+	value, err := requireVersion(component)
+	if err != nil {
+		return "", fmt.Errorf("no %s-%s and %w", component, arch, err)
+	}
+	return value, nil
+}
+
 func optionalVersion(component string) string {
 	versions, err := runVersions()
 	if err != nil {

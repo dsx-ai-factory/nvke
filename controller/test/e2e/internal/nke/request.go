@@ -115,7 +115,7 @@ type ClusterSpec struct {
 	VpcID  string
 
 	// NodePayloads is required by nico-forge and ignored by everything else.
-	NodePayloads *NodePayloads
+	NodePayloads *RolePayloads
 }
 
 // NodePayloads are the two things that turn a bare machine into an NKE node:
@@ -129,6 +129,20 @@ type ClusterSpec struct {
 type NodePayloads struct {
 	IPXEScript         string
 	PreKubeadmCommands []string
+}
+
+// RolePayloads is one set per role, because a cluster's control plane and its
+// workers need not be the same architecture: a GB200 tenant puts arm64 workers
+// behind an amd64 control plane, and each boots the OS image and installs the
+// packages built for its own machine.
+//
+// Both are required rather than one defaulting to the other. A single-
+// architecture cluster passes the same value twice, which is a line of code,
+// whereas a silent fallback would let a mixed cluster boot half its nodes on
+// the wrong image and say nothing.
+type RolePayloads struct {
+	ControlPlane NodePayloads
+	Worker       NodePayloads
 }
 
 var (
@@ -201,16 +215,27 @@ func buildNicoForgeRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 		return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires node payloads: a real machine boots an image and installs packages")
 	}
 	payloads := *spec.NodePayloads
-	if payloads.IPXEScript == "" {
-		return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires an iPXE script: without one the instance boots nothing")
-	}
-	if len(payloads.PreKubeadmCommands) == 0 {
-		return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires pre-kubeadm commands: without them the node has no nke-agent")
+	for _, role := range []struct {
+		name     string
+		payloads NodePayloads
+	}{
+		{"control plane", payloads.ControlPlane},
+		{"worker", payloads.Worker},
+	} {
+		if role.payloads.IPXEScript == "" {
+			return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires a %s iPXE script: without one the instance boots nothing", role.name)
+		}
+		if len(role.payloads.PreKubeadmCommands) == 0 {
+			return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires %s pre-kubeadm commands: without them the node has no nke-agent", role.name)
+		}
 	}
 
-	// Both roles boot the same image and install the same packages, so unlike
-	// the container stub the payloads do not vary by role.
-	return buildCAPNicoRequest(spec, func(bool) NodePayloads { return payloads })
+	return buildCAPNicoRequest(spec, func(controlPlane bool) NodePayloads {
+		if controlPlane {
+			return payloads.ControlPlane
+		}
+		return payloads.Worker
+	})
 }
 
 // containerNodePayloads stubs both payloads for the container backend. The

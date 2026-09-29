@@ -71,14 +71,32 @@ on:
         description: Published CWE tag to qualify, e.g. v0.1.1-rc.8. Leave empty to build the CWE from this checkout, which is the only pairing that currently works -- see the resolve step.
         type: string
         required: false
-      os-image-bootloader:
-        description: HTTPS URL of the qcow-imager EFI. Must be plain HTTPS -- iPXE cannot pull an OCI artifact.
+      os-image-bootloader-amd64:
+        description: HTTPS URL of the amd64 qcow-imager EFI. Must be plain HTTPS -- iPXE cannot pull an OCI artifact.
         type: string
-        required: true
-      os-image:
-        description: HTTPS URL of the NKE qcow2.
+        required: false
+      os-image-amd64:
+        description: HTTPS URL of the amd64 NKE qcow2.
         type: string
-        required: true
+        required: false
+      os-image-bootloader-arm64:
+        description: HTTPS URL of the arm64 qcow-imager EFI.
+        type: string
+        required: false
+      os-image-arm64:
+        description: HTTPS URL of the arm64 NKE qcow2.
+        type: string
+        required: false
+      arch:
+        description: Architecture of the CPU machines, which are the site controller and the tenant control plane. arm64 requires controller-version, because building the controller image here is amd64-only.
+        type: choice
+        required: false
+        default: amd64
+        options: [amd64, arm64]
+      gpu:
+        description: "GPU model the tenant workers need, e.g. gb200. Empty puts the workers on the CPU shape. The model decides their architecture, so it is not stated."
+        type: string
+        required: false
       keep-site:
         description: Keep the node after the run, for debugging. Remember to delete it by hand.
         type: boolean
@@ -181,8 +199,28 @@ jobs:
       # NKECTL_CWE_IMAGE the bootstrap runs, and the tag the SBOM deploys --
       # reads this one value, which is what keeps them the same image.
       SITE_CONTROLLER_VERSION: ${{ inputs.controller-version || vars.SITE_E2E_CONTROLLER_VERSION || vars.FORGE_E2E_CONTROLLER_VERSION }}
-      OS_IMAGE_BOOTLOADER: ${{ inputs.os-image-bootloader || vars.SITE_E2E_OS_IMAGE_BOOTLOADER || vars.FORGE_E2E_OS_IMAGE_BOOTLOADER }}
-      OS_IMAGE: ${{ inputs.os-image || vars.SITE_E2E_OS_IMAGE || vars.FORGE_E2E_OS_IMAGE }}
+      # One pair per architecture. A run boots as many as its shapes need: a
+      # GB200 tenant is arm64 workers behind a control plane of whatever
+      # `arch` asked for, so it needs both pairs, while a single-architecture
+      # run needs one. Which pair each machine takes is decided by the suite
+      # from the instance type it resolved, not here.
+      OS_IMAGE_BOOTLOADER_AMD64: ${{ inputs.os-image-bootloader-amd64 || vars.SITE_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
+      OS_IMAGE_AMD64: ${{ inputs.os-image-amd64 || vars.SITE_E2E_OS_IMAGE_AMD64 }}
+      OS_IMAGE_BOOTLOADER_ARM64: ${{ inputs.os-image-bootloader-arm64 || vars.SITE_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
+      OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 || vars.SITE_E2E_OS_IMAGE_ARM64 }}
+      # The account the OS images bake. Empty is what the OSS os-image releases
+      # use; an image from the internal pipeline bakes a different one, and a
+      # mismatch fails as a publickey rejection after the provisioning wait
+      # rather than at validation.
+      NODE_USER: ${{ vars.SITE_E2E_NODE_USER }}
+      # What the run needs to execute on, one key per input rather than one
+      # packed string. The suite takes them joined as -e2e.capabilities, which
+      # the step below assembles: a form with a dropdown and a repository
+      # variable per key is easier to set correctly than a string whose
+      # grammar has to be remembered, and ARCH is needed on its own anyway,
+      # for SITE_ARCH.
+      ARCH: ${{ inputs.arch || vars.SITE_E2E_ARCH }}
+      GPU: ${{ inputs.gpu || vars.SITE_E2E_GPU }}
       # A label cannot carry a boolean, so a PR run never keeps its node.
       KEEP_SITE: ${{ inputs.keep-site || false }}
       # ghcr or nvcr. Only the runner pulls from it: every image it names is
@@ -243,6 +281,19 @@ jobs:
       FORGE_SSH_KEY_GROUP_ID: ${{ vars.FORGE_SSH_KEY_GROUP_ID }}
       FORGE_INSTANCE_TYPE_CPU_ID: ${{ vars.FORGE_INSTANCE_TYPE_CPU_ID }}
       FORGE_INSTANCE_TYPE_GPU_ID: ${{ vars.FORGE_INSTANCE_TYPE_GPU_ID }}
+      # ytl, declared alongside az61 in environments/forge.yaml. Its own
+      # names so a run against az61 is unaffected; the loader accepts an
+      # unset optional one, so a repository that has not onboarded ytl still
+      # loads the file and simply cannot resolve gb200.
+      FORGE_YTL_SITE_ID: ${{ vars.FORGE_YTL_SITE_ID }}
+      FORGE_YTL_VPC_ID: ${{ vars.FORGE_YTL_VPC_ID }}
+      FORGE_YTL_VPC_PREFIX_ID: ${{ vars.FORGE_YTL_VPC_PREFIX_ID }}
+      FORGE_YTL_SSH_KEY_GROUP_ID: ${{ vars.FORGE_YTL_SSH_KEY_GROUP_ID }}
+      FORGE_YTL_JUMP_HOST: ${{ vars.FORGE_YTL_JUMP_HOST }}
+      FORGE_YTL_TELEPORT_LOGIN: ${{ vars.FORGE_YTL_TELEPORT_LOGIN }}
+      FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID: ${{ vars.FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID }}
+      FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID: ${{ vars.FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID }}
+      FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID: ${{ vars.FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -315,25 +366,6 @@ jobs:
           echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
           "${HOME}/.local/bin/tsh" version
 
-      # nkectl is built from this checkout and is a client of the CWE it
-      # bootstraps, so the two have to be one commit. No published tag gives
-      # that: GHCR carries release tags only and its newest, v0.1.1-rc.8, is
-      # 43 commits before #850, which removed infra.spireAttestationMethod
-      # from the cluster API. Run 35999250795 spent forty minutes reaching
-      #   400 Bad Request: infra.spireAttestationMethod is required
-      # on exactly that pairing.
-      #
-      # So the default is to build, tagged with the commit under test -- on a
-      # pull_request that is the merge commit, which is the thing being
-      # qualified. Not `git describe`: the checkout is shallow and carries no
-      # tags, so it would report v0.0.0 and silently stop being unique.
-      #
-      # Naming a version instead pulls that published tag, for qualifying a
-      # release once one is cut past #850. The deploy path follows the
-      # controller -- it carries the controller's own chart -- so that
-      # version's controller/<version> release tag is fetched for the suite
-      # to export it from. The checkout is shallow and tagless, and without
-      # credentials, hence the one-off header.
       - name: Resolve the controller version
         shell: bash
         env:
@@ -388,7 +420,7 @@ jobs:
           # Empty on a pull_request run whose SITE_E2E_* variable is unset.
           # SITE_CONTROLLER_VERSION is not here: the step above resolves it.
           missing=()
-          for name in SITE_STAGE OS_IMAGE_BOOTLOADER OS_IMAGE; do
+          for name in SITE_STAGE; do
             [ -n "${!name}" ] || missing+=("${name}")
           done
           if [ "${#missing[@]}" -gt 0 ]; then
@@ -416,6 +448,86 @@ jobs:
           esac
           echo "SITE_IMAGES=${images}" >> "${GITHUB_ENV}"
           echo "stage=${SITE_STAGE} controller=${SITE_CONTROLLER_VERSION} images=${images}"
+
+      # nkectl is built from this checkout and is a client of the CWE it
+      # bootstraps, so the two have to be one commit. No published tag gives
+      # that: GHCR carries release tags only and its newest, v0.1.1-rc.8, is
+      # 43 commits before #850, which removed infra.spireAttestationMethod
+      # from the cluster API. Run 35999250795 spent forty minutes reaching
+      #   400 Bad Request: infra.spireAttestationMethod is required
+      # on exactly that pairing.
+      #
+      # So the default is to build, tagged with the commit under test -- on a
+      # pull_request that is the merge commit, which is the thing being
+      # qualified. Not `git describe`: the checkout is shallow and carries no
+      # tags, so it would report v0.0.0 and silently stop being unique.
+      #
+      # Naming a version instead pulls that published tag, for qualifying a
+      # release once one is cut past #850. The deploy path follows the
+      # controller -- it carries the controller's own chart -- so that
+      # version's controller/<version> release tag is fetched for the suite
+      # to export it from. The checkout is shallow and tagless, and without
+      # credentials, hence the one-off header.
+      # ARCH is both a capability the suite matches machines on and the
+      # architecture `make site-inputs` builds for, so it is one value used
+      # twice rather than two that could disagree.
+      - name: Resolve the capabilities and the site architecture
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          arch="${ARCH:-amd64}"
+          case "${arch}" in
+            amd64|arm64) ;;
+            *) echo "::error::arch is ${arch}, which is neither amd64 nor arm64"; exit 1 ;;
+          esac
+          if [ "${arch}" != amd64 ] && [ -z "${SITE_CONTROLLER_VERSION}" ]; then
+            echo "::error::arch=${arch} needs controller-version set: building the controller image here is amd64-only"
+            exit 1
+          fi
+          echo "SITE_ARCH=${arch}" >> "${GITHUB_ENV}"
+
+          # Joined here rather than taken as a string, so each key is set and
+          # validated on its own. Empty keys are left out: the suite reads an
+          # absent gpu as "the workers take the CPU shape", which is not the
+          # same as asking for a GPU named "".
+          capabilities="arch=${arch}"
+          if [ -n "${GPU}" ]; then
+            capabilities="${capabilities},gpu=${GPU}"
+          fi
+          echo "CAPABILITIES=${capabilities}" >> "${GITHUB_ENV}"
+          echo "capabilities: ${capabilities}"
+
+          # Every architecture that has a complete pair is passed, and the
+          # suite takes the one each machine needs. Which architecture the GPU
+          # workers are is a property of the instance type, which only the
+          # environment file knows, so deciding it here would mean guessing at
+          # something the suite can read. Passing both costs nothing and is
+          # never wrong.
+          #
+          # The run fails on a missing pair rather than here, in requireNodeArtifacts,
+          # which names the key it looked for and the machine that needed it.
+          versions=""
+          pairs=0
+          for pair_arch in amd64 arm64; do
+            eval "image=\${OS_IMAGE_${pair_arch^^}}"
+            eval "loader=\${OS_IMAGE_BOOTLOADER_${pair_arch^^}}"
+            if [ -z "${image}" ] && [ -z "${loader}" ]; then
+              continue
+            fi
+            if [ -z "${image}" ] || [ -z "${loader}" ]; then
+              echo "::error::os-image-${pair_arch} and os-image-bootloader-${pair_arch} go together: a qcow2 needs its imager"
+              exit 1
+            fi
+            versions="${versions},os-image-bootloader-${pair_arch}=${loader},os-image-${pair_arch}=${image}"
+            pairs=$((pairs + 1))
+            echo "${pair_arch} OS image: ${image}"
+          done
+          if [ "${pairs}" -eq 0 ]; then
+            echo "::error::no OS image pair for any architecture. A dispatch takes these from its inputs;" \
+                 "a labelled pull request takes them from the FORGE_E2E_OS_IMAGE_<ARCH> repository variables."
+            exit 1
+          fi
+          echo "OS_IMAGE_VERSIONS=${versions#,}" >> "${GITHUB_ENV}"
 
       # No stored identity: tbot joins with the repository's OIDC token
       # against a join token named by FORGE_TELEPORT_JOIN_TOKEN, whose bot
@@ -527,6 +639,7 @@ jobs:
           make -C controller/test/e2e site-inputs \
             SITE_CONTROLLER_VERSION="${SITE_CONTROLLER_VERSION}" \
             SITE_CONTROLLER_BUILD="${SITE_CONTROLLER_BUILD}" \
+            SITE_ARCH="${SITE_ARCH}" \
             SITE_IMAGE_REGISTRY="${SITE_IMAGES}" \
             SITE_PROVISIONED_VERSION="${CAPI_PROVISIONED_VERSION}" \
             SITE_INPUTS="${SITE_INPUTS}"
@@ -548,6 +661,8 @@ jobs:
           # the ones the archives carry.
           cat > controller/test/e2e/e2e-config.yaml <<EOF
           # Generated by .github/workflows/forge-site-controller-e2e.yml.
+          node:
+            user: "${NODE_USER}"
           site:
             images:
               controller:
@@ -580,16 +695,18 @@ jobs:
           OUT: ${{ runner.temp }}/run-inputs.txt
           IN_STAGE: ${{ inputs.stage }}
           IN_CONTROLLER_VERSION: ${{ inputs.controller-version }}
-          IN_OS_IMAGE_BOOTLOADER: ${{ inputs.os-image-bootloader }}
-          IN_OS_IMAGE: ${{ inputs.os-image }}
+          IN_OS_IMAGE_BOOTLOADER_AMD64: ${{ inputs.os-image-bootloader-amd64 }}
+          IN_OS_IMAGE_AMD64: ${{ inputs.os-image-amd64 }}
+          IN_OS_IMAGE_BOOTLOADER_ARM64: ${{ inputs.os-image-bootloader-arm64 }}
+          IN_OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 }}
+          IN_ARCH: ${{ inputs.arch }}
+          IN_GPU: ${{ inputs.gpu }}
           IN_KEEP_SITE: ${{ inputs.keep-site }}
           IN_IMAGE_REGISTRY: ${{ inputs.image-registry }}
           VAR_IMAGE_REGISTRY: ${{ vars.SITE_E2E_IMAGE_REGISTRY }}
           VAR_NGC_ORG: ${{ vars.SITE_E2E_NGC_ORG }}
           VAR_STAGE: ${{ vars.SITE_E2E_STAGE }}
           VAR_CONTROLLER_VERSION: ${{ vars.SITE_E2E_CONTROLLER_VERSION }}
-          VAR_OS_IMAGE_BOOTLOADER: ${{ vars.SITE_E2E_OS_IMAGE_BOOTLOADER }}
-          VAR_OS_IMAGE: ${{ vars.SITE_E2E_OS_IMAGE }}
           # The names each of the six replaced, read separately so the
           # summary can say a deprecated one answered instead of hiding it
           # behind the value it supplied.
@@ -597,8 +714,13 @@ jobs:
           WAS_NGC_ORG: ${{ vars.FORGE_E2E_NGC_ORG }}
           WAS_STAGE: ${{ vars.FORGE_E2E_STAGE }}
           WAS_CONTROLLER_VERSION: ${{ vars.FORGE_E2E_CONTROLLER_VERSION }}
-          WAS_OS_IMAGE_BOOTLOADER: ${{ vars.FORGE_E2E_OS_IMAGE_BOOTLOADER }}
-          WAS_OS_IMAGE: ${{ vars.FORGE_E2E_OS_IMAGE }}
+          VAR_OS_IMAGE_BOOTLOADER_AMD64: ${{ vars.SITE_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
+          VAR_OS_IMAGE_AMD64: ${{ vars.SITE_E2E_OS_IMAGE_AMD64 }}
+          VAR_OS_IMAGE_BOOTLOADER_ARM64: ${{ vars.SITE_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
+          VAR_OS_IMAGE_ARM64: ${{ vars.SITE_E2E_OS_IMAGE_ARM64 }}
+          VAR_NODE_USER: ${{ vars.SITE_E2E_NODE_USER }}
+          VAR_ARCH: ${{ vars.SITE_E2E_ARCH }}
+          VAR_GPU: ${{ vars.SITE_E2E_GPU }}
           VAR_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
         run: |
           set -Eeuo pipefail
@@ -612,8 +734,6 @@ jobs:
           rows=(
             "stage|SITE_STAGE|IN_STAGE|VAR_STAGE|SITE_E2E_STAGE|WAS_STAGE|FORGE_E2E_STAGE"
             "controller version|SITE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|SITE_E2E_CONTROLLER_VERSION|WAS_CONTROLLER_VERSION|FORGE_E2E_CONTROLLER_VERSION"
-            "OS image bootloader|OS_IMAGE_BOOTLOADER|IN_OS_IMAGE_BOOTLOADER|VAR_OS_IMAGE_BOOTLOADER|SITE_E2E_OS_IMAGE_BOOTLOADER|WAS_OS_IMAGE_BOOTLOADER|FORGE_E2E_OS_IMAGE_BOOTLOADER"
-            "OS image|OS_IMAGE|IN_OS_IMAGE|VAR_OS_IMAGE|SITE_E2E_OS_IMAGE|WAS_OS_IMAGE|FORGE_E2E_OS_IMAGE"
             "keep the node|KEEP_SITE|IN_KEEP_SITE||||"
             "image registry|SITE_IMAGE_REGISTRY|IN_IMAGE_REGISTRY|VAR_IMAGE_REGISTRY|SITE_E2E_IMAGE_REGISTRY|WAS_IMAGE_REGISTRY|FORGE_E2E_IMAGE_REGISTRY"
             "NGC org|SITE_E2E_NGC_ORG||VAR_NGC_ORG|SITE_E2E_NGC_ORG|WAS_NGC_ORG|FORGE_E2E_NGC_ORG"
@@ -627,6 +747,22 @@ jobs:
             "Forge SSH key group|FORGE_SSH_KEY_GROUP_ID||FORGE_SSH_KEY_GROUP_ID|FORGE_SSH_KEY_GROUP_ID||"
             "CPU instance type|FORGE_INSTANCE_TYPE_CPU_ID||FORGE_INSTANCE_TYPE_CPU_ID|FORGE_INSTANCE_TYPE_CPU_ID||"
             "GPU instance type|FORGE_INSTANCE_TYPE_GPU_ID||FORGE_INSTANCE_TYPE_GPU_ID|FORGE_INSTANCE_TYPE_GPU_ID||"
+            "amd64 OS image bootloader|OS_IMAGE_BOOTLOADER_AMD64|IN_OS_IMAGE_BOOTLOADER_AMD64|VAR_OS_IMAGE_BOOTLOADER_AMD64|SITE_E2E_OS_IMAGE_BOOTLOADER_AMD64||"
+            "amd64 OS image|OS_IMAGE_AMD64|IN_OS_IMAGE_AMD64|VAR_OS_IMAGE_AMD64|SITE_E2E_OS_IMAGE_AMD64||"
+            "arm64 OS image bootloader|OS_IMAGE_BOOTLOADER_ARM64|IN_OS_IMAGE_BOOTLOADER_ARM64|VAR_OS_IMAGE_BOOTLOADER_ARM64|SITE_E2E_OS_IMAGE_BOOTLOADER_ARM64||"
+            "arm64 OS image|OS_IMAGE_ARM64|IN_OS_IMAGE_ARM64|VAR_OS_IMAGE_ARM64|SITE_E2E_OS_IMAGE_ARM64||"
+            "node user|NODE_USER||VAR_NODE_USER|SITE_E2E_NODE_USER||"
+            "cpu arch|ARCH|IN_ARCH|VAR_ARCH|SITE_E2E_ARCH||"
+            "gpu model|GPU|IN_GPU|VAR_GPU|SITE_E2E_GPU||"
+            "ytl site|FORGE_YTL_SITE_ID||FORGE_YTL_SITE_ID|FORGE_YTL_SITE_ID||"
+            "ytl VPC|FORGE_YTL_VPC_ID||FORGE_YTL_VPC_ID|FORGE_YTL_VPC_ID||"
+            "ytl VPC prefix|FORGE_YTL_VPC_PREFIX_ID||FORGE_YTL_VPC_PREFIX_ID|FORGE_YTL_VPC_PREFIX_ID||"
+            "ytl ssh key group|FORGE_YTL_SSH_KEY_GROUP_ID||FORGE_YTL_SSH_KEY_GROUP_ID|FORGE_YTL_SSH_KEY_GROUP_ID||"
+            "ytl jump host|FORGE_YTL_JUMP_HOST||FORGE_YTL_JUMP_HOST|FORGE_YTL_JUMP_HOST||"
+            "ytl Teleport login|FORGE_YTL_TELEPORT_LOGIN||FORGE_YTL_TELEPORT_LOGIN|FORGE_YTL_TELEPORT_LOGIN||"
+            "ytl amd64 cpu instance type|FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID||FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID|FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID||"
+            "ytl arm64 cpu instance type|FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID||FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID|FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID||"
+            "ytl gb200 instance type|FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID||FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID|FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID||"
           )
 
           # A row nobody remembers to add is the whole failure mode: the
@@ -793,7 +929,8 @@ jobs:
             -e2e.config=e2e-config.yaml \
             -e2e.environment=forge \
             -e2e.site-stage="${SITE_STAGE}" \
-            -e2e.versions="controller=${SITE_CONTROLLER_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},os-image-bootloader=${OS_IMAGE_BOOTLOADER},os-image=${OS_IMAGE}" \
+            -e2e.versions="controller=${SITE_CONTROLLER_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}" \
+            -e2e.capabilities="${CAPABILITIES}" \
             "${keep[@]}" 2>&1 | tee site-e2e.log
 
       # The suite names the jump host in its own errors ("not reachable

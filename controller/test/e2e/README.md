@@ -438,6 +438,15 @@ go test -timeout 5h . -args \
   -e2e.versions=controller=<the same value>,os-image-bootloader=<url>,os-image=<url>
 ```
 
+The two OS-image keys may carry an architecture, as `os-image-arm64`. That is
+how one run boots two: a GB200 tenant puts arm64 workers behind a control plane
+of whatever `-e2e.capabilities` asked for under `arch`, and each machine takes
+the pair built for it. The unsuffixed keys above are what a run on a single
+architecture passes, and are used for any architecture that has no suffixed
+pair. The CI workflow always passes suffixed pairs, from the
+`FORGE_E2E_OS_IMAGE_<ARCH>` and `FORGE_E2E_OS_IMAGE_BOOTLOADER_<ARCH>`
+repository variables.
+
 `SITE_CONTROLLER_VERSION` and `-e2e.versions=controller=` have to be the same
 string, because they name one image: the archive `site-inputs` writes, and the
 reference the suite hands the bootstrap and the deploy path, which the node
