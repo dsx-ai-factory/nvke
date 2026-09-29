@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# All these identities and permissions belong to the datastore API.
+resources:
+- service_account.yaml
+# Controller permissions generated from RBAC markers.
+- role.yaml
+- role_binding.yaml
+# Leases and election Events in the datastore namespace.
+- leader_election_role.yaml
+- leader_election_role_binding.yaml
+# Kubebuilder's secure metrics authentication and authorization.
+- metrics_auth_role.yaml
+- metrics_auth_role_binding.yaml
+# Optional scraper permissions.  No scraper is bound by default.
+- metrics_reader_role.yaml

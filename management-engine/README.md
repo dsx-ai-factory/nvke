@@ -2,32 +2,68 @@
 
 The management engine connects directly to a configurable Kubernetes API serving
 NKE and Cluster API (CAPI) resources. It provides a standalone controller-manager,
-internal resource types and generated CRDs. The controller registry is currently
-empty; lifecycle reconciliation and the public API service are not implemented.
+internal resource types and generated CRDs. Lifecycle reconciliation and the
+public API service are not implemented.
+
+Unless noted otherwise, run commands from `management-engine/`.
 
 | Package | Purpose |
 | --- | --- |
 | `apis/v1` | Importable resource types and scheme registration |
-| `apis/crds` | Generated CRD manifests |
-| `cmd/manager` | Executable configuration and process lifecycle |
-| `pkg/manager` | Importable connection configuration and runtime construction |
-| `pkg/controllers/registry` | Production controller registration |
+| `config/crd/bases` | Generated CRD manifests |
+| `cmd` | Startup, connection configuration, manager setup, and runtime tests |
+| `internal/controller` | Resource reconcilers |
+
+## Deployment topology
+
+The Workload NKE Services Cluster runs the manager (`chart` / `config/default`).
+The Workload NKE Datastore Cluster holds the CRDs, resources, and election Lease
+(`config/state`); it needs no separate management-engine manager. Runtime uninstall
+preserves datastore resources.
+
+The current chart mounts a Secret containing `kubeconfig` and any referenced
+credential files at `/etc/management-api`. Set the Secret name and datastore
+election namespace in [runtime values](config/samples/runtime-values.yaml).
+Supply Kubernetes credentials; automatic credential provisioning and renewal are
+not implemented.
+
+Install state with `make install-state STATE_CONTEXT=...`.
+`make deploy HOST_CONTEXT=... IMG=...` applies the Kustomize runtime bundle,
+including its `management-engine-system` namespace; the manager cannot start
+until its credential Secret is provisioned. For Helm, provision the runtime
+namespace and Secret first, then run
+`make helm-deploy HOST_CONTEXT=... IMG=... HELM_EXTRA_ARGS='-f /path/to/values.yaml'`.
+
+`make undeploy` and `make helm-uninstall` preserve the runtime namespace and
+external Secrets. To remove them too, explicitly delete the runtime namespace;
+this deletes everything in that namespace. Datastore resources are separate.
+
+### Metrics
+
+Deployments enable HTTPS metrics on port 8443; the standalone binary disables
+metrics by default. Prometheus integration is disabled by default and no collector
+is installed. See [Kubebuilder's metrics guide](https://book.kubebuilder.io/reference/metrics.html)
+for certificates, access control and scraping configuration.
+
+In this split deployment, metrics authentication and authorization currently use
+the datastore kubeconfig. Services-cluster scraper tokens are not automatically
+accepted; services-cluster metrics authorization is not wired yet.
 
 ## Run the controller manager
 
-Use an existing development management cluster. The empty runtime does not require
-NKE or CAPI CRDs; install them when adding controllers that watch those resources.
-Run from the repository root:
+Use a datastore with the NKECluster and NodePool CRDs installed and credentials
+authorized to watch them. The scaffolded reconcilers currently perform no lifecycle
+operations:
 
 ```sh
-make -C management-engine run MANAGER_ARGS="--kubeconfig /path/to/dev-kubeconfig --context development-management --leader-election-namespace nke-system"
+make run MANAGER_ARGS="--kubeconfig /path/to/dev-kubeconfig --context development-management --leader-election-namespace nke-system"
 ```
 
 Replace the example paths, context and namespace with your environment's values.
 The election namespace must be supplied even when running in a cluster, and must
 already exist. It does not restrict which org
-namespaces controllers can watch. `make run` builds the executable at
-`management-engine/bin/management-engine` before starting it.
+namespaces controllers can watch. `make run` builds `bin/management-engine` before
+starting it.
 
 The manager is a client of the **management Kubernetes API**. Its own HTTP
 listeners serve metrics and probes. Tenant workload clusters have separate
@@ -35,38 +71,31 @@ Kubernetes APIs; the existing CWE REST service is also a distinct interface.
 
 ### Connection configuration
 
-Credentials and the target endpoint are selected in this order:
+Credentials and the target endpoint use controller-runtime's standard loading order:
 
-1. `--kubeconfig`, with optional `--context`.
-2. `KUBECONFIG`, with optional `--context`.
-3. An explicit `--context` selects the default kubeconfig, even inside a cluster.
-4. With no explicit selectors, client-go loads in-cluster ServiceAccount
-   credentials, or the default kubeconfig when running outside a cluster.
+1. `--kubeconfig`.
+2. `KUBECONFIG`.
+3. In-cluster ServiceAccount credentials.
+4. The default kubeconfig (`$HOME/.kube/config`).
 
-Invalid selections fail without falling back to another cluster. Every nonempty
-path in a selected `KUBECONFIG` list must exist. The management API must use HTTPS
-with certificate verification enabled. Redirects must remain HTTPS on the selected
-API hostname and port.
+`--context` selects a context when loading a kubeconfig; it does not force
+out-of-cluster loading. Missing entries in `KUBECONFIG` lists may be skipped, and
+empty configurations may fall back to in-cluster credentials. The deployment
+explicitly selects the datastore kubeconfig and disables host ServiceAccount-token
+mounting. The management API must use HTTPS with certificate verification enabled.
 
-Kubeconfigs and their exec credential helpers must come from trusted sources.
-Kubeconfig files must remain unchanged during loading; the loader does not take an
-atomic snapshot across files. Embedded consumers supplying `rest.Config.Transport`
-or `WrapTransport` are responsible for preserving certificate verification and the
-selected API origin. These hooks execute trusted Go code inside the process; the
-manager cannot enforce those guarantees inside a custom transport.
-
-Kubeconfig TLS settings and client-go exec credentials are preserved; required
-exec helpers must be installed. Embedded consumers can pass a `*rest.Config` to `manager.New`.
-Discovery, resource access and leader election all use that target.
+Use trusted kubeconfigs and exec credential helpers. Required helpers must be
+installed and terminate promptly; kubeconfig files must remain stable during loading.
+Discovery, resource access and leader election all use the selected datastore.
 The loader disables client-side throttling, matching controller-runtime's default
-and relying on server-side API Priority and Fairness. Embedded consumers can set
-`rest.Config.QPS` and `Burst` before calling `manager.New`.
+and relying on server-side API Priority and Fairness.
 
-The runtime identity requires API discovery access, `get/create/update` on
-`coordination.k8s.io` Leases and `create/patch` on core Events in the election
-namespace. Add resource permissions with each controller's watches and writes.
-The empty registry requires no NKE/CAPI object permissions. Constructing the
-manager does not verify API availability or resource permissions.
+The datastore bundle grants `get/list/watch` on NKEClusters and NodePools across
+namespaces, `get/create/update` on Leases and `create/patch` on Events in the election
+namespace, and TokenReview/SubjectAccessReview creation for secure metrics.
+API discovery uses Kubernetes' default permissions for authenticated identities.
+Add write permissions when implementing reconciliation.
+Constructing the manager does not verify API availability or resource permissions.
 
 | Flag | Default | Purpose |
 | --- | --- | --- |
@@ -74,20 +103,20 @@ manager does not verify API availability or resource permissions.
 | `--context` | Kubeconfig current context | Management cluster selection |
 | `--leader-elect` | `true` | Coordinate replicas |
 | `--leader-election-namespace` | Required with election | Namespace containing the Lease |
-| `--metrics-bind-address` | `127.0.0.1:9090` | HTTP `/metrics`; `0` disables |
+| `--metrics-bind-address` | `0` | Metrics address; deployments use `:8443` |
+| `--metrics-secure` | `true` | HTTPS metrics with authentication and authorization |
 | `--health-probe-bind-address` | `:8081` | HTTP `/healthz` and `/readyz`; `0` disables |
-| `--log-level` | `INFO` | JSON log level |
+| `--zap-log-level` | `info` | Log verbosity; JSON output by default |
 | `--version` | — | Print binary version and exit |
+
+Run `bin/management-engine --help` for all flags, including metrics TLS options.
 
 ### Health and leadership
 
 Readiness requires startup and synchronization of registered caches, including on
 standby replicas; it does not certify API connectivity or authorization. API
 requirements belong to each controller's watches and resource access, rather than
-a central startup precheck. Exec credential helpers must terminate promptly.
-Prometheus metrics use unauthenticated HTTP on loopback port 9090 by default,
-matching CWE. Set an explicit address only when access is restricted to trusted
-scrapers. Probes use unauthenticated HTTP on all interfaces so the kubelet can
+a central startup precheck. Probes use unauthenticated HTTP so the kubelet can
 reach them.
 
 Run one deployment group per management cluster. All replicas must share the
@@ -97,60 +126,64 @@ uses upstream defaults: 15-second lease, 10-second renew deadline and 2-second
 retry period.
 
 Shutdown cancels work with a 30-second grace period and leaves the Lease to expire.
-Embedding processes must exit promptly when `Start` returns, including on
-leadership loss. For debugging with `--leader-elect=false`, stop deployed replicas
+The process exits when `Start` returns, including on leadership loss.
+For debugging with `--leader-elect=false`, stop deployed replicas
 first and stop the host process before restoring them.
 
 ## Development
 
 Follow the repository [development conventions](../docs/development.md) and
-[workspace guide](../docs/go-workspace.md). From the repository root:
+[workspace guide](../docs/go-workspace.md).
 
 ```sh
-make -C management-engine build test lint
-make -C management-engine generate       # after changing API types
-make -C management-engine generate-check # verify generated CRDs and deepcopy code
-make -C management-engine test-integration
-make preflight MODULES=management-engine
+make build test lint
+make generate manifests # after changing API types
+make generate-check # verify generated CRDs and deepcopy code
+make test-integration
+make chart-check
 ```
 
-Integration tests start a disposable API server and verify NKE/CAPI event delivery,
-probes, metrics, leader handoff and shutdown. The target downloads missing test
-assets: envtest for Kubernetes 1.37.0 and CRDs from the module-pinned CAPI version.
+Before submitting a PR, run `make preflight MODULES=management-engine` from the
+repository root.
+
+Controller and runtime tests use disposable envtest API servers and download
+missing binaries unless `KUBEBUILDER_ASSETS` is set. Runtime integration tests cover
+NKECluster event delivery, probes, leader handoff and shutdown.
 For offline runs, supply existing assets:
 
 ```sh
 KUBEBUILDER_ASSETS=/path/to/envtest-binaries \
-CAPI_CRD_DIR=/path/to/cluster-api/config/crd/bases \
-  make -C management-engine test-integration
+  make test-integration
 ```
 
-### Add a controller
+### Add an API or controller
 
-The command calls `manager.New`, `registry.Register`, then `Start`. Runtime
-construction is independent of registration, so other binaries can choose which
-controllers to install.
+For a new API, add its Go types and validation markers under `apis/v1`, register
+its object and list in `AddToScheme`, and add its import path to [PROJECT](PROJECT)
+using the existing resource entries as examples. Run `make generate manifests`
+and include the new CRD in `config/crd/kustomization.yaml`.
 
-1. Add a controller under `pkg/controllers/<resource>`, accepting production
-   dependencies through its constructor.
-2. Register its `SetupWithManager` call in `pkg/controllers/registry`, returning
-   errors with the controller's name. Reuse the manager's scheme, clients, cache,
-   logging and event recording.
-3. Declare watches and indexes during setup, add required schemes, and provide
-   matching RBAC. Cached reads of undeclared types fail; use the API reader for
-   intentional uncached reads. The cache strips `managedFields` to reduce memory
-   use; controllers that need field ownership metadata must use the API reader.
-4. Keep NKECluster and NodePool resources in their org namespace. Preserve existing
-   CWE-managed CAPI resources in place; define downstream placement and ownership
-   when implementing lifecycle controllers.
-   Keep flag parsing, signals and process exits in the command, and test observers
-   and fakes in test code.
+For an API registered in `PROJECT` without a controller, replace `Example` with
+its kind and run:
 
-Use resource APIs directly. The migration replaces NKE's existing REST API embedded
-in CWE; new controllers must not depend on CWE REST endpoints. Replacing existing
-workflow or database behavior requires an explicit ownership handoff. A separate
-election Lease does not prevent two different controllers from writing the same
-objects.
+```sh
+make kubebuilder
+bin/kubebuilder create api --group internal --version v1 --kind Example \
+  --resource=false --controller=true
+```
+
+`--resource=false` preserves the existing types. Kubebuilder's `--resource=true`
+scaffolds types under `api/`, which requires adaptation to this project's `apis/`
+layout. The CLI registers controllers in `cmd/main.go`; implement their
+`Reconcile` methods and tests under `internal/controller`.
+
+Add RBAC markers for required access and run `make manifests`. The generated
+`config/rbac/role.yaml` is bound to the datastore ServiceAccount by `config/state`.
+
+Declare watches and indexes explicitly. Cached reads of undeclared types fail;
+use the API reader for uncached reads or access to `managedFields`. Access NKE/CAPI
+resources directly and establish ownership before taking over resources managed
+by existing controllers.
 
 ## API conventions
 
@@ -182,12 +215,12 @@ Before creating NKE resources, apply the generated CRDs to the management API:
 
 ```sh
 kubectl --kubeconfig /path/to/dev-kubeconfig --context development-management \
-  apply -f management-engine/apis/crds/
+  apply -f config/crd/bases/
 ```
 
 The manifests serve and store only `v1`. Existing `v1alpha1` installations need a
 storage-version migration before removing the old version; these manifests alone
-do not migrate stored objects. Go consumers must update imports to `apis/v1`.
+do not migrate stored objects.
 
 ## Resource examples
 
@@ -196,46 +229,15 @@ do not migrate stored objects. Go consumers must update imports to `apis/v1`.
 [NKECluster](apis/v1/nkecluster_types.go) defines cluster access, authentication,
 networking, release selection, control-plane class and accelerated runtime.
 
-```yaml
-apiVersion: internal.nke.nvidia.com/v1
-kind: NKECluster
-metadata:
-  name: prod-us-west
-  namespace: org-example
-spec:
-  apiServerAccess:
-    publicAccessEnabled: false
-  clusterNetwork:
-    pods:
-      cidrBlocks: [10.244.0.0/16]
-    services:
-      cidrBlocks: [10.96.0.0/12]
-    serviceDomain: cluster.local
-  release:
-    channel:
-      name: stable
-      version: "1.34"
-  controlPlaneClass: standard
-```
+See the [NKECluster sample](config/samples/internal_v1_nkecluster.yaml).
 
 [NodePool](apis/v1/nodepool_types.go) defines worker capacity and configuration.
 `replicas` is required; zero requests zero workers. Omitted rollout defaults to a
 rolling update with one surge node; `maxSurge` accepts an integer or percentage.
 
-```yaml
-apiVersion: internal.nke.nvidia.com/v1
-kind: NodePool
-metadata:
-  name: gpu-a
-  namespace: org-example
-spec:
-  clusterName: prod-us-west
-  replicas: 8
-  instanceType: gb200-nvl72
-  release:
-    name: gb200-ubuntu-24.04
-    version: "2026.09.1"
-```
+See the [NodePool sample](config/samples/internal_v1_nodepool.yaml). Apply tenant
+samples to an existing org namespace using `kubectl --context <state-context>
+apply -n <org-namespace> -f <sample-file>`.
 
 Status carries conditions, observed generation and resolved release. NodePool
 also carries its cluster UID binding and observed/ready/updated replica counts;
@@ -284,3 +286,25 @@ spec:
   lifecycle: # mutable fields
     deprecated: false
 ```
+
+## Kubebuilder layout and generated files
+
+Keep [PROJECT](PROJECT) resource metadata and `cmd/main.go`'s scaffold markers;
+Kubebuilder uses them to register new APIs and controllers. `make generate manifests`
+does not update `PROJECT`. Keep single-group mode: the `internal` API group would
+otherwise generate `internal/controller/internal`, which Go prevents `cmd` from importing.
+
+Edit deployment sources under `config/`, then generate and validate the chart:
+
+```sh
+make chart
+make chart-check
+```
+
+This produces separate `dist/runtime.yaml` and `dist/state.yaml` bundles and
+generates chart templates through `config/helm`. Chart metadata, values and Helm
+helpers are maintained separately; do not use `--force` when regenerating.
+
+`IMG` defaults to `management-engine:dev`; supply the image you build/publish to
+`make docker-build` and `make helm-deploy`. Chart generation does not build an
+image or overwrite existing image settings in `chart/values.yaml`.

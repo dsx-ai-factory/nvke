@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Datastore cluster only: no manager Deployment.
+namespace: management-state-system
+namePrefix: management-engine-
+resources:
+- namespace.yaml
+- ../crd
+- ../rbac
