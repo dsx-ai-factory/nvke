@@ -2,36 +2,36 @@
 
 ## Overview
 
-OIDC authentication lets the NKE Controller and the Cluster API controllers call
-a tenant cluster's Kubernetes API with short-lived SPIFFE JWTs. The tenant API
-server validates each token against a site-wide OIDC issuer and maps its `sub`
-claim to a Kubernetes username. [Tenant Kubernetes API
+**OIDC authentication** lets the NKE Controller and the Cluster API controllers
+call a tenant cluster's Kubernetes API with short-lived SPIFFE JWTs. The tenant
+API server validates each token against a site-wide OIDC issuer and maps its
+`sub` claim to a Kubernetes username. [Tenant Kubernetes API
 Access](kubernetes-api-access.md#service-identity-and-tenant-oidc) describes the
-authentication and authorization model. This page covers turning it on.
+authentication and authorization model.
 
 OIDC authentication is for service identities. It does not give tenant
 operators or users an OIDC login.
 
-It is off by default. Both ways of turning it on depend on the same site
-configuration:
+It is disabled by default. You can enable it:
 
-- **New clusters** get OIDC authentication at creation while
-  `nkeOIDCAuth.enabled` is `true`.
-- **An existing cluster** gets it through an `UpdateCluster` API request, which
-  rolls the configuration onto the running control plane.
+- **For new clusters:** every cluster created while `nkeOIDCAuth.enabled` is
+  `true` has it from creation.
+- **For an existing cluster:** an `UpdateCluster` request rolls it onto the
+  running control plane.
+
+Each uses the [site configuration](#site-configuration).
 
 ## Site Configuration
 
-Configure the site before enabling OIDC on any cluster, new or existing. Set
-these values in the NKE Controller Helm chart. The [chart
+Set these values in the NKE Controller Helm chart. The [chart
 README](../../controller/deploy/charts/controller/README.md) lists each one.
 
 | Value | Environment variable | Purpose |
 |---|---|---|
-| `nkeOIDCAuth.enabled` | `NKE_OIDC_AUTH_ENABLED` | Turns OIDC authentication on for new clusters. Default `false`. |
+| `nkeOIDCAuth.enabled` | `NKE_OIDC_AUTH_ENABLED` | Enables OIDC authentication for new clusters. Default `false`. |
 | `nkeOIDCAuth.issuerURL` | `NKE_OIDC_AUTH_ISSUER_URL` | The OIDC issuer tenant API servers trust. Required. |
 | `nkeOIDCAuth.discoveryURL` | `NKE_OIDC_AUTH_DISCOVERY_URL` | Optional. Set it when tenant API servers cannot reach the issuer's discovery document at `issuerURL`. |
-| `nkeOIDCAuth.caBundleSecret.namespace`, `.name`, `.key` | `NKE_OIDC_AUTH_CA_BUNDLE_SECRET_*` | Optional. The Secret holding the issuer's PEM CA bundle, embedded in each tenant API server's configuration. Set all three or none. The Secret and key must exist and be non-empty. |
+| `nkeOIDCAuth.caBundleSecret.namespace`, `.name`, `.key` | `NKE_OIDC_AUTH_CA_BUNDLE_SECRET_*` | Optional. The Secret holding the issuer's PEM CA bundle, embedded in each tenant API server's configuration. Set every field or none. The Secret and key must exist and be non-empty. |
 
 OIDC authentication also requires:
 
@@ -49,23 +49,25 @@ With `nkeOIDCAuth.enabled: true`, the chart fails to render when
 check `issuerURL` or the CA Secret. When either is wrong, cluster provisioning
 and the `UpdateCluster` rollout fail.
 
-Enabling OIDC on an existing cluster uses these same settings, so set
-`nkeOIDCAuth.enabled: true` before you use it. The chart grants the NKE
-Controller read access to the CA Secret only when `enabled` is `true`. Every
-cluster created afterwards also gets OIDC authentication.
+Enabling OIDC authentication on an existing cluster also needs
+`nkeOIDCAuth.enabled: true`, because the chart grants the NKE Controller read
+access to the CA Secret only then. Every cluster created afterwards gets OIDC
+authentication too.
+
+The API has no per-cluster override: `CreateClusterRequest` has no OIDC field.
+Every cluster uses the same issuer, and the token audience is the cluster name.
+Changing the issuer settings later does not update existing control-plane nodes,
+but new and replaced control-plane nodes get the new settings. Do not change
+them while clusters with OIDC authentication exist.
 
 If `spiffe.jwtExchangeEndpoint` is set, tenant clusters must trust the
 exchange's issuer, so `issuerURL` names that issuer. The chart then also
 requires `spiffe.cweSubject` and the Cluster API subject overrides. See the
 chart README.
 
-The API has no per-cluster override: `CreateClusterRequest` has no OIDC field.
-Every cluster uses the same issuer, and the token audience is the cluster name.
-Changing the issuer settings later does not update existing control-plane nodes,
-but new and replaced control-plane nodes get the new settings. Do not change
-them while OIDC-enabled clusters exist.
-
 ## Enabling OIDC on an Existing Cluster
+
+Enabling OIDC authentication cannot be undone.
 
 Send `enableOidc: true` to `PATCH /api/clusters/{clusterID}`. See
 [Authenticating to the NKE API](../../controller/docs/authenticating-to-the-api.md)
@@ -93,8 +95,8 @@ report ready before the next node starts. While the rollout runs,
 ```
 
 When the rollout succeeds, `updateInProgress` is cleared. The cluster API
-response has no field that shows OIDC is on. Use [Verifying OIDC on a
-Cluster](#verifying-oidc-on-a-cluster) to confirm it.
+response has no field that shows whether OIDC authentication is enabled. Use
+[Verifying OIDC on a Cluster](#verifying-oidc-on-a-cluster) to confirm it.
 
 When the rollout fails, `updateInProgress` is cleared and
 `conditions.updateFailed` carries the message `OIDC enablement failed`. The
@@ -110,8 +112,8 @@ already accepting OIDC tokens:
 To retry, send the same request again. Nodes that already have the change are
 left as they are.
 
-Enabling OIDC cannot be undone. If OIDC is already enabled, the request starts
-no rollout and returns `200`, as long as it passes the checks below.
+If OIDC authentication is already enabled, the request starts no rollout and
+returns `200`, as long as it passes the checks below.
 
 ### Request Validation
 
@@ -146,18 +148,18 @@ Before each node is changed, its node agent must report kubeadm as ready.
 
 ## Verifying OIDC on a Cluster
 
-Check the result on the Site Controller cluster. After OIDC is enabled, the
-tenant-access controller applies the NKE RBAC into the tenant cluster and
-publishes these Secrets in `nke-system`:
+Check the result on the Site Controller cluster. After OIDC authentication is
+enabled, the tenant-access controller applies the NKE RBAC into the tenant
+cluster and publishes these Secrets in `nke-system`:
 
 | Secret | Contents |
 |---|---|
 | `<cluster>-kubeconfig` | The NKE Controller's kubeconfig. It runs the SPIFFE exec-auth plugin to obtain a JWT. |
 | `<cluster>-cluster-trust-bundle` | The tenant cluster CA, under key `ca.crt`. |
-| `<cluster>-admin-kubeconfig` | The kubeadm `admin.conf`. It is published whether or not OIDC is on. |
+| `<cluster>-admin-kubeconfig` | The kubeadm `admin.conf`. It is published whether or not OIDC authentication is enabled. |
 
-The `nke.nvidia.com/kubeconfig-mode` label on `<cluster>-kubeconfig` shows which
-mode a cluster is in: `spire` with OIDC, `admin` without.
+The `nke.nvidia.com/kubeconfig-mode` label on `<cluster>-kubeconfig` shows the
+cluster's mode: `spire` with OIDC authentication, `admin` without.
 
 ```bash
 kubectl -n nke-system get secret "${CLUSTER_NAME}-kubeconfig" \
