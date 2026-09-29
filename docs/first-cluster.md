@@ -152,9 +152,11 @@ bin/nkectl delete cluster <name>
 [`cli/examples/nico-mock-cluster.yaml`](../cli/examples/nico-mock-cluster.yaml)
 works as-is — its UUIDs are nico-mock's seeded identifiers.
 
-A node pool carries **either** a `nico` payload **or** an `infra` one, never
-both. **Mock NICo** uses `infra`, supplying the `NicoCluster` and `NicoMachineTemplate`
-manifests directly; a real site uses `nico` and CWE builds them. Full schema at
+The cluster's top-level `nico` or `infra` payload sets its provider, and the
+control plane and every node pool must carry the same one. **Mock NICo** uses
+`infra`, supplying the `NicoCluster` and `NicoMachineTemplate` manifests
+directly; a real site uses `nico` and CWE builds them. See
+[Control plane configuration](#control-plane-configuration); full schema at
 `/api/docs`.
 
 For `curl`, mint a token with `hack/nke-token.sh` after the stack is up:
@@ -426,6 +428,39 @@ teardown cannot be helped along through the API.
 
 - The site controller does not manage itself: no upgrade, node cycling or
   scaling.
+
+## Control plane configuration
+
+A tenant cluster's control plane is described once, at the cluster level, by
+`controlPlaneConfig`. The site controller's control-plane controller manages
+it: it creates control-plane hosts in parallel, joins them to the cluster one
+at a time, and deletes them one at a time. `nodePools` holds only workers.
+
+| Field | Meaning |
+|---|---|
+| `desiredCount` | How many control-plane nodes to run. At least 1; an odd count keeps an etcd quorum through a single failure. |
+| `maxSurge` | 0 or 1. With 1, a replacement joins before an old node is removed; with 0, the old node is removed first. |
+| `systemReservedMemory` | Memory reserved for system processes on each control-plane node. Defaults to `16Gi`. |
+| `nico` or `infra` | The provider payload. It must match the cluster's own top-level `nico` or `infra`; any other is rejected. |
+
+[`nico-cluster.yaml`](../cli/examples/nico-cluster.yaml),
+[`nico-mock-cluster.yaml`](../cli/examples/nico-mock-cluster.yaml) and
+[`capd-cluster.yaml`](../cli/examples/capd-cluster.yaml) are complete requests.
+
+Two behaviors to plan around:
+
+- **Deleting a control-plane node** is refused while it would leave fewer than
+  three joined control-plane nodes. Raise `desiredCount` first so a replacement
+  joins, or delete the cluster.
+- **Upgrading `controlPlaneKubernetesVersion`** replaces the control-plane
+  nodes, and waits until the cluster's `enableCPNodeRecycling` is `true`. It is
+  `false` by default: set it with
+  `nkectl patch cluster <name> --patch 'enableCPNodeRecycling: true'`.
+
+A site controller deployed with
+`PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=false` takes the older
+shape instead: a node pool with `controlPlane: true`, and no
+`controlPlaneConfig`. Each rejects the other's shape.
 
 ## See also
 
