@@ -290,7 +290,11 @@ jobs:
       FORGE_YTL_VPC_PREFIX_ID: ${{ vars.FORGE_YTL_VPC_PREFIX_ID }}
       FORGE_YTL_SSH_KEY_GROUP_ID: ${{ vars.FORGE_YTL_SSH_KEY_GROUP_ID }}
       FORGE_YTL_JUMP_HOST: ${{ vars.FORGE_YTL_JUMP_HOST }}
-      FORGE_YTL_TELEPORT_LOGIN: ${{ vars.FORGE_YTL_TELEPORT_LOGIN }}
+      # root for the same reason as FORGE_TELEPORT_LOGIN: the same bot reaches
+      # both jump hosts through rg-k8aas-bot-ssh-root, whose only login is
+      # root. Unset falls back to tsh's default, the runner's local user,
+      # which Teleport denies.
+      FORGE_YTL_TELEPORT_LOGIN: root
       FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID: ${{ vars.FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID }}
       FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID: ${{ vars.FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID }}
       FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID: ${{ vars.FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID }}
@@ -759,7 +763,7 @@ jobs:
             "ytl VPC prefix|FORGE_YTL_VPC_PREFIX_ID||FORGE_YTL_VPC_PREFIX_ID|FORGE_YTL_VPC_PREFIX_ID||"
             "ytl ssh key group|FORGE_YTL_SSH_KEY_GROUP_ID||FORGE_YTL_SSH_KEY_GROUP_ID|FORGE_YTL_SSH_KEY_GROUP_ID||"
             "ytl jump host|FORGE_YTL_JUMP_HOST||FORGE_YTL_JUMP_HOST|FORGE_YTL_JUMP_HOST||"
-            "ytl Teleport login|FORGE_YTL_TELEPORT_LOGIN||FORGE_YTL_TELEPORT_LOGIN|FORGE_YTL_TELEPORT_LOGIN||"
+            "ytl Teleport login|FORGE_YTL_TELEPORT_LOGIN|||||"
             "ytl amd64 cpu instance type|FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID||FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID|FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID||"
             "ytl arm64 cpu instance type|FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID||FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID|FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID||"
             "ytl gb200 instance type|FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID||FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID|FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID||"
