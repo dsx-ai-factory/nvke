@@ -36,7 +36,8 @@ export KUBECONFIG=$PWD/nktp-validation.kubeconfig
 ## Installing the chart
 
 Build the chart's dependencies, create the release namespace with the Pod
-Security level the node Collector needs, and install with default values.
+Security level the node Collector needs, and install with the Kind values in
+`nktp/hack/e2e-values.yaml`.
 
 ```console
 helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
@@ -48,13 +49,15 @@ kubectl create namespace nktp
 kubectl label namespace nktp pod-security.kubernetes.io/enforce=privileged
 
 helm install nktp nktp/deploy/charts/nktp --namespace nktp --wait \
-  --set-json 'metrics-server.args=["--kubelet-insecure-tls"]'
+  --values nktp/hack/e2e-values.yaml
 kubectl -n nktp wait --for=condition=Ready pod --all --timeout=5m
 ```
 
-The `metrics-server.args` override is for Kind only. Kind's kubelet serving
-certificates are self-signed, so metrics-server cannot verify them and never
-becomes Ready without it. A site's kubelet certificates are signed by the cluster
+The chart's defaults are sized for a multi-node cluster, so that file lowers
+replicas and requests to fit one Kind node. It also turns on metrics-server,
+which is off by default, with `--kubelet-insecure-tls`. That flag is for Kind
+only. Kind's kubelet serving certificates are self-signed, so metrics-server
+cannot verify them and never becomes Ready without it. A site's kubelet certificates are signed by the cluster
 CA through the controller's CSR approval and need no such flag; do not carry it
 into site values.
 

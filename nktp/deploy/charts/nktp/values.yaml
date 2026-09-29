@@ -15,7 +15,7 @@ otelcol_image: otel/opentelemetry-collector-k8s:0.159.0
 watchdog:
   kubernetes:
     mode: statefulset # Required by the operator's Target Allocator support.
-    replicas: 1
+    replicas: 2
     targetAllocator:
       enabled: true # Assign each explicit scrape target to one watchdog replica.
       replicas: 1
@@ -26,7 +26,7 @@ watchdog:
         metrics:
           enableMetrics: false # Watchdog scrapes the allocator without a ServiceMonitor.
     autoscaler:
-      minReplicas: 1
+      minReplicas: 2
       maxReplicas: 16
       targetCPUUtilization: 75
       targetMemoryUtilization: 100
@@ -190,9 +190,9 @@ watchdog:
 gateway_logs:
   kubernetes:
     mode: statefulset # Stable replica identities support per-replica volumes for optional persistent queues.
-    replicas: 1
+    replicas: 2
     autoscaler:
-      minReplicas: 1
+      minReplicas: 2
       maxReplicas: 64
       targetCPUUtilization: 75
       targetMemoryUtilization: 100
@@ -303,9 +303,9 @@ gateway_logs:
 gateway_metrics:
   kubernetes:
     mode: statefulset # Stable replica identities support per-replica volumes for optional persistent queues.
-    replicas: 1
+    replicas: 2
     autoscaler:
-      minReplicas: 1
+      minReplicas: 2
       maxReplicas: 64
       targetCPUUtilization: 75
       targetMemoryUtilization: 100
@@ -416,9 +416,9 @@ gateway_metrics:
 gateway_traces:
   kubernetes:
     mode: statefulset # Stable replica identities support per-replica volumes for optional persistent queues.
-    replicas: 1
+    replicas: 2
     autoscaler:
-      minReplicas: 1
+      minReplicas: 2
       maxReplicas: 64
       targetCPUUtilization: 75
       targetMemoryUtilization: 100
@@ -528,7 +528,7 @@ gateway_traces:
 # Node-level collector. Collects local telemetry and forwards received OTLP signals.
 daemonset:
   kubelet:
-    cadvisor: true # Also scrape /metrics/cadvisor from each local kubelet.
+    cadvisor: false # Also scrape /metrics/cadvisor from each local kubelet.
     probes: false # Also scrape /metrics/probes from each local kubelet.
     resource: false # Also scrape /metrics/resource from each local kubelet.
     tls:
@@ -603,9 +603,6 @@ daemonset:
       readOnlyRootFilesystem: true
       capabilities:
         drop: [ALL]
-        # For the hostmetrics process scraper: SYS_PTRACE reads /proc/<pid>/exe of other
-        # processes, DAC_READ_SEARCH reads their mode-0400 /proc/<pid>/io.
-        add: [SYS_PTRACE, DAC_READ_SEARCH]
     volumes:
       - name: pod-logs
         hostPath:
@@ -615,19 +612,12 @@ daemonset:
         hostPath:
           path: /proc
           type: Directory
-      - name: host-passwd
-        hostPath:
-          path: /etc/passwd
-          type: File
     volumeMounts:
       - name: pod-logs
         mountPath: /var/log/pods
         readOnly: true
       - name: host-proc
         mountPath: /hostfs/proc
-        readOnly: true
-      - name: host-passwd
-        mountPath: /etc/passwd # The process scraper resolves owners through the container's passwd file; the image ships none.
         readOnly: true
   otelcol:
     # Set a custom image for this workload only.
@@ -695,15 +685,9 @@ daemonset:
           collection_interval: 1m
           scrapers:
             process:
-              # SYS_PTRACE, DAC_READ_SEARCH and the mounted passwd file resolve executable
-              # paths, I/O counters and host users. Container-internal uids are not in the
-              # node's passwd, so that lookup is muted; those processes carry no owner.
-              mute_process_user_error: true
               resource_attributes:
                 process.command_line:
                   enabled: false # Do not export process arguments.
-                process.cgroup:
-                  enabled: true # Names the pod and container a process belongs to, which its uid cannot.
       processors:
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
@@ -802,7 +786,7 @@ daemonset:
 large_target_metrics:
   kubernetes:
     mode: statefulset # The Target Allocator uses stable Collector identities.
-    replicas: 1
+    replicas: 2
     targetAllocator:
       enabled: true
       replicas: 1
@@ -850,22 +834,22 @@ large_target_metrics:
               operator: In
               values: ["true"]
     autoscaler:
-      minReplicas: 1
+      minReplicas: 2
       maxReplicas: 16
       targetCPUUtilization: 75
-      targetMemoryUtilization: 100 # Scale at 1Gi working set. The limiter checks Go heap separately.
+      targetMemoryUtilization: 100 # Scale at 8Gi working set. The limiter checks Go heap separately.
     resources:
       requests:
-        cpu: 100m
-        memory: 256Mi # Sized for a small cluster. Raise with the scrape volume kube-state-metrics adds.
+        cpu: 500m
+        memory: 8Gi # Reserve memory for parsing and retained scrape data.
       limits:
-        cpu: "1"
-        memory: 1Gi # Allow headroom for overlapping scrapes and the exporter queue.
+        cpu: "2"
+        memory: 16Gi # Allow headroom for overlapping scrapes and the exporter queue.
     env:
       - name: GOMEMLIMIT
         # Large responses allocate before the memory limiter, while earlier scrapes may remain queued.
         # Use half the container limit as a soft runtime target to leave room for overlapping allocations.
-        value: 512MiB
+        value: 8GiB
       - name: GOGC
         value: "50" # More frequent GC trades CPU for lower heap growth.
     podDisruptionBudget:
@@ -906,7 +890,7 @@ large_target_metrics:
             global:
               # Defaults for allocator jobs. Monitor-specific limits can override them.
               sample_limit: 1000000 # Samples after metric relabeling, per scrape.
-              body_size_limit: 64MiB # Bound the uncompressed response buffer before parsing.
+              body_size_limit: 1GiB # Bound the uncompressed response buffer before parsing.
               label_limit: 64 # Bound label-map growth per sample.
               label_name_length_limit: 256 # Bytes per label name.
               label_value_length_limit: 4096 # Bytes per label value.
@@ -917,8 +901,8 @@ large_target_metrics:
       processors:
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
-          limit_percentage: 80 # Hard heap threshold, 819.2Mi. The Go runtime target is 512MiB.
-          spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (563.2Mi).
+          limit_percentage: 80 # Hard heap threshold, 12.8Gi. The Go runtime target is 8GiB.
+          spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (8.8Gi).
       exporters:
         otlp_http:
           endpoint: http://nktp-gateway-metrics-collector:4318
@@ -927,7 +911,7 @@ large_target_metrics:
           sending_queue:
             block_on_overflow: true
             sizer: bytes # Counts serialized bytes. Go heap use can be several times larger.
-            queue_size: 67108864 # 64MiB serialized. Whole scrapes enter before batch splitting.
+            queue_size: 2147483648 # 2GiB serialized. Whole scrapes enter before batch splitting.
             num_consumers: 32 # Export concurrency. Idle worker slots hold no batch payload.
             batch:
               sizer: bytes # Batch sizes use serialized bytes, matching queue accounting.
@@ -970,7 +954,7 @@ large_target_metrics:
 cluster_events:
   kubernetes:
     mode: statefulset # Stable replica identities support per-replica volumes for optional persistent queues.
-    replicas: 1 # A single reader. A second replica would only stand by; it does not increase watch throughput.
+    replicas: 2 # One active reader and one standby. More replicas do not increase watch throughput.
     resources:
       requests:
         cpu: 200m
@@ -1094,8 +1078,8 @@ kube-state-metrics:
   kubernetes:
     resources:
       requests:
-        cpu: 25m
-        memory: 64Mi
+        cpu: 100m
+        memory: 128Mi
       limits:
         cpu: "1"
         memory: 512Mi
@@ -1127,10 +1111,34 @@ kube-state-metrics:
       track_unscheduled_pods: true # Requires resource_types to be exactly [pods].
       shards: 1
       kubernetes: {}
-    objects:
+    workloads:
+      enabled: true
+      resource_types: [deployments, statefulsets, daemonsets, replicasets, replicationcontrollers, jobs, cronjobs, horizontalpodautoscalers, poddisruptionbudgets]
+      track_unscheduled_pods: false
+      shards: 1
+      kubernetes: {}
+    networking:
+      enabled: true
+      resource_types: [services, endpointslices, ingresses, networkpolicies]
+      track_unscheduled_pods: false
+      shards: 1
+      kubernetes: {}
+    storage:
+      enabled: true
+      resource_types: [persistentvolumes, persistentvolumeclaims, volumeattachments]
+      track_unscheduled_pods: false
+      shards: 1
+      kubernetes: {}
+    configuration:
       enabled: true
       # Add secrets to opt in to Secret metrics and list/watch access to Secret contents.
-      resource_types: [deployments, statefulsets, daemonsets, replicasets, replicationcontrollers, jobs, cronjobs, horizontalpodautoscalers, poddisruptionbudgets, services, endpointslices, ingresses, networkpolicies, persistentvolumes, persistentvolumeclaims, volumeattachments, configmaps, nodes, namespaces, storageclasses, resourcequotas, limitranges, leases, certificatesigningrequests, mutatingwebhookconfigurations, validatingadmissionpolicies, validatingadmissionpolicybindings, validatingwebhookconfigurations]
+      resource_types: [configmaps]
+      track_unscheduled_pods: false
+      shards: 1
+      kubernetes: {}
+    cluster:
+      enabled: true
+      resource_types: [nodes, namespaces, storageclasses, resourcequotas, limitranges, leases, certificatesigningrequests, mutatingwebhookconfigurations, validatingadmissionpolicies, validatingadmissionpolicybindings, validatingwebhookconfigurations]
       track_unscheduled_pods: false
       shards: 1
       kubernetes: {}
@@ -1170,8 +1178,7 @@ node-exporter:
       # Declares the exporter as a scrape target, ready for a collector to pick up.
       enabled: true
 
-# Resource metrics API, which the autoscalers read. On by default because a
-# control-plane cluster has no other provider of it. Disable when the cluster
-# already serves metrics.k8s.io.
+# Resource metrics API, used for autoscaling. Disabled by default because it is installed
+# via other mechanisms in many clusters.
 metrics-server:
-  enabled: true
+  enabled: false

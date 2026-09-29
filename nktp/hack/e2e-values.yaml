@@ -1,0 +1,86 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Kind sizing and settings for nktp/hack/e2e-validate.sh and the hand-run
+# docs/nktp/kind-validation.md, applied over the chart's defaults.
+#
+# The defaults size NKTP for a multi-node cluster; one Kind node on the e2e
+# runner cannot schedule them. Lower replica counts, autoscaler floors and
+# requests keep it schedulable while collection behavior and limits stay the
+# chart's own. Adapted from the upstream NKTP project's tests/e2e/values.yaml.
+#
+# Two workloads keep their replica counts, because there the count is behavior:
+# cluster_events runs an elected reader and a standby, and large_target_metrics
+# is a pool the Target Allocator distributes targets across.
+
+# Kind has no other provider of metrics.k8s.io, and the lane asserts the
+# autoscalers read it. --kubelet-insecure-tls is Kind-only: Kind's kubelet
+# serving certificates are self-signed, so metrics-server cannot verify them.
+metrics-server:
+  enabled: true
+  args: ["--kubelet-insecure-tls"]
+
+watchdog:
+  kubernetes:
+    replicas: 1
+    autoscaler:
+      minReplicas: 1
+    resources:
+      requests:
+        cpu: 50m
+
+gateway_logs:
+  kubernetes:
+    replicas: 1
+    autoscaler:
+      minReplicas: 1
+    resources:
+      requests:
+        cpu: 50m
+
+gateway_metrics:
+  kubernetes:
+    replicas: 1
+    autoscaler:
+      minReplicas: 1
+    resources:
+      requests:
+        cpu: 50m
+
+gateway_traces:
+  kubernetes:
+    replicas: 1
+    autoscaler:
+      minReplicas: 1
+    resources:
+      requests:
+        cpu: 50m
+
+daemonset:
+  kubernetes:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+
+cluster_events:
+  kubernetes:
+    resources:
+      requests:
+        cpu: 50m
+
+large_target_metrics:
+  kubernetes:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+
+# Six kube-state-metrics Deployments and the node DaemonSet share this default.
+# Each watches a handful of resource types on a cluster that holds almost
+# nothing.
+kube-state-metrics:
+  kubernetes:
+    resources:
+      requests:
+        cpu: 25m

@@ -28,6 +28,7 @@ set -euo pipefail
 CLUSTER="${CLUSTER:-nktp-e2e}"
 NAMESPACE="${NAMESPACE:-nktp}"
 CHART="${CHART:-nktp/deploy/charts/nktp}"
+VALUES="${VALUES:-nktp/hack/e2e-values.yaml}"
 KIND_CONFIG="${KIND_CONFIG:-controller/hack/cwe-capi-kind.yaml}"
 KEEP_CLUSTER="${KEEP_CLUSTER:-0}"
 REUSE_CLUSTER="${REUSE_CLUSTER:-0}"
@@ -85,18 +86,17 @@ log "Installing the chart"
 make --no-print-directory nktp-chart-deps
 
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-# The node Collector reads /var/log/pods, /proc and /etc/passwd from the host, so
+# The node Collector reads /var/log/pods and /proc from the host, so
 # the namespace has to admit a privileged pod or its DaemonSet never starts.
 kubectl label namespace "$NAMESPACE" \
   pod-security.kubernetes.io/enforce=privileged --overwrite
 
-# --kubelet-insecure-tls is Kind-only: Kind's kubelet serving certificates are
-# self-signed, so metrics-server cannot verify them and never goes Ready. A real
-# site signs them through the controller's CSR approval and needs no such flag.
+# The chart's defaults are sized for a multi-node cluster. VALUES sizes it for
+# one Kind node and turns on metrics-server for Kind; see that file.
 helm install nktp "$CHART" \
   --namespace "$NAMESPACE" \
   --wait --timeout 15m \
-  --set-json 'metrics-server.args=["--kubelet-insecure-tls"]'
+  --values "$VALUES"
 
 log "Waiting for the Operator-built Collectors"
 # helm --wait covers the Helm-managed workloads. The Operator builds the

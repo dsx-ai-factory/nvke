@@ -7,11 +7,12 @@ also bundles node-exporter, kube-state-metrics and an all-in-one development
 backend, all on by default. The backend is for evaluation; a site points the
 exporters at its own.
 
-The default values are sized for the site-controller
-with minimal telemetry: every Collector starts at one replica and autoscales
-on CPU and memory, and every signal is exported over OTLP/HTTP to one
-endpoint, the bundled backend until a site sets its own. Everything larger is a values change; the templates carry
-the full topology.
+The default values run two replicas of every Collector except the node
+DaemonSet, and the gateways, the watchdog and the large-target pool autoscale on
+CPU and memory. Every signal is exported over OTLP/HTTP to one endpoint, the
+bundled backend until a site sets its own. A smaller cluster, such as a
+single-node site controller, lowers the replicas and requests in its values; the
+templates carry the full topology.
 
 The chart version is `version:` in [Chart.yaml](Chart.yaml). A release tag
 `nktp/vX.Y.Z` has to equal it; see [RELEASE.md](../../../../RELEASE.md).
@@ -42,29 +43,27 @@ to the watchdog; the watchdog sends its own to the backend.
 | Values key | Role |
 |---|---|
 | `watchdog` | Receives the other Collectors' own telemetry over OTLP at `nktp-watchdog-collector:4318` and forwards it to the backend. Scrapes the Operator and the Target Allocators. |
-| `gateway_logs`, `gateway_metrics`, `gateway_traces` | The OTLP entry points, one per signal, at `nktp-gateway-<signal>-collector:4317` (gRPC) and `:4318` (HTTP). Forward to the backend. One replica each by default, autoscaling up to 64. |
-| `daemonset` | One Collector per node. Reads pod logs under `/var/log/pods`, scrapes the local kubelet including cAdvisor, collects per-process metrics from `/proc`, with `SYS_PTRACE`, `DAC_READ_SEARCH` and the node's `/etc/passwd` mounted so executable paths, I/O counters and host-user owners resolve, and records each process's cgroup so container processes attribute to their pod, scrapes the targets a node-local Target Allocator assigns from every monitor in the cluster, and forwards each signal to its gateway. Runs as root because of the host log mount. |
-| `large_target_metrics` | A pool with its own Target Allocator for monitors labelled `nktp.nvidia.io/large-target: "true"`, which is how kube-state-metrics is scraped. One replica by default, autoscaling up to 16, sized for a small cluster. |
-| `cluster_events` | Turns Kubernetes Events into logs. One replica by default; a Lease the chart creates in the release namespace elects the reader when there are more. |
-| `kube-state-metrics` | A DaemonSet for node-local Pod metrics, one Deployment for Pods awaiting a node, and one Deployment for every other object type. RBAC is derived from the resource types. The chart can split the central types across sharded Deployments for larger clusters. |
+| `gateway_logs`, `gateway_metrics`, `gateway_traces` | The OTLP entry points, one per signal, at `nktp-gateway-<signal>-collector:4317` (gRPC) and `:4318` (HTTP). Forward to the backend. Two replicas each by default, autoscaling up to 64. |
+| `daemonset` | One Collector per node. Reads pod logs under `/var/log/pods`, scrapes the local kubelet, collects per-process metrics from `/proc`, scrapes the targets a node-local Target Allocator assigns from every monitor in the cluster, and forwards each signal to its gateway. Runs as root because of the host log mount. |
+| `large_target_metrics` | A pool with its own Target Allocator for monitors labelled `nktp.nvidia.io/large-target: "true"`, which is how kube-state-metrics is scraped. Two replicas by default, autoscaling up to 16. |
+| `cluster_events` | Turns Kubernetes Events into logs. Two replicas by default: a Lease the chart creates in the release namespace elects the reader, and the other stands by. |
+| `kube-state-metrics` | A DaemonSet for node-local Pod metrics, one Deployment for Pods awaiting a node, and five Deployments for the other object types, grouped as workloads, networking, storage, configuration and cluster-scoped objects. RBAC is derived from the resource types. Each group can be sharded for larger clusters. |
 | `node-exporter` | The upstream DaemonSet on host network port 9100, with a ServiceMonitor the node Target Allocator picks up. The only source of node-level CPU, memory, filesystem and network metrics; the node Collector's host metrics receiver reports processes, not the node. |
-| `metrics-server` | The resource metrics API the autoscalers read. On by default because a control-plane cluster has no other provider of it. |
+| `metrics-server` | The resource metrics API the autoscalers read. Off by default, because most clusters already have a provider; see [Bundled components](#bundled-components). |
 | `otel-lgtm` | Grafana, Loki, Tempo and Prometheus in one container, with the NKTP dashboards. On by default for evaluation; see [The backend](#the-backend). |
 
-Footprint with default values on three nodes, before the Operator and the three
-Target Allocators, which run with the Operator's own defaults:
+Footprint with default values on three nodes, before the Operator, the three
+Target Allocators and the development backend:
 
 | Workload | Pods | CPU request | Memory request |
 |---|---|---|---|
 | Node Collector | 3 | 300m | 768Mi |
-| Watchdog | 1 | 100m | 256Mi |
-| Gateways | 3 | 600m | 1.5Gi |
-| Large-target pool | 1 | 100m | 256Mi |
-| Cluster event reader | 1 | 200m | 512Mi |
+| Watchdog | 2 | 200m | 512Mi |
+| Gateways | 6 | 1200m | 3Gi |
+| Large-target pool | 2 | 1000m | 16Gi |
+| Cluster event reader | 2 | 400m | 1Gi |
 | node-exporter | 3 | none set | none set |
-| kube-state-metrics | 5 | 125m | 320Mi |
-| Development backend | 1 | none set | none set |
-| metrics-server | 1 | 100m | 200Mi |
+| kube-state-metrics | 9 | 900m | 1.1Gi |
 
 ## Prerequisites
 
@@ -74,8 +73,8 @@ Target Allocators, which run with the Operator's own defaults:
 - A cluster that accepts the `opentelemetry.io/v1beta1` API. The chart installs
   the OpenTelemetry and Prometheus Operator CRDs by default.
 - A release namespace whose Pod Security admission level is `privileged`. The
-  node Collector runs as root with `SYS_PTRACE` and `DAC_READ_SEARCH` and mounts `/var/log/pods`,
-  `/proc` and `/etc/passwd` from the host, which `baseline` rejects.
+  node Collector runs as root and mounts `/var/log/pods` and `/proc` from the
+  host, which `baseline` rejects.
 - For anything beyond evaluation, a backend that accepts OTLP over HTTP for
   metrics, logs and traces. The bundled Collector image exports OTLP only. See
   [The backend](#the-backend).
@@ -165,11 +164,11 @@ read by the Collector through `${env:NAME}` substitution, never in values.
 ### Bundled components
 
 - `kube-state-metrics` runs as one node DaemonSet for scheduled Pods, one
-  Deployment for Pods awaiting a node, and one Deployment named `objects` for
-  every other object type, each with small requests. Their PodMonitors carry
-  the large-target label, so the pool scrapes them. Split `objects` into
-  several groups and raise `large_target_metrics.kubernetes.resources` when
-  the object count grows. Secret metrics stay opt-in because they need list
+  Deployment for Pods awaiting a node, and one Deployment per group of the
+  other object types under `kube-state-metrics.deployments`. Their PodMonitors
+  carry the large-target label, so the pool scrapes them. Raise a group's
+  `shards` and `large_target_metrics.kubernetes.resources` when the object
+  count grows. Secret metrics stay opt-in because they need list
   and watch access to whole Secret objects; add `secrets` to a group's
   `resource_types` and scope its `namespaces` list to enable them.
   `kube-state-metrics.enabled: false` removes all of it.
@@ -178,11 +177,11 @@ read by the Collector through `${env:NAME}` substitution, never in values.
 - `otel-lgtm` is the development backend described above.
   `otel-lgtm.enabled: false` for a site.
 - `metrics-server` serves `metrics.k8s.io`, which is a cluster-wide singleton:
-  one APIService object, owned by one provider. With the default on, this
-  chart owns it. A cluster that already has a provider, or gets one later
-  through another path, must run exactly one of the two, or the APIService
-  flips between backends and the autoscalers lose their metrics.
-  `metrics-server.enabled: false` hands it to the other provider.
+  one APIService object, owned by one provider. It is off by default. Turn it
+  on with `metrics-server.enabled: true` only where nothing else provides the
+  API, such as a bare control-plane cluster. Two providers flip the
+  APIService between backends and the autoscalers lose their metrics, so turn
+  it off again if the cluster gets another one.
 
 ## Bundled dependencies
 
@@ -190,7 +189,7 @@ read by the Collector through `${env:NAME}` substitution, never in values.
 |---|---|---|
 | opentelemetry-kube-stack | 0.22.0 | Operator chart 0.123.0, operator image 0.159.0, and the CRDs. Always installed. |
 | prometheus-node-exporter, aliased `node-exporter` | 4.56.1 | On by default. `node-exporter.enabled: false` when the cluster already runs one. |
-| metrics-server | 3.13.1 | On by default. `metrics-server.enabled: false` when the cluster already serves `metrics.k8s.io`. |
+| metrics-server | 3.13.1 | Off by default. `metrics-server.enabled: true` when nothing else serves `metrics.k8s.io`. |
 
 Pins live in [Chart.yaml](Chart.yaml) and [Chart.lock](Chart.lock). Bump them
 in their own pull request with `helm dependency update` and a chart version bump.
