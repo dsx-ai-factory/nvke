@@ -7,9 +7,9 @@ into three categories:
     describing what you encountered or what you want to see changed.
     - For usage questions, use [GitHub Discussions Q&A](https://github.com/dsx-ai-factory/nke/discussions/categories/q-a)
     instead of an issue.
-    - The maintainers review issues at least weekly. Engineering triages bugs;
-    Product triages feature requests under the DGXC OSS issue-management
-    policy. The impact reported in an issue is evidence for triage, not a
+    - Maintainers triage issues. Engineering reviews bugs, Product reviews
+    feature requests, and maintainers review documentation requests. The
+    impact reported in an issue is evidence for triage, not a
     P0/P1/P2 priority assigned by the reporter. If you believe an issue needs
     prompt attention, comment on it to notify the team.
 2. You want to propose a new Feature and implement it

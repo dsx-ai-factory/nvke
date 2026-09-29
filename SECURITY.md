@@ -37,8 +37,8 @@ for the public coordinated-disclosure and remediation policy. The response
 and resolution timeline depends on the case; this repository does not set a
 separate public deadline.
 
-If you have not heard anything within a few business days of filing, resend to
-psirt@nvidia.com rather than opening a public issue.
+If you need to follow up on a report, contact psirt@nvidia.com rather than
+opening a public issue.
 
 ## Embargo and coordinated disclosure
 
@@ -53,16 +53,9 @@ discussion — issues, pull requests, commit messages and release notes — unti
 PSIRT lifts the embargo. Please keep anything you report confidential until
 PSIRT authorizes disclosure.
 
-PSIRT files an NVBug for the owning engineering team. Confirm access with
-PSIRT before putting embargoed details there. An authorized maintainer may use
-an **unpublished draft** GitHub Security Advisory solely to create a temporary
-private fork for coordinated fix development; this is not a reporting channel
-and the draft must not be published. A vulnerability that cannot be remediated
-on time requires the applicable formal exception process: an eligible
-source-code nSpect finding uses the OSS Exception Tracker, while an
-already-released program or PSIRT bug uses the restricted PSIRT individual-bug
-exception process. Confirm the route with the Security PIC; a scanner waiver
-or green CI result is not policy approval.
+For fix development, maintainers may use an **unpublished draft** GitHub
+Security Advisory only to create a temporary private fork. It is not a
+reporting channel and must not be published.
 
 ## Supported versions
 
@@ -82,9 +75,9 @@ until the project reaches 1.0.
 
 ## Reporter credit
 
-We credit reporters by name in the published advisory and in the release notes
-of the release that carries the fix, unless you ask to stay anonymous. Tell
-PSIRT your preference, and the name or handle you want used, when you file.
+NVIDIA may credit reporters in a published security bulletin or related release
+notes, in coordination with PSIRT. Tell PSIRT if you prefer anonymity, or the
+name or handle you would like used, when you file.
 
 NVIDIA does not run a bug bounty program. We do acknowledge externally reported
 issues resolved under our coordinated vulnerability disclosure policy.
