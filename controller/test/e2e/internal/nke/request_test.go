@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -369,6 +370,96 @@ func TestBuildNicoRequestNodePools(t *testing.T) {
 		t.Fatal("second Nico node pool infra is nil")
 	}
 	assertBootstrapSuccessCommands(t, pools[1].Infra.PreKubeadmCommands)
+}
+
+func TestBuildNicoNodePoolInterfaces(t *testing.T) {
+	subnetA, subnetB := uuid.NewString(), uuid.NewString()
+	prefix := uuid.NewString()
+
+	for name, tc := range map[string]struct {
+		subnets, vpcPrefixes []string
+		want                 []map[string]any
+		wantErr              string
+	}{
+		"subnet fabric": {
+			subnets: []string{subnetA},
+			want:    []map[string]any{{"subnetID": subnetA}},
+		},
+		"one interface per subnet": {
+			subnets: []string{subnetA, subnetB},
+			want:    []map[string]any{{"subnetID": subnetA}, {"subnetID": subnetB}},
+		},
+		// ytl: the pool names a prefix and no subnet, which is what failed as
+		// "at least one subnet ID is required" before the builder knew prefixes.
+		"VPC prefix fabric": {
+			vpcPrefixes: []string{prefix},
+			want:        []map[string]any{{"vpcPrefixID": prefix}},
+		},
+		"both kinds": {
+			subnets:     []string{subnetA},
+			vpcPrefixes: []string{prefix},
+			wantErr:     "both subnet IDs and VPC prefix IDs are set",
+		},
+		"neither": {
+			wantErr: "at least one subnet ID or VPC prefix ID is required",
+		},
+		"malformed prefix": {
+			vpcPrefixes: []string{"not-a-uuid"},
+			wantErr:     "parsing VPC prefix IDs",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			pool, err := buildNicoNodePool("c", uuid.New(), NodePoolSpec{
+				Name:           "worker",
+				InstanceTypeID: uuid.NewString(),
+				SubnetIDs:      tc.subnets,
+				VpcPrefixIDs:   tc.vpcPrefixes,
+			}, NodePayloads{})
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("err = %v, want one containing %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("building pool: %v", err)
+			}
+			if got := machineTemplateInterfaces(t, pool.Infra.MachineTemplate); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("interfaces = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildNicoControlPlaneConfigVpcPrefix(t *testing.T) {
+	prefix := uuid.NewString()
+	cfg, err := buildNicoControlPlaneConfig("c", uuid.New(), ClusterSpec{
+		ControlPlane: ControlPlane{Config: &ControlPlaneConfigSpec{
+			DesiredCount:   1,
+			InstanceTypeID: uuid.NewString(),
+			VpcPrefixIDs:   []string{prefix},
+		}},
+	}, NodePayloads{})
+	if err != nil {
+		t.Fatalf("building control plane config: %v", err)
+	}
+	want := []map[string]any{{"vpcPrefixID": prefix}}
+	if got := machineTemplateInterfaces(t, cfg.Infra.MachineTemplate); !reflect.DeepEqual(got, want) {
+		t.Errorf("control plane interfaces = %v, want %v: the prefix has to reach the machine template", got, want)
+	}
+}
+
+// machineTemplateInterfaces digs the interfaces out of a NicoMachineTemplate.
+func machineTemplateInterfaces(t *testing.T, template map[string]any) []map[string]any {
+	t.Helper()
+	spec, _ := template[capiSpecKey].(map[string]any)
+	tmpl, _ := spec["template"].(map[string]any)
+	inner, _ := tmpl[capiSpecKey].(map[string]any)
+	interfaces, ok := inner["interfaces"].([]map[string]any)
+	if !ok {
+		t.Fatalf("machine template has no interfaces: %v", template)
+	}
+	return interfaces
 }
 
 func assertBootstrapSuccessCommands(t *testing.T, got []string) {
