@@ -15,6 +15,7 @@ import unittest
 
 class BundleTest(unittest.TestCase):
     def test_cold_build_stages_each_architecture(self):
+        """Run bundle.sh against local release fixtures and check every component is staged."""
         script = Path(__file__).with_name("bundle.sh")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

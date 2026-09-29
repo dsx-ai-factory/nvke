@@ -25,6 +25,7 @@ MAX_ARTIFACT_BYTES=268435456
 ARCHES=(amd64 arm64)
 COMPONENTS=(spire-agent tpm_attestor_agent get_tpm_pubhash dsx-imds-node-attestor-agent)
 
+# die prints an error message prefixed with the script name and exits nonzero.
 die() { echo "bundle.sh: $*" >&2; exit 1; }
 
 WRITE_LOCK=0
