@@ -41,8 +41,9 @@ SITE_PROFILES_IMAGE ?= nke-e2e-profiles:local
 
 # Build the CWE from this checkout instead of pulling SITE_CONTROLLER_IMAGE.
 #
-# nkectl is always built here, and it is a client of the CWE it bootstraps, so
-# the two have to come from one commit. A published tag cannot give that:
+# nkectl is built here by default (see SITE_CLI_BUILD), and it is a client of
+# the CWE it bootstraps, so the two have to agree on the cluster API. Built
+# from one commit they do; a published pair has to be chosen to:
 # GHCR carries release tags only and its newest, v0.1.1-rc.8, is 43 commits
 # before #850, which removed infra.spireAttestationMethod from the cluster
 # API. That pairing fails at "creating the site cluster" with
@@ -52,6 +53,12 @@ SITE_PROFILES_IMAGE ?= nke-e2e-profiles:local
 #
 # Set to 0 to qualify a published tag, once one is cut past #850.
 SITE_CONTROLLER_BUILD ?= 1
+
+# Build nkectl from this checkout. Set to 0 to stage a published one instead:
+# download nkectl-linux-$(SITE_ARCH) from a cli/<version> GitHub Release and
+# point site.nkectl in e2e-config.yaml at it. The Forge workflow does this
+# when given a cli-version.
+SITE_CLI_BUILD ?= 1
 
 # Passed through as GIT_VERSION, which the controller Makefile takes from
 # CI_COMMIT_SHA whenever CI is set. That is GitLab's variable: under GitHub
@@ -76,7 +83,9 @@ SITE_CONTROLLER_COMMIT ?= $(shell git -C "$(REPO_ROOT)" rev-parse --short=12 HEA
 site-inputs: ## Build the nkectl and image archives the site lane stages. Needs SITE_CONTROLLER_VERSION and a docker login to SITE_IMAGE_REGISTRY.
 	@test -n "$(SITE_CONTROLLER_VERSION)" || { echo "SITE_CONTROLLER_VERSION is required, e.g. v0.1.1-rc.8" >&2; exit 1; }
 	@mkdir -p "$(SITE_INPUTS)"
+ifeq ($(SITE_CLI_BUILD),1)
 	$(MAKE) -C "$(REPO_ROOT)/cli" build-cross NKECTL_PLATFORMS=linux/$(SITE_ARCH)
+endif
 ifeq ($(SITE_CONTROLLER_BUILD),1)
 	@test "$(SITE_ARCH)" = amd64 || { echo "SITE_CONTROLLER_BUILD=1 builds linux/amd64 only (docker build --load takes one platform); set SITE_CONTROLLER_BUILD=0 for $(SITE_ARCH)" >&2; exit 1; }
 	$(MAKE) -C "$(REPO_ROOT)/controller" docker-build-local IMG=$(SITE_CONTROLLER_IMAGE) GIT_VERSION=$(SITE_CONTROLLER_COMMIT) BUILD_VERSION=$(SITE_CONTROLLER_VERSION)

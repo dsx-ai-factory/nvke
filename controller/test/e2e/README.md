@@ -475,6 +475,22 @@ newest CWE on GHCR predates #850 and rejects this checkout's nkectl at
 `SITE_CONTROLLER_VERSION` as a published tag instead, for qualifying a release
 once one is cut past #850.
 
+To stage a published nkectl instead, download `nkectl-linux-amd64` from its
+`cli/<version>` GitHub Release, check it against the release's
+`checksums.txt`, and skip the build:
+
+```bash
+gmake site-inputs SITE_CLI_BUILD=0 SITE_CONTROLLER_VERSION=...
+# and in e2e-config.yaml, site.nkectl: <path to the downloaded binary>
+# and on the suite, -e2e.versions=...,cli=<version>
+```
+
+The Forge workflow does all of this when given a `cli-version` input or the
+`SITE_E2E_CLI_VERSION` repository variable, and stops if the binary does not
+report the version it was asked for. Pick a CLI and a controller that agree on
+the cluster API; the pairing is not checked until the bootstrap reaches
+"creating the site cluster".
+
 The deploy path is exported from the controller's own commit, tracked files
 only, so nothing in the working tree reaches the node. It carries the
 controller's chart and overlay, so it follows `-e2e.versions=controller=`: that
