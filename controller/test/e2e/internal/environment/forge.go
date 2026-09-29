@@ -162,6 +162,22 @@ func (s ForgeSite) validate() error {
 	if len(s.InstanceTypes) == 0 {
 		missing = append(missing, "instanceTypes")
 	}
+	// A type with no id reaches CreateInstance as instanceTypeId "", and the
+	// error names Forge's field rather than the variable that was never set --
+	// the same late failure the site identifiers above are checked to avoid.
+	// The name is what a lane selects a type by, so a type without one is
+	// unreachable rather than wrong, and either way it is worth saying now.
+	for i, instanceType := range s.InstanceTypes {
+		where := fmt.Sprintf("instanceTypes[%d]", i)
+		if name := strings.TrimSpace(instanceType.Name); name != "" {
+			where = "instanceTypes[" + name + "]"
+		} else {
+			missing = append(missing, where+".name")
+		}
+		if strings.TrimSpace(instanceType.ID) == "" {
+			missing = append(missing, where+".id")
+		}
+	}
 	if len(missing) > 0 {
 		return fmt.Errorf("site %q is missing %s", s.Key, strings.Join(missing, ", "))
 	}

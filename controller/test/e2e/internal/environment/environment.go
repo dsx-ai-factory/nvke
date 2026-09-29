@@ -110,19 +110,26 @@ var reference = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}`)
 // premise of this package is that an environment cannot be defaulted. Every
 // missing name is collected, so one run reports the whole list.
 //
+// Set but empty counts as unset, because that is the shape the caller
+// actually produces: `env: FORGE_VPC_ID: ${{ vars.FORGE_VPC_ID }}` is the
+// empty string when the repository variable does not exist, not absent, and a
+// `||` chain over several candidate names is empty when none of them exist.
+// Distinguishing the two here would mean the failure above is the one a
+// missing variable reaches in CI, which is the only place it matters.
+//
 // ${NAME:-default} is the exception, for a value only some lanes use: the
 // site lane's jump host means nothing to a tenant lane that reaches an
 // existing site controller through the kube context, and that lane must not
-// have to set it. An infrastructure identifier never takes this form.
+// have to set it. Empty takes the default too, as it does in the shell form
+// this borrows. An infrastructure identifier never takes this form.
 func expand(data []byte) ([]byte, error) {
 	missing := make(map[string]struct{})
 
 	expanded := reference.ReplaceAllFunc(data, func(match []byte) []byte {
 		groups := reference.FindSubmatch(match)
 		name := string(groups[1])
-		value, ok := os.LookupEnv(name)
-		switch {
-		case ok:
+		switch value := os.Getenv(name); {
+		case value != "":
 			return []byte(value)
 		case len(groups[2]) > 0:
 			return groups[2][len(":-"):]
@@ -138,7 +145,7 @@ func expand(data []byte) ([]byte, error) {
 			names = append(names, name)
 		}
 		sort.Strings(names)
-		return nil, fmt.Errorf("unset: %s", strings.Join(names, ", "))
+		return nil, fmt.Errorf("unset or empty: %s", strings.Join(names, ", "))
 	}
 
 	return expanded, nil

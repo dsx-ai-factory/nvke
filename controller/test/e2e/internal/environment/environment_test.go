@@ -102,6 +102,30 @@ func TestLoadRejectsUnsetReference(t *testing.T) {
 	}
 }
 
+// A set-but-empty reference has to fail for the same reason an absent one
+// does, and it is the shape CI actually produces: a workflow that writes
+// `env: FORGE_ABSENT_ORG: ${{ vars.FORGE_ABSENT_ORG }}` for a repository
+// variable nobody created sets the variable to "" rather than leaving it out.
+// Checking presence alone would let exactly the run this package exists to
+// prevent through, and only on the runner.
+func TestLoadRejectsEmptyReference(t *testing.T) {
+	t.Setenv("FORGE_ABSENT_ORG", "")
+
+	path := filepath.Join(t.TempDir(), "empty.yaml")
+	body := "provider: forge\ninfrastructure:\n  org:\n    id: \"${FORGE_ABSENT_ORG}\"\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("writing %s: %v", path, err)
+	}
+
+	_, err := loadPath("empty", path)
+	if err == nil {
+		t.Fatal("loading an environment with an empty reference should have failed")
+	}
+	if !strings.Contains(err.Error(), "FORGE_ABSENT_ORG") {
+		t.Errorf("error should name the empty variable, got: %v", err)
+	}
+}
+
 func TestExpandOptionalReference(t *testing.T) {
 	t.Setenv("FORGE_SET_OPTIONAL", "jump.example")
 	for _, tc := range []struct{ in, want string }{
