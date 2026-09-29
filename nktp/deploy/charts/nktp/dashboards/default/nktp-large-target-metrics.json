@@ -1,6 +1,7 @@
 {
   "uid": "nktp-large-target-metrics",
   "title": "NKTP Large-target Metrics",
+  "description": "A separate Collector pool for metrics endpoints with large scrape responses, such as kube-state-metrics. It scrapes ServiceMonitor, PodMonitor, Probe, and ScrapeConfig resources explicitly labeled nktp.nvidia.io/large-target=true; NKTP does not classify targets by size automatically. A Target Allocator spreads those scrapes across the Collectors. Collected metrics go to the NKTP metrics gateway, while the Collectors' own diagnostic telemetry goes to Watchdog. Panels show metric flow, queue use, scrape sample counts, and target assignments; sample counts do not measure response bytes or delivery to storage.",
   "schemaVersion": 39,
   "refresh": "30s",
   "time": {
@@ -249,37 +250,10 @@
       ]
     },
     {
-      "id": 9,
-      "type": "timeseries",
-      "title": "Target Allocator scrape health",
-      "gridPos": {
-        "x": 12,
-        "y": 28,
-        "w": 12,
-        "h": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "min": 0
-        }
-      },
-      "targets": [
-        {
-          "expr": "up{job=\"nktp-large-target-metrics-targetallocator\"}",
-          "legendFormat": "{{instance}}",
-          "refId": "A"
-        }
-      ],
-      "description": "Zero means the scrape failed. No data means Target Allocator metrics are unavailable."
-    },
-    {
       "id": 10,
       "type": "timeseries",
       "title": "Target Allocator collectors",
+      "description": "Discovered and allocatable large-target Collectors reported by each Target Allocator replica. A discovered Collector may not yet be allocatable; replica reports are shown separately.",
       "gridPos": {
         "x": 0,
         "y": 35,
@@ -312,6 +286,7 @@
       "id": 11,
       "type": "timeseries",
       "title": "Targets per collector",
+      "description": "Targets assigned to each large-target Collector by the Target Allocator. This is an assignment count, not a count of successful scrapes. Multiple allocator replicas may report the same assignments.",
       "gridPos": {
         "x": 12,
         "y": 35,

@@ -38,11 +38,13 @@ are listed on the repository's GitHub Releases, as `nktp/vX.Y.Z` tags.
 
 Every Collector below is an `OpenTelemetryCollector` resource that the bundled
 Operator turns into a workload. Each one sends its own metrics, logs and traces
-to the watchdog; the watchdog sends its own to the backend.
+to the watchdog, and so does each Target Allocator its metrics, over OTLP. The
+node Collectors send the Target Allocators' and the Operator's container logs
+there too. The watchdog sends its own telemetry to the backend.
 
 | Values key | Role |
 |---|---|
-| `watchdog` | Receives the other Collectors' own telemetry over OTLP at `nktp-watchdog-collector:4318` and forwards it to the backend. Scrapes the Operator and the Target Allocators. |
+| `watchdog` | Receives the other Collectors' own telemetry over OTLP at `nktp-watchdog-collector:4318` and forwards it to the backend. Scrapes the Operator. |
 | `gateway_logs`, `gateway_metrics`, `gateway_traces` | The OTLP entry points, one per signal, at `nktp-gateway-<signal>-collector:4317` (gRPC) and `:4318` (HTTP). Forward to the backend. Two replicas each by default, autoscaling up to 64. |
 | `daemonset` | One Collector per node. Reads pod logs under `/var/log/pods`, scrapes the local kubelet and its cAdvisor endpoint, collects per-process metrics from `/proc`, scrapes the targets a node-local Target Allocator assigns from every monitor in the cluster, and forwards each signal to its gateway. Runs as root because of the host log mount. |
 | `large_target_metrics` | A pool with its own Target Allocator for monitors labelled `nktp.nvidia.io/large-target: "true"`, which is how kube-state-metrics is scraped. Two replicas by default, autoscaling up to 16. |
@@ -50,7 +52,7 @@ to the watchdog; the watchdog sends its own to the backend.
 | `kube-state-metrics` | A DaemonSet for node-local Pod metrics, one Deployment for Pods awaiting a node, and five Deployments for the other object types, grouped as workloads, networking, storage, configuration and cluster-scoped objects. RBAC is derived from the resource types. Each group can be sharded for larger clusters. |
 | `node-exporter` | The upstream DaemonSet on host network port 9100, with a ServiceMonitor the node Target Allocator picks up. The only source of node-level CPU, memory, filesystem and network metrics; the node Collector's host metrics receiver reports processes, not the node. |
 | `metrics-server` | The resource metrics API the autoscalers read. Off by default, because most clusters already have a provider; see [Bundled components](#bundled-components). |
-| `otel-lgtm` | Grafana, Loki, Tempo and Prometheus in one container, with the NKTP dashboards. On by default for evaluation; see [The backend](#the-backend). |
+| `otel-lgtm` | Grafana, Loki, Tempo and Prometheus in one container, with the NKTP dashboards in [dashboards/default](dashboards/README.md). On by default for evaluation; see [The backend](#the-backend). |
 
 Footprint with default values on three nodes, before the Operator, the three
 Target Allocators and the development backend:
@@ -143,7 +145,10 @@ it is for evaluation only.
 
 A site points those endpoints at its own backend and turns the bundled one
 off. The backend has to accept OTLP over HTTP for metrics, logs and traces;
-the bundled Collector image exports OTLP and nothing else. A values file for a
+the bundled Collector image exports OTLP and nothing else. It also has to
+accept delta metrics: the Target Allocators export some counters as delta even
+though the chart asks for cumulative temporality, which the bundled Prometheus
+converts with `--enable-feature=otlp-deltatocumulative`. A values file for a
 site therefore sets at least:
 
 ```yaml

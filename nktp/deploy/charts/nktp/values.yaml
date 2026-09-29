@@ -38,11 +38,29 @@ watchdog:
       enabled: true # Assign each explicit scrape target to one watchdog replica.
       replicas: 1
       allocationStrategy: consistent-hashing
+      env:
+        - name: OTEL_SERVICE_NAME
+          value: nktp-watchdog-targetallocator
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: service.instance.id=$(POD_NAME)
+      telemetry:
+        metrics:
+          readers:
+            - periodic:
+                interval: 30s
+                exporter:
+                  otlpHttp:
+                    endpoint: http://nktp-watchdog-collector:4318
+                    temporalityPreference: cumulative
       prometheusCR:
         enabled: false # The future metrics service owns monitor discovery.
       observability:
         metrics:
-          enableMetrics: false # Watchdog scrapes the allocator without a ServiceMonitor.
+          enableMetrics: false # Metrics are pushed over OTLP without a ServiceMonitor.
     autoscaler:
       minReplicas: 2
       maxReplicas: 16
@@ -125,28 +143,6 @@ watchdog:
                     target_label: namespace
                   - source_labels: [__meta_kubernetes_endpointslice_address_target_name]
                     target_label: pod
-              # TODO: Replace both TA scrape jobs with native TA OTLP metrics export
-              # to watchdog after an aligned Operator, Target Allocator and CRD upgrade.
-              - job_name: nktp-watchdog-targetallocator
-                scrape_interval: 30s
-                static_configs:
-                  - targets: [nktp-watchdog-targetallocator:80]
-              # Watchdog's allocator assigns each TA Pod to one watchdog replica.
-              - job_name: nktp-large-target-metrics-targetallocator
-                scrape_interval: 30s
-                kubernetes_sd_configs:
-                  - role: pod
-                    namespaces:
-                      own_namespace: true
-                    selectors:
-                      - role: pod
-                        label: app.kubernetes.io/name=nktp-large-target-metrics-targetallocator,app.kubernetes.io/component=opentelemetry-targetallocator
-                relabel_configs:
-                  - source_labels: [__meta_kubernetes_pod_container_port_name]
-                    regex: http
-                    action: keep
-                  - source_labels: [__meta_kubernetes_pod_name]
-                    target_label: instance
       processors:
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
@@ -172,6 +168,7 @@ watchdog:
         telemetry:
           resource:
             service.name: nktp-watchdog
+            service.instance.id: ${env:POD_NAME}
           metrics:
             readers:
               - periodic:
@@ -187,6 +184,7 @@ watchdog:
                       protocol: http/protobuf
                       endpoint: http://lgtm:4318
           traces:
+            level: basic
             processors:
               - batch:
                   exporter:
@@ -296,6 +294,7 @@ gateway_logs:
         telemetry:
           resource:
             service.name: nktp-gateway-logs
+            service.instance.id: ${env:POD_NAME}
           metrics:
             readers:
               - periodic:
@@ -311,6 +310,7 @@ gateway_logs:
                       protocol: http/protobuf
                       endpoint: http://nktp-watchdog-collector:4318
           traces:
+            level: basic
             processors:
               - batch:
                   exporter:
@@ -412,6 +412,7 @@ gateway_metrics:
         telemetry:
           resource:
             service.name: nktp-gateway-metrics
+            service.instance.id: ${env:POD_NAME}
           metrics:
             readers:
               - periodic:
@@ -427,6 +428,7 @@ gateway_metrics:
                       protocol: http/protobuf
                       endpoint: http://nktp-watchdog-collector:4318
           traces:
+            level: basic
             processors:
               - batch:
                   exporter:
@@ -528,6 +530,7 @@ gateway_traces:
         telemetry:
           resource:
             service.name: nktp-gateway-traces
+            service.instance.id: ${env:POD_NAME}
           metrics:
             readers:
               - periodic:
@@ -543,6 +546,7 @@ gateway_traces:
                       protocol: http/protobuf
                       endpoint: http://nktp-watchdog-collector:4318
           traces:
+            level: basic
             processors:
               - batch:
                   exporter:
@@ -618,6 +622,27 @@ daemonset:
       enabled: true
       replicas: 1
       allocationStrategy: per-node # Targets without a matching collector node stay unassigned.
+      env:
+        - name: OTEL_SERVICE_NAME
+          value: nktp-targetallocator
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: service.instance.id=$(POD_NAME)
+      telemetry:
+        metrics:
+          readers:
+            - periodic:
+                interval: 30s
+                exporter:
+                  otlpHttp:
+                    endpoint: http://nktp-watchdog-collector:4318
+                    temporalityPreference: cumulative
+      observability:
+        metrics:
+          enableMetrics: false # Metrics are pushed over OTLP without a ServiceMonitor.
       prometheusCR:
         enabled: true
         denyFSAccessThroughSMs: true # Reject monitor endpoints that reference files in the Collector container.
@@ -710,13 +735,33 @@ daemonset:
               endpoint: 0.0.0.0:4318
         filelog:
           include: [/var/log/pods/*/*/*.log]
-          # NKTP Collectors already send their own logs through watchdog.
-          exclude: ["/var/log/pods/${env:POD_NAMESPACE}_nktp-*-collector-*_*/*/*.log"]
+          exclude:
+            - "/var/log/pods/${env:POD_NAMESPACE}_nktp-*-collector-*_*/*/*.log" # Avoid duplicate logs already exported over OTLP.
+            - "/var/log/pods/${env:POD_NAMESPACE}_nktp-*-targetallocator-*_*/ta-container/*.log" # Collected separately by filelog/targetallocator.
+            - "/var/log/pods/${env:POD_NAMESPACE}_nktp-operator-*_*/manager/*.log" # Collected separately by filelog/operator.
           start_at: end
           include_file_path: true
           retry_on_failure:
             enabled: true
             max_elapsed_time: 0 # Retry downstream transient failures until recovery. Permanent errors are dropped.
+          operators:
+            - type: container
+        filelog/targetallocator:
+          include: ["/var/log/pods/${env:POD_NAMESPACE}_nktp-*-targetallocator-*_*/ta-container/*.log"]
+          start_at: beginning # Include allocator startup diagnostics.
+          include_file_path: true
+          retry_on_failure:
+            enabled: true
+            max_elapsed_time: 0
+          operators:
+            - type: container
+        filelog/operator:
+          include: ["/var/log/pods/${env:POD_NAMESPACE}_nktp-operator-*_*/manager/*.log"]
+          start_at: beginning # Include operator startup diagnostics.
+          include_file_path: true
+          retry_on_failure:
+            enabled: true
+            max_elapsed_time: 0
           operators:
             - type: container
         prometheus:
@@ -773,6 +818,20 @@ daemonset:
             - key: k8s.node.name
               value: ${env:NODE_NAME}
               action: upsert
+        transform/targetallocator:
+          log_statements:
+            - context: resource
+              statements:
+                - set(attributes["service.instance.id"], attributes["k8s.pod.name"])
+                - set(attributes["service.name"], "nktp-targetallocator") where IsMatch(attributes["k8s.pod.name"], "^nktp-daemonset-targetallocator-")
+                - set(attributes["service.name"], "nktp-watchdog-targetallocator") where IsMatch(attributes["k8s.pod.name"], "^nktp-watchdog-targetallocator-")
+                - set(attributes["service.name"], "nktp-large-target-metrics-targetallocator") where IsMatch(attributes["k8s.pod.name"], "^nktp-large-target-metrics-targetallocator-")
+        transform/operator:
+          log_statements:
+            - context: resource
+              statements:
+                - set(attributes["service.name"], "nktp-operator")
+                - set(attributes["service.instance.id"], attributes["k8s.pod.name"])
       exporters:
         otlp_http/logs:
           endpoint: http://nktp-gateway-logs-collector:4318
@@ -816,11 +875,26 @@ daemonset:
               min_size: 1048576
               max_size: 2097152
               flush_timeout: 1s
+        otlp_http/watchdog:
+          endpoint: http://nktp-watchdog-collector:4318
+          retry_on_failure:
+            max_elapsed_time: 30m
+          sending_queue:
+            block_on_overflow: true
+            sizer: bytes
+            queue_size: 1048576
+            num_consumers: 2
+            batch:
+              sizer: bytes
+              min_size: 65536
+              max_size: 262144
+              flush_timeout: 1s
       service:
         extensions: [health_check]
         telemetry:
           resource:
             service.name: nktp-daemonset
+            service.instance.id: ${env:POD_NAME}
             k8s.node.name: ${env:NODE_NAME}
           metrics:
             readers:
@@ -837,6 +911,7 @@ daemonset:
                       protocol: http/protobuf
                       endpoint: http://nktp-watchdog-collector:4318
           traces:
+            level: basic
             processors:
               - batch:
                   exporter:
@@ -848,6 +923,14 @@ daemonset:
             receivers: [filelog, otlp]
             processors: [memory_limiter, resource/node]
             exporters: [otlp_http/logs]
+          logs/targetallocator:
+            receivers: [filelog/targetallocator]
+            processors: [memory_limiter, resource/node, transform/targetallocator]
+            exporters: [otlp_http/watchdog]
+          logs/operator:
+            receivers: [filelog/operator]
+            processors: [memory_limiter, resource/node, transform/operator]
+            exporters: [otlp_http/watchdog]
           metrics:
             receivers: [prometheus, prometheus/kubelet, hostmetrics, otlp]
             processors: [memory_limiter, resource/node]
@@ -866,6 +949,24 @@ large_target_metrics:
       enabled: true
       replicas: 1
       allocationStrategy: consistent-hashing
+      env:
+        - name: OTEL_SERVICE_NAME
+          value: nktp-large-target-metrics-targetallocator
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: service.instance.id=$(POD_NAME)
+      telemetry:
+        metrics:
+          readers:
+            - periodic:
+                interval: 30s
+                exporter:
+                  otlpHttp:
+                    endpoint: http://nktp-watchdog-collector:4318
+                    temporalityPreference: cumulative
       resources:
         requests:
           cpu: 100m
@@ -884,7 +985,7 @@ large_target_metrics:
           drop: [ALL]
       observability:
         metrics:
-          enableMetrics: false # Watchdog owns the explicit TA scrape job.
+          enableMetrics: false # Metrics are pushed over OTLP without a ServiceMonitor.
       prometheusCR:
         enabled: true
         denyFSAccessThroughSMs: true # Reject monitor endpoints that reference files in the Collector container.
@@ -1001,6 +1102,7 @@ large_target_metrics:
         telemetry:
           resource:
             service.name: nktp-large-target-metrics
+            service.instance.id: ${env:POD_NAME}
           metrics:
             readers:
               - periodic:
@@ -1016,6 +1118,7 @@ large_target_metrics:
                       protocol: http/protobuf
                       endpoint: http://nktp-watchdog-collector:4318
           traces:
+            level: basic
             processors:
               - batch:
                   exporter:
@@ -1118,6 +1221,7 @@ cluster_events:
         telemetry:
           resource:
             service.name: nktp-cluster-events
+            service.instance.id: ${env:POD_NAME}
           metrics:
             readers:
               - periodic:
@@ -1133,6 +1237,7 @@ cluster_events:
                       protocol: http/protobuf
                       endpoint: http://nktp-watchdog-collector:4318
           traces:
+            level: basic
             processors:
               - batch:
                   exporter:

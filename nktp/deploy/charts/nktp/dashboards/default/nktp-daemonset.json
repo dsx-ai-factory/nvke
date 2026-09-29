@@ -249,34 +249,6 @@
       ]
     },
     {
-      "id": 9,
-      "type": "timeseries",
-      "title": "Target Allocator scrape health",
-      "gridPos": {
-        "x": 0,
-        "y": 28,
-        "w": 12,
-        "h": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "min": 0
-        }
-      },
-      "targets": [
-        {
-          "expr": "up{job=\"nktp-targetallocator\"}",
-          "legendFormat": "{{instance}}",
-          "refId": "A"
-        }
-      ],
-      "description": "One series per Target Allocator pod. Zero means its scrape failed. No data means no local Target Allocator pods were discovered or metrics collection is unavailable."
-    },
-    {
       "id": 10,
       "type": "timeseries",
       "title": "Target Allocator collectors",
