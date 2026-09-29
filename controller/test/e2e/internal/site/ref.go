@@ -21,8 +21,9 @@ const (
 	// commit under test. It was pinned to the head of pull request 812 while
 	// the deploy path existed only there; 812 was squash-merged, so that
 	// commit is on no branch and a clone without `refs/pull/812/head` cannot
-	// resolve it. Config's deployPathRef overrides this to stage an older
-	// deploy path against a newer suite.
+	// resolve it. The site lane stages from the controller's own commit
+	// instead, since the deploy path carries the controller's chart; see
+	// deployPathRef in site_controller_test.go.
 	DeployPathRef = "HEAD"
 
 	// scriptsDir holds the install script and its helpers, deployDir the

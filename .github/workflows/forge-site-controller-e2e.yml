@@ -84,6 +84,14 @@ on:
         type: boolean
         required: false
         default: false
+      image-registry:
+        description: Where the published controller and capi-provisioned images are pulled from. nvcr needs the NGC_API_KEY secret and the FORGE_E2E_NGC_ORG variable.
+        type: choice
+        required: false
+        default: ghcr
+        options:
+          - ghcr
+          - nvcr
   # The only way to run this lane against a change before that change is on
   # main, and for now the only way to run it at all: workflow_dispatch reads
   # its definition from the default branch, so this file is not dispatchable
@@ -95,8 +103,8 @@ on:
   # does not quietly take another machine. To run again, remove the label and
   # add it back, or use the re-run button.
   #
-  # A pull_request event has no `inputs`, so the four dispatch inputs fall
-  # back to FORGE_E2E_* repository variables. See the job env below.
+  # A pull_request event has no `inputs`, so the dispatch inputs fall back to
+  # FORGE_E2E_* repository variables. See the job env below.
   pull_request:
     types: [labeled]
     branches: [main]
@@ -166,6 +174,18 @@ jobs:
       OS_IMAGE: ${{ inputs.os-image || vars.FORGE_E2E_OS_IMAGE }}
       # A label cannot carry a boolean, so a PR run never keeps its node.
       KEEP_SITE: ${{ inputs.keep-site || false }}
+      # ghcr or nvcr. Only the runner pulls from it: every image it names is
+      # staged onto the node as an archive. The node's own pull is CAPNICo,
+      # which is published to GHCR alone, so the GHCR login below stays either
+      # way.
+      SITE_IMAGE_REGISTRY: ${{ inputs.image-registry || vars.FORGE_E2E_IMAGE_REGISTRY || 'ghcr' }}
+      # The only published capi-provisioned tag. One value for the archive
+      # site-inputs pulls and the reference the suite bootstraps with.
+      SITE_PROVISIONED_VERSION: v0.1.0-rc.1
+      # The NGC org the NVCR images are published under. A repository
+      # variable, not the nvcr environment's NKE_NGC_ORG: that environment
+      # gates the publish jobs, and this job has no business entering it.
+      FORGE_E2E_NGC_ORG: ${{ vars.FORGE_E2E_NGC_ORG }}
       # Where `make site-inputs` writes nkectl and the three image archives.
       # Deliberately not the Makefile default, which is a $HOME cache: that
       # survives between jobs on a self-hosted runner, and a stale archive
@@ -188,6 +208,12 @@ jobs:
       # identity, which is what the token is bound to -- so a variable, not
       # a secret. Out of the file for the same reason as the jump host.
       FORGE_TELEPORT_JOIN_TOKEN: ${{ vars.FORGE_TELEPORT_JOIN_TOKEN }}
+      # The jump host login, read by environments/forge.yaml beside
+      # FORGE_JUMP_HOST. root because that is the only login the bot's role
+      # grants, and the probe confirmed the certificate carries it. No
+      # jumpHostUser or jumpHostKeyFingerprint: Teleport takes the login from
+      # the identity and the host key from the cluster CA.
+      FORGE_TELEPORT_LOGIN: root
       # The identifiers environments/forge.yaml references. Not checked in for
       # the same reason as the jump host and not secrets for the same reason
       # either: an org or subnet id names infrastructure rather than granting
@@ -287,15 +313,29 @@ jobs:
       # tags, so it would report v0.0.0 and silently stop being unique.
       #
       # Naming a version instead pulls that published tag, for qualifying a
-      # release once one is cut past #850.
+      # release once one is cut past #850. The deploy path follows the
+      # controller -- it carries the controller's own chart -- so that
+      # version's controller/<version> release tag is fetched for the suite
+      # to export it from. The checkout is shallow and tagless, and without
+      # credentials, hence the one-off header.
       - name: Resolve the controller version
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           if [ -n "${SITE_CONTROLLER_VERSION}" ]; then
             echo "SITE_CONTROLLER_BUILD=0" >> "${GITHUB_ENV}"
             echo "qualifying the published ${SITE_CONTROLLER_VERSION}"
             echo "::warning::pulling a published CWE, ${SITE_CONTROLLER_VERSION}; if it predates #850 the bootstrap fails at \"creating the site cluster\""
+            tag="controller/${SITE_CONTROLLER_VERSION}"
+            auth="$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 -w0)"
+            echo "::add-mask::${auth}"
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}" \
+              fetch --no-tags --depth=1 origin "refs/tags/${tag}:refs/tags/${tag}" || {
+              echo "::error::no ${tag} release tag; the deploy path is exported from the controller's own commit"
+              exit 1
+            }
             exit 0
           fi
           version="$(git rev-parse --short=12 HEAD)"
@@ -312,6 +352,7 @@ jobs:
         shell: bash
         env:
           REF: ${{ github.ref }}
+          NGC_TOKEN: ${{ secrets.NGC_API_KEY }}
         run: |
           set -Eeuo pipefail
 
@@ -339,7 +380,25 @@ jobs:
                  "a labelled pull request takes them from the FORGE_E2E_* repository variables."
             exit 1
           fi
-          echo "stage=${SITE_STAGE} controller=${SITE_CONTROLLER_VERSION}"
+
+          # The image path, resolved here so every later step reads one value.
+          # Same image names on both; only the prefix differs.
+          case "${SITE_IMAGE_REGISTRY}" in
+            ghcr) images="ghcr.io/dsx-ai-factory/nke" ;;
+            nvcr)
+              if [ -z "${FORGE_E2E_NGC_ORG}" ] || [ -z "${NGC_TOKEN}" ]; then
+                echo "::error::image-registry nvcr needs the FORGE_E2E_NGC_ORG repository variable and the NGC_API_KEY secret"
+                exit 1
+              fi
+              images="nvcr.io/${FORGE_E2E_NGC_ORG}"
+              ;;
+            *)
+              echo "::error::image-registry ${SITE_IMAGE_REGISTRY} is not ghcr or nvcr"
+              exit 1
+              ;;
+          esac
+          echo "SITE_IMAGES=${images}" >> "${GITHUB_ENV}"
+          echo "stage=${SITE_STAGE} controller=${SITE_CONTROLLER_VERSION} images=${images}"
 
       # No stored identity: tbot joins with the repository's OIDC token
       # against a join token named by FORGE_TELEPORT_JOIN_TOKEN, whose bot
@@ -414,16 +473,30 @@ jobs:
           } >> "${GITHUB_ENV}"
           tsh --proxy "${FORGE_TELEPORT_PROXY}" --identity "${TBOT_DIR}/identity" status
 
-      # site-inputs pulls the controller and capi-provisioned images, both
-      # private. The same credential is handed to the suite below, which is
-      # what the *node* pulls CAPNICo with, through the ghcr-imagepull Secret
-      # the deploy path renders.
+      # With image-registry ghcr, site-inputs pulls the controller and
+      # capi-provisioned images from here, both private. Either way the same
+      # credential is handed to the suite below, which is what the *node*
+      # pulls CAPNICo with, through the ghcr-imagepull Secret the deploy path
+      # renders.
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # An NGC key with pull access on the FORGE_E2E_NGC_ORG org's registry.
+      # Separate from FORGE_API_KEY because NGC cannot scope one key to both
+      # the Forge tenant and the registry. The runner is the only thing that
+      # pulls with it: nothing on the node pulls from NVCR.
+      - name: Log in to NVCR
+        if: env.SITE_IMAGE_REGISTRY == 'nvcr'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: nvcr.io
+          # `$oauthtoken` is NGC's literal username, not a variable reference.
+          username: $oauthtoken
+          password: ${{ secrets.NGC_API_KEY }}
 
       # nkectl for the node's architecture, the three image archives, and the
       # deploy path out of the checkout. The node has no access to this
@@ -437,11 +510,14 @@ jobs:
           make -C controller/test/e2e site-inputs \
             SITE_CONTROLLER_VERSION="${SITE_CONTROLLER_VERSION}" \
             SITE_CONTROLLER_BUILD="${SITE_CONTROLLER_BUILD}" \
+            SITE_IMAGE_REGISTRY="${SITE_IMAGES}" \
+            SITE_PROVISIONED_VERSION="${SITE_PROVISIONED_VERSION}" \
             SITE_INPUTS="${SITE_INPUTS}"
 
-      # Identifiers and paths only. Every secret is read from the environment
-      # by the suite itself and never reaches this file -- see the const block
-      # at the top of site_controller_test.go.
+      # Where each staged image came from, and nothing else. Versions are
+      # -e2e.versions keys, the jump host is environments/forge.yaml's, and
+      # every secret is read from the environment by the suite itself -- see
+      # the const block at the top of site_controller_test.go.
       - name: Write the e2e config
         shell: bash
         run: |
@@ -452,41 +528,27 @@ jobs:
           }
           # A variable rather than a secret, and rightly so -- a hostname
           # grants nothing. But it is the access path to the site, which is
-          # why it is kept out of environments/forge.yaml, and a job log is
-          # readable by more people than that file was withheld from. Masking
-          # holds for the rest of the job, which covers the cat below and the
-          # resolved-inputs step. It does not reach files, so the artifact
-          # that step writes redacts it separately.
+          # why environments/forge.yaml references it rather than naming it,
+          # and a job log is readable by more people than that file was
+          # withheld from. Masking holds for the rest of the job.
           echo "::add-mask::${FORGE_JUMP_HOST}"
+          # The repositories are the ones site-inputs pulled or tagged, so the
+          # references the suite hands the bootstrap and the deploy path are
+          # the ones the archives carry.
           cat > controller/test/e2e/e2e-config.yaml <<EOF
           # Generated by .github/workflows/forge-site-controller-e2e.yml.
           site:
-            jumpHost: "${FORGE_JUMP_HOST}"
-            # root because that is the only login the bot's role grants, and
-            # the probe confirmed the certificate carries it.
-            # No jumpHostUser or jumpHostKeyFingerprint: Teleport takes the
-            # login from the identity and the host key from the cluster CA.
-            teleportLogin: "root"
-            # The no-SPIRE path, for the bootstrap only. It also decides the
-            # node agent's arguments, which have to agree -- see nodeInputs.
-            #
-            # The alternative needs the node's TPM EK thumbprint in the site
-            # spec, and Forge does not report one: run 36016817952 installed
-            # SPIRE with tpmThumbprints=0, so no TPM attestor was deployed,
-            # the agent could never attest, and the cluster sat in
-            # Provisioning for its full 30 minutes without an error. The
-            # procedure that has actually built a site on Forge bootstraps
-            # this way too, and turns SPIRE and TPM on in the deploy path
-            # afterwards -- which the full stage still exercises.
-            disableMTLS: true
             images:
-              - ${SITE_INPUTS}/controller.tar
-              - ${SITE_INPUTS}/capi-provisioned.tar
-              - ${SITE_INPUTS}/profiles.tar
-            bootstrapEnv:
-              NKECTL_CWE_IMAGE: ghcr.io/dsx-ai-factory/nke/nke-controller:${SITE_CONTROLLER_VERSION}
-              NKECTL_CAPI_PROVISIONED_IMAGE: ghcr.io/dsx-ai-factory/nke/cluster-api-provider-provisioned:v0.1.0-rc.1
-            profilesImage: nke-e2e-profiles:local
+              controller:
+                repository: ${SITE_IMAGES}/nke-controller
+                archive: ${SITE_INPUTS}/controller.tar
+              capi-provisioned:
+                repository: ${SITE_IMAGES}/cluster-api-provider-provisioned
+                archive: ${SITE_INPUTS}/capi-provisioned.tar
+              profiles:
+                repository: nke-e2e-profiles
+                tag: local
+                archive: ${SITE_INPUTS}/profiles.tar
           EOF
           echo "--- e2e-config.yaml ---"
           cat controller/test/e2e/e2e-config.yaml
@@ -510,6 +572,9 @@ jobs:
           IN_OS_IMAGE_BOOTLOADER: ${{ inputs.os-image-bootloader }}
           IN_OS_IMAGE: ${{ inputs.os-image }}
           IN_KEEP_SITE: ${{ inputs.keep-site }}
+          IN_IMAGE_REGISTRY: ${{ inputs.image-registry }}
+          VAR_IMAGE_REGISTRY: ${{ vars.FORGE_E2E_IMAGE_REGISTRY }}
+          VAR_NGC_ORG: ${{ vars.FORGE_E2E_NGC_ORG }}
           VAR_STAGE: ${{ vars.FORGE_E2E_STAGE }}
           VAR_CONTROLLER_VERSION: ${{ vars.FORGE_E2E_CONTROLLER_VERSION }}
           VAR_OS_IMAGE_BOOTLOADER: ${{ vars.FORGE_E2E_OS_IMAGE_BOOTLOADER }}
@@ -526,6 +591,8 @@ jobs:
             "OS image bootloader|OS_IMAGE_BOOTLOADER|IN_OS_IMAGE_BOOTLOADER|VAR_OS_IMAGE_BOOTLOADER|FORGE_E2E_OS_IMAGE_BOOTLOADER"
             "OS image|OS_IMAGE|IN_OS_IMAGE|VAR_OS_IMAGE|FORGE_E2E_OS_IMAGE"
             "keep the node|KEEP_SITE|IN_KEEP_SITE||"
+            "image registry|SITE_IMAGE_REGISTRY|IN_IMAGE_REGISTRY|VAR_IMAGE_REGISTRY|FORGE_E2E_IMAGE_REGISTRY"
+            "NGC org|FORGE_E2E_NGC_ORG||VAR_NGC_ORG|FORGE_E2E_NGC_ORG"
             "Teleport proxy|FORGE_TELEPORT_PROXY||VAR_TELEPORT_PROXY|FORGE_TELEPORT_PROXY"
             "jump host|FORGE_JUMP_HOST||VAR_JUMP_HOST|FORGE_JUMP_HOST"
           )
@@ -586,14 +653,7 @@ jobs:
             done
             echo
             echo "--- e2e-config.yaml (what the suite reads) ---"
-            # Same reason as the row above, and needed separately: ::add-mask::
-            # redacts the log, not a file. The substitution is guarded because
-            # an empty pattern would match at every position.
-            if [ -n "${FORGE_JUMP_HOST:-}" ]; then
-              sed "s|${FORGE_JUMP_HOST}|<jump host withheld>|g" controller/test/e2e/e2e-config.yaml
-            else
-              cat controller/test/e2e/e2e-config.yaml
-            fi
+            cat controller/test/e2e/e2e-config.yaml
           } | tee "${OUT}"
 
       # Three nested timeouts, shortest first, because only the shortest one
@@ -681,7 +741,7 @@ jobs:
             -e2e.config=e2e-config.yaml \
             -e2e.environment=forge \
             -e2e.site-stage="${SITE_STAGE}" \
-            -e2e.versions="controller=${SITE_CONTROLLER_VERSION},os-image-bootloader=${OS_IMAGE_BOOTLOADER},os-image=${OS_IMAGE}" \
+            -e2e.versions="controller=${SITE_CONTROLLER_VERSION},capi-provisioned=${SITE_PROVISIONED_VERSION},os-image-bootloader=${OS_IMAGE_BOOTLOADER},os-image=${OS_IMAGE}" \
             "${keep[@]}" 2>&1 | tee site-e2e.log
 
       # The Ginkgo log carries every phase boundary, remote command and

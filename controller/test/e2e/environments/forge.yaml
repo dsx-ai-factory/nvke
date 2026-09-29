@@ -5,7 +5,8 @@
 # `-e2e.environment forge`.
 #
 # No identifiers. Every ${...} below is read from the process environment at
-# load time and an unset one fails the run; CI supplies them from repository
+# load time and an unset one fails the run, unless it is written ${NAME:-} for
+# a value only some lanes use; CI supplies them from repository
 # variables, the same route the Teleport proxy and the jump host already take.
 # What stays here is the part that is engineering rather than account: which
 # sites exist, which machine shapes they offer, and what those shapes provide.
@@ -49,6 +50,14 @@ infrastructure:
       # Serial-over-LAN console access, not authorized_keys, so this grants no
       # shell on a node.
       sshKeyGroupID: "${FORGE_SSH_KEY_GROUP_ID}"
+
+      # How the site lane reaches the machines it provisions: they sit behind
+      # this jump host and are not Teleport-enrolled themselves. Defaulted
+      # empty rather than required, because a tenant lane against an existing
+      # site controller never dials it; the site lane fails on an empty one
+      # before a machine exists. The CI bot's only login is root.
+      jumpHost: "${FORGE_JUMP_HOST:-}"
+      teleportLogin: "${FORGE_TELEPORT_LOGIN:-}"
 
       # Only the two types below have actually carried a tenant here. The site
       # offers more, but a Forge instance-type list caps at twenty rows and

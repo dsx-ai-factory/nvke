@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -50,11 +51,39 @@ const (
 )
 
 // Host tools the node installs for nkectl, pinned to what has built a site on
-// the Forge hardware. Each can be overridden through -e2e.versions.
+// the Forge hardware. Each can be overridden through -e2e.versions, as can
+// capi-provisioned, the only published CAPI provider tag there is.
 const (
-	siteDefaultNerdctlVersion    = "2.3.5"
-	siteDefaultKindVersion       = "v0.30.0"
-	siteDefaultClusterctlVersion = "v1.12.3"
+	siteDefaultNerdctlVersion         = "2.3.5"
+	siteDefaultKindVersion            = "v0.30.0"
+	siteDefaultClusterctlVersion      = "v1.12.3"
+	siteDefaultCAPIProvisionedVersion = "v0.1.0-rc.1"
+)
+
+// The shape of the site the lane bootstraps.
+const (
+	siteCNI = CNIPluginOVN
+
+	// siteDisableMTLS bootstraps without SPIFFE. The alternative needs the
+	// node's TPM EK thumbprint in the site spec, and Forge does not report
+	// one: run 36016817952 installed SPIRE with tpmThumbprints=0, so no TPM
+	// attestor was deployed, the agent could never attest, and the cluster
+	// sat in Provisioning for its full 30 minutes without an error. The
+	// procedure that has actually built a site on Forge bootstraps this way
+	// too, and turns SPIRE and TPM on in the deploy path afterwards -- which
+	// the full stage still exercises.
+	//
+	// A constant rather than derived from infra.Node.TPMEkThumbprint: it
+	// also decides the node agent's arguments, which cloud-init writes
+	// before the node, and so its thumbprint, exists. See nodeInputs.
+	siteDisableMTLS = true
+
+	// siteCAPNICoRegistry is the one registry the node pulls from itself:
+	// CAPNICo's manifest is its published release asset, which names a GHCR
+	// image, and the deploy path's ghcr-imagepull Secret carries one
+	// registry. Everything else is staged. The credential is envRegistryUser
+	// and envRegistryToken.
+	siteCAPNICoRegistry = "ghcr.io"
 )
 
 var (
@@ -182,7 +211,7 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		}
 		if keepSite || (lane.cfg.Lifecycle.PreserveOnFailure && failed) {
 			GinkgoLogr.Info("keeping the site controller", "name", node.Name, "ip", node.IP,
-				"jumpHost", lane.cfg.Site.JumpHost, "kubeconfig", built.Kubeconfig)
+				"jumpHost", lane.site.JumpHost, "kubeconfig", built.Kubeconfig)
 			return
 		}
 		detached := context.WithoutCancel(ctx)
@@ -208,6 +237,7 @@ type siteLane struct {
 	cfg          config.Config
 	name         string
 	env          *environment.Forge
+	site         environment.ForgeSite
 	capabilities map[string]string
 	apiKey       string
 	provider     infra.Provider
@@ -254,14 +284,13 @@ func newSiteLane() (siteLane, error) {
 	if apiKey == "" {
 		return siteLane{}, fmt.Errorf("%s is not set", envForgeAPIKey)
 	}
-	name := cfg.Site.Name
-	if name == "" {
-		suffix, rerr := randomHex(3)
-		if rerr != nil {
-			return siteLane{}, rerr
-		}
-		name = "nke-e2e-site-" + suffix
+	// Per run, never configured: it is the cluster name and the SPIRE trust
+	// domain, and two runs sharing one would collide on both.
+	suffix, err := randomHex(3)
+	if err != nil {
+		return siteLane{}, err
 	}
+	name := "nke-e2e-site-" + suffix
 	tenantPassword, err := randomHex(16)
 	if err != nil {
 		return siteLane{}, err
@@ -273,7 +302,7 @@ func newSiteLane() (siteLane, error) {
 
 	kubernetesVersion := defaultString(optionalVersion("kube"), forgeDefaultKubernetesVersion)
 	dialer := &teleport.Dialer{
-		Login:        cfg.Site.TeleportLogin,
+		Login:        forgeSite.TeleportLogin,
 		IdentityFile: cfg.Site.TeleportIdentityFile,
 	}
 	// Teleport is the route; the password is the interim one, for a site
@@ -283,9 +312,9 @@ func newSiteLane() (siteLane, error) {
 	// are reached with the run's own key either way.
 	if password := os.Getenv(envJumpHostPassword); password != "" {
 		if jerr := dialer.JumpOverSSH(teleport.SSHJumpHost{
-			User:               defaultString(cfg.Site.JumpHostUser, cfg.Site.TeleportLogin),
+			User:               defaultString(forgeSite.JumpHostUser, forgeSite.TeleportLogin),
 			Password:           password,
-			HostKeyFingerprint: cfg.Site.JumpHostKeyFingerprint,
+			HostKeyFingerprint: forgeSite.JumpHostKeyFingerprint,
 		}); jerr != nil {
 			return siteLane{}, jerr
 		}
@@ -294,7 +323,7 @@ func newSiteLane() (siteLane, error) {
 		Env:      env,
 		Site:     forgeSite.Key,
 		APIKey:   apiKey,
-		JumpHost: cfg.Site.JumpHost,
+		JumpHost: forgeSite.JumpHost,
 		// The site node boots the same OS image as the tenants it will host.
 		Images: func(string) (string, string, error) {
 			bootLoaderURL, berr := requireVersion("os-image-bootloader")
@@ -305,19 +334,19 @@ func newSiteLane() (siteLane, error) {
 			return bootLoaderURL, imageURL, ierr
 		},
 		Dialer: forge.Teleport(dialer),
-		Node:   nodeInputs(cfg, kubernetesVersion),
+		Node:   nodeInputs(kubernetesVersion),
 		Tools: forge.HostTools{
 			NerdctlVersion:    defaultString(optionalVersion("nerdctl"), siteDefaultNerdctlVersion),
 			KindVersion:       defaultString(optionalVersion("kind"), siteDefaultKindVersion),
 			ClusterctlVersion: defaultString(optionalVersion("clusterctl"), siteDefaultClusterctlVersion),
 		},
-		DisableMTLS: cfg.Site.DisableMTLS,
+		DisableMTLS: siteDisableMTLS,
 	})
 	if err != nil {
 		return siteLane{}, err
 	}
 	return siteLane{
-		cfg: cfg, name: name, env: env,
+		cfg: cfg, name: name, env: env, site: forgeSite,
 		capabilities: capabilities, apiKey: apiKey, provider: provider,
 		tenantPassword: tenantPassword, dbPassword: dbPassword,
 	}, nil
@@ -385,16 +414,16 @@ func collectSiteDiagnostics(ctx context.Context, session infra.Session, secrets 
 
 // nodeInputs is what cloud-init writes onto the node. The agent's arguments
 // are decided here because they have to agree with the bootstrap's
-// --disable-mtls, which comes from the same config field: the two sides
+// --disable-mtls, which comes from the same constant: the two sides
 // negotiate with each other, and a mismatch surfaces as an opaque TLS
 // handshake error rather than as a configuration problem.
-func nodeInputs(cfg config.Config, kubernetesVersion string) nke.NodeInputs {
+func nodeInputs(kubernetesVersion string) nke.NodeInputs {
 	inputs := nke.NodeInputs{
 		KubernetesVersion: kubernetesVersion,
 		CNIVersion:        defaultString(optionalVersion("nke-cni-ovn"), forgeDefaultCNIVersion),
 		SpireVersion:      defaultString(optionalVersion("spire-agent"), forgeDefaultSpireVersion),
 	}
-	if cfg.Site.DisableMTLS {
+	if siteDisableMTLS {
 		inputs.AgentArgs = nke.AgentArgsNoMTLS
 	}
 	return inputs
@@ -413,12 +442,21 @@ func (l siteLane) candidate(node infra.Node) (site.Candidate, site.Options, erro
 		repo = strings.TrimSpace(string(top))
 	}
 	nkectl := defaultString(l.cfg.Site.Nkectl, filepath.Join("cli", "dist", "nkectl-linux-"+node.Arch))
-	images := make([]string, 0, len(l.cfg.Site.Images))
-	for _, image := range l.cfg.Site.Images {
-		images = append(images, inRepo(repo, image))
+	version, err := requireVersion("controller")
+	if err != nil {
+		return site.Candidate{}, site.Options{}, err
+	}
+	images := l.cfg.Site.Images
+	controller := site.Image{Repository: images.Controller.Repository, Tag: version}
+	provisioned := site.Image{
+		Repository: images.CAPIProvisioned.Repository,
+		Tag:        defaultString(optionalVersion("capi-provisioned"), siteDefaultCAPIProvisionedVersion),
 	}
 
-	ref := defaultString(l.cfg.Site.DeployPathRef, site.DeployPathRef)
+	ref, err := deployPathRef(repo, l.cfg.Site.DeployPathRef, version)
+	if err != nil {
+		return site.Candidate{}, site.Options{}, err
+	}
 	assets, err := site.ExportRef(context.Background(), repo, ref, site.DeployAssetPaths())
 	if err != nil {
 		return site.Candidate{}, site.Options{}, err
@@ -426,22 +464,31 @@ func (l siteLane) candidate(node infra.Node) (site.Candidate, site.Options, erro
 	DeferCleanup(func() { _ = os.RemoveAll(assets) })
 
 	c := site.Candidate{
-		SiteName:          l.name,
-		Nkectl:            inRepo(repo, nkectl),
-		Assets:            assets,
-		AssetPaths:        site.DeployAssetPaths(),
-		Images:            images,
+		SiteName:   l.name,
+		Nkectl:     inRepo(repo, nkectl),
+		Assets:     assets,
+		AssetPaths: site.DeployAssetPaths(),
+		Images: []string{
+			inRepo(repo, images.Controller.Archive),
+			inRepo(repo, images.CAPIProvisioned.Archive),
+			inRepo(repo, images.Profiles.Archive),
+		},
 		KubernetesVersion: defaultString(optionalVersion("kube"), forgeDefaultKubernetesVersion),
-		CNI:               l.cfg.Site.CNI,
-		DisableMTLS:       l.cfg.Site.DisableMTLS,
-		BootstrapEnv:      l.cfg.Site.BootstrapEnv,
+		CNI:               siteCNI,
+		DisableMTLS:       siteDisableMTLS,
+		// The references the archives carry, so the bootstrap's kind cluster
+		// resolves them from containerd rather than a registry.
+		BootstrapEnv: map[string]string{
+			"NKECTL_CWE_IMAGE":              controller.Ref(),
+			"NKECTL_CAPI_PROVISIONED_IMAGE": provisioned.Ref(),
+		},
 	}
 	if siteStage != siteStageFull {
 		c.Deploy = noDeploy{}
 		return c, site.Options{Probe: probeAPIServer}, nil
 	}
 
-	deployer, version, err := l.sbom(node)
+	deployer, err := l.sbom(node, controller)
 	if err != nil {
 		return site.Candidate{}, site.Options{}, err
 	}
@@ -449,30 +496,42 @@ func (l siteLane) candidate(node infra.Node) (site.Candidate, site.Options, erro
 	return c, site.Options{}, nil
 }
 
-func (l siteLane) sbom(node infra.Node) (site.SBOM, string, error) {
-	version, err := requireVersion("controller")
-	if err != nil {
-		return site.SBOM{}, "", err
+// deployPathRef is the commit the deploy path is exported from. It carries
+// the controller's own chart and overlay, so unless configured it follows the
+// controller: the commit itself when the controller was built from one, else
+// that version's release tag.
+func deployPathRef(repo, configured, controllerVersion string) (string, error) {
+	if configured != "" {
+		return configured, nil
 	}
-	profiles, err := splitImage(l.cfg.Site.ProfilesImage)
-	if err != nil {
-		return site.SBOM{}, "", fmt.Errorf("site.profilesImage: %w", err)
+	candidates := []string{controllerVersion, "controller/" + controllerVersion}
+	for _, ref := range candidates {
+		if exec.CommandContext(context.Background(), "git", "-C", repo, "cat-file", "-e", ref+"^{commit}").Run() == nil {
+			return ref, nil
+		}
 	}
+	return "", fmt.Errorf("the deploy path follows the controller version, and neither %s resolves in %s; "+
+		"fetch the release tag or set site.deployPathRef", strings.Join(candidates, " nor "), repo)
+}
+
+func (l siteLane) sbom(node infra.Node, controller site.Image) (site.SBOM, error) {
+	images := l.cfg.Site.Images
+	profiles := site.Image{Repository: images.Profiles.Repository, Tag: images.Profiles.Tag}
 	user, token := os.Getenv(envRegistryUser), os.Getenv(envRegistryToken)
 	if user == "" || token == "" {
-		return site.SBOM{}, "", fmt.Errorf("%s and %s are required to pull the private images", envRegistryUser, envRegistryToken)
+		return site.SBOM{}, fmt.Errorf("%s and %s are required for the node to pull CAPNICo from %s", envRegistryUser, envRegistryToken, siteCAPNICoRegistry)
 	}
 	unameArch := map[string]string{"amd64": "x86_64", "arm64": "arm64"}[node.Arch]
-	GinkgoLogr.Info("deploying the stack", "node", node.Name, "controller", version, "profiles", l.cfg.Site.ProfilesImage)
+	GinkgoLogr.Info("deploying the stack", "node", node.Name, "controller", controller.Ref(), "profiles", profiles.Ref())
 	return site.SBOM{
-		Controller: site.Image{Repository: l.cfg.Site.ControllerRepository, Tag: version},
+		Controller: controller,
 		Profiles:   profiles,
 		Nico: site.Nico{
 			Endpoint: forge.DefaultEndpoint,
 			OrgID:    l.env.Org.ID,
 			Token:    l.apiKey,
 		},
-		Registry: site.Registry{Server: l.cfg.Site.RegistryServer, Username: user, Token: token},
+		Registry: site.Registry{Server: siteCAPNICoRegistry, Username: user, Token: token},
 		// The login baked into tenant nodes' user-data; nothing outside the
 		// run needs it.
 		Tenant: site.Tenant{User: "nke-tenant", Password: l.tenantPassword},
@@ -480,7 +539,7 @@ func (l siteLane) sbom(node infra.Node) (site.SBOM, string, error) {
 		// value is one placedSecrets can name.
 		DatabasePassword: l.dbPassword,
 		Arch:             unameArch,
-	}, version, nil
+	}, nil
 }
 
 // noDeploy is the bootstrap stage's deployer: Kubernetes only.
@@ -533,15 +592,6 @@ func sweepSiteTenants(ctx context.Context, kubeconfig string) error {
 	return site.SweepTenants(ctx, client)
 }
 
-func splitImage(ref string) (site.Image, error) {
-	slash := strings.LastIndex(ref, "/")
-	colon := strings.LastIndex(ref, ":")
-	if ref == "" || colon <= slash {
-		return site.Image{}, fmt.Errorf("%q is not repository:tag", ref)
-	}
-	return site.Image{Repository: ref[:colon], Tag: ref[colon+1:]}, nil
-}
-
 func inRepo(repo, path string) string {
 	if rest, ok := strings.CutPrefix(path, "~/"); ok {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -560,6 +610,38 @@ func randomHex(n int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func TestDeployPathRefFollowsTheController(t *testing.T) {
+	repo := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		out, err := exec.CommandContext(context.Background(), "git", append([]string{"-C", repo}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-q")
+	git("-c", "user.name=e2e", "-c", "user.email=e2e@example.com", "commit", "-q", "--allow-empty", "-m", "first")
+	git("tag", "controller/v0.1.1-rc.8")
+	commit := git("rev-parse", "--short=12", "HEAD")
+
+	for _, tc := range []struct{ name, configured, version, want string }{
+		{"built from a commit", "", commit, commit},
+		{"published version", "", "v0.1.1-rc.8", "controller/v0.1.1-rc.8"},
+		{"configured wins", "abc", "v0.1.1-rc.8", "abc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := deployPathRef(repo, tc.configured, tc.version)
+			if err != nil || got != tc.want {
+				t.Errorf("deployPathRef = %q, %v; want %q", got, err, tc.want)
+			}
+		})
+	}
+	if _, err := deployPathRef(repo, "", "v9.9.9"); err == nil || !strings.Contains(err.Error(), "controller/v9.9.9") {
+		t.Errorf("an unresolvable version should fail naming its tag, got %v", err)
+	}
 }
 
 func expectSucceed2[A, B any](a A, b B, err error, messages ...any) (A, B) {

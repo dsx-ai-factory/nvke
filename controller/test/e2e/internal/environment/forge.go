@@ -55,6 +55,23 @@ type ForgeSite struct {
 	// passing the same field to CreateInstance beside a wait-for-SSH step.
 	SSHKeyGroupID string `json:"sshKeyGroupID"`
 
+	// JumpHost is the node the site's machines are reached through; they are
+	// not Teleport-enrolled themselves. Optional here, because only a lane
+	// that provisions machines on the site needs it, and forge.New rejects an
+	// empty one. The Teleport proxy is not declared: tsh takes it from
+	// $TELEPORT_PROXY or the logged-in profile.
+	JumpHost string `json:"jumpHost"`
+	// TeleportLogin is the jump host login; empty is tsh's default.
+	TeleportLogin string `json:"teleportLogin"`
+	// JumpHostUser is the jump host login for the plain-SSH route, taken
+	// when JUMP_HOST_PASSWORD is set. Empty falls back to TeleportLogin, so a
+	// site that uses the same account for both names it once.
+	JumpHostUser string `json:"jumpHostUser"`
+	// JumpHostKeyFingerprint pins the jump host's host key on the plain-SSH
+	// route. Empty accepts whatever it presents and warns on every dial; see
+	// teleport.SSHJumpHost for how to read one.
+	JumpHostKeyFingerprint string `json:"jumpHostKeyFingerprint"`
+
 	// No control-plane VIP. CWE treats an empty one as "do not configure
 	// kube-vip", which is what create-forge-nico-cluster.sh relies on: it
 	// sends no VIP at all. The simulator backends need one because their BGP

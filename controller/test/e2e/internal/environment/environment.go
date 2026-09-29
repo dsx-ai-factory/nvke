@@ -88,10 +88,11 @@ func loadPath(name, path string) (*Environment, error) {
 	return &env, nil
 }
 
-// reference matches ${NAME}. Only the braced form is recognized: a bare $NAME
-// would also match prose in a comment, and expansion happens before the YAML
-// is parsed, so a comment is not yet a comment when this runs.
-var reference = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+// reference matches ${NAME} and ${NAME:-default}. Only the braced form is
+// recognized: a bare $NAME would also match prose in a comment, and expansion
+// happens before the YAML is parsed, so a comment is not yet a comment when
+// this runs.
+var reference = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}`)
 
 // expand substitutes ${NAME} from the process environment.
 //
@@ -108,17 +109,27 @@ var reference = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 // against an API that was asked to create a cluster in org "" -- and the
 // premise of this package is that an environment cannot be defaulted. Every
 // missing name is collected, so one run reports the whole list.
+//
+// ${NAME:-default} is the exception, for a value only some lanes use: the
+// site lane's jump host means nothing to a tenant lane that reaches an
+// existing site controller through the kube context, and that lane must not
+// have to set it. An infrastructure identifier never takes this form.
 func expand(data []byte) ([]byte, error) {
 	missing := make(map[string]struct{})
 
 	expanded := reference.ReplaceAllFunc(data, func(match []byte) []byte {
-		name := string(reference.FindSubmatch(match)[1])
+		groups := reference.FindSubmatch(match)
+		name := string(groups[1])
 		value, ok := os.LookupEnv(name)
-		if !ok {
+		switch {
+		case ok:
+			return []byte(value)
+		case len(groups[2]) > 0:
+			return groups[2][len(":-"):]
+		default:
 			missing[name] = struct{}{}
 			return match
 		}
-		return []byte(value)
 	})
 
 	if len(missing) > 0 {

@@ -102,6 +102,24 @@ func TestLoadRejectsUnsetReference(t *testing.T) {
 	}
 }
 
+func TestExpandOptionalReference(t *testing.T) {
+	t.Setenv("FORGE_SET_OPTIONAL", "jump.example")
+	for _, tc := range []struct{ in, want string }{
+		{`a: "${FORGE_ABSENT_OPTIONAL:-}"`, `a: ""`},
+		{`a: "${FORGE_ABSENT_OPTIONAL:-root}"`, `a: "root"`},
+		{`a: "${FORGE_SET_OPTIONAL:-}"`, `a: "jump.example"`},
+	} {
+		got, err := expand([]byte(tc.in))
+		if err != nil {
+			t.Errorf("expand(%s): %v", tc.in, err)
+			continue
+		}
+		if string(got) != tc.want {
+			t.Errorf("expand(%s) = %s, want %s", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestLoadRejectsPaths(t *testing.T) {
 	for _, name := range []string{"", "../secrets", "forge/../../etc", "."} {
 		if _, err := Load(name); err == nil {

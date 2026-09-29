@@ -80,6 +80,9 @@ type Image struct {
 
 func (i Image) valid() bool { return i.Repository != "" && i.Tag != "" }
 
+// Ref is the image as repository:tag.
+func (i Image) Ref() string { return i.Repository + ":" + i.Tag }
+
 // Nico is where the site's CAPNICo reaches the NICo API.
 type Nico struct {
 	Endpoint string `json:"Endpoint"`

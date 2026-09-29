@@ -22,37 +22,35 @@
 
 # The site lane builds a site controller on a Forge node (-e2e.site-stage=
 # provision|bootstrap|full). `gmake site-inputs SITE_CONTROLLER_VERSION=...`
-# builds nkectl and the image archives below. Secrets come only from the
-# environment: FORGE_API_KEY, and GHCR_USERNAME/GHCR_TOKEN for the full stage.
-# The os-image URLs and controller version are -e2e.versions keys
-# (os-image-bootloader, os-image, controller).
+# builds nkectl and the image archives below, pulling the published images
+# from SITE_IMAGE_REGISTRY: GHCR by default, or nvcr.io/<NGC org> after a
+# `docker login nvcr.io` with an NGC key. Secrets come only from the
+# environment: FORGE_API_KEY, and GHCR_USERNAME/GHCR_TOKEN for the full stage,
+# which the node pulls CAPNICo with.
+#
+# This block names only where artifacts come from. Component versions are
+# -e2e.versions keys (controller, capi-provisioned, os-image,
+# os-image-bootloader). The jump host and its login are the site's and live in
+# environments/<name>.yaml, from FORGE_JUMP_HOST and FORGE_TELEPORT_LOGIN.
 # site:
-#   name: ""            # "" -> nke-e2e-site-<random>
 #   repo: ""            # "" -> the clone the suite runs from
-#   deployPathRef: ""   # "" -> the pinned deploy path commit
+#   deployPathRef: ""   # "" -> the controller version's commit, or its
+#                       #       controller/<version> release tag
 #   nkectl: ""          # "" -> cli/dist/nkectl-linux-<arch>
+#   # Each image the node stages: the reference it is bootstrapped and
+#   # deployed with, and the archive carrying it. Relative archive paths
+#   # resolve against repo. The controller and capi-provisioned tags are their
+#   # -e2e.versions keys, so they take none here.
 #   images:
-#     - ~/.cache/nke-e2e/site/controller.tar   # relative paths resolve against repo
-#     - ~/.cache/nke-e2e/site/capi-provisioned.tar
-#     - ~/.cache/nke-e2e/site/profiles.tar
-#   bootstrapEnv:
-#     NKECTL_CWE_IMAGE: ghcr.io/dsx-ai-factory/nke/nke-controller:v0.1.1-rc.8
-#     NKECTL_CAPI_PROVISIONED_IMAGE: ghcr.io/dsx-ai-factory/nke/cluster-api-provider-provisioned:v0.1.0-rc.1
-#   profilesImage: nke-e2e-profiles:local
-#   cni: ovn-kubernetes
-#   disableMTLS: false
-#   controllerRepository: ghcr.io/dsx-ai-factory/nke/nke-controller
-#   registryServer: ghcr.io
-#   jumpHost: ""               # required: the node the site's machines sit behind
-#   teleportLogin: ""          # "" -> tsh's default
+#     controller:
+#       repository: ghcr.io/dsx-ai-factory/nke/nke-controller   # or nvcr.io/<org>/nke-controller
+#       archive: ~/.cache/nke-e2e/site/controller.tar
+#     capi-provisioned:
+#       repository: ghcr.io/dsx-ai-factory/nke/cluster-api-provider-provisioned
+#       archive: ~/.cache/nke-e2e/site/capi-provisioned.tar
+#     profiles:       # built from controller/test/fixtures, published nowhere
+#       repository: nke-e2e-profiles
+#       tag: local
+#       archive: ~/.cache/nke-e2e/site/profiles.tar
 #   teleportIdentityFile: ""   # "" -> $TELEPORT_IDENTITY_FILE, else the runner's tsh profile
 #   (the Teleport proxy comes from $TELEPORT_PROXY or the tsh login profile)
-#
-#   Interim route, for a jump host that is not Teleport-enrolled yet: set
-#   $JUMP_HOST_PASSWORD and the suite logs into jumpHost over plain SSH and
-#   has its sshd forward, instead of shelling out to tsh. Unset uses Teleport.
-#   The password is the jump host's; the machine beyond it is still reached
-#   with the key the run generated.
-#   jumpHostUser: ""           # "" -> teleportLogin
-#   jumpHostKeyFingerprint: "" # `ssh-keyscan -t ed25519 <jumpHost> | ssh-keygen -lf -`
-#                              # "" accepts any host key and warns on every dial

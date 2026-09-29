@@ -424,10 +424,11 @@ The node is torn down afterwards (tenants are deleted first). `-e2e.keep-site`, 
 `lifecycle.preserveOnFailure` with a failed spec, keeps it.
 
 Prerequisites: a way to reach the jump host (below), the jump host in
-`site.jumpHost`, `FORGE_API_KEY`, and for `full` `GHCR_USERNAME` and
-`GHCR_TOKEN`. Neither the proxy nor the jump host is checked in; secrets are
-read only from the environment. Build the inputs, then fill in the `site:`
-block of `e2e-config-example.yaml`:
+`FORGE_JUMP_HOST` (read by `environments/forge.yaml`), `FORGE_API_KEY`, and for
+`full` `GHCR_USERNAME` and `GHCR_TOKEN`, which the node pulls CAPNICo with.
+Neither the proxy nor the jump host is checked in; secrets are read only from
+the environment. Build the inputs, then run; with the `site-inputs` defaults
+no `site:` block is needed at all:
 
 ```bash
 gmake site-inputs SITE_CONTROLLER_VERSION=$(git rev-parse --short=12 HEAD)
@@ -437,10 +438,26 @@ go test -timeout 5h . -args \
   -e2e.versions=controller=<the same value>,os-image-bootloader=<url>,os-image=<url>
 ```
 
-`SITE_CONTROLLER_VERSION` has to be the same string in three places — the
-archive `site-inputs` writes, `site.bootstrapEnv.NKECTL_CWE_IMAGE`, and
-`-e2e.versions=controller=` — because they all name one image, which the node
-resolves out of its own containerd rather than a registry.
+`SITE_CONTROLLER_VERSION` and `-e2e.versions=controller=` have to be the same
+string, because they name one image: the archive `site-inputs` writes, and the
+reference the suite hands the bootstrap and the deploy path, which the node
+resolves out of its own containerd rather than a registry. The suite builds
+that reference from `site.images.controller.repository` and the version, so a
+repository here has to match the one `site-inputs` pulled or tagged.
+
+The published images come from GHCR by default. To pull them from NVCR
+instead, log in with an NGC key and point `site-inputs` and the config at the
+NGC org; the image names are the same:
+
+```bash
+echo "$NGC_KEY" | docker login nvcr.io -u '$oauthtoken' --password-stdin
+gmake site-inputs SITE_IMAGE_REGISTRY=nvcr.io/<org> SITE_CONTROLLER_VERSION=...
+# and in e2e-config.yaml, site.images.{controller,capi-provisioned}.repository
+# under nvcr.io/<org>
+```
+
+The node still pulls CAPNICo from GHCR either way: its release asset names a
+GHCR image, and nothing else on the node pulls at all.
 
 `site-inputs` builds that image from the checkout. nkectl is built here too and
 is a client of the CWE it bootstraps, so the two have to be one commit; the
@@ -449,9 +466,12 @@ newest CWE on GHCR predates #850 and rejects this checkout's nkectl at
 `SITE_CONTROLLER_VERSION` as a published tag instead, for qualifying a release
 once one is cut past #850.
 
-The deploy path is exported from the commit under test, tracked files only, so
-nothing in the working tree reaches the node. Set `site.deployPathRef` in the
-config to stage an older deploy path against a newer suite.
+The deploy path is exported from the controller's own commit, tracked files
+only, so nothing in the working tree reaches the node. It carries the
+controller's chart and overlay, so it follows `-e2e.versions=controller=`: that
+commit when the controller was built from one, else its `controller/<version>`
+release tag, which has to be fetched in a shallow clone. Set
+`site.deployPathRef` only when developing the deploy path itself.
 
 ### Reaching the jump host
 
@@ -460,13 +480,15 @@ the jump host is enrolled in. In CI it is a bot identity in `TELEPORT_PROXY`
 and `TELEPORT_IDENTITY_FILE`, which
 `.github/workflows/forge-site-controller-e2e.yml` obtains by joining with the
 repository's GitHub OIDC token — nothing is stored. The bot's login is `root`,
-so set `site.teleportLogin` accordingly.
+so the workflow sets `FORGE_TELEPORT_LOGIN=root`, which the site's
+`teleportLogin` in `environments/forge.yaml` reads. Unset is tsh's default.
 
 For a site whose jump host is *not* enrolled, set `JUMP_HOST_PASSWORD` and the
 harness logs into it over plain SSH and asks its sshd to forward, instead of
 shelling out to `tsh`. The jump host needs `AllowTcpForwarding` on; the error
-names it if not. Set `site.jumpHostUser` (defaults to `site.teleportLogin`) and
-`site.jumpHostKeyFingerprint`, which comes from:
+names it if not. Set the site's `jumpHostUser` (defaults to its
+`teleportLogin`) and `jumpHostKeyFingerprint` in its environment file; the
+fingerprint comes from:
 
 ```bash
 ssh-keyscan -t ed25519 <jump host> | ssh-keygen -lf -

@@ -9,6 +9,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"sigs.k8s.io/yaml"
 )
@@ -33,59 +34,90 @@ type Config struct {
 	Site Site `json:"site"`
 }
 
-// Site is what a site controller is built from.
+// Site is where a site controller's artifacts come from. Only that: the run's
+// identity and the bootstrap's shape are test code, component versions are
+// -e2e.versions keys, and the jump host is the site's, declared in
+// environments/<name>.yaml.
 type Site struct {
-	// Name is the site's cluster name and its node's hostname. Empty
-	// generates one per run.
-	Name string `json:"name"`
-
 	// Repo is the clone the deploy path is exported from and that relative
 	// paths below resolve against. Empty is the clone the suite runs from.
 	Repo string `json:"repo"`
-	// DeployPathRef is the commit the deploy path is exported from. Empty is
-	// the commit under test.
+	// DeployPathRef is the commit the deploy path is exported from. Empty
+	// follows the controller version: the commit itself when the controller
+	// was built from one, else its controller/<version> release tag. The
+	// deploy path carries the controller's own chart, so the two have to
+	// agree; override only when developing the deploy path itself.
 	DeployPathRef string `json:"deployPathRef"`
 
 	// Nkectl is a linux nkectl for the node. Empty is what
 	// `gmake -C cli build-cross` writes for the node's architecture.
 	Nkectl string `json:"nkectl"`
-	// Images are image archives imported into the node's containerd.
-	Images []string `json:"images"`
-	// BootstrapEnv is passed to nkectl bootstrap site; {assets} expands to
-	// where the deploy path was unpacked on the node.
-	BootstrapEnv map[string]string `json:"bootstrapEnv"`
 
-	CNI         string `json:"cni"`         // default "ovn-kubernetes"
-	DisableMTLS bool   `json:"disableMTLS"` // node agent and bootstrap without SPIFFE
+	// Images are the site's images and the archives staged into the node's
+	// containerd, which is the cluster's, so they resolve with IfNotPresent
+	// and need no pull credential.
+	Images SiteImages `json:"images"`
 
-	// ControllerRepository is the CWE image repository; the tag is the
-	// controller version under qualification.
-	ControllerRepository string `json:"controllerRepository"`
-	// ProfilesImage is repository:tag. The controller chart requires one.
-	ProfilesImage string `json:"profilesImage"`
-	// RegistryServer is where private images are pulled from, with the
-	// credential in GHCR_USERNAME and GHCR_TOKEN.
-	RegistryServer string `json:"registryServer"`
-
-	// JumpHost is the node the Forge site's machines are reached through. The
-	// Teleport proxy is not configured here: tsh takes it from
-	// $TELEPORT_PROXY or the logged-in profile.
-	JumpHost string `json:"jumpHost"`
-	// TeleportLogin is the jump host login; empty is tsh's default.
-	TeleportLogin string `json:"teleportLogin"`
 	// TeleportIdentityFile is a tsh identity file, as a CI bot has instead of
 	// a login session. Empty leaves it to tsh: $TELEPORT_IDENTITY_FILE, else
-	// the runner's tsh profile.
+	// the runner's tsh profile. The runner's, not the site's, so it is here
+	// rather than beside the jump host.
 	TeleportIdentityFile string `json:"teleportIdentityFile"`
+}
 
-	// JumpHostUser is the jump host login for the plain-SSH route, taken
-	// when JUMP_HOST_PASSWORD is set. Empty falls back to TeleportLogin, so a
-	// site that uses the same account for both names it once.
-	JumpHostUser string `json:"jumpHostUser"`
-	// JumpHostKeyFingerprint pins the jump host's host key on the plain-SSH
-	// route. Empty accepts whatever it presents and warns on every dial;
-	// see teleport.SSHJumpHost for how to read one.
-	JumpHostKeyFingerprint string `json:"jumpHostKeyFingerprint"`
+// SiteImages names each image the site stages. Every field is required by
+// the time a bootstrap runs, and each one's reference and archive are stated
+// together so nothing can list an archive without the reference it carries.
+type SiteImages struct {
+	// Controller's tag is the controller version under qualification, so it
+	// takes none here.
+	Controller SiteImage `json:"controller"`
+	// CAPIProvisioned's tag is the capi-provisioned -e2e.versions key.
+	CAPIProvisioned SiteImage `json:"capi-provisioned"`
+	// Profiles is built from controller/test/fixtures and published nowhere,
+	// so it has no version key and its tag is here.
+	Profiles SiteImage `json:"profiles"`
+}
+
+// SiteImage is an image by repository, and the docker save archive of it.
+type SiteImage struct {
+	Repository string `json:"repository"`
+	Tag        string `json:"tag"`
+	// Archive is a runner path; a relative one resolves against Repo.
+	Archive string `json:"archive"`
+}
+
+const (
+	// DefaultSiteInputs is where `gmake site-inputs` writes the archives
+	// unless told otherwise, and so where the archives default to.
+	DefaultSiteInputs = "~/.cache/nke-e2e/site"
+)
+
+func (i SiteImages) validate() error {
+	var problems []string
+	for _, image := range []struct {
+		name  string
+		image SiteImage
+		tag   bool // whether the tag comes from this file
+	}{
+		{"controller", i.Controller, false},
+		{"capi-provisioned", i.CAPIProvisioned, false},
+		{"profiles", i.Profiles, true},
+	} {
+		if image.image.Repository == "" || image.image.Archive == "" {
+			problems = append(problems, image.name+" needs a repository and an archive")
+		}
+		switch {
+		case image.tag && image.image.Tag == "":
+			problems = append(problems, image.name+" needs a tag")
+		case !image.tag && image.image.Tag != "":
+			problems = append(problems, fmt.Sprintf("%s takes its tag from -e2e.versions=%s=, not from a tag here", image.name, image.name))
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("site.images: %s", strings.Join(problems, "; "))
+	}
+	return nil
 }
 
 // Load reads the config file at path and applies defaults. A missing file is
@@ -113,14 +145,25 @@ func Load(path string) (Config, error) {
 	}
 
 	cfg.applyDefaults()
+	if err := cfg.Site.Images.validate(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
 	return cfg, nil
 }
 
 func (c *Config) applyDefaults() {
 	setDefault(&c.Cluster.CAPDNodeImage, "cwe-capd-kindest-node:local")
-	setDefault(&c.Site.CNI, "ovn-kubernetes")
-	setDefault(&c.Site.ControllerRepository, "ghcr.io/dsx-ai-factory/nke/nke-controller")
-	setDefault(&c.Site.RegistryServer, "ghcr.io")
+
+	// The same repositories and archive names `gmake site-inputs` defaults
+	// to, so a local run after it needs no site block at all.
+	images := &c.Site.Images
+	setDefault(&images.Controller.Repository, "ghcr.io/dsx-ai-factory/nke/nke-controller")
+	setDefault(&images.Controller.Archive, DefaultSiteInputs+"/controller.tar")
+	setDefault(&images.CAPIProvisioned.Repository, "ghcr.io/dsx-ai-factory/nke/cluster-api-provider-provisioned")
+	setDefault(&images.CAPIProvisioned.Archive, DefaultSiteInputs+"/capi-provisioned.tar")
+	setDefault(&images.Profiles.Repository, "nke-e2e-profiles")
+	setDefault(&images.Profiles.Tag, "local")
+	setDefault(&images.Profiles.Archive, DefaultSiteInputs+"/profiles.tar")
 }
 
 func setDefault(field *string, def string) {

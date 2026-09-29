@@ -29,8 +29,14 @@ REPO_ROOT := $(abspath ../../..)
 SITE_ARCH ?= amd64
 SITE_INPUTS ?= $(HOME)/.cache/nke-e2e/site
 SITE_CONTROLLER_VERSION ?=
-SITE_CONTROLLER_IMAGE ?= ghcr.io/dsx-ai-factory/nke/nke-controller:$(SITE_CONTROLLER_VERSION)
-SITE_PROVISIONED_IMAGE ?= ghcr.io/dsx-ai-factory/nke/cluster-api-provider-provisioned:v0.1.0-rc.1
+SITE_PROVISIONED_VERSION ?= v0.1.0-rc.1
+# Where the published images are pulled from. Both registries carry them under
+# the same names: GHCR at ghcr.io/dsx-ai-factory/nke, NVCR at nvcr.io/<NGC org>
+# (see image-nvcr.yml and image-provisioned-nvcr.yml). NVCR needs a docker
+# login with an NGC key; the username is the literal $oauthtoken.
+SITE_IMAGE_REGISTRY ?= ghcr.io/dsx-ai-factory/nke
+SITE_CONTROLLER_IMAGE ?= $(SITE_IMAGE_REGISTRY)/nke-controller:$(SITE_CONTROLLER_VERSION)
+SITE_PROVISIONED_IMAGE ?= $(SITE_IMAGE_REGISTRY)/cluster-api-provider-provisioned:$(SITE_PROVISIONED_VERSION)
 SITE_PROFILES_IMAGE ?= nke-e2e-profiles:local
 
 # Build the CWE from this checkout instead of pulling SITE_CONTROLLER_IMAGE.
@@ -65,7 +71,7 @@ SITE_CONTROLLER_BUILD ?= 1
 SITE_CONTROLLER_COMMIT ?= $(shell git -C "$(REPO_ROOT)" rev-parse --short=12 HEAD)
 
 .PHONY: site-inputs
-site-inputs: ## Build the nkectl and image archives the site lane stages. Needs SITE_CONTROLLER_VERSION and a docker login to ghcr.io.
+site-inputs: ## Build the nkectl and image archives the site lane stages. Needs SITE_CONTROLLER_VERSION and a docker login to SITE_IMAGE_REGISTRY.
 	@test -n "$(SITE_CONTROLLER_VERSION)" || { echo "SITE_CONTROLLER_VERSION is required, e.g. v0.1.1-rc.8" >&2; exit 1; }
 	@mkdir -p "$(SITE_INPUTS)"
 	$(MAKE) -C "$(REPO_ROOT)/cli" build-cross NKECTL_PLATFORMS=linux/$(SITE_ARCH)

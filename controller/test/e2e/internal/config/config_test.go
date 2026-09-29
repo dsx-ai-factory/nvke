@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -31,26 +32,72 @@ func TestLoadAcceptsShippedConfigs(t *testing.T) {
 // keeps the two in step.
 func TestLoadAcceptsTheGeneratedSiteConfig(t *testing.T) {
 	doc := `site:
-  jumpHost: "jump.example"
-  teleportLogin: "root"
-  disableMTLS: true
   images:
-    - /w/.site-inputs/controller.tar
-    - /w/.site-inputs/capi-provisioned.tar
-    - /w/.site-inputs/profiles.tar
-  bootstrapEnv:
-    NKECTL_CWE_IMAGE: ghcr.io/x/y:v1
-    NKECTL_CAPI_PROVISIONED_IMAGE: ghcr.io/x/z:v1
-  profilesImage: nke-e2e-profiles:local
+    controller:
+      repository: nvcr.io/example-org/nke-controller
+      archive: /w/.site-inputs/controller.tar
+    capi-provisioned:
+      repository: nvcr.io/example-org/cluster-api-provider-provisioned
+      archive: /w/.site-inputs/capi-provisioned.tar
+    profiles:
+      repository: nke-e2e-profiles
+      tag: local
+      archive: /w/.site-inputs/profiles.tar
 `
-	if _, err := Load(write(t, doc)); err != nil {
+	cfg, err := Load(write(t, doc))
+	if err != nil {
 		t.Fatalf("the config the workflow writes no longer loads: %v", err)
+	}
+	if got := cfg.Site.Images.CAPIProvisioned.Repository; got != "nvcr.io/example-org/cluster-api-provider-provisioned" {
+		t.Errorf("capi-provisioned repository = %q, want the one written", got)
 	}
 }
 
 func TestLoadRejectsAnUnknownKey(t *testing.T) {
-	if _, err := Load(write(t, "site:\n  jumpHostt: \"typo\"\n")); err == nil {
+	if _, err := Load(write(t, "site:\n  deployPathReff: \"typo\"\n")); err == nil {
 		t.Fatal("an unknown key was accepted, so the run would proceed on the default")
+	}
+}
+
+// The keys this block used to carry. Each now lives in test code, in
+// -e2e.versions or in the environment file, so a config still naming one is
+// out of date and has to say so rather than be half obeyed.
+func TestLoadRejectsARetiredSiteKey(t *testing.T) {
+	for _, key := range []string{
+		"name: x", "cni: ovn-kubernetes", "disableMTLS: true",
+		"controllerRepository: x", "profilesImage: x:y", "registryServer: ghcr.io",
+		"bootstrapEnv: {}", "jumpHost: x", "teleportLogin: root",
+		"images: [a.tar]",
+	} {
+		if _, err := Load(write(t, "site:\n  "+key+"\n")); err == nil {
+			t.Errorf("site.%s was accepted", key)
+		}
+	}
+}
+
+func TestDefaultsNeedNoSiteBlock(t *testing.T) {
+	cfg, err := Load(filepath.Join(t.TempDir(), "absent.yaml"))
+	if err != nil {
+		t.Fatalf("defaults do not validate: %v", err)
+	}
+	if got := cfg.Site.Images.Profiles.Archive; got != DefaultSiteInputs+"/profiles.tar" {
+		t.Errorf("profiles archive = %q, want the site-inputs default", got)
+	}
+}
+
+func TestImagesValidate(t *testing.T) {
+	for _, tc := range []struct {
+		name, doc, want string
+	}{
+		{"controller tag", "site:\n  images:\n    controller:\n      tag: v1\n", "-e2e.versions=controller="},
+		{"capi-provisioned tag", "site:\n  images:\n    capi-provisioned:\n      tag: v1\n", "-e2e.versions=capi-provisioned="},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(write(t, tc.doc))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("Load = %v, want an error naming %s", err, tc.want)
+			}
+		})
 	}
 }
 
@@ -60,12 +107,12 @@ func TestLoadRejectsAnUnknownKey(t *testing.T) {
 // to the field rather than counting as unknown. Nothing is dropped, which is
 // the property this file is about.
 func TestLoadStillAcceptsAKeyDifferingOnlyInCase(t *testing.T) {
-	cfg, err := Load(write(t, "site:\n  jumphost: \"jump.example\"\n"))
+	cfg, err := Load(write(t, "site:\n  deploypathref: \"abc123\"\n"))
 	if err != nil {
 		t.Fatalf("a case variant was rejected: %v", err)
 	}
-	if cfg.Site.JumpHost != "jump.example" {
-		t.Errorf("Site.JumpHost = %q, want it bound from the case variant", cfg.Site.JumpHost)
+	if cfg.Site.DeployPathRef != "abc123" {
+		t.Errorf("Site.DeployPathRef = %q, want it bound from the case variant", cfg.Site.DeployPathRef)
 	}
 }
 
