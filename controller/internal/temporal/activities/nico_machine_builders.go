@@ -423,7 +423,7 @@ func (a *Activities) renderUserData(
 		HashedPassword:        hashedPassword,
 		Hostname:              node.Name,
 		KubernetesVersion:     kubernetesVersion,
-		NodeAgentPort:         a.cfg.NodeAgentPort,
+		NodeAgentPort:         a.cfg.NodeAgent.Port,
 		OvnEnabled:            ovnEnabled,
 		SpiffeEnabled:         node.SpiffeEnabled,
 		SpireServerAddress:    a.cfg.SpireServerAddress,

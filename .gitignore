@@ -11,6 +11,10 @@ controller/hack/capd-reboot-controller/capd-reboot-controller
 **/dist/
 **/release/
 
+# Go workspace dependencies may be vendored locally for offline remote tests,
+# but the generated tree is not committed.
+/vendor/
+
 # Reference-image Packer output and build-only SSH keys / pulled binaries.
 os-image/packer/output/
 os-image/packer/output-fde/

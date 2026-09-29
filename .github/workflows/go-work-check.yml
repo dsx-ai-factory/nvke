@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Fails when go.work, go.work.sum or vendor/ is stale.
+# Fails when go.work, go.work.sum or a module manifest is stale.
 #
-# `make work-check` asserts six things, and each one has a failure this
+# `make work-check` asserts five things, and each one has a failure this
 # repository can actually produce:
 #
 #   1. go.work and go.work.sum are tracked. `git diff` reports nothing for an
@@ -20,26 +20,9 @@
 #   5. A full refresh changes nothing. This is the ordinary staleness case: a
 #      dependency bump lands in one module, and the other modules then build
 #      against a version none of their go.mod files admits to.
-#   6. vendor/ matches the go.mod files above it, tracked files and new ones
-#      both. A root vendor tree puts the workspace in -mod=vendor, so a stale
-#      one does not degrade the build, it stops it -- and #84 added the tree
-#      with no check, so main broke exactly this way on 2026-08-13.
-#
-# This runs on a public runner, and go.work now lists every module in the
-# repository -- #76 removed the carbide SDK, so there is nothing left to leave
-# out. The one internal dependency, github.com/dsx-ai-factory/cluster-api-provider-nico,
-# is carried in the committed vendor/ tree, so builds and the static checks here
-# need no credentials.
-#
-# Only the freshness re-derivation in step 5 does, because `go work vendor`
-# resolves that module for real rather than reading the vendor tree. `make
-# work-check` probes for it and skips that block when it is unreachable.
-#
-# On this repository the job now carries a read-only token for that module, so
-# the probe succeeds and step 5 runs. It did not before, and the job went green
-# on every run having skipped the one assertion its name is about. See the step
-# for what the credential is and how a fork degrades. Drop both when
-# cluster-api-provider-nico is public. See docs/go-workspace.md.
+# All dependencies are public. The full refresh requires network access on a
+# cold runner and fails rather than silently skipping the freshness assertion.
+# See docs/go-workspace.md.
 name: Go Workspace Check
 
 # The two path lists are duplicated by hand. github.com has supported YAML
@@ -60,17 +43,9 @@ on:
       - '**/go.sum'
       - 'go.work'
       - 'go.work.sum'
-      - 'vendor/**'
       - 'Makefile'
       - '.github/workflows/go-work-check.yml'
   workflow_call:
-    secrets:
-      NKE_INTERNAL_RO_TOKEN:
-        description: >-
-          Read-only token for the private cluster-api-provider-nico module.
-          Optional: without it the full re-derivation takes its documented
-          skip branch, which is what a fork pull request already gets.
-        required: false
   workflow_dispatch:
 
 permissions: {}
@@ -99,8 +74,7 @@ jobs:
     name: Check go.work and go.work.sum are current
     runs-on: ubuntu-latest
     if: github.repository == 'dsx-ai-factory/nke'
-    # Raised from 10: step 5 now runs, and it downloads the whole module graph
-    # and re-vendors 191 modules. 36s locally with a warm cache.
+    # A fresh runner downloads the whole public module graph.
     timeout-minutes: 20
     permissions:
       contents: read
@@ -123,26 +97,5 @@ jobs:
             go.work.sum
             **/go.sum
 
-      # The credential is what makes step 5 run. Without it the probe in
-      # `make work-check` cannot reach cluster-api-provider-nico, so the job
-      # printed its skip notice on every run and went green having checked only
-      # the four static assertions -- while its name claimed the workspace was
-      # current. The staleness case it exists to catch was never tested.
-      #
-      # Same three variables as dependabot-fixup.yml, for the same reasons.
-      # GOPRIVATE keeps the internal path off proxy.golang.org and sum.golang.org,
-      # which cannot serve it. The rewrite gets git past the username prompt, and
-      # is scoped to github.com/dsx-ai-factory/ so the token is not sent to public hosts.
-      # GIT_CONFIG_COUNT keeps it to this step and out of ~/.gitconfig.
-      #
-      # A pull request from a fork gets no secrets, so the rewrite is empty
-      # there, the probe fails and the job takes the skip branch as before. That
-      # is the intended degradation: an outside contributor cannot reach the
-      # module either, and the four static assertions still run for them.
       - name: Verify the workspace is current
-        env:
-          GOPRIVATE: github.com/dsx-ai-factory/*
-          GIT_CONFIG_COUNT: 1
-          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.NKE_INTERNAL_RO_TOKEN }}@github.com/dsx-ai-factory/.insteadOf
-          GIT_CONFIG_VALUE_0: https://github.com/dsx-ai-factory/
         run: make work-check

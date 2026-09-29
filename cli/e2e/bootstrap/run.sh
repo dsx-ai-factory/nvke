@@ -759,9 +759,13 @@ else
   ip route show "${CONTROL_PLANE_VIP}/32" | sed 's/^/  /' || true
   log "PASS: FRR learned ${CONTROL_PLANE_VIP}/32 with one next-hop per control-plane node"
 
-  # Check API readiness through the VIP.
-  if kubectl --kubeconfig "${TENANT_KUBECONFIG}" --server "https://${CONTROL_PLANE_VIP}:6443" \
-      get --raw /readyz >/dev/null 2>&1; then
+  # Check API readiness through the VIP. Retried: the ECMP route is seconds old
+  # here, and a single-shot check has failed with the retry 67ms later passing.
+  vip_readyz() {
+    kubectl --kubeconfig "${TENANT_KUBECONFIG}" --server "https://${CONTROL_PLANE_VIP}:6443" \
+      get --raw /readyz >/dev/null 2>&1
+  }
+  if wait_until "${NKECTL_E2E_VIP_READYZ_TIMEOUT_SECONDS:-60}" 3 vip_readyz; then
     log "PASS: the API server answered /readyz through the VIP https://${CONTROL_PLANE_VIP}:6443"
   else
     log "FAIL: the API server did not answer /readyz through the VIP https://${CONTROL_PLANE_VIP}:6443"

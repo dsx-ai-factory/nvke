@@ -60,7 +60,7 @@ The tag exists because this suite needs real VMs, a host bridge, and outbound
 network access to a public Kubernetes mirror. A plain `go test ./...` anywhere in
 the `controller` module must never try to boot a VM. The tag also keeps the
 suite inside the existing `controller` module — no new `go.mod`, no `go.work`
-entry, no `vendor/` churn — while `.github/workflows/controller-test.yml`'s
+entry — while `.github/workflows/controller-test.yml`'s
 `compile` matrix still type-checks it on every pull request with
 `go vet -tags kubeadm_bringup`.
 

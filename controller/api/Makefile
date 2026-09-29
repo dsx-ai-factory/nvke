@@ -15,13 +15,8 @@ ifeq (,$(GOBIN))
 GOBIN = $(shell $(GO) env GOPATH)/bin
 endif
 
-# Empty, not "off". This module has no .golangci.yml, so golangci-lint walks up
-# and finds controller/.golangci.yml, which sets modules-download-mode: vendor.
-# With the workspace off, -mod=vendor resolves against the root vendor/ tree
-# while treating this module as a lone main module, and that tree is a
-# workspace-level construct whose explicit markers describe no single member.
-# The job failed that way, listing fourteen of its own direct requirements as
-# inconsistent vendoring. Turning the workspace on makes the two agree.
+# This module inherits controller/.golangci.yml. Keep workspace mode on so
+# lint sees the same public dependency graph as the other module builds.
 GOLANGCI_LINT_GOWORK :=
 include ../../make/golangci.mk
 

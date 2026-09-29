@@ -8,7 +8,7 @@
 # GitHub-hosted runners, not the self-hosted linux-*-cpu16 pool, deliberately.
 # This repository does not dispatch fork or Dependabot pull_request jobs to the
 # NVIDIA runner pool, so using it would cost that coverage. The agent module
-# resolves from the committed root vendor/ tree (workspace mode), so this needs
+# resolves from public modules (workspace mode), so this needs
 # no NVIDIA runner and no credentials.
 #
 # Go Build already compiles the workspace; this job is the missing `go test`
@@ -30,7 +30,6 @@ on:
       - 'agent/**'
       - 'go.work'
       - 'go.work.sum'
-      - 'vendor/**'
       - '.github/workflows/agent-test.yml'
   workflow_call:
   workflow_dispatch: {}
@@ -74,8 +73,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # Workspace mode (default) so tests resolve from the committed vendor/
-      # tree. go.work carries the toolchain that satisfies every module.
+      # Workspace mode (default) so tests resolve the root module graph.
+      # go.work carries the toolchain that satisfies every module.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:

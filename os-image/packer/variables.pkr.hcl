@@ -106,6 +106,21 @@ variable "disk_size" {
   description = "Build-time disk size shared by both variants, with headroom for the installer and FDE overhead. The deployed disk grows on first boot."
 }
 
+variable "serial_console" {
+  type        = string
+  default     = ""
+  description = "Serial console the INSTALLED system directs kernel output to. Empty selects the architecture default (ttyS0 on amd64, ttyAMA0 on arm64)."
+
+  # A boundary, not a typo check: this is interpolated into a shell command in
+  # autoinstall-lvm.pkrtpl's late-commands, so anything accepted runs in the
+  # target. A bare tty name rejects a quoted or chained payload before QEMU or
+  # the installer is involved.
+  validation {
+    condition     = var.serial_console == "" || can(regex("^tty[A-Za-z0-9]+$", var.serial_console))
+    error_message = "The serial_console value must be empty or a bare tty device name such as ttyS0, ttyS1 or ttyAMA0."
+  }
+}
+
 variable "root_fs_label" {
   type        = string
   default     = "cloudimg-rootfs"

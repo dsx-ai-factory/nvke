@@ -67,7 +67,7 @@ commands are not listed, because they are not distributed.
 | [go.uber.org/zap](https://github.com/uber-go/zap/blob/v1.28.0/LICENSE) | MIT | go.uber.org/zap@v1.28.0 |
 | [go.yaml.in/yaml/v2](https://github.com/yaml/go-yaml/blob/v2.4.4/LICENSE) | Apache-2.0 | go.yaml.in/yaml/v2@v2.4.4 |
 | [go.yaml.in/yaml/v3](https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE) | MIT | go.yaml.in/yaml/v3@v3.0.5 |
-| [golang.org/x/net](https://cs.opensource.google/go/x/net/+/v0.58.0:LICENSE) | BSD-3-Clause | — |
+| [golang.org/x/net](https://cs.opensource.google/go/x/net/+/v0.59.0:LICENSE) | BSD-3-Clause | — |
 | [golang.org/x/oauth2](https://cs.opensource.google/go/x/oauth2/+/v0.37.0:LICENSE) | BSD-3-Clause | golang.org/x/oauth2@v0.37.0 |
 | [golang.org/x/sync](https://cs.opensource.google/go/x/sync/+/v0.23.0:LICENSE) | BSD-3-Clause | — |
 | [golang.org/x/sys/unix](https://cs.opensource.google/go/x/sys/+/v0.48.0:LICENSE) | BSD-3-Clause | golang.org/x/sys@v0.48.0 |

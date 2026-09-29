@@ -18,8 +18,8 @@ ARG TARGETOS
 ARG TARGETARCH
 ARG BUILD_VERSION=dev
 
-# The build context is the NKE repository root. The workspace vendor directory
-# contains every dependency, so this build does not need source credentials.
+# The build context is the NKE repository root. All Go dependencies are public;
+# the builder downloads them as needed without source credentials.
 WORKDIR /workspace
 COPY . .
 RUN cd cluster-api-provider-provisioned && \

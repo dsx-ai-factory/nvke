@@ -1,0 +1,20 @@
+NVIDIA Kubernetes Engine (nke)
+Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+This product includes software developed at NVIDIA CORPORATION.
+
+Licensed under the Apache License, Version 2.0. The full terms are in the
+LICENSE file beside this notice.
+
+This chart declares third-party charts as dependencies rather than vendoring
+them. Their copyright notices and license terms stay with the archives Helm
+downloads into charts/, which this repository does not commit. Chart.yaml and
+Chart.lock name and pin every one of them:
+
+    opentelemetry-kube-stack   open-telemetry/opentelemetry-helm-charts
+    prometheus-node-exporter   prometheus-community/helm-charts
+    metrics-server             kubernetes-sigs/metrics-server
+
+THIRD_PARTY_NOTICES.md at the root of this repository indexes the notice files
+for the components that build a binary, and records which components are
+covered. This chart builds none, so it has no entry there.

@@ -53,9 +53,12 @@ on:
   workflow_dispatch:
     inputs:
       label-filter:
-        description: Ginkgo label filter. The default is the 15 happy-path specs.
+        description: >-
+          Ginkgo label filter. Empty runs what the schedule runs, which is the
+          per-leg filter in the matrix below. Set a value to narrow it, e.g.
+          'nico-vms && happy-path' for the 15 happy-path specs.
         required: false
-        default: nico-vms && happy-path
+        default: ''
         type: string
       os-image-tag:
         description: "Pin every leg to one node image, e.g. v0.1.0-rc.1. The tag needs an image for each architecture the run covers, because each leg appends its own. Empty is usually what you want: it resolves the newest per architecture."
@@ -137,7 +140,9 @@ jobs:
       NKE_E2E_RUN_ID: github-nico-vms-${{ github.run_id }}-${{ github.run_attempt }}
       # Per leg, from the matrix above: both run happy-path and multi-pod-cidrs,
       # arm64 additionally runs parallel-lifecycle and ovn. A dispatch
-      # label-filter still overrides both.
+      # label-filter still overrides both. Its default has to stay empty:
+      # Actions substitutes a non-empty default whenever the input is omitted,
+      # so a dispatch would silently narrow the run and never reach the matrix.
       NKE_E2E_LABEL_FILTER: ${{ github.event.inputs.label-filter || matrix.label_filter }}
       # Empty on a schedule or a push, which is what makes the lane resolve the
       # newest published image for each architecture. Only a dispatch pins one.
@@ -151,7 +156,6 @@ jobs:
       NKE_E2E_NICO_VMS_CNI: ovn-kubernetes
       NKE_E2E_STATE_DIR: ${{ github.workspace }}/controller/.local/nico-vms-e2e/${{ github.run_id }}-${{ github.run_attempt }}
       NKE_BRINGUP_ARTIFACT_DIR: ${{ github.workspace }}/controller/.local/nico-vms-e2e/${{ github.run_id }}-${{ github.run_attempt }}/host
-      GOPROXY: "off"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -180,7 +184,6 @@ jobs:
         with:
           repository: dsx-ai-factory/cluster-api-provider-nico
           ref: ${{ steps.capnico_version.outputs.ref }}
-          token: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
           path: .capnico/cluster-api-provider-nico
           persist-credentials: false
 
@@ -320,5 +323,8 @@ jobs:
             !${{ env.NKE_E2E_STATE_DIR }}/nkectl-no-auth
             !${{ env.NKE_E2E_STATE_DIR }}/nkectl
             !${{ env.NKE_E2E_STATE_DIR }}/kubeconfig
+            # The node image pulled from GHCR (nico-vms-e2e.sh:442): an input,
+            # not a diagnostic, and 3.1 GB of a 3.1 GB artifact.
+            !${{ env.NKE_E2E_STATE_DIR }}/os-image/*.qcow2
           if-no-files-found: warn
           retention-days: 7

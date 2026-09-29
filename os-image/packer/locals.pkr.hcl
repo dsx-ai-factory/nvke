@@ -39,9 +39,14 @@ locals {
   # ARM uses virt, AAVMF, the PL011 serial console, and the NVIDIA 64K-page
   # kernel. AMD64 uses q35, OVMF, ttyS0, and linux-nvidia.
   nvidia_kernel_package = local.architecture == "arm64" ? "linux-nvidia-64k" : "linux-nvidia"
-  serial_console        = local.architecture == "arm64" ? "ttyAMA0" : "ttyS0"
-  qemu_binary           = local.architecture == "arm64" ? "qemu-system-aarch64" : "qemu-system-x86_64"
-  machine_type          = local.architecture == "arm64" ? "virt" : "q35"
+  # The INSTALLED system's console only. boot_command below keeps the installer
+  # on the first UART, because the build VM maps `-serial file:` there and
+  # moving it would blank the log used to diagnose a stuck bake. Overridable
+  # because SOL is not on the same UART on every board.
+  default_serial_console = local.architecture == "arm64" ? "ttyAMA0" : "ttyS0"
+  serial_console         = var.serial_console != "" ? var.serial_console : local.default_serial_console
+  qemu_binary            = local.architecture == "arm64" ? "qemu-system-aarch64" : "qemu-system-x86_64"
+  machine_type           = local.architecture == "arm64" ? "virt" : "q35"
 
   # ARM has no fixed cd0 alias, so GRUB locates the installer by content.
   # Under TCG, BIOS and GRUB timing varies widely. The source-owned ISO

@@ -42,44 +42,14 @@ set -euo pipefail
 
 MODULE_ROOT="${MODULE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
-# go-licenses requires its rootDir to CONTAIN the vendor tree it reads. This
-# repository vendors once at the workspace root, above every module, so running
-# from the module directory fails outright:
-#
-#   licenses.Find: rootDir /…/controller should contain dir /…/vendor/k8s.io/…
-#
-# The working directory is therefore whichever directory owns vendor/, found by
-# walking up from the module. Package paths are then expressed relative to it.
-# This keeps working whether the module vendors in place or a workspace above it
-# does, so the same script serves every module in the tree.
-WORK_ROOT="${MODULE_ROOT}"
-while [[ ! -d "${WORK_ROOT}/vendor" && "${WORK_ROOT}" != "/" ]]; do
-    WORK_ROOT="$(dirname "${WORK_ROOT}")"
-done
-if [[ ! -d "${WORK_ROOT}/vendor" ]]; then
-    echo "ERROR: no vendor/ directory at or above ${MODULE_ROOT}." >&2
-    echo "Run 'make work-sync' from the repository root first." >&2
-    exit 1
-fi
-cd "${WORK_ROOT}"
-
-REL_MODULE="${MODULE_ROOT#"${WORK_ROOT}"/}"
-[[ "${REL_MODULE}" == "${MODULE_ROOT}" ]] && REL_MODULE="."
+cd "${MODULE_ROOT}"
 
 OUTPUT="${OUTPUT:-${MODULE_ROOT}/THIRD_PARTY_NOTICES.md}"
 
 # The binary shipped in the container image. nico-sim and
 # nico-simctl are development tooling and are not distributed.
-# PACKAGES entries are given relative to the module and rewritten to WORK_ROOT.
-read -r -a _pkgs <<< "${PACKAGES:-./cmd/worker}"
-PACKAGES=()
-for _p in "${_pkgs[@]}"; do
-    if [[ "${REL_MODULE}" == "." ]]; then
-        PACKAGES+=("${_p}")
-    else
-        PACKAGES+=("./${REL_MODULE}/${_p#./}")
-    fi
-done
+# PACKAGES entries are relative to this module.
+read -r -a PACKAGES <<< "${PACKAGES:-./cmd/worker}"
 
 # Pinned, not inherited from the host — see the header. Matches the primary
 # architecture of the published image; the Dockerfile builds GOOS=linux.
@@ -105,9 +75,7 @@ fi
 # LOCAL_MODULE becomes a multi-line string and the --ignore value built from it
 # below stops meaning anything. Turning the workspace off narrows it to this
 # module, which is what the variable name promises.
-# Asked in the MODULE directory, not the working directory. The working
-# directory is the workspace root, which is not itself a module, so asking there
-# returns either nothing or every member.
+# Ask with the workspace disabled so exactly one module path is returned.
 LOCAL_MODULE="$(cd "${MODULE_ROOT}" && GOWORK=off go list -m 2>/dev/null || true)"
 if [[ -z "${LOCAL_MODULE}" ]]; then
     echo "ERROR: could not determine the local module path via 'go list -m'." >&2

@@ -6,7 +6,7 @@ require (
 	github.com/GehirnInc/crypt v0.0.0-20230320061759-8cc1b52080c5
 	github.com/blang/semver/v4 v4.0.0
 	github.com/caarlos0/env/v11 v11.4.1
-	github.com/dsx-ai-factory/cluster-api-provider-nico v0.0.45
+	github.com/dsx-ai-factory/cluster-api-provider-nico v0.0.46-rc.4
 	github.com/dsx-ai-factory/nke/agent v0.0.0-00010101000000-000000000000
 	github.com/dsx-ai-factory/nke/controller/api v0.0.0-00010101000000-000000000000
 	github.com/evanphx/json-patch/v5 v5.9.11
@@ -159,7 +159,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	go.temporal.io/sdk/contrib/tally v0.2.0
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.15.0 // indirect

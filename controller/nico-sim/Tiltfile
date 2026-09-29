@@ -304,6 +304,7 @@ def register(ctx):
         nico_sim_env.update({
             "NICO_CONTAINERS_REQUIRE_HEALTHY": "true",
             "NICO_CONTAINERS_NODE_IMAGE": os.getenv("CAPD_KINDEST_NODE_IMAGE", "cwe-capd-kindest-node:local"),
+            "NICO_CONTAINERS_SPIRE_ATTESTATION_METHOD": "dsxImds" if "dsx-imds-attestation" in ctx.cfg.get("providers", []) else "tpm",
         })
     _image_cache = ctx.cfg.get("nico_sim_image_cache_dir", "")
     if _image_cache:

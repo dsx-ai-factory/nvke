@@ -22,9 +22,8 @@ ARG TARGETARCH
 
 # The build context is the REPOSITORY ROOT, not controller/ (docker-build-local
 # passes it): the controller is a member of the root Go workspace, and the
-# build needs go.work, the committed vendor/ tree, and the sibling modules
-# (../agent, ./api). No credentials or module downloads are needed — every
-# dependency comes from vendor/.
+# build needs go.work and the sibling modules (../agent, ./api). Public Go
+# modules are downloaded into the builder's module cache on first build.
 WORKDIR /workspace
 COPY . /workspace
 

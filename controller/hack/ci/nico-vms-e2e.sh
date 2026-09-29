@@ -631,7 +631,7 @@ curl -fsS --max-time 5 "http://localhost:18080/${AGENT_URL_PATH}" >/dev/null ||
 log "management plane is up: CWE, CAPNICo and nico-vms all answer"
 
 # ── The suite ───────────────────────────────────────────────────────────────
-# Through go.work: the workspace vendor tree, no downloads (GOPROXY=off in CI).
+# Through go.work: dependencies resolve from public modules and the Go cache.
 log "compiling the E2E suite"
 (cd test/e2e && CGO_ENABLED=0 go test -c -o "${E2E_BIN}" .)
 

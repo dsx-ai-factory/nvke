@@ -70,7 +70,7 @@ func TestLoader_LoadCluster(t *testing.T) {
 		allNodes: []db.Node{worker, cp},
 	}
 
-	loader := cwe.NewLoader(fake, config.Config{NodeAgentPort: "15005"})
+	loader := cwe.NewLoader(fake, config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}})
 	cluster, err := loader.LoadCluster(context.Background(), clusterID)
 	require.NoError(t, err)
 
@@ -93,7 +93,7 @@ func TestLoader_LoadCluster(t *testing.T) {
 
 func TestLoader_LoadCluster_GetClusterError(t *testing.T) {
 	fake := &fakeDB{clusterErr: db.ErrNotFound}
-	loader := cwe.NewLoader(fake, config.Config{NodeAgentPort: "15005"})
+	loader := cwe.NewLoader(fake, config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}})
 
 	cluster, err := loader.LoadCluster(context.Background(), uuid.New())
 	require.Error(t, err)
@@ -104,7 +104,7 @@ func TestLoader_LoadCluster_GetClusterError(t *testing.T) {
 func TestLoader_LoadCluster_ListNodesError(t *testing.T) {
 	sentinel := errors.New("boom")
 	fake := &fakeDB{nodesErr: sentinel}
-	loader := cwe.NewLoader(fake, config.Config{NodeAgentPort: "15005"})
+	loader := cwe.NewLoader(fake, config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}})
 
 	cluster, err := loader.LoadCluster(context.Background(), uuid.New())
 	require.Error(t, err)

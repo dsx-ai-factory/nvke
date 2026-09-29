@@ -28,42 +28,55 @@ func (v staticValidator) Validate(string) (validatedToken, error) {
 	return v.token, v.err
 }
 
-func TestExchangeSubject(t *testing.T) {
+func TestUnit_ExchangeSubject(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name  string
+	type parameters struct {
 		input string
 		want  string
-	}{
-		{
-			name:  "bare metal CWE",
+	}
+	tests := map[string]parameters{
+		"bare metal CWE": {
 			input: "spiffe://capd.nke.local/tenant/nke/service/cloud-workflow-engine/bm/cwe",
 			want:  "spiffe://nke.capd.cloud-workflow-engine.nvid.id/bm/cwe",
 		},
-		{
-			name:  "DPU suffix is preserved",
+		"DPU suffix is preserved": {
 			input: "spiffe://capd.nke.local/tenant/operator/service/dpu-agent/dpu/host-1/process/agent",
 			want:  "spiffe://operator.capd.dpu-agent.nvid.id/dpu/host-1/process/agent",
 		},
+		"node agent maps to the exact node UUID": {
+			input: "spiffe://capd.nke.local/host/45f59791-87df-4e85-9430-e565166ad020",
+			want:  "spiffe://nke.capd.node-agent.nvid.id/bm/45f59791-87df-4e85-9430-e565166ad020",
+		},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			got, err := exchangeSubject("capd", "nvid.id", spiffeid.RequireFromString(test.input))
+			got, err := exchangeSubject("capd", "nvid.id", spiffeid.RequireFromString(params.input))
 			require.NoError(t, err)
-			require.Equal(t, test.want, got.String())
+			require.Equal(t, params.want, got.String())
 		})
 	}
 }
 
-func TestExchangeSubjectRejectsUnsupportedSource(t *testing.T) {
+func TestUnit_ExchangeSubjectRejectsUnsupportedSource(t *testing.T) {
 	t.Parallel()
-	_, err := exchangeSubject(
-		"capd",
-		"nvid.id",
-		spiffeid.RequireFromString("spiffe://capd.nke.local/nke-service/cloud-workflow-engine"),
-	)
-	require.ErrorContains(t, err, "invalid local SPIFFE identity path")
+	type parameters struct {
+		path    string
+		wantErr string
+	}
+	tests := map[string]parameters{
+		"unrelated workload": {path: "/nke-service/cloud-workflow-engine", wantErr: "invalid local SPIFFE identity path"},
+		"non-UUID host":      {path: "/host/not-a-uuid", wantErr: "invalid canonical node ID"},
+		"uppercase host":     {path: "/host/45F59791-87DF-4E85-9430-E565166AD020", wantErr: "invalid canonical node ID"},
+		"host suffix":        {path: "/host/45f59791-87df-4e85-9430-e565166ad020/process/agent", wantErr: "invalid local SPIFFE identity path"},
+	}
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, err := exchangeSubject("capd", "nvid.id", spiffeid.RequireFromString("spiffe://capd.nke.local"+params.path))
+			require.ErrorContains(t, err, params.wantErr)
+		})
+	}
 }
 
 func TestTokenExchangeRewritesAndResignsValidatedSVID(t *testing.T) {
@@ -113,6 +126,37 @@ func TestTokenExchangeRewritesAndResignsValidatedSVID(t *testing.T) {
 	require.Equal(t, "source-token", claims["jti"])
 	require.NotContains(t, claims, "private_source_claim")
 	require.Equal(t, server.publicKey.KeyID, parsed.Headers[0].KeyID)
+}
+
+func TestUnit_TokenExchangeSignsNodeAgentIdentity(t *testing.T) {
+	t.Parallel()
+	const nodeID = "45f59791-87df-4e85-9430-e565166ad020"
+	now := time.Unix(1_800_000_000, 0).UTC()
+	server := newTestServer(t, staticValidator{token: validatedToken{
+		ID:     spiffeid.RequireFromString("spiffe://capd.nke.local/host/" + nodeID),
+		Expiry: now.Add(10 * time.Minute),
+		Claims: map[string]any{
+			"aud": "nke-controller",
+			"exp": now.Add(10 * time.Minute).Unix(),
+		},
+	}})
+	server.now = func() time.Time { return now }
+
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/v1/exchange", strings.NewReader(validForm("validated-by-test-double").Encode()))
+	request.Header.Set("Content-Type", contentTypeFormEncoded)
+	response := httptest.NewRecorder()
+	server.handler().ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	var exchange tokenExchangeResponse
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &exchange))
+	parsed, err := jwt.ParseSigned(exchange.AccessToken, []jose.SignatureAlgorithm{jose.ES256})
+	require.NoError(t, err)
+	var claims map[string]any
+	require.NoError(t, parsed.Claims(server.publicKey.Key, &claims))
+	require.Equal(t, "https://capd.dsx.nvid.id", claims["iss"])
+	require.Equal(t, "nke-controller", claims["aud"])
+	require.Equal(t, "spiffe://nke.capd.node-agent.nvid.id/bm/"+nodeID, claims["sub"])
 }
 
 func TestTokenExchangeRejectsInvalidRequests(t *testing.T) {

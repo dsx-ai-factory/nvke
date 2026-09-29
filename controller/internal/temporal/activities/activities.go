@@ -54,7 +54,7 @@ func NewActivities(
 
 func (a *Activities) nodeAgentBootstrapFiles() ([]db.CloudInitFile, error) {
 	var files []db.CloudInitFile
-	args := []string{"--secure-server-port", a.cfg.NodeAgentPort}
+	args := []string{"--secure-server-port", a.cfg.NodeAgent.Port}
 	if a.cfg.NodeAgentExternalMTLSEnabled {
 		if a.controllerClientCABundle == "" {
 			return nil, errors.New("controller client CA bundle is required when external node-agent mTLS is enabled")
@@ -69,8 +69,8 @@ func (a *Activities) nodeAgentBootstrapFiles() ([]db.CloudInitFile, error) {
 		})
 		args = append(args, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
 	}
-	if a.cfg.NodeAgentTLSJWTEnabled {
-		args = append(args, "--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url="+a.cfg.NodeAgentTLSJWTDSXIdentityExchangeURL)
+	if a.cfg.NodeAgent.TLSJWT.Enabled {
+		args = append(args, "--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url="+a.cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)
 	}
 	files = append(files, db.CloudInitFile{
 		Path:        config.NodeAgentConfigPath,

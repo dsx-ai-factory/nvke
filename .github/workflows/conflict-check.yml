@@ -53,7 +53,19 @@ jobs:
             // so the first read usually returns null and also starts the job.
             async function mergeableState(number) {
               for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
-                const { data } = await github.rest.pulls.get({ ...context.repo, pull_number: number });
+                // A 5xx threw straight out of this loop and failed the job,
+                // though the retry it needed was already here.
+                let data;
+                try {
+                  ({ data } = await github.rest.pulls.get({ ...context.repo, pull_number: number }));
+                } catch (error) {
+                  if (attempt === ATTEMPTS) {
+                    throw error;
+                  }
+                  core.info(`#${number}: read failed (${error.status ?? 'no status'}), retrying`);
+                  await sleep(DELAY_MS);
+                  continue;
+                }
                 if (data.mergeable !== null) {
                   return data;
                 }

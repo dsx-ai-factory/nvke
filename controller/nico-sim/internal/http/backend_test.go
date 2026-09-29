@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	nethttp "net/http"
@@ -292,6 +293,16 @@ func (f *fakeContainerService) Create(_ context.Context, instanceID string, req 
 	instance.SetSiteId(testContainerSiteID)
 	instance.SetVpcId(req.GetVpcId())
 	instance.SetInstanceTypeId(req.GetInstanceTypeId())
+	instance.SetMachineId("machine-" + instanceID[:8])
+	interfaces := make([]nicosdk.Interface, 0, len(req.GetInterfaces()))
+	for index, requested := range req.GetInterfaces() {
+		iface := nicosdk.NewInterface()
+		iface.SetId(fmt.Sprintf("interface-%d", index))
+		iface.SetInstanceId(instanceID)
+		iface.SetIpAddresses([]string{requested.GetIpAddress()})
+		interfaces = append(interfaces, *iface)
+	}
+	instance.SetInterfaces(interfaces)
 	instance.SetStatus(nicosdk.InstanceStatus("Ready"))
 	instance.SetCreated(time.Unix(100, 0).UTC())
 	f.instances[instance.GetId()] = *instance

@@ -739,7 +739,7 @@ func testTemplateLessForgeCAPICfg(t *testing.T) config.Config {
 		ProfilesDir:                        profilesDir,
 		DgxcTenantUser:                     "nvidia",
 		DgxcTenantPassword:                 "password",
-		NodeAgentPort:                      "15005",
+		NodeAgent:                          config.NodeAgentConfig{Port: "15005"},
 		SpireServerAddress:                 "spire-server",
 		SpireServerPort:                    "9091",
 		NKESiteControllerName:              "site-a",
@@ -911,8 +911,8 @@ func TestCreateCAPISpireJoinTokenSkippedWhenSpiffeDisabled(t *testing.T) {
 	}
 
 	a := &Activities{cfg: config.Config{
-		SpiffeEnabled:                   false,
-		NodeAgentSpireAttestationMethod: config.SpireAttestationMethodJoinToken,
+		SpiffeEnabled: false,
+		NodeAgent:     config.NodeAgentConfig{SpireAttestationMethod: config.SpireAttestationMethodJoinToken},
 	}}
 	token, path, err := a.createCAPISpireJoinToken(context.Background(), createCtx)
 	require.NoError(t, err, "must not reach SPIRE when SPIFFE is off")

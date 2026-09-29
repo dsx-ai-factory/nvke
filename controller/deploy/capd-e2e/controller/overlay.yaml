@@ -41,9 +41,12 @@ nkeOIDCAuth:
 cni:
   installAfterInit: false
 
-# Empty on this path: none of the twelve variables the Tiltfile forwards
-# (TEMPORAL_UI_URL, LOG_LEVEL, FORGE_URL, ...) are set by backend-e2e.sh.
-env: []
+# Of the variables the Tiltfile forwards, backend-e2e.sh sets only this one.
+# A container node cannot reboot in-guest, so the reboot goes out of band
+# through the CAPI Machine annotation instead.
+env:
+  - name: NODE_REBOOT_SOFT_REBOOT_ENABLED
+    value: "false"
 
 # ---------------------------------------------------------------------------
 # Moved here from controller/hack/tilt-cwe-chart-values.yaml, which the lane

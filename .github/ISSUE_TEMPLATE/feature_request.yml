@@ -1,0 +1,91 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Feature Request
+description: Propose an NKE feature
+title: "[FEATURE]: "
+labels: ["feature"]
+
+body:
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I searched existing issues and discussions for similar proposals
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: Describe the operator or developer problem, who it affects, and why current behavior is insufficient.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the outcome and user-visible behavior you want. Implementation details are optional.
+    validations:
+      required: true
+
+  - type: textarea
+    id: success
+    attributes:
+      label: Success criteria
+      description: Explain how maintainers and users can tell the request is complete.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      options:
+        - Controller
+        - Node agent or updater
+        - nkectl CLI
+        - Cluster API provider (provisioned)
+        - Helm charts or deployment (nke-stack)
+        - nico-sim (development simulator)
+        - OS image or image checker
+        - NKTP telemetry pipeline
+        - Build, packaging, or release automation
+        - Documentation
+        - Cross-component or other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe workarounds or alternative designs you have considered.
+
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and operational considerations
+      description: Note migrations, API compatibility, upgrades, security boundaries, or operational impact. Report suspected vulnerabilities to NVIDIA PSIRT through the [security policy](https://github.com/dsx-ai-factory/nke/blob/main/SECURITY.md), not in a public feature request.
+
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Are you willing to contribute?
+      description: See [CONTRIBUTING.md](https://github.com/dsx-ai-factory/nke/blob/main/CONTRIBUTING.md) for contribution guidance.
+      options:
+        - Yes, I can open a pull request
+        - Maybe, with maintainer guidance
+        - "No"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      options:
+        - label: I agree to follow the project's [Code of Conduct](https://github.com/dsx-ai-factory/nke/blob/main/CODE_OF_CONDUCT.md)
+          required: true

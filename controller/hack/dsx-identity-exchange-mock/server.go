@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+	"github.com/google/uuid"
 	"github.com/spiffe/go-spiffe/v2/bundle/jwtbundle"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/svid/jwtsvid"
@@ -264,6 +265,17 @@ func (s *exchangeServer) resign(validated validatedToken, subject spiffeid.ID) (
 func exchangeSubject(region, partition string, id spiffeid.ID) (spiffeid.ID, error) {
 	path := strings.TrimPrefix(id.Path(), "/")
 	segments := strings.Split(path, "/")
+	if len(segments) == 2 && segments[0] == "host" {
+		nodeID, err := uuid.Parse(segments[1])
+		if err != nil || nodeID.String() != segments[1] {
+			return spiffeid.ID{}, fmt.Errorf("invalid canonical node ID %q", segments[1])
+		}
+		trustDomain, err := spiffeid.TrustDomainFromString(strings.Join([]string{"nke", region, "node-agent", partition}, "."))
+		if err != nil {
+			return spiffeid.ID{}, fmt.Errorf("build node-agent trust domain: %w", err)
+		}
+		return spiffeid.FromSegments(trustDomain, "bm", segments[1])
+	}
 	if len(segments) < 6 || segments[0] != "tenant" || segments[2] != "service" {
 		return spiffeid.ID{}, fmt.Errorf("invalid local SPIFFE identity path %q", id.Path())
 	}

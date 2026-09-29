@@ -9,7 +9,7 @@ Three paths. Start with A.
 | Path | Needs | Gets you |
 |---|---|---|
 | [**A — the API alone**](#path-a--the-api-alone) | Go, Docker, kind | CWE running and its API to explore, in minutes. No tenant clusters. |
-| [**B — a tenant cluster with mock NICo**](#path-b--a-tenant-cluster-with-mock-nico) | Docker, kind, ~16 GB free, a CAPNICo checkout | The real create-a-cluster loop against real CAPNICo, no hardware |
+| [**B — a tenant cluster with mock NICo**](#path-b--a-tenant-cluster-with-mock-nico) | Docker, kind, ~16 GB free, and either a CAPNICo checkout or an NGC account | The real create-a-cluster loop against real CAPNICo, no hardware |
 | [**C — a real site**](#path-c--a-real-site) | Imaged nodes, nerdctl, a NICo site | A site controller minting CAPNICo-backed tenant clusters |
 
 ## Before you start
@@ -44,8 +44,14 @@ that `colima-up` will then refuse to resize, so size it first:
 make -C controller colima-up      # 6 CPU, 12 GiB
 ```
 
-Path A needs nothing internal and no NGC account. Path B needs a checkout of
-`dsx-ai-factory/cluster-api-provider-nico`.
+Path A needs nothing internal and no NGC account.
+
+Path B installs CAPNICo one of two ways, and **only one of them works without an
+NGC account**. Set `CAPNICO_SOURCE_DIR` to a checkout of
+[`dsx-ai-factory/cluster-api-provider-nico`](https://github.com/dsx-ai-factory/cluster-api-provider-nico),
+which is public, and it builds from source. Leave it unset and it installs the
+released chart from NGC instead, which needs `NGC_API_KEY`. The source route is
+the one to take if you are outside NVIDIA.
 
 ## Path A — the API alone
 
@@ -69,9 +75,10 @@ make -C controller run-local
 The same stack a real site runs: real CAPNICo, with **nico-mock** answering the
 NICo API and tenant nodes as containers.
 
-Tilt installs the released CAPNICo chart by default. To build CAPNICo from a
-checkout instead, set `capnico_source_dir` in `controller/tilt_config.json` or
-export `CAPNICO_SOURCE_DIR`.
+Tilt installs the released CAPNICo chart by default, which pulls from NGC and so
+needs `NGC_API_KEY`. To build CAPNICo from a checkout instead, and need no NGC
+account, set `capnico_source_dir` in `controller/tilt_config.json` or export
+`CAPNICO_SOURCE_DIR`.
 
 If you ran path A first, stop it — its Postgres and Temporal hold 5432 and 7233,
 and Tilt's probes will pass against the wrong servers while its port-forwards

@@ -365,6 +365,11 @@ spec:
               machineID:
                 description: MachineID is the machine ID for this machine.
                 type: string
+              primaryDPUMachineID:
+                description: |-
+                  PrimaryDPUMachineID is the NICo machine ID of the DPU attached to the
+                  host's primary interface.
+                type: string
               ready:
                 description: Ready is true once the backing instance reaches Ready.
                 type: boolean

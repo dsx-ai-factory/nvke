@@ -21,8 +21,7 @@ REPO_ROOT ?= $(shell git rev-parse --show-toplevel)
 # for working inside cli/ alone, and it is what the Lint workflow
 # invokes.
 #
-# Every dependency here is public, so these targets need neither the workspace
-# nor the committed vendor/ tree, and CI runs them with GOWORK=off.
+# Every dependency here is public, so these targets can run with GOWORK=off.
 
 GO ?= go
 BINARY := bin/nkectl
@@ -115,8 +114,7 @@ build-cross: ## Build nkectl for every NKECTL_PLATFORMS entry into DIST.
 	fi
 
 # -buildvcs=false because nkectl's version comes from the -X symbols in
-# NKECTL_LDFLAGS, asserted just below. See the note on work-check-offline in the
-# root Makefile.
+# NKECTL_LDFLAGS, asserted just below.
 build: ## Build nkectl into bin/, and assert the version stamp took.
 	CGO_ENABLED=0 $(GO) build -buildvcs=false -trimpath -ldflags "$(NKECTL_LDFLAGS)" -o $(BINARY) ./cmd/nkectl
 	@# A wrong -X symbol is silently ignored by the linker, so the only way to

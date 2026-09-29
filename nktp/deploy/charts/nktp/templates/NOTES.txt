@@ -1,0 +1,47 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+{{- $lgtm := index .Values "otel-lgtm" }}
+NKTP {{ .Chart.Version }} is installed in namespace {{ .Release.Namespace }} as {{ .Release.Name }}.
+
+Send telemetry to the gateway for its signal. Each one accepts OTLP on 4317
+(gRPC) and 4318 (HTTP):
+
+  logs     nktp-gateway-logs-collector.{{ .Release.Namespace }}.svc:4317
+  metrics  nktp-gateway-metrics-collector.{{ .Release.Namespace }}.svc:4317
+  traces   nktp-gateway-traces-collector.{{ .Release.Namespace }}.svc:4317
+
+An application can also send to the collector on its own node, on the same two
+ports:
+
+  nktp-daemonset-collector.{{ .Release.Namespace }}.svc
+
+Watch the pipeline come up:
+
+  kubectl get opentelemetrycollectors -n {{ .Release.Namespace }}
+  kubectl get pods -n {{ .Release.Namespace }}
+
+{{ if $lgtm.enabled -}}
+The bundled Grafana/LGTM backend is ENABLED. It keeps telemetry in the pod, so
+a restart loses it. It is a development backend, not a production one.
+
+  kubectl port-forward -n {{ .Release.Namespace }} svc/lgtm 3000:3000
+  # then open http://localhost:3000
+
+Turn it off and point NKTP at your own backend:
+
+  --set otel-lgtm.enabled=false
+
+and override the otlp_http exporter of each gateway and of the watchdog, and
+the watchdog's three service.telemetry exporters. The chart README shows the
+values block.
+{{- else -}}
+The bundled development backend is disabled, so the gateways and the watchdog
+export to whatever endpoints your values set. Check that they are reachable:
+
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name=nktp-gateway-metrics-collector --tail=20
+{{- end }}
+
+The DaemonSet reads host paths and needs the namespace to allow privileged
+pods. If its pods do not start, check the namespace's Pod Security level first.

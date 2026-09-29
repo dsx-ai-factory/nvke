@@ -1,0 +1,141 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Installs the NKTP chart on a Kind cluster and asserts that telemetry flows.
+#
+# nktp-chart.yml lints, renders and kubeconforms the chart, and every one of
+# those passes on a chart that installs and then sends nothing. This lane runs
+# the pipeline: seven Collectors, kube-state-metrics, node-exporter,
+# metrics-server and the bundled backend, then queries that backend for the
+# signals. A crash-looping Collector, an exporter that cannot reach the backend,
+# or a Target Allocator that discovers nothing all fail here and nowhere else.
+#
+# The assertions live in nktp/hack/e2e-validate.sh, not inline, so the same
+# checks run locally. docs/nktp/kind-validation.md is the hand-run version and
+# the source of the queries.
+#
+# Runs on linux-amd64-cpu8. One Kind node, and no KVM, but not a hosted runner:
+# the chart requests about 2 CPU across its pods, and a 4-vCPU ubuntu-latest
+# runner already spends most of a core on the Kind control plane. Three
+# Collectors stayed Pending on "Insufficient cpu" there. Shrinking the requests
+# to fit would have meant the lane no longer exercised the values the chart
+# ships, so it takes the capacity instead.
+#
+# Not a merge-gate member, like the other e2e lanes. The gate is static checks
+# only, so a chart that renders can still merge while this is red; the schedule
+# is what keeps it honest.
+name: NKTP E2E
+
+on:
+  push:
+    branches:
+      - main
+      # The mirror branch copy-pr-bot pushes. Self-hosted runners do not pick up
+      # `pull_request`, so this is how a pull request reaches them -- the same
+      # reason the other e2e lanes watch it. An unvetted author is not mirrored
+      # and so gets no run here; absence is not a pass.
+      - "pull-request/[0-9]+"
+    paths:
+      - 'nktp/**'
+      - 'controller/hack/cwe-capi-kind.yaml'
+      - 'make/tool-versions.mk'
+      - '.github/actions/setup-kind/**'
+      - '.github/workflows/nktp-e2e.yml'
+  # Twice daily, like the other e2e lanes. A schedule ignores the paths above,
+  # so these runs also catch a dependency moving under a chart that did not.
+  schedule:
+    - cron: '30 3,15 * * *'
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: NKTP E2E-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  validate:
+    name: install and validate on Kind
+    runs-on: linux-amd64-cpu8
+    if: github.repository == 'dsx-ai-factory/nke'
+    # The install alone is ~10 minutes on a hosted runner: the Operator, its
+    # CRDs, seven Collectors and the LGTM image. The signal assertions then
+    # retry for up to five minutes each.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Version pins come from make/tool-versions.mk, so this lane and
+      # `make show-versions` cannot disagree.
+      - name: Read pinned tool versions
+        id: versions
+        run: |
+          {
+            echo "kind_version=$(make --no-print-directory print-KIND_VERSION)"
+            echo "kubectl_version=$(make --no-print-directory print-KUBECTL_VERSION)"
+            echo "helm_version=$(make --no-print-directory print-HELM_VERSION)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ steps.versions.outputs.helm_version }}
+
+      - name: Set up Kind and kubectl
+        uses: ./.github/actions/setup-kind
+        with:
+          kind_version: ${{ steps.versions.outputs.kind_version }}
+          kubectl_version: ${{ steps.versions.outputs.kubectl_version }}
+
+      # This chart puts about fifteen pods on a single Kind node, more than the
+      # other Kind lanes here. Past the default watcher limit kube-proxy exits
+      # with "fsnotify watcher init: too many open files", every ClusterIP goes
+      # dead, and the failure surfaces as unrelated pods timing out against
+      # 10.96.0.1 rather than as anything naming kube-proxy. Same values and
+      # same raise-only helper as the other E2E lanes here.
+      - name: Configure runner inotify capacity
+        shell: bash
+        run: |
+          set -euo pipefail
+          raise_minimum() {
+            local key="$1" minimum="$2" current
+            current="$(sysctl -n "${key}")"
+            echo "${key}=${current} (required minimum ${minimum})"
+            if (( current < minimum )); then
+              sudo sysctl -w "${key}=${minimum}"
+              current="$(sysctl -n "${key}")"
+            fi
+            (( current >= minimum )) || { echo "${key} stayed below ${minimum}" >&2; exit 1; }
+          }
+          raise_minimum fs.inotify.max_user_instances 1024
+          raise_minimum fs.inotify.max_user_watches 1048576
+
+      - name: Install and validate
+        run: ./nktp/hack/e2e-validate.sh
+
+      # The script prints pods, Collectors and events on failure. This keeps the
+      # Collector logs too, which is where an exporter error actually says why.
+      - name: Collect diagnostics
+        if: failure()
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/nktp-diag
+          kubectl -n nktp get all -o wide            > /tmp/nktp-diag/resources.txt 2>&1 || true
+          kubectl -n nktp describe pods              > /tmp/nktp-diag/describe-pods.txt 2>&1 || true
+          kubectl -n nktp logs -l app.kubernetes.io/component=opentelemetry-collector \
+            --tail=2000 --prefix                     > /tmp/nktp-diag/collectors.log 2>&1 || true
+          kubectl -n nktp logs deploy/lgtm --tail=2000 > /tmp/nktp-diag/lgtm.log 2>&1 || true
+          kubectl get events -A --sort-by=.lastTimestamp > /tmp/nktp-diag/events.txt 2>&1 || true
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nktp-e2e-diagnostics-${{ github.run_id }}
+          path: /tmp/nktp-diag
+          retention-days: 7

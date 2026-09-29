@@ -224,7 +224,7 @@ func NewWorker(
 	rolloutetcd.RegisterDefaults(rolloutRegistry, rolloutDialer, k8sClient, cfg.PodNamespace)
 	rolloutoidc.RegisterDefaults(rolloutRegistry, rolloutDialer, rolloutMethodChecker, k8sClient, cfg.NkeOIDCAuth)
 	rollouttemporal.NewActivities(rolloutLoader, rolloutRegistry).Register(w)
-	rollouttemporal.NewClusterLoaderActivity(rolloutLoader, cfg.NodeAgentPort).Register(w)
+	rollouttemporal.NewClusterLoaderActivity(rolloutLoader, cfg.NodeAgent.Port).Register(w)
 
 	return w, nil
 }

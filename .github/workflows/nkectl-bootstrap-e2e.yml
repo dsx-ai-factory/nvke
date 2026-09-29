@@ -52,13 +52,10 @@ on:
       # The suite builds CWE from controller/Dockerfile, so a controller-only
       # change has to run it too.
       - 'controller/**'
-      # controller/Dockerfile builds against the committed vendor/ tree, not a
-      # module download, so a vendoring change can break the image the same
-      # way a controller/** change can. Same paths controller-test.yml watches
-      # for the same reason.
+      # The controller image uses the root Go workspace, so changes to its
+      # workspace files can break the image as well as controller source changes.
       - 'go.work'
       - 'go.work.sum'
-      - 'vendor/**'
       - '.github/workflows/nkectl-bootstrap-e2e.yml'
   # Twice a day as well: a schedule ignores the paths above, so a break they
   # filtered out still surfaces within twelve hours.

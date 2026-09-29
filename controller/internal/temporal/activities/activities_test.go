@@ -45,10 +45,11 @@ func TestUnit_NodeAgentBootstrapFiles(t *testing.T) {
 			t.Parallel()
 			activities := &Activities{
 				cfg: config.Config{
-					NodeAgentPort:                         "15005",
-					NodeAgentTLSJWTEnabled:                params.tlsJWT,
-					NodeAgentTLSJWTDSXIdentityExchangeURL: "https://identity.example.test/v1/exchange",
-					NodeAgentExternalMTLSEnabled:          params.externalMTLS,
+					NodeAgent: config.NodeAgentConfig{
+						Port:   "15005",
+						TLSJWT: config.TLSJWTConfig{Enabled: params.tlsJWT, DSXIdentityExchangeURL: "https://identity.example.test/v1/exchange"},
+					},
+					NodeAgentExternalMTLSEnabled: params.externalMTLS,
 				},
 				controllerClientCABundle: "public-ca",
 			}

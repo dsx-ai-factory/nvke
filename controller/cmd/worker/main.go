@@ -336,12 +336,13 @@ func main() {
 		if !nicoCRDInstalled {
 			logger.Warn("NicoMachine CRD not installed; skipping the NICo controllers")
 		} else {
-			nicoTpmSpiffeController := capi.NewNicoTpmSpiffeController(
+			nicoSpiffeController := capi.NewNicoSpiffeController(
+				cfg,
 				k8sControllerManager.GetClient(),
-				logger.With("logger", "nico-tpm-spiffe-controller"),
+				logger.With("logger", "nico-spiffe-controller"),
 			)
-			if err := nicoTpmSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
-				logger.Error("Failed to set up nico TPM SPIFFE controller", "error", err)
+			if err := nicoSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
+				logger.Error("Failed to set up nico SPIFFE controller", "error", err)
 				os.Exit(1)
 			}
 

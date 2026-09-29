@@ -126,7 +126,7 @@ periodic use. Preserve release-tag triggers when extending an existing workflow.
 The filter controls only the member's direct post-merge run. Include:
 
 - every module or directory the job actually checks;
-- shared inputs such as `go.work`, `go.work.sum`, `vendor/**`, or `Makefile`
+- shared inputs such as `go.work`, `go.work.sum`, or `Makefile`
   where they can change the result; and
 - the workflow file itself.
 

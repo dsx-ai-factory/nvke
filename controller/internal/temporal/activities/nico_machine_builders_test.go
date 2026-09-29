@@ -358,18 +358,18 @@ func TestUnit_RenderUserData(t *testing.T) {
 	baseConfig := config.Config{
 		DgxcTenantUser:     "test-admin",
 		DgxcTenantPassword: "test-password",
-		NodeAgentPort:      "15005",
+		NodeAgent:          config.NodeAgentConfig{Port: "15005"},
 		SpireServerAddress: "spire.example.com",
 		SpireServerPort:    "9091",
 	}
 	tlsJWTConfig := baseConfig
-	tlsJWTConfig.NodeAgentTLSJWTEnabled = true
-	tlsJWTConfig.NodeAgentTLSJWTDSXIdentityExchangeURL = "https://identity.example.test/v1/exchange"
+	tlsJWTConfig.NodeAgent.TLSJWT.Enabled = true
+	tlsJWTConfig.NodeAgent.TLSJWT.DSXIdentityExchangeURL = "https://identity.example.test/v1/exchange"
 	externalMTLSConfig := baseConfig
 	externalMTLSConfig.NodeAgentExternalMTLSEnabled = true
 	combinedConfig := externalMTLSConfig
-	combinedConfig.NodeAgentTLSJWTEnabled = true
-	combinedConfig.NodeAgentTLSJWTDSXIdentityExchangeURL = "https://identity.example.test/v1/exchange"
+	combinedConfig.NodeAgent.TLSJWT.Enabled = true
+	combinedConfig.NodeAgent.TLSJWT.DSXIdentityExchangeURL = "https://identity.example.test/v1/exchange"
 
 	type parameters struct {
 		config                config.Config
@@ -712,11 +712,13 @@ func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
 			require.NoError(t, err)
 			activities := &Activities{
 				cfg: config.Config{
-					DgxcTenantUser:                  "test-admin",
-					DgxcTenantPassword:              "test-password",
-					NodeAgentExternalMTLSEnabled:    true,
-					NodeAgentPort:                   "15005",
-					NodeAgentSpireAttestationMethod: config.SpireAttestationMethodTPM,
+					DgxcTenantUser:               "test-admin",
+					DgxcTenantPassword:           "test-password",
+					NodeAgentExternalMTLSEnabled: true,
+					NodeAgent: config.NodeAgentConfig{
+						Port:                   "15005",
+						SpireAttestationMethod: config.SpireAttestationMethodTPM,
+					},
 				},
 				controllerClientCABundle: testControllerClientCA,
 				getTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {

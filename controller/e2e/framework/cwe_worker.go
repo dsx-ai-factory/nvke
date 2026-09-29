@@ -55,7 +55,7 @@ type CWEWorkerBinaryConfig struct {
 	BinaryPath         string
 	DBConnectionString string
 	KubeconfigPath     string
-	NodeAgentPort      string
+	NodeAgent          config.NodeAgentConfig
 	TemporalHostPort   string
 	Namespace          string
 	TaskQueue          string
@@ -108,7 +108,7 @@ func StartCWEWorkerBinary(t testing.TB, cfg CWEWorkerBinaryConfig) *Process {
 
 	require.NotEmpty(t, cfg.DBConnectionString)
 	require.NotEmpty(t, cfg.KubeconfigPath)
-	require.NotEmpty(t, cfg.NodeAgentPort)
+	require.NotEmpty(t, cfg.NodeAgent.Port)
 	// Fleet profiles are no longer baked into the worker binary. Point
 	// migrations that load osProfiles/metadata.yaml at the sanitized fixtures tree.
 	profilesDir := filepath.Join(RepoRoot(t), "test", "fixtures", "profiles")
@@ -120,7 +120,7 @@ func StartCWEWorkerBinary(t testing.TB, cfg CWEWorkerBinaryConfig) *Process {
 		"DB_MAX_OPEN_CONNECTIONS=4",
 		"DB_QUERY_LOG_LEVEL=debug",
 		"KUBECONFIG=" + cfg.KubeconfigPath,
-		"NODE_AGENT_PORT=" + cfg.NodeAgentPort,
+		"NODE_AGENT_PORT=" + cfg.NodeAgent.Port,
 		"TEMPORAL_HOST_PORT=" + cfg.TemporalHostPort,
 		"TEMPORAL_NAMESPACE=" + cfg.Namespace,
 		"TEMPORAL_TASK_QUEUE=" + cfg.TaskQueue,

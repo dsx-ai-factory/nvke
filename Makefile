@@ -20,7 +20,7 @@ endif
 # so it is dropped from the environment the recipes pass on.
 unexport GOWORK
 
-# go.work owns the Go version. strcase (vendored via teleport/api) asserts its
+# go.work owns the Go version. strcase (via teleport/api) asserts its
 # Unicode tables match the stdlib's, so a toolchain newer than the `go`
 # directive panics at init -- controller/Makefile:7 has pinned against that
 # for a while. Exporting it here extends the same pin to every module this
@@ -48,19 +48,12 @@ ADDLICENSE       ?= $(GO) run github.com/google/addlicense@v1.1.1
 # The exclusions cover vendored and generated trees, testdata, fixtures, build
 # tooling, and the chart templates the chart ships. Files under hack/ are
 # deliberately included: they are source and must carry the repository licence.
-LICENSE_FILES = git ls-files -- '*.go' '*.sh' '*.py' '*.js' '*.css' '*.html' '*.yaml' '*.yml' \
-	| grep -vE '(^|/)vendor/' \
-	| grep -vE '(^|/)testdata/' \
-	| grep -vE '^generated/' \
-	| grep -vE '\.pb\.go$$' \
-	| grep -vE '^controller/deploy/charts/' \
-	| grep -vE '^controller/test/fixtures/'
+LICENSE_TRACKED_FILES = git ls-files -- '*.go' '*.sh' '*.py' '*.js' '*.css' '*.html' '*.yaml' '*.yml'
+LICENSE_SOURCE_FILTER = awk '!/(^|\/)vendor\// && !/(^|\/)testdata\// && !/^generated\// \
+	&& !/\.pb\.go$$/ && !/^controller\/deploy\/charts\// && !/^controller\/test\/fixtures\//'
 
-# Modules in go.work — every module in the repository. Building needs no
-# NVIDIA credentials: the one still-INTERNAL dependency
-# (github.com/dsx-ai-factory/cluster-api-provider-nico) is carried in the committed
-# vendor/ tree, so `build` gives an outside contributor the same result as CI.
-# Re-vendoring (inside `work-sync`) is the only step that needs access to it.
+# Modules in go.work — every module in the repository. All dependencies are
+# public; the Go module cache supplies them after the first download.
 WORK_MODULES := agent \
                 cluster-api-provider-provisioned \
                 controller \
@@ -150,7 +143,7 @@ include make/versions.mk
 include make/checks.mk
 
 .DEFAULT_GOAL := help
-.PHONY: help show-versions tools-check lint-workflows lint-shell docs-check internal-config-check lint-chart chart-rbac-check chart-package-check chart-check vulncheck fmt lint gate test-compile test-e2e-backend-ci work work-sync work-check work-check-offline build test preflight version-check clean licenses licenses-check license-deps-check notices notices-check license-header-check
+.PHONY: help show-versions tools-check lint-workflows lint-shell docs-check internal-config-check lint-chart chart-rbac-check chart-package-check chart-check vulncheck fmt lint gate test-compile test-e2e-backend-ci work work-sync work-check build test preflight version-check clean licenses licenses-check license-deps-check notices notices-check license-header-check
 
 ##@ Help
 
@@ -215,13 +208,7 @@ work-sync: work ## Refresh go.work.sum and the modules' go.mod and go.sum.
 	@# and stops being a function of the modules it describes.
 	@rm -f go.work.sum
 	@$(GO) mod download all
-	@# The vendor tree is a function of the go.mod files above it, so it has to
-	@# be regenerated here rather than by hand. A root vendor/ puts the whole
-	@# workspace in -mod=vendor: leave it behind and every build stops with
-	@# "is marked as explicit in vendor/modules.txt, but not explicitly
-	@# required in a go.mod". That is how main broke on 2026-08-13.
-	@$(GO) work vendor
-	@echo "Workspace refreshed. Commit go.work, go.work.sum, vendor/ and every"
+	@echo "Workspace refreshed. Commit go.work, go.work.sum and every"
 	@echo "go.mod and go.sum this changed, together."
 
 work-check: ## Verify go.work and go.work.sum are complete and current. (run by the merge gate)
@@ -264,102 +251,18 @@ work-check: ## Verify go.work and go.work.sum are complete and current. (run by 
 	   echo "ERROR: these modules are listed in the Makefile but no longer exist:"; \
 	   printf '%s\n' "$$gone" | sed 's/^/    /'; exit 1; \
 	 fi
-	@# Re-deriving workspace freshness needs the module graph over the network,
-	@# which includes github.com/dsx-ai-factory/cluster-api-provider-nico — INTERNAL
-	@# visibility until it is open-sourced, so unreachable from public runners
-	@# and outside contributors. Builds are unaffected (the dependency is in the
-	@# committed vendor/ tree); only this freshness re-derivation needs access,
-	@# so it is skipped — as one shell block, because every recipe line runs in
-	@# its own shell and an exit in one does not stop the next. Drop the guard
-	@# when the repo goes public.
-	@#
-	@# Offline first: this needs no network, so it runs everywhere -- including on
-	@# a public runner and for an outside contributor's fork, where the guarded
-	@# block below cannot run at all.
-	@$(MAKE) --no-print-directory work-check-offline
-	@# Inside the guarded block: go work sync writes the workspace's selected
-	@# versions back into every go.mod; each module is tidied with the workspace
-	@# off to complete its go.sum; go.work.sum is rebuilt from scratch so it
-	@# cannot accumulate stale hashes; vendor/ is regenerated because it is
-	@# derived from the go.mod files, and a root vendor tree puts the workspace
-	@# in -mod=vendor, so a stale one does not degrade the build, it stops it
-	@# (main broke this way on 2026-08-13). The git diff then catches a bump
-	@# landing in one module without the workspace being refreshed, and the
-	@# untracked check catches a package that vendoring ADDS, which git diff
-	@# alone would miss.
-	@if (cd controller && GOWORK=off $(GO) mod download github.com/dsx-ai-factory/cluster-api-provider-nico >/dev/null 2>&1); then \
-		echo "- Checking the workspace, go.work.sum, vendor/ and every go.mod agree..."; \
+	@echo "- Checking the workspace, go.work.sum and every go.mod agree..."
+	@before=$$(git diff --binary -- go.work go.work.sum '*/go.mod' '*/go.sum' | shasum); \
 		$(GO) work sync || exit 1; \
 		for m in $(WORK_MODULES); do \
 			(cd $$m && GOWORK=off $(GO) mod tidy) || exit 1; \
 		done; \
 		rm -f go.work.sum; \
 		$(GO) mod download all || exit 1; \
-		$(GO) work vendor || exit 1; \
-		git diff --exit-code -- go.work go.work.sum '*/go.mod' '*/go.sum' vendor \
-			|| { echo "ERROR: the workspace is stale. Run 'make work-sync' and commit every file it changes."; exit 1; }; \
-		untracked=$$(git ls-files --others --exclude-standard -- vendor); \
-		[ -z "$$untracked" ] \
-			|| { echo "ERROR: vendoring added files that are not tracked. Run 'make work-sync' and commit every file it changes:"; \
-			     printf '%s\n' "$$untracked" | sed 's/^/    /'; exit 1; }; \
-		echo "go.work, go.work.sum and vendor/ are up to date."; \
-	else \
-		echo "NOTE: skipped the workspace freshness re-derivation:"; \
-		echo "  github.com/dsx-ai-factory/cluster-api-provider-nico is not fetchable from here"; \
-		echo "  (INTERNAL until open-sourced). The static checks above all passed."; \
-	fi
-
-# The assertions that need no network.
-#
-# Without this, a public runner reaches the guard below, finds
-# cluster-api-provider-nico unfetchable, prints the skip notice and reports
-# success -- having verified nothing about the vendor tree. That is the whole
-# check for every outside contributor and every fork pull request, and it stays
-# that way until the module is public.
-#
-# Go performs this comparison itself whenever it builds against a vendor tree:
-# it reads vendor/modules.txt, compares it with every module's go.mod, and
-# refuses to proceed on a mismatch. Asking `go list` for it makes the assertion
-# explicit, and GOPROXY=off guarantees no network is consulted -- so a pass here
-# means the tree really is self-consistent, not that a fetch quietly succeeded.
-#
-# This is the check that would have caught the 2026-08-13 breakage: main carried
-# a go.mod requiring k8s.io/api v0.36.3 while vendor/modules.txt still said
-# v0.35.3, and every build stopped.
-#
-# -mod=vendor is passed as a flag rather than through GOFLAGS, because setting
-# GOFLAGS here would discard whatever the caller already had in it. -C has to be
-# the first flag on the command line.
-#
-# -buildvcs=false because this lists rather than builds, so nothing is stamped
-# with a commit. Reading the VCS can also fail outright: Go searches upwards from
-# the module, and in a git worktree the search passes the worktree root, so a
-# broken repository above it exits 128 and Go reports only "error obtaining VCS
-# status".
-#
-# This target used to blame the vendor tree for that, and for any other `go list`
-# failure. It printed "vendor/ is inconsistent" and sent the reader to
-# `make work-sync`, which rewrites go.mod, go.sum and vendor/ across ten
-# modules. The case below reports what actually failed.
-work-check-offline: ## Verify vendor/ agrees with every go.mod. Needs no network.
-	@echo "- Checking vendor/ agrees with every go.mod (offline)..."
-	@for m in $(WORK_MODULES); do \
-		err=$$(GOPROXY=off $(GO) list -C $$m -mod=vendor -buildvcs=false ./... 2>&1 >/dev/null) || { \
-			printf '%s\n' "$$err" | sed 's/^/    /'; \
-			case "$$err" in \
-			  *vendor*|*"missing go.sum entry"*|*"inconsistent"*) \
-			    echo "ERROR: vendor/ is inconsistent with the workspace -- Go's own message is above."; \
-			    echo "  Detected from $$m; a root vendor tree is workspace-wide, so the module named"; \
-			    echo "  there is where it was noticed, not necessarily where it originates."; \
-			    echo "  Run 'make work-sync' and commit every file it changes." ;; \
-			  *) \
-			    echo "ERROR: 'go list' failed in $$m for a reason unrelated to vendoring."; \
-			    echo "  Go's own message is above. vendor/ was NOT assessed, so do not run"; \
-			    echo "  'make work-sync' on the strength of this failure -- fix the cause first." ;; \
-			esac; \
-			exit 1; }; \
-	done
-	@echo "  vendor/ is consistent with every module."
+		after=$$(git diff --binary -- go.work go.work.sum '*/go.mod' '*/go.sum' | shasum); \
+		[ "$$before" = "$$after" ] \
+			|| { echo "ERROR: the workspace is stale. Run 'make work-sync' and commit every file it changes."; exit 1; }
+	@echo "go.work, go.work.sum and module manifests are up to date."
 
 ##@ Build and test
 
@@ -512,7 +415,7 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 	else \
 		echo "  (nothing: no changed module has its own lint/test)"; \
 	fi; \
-	[ "$$workspace" = yes ] && echo "  work-check-offline   (the workspace moved)" || true; \
+	[ "$$workspace" = yes ] && echo "  work-check           (the workspace moved)" || true; \
 	[ "$$workspace" = yes ] && echo "  license-deps-check   (dependencies changed)" || true; \
 	[ "$$licences" = yes ] && echo "  license-header-check (source files changed)" || true; \
 	[ "$$workflows" = yes ] && echo "  lint-workflows       (workflow or build-system changes)" || true; \
@@ -543,8 +446,8 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 		fi; \
 	done; \
 	if [ "$$workspace" = yes ]; then \
-		echo "==> work-check-offline"; \
-		$(MAKE) --no-print-directory work-check-offline || failed="$$failed workspace"; \
+		echo "==> work-check"; \
+		$(MAKE) --no-print-directory work-check || failed="$$failed workspace"; \
 		echo "==> license-deps-check"; \
 		$(MAKE) --no-print-directory license-deps-check || failed="$$failed dependency-licenses"; \
 	fi; \
@@ -584,8 +487,8 @@ build: ## Build every workspace package, and the released commands into bin/.
 	@# controller/test/e2e with no compile coverage anywhere in CI, and this
 	@# change re-versioned both of them.
 	@# -buildvcs=false because every binary here takes its version from the -X
-	@# ldflags below, not from Go's VCS stamp. See the note on work-check-offline
-	@# for how reading the VCS can fail in a git worktree.
+	@# ldflags below, not from Go's VCS stamp. VCS status can fail in worktrees
+	@# whose parent repository is unavailable.
 	@for m in $(WORK_MODULES); do \
 		echo "- checking $$m"; \
 		$(GO) build -C $$m -buildvcs=false ./... || exit 1; \
@@ -730,13 +633,35 @@ license-header-check: ## Verify every source file carries the Apache-2.0 SPDX he
 	@# two together reports a module download as a file with no licence header,
 	@# which is exactly how the first CI run of this check failed while passing
 	@# on a developer machine whose cache was already warm.
-	@missing=$$($(LICENSE_FILES) | xargs $(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE) | grep -v '^$$' || true); \
+	@tracked=$$($(LICENSE_TRACKED_FILES)); \
+	 tracked_rc=$$?; \
+	 if [ $$tracked_rc -ne 0 ]; then \
+		echo "ERROR: could not enumerate source files for the licence-header check."; \
+		exit 1; \
+	 fi; \
+	 files=$$(printf '%s\n' "$$tracked" | $(LICENSE_SOURCE_FILTER)); \
+	 filter_rc=$$?; \
+	 if [ $$filter_rc -ne 0 ]; then \
+		echo "ERROR: could not filter source files for the licence-header check."; \
+		exit 1; \
+	 fi; \
+	 if [ -z "$$files" ]; then \
+		echo "ERROR: no source files found for the licence-header check."; \
+		exit 1; \
+	 fi; \
+	 missing=$$(printf '%s\n' "$$files" | xargs $(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)); \
+	 rc=$$?; \
+	 if [ $$rc -ne 0 ] && [ -z "$$missing" ]; then \
+		echo "ERROR: addlicense could not check licence headers."; \
+		exit 1; \
+	 fi; \
+	 missing=$$(printf '%s\n' "$$missing" | grep -v '^$$' || true); \
 	 if [ -n "$$missing" ]; then \
 		echo "ERROR: these files carry no licence header. Run 'make license':"; \
 		printf '%s\n' "$$missing" | sed 's/^/    /'; \
 		exit 1; \
-	 fi
-	@wrong=$$($(LICENSE_FILES) | while read -r f; do \
+	 fi; \
+	 wrong=$$(printf '%s\n' "$$files" | while read -r f; do \
 		grep -qE '^.{0,3} ?Code generated .* DO NOT EDIT\.$$' "$$f" && continue; \
 		head -20 "$$f" | grep -q 'SPDX-License-Identifier: Apache-2.0' || echo "$$f"; \
 	 done); \

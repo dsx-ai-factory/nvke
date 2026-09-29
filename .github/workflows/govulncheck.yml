@@ -52,15 +52,14 @@
 # the Security tab rather than losing them with the job.
 #
 # The workspace stays ON, unlike the previous single-module version of this
-# file. That is what makes the scan hermetic: the committed vendor/ tree
-# supplies every dependency, so no module is downloaded and the scan measures
+# file. The Go module cache and go.sum supply public dependencies, so the scan measures
 # exactly what `make build` compiles. It is also why go-version is pinned rather
 # than read from a go.mod -- see the comment on that step.
 
 name: govulncheck
 
 # Nothing here needs an NVIDIA runner: the whole workspace resolves from the
-# committed vendor/ tree, so merge-gate.yml calls this on the real pull_request
+# public module graph, so merge-gate.yml calls this on the real pull_request
 # event, including fork and Dependabot pull requests. The standalone push
 # trigger is post-merge coverage on main; naming the mirrored PR branches here
 # too would run the same scan a second time.
@@ -188,8 +187,7 @@ jobs:
         # golang.org/x/vuln v1.6.0 needs go >= 1.25.0, which the pin above
         # satisfies, so this needs no GOTOOLCHAIN=auto.
         #
-        # No GOPROXY=off here, unlike the scan steps below: this fetches the
-        # tool, which is deliberately not vendored. `go install pkg@version`
+        # This fetches the tool independently. `go install pkg@version`
         # ignores the surrounding workspace, so it resolves the tool's own
         # dependencies rather than the repository's build list.
         run: go install golang.org/x/vuln/cmd/govulncheck@${{ steps.versions.outputs.tool }}
@@ -198,12 +196,6 @@ jobs:
         id: scan
         shell: bash
         working-directory: ${{ matrix.module.dir }}
-        env:
-          # The workspace supplies vendor/, so nothing is downloaded. GOPROXY=off
-          # asserts that rather than hoping: if a dependency is ever missing from
-          # the vendor tree, this fails loudly instead of quietly reaching the
-          # network and scanning a different build list from the one we ship.
-          GOPROXY: "off"
         run: |
           set -euo pipefail
           raw="${RUNNER_TEMP}/govulncheck.raw.sarif"
@@ -262,7 +254,6 @@ jobs:
         # tool failing.
         shell: bash
         env:
-          GOPROXY: "off"
           GOVULNCHECK_WAIVED: ${{ steps.versions.outputs.waived }}
           GOVULNCHECK_WAIVER_OWNER: ${{ steps.versions.outputs.waiver_owner }}
           GOVULNCHECK_WAIVER_REVIEW: ${{ steps.versions.outputs.waiver_review }}

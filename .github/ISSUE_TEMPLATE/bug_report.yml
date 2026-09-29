@@ -1,0 +1,108 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Bug Report
+description: Report a reproducible problem with NKE
+title: "[BUG]: "
+labels: ["bug"]
+
+body:
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I searched existing issues and found no duplicate
+          required: true
+        - label: I included reproduction steps or, for an intermittent failure, its observed frequency and conditions
+          required: true
+        - label: This is not a security vulnerability. I will report vulnerabilities to NVIDIA PSIRT as described in the [security policy](https://github.com/dsx-ai-factory/nke/blob/main/SECURITY.md), not through a public issue or GitHub Security Advisory
+          required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      options:
+        - Controller
+        - Node agent or updater
+        - nkectl CLI
+        - Cluster API provider (provisioned)
+        - Helm charts or deployment (nke-stack)
+        - nico-sim (development simulator)
+        - OS image or image checker
+        - NKTP telemetry pipeline
+        - Build, packaging, or release automation
+        - Documentation
+        - Other or unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem description
+      description: Describe what happened and the impact.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps or observed pattern
+      description: Provide reliable reproduction steps, or for an intermittent failure, its observed frequency and conditions.
+      placeholder: |
+        1. Configure ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include only the fields that apply. Redact kubeconfigs, kubeadm join commands and bootstrap tokens, SPIFFE certificates and keys, BMC/Redfish/NICo credentials, database connection strings, and sensitive internal hostnames or IPs. Rotate credentials if exposed.
+      placeholder: |
+        - NKE version, tag, or commit:
+        - Component version:
+        - Kubernetes version:
+        - Deployment environment (bare metal, CAPD, or other):
+        - OS and architecture:
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste the smallest useful excerpt. Redact kubeconfigs, kubeadm join commands and bootstrap tokens, SPIFFE certificates and keys, BMC/Redfish/NICo credentials, database connection strings, and sensitive internal hostnames or IPs. Rotate credentials if exposed.
+      render: shell
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Add links, screenshots, or other context that may help reproduce the issue.
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      options:
+        - label: I agree to follow the project's [Code of Conduct](https://github.com/dsx-ai-factory/nke/blob/main/CODE_OF_CONDUCT.md)
+          required: true

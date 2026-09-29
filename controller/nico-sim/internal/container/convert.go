@@ -63,7 +63,7 @@ func (s *Service) loadInstance(ctx context.Context, containerID string) (*nicosd
 	if err != nil {
 		return nil, fmt.Errorf("read TPM EK certificate for %s: %w", containerID, err)
 	}
-	instance.SetStatus(instanceStatusForContainer(inspectResult.State.Running, tpmEKCertificate))
+	instance.SetStatus(instanceStatusForContainer(inspectResult.State.Running, tpmEKCertificate, s.cfg.SpireAttestationMethod))
 	if tpmEKCertificate != "" {
 		instance.SetTpmEkCertificate(tpmEKCertificate)
 	}
@@ -126,11 +126,11 @@ func (s *Service) validateOwnership(labels map[string]string) error {
 	return nil
 }
 
-func instanceStatusForContainer(running bool, tpmEKCertificate string) nicosdk.InstanceStatus {
+func instanceStatusForContainer(running bool, tpmEKCertificate, attestationMethod string) nicosdk.InstanceStatus {
 	switch {
 	case !running:
 		return nicosdk.InstanceStatus("Error")
-	case strings.TrimSpace(tpmEKCertificate) == "":
+	case attestationMethod == "tpm" && strings.TrimSpace(tpmEKCertificate) == "":
 		return nicosdk.InstanceStatus("Pending")
 	default:
 		return nicosdk.InstanceStatus("Ready")

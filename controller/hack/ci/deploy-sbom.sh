@@ -135,7 +135,8 @@ TRUST_DOMAIN="${KIND_CLUSTER_NAME}.nke.local"
 #   * PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER, set per leg -- the
 #     single-runner mode runs cp-controller on, then flips it off
 #   * the five credentials the Tiltfile treats as required
-#   * the twelve optional names (LOG_LEVEL, FORGE_URL, ...) which nothing on
+#   * NODE_REBOOT_SOFT_REBOOT_ENABLED, which backend-e2e.yml does set
+#   * the remaining optional names (LOG_LEVEL, FORGE_URL, ...) which nothing on
 #     this path sets, so they are absent rather than empty
 #
 # Passed as JSON for the same reason Tilt uses --set-json: a list of
@@ -163,6 +164,11 @@ env = [{"name": "SPIRE_SERVER_API_ADDRESS",
 flag = os.environ.get("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER", "")
 if flag:
     env.append({"name": "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER", "value": flag})
+# backend-e2e.yml sets this and only Tilt was forwarding it. Left out, CWE takes
+# its "true" default and reboots a container node in-guest, which never restarts.
+soft_reboot = os.environ.get("NODE_REBOOT_SOFT_REBOOT_ENABLED", "")
+if soft_reboot:
+    env.append({"name": "NODE_REBOOT_SOFT_REBOOT_ENABLED", "value": soft_reboot})
 for name in ("DGXC_TENANT_USER", "DGXC_TENANT_PASSWORD", "CNPG_SUPERUSER_PASSWORD",
              "CNPG_CLOUD_PASSWORD", "CNPG_TEMPORAL_PASSWORD"):
     value = os.environ.get(name, "")

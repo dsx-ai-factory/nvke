@@ -29,14 +29,9 @@ export GOLANGCI_LINT_CACHE
 
 # Whether the workspace stays on while linting.
 #
-# lint.yml:47 sets GOWORK=off for the whole workflow and turns it back on for
-# controller (:92) and controller/api (:198), which lint against the root
-# vendor/ tree. Every other module lints against its own go.mod.
-#
-# With the workspace on, golangci-lint resolves the whole workspace, reaches the
-# INTERNAL cluster-api-provider-nico, and fails with typecheck errors naming an
-# unrelated package. It passes wherever that module is already cached, so it
-# only showed up on a fresh box. controller/Makefile sets this empty.
+# lint.yml keeps most modules independent and enables workspace mode for
+# controller and controller/api. All dependencies are public; a cold cache
+# downloads them from the Go module proxy.
 GOLANGCI_LINT_GOWORK ?= off
 
 # golangci-lint prints its version without the leading v.

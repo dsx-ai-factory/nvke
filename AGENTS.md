@@ -46,33 +46,29 @@ clusters on demand. The main components are:
 
 ## Read this before you try to build
 
-**Every module builds outside the NVIDIA network.** From a clean checkout, with
-no credentials and no network:
+**Every module builds without NVIDIA credentials.** From a clean checkout,
+with network access to public Go modules:
 
 ```bash
-GOPROXY=off make build
+make build
 ```
 
-compiles all eleven modules and links six binaries. `GOPROXY=off` is not a
-suggestion to copy — it is how you can tell nothing is being fetched.
+compiles all eleven modules and links six binaries. Go caches public modules
+after the first download.
 
 This changed in #76, which replaced the internal carbide SDK
 (`nvmetal/cloud-api-sdk-go`, reached through the Forge provider) with the public
 `github.com/NVIDIA/ncx-infra-controller-rest`. Before that, `controller/` needed
 only `agent/` built from public dependencies.
 
-**One internal dependency remains**, and it does not block you:
-`github.com/dsx-ai-factory/cluster-api-provider-nico` is an internal GitHub repository,
-and it is carried in the committed `vendor/` tree. Building, testing and linting
-all read the vendor tree, so they work without access to it. **Only `go work
-vendor` resolves it for real** — so re-vendoring after a dependency bump needs
-that access, and `make work-check` probes for it and says so when it is
-skipping.
+**No internal dependency remains.**
+`github.com/dsx-ai-factory/cluster-api-provider-nico` was the last one. It is now a
+public repository served by `proxy.golang.org`, so `make work-check` verifies
+the full module graph without repository-specific credentials.
 
 If a task asks you to build or test `controller/` and the modules do not
-resolve, **say so and stop**. Do not vendor the private modules, do not add a
-`replace` pointing at a local checkout, and do not stub the SDK to make the
-build pass. Removing those dependencies is tracked work with its own design.
+resolve, **say so and stop**. Do not add a `replace` pointing at a local
+checkout, and do not stub a dependency to make the build pass.
 
 ## Directory layout
 

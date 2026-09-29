@@ -117,9 +117,6 @@ jobs:
     uses: ./.github/workflows/go-work-check.yml
     permissions:
       contents: read
-    # The one secret it uses, not inherit. go-work-check.yml declares it.
-    secrets:
-      NKE_INTERNAL_RO_TOKEN: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
 
   chart:
     uses: ./.github/workflows/chart.yml

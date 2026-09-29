@@ -71,7 +71,7 @@ jobs:
     name: Check THIRD_PARTY_NOTICES.md is up to date
     # ubuntu-latest, not the self-hosted pool: a required gate member must run
     # for a fork author, and this job needs no secret and no NVIDIA network --
-    # checkout, setup-go, and go-licenses over the committed vendor tree. It
+    # checkout, setup-go, and go-licenses over public modules. It
     # took 47-53s on the 16-CPU pool, so the hosted runner has room.
     runs-on: ubuntu-latest
     if: github.repository == 'dsx-ai-factory/nke'

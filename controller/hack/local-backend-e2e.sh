@@ -249,9 +249,10 @@ else
 fi
 
 # The committed fixture, not the provider checkout: this script installs the
-# CRDs but never builds the provider, and `cluster-api-provider-nico` is private,
-# so requiring it gated the whole entrypoint on internal access. Same call the
-# gofail suite already made -- see test/fixtures/capnico-crds/README.md.
+# CRDs but never builds the provider, so requiring a checkout would gate the
+# whole entrypoint on fetching one. (It was also private when this was written,
+# which made that gate an internal-access gate.) Same call the gofail suite
+# already made -- see test/fixtures/capnico-crds/README.md.
 # CAPNICO_SOURCE_DIR still wins when it is set.
 if [[ -n "${CAPNICO_SOURCE_DIR:-}" ]]; then
   capnico_crd_dir="${CAPNICO_SOURCE_DIR}/config/crd/bases"

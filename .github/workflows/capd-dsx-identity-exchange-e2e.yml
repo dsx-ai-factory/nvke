@@ -62,8 +62,6 @@ jobs:
     uses: ./.github/workflows/backend-e2e.yml
     permissions:
       contents: read
-    secrets:
-      NKE_INTERNAL_RO_TOKEN: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
     with:
       backend: capd-dsx-identity
       arch: ${{ matrix.arch }}

@@ -51,18 +51,16 @@ cp .env.local.example .env.local
 
 Then edit `.env.local` to add your personal settings for host-local CWE runs. This file is gitignored and won't be checked into the repository.
 
-### Go Private Module Configuration
+### Go module configuration
 
-Not needed for an ordinary build. This module has no `gitlab-master.nvidia.com` dependency since #76, and its one internal dependency — `github.com/dsx-ai-factory/cluster-api-provider-nico` — is carried in the repository's committed `vendor/` tree. `GOPROXY=off make build` from the repository root compiles every module with no credentials at all.
+Nothing to set. Every dependency of this module is public: the
+`gitlab-master.nvidia.com` ones went in #76, and
+`github.com/dsx-ai-factory/cluster-api-provider-nico`, which was internal after that,
+is public now and served by `proxy.golang.org`. `GOPRIVATE` is no longer needed
+for any of it.
 
-You need this only to **re-resolve** that module rather than read the vendor tree, which in practice means running `go work vendor` or `make work-sync` after a dependency bump:
-
-```bash
-# Tell Go not to use a public proxy for internal NVIDIA repos
-go env -w GOPRIVATE=github.com/dsx-ai-factory/cluster-api-provider-nico
-```
-
-Go then uses your SSH keys to authenticate. This goes away when that repository is public.
+`make build` from the repository root compiles every module with no internal
+credentials. A cold build downloads public dependencies into the Go cache.
 
 ### API module (for consumers)
 

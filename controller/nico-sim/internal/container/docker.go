@@ -5,6 +5,7 @@ package container
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,6 +33,7 @@ type cloudConfigWriteFile struct {
 	Path        string `yaml:"path"`
 	Owner       string `yaml:"owner"`
 	Permissions string `yaml:"permissions"`
+	Encoding    string `yaml:"encoding"`
 	Content     string `yaml:"content"`
 }
 
@@ -160,10 +162,14 @@ func (s *Service) applyCloudConfig(ctx context.Context, containerID, userData st
 			if strings.TrimSpace(file.Path) == "" {
 				continue
 			}
+			content, err := decodeCloudConfigContent(file)
+			if err != nil {
+				return fmt.Errorf("decode %s: %w", file.Path, err)
+			}
 			if err := s.execInContainer(ctx, containerID, "mkdir", "-p", filepath.Dir(file.Path)); err != nil {
 				return fmt.Errorf("create directory for %s: %w", file.Path, err)
 			}
-			if err := s.copyFileToContainer(ctx, containerID, file.Path, file.Content); err != nil {
+			if err := s.copyFileToContainer(ctx, containerID, file.Path, content); err != nil {
 				return fmt.Errorf("write %s: %w", file.Path, err)
 			}
 			if permissions := strings.TrimSpace(file.Permissions); permissions != "" {
@@ -191,6 +197,21 @@ func (s *Service) applyCloudConfig(ctx context.Context, containerID, userData st
 		return fmt.Errorf("set mock cloud-init status to done: %w", err)
 	}
 	return nil
+}
+
+func decodeCloudConfigContent(file cloudConfigWriteFile) (string, error) {
+	switch file.Encoding {
+	case "":
+		return file.Content, nil
+	case "b64", "base64":
+		decoded, err := base64.StdEncoding.DecodeString(file.Content)
+		if err != nil {
+			return "", fmt.Errorf("decode base64 content: %w", err)
+		}
+		return string(decoded), nil
+	default:
+		return "", fmt.Errorf("unsupported cloud-config encoding %q", file.Encoding)
+	}
 }
 
 // writeMockCloudInitStatus atomically updates the status read by the
