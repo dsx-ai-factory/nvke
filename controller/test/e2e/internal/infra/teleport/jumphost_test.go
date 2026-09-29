@@ -183,7 +183,7 @@ func newJumpHarness(t *testing.T, jump *fakeJumpHost) *jumpHarness {
 		dialer: dialer,
 		// The jump host is dialed by the target's JumpHost field, so it is
 		// the loopback address here rather than a hostname.
-		target: Target{JumpHost: "127.0.0.1", Address: "10.0.0.7", User: "dgxc-admin", Signer: clientKey},
+		target: Target{JumpHost: "127.0.0.1", Address: "10.0.0.7", User: "ubuntu", Signer: clientKey},
 	}
 }
 

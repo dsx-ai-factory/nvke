@@ -48,7 +48,7 @@
 #   `cancel-in-progress: false` and the go-test timeout below both exist for
 #   that reason, and a cancelled run still needs someone to check Forge.
 #
-# NO NODE PASSWORD. The image's baked `dgxc-admin` account is how a person
+# NO NODE PASSWORD. The image's baked `ubuntu` account is how a person
 # reaches these nodes, and how the manual procedure does it. The harness does
 # not: `forge.go` generates an ed25519 key per run, cloud-init writes the
 # public half to `authorized_keys`, and the dialer authenticates with the

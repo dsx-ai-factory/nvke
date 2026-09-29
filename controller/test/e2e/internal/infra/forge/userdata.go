@@ -11,10 +11,11 @@ import (
 )
 
 const (
-	// nodeUser is the account the NKE image bakes in. Cloud-init must not
-	// declare it: a users: block would shadow the baked account and lock
-	// everyone out of the node bootstrap has to run on.
-	nodeUser = "dgxc-admin"
+	// nodeUser is the account the NKE image bakes in, set by autoinstall's
+	// identity.username in os-image/packer/cidata/autoinstall-lvm.pkrtpl.
+	// Cloud-init must not declare it: a users: block would shadow the baked
+	// account and lock everyone out of the node bootstrap has to run on.
+	nodeUser = "ubuntu"
 )
 
 // HostTools are the programs `nkectl bootstrap site` needs on the host it

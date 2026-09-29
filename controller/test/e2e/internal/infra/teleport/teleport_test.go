@@ -187,7 +187,7 @@ func newHarness(t *testing.T) *harness {
 			forwardPort: 6443, forwardTo: echo.Addr().String(),
 			stdins: map[string][]byte{},
 		},
-		target: Target{JumpHost: "jump", Address: "10.0.0.7", User: "dgxc-admin", Signer: client},
+		target: Target{JumpHost: "jump", Address: "10.0.0.7", User: "ubuntu", Signer: client},
 	}
 	h.dialer = &Dialer{HandshakeTimeout: 5 * time.Second, relay: func(ctx context.Context, jumpHost, address string) (net.Conn, error) {
 		if jumpHost != "jump" || address != "10.0.0.7" {
