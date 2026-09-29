@@ -28,6 +28,7 @@ type SpireAttestationMethod string
 const (
 	SpireAttestationMethodTPM       SpireAttestationMethod = "tpm"
 	SpireAttestationMethodJoinToken SpireAttestationMethod = "joinToken"
+	SpireAttestationMethodDSXIMDS   SpireAttestationMethod = "dsxImds"
 )
 
 type NicoNodePoolProvider struct {

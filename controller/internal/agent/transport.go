@@ -23,8 +23,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
-// Transport dials node agents using the deployment's configured
-// authentication.
+// Transport dials node agents using each node's pinned authentication profile.
 //
 // Every caller that reaches an agent goes through it. That is a requirement
 // rather than a convenience: an agent running with TLS/JWT writes an
@@ -105,13 +104,15 @@ func (t *Transport) Dial(ctx context.Context, node db.Node) (*grpc.ClientConn, f
 		}
 	}
 
-	// Select the connection's base TLS independently from the optional pre-gRPC
-	// JWT exchange. External mTLS is deployment-wide and takes precedence over
-	// the node's legacy SPIFFE bit.
+	// The node's persisted profile selects its transport. Deployment settings
+	// only make credentials available for profiles that require them.
 	var baseTransportCredentials credentials.TransportCredentials
 	baseSupportsTLSJWT := false
 	switch {
-	case t.externalClientCertificate != nil:
+	case node.NodeAgentExternalMTLSEnabled:
+		if t.externalClientCertificate == nil {
+			return nil, nil, fmt.Errorf("external mTLS client certificate is unavailable for node %s", node.ID)
+		}
 		baseTransportCredentials = credentials.NewTLS(t.externalTLSConfig())
 		baseSupportsTLSJWT = true
 	case !node.SpiffeEnabled:
@@ -127,7 +128,11 @@ func (t *Transport) Dial(ctx context.Context, node db.Node) (*grpc.ClientConn, f
 	}
 
 	transportCredentials := baseTransportCredentials
-	if t.tlsJWTVerifier != nil {
+	if node.NodeAgentTLSJWTEnabled {
+		if t.tlsJWTVerifier == nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("TLS/JWT verifier is unavailable for node %s", node.ID)
+		}
 		if !baseSupportsTLSJWT {
 			cleanup()
 			return nil, nil, fmt.Errorf("node-agent base transport does not support TLS/JWT authentication")

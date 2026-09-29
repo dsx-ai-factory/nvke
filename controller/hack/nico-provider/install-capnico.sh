@@ -23,7 +23,7 @@ adopt_namespace() {
 
 install_released_chart() {
   : "${NGC_API_KEY:?NGC_API_KEY is required when CAPNICO_SOURCE_DIR is unset}"
-  : "${CAPNICO_CHART_VERSION:=0.0.28}"
+  : "${CAPNICO_CHART_VERSION:=0.1.0-rc.2}"
   : "${CAPNICO_HELM_REPO:=ngc-components-dev}"
   : "${CAPNICO_HELM_REPO_URL:=https://helm.ngc.nvidia.com/0837451325059433/components-dev}"
 

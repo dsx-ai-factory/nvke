@@ -12,7 +12,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
@@ -66,6 +65,7 @@ func appendMappingNode(node *yaml.Node, key string, style yaml.Style, value, tag
 
 func (a *Activities) renderCAPIBootstrapUserData(
 	ctx context.Context,
+	node db.Node,
 	nodeSet db.NodeSet,
 	spireJoinToken string,
 ) (string, error) {
@@ -73,11 +73,11 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	if err != nil {
 		return "", fmt.Errorf("failed to read node set capi provider: %w", err)
 	}
-	controllerFiles, err := a.nodeAgentBootstrapFiles()
+	controllerFiles, err := a.nodeAgentBootstrapFiles(node)
 	if err != nil {
 		return "", err
 	}
-	if a.cfg.NodeAgent.SpireAttestationMethod == config.SpireAttestationMethodJoinToken && spireJoinToken == "" {
+	if node.SpireAttestationMethod == db.SpireAttestationMethodJoinToken && spireJoinToken == "" {
 		return "", fmt.Errorf("spire join token is required when SPIRE attestation method is joinToken")
 	}
 
@@ -86,7 +86,7 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	// config. Asking anyway blocks provisioning: the dial fails, the activity
 	// retries forever, and the cluster never leaves Provisioning.
 	var trustDomain, trustBundle string
-	if a.cfg.SpiffeEnabled {
+	if node.SpiffeEnabled {
 		trustDomain, trustBundle, err = a.getTrustDomainBundle(ctx, a.cfg)
 		if err != nil {
 			return "", fmt.Errorf("failed to get trust domain and bundle: %w", err)
@@ -102,7 +102,7 @@ func (a *Activities) renderCAPIBootstrapUserData(
 			Content:     file.Content,
 		})
 	}
-	if a.cfg.SpiffeEnabled {
+	if node.SpiffeEnabled {
 		dsxIMDSPluginChecksum := a.cfg.NodeAgent.DSXImds.PluginChecksum
 		if dsxIMDSPluginChecksum == "" {
 			dsxIMDSPluginChecksum = "${DSX_IMDS_PLUGIN_CHECKSUM}"
@@ -119,7 +119,7 @@ func (a *Activities) renderCAPIBootstrapUserData(
 				Owner:       "root:root",
 				Permissions: "0644",
 				Content: buildCAPISpireAgentConfig(capiSpireAgentConfig{
-					AttestationMethod:     string(a.cfg.NodeAgent.SpireAttestationMethod),
+					AttestationMethod:     string(node.SpireAttestationMethod),
 					ServerAddress:         a.cfg.SpireServerAddress,
 					ServerPort:            a.cfg.SpireServerPort,
 					TrustDomain:           trustDomain,

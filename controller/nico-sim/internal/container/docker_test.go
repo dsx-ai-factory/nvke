@@ -14,23 +14,24 @@ func TestUnit_InstanceStatusForContainer(t *testing.T) {
 	type parameters struct {
 		running          bool
 		tPMEKCertificate string
-		method           string
+		labels           map[string]string
 	}
 	tests := map[string]struct {
 		parameters parameters
 		want       string
 	}{
-		"stopped":                           {parameters: parameters{method: "dsxImds"}, want: "Error"},
-		"TPM awaiting EK certificate":       {parameters: parameters{running: true, method: "tpm"}, want: "Pending"},
-		"TPM with EK certificate":           {parameters: parameters{running: true, tPMEKCertificate: "certificate", method: "tpm"}, want: "Ready"},
-		"join token without EK certificate": {parameters: parameters{running: true, method: "joinToken"}, want: "Ready"},
-		"DSX IMDS without EK certificate":   {parameters: parameters{running: true, method: "dsxImds"}, want: "Ready"},
+		"stopped":                           {parameters: parameters{labels: map[string]string{labelSpireAttestationMethod: "dsxImds"}}, want: "Error"},
+		"TPM awaiting EK certificate":       {parameters: parameters{running: true, labels: map[string]string{labelSpireAttestationMethod: "tpm"}}, want: "Pending"},
+		"TPM with EK certificate":           {parameters: parameters{running: true, tPMEKCertificate: "certificate", labels: map[string]string{labelSpireAttestationMethod: "tpm"}}, want: "Ready"},
+		"join token without EK certificate": {parameters: parameters{running: true, labels: map[string]string{labelSpireAttestationMethod: "joinToken"}}, want: "Ready"},
+		"DSX IMDS without EK certificate":   {parameters: parameters{running: true, labels: map[string]string{labelSpireAttestationMethod: "dsxImds"}}, want: "Ready"},
+		"unlabeled container uses TPM":      {parameters: parameters{running: true}, want: "Pending"},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			got := instanceStatusForContainer(tt.parameters.running, tt.parameters.tPMEKCertificate, tt.parameters.method)
+			got := instanceStatusForContainer(tt.parameters.running, tt.parameters.tPMEKCertificate, tt.parameters.labels)
 			if string(got) != tt.want {
 				t.Errorf("instanceStatusForContainer() = %q, want %q", got, tt.want)
 			}

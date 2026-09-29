@@ -159,13 +159,14 @@ func seedTeardownScenarioTx(ctx context.Context, tx db.Tx, scenario TeardownScen
 	}
 	for _, node := range nodes {
 		dbNode := db.Node{
-			ID:           node.id,
-			ClusterID:    scenario.ClusterID,
-			NodePoolID:   nodePoolID,
-			NodeSetID:    nodeSetID,
-			ControlPlane: true,
-			Name:         node.name,
-			IP:           "127.0.0.1",
+			ID:                     node.id,
+			ClusterID:              scenario.ClusterID,
+			NodePoolID:             nodePoolID,
+			NodeSetID:              nodeSetID,
+			ControlPlane:           true,
+			Name:                   node.name,
+			IP:                     "127.0.0.1",
+			SpireAttestationMethod: db.SpireAttestationMethodTPM,
 			Conditions: db.NodeConditions{
 				Joined:          db.NewCondition(true, "seeded"),
 				KubernetesReady: db.NewCondition(true, "seeded"),

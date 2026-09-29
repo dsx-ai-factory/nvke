@@ -69,15 +69,15 @@ A Helm chart to deploy the NKE controller service
 | nodeAgent.dsxImds.endpoint | string | `"http://169.254.169.254"` | Metadata endpoint used by the external dsx_imds node attestor. The default is the standard link-local metadata service address. |
 | nodeAgent.dsxImds.operatorTenant | string | `""` | Operator tenant encoded in dsx_imds-attested SPIRE agent IDs. This must match the DSX Identity global.operatorTenant value. |
 | nodeAgent.dsxImds.pluginChecksum | string | `""` | Optional SHA-256 checksum for the external dsx_imds plugin binary. Leave empty to expand DSX_IMDS_PLUGIN_CHECKSUM from the node image's /etc/spire-agent/spire-agent.env file. |
-| nodeAgent.externalMTLS.enabled | bool | `false` | Present an externally managed client certificate instead of the controller SPIRE X509-SVID. |
+| nodeAgent.externalMTLS.enabled | bool | `false` | Pin an externally managed client certificate transport for newly created nodes instead of the controller SPIRE X509-SVID. Keep the Secret available while nodes using this transport remain. |
 | nodeAgent.externalMTLS.secret.caBundleKey | string | `"ca.crt"` | Secret key containing the PEM-encoded issuing CA bundle. |
 | nodeAgent.externalMTLS.secret.certificateKey | string | `"tls.crt"` | Secret key containing the PEM-encoded client certificate chain. |
 | nodeAgent.externalMTLS.secret.name | string | `""` | Name of the externally managed Secret containing the client identity. |
 | nodeAgent.externalMTLS.secret.privateKeyKey | string | `"tls.key"` | Secret key containing the PEM-encoded client private key. |
-| nodeAgent.spireAttestationMethod | string | `"tpm"` | SPIRE node attestation method used by every cluster managed by this controller deployment. Set this value once when the environment is first deployed. Changing it in an existing environment is unsupported and requires a separately coordinated migration. dsxImds requires SPIFFE and a compatible DSX node image. |
+| nodeAgent.spireAttestationMethod | string | `"tpm"` | SPIRE node attestation method pinned to newly created nodes. Existing nodes retain their method when this deployment default changes; keep their attestation plugins available. dsxImds requires SPIFFE and a compatible DSX node image. |
 | nodeAgent.tlsJwt.algorithms | list | `["RS256"]` | Asymmetric JWT signing algorithms accepted from the issuer. |
 | nodeAgent.tlsJwt.dsxIdentityExchangeURL | string | `""` | DSX Identity token-exchange endpoint injected into node-agent bootstrap arguments when TLS/JWT is enabled. |
-| nodeAgent.tlsJwt.enabled | bool | `false` | Add JWT node authentication to the existing secure node-agent transport for every node agent managed by this controller. Requires either spiffe.enabled or nodeAgent.externalMTLS.enabled. |
+| nodeAgent.tlsJwt.enabled | bool | `false` | Pin JWT node authentication to newly created nodes. Existing nodes retain their stored transport; keep issuer/JWKS settings available for JWT-enabled nodes. Requires either spiffe.enabled or nodeAgent.externalMTLS.enabled. |
 | nodeAgent.tlsJwt.issuer | string | `""` | Identity issuer expected in node-agent JWTs. |
 | nodeAgent.tlsJwt.jwksURI | string | `""` | HTTPS endpoint serving the issuer's JSON Web Key Set. |
 | nodeAgent.tlsJwt.subjectTrustDomain | string | `""` | Exact SPIFFE trust domain accepted in node-agent JWT subjects. |

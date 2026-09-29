@@ -63,7 +63,7 @@ func (s *Service) loadInstance(ctx context.Context, containerID string) (*nicosd
 	if err != nil {
 		return nil, fmt.Errorf("read TPM EK certificate for %s: %w", containerID, err)
 	}
-	instance.SetStatus(instanceStatusForContainer(inspectResult.State.Running, tpmEKCertificate, s.cfg.SpireAttestationMethod))
+	instance.SetStatus(instanceStatusForContainer(inspectResult.State.Running, tpmEKCertificate, labels))
 	if tpmEKCertificate != "" {
 		instance.SetTpmEkCertificate(tpmEKCertificate)
 	}
@@ -126,7 +126,13 @@ func (s *Service) validateOwnership(labels map[string]string) error {
 	return nil
 }
 
-func instanceStatusForContainer(running bool, tpmEKCertificate, attestationMethod string) nicosdk.InstanceStatus {
+func instanceStatusForContainer(running bool, tpmEKCertificate string, labels map[string]string) nicosdk.InstanceStatus {
+	attestationMethod := labels[labelSpireAttestationMethod]
+	if attestationMethod == "" {
+		// Treat legacy containers without a pinned method as TPM so a missing
+		// EK certificate cannot make them appear ready after the default changes.
+		attestationMethod = "tpm"
+	}
 	switch {
 	case !running:
 		return nicosdk.InstanceStatus("Error")
@@ -252,6 +258,7 @@ func publicInstanceLabels(labels map[string]string) map[string]string {
 		switch key {
 		case labelManaged, labelInstanceID, labelInstanceName, labelSiteID, labelVPCID,
 			labelTenantID, labelInstanceType, labelSubnetID, labelVPCPrefixID, labelMachineID,
+			labelSpireAttestationMethod,
 			labelIpxeScript, labelSSHKeyGroupIDs, labelInterfaces, labelInfiniBandInterfaces,
 			labelNVLinkInterfaces:
 			continue

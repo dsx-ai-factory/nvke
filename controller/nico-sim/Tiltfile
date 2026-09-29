@@ -121,7 +121,12 @@ def register(ctx):
     _build_target = "build"
     if _vm_backend_enabled and _host_os == "Linux":
         _build_target = "build-privileged"
-    _nico_sim_build_cmd = "truncate -s 0 %s/nico-sim.log 2>/dev/null; mkdir -p %s; cd nico-sim && make BINARY=%s %s" % (_log_dir, os.path.dirname(_nico_sim_binary), _nico_sim_binary, _build_target)
+    _nico_sim_make_cmd = "make BINARY=%s %s" % (_nico_sim_binary, _build_target)
+    if _host_os == "Darwin" and not os.getenv("CC", ""):
+        _homebrew_clang = "/opt/homebrew/opt/llvm/bin/clang"
+        if str(local("test -x %s && echo available || true" % _homebrew_clang, quiet=True, echo_off=True)).strip() == "available":
+            _nico_sim_make_cmd = "CC=%s %s" % (_homebrew_clang, _nico_sim_make_cmd)
+    _nico_sim_build_cmd = "truncate -s 0 %s/nico-sim.log 2>/dev/null; mkdir -p %s; cd nico-sim && %s" % (_log_dir, os.path.dirname(_nico_sim_binary), _nico_sim_make_cmd)
     if os.getenv("NICO_SIM_BINARY_PREBUILT", "false") == "true":
         _nico_sim_build_cmd = "test -x %s" % _nico_sim_binary
 
@@ -304,7 +309,10 @@ def register(ctx):
         nico_sim_env.update({
             "NICO_CONTAINERS_REQUIRE_HEALTHY": "true",
             "NICO_CONTAINERS_NODE_IMAGE": os.getenv("CAPD_KINDEST_NODE_IMAGE", "cwe-capd-kindest-node:local"),
-            "NICO_CONTAINERS_SPIRE_ATTESTATION_METHOD": "dsxImds" if "dsx-imds-attestation" in ctx.cfg.get("providers", []) else "tpm",
+            "NICO_CONTAINERS_SPIRE_ATTESTATION_METHOD": ctx.cfg.get(
+                "controller_attestation_method",
+                "dsxImds" if "dsx-imds-attestation" in ctx.cfg.get("providers", []) else "tpm",
+            ),
         })
     _image_cache = ctx.cfg.get("nico_sim_image_cache_dir", "")
     if _image_cache:

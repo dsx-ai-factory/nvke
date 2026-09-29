@@ -33,7 +33,7 @@ const (
 	NodeAgentControllerCAPath    = "/etc/nke/controller-ca.crt"
 )
 
-// SpireAttestationMethod selects the deployment-wide SPIRE node attestation method.
+// SpireAttestationMethod selects the SPIRE node attestation method pinned at node creation.
 type SpireAttestationMethod string
 
 // DSXImdsConfig configures the external dsx_imds SPIRE node attestor.
@@ -52,7 +52,7 @@ type DSXImdsConfig struct {
 
 // TLSJWTConfig configures TLS/JWT authentication for controller calls to node agents.
 type TLSJWTConfig struct {
-	// Enabled selects the deployment-wide TLS/JWT transport.
+	// Enabled selects the TLS/JWT transport pinned to newly created nodes.
 	Enabled bool `env:"ENABLED" default:"false"`
 
 	// Issuer is the identity issuer expected in node-agent JWTs.
@@ -77,8 +77,8 @@ type NodeAgentConfig struct {
 	// Port is the secure port that the NKE node agent listens on.
 	Port string `env:"PORT" default:"15005"`
 
-	// SpireAttestationMethod selects the SPIRE attestation method used by every
-	// cluster managed by this controller deployment.
+	// SpireAttestationMethod selects the SPIRE attestation method pinned to
+	// newly created nodes.
 	SpireAttestationMethod SpireAttestationMethod `env:"SPIRE_ATTESTATION_METHOD" default:"tpm"`
 
 	// DSXImds contains settings specific to dsx_imds attestation.
@@ -284,8 +284,8 @@ type Config struct {
 	NodeAgent NodeAgentConfig `envPrefix:"NODE_AGENT_"`
 
 	// NodeAgentExternalMTLSEnabled selects an externally issued client
-	// certificate as the deployment-wide node-agent base transport instead of
-	// selecting transport from each node's SPIFFE setting.
+	// certificate as the base transport pinned to newly created nodes instead
+	// of selecting transport from each node's SPIFFE setting.
 	NodeAgentExternalMTLSEnabled bool `env:"NODE_AGENT_EXTERNAL_MTLS_ENABLED" default:"false"`
 
 	// DgxcTenantUser is the DGXC tenant SSH username injected into OS profile userData templates.

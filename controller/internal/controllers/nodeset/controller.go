@@ -21,6 +21,7 @@ import (
 	dbfilters "github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/naming"
+	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
 )
 
 // Controller is responsible for reconciling node sets.
@@ -231,12 +232,11 @@ func (c *Controller) createPendingNode(ctx context.Context, tx db.Tx, cluster db
 	}
 
 	dbNode := db.Node{
-		ClusterID:     cluster.ID,
-		NodePoolID:    nodePool.ID,
-		NodeSetID:     nodeSet.ID,
-		ControlPlane:  nodePool.ControlPlane,
-		Name:          naming.GenerateNodeName(existingNodeNames, cluster.Name, nodePool.NodeNamePrefix, rand.IntN),
-		SpiffeEnabled: c.cfg.SpiffeEnabled,
+		ClusterID:    cluster.ID,
+		NodePoolID:   nodePool.ID,
+		NodeSetID:    nodeSet.ID,
+		ControlPlane: nodePool.ControlPlane,
+		Name:         naming.GenerateNodeName(existingNodeNames, cluster.Name, nodePool.NodeNamePrefix, rand.IntN),
 		Conditions: db.NodeConditions{
 			Pending:                 db.NewCondition(true, "Pending node provisioning"),
 			ProvisioningClaimed:     db.NewCondition(false, "Provisioning workflow has not claimed node"),
@@ -250,6 +250,7 @@ func (c *Controller) createPendingNode(ctx context.Context, tx db.Tx, cluster db
 			NodeAgentReady:          db.NewCondition(false, "Status unknown"),
 		},
 	}
+	nodes.PinAgentProfile(&dbNode, c.cfg)
 	if cluster.ProviderType == db.ProviderTypeNico {
 		nicoNodePoolProvider, err := nodePool.NicoProvider()
 		if err != nil {

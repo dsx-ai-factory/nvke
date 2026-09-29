@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 func TestUnit_NodeAgentBootstrapFiles(t *testing.T) {
@@ -53,7 +54,10 @@ func TestUnit_NodeAgentBootstrapFiles(t *testing.T) {
 				},
 				controllerClientCABundle: "public-ca",
 			}
-			files, err := activities.nodeAgentBootstrapFiles()
+			files, err := activities.nodeAgentBootstrapFiles(db.Node{
+				NodeAgentExternalMTLSEnabled: params.externalMTLS,
+				NodeAgentTLSJWTEnabled:       params.tlsJWT,
+			})
 			require.NoError(t, err)
 			wantFileCount := 1
 			if params.externalMTLS {

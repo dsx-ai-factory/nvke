@@ -587,6 +587,8 @@ autoinstall:
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			params.node.NodeAgentExternalMTLSEnabled = params.config.NodeAgentExternalMTLSEnabled
+			params.node.NodeAgentTLSJWTEnabled = params.config.NodeAgent.TLSJWT.Enabled
 			bundleLookupCalled := false
 			controllerCA := testControllerClientCA
 			if params.emptyControllerCA {
@@ -728,7 +730,7 @@ func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
 			userData, err := activities.renderUserData(
 				context.Background(),
 				string(templateBytes),
-				db.Node{Name: "test-node", SpiffeEnabled: true},
+				db.Node{Name: "test-node", SpiffeEnabled: true, NodeAgentExternalMTLSEnabled: true},
 				db.DiskSelectionStrategyLargest,
 				"1.33.0",
 				&TeleportUserDataConfig{},

@@ -341,6 +341,7 @@ func main() {
 		} else {
 			nicoSpiffeController := capi.NewNicoSpiffeController(
 				cfg,
+				dbInstance,
 				k8sControllerManager.GetClient(),
 				logger.With("logger", "nico-spiffe-controller"),
 			)
