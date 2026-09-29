@@ -748,12 +748,6 @@ func spireServiceHost() string {
 	return spireReleaseName + "-server." + spireNamespace + ".svc.cluster.local"
 }
 
-// chartArgs returns the chart half of a `helm upgrade --install`: the override
-// verbatim when set, otherwise the upstream chart name and its --repo. The
-// first element is always the chart. An override carries no --repo because
-// helm resolves whatever it is given as a name in that repo when one is
-// present, so an OCI reference would be looked up in the repo's index rather
-// than pulled.
 // manifestChart returns the identity of a chart the bootstrap installs, as
 // the embedded bootstrap manifest pins it. The manifest ships in the binary,
 // so a missing entry is a build defect; TestDeploy_ChartsMatchTheBootstrapManifest
@@ -766,6 +760,12 @@ func manifestChart(component string) (manifest.Chart, error) {
 	return *comp.Chart, nil
 }
 
+// chartArgs returns the chart half of a `helm upgrade --install`: the override
+// verbatim when set, otherwise the upstream chart name and its --repo. The
+// first element is always the chart. An override carries no --repo because
+// helm resolves whatever it is given as a name in that repo when one is
+// present, so an OCI reference would be looked up in the repo's index rather
+// than pulled.
 func chartArgs(override, name, repo string) []string {
 	if override != "" {
 		return []string{override}

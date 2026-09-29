@@ -1,18 +1,27 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# The bootstrap manifest: every chart and image `nkectl bootstrap site` pulls,
-# with the version and digest of each. nkectl embeds this file and reads the
-# chart entries when it installs. `nkectl get bootstrap-manifest` prints it.
+# The bootstrap manifest lists the charts `nkectl bootstrap site` fetches and
+# installs with Helm, and the images the bootstrap runs. nkectl embeds this
+# file. `nkectl get bootstrap-manifest` prints it.
 #
-# Not listed: the controller chart, the Postgres chart and the provisioned
-# provider's manifest. They ship inside nkectl. Nothing fetches them.
+# nkectl installs each chart at the version listed here. The digests are a
+# record for whoever mirrors these artifacts. The bootstrap does not verify
+# them.
+#
+# Not listed:
+# - The controller chart, the Postgres chart and the provisioned provider's
+#   manifest. They ship inside nkectl.
+# - The components `clusterctl init` installs: Cluster API core, the kubeadm
+#   providers and cert-manager.
+# - The kindest/node image kind boots.
 #
 # This file is hand-authored. A later check compares it to what the charts
 # render.
 
 components:
-  # Upstream release.
+  # Upstream release. controller/Tiltfile pins the same version as
+  # CHART_VERSION_TEMPORAL; keep the two in step.
   temporal:
     chart:
       repo: https://go.temporal.io/helm-charts
@@ -81,18 +90,17 @@ components:
         ref: ghcr.io/spiffe/spire-tpm-plugin-tpm-attestor-server:v1.9.0
         digest: sha256:9d3c69f9a9a59b274e7d6d9f8e75d89691d7d9204f2063d7917685a17b8828dc
 
-  # Built by you from controller/Dockerfile. The bootstrap bundle's
-  # images.controller names yours. The default names no registry, so nkectl
-  # side-loads it; that is the public form only. The controller chart ships
-  # inside nkectl, so there is no chart entry.
+  # Built by you from controller/Dockerfile. NKECTL_CWE_IMAGE names the
+  # image the bootstrap runs; the ref below is a placeholder. The controller
+  # chart ships inside nkectl, so there is no chart entry.
   controller:
     images:
       controller:
         ref: cwe-controller:local
 
-  # Built by you from cluster-api-provider-provisioned/Dockerfile. The
-  # bootstrap bundle's images.provisionedProvider names yours. Its manifest
-  # ships inside nkectl.
+  # Built by you from cluster-api-provider-provisioned/Dockerfile.
+  # NKECTL_CAPI_PROVISIONED_IMAGE names the image the bootstrap runs; the ref
+  # below is the local build's tag. Its manifest ships inside nkectl.
   cluster-api-provider-provisioned:
     images:
       manager:

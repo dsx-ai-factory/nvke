@@ -1,9 +1,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package manifest holds the bootstrap manifest: every chart and image
-// `nkectl bootstrap site` pulls, with the version and digest of each.
-// nkectl embeds it and pins it.
+// Package manifest holds the bootstrap manifest: the charts
+// `nkectl bootstrap site` fetches and installs with Helm, and the images the
+// bootstrap runs. nkectl pins each chart's version. The digests are recorded
+// for mirroring; the bootstrap does not verify them.
 package manifest
 
 import (
@@ -32,8 +33,8 @@ const (
 //go:embed bootstrap-manifest.yaml
 var manifestYAML []byte
 
-// Manifest lists every chart and image `bootstrap site` pulls, with the
-// version and digest of each.
+// Manifest lists the charts `bootstrap site` fetches and the images it runs,
+// with the version and digest of each.
 type Manifest struct {
 	Components map[string]Component `yaml:"components"`
 }

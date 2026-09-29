@@ -394,7 +394,7 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 	}
 
 	if !strings.Contains(temporal, "upgrade --install temporal temporal --repo https://go.temporal.io/helm-charts") ||
-		!strings.Contains(temporal, "--version 0.74.0") {
+		!hasArgs(temporal, "--version", "0.74.0") {
 		t.Errorf("temporal call = %q, want the temporal release/chart/repo/version", temporal)
 	}
 	if !strings.Contains(temporal, "server.config.persistence.default.sql.password=test-password") {
@@ -403,7 +403,7 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 
 	if !strings.Contains(spireCRDs, "upgrade --install spire-crds spire-crds") ||
 		!strings.Contains(spireCRDs, "--repo https://spiffe.github.io/helm-charts-hardened/") ||
-		!strings.Contains(spireCRDs, "--version 0.6.1") {
+		!hasArgs(spireCRDs, "--version", "0.6.1") {
 		t.Errorf("SPIRE CRDs call = %q, want the pinned CRD chart", spireCRDs)
 	}
 	if !strings.Contains(spire, "upgrade --install spire spire") ||
@@ -678,7 +678,7 @@ func TestSpireInstallArgs(t *testing.T) {
 		"global.spire.trustDomain=kind.nke.local",
 		spireServerValuesPrefix + ".adminIDs[0]=spiffe://kind.nke.local/nke-service/cloud-workflow-engine",
 	} {
-		if !strings.Contains(got, want) {
+		if !hasArgs(got, strings.Fields(want)...) {
 			t.Errorf("install = %q, want it to contain %q", got, want)
 		}
 	}
@@ -892,7 +892,7 @@ func TestSpireInstallArgs_PullsTheChartFromTheConfiguredRef(t *testing.T) {
 			if gotRepo := strings.Contains(got, "--repo "); gotRepo != tt.wantRepo {
 				t.Errorf("install = %q, has --repo = %v, want %v", got, gotRepo, tt.wantRepo)
 			}
-			if !strings.Contains(got, "--version 0.30.1") {
+			if !hasArgs(got, "--version", "0.30.1") {
 				t.Errorf("install = %q, want the version pin kept", got)
 			}
 		})
@@ -994,8 +994,7 @@ func TestDeploy_ChartsMatchTheBootstrapManifest(t *testing.T) {
 		pulled++
 		matched := false
 		for name, chart := range pinned {
-			if strings.Contains(call, " "+chart.Name+" --repo "+chart.Repo) &&
-				strings.Contains(call, "--version "+chart.Version) {
+			if hasArgs(call, chart.Name, "--repo", chart.Repo) && hasArgs(call, "--version", chart.Version) {
 				delete(pinned, name)
 				matched = true
 				break
@@ -1021,4 +1020,15 @@ func testSpireChart(t *testing.T) manifest.Chart {
 		t.Fatal("the embedded bootstrap manifest pins no spire chart")
 	}
 	return *comp.Chart
+}
+
+// hasArgs reports whether call holds args as adjacent whole tokens.
+func hasArgs(call string, args ...string) bool {
+	fields := strings.Fields(call)
+	for i := 0; i+len(args) <= len(fields); i++ {
+		if slices.Equal(fields[i:i+len(args)], args) {
+			return true
+		}
+	}
+	return false
 }
