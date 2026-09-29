@@ -1,0 +1,177 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Validated against ../../../schemas/scenario.schema.json.
+# The human-readable replication narrative is README.md in this directory.
+---
+slug: k8s-netperf-throughput
+workload: cni
+description: >-
+  OVN-Kubernetes data-plane throughput and latency across four network paths at
+  four concurrency levels, measured with upstream k8s-netperf.
+
+intent:
+  goal: >-
+    Establish a repeatable OVN-Kubernetes data-plane baseline: TCP/UDP stream
+    throughput and TCP request-response latency across four network paths and
+    four concurrency levels, so overlay overhead can be quantified against a
+    host-network reference on the same hardware.
+  characterizes:
+    - TCP stream throughput as a fraction of NIC line rate
+    - TCP efficiency (retransmission rate) under sustained load
+    - UDP loss on an overdriven overlay path
+    - TCP request-response transaction rate and tail latency
+    - The overhead of Geneve encapsulation, measured as the host-to-host vs cross-node delta
+
+topology:
+  node_count: 11
+  node_type:
+    cpu: AMD EPYC 9334
+    cpu_cores: 64
+    memory_gib: 377
+    nic_speed_gbps: 400
+    arch: x86_64
+  roles:
+    control_plane: 3
+    worker: 7
+    monitoring: 1
+
+sizing:
+  derivation:
+    rule: >-
+      T-shirt sizes are concurrency levels, not node counts: S=4, M=8, L=16,
+      XL=32 concurrent netperf flows inside a single client pod. Message size is
+      held fixed so sizes are comparable. Scale the top size to your hardware
+      rather than copying XL: pick the largest power of two at which added
+      concurrency stops increasing throughput, which is where the path
+      saturates. On this bed that is 32 for a 400 Gb/s NIC across 64 cores. A
+      slower NIC or fewer cores saturates earlier, and running past saturation
+      measures the load generator rather than the network. The TCP_STREAM anchor
+      message size is the largest power of two below the pod MTU (8192 at MTU
+      8940); recompute it if your MTU differs.
+    inputs:
+      - Worker NIC line rate
+      - Worker logical CPU count
+      - Pod MTU
+  observed:
+    sizes: [S, M, L, XL]
+    parallelism: [4, 8, 16, 32]
+    tcp_stream_anchor_bytes: 8192
+    udp_message_bytes: [8192, 8192, 8800, 8800]
+    tcp_rr_message_bytes: [256, 256, 1024, 1024]
+    duration_s: 60
+    samples: 3
+    paths:
+      - host-to-host
+      - pod-to-pod-same-node
+      - pod-to-pod-cross-node
+      - pod-to-service
+
+stack:
+  kubernetes: 1.34.2
+  cni:
+    name: OVN-Kubernetes
+    version: 25.09.1
+    # `vendor`: a distribution-specific build, not an upstream release artefact.
+    # Results from a vendor build are comparable to another vendor build of the
+    # same version, and should be read with care against an upstream one.
+    build: vendor
+    dataplane: OVS 3.6.1
+  engine:
+    name: k8s-netperf
+    version: v0.1.41
+    build: upstream
+  container_runtime: containerd 1.7.28
+  node_os:
+    distro: Ubuntu 22.04.4 LTS
+    kernel: 5.15.0-113-generic
+  # etcd version was not captured for this run. Record it for scenarios
+  # published from later runs.
+
+engine_config: engine/netperf.yml
+
+metrics:
+  required:
+    - size
+    - path
+    - duration_s
+  workload_specific:
+    - throughput_gbps_avg
+    - line_usage_pct
+    - tcp_retransmissions_avg
+    - tcp_efficiency_pct
+    - udp_loss_pct
+    - tcp_rr_op_s_avg
+    - tcp_rr_p99_us
+
+slo:
+  - metric: tcp_efficiency_pct
+    op: gte
+    value: 99.0
+    unit: percent
+    severity: error
+    source: "RFC 6349 section 4.2 (TCP Efficiency)"
+  - metric: udp_loss_pct
+    op: lte
+    value: 5.0
+    unit: percent
+    severity: error
+    applies_to:
+      - host-to-host
+      - pod-to-pod-same-node
+      - pod-to-pod-cross-node
+      - pod-to-service
+    source: "RFC 6349; k8s-netperf output-and-results documentation"
+  - metric: execution_completeness_pct
+    op: gte
+    value: 100.0
+    unit: percent
+    severity: error
+    source: "Every size x path cell must produce its samples for the matrix to be readable"
+
+dashboard: ../../../dashboards/1.34/networking-ovn.json
+
+prerequisites:
+  node_labels:
+    - node-role.kubernetes.io/worker
+  namespaces:
+    - netperf
+  mtu:
+    host: 9000
+    pod: 8940
+    note: >-
+      Pod MTU is host MTU minus 60 bytes of Geneve/overlay headroom on
+      cross-node paths. It is a property of the CNI on this cluster, not a
+      netperf tuning knob. The anchor message size is derived from it.
+  baseline_validation:
+    - Confirm kubectl reaches the cluster and every node is Ready
+    - Confirm node count and role split match the scenario topology
+    - Confirm host and pod MTU match the values above, and recompute the anchor message size if not
+    - Confirm the netperf namespace can be created and deleted
+
+upstream:
+  project: https://github.com/cloud-bulldozer/k8s-netperf
+  docs: https://github.com/cloud-bulldozer/k8s-netperf/blob/main/docs/output-and-results.md
+  engine: k8s-netperf
+  engine_version: v0.1.41
+  config: engine/netperf.yml
+  # One invocation per network path. k8s-netperf selects the path by flag, so the
+  # test matrix in the config file is held constant across all four runs — that
+  # is what makes the paths comparable.
+  argv:
+    - "k8s-netperf --config engine/netperf.yml --hostNet"
+    - "k8s-netperf --config engine/netperf.yml --local"
+    - "k8s-netperf --config engine/netperf.yml"
+    - "k8s-netperf --config engine/netperf.yml --across"
+  notes: >-
+    Path selection is split between the command line and the config file.
+    Command line: --hostNet runs host-network only, bypassing the CNI for the
+    hardware reference; --local places client and server on the same node;
+    no placement flag runs pod-to-pod across nodes; --across additionally
+    forces them into different availability zones and requires worker nodes
+    labelled across at least two topology.kubernetes.io/zone values. Config
+    file: the pod-to-service path is selected per test by `service: true`,
+    not by a flag, and k8s-netperf skips service tests under --hostNet.
+    Verify flag names against the upstream documentation for the version you
+    install; they have changed between releases. This scenario is not
+    guaranteed to execute verbatim on a different cluster.

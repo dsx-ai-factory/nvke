@@ -1,0 +1,175 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# k8s-netperf test matrix for the OVN-Kubernetes throughput scenario.
+#
+# This file is engine-native: hand it to upstream k8s-netperf unchanged. It
+# carries the TEST MATRIX only. The four network paths (host-to-host,
+# pod-to-pod same-node, pod-to-pod cross-node, pod-to-service) are selected by
+# command-line flag, not by this file — see `upstream.argv` in scenario.yaml
+# and the "How to replicate" section of README.md.
+#
+# T-shirt sizes are parallelism levels, holding message size fixed:
+#
+#   S = 4 streams   M = 8 streams   L = 16 streams   XL = 32 streams
+#
+# `pN` is the number of concurrent netperf flows inside a single client pod. It
+# does not add pods: each run uses single-replica Deployments.
+#
+# MESSAGE SIZES
+#
+# 8192 B (8K) is the TCP_STREAM anchor at every size and on every path, which
+# is what makes the summary table an apples-to-apples comparison. It is the
+# largest power of two that fits in a single pod jumbo frame without
+# fragmentation at a pod MTU of 8940.
+#
+# UDP uses 8192 B at S/M and 8800 B at L/XL — just under the pod MTU — so that
+# reported loss reflects congestion rather than fragmentation. UDP has no flow
+# control, so loss is the signal that matters on an overdriven path.
+#
+# TCP_RR uses 256 B at S/M and 1024 B at L/XL. Small messages keep it
+# latency-bound rather than bandwidth-bound, so the result reads as round-trip
+# time rather than throughput. The step up at L/XL matches the published run.
+#
+# 60 s x 3 samples per test. Samples are averaged; the published result reports
+# the mean.
+---
+tests:
+  # --- S (4 streams) ---
+  - TCPStream_8k_p4:
+    parallelism: 4
+    profile: "TCP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8192
+
+  - UDPStream_8k_p4:
+    parallelism: 4
+    profile: "UDP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8192
+
+  - TCPRR_256_p4:
+    parallelism: 4
+    profile: "TCP_RR"
+    duration: 60
+    samples: 3
+    messagesize: 256
+
+  # --- M (8 streams) ---
+  - TCPStream_8k_p8:
+    parallelism: 8
+    profile: "TCP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8192
+
+  - UDPStream_8k_p8:
+    parallelism: 8
+    profile: "UDP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8192
+
+  - TCPRR_256_p8:
+    parallelism: 8
+    profile: "TCP_RR"
+    duration: 60
+    samples: 3
+    messagesize: 256
+
+  # --- L (16 streams) ---
+  - TCPStream_8k_p16:
+    parallelism: 16
+    profile: "TCP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8192
+
+  # 8800 B: just under the 8940 pod MTU, so loss is congestion, not fragmentation.
+  - UDPStream_8800_p16:
+    parallelism: 16
+    profile: "UDP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8800
+
+  - TCPRR_1k_p16:
+    parallelism: 16
+    profile: "TCP_RR"
+    duration: 60
+    samples: 3
+    messagesize: 1024
+
+  # --- XL (32 streams) ---
+  #
+  # NOTE ON PATH COVERAGE AT XL. Stock k8s-netperf exposes 16 ClusterIP data
+  # ports on the netperf Service. super-netperf increments the destination port
+  # per parallel stream, so at 32 streams multiple streams hash onto the same
+  # Service port. On the pod-to-service path only, that collision depresses
+  # throughput and inflates UDP loss — a harness artefact, not a CNI result.
+  #
+  # The published result therefore reports XL on host-to-host, pod-to-pod
+  # same-node and pod-to-pod cross-node, and omits XL pod-to-service. Run XL
+  # against the Service path only if you have raised the Service data-port
+  # count to at least the stream count; otherwise the number is not meaningful.
+  - TCPStream_8k_p32:
+    parallelism: 32
+    profile: "TCP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8192
+
+  - UDPStream_8800_p32:
+    parallelism: 32
+    profile: "UDP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8800
+
+  - TCPRR_1k_p32:
+    parallelism: 32
+    profile: "TCP_RR"
+    duration: 60
+    samples: 3
+    messagesize: 1024
+
+  # --- pod-to-service ---
+  #
+  # The ClusterIP path is selected PER TEST by `service: true`, not by a
+  # command-line flag. Everything else about these entries matches the
+  # pod-network anchors above, so the pod-to-service rows are comparable with
+  # the pod-to-pod ones.
+  #
+  # k8s-netperf skips service tests when running host-network, so these entries
+  # are simply not exercised by the --hostNet invocation.
+  #
+  # XL is absent deliberately. Stock k8s-netperf exposes 16 ClusterIP data ports
+  # from base port 42424, and super-netperf increments the destination port per
+  # stream, so at 32 streams multiple streams collide on one port. That depresses
+  # throughput and inflates loss on this path only — a harness artefact, not a
+  # CNI result. See the published result's scope note.
+  - TCPStream_8k_p4_svc:
+    parallelism: 4
+    profile: "TCP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8192
+    service: true
+
+  - TCPStream_8k_p8_svc:
+    parallelism: 8
+    profile: "TCP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8192
+    service: true
+
+  - TCPStream_8k_p16_svc:
+    parallelism: 16
+    profile: "TCP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8192
+    service: true

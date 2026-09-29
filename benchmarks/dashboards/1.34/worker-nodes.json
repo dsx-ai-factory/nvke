@@ -1,0 +1,1156 @@
+{
+  "uid": "nke-benchmarks-worker-nodes",
+  "title": "Worker Nodes",
+  "description": "Node resource utilization (node-exporter) and kubelet pod-lifecycle and runtime health. Despite the name, no query filters on node role, so this covers every node the node-exporter and kubelet jobs scrape -- including control-plane nodes on a self-managed cluster. Use the node variable to narrow it. Inline PromQL, no recording rules required.",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "1m",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "utc",
+  "tags": [
+    "nke",
+    "nke-benchmarks",
+    "node-exporter",
+    "kubelet"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "label": "Datasource",
+        "query": "prometheus",
+        "hide": 0,
+        "current": {},
+        "refresh": 1
+      },
+      {
+        "name": "cluster",
+        "type": "query",
+        "label": "Cluster",
+        "description": "Values of the k8s_cluster_name label, populated only where the datasource holds several clusters. All (.*) matches every series, including those without the label. A cluster label under any other name is not filtered.",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": "label_values(up, k8s_cluster_name)",
+        "hide": 0,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1,
+        "refresh": 1,
+        "definition": "label_values(up, k8s_cluster_name)"
+      },
+      {
+        "name": "quantile",
+        "type": "custom",
+        "label": "Quantile",
+        "query": "p50 : 0.50, p90 : 0.90, p99 : 0.99",
+        "hide": 0,
+        "current": {
+          "text": "p99",
+          "value": "0.99"
+        },
+        "options": [
+          {
+            "text": "p50",
+            "value": "0.50",
+            "selected": false
+          },
+          {
+            "text": "p90",
+            "value": "0.90",
+            "selected": false
+          },
+          {
+            "text": "p99",
+            "value": "0.99",
+            "selected": true
+          }
+        ]
+      },
+      {
+        "name": "node",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": "label_values(kubelet_running_pods{k8s_cluster_name=~\"$cluster\"}, node)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2,
+        "definition": "label_values(kubelet_running_pods{k8s_cluster_name=~\"$cluster\"}, node)"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 29,
+      "type": "text",
+      "title": "Requirements and scope",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Requirements.** Prometheus scraping node-exporter as `job=\"node-exporter\"` and the kubelet.\n\n**Scope.** Kubernetes 1.34 metric names; use until a newer `dashboards/` directory exists. `$cluster` filters on `k8s_cluster_name` and matches everything when the label is absent, so a single-cluster Prometheus needs no relabeling. Inline PromQL; no recording rules."
+      }
+    },
+    {
+      "id": 1,
+      "title": "Node CPU by Mode",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance, mode) (rate(node_cpu_seconds_total{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\"}[5m]))",
+          "legendFormat": "{{instance}} {{mode}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Node Memory Used",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "node_memory_MemTotal_bytes{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\"} - node_memory_MemAvailable_bytes{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\"}",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Node Network Receive",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance, device) (rate(node_network_receive_bytes_total{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\", device!~\"lo\"}[5m]))",
+          "legendFormat": "{{instance}} {{device}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Node Network Transmit",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance, device) (rate(node_network_transmit_bytes_total{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\", device!~\"lo\"}[5m]))",
+          "legendFormat": "{{instance}} {{device}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Node Network Errors",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance, device) (rate(node_network_receive_errs_total{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\", device!~\"lo\"}[5m]) + rate(node_network_transmit_errs_total{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\", device!~\"lo\"}[5m]))",
+          "legendFormat": "{{instance}} {{device}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Node Major Page Faults",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance) (rate(node_vmstat_pgmajfault{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\"}[5m]))",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Kubelet Running Pods by Node",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (node) (kubelet_running_pods{k8s_cluster_name=~\"$cluster\", node=~\"$node\"})",
+          "legendFormat": "{{node}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Kubelet PLEG Relist Duration (${quantile:text}) by Node",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile($quantile, sum by (node, le) (rate(kubelet_pleg_relist_duration_seconds_bucket{k8s_cluster_name=~\"$cluster\", node=~\"$node\"}[2m])))",
+          "legendFormat": "{{node}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Kubelet PLEG Relist Interval (p99) by Node",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 36
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (node, le) (rate(kubelet_pleg_relist_interval_seconds_bucket{k8s_cluster_name=~\"$cluster\", node=~\"$node\"}[2m])))",
+          "legendFormat": "{{node}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Kubelet Pod Worker Duration (p99) by Operation",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 36
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (operation_type, le) (rate(kubelet_pod_worker_duration_seconds_bucket{k8s_cluster_name=~\"$cluster\", node=~\"$node\"}[2m])))",
+          "legendFormat": "{{operation_type}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Kubelet cgroup Manager Duration (p99) by Operation",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 44
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (operation_type, le) (rate(kubelet_cgroup_manager_duration_seconds_bucket{k8s_cluster_name=~\"$cluster\", node=~\"$node\"}[2m])))",
+          "legendFormat": "{{operation_type}}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Kubelet Pod Startup SLI (${quantile:text}) by Node",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 44
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile($quantile, sum by (node, le) (rate(kubelet_pod_start_sli_duration_seconds_bucket{k8s_cluster_name=~\"$cluster\", node=~\"$node\"}[2m])))",
+          "legendFormat": "{{node}}"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Kubelet Runtime Ops Duration (p99) by Operation",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 52
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (operation_type, le) (rate(kubelet_runtime_operations_duration_seconds_bucket{k8s_cluster_name=~\"$cluster\", node=~\"$node\"}[2m])))",
+          "legendFormat": "dur {{operation_type}}"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "Kubelet Runtime Ops Rate & Errors by Operation",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 52
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (operation_type) (rate(kubelet_runtime_operations_total{k8s_cluster_name=~\"$cluster\", node=~\"$node\"}[2m]))",
+          "legendFormat": "{{operation_type}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (operation_type) (rate(kubelet_runtime_operations_errors_total{k8s_cluster_name=~\"$cluster\", node=~\"$node\"}[2m]))",
+          "legendFormat": "err {{operation_type}}"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Container CPU (kube-system|ovn) — top 15",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 60
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "topk(15, sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{k8s_cluster_name=~\"$cluster\", namespace=~\"kube-system|ovn-.*\", container!=\"\"}[5m])))",
+          "legendFormat": "{{namespace}}/{{pod}}"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "title": "Container RSS (kube-system|ovn) — top 15",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 60
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "topk(15, sum by (namespace, pod) (container_memory_rss{k8s_cluster_name=~\"$cluster\", namespace=~\"kube-system|ovn-.*\", container!=\"\"}))",
+          "legendFormat": "{{namespace}}/{{pod}}"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "title": "CPU Utilisation per Node",
+      "type": "timeseries",
+      "description": "Read max and quantiles, not avg — a mean over all nodes hides saturated ones. Keep sustained < 80%.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 68
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "1 - avg by (instance) (rate(node_cpu_seconds_total{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\", mode=\"idle\"}[5m]))",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "title": "Run-Queue Pressure (load1 per core)",
+      "type": "timeseries",
+      "description": "Per core, because raw load1 is not comparable across mixed pools. < 1.0 healthy, > 2.0 sustained is saturated.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 68
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "node_load1{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\"} / on(instance) group_left count by (instance) (count by (instance, cpu) (node_cpu_seconds_total{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\"}))",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "title": "PSI — CPU Stall",
+      "type": "timeseries",
+      "description": "Earliest saturation signal — rises before load average or utilisation flatten. 0.20 means tasks were stalled 20% of wall time.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 76
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(node_pressure_cpu_waiting_seconds_total{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\"}[5m])",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "title": "PSI — I/O Stall",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 76
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(node_pressure_io_waiting_seconds_total{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\"}[5m])",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "title": "PSI — Memory Stall",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 84
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(node_pressure_memory_waiting_seconds_total{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\"}[5m])",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "title": "Conntrack Table Utilisation",
+      "type": "timeseries",
+      "description": "Hard cliff: when the table fills, new connections drop silently and look like random network faults. Grows with node count. Keep < 0.80.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 84
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "node_nf_conntrack_entries{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\"} / node_nf_conntrack_entries_limit{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\"}",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "title": "Worst Filesystem Headroom per Node",
+      "type": "timeseries",
+      "description": "Pseudo and boot mounts excluded, or the tiny /boot/efi partition dominates the min. Keep > 0.20 — kubelet starts evicting at 10-15% free.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 92
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "min by (instance) (node_filesystem_avail_bytes{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\", fstype!~\"tmpfs|vfat\"} / node_filesystem_size_bytes{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\", fstype!~\"tmpfs|vfat\"})",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "title": "Disk I/O Saturation",
+      "type": "timeseries",
+      "description": "Fraction of time the device had I/O in flight; keep < 0.90. On control-plane nodes, etcd fsync slowness is usually a symptom of this.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 92
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(node_disk_io_time_seconds_total{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\"}[5m])",
+          "legendFormat": "{{instance}} {{device}}"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "title": "Memory Headroom per Node",
+      "type": "timeseries",
+      "description": "A ratio rather than bytes so it is comparable across instance types.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 100
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "node_memory_MemAvailable_bytes{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\"} / node_memory_MemTotal_bytes{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\"}",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "title": "Open File Descriptors",
+      "type": "timeseries",
+      "description": "Absolute count on purpose: node_filefd_maximum reads 9.22e18 here, so a ratio is always ~0. Watch growth against node count.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 100
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "node_filefd_allocated{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\"}",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "title": "Unplanned Reboots (1h)",
+      "type": "timeseries",
+      "description": "A node that rebooted invalidates its own saturation history — exclude it before reading the panels above.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 108
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "changes(node_boot_time_seconds{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\"}[1h])",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "title": "Node Network Drops",
+      "type": "timeseries",
+      "description": "Drops appear before throughput plateaus. Virtual devices excluded — Cilium veth/lxc add ~15 series per node and swamp the real NICs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 108
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (instance, device) (rate(node_network_receive_drop_total{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\", device!~\"lo|cilium.*|veth.*|lxc.*\"}[5m]) + rate(node_network_transmit_drop_total{k8s_cluster_name=~\"$cluster\", job=\"node-exporter\", device!~\"lo|cilium.*|veth.*|lxc.*\"}[5m]))",
+          "legendFormat": "{{instance}} {{device}}"
+        }
+      ]
+    }
+  ],
+  "timepicker": {
+    "refresh_intervals": [
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "2h",
+      "1d"
+    ]
+  }
+}

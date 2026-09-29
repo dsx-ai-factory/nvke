@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Scheduler correctness and convergence during a benchmark run.
+#
+# Kubernetes publishes no SLO for scheduler throughput or scheduling latency,
+# so there is no external bar to encode. These rules assert only what has a
+# right answer independent of hardware: the scheduler did not error, and the
+# workload converged. Capacity belongs in a scenario's slo block, stated
+# against the configuration that produced it.
+#
+# API-server, etcd and component-availability rules are in control-plane.yml.
+
+# Diagnostic, not a gate: the scheduler's API client is bounded by
+# kube-api-qps, so a run that outpaces it raises this P99 by design.
+- expr: histogram_quantile(0.99, sum(rate(scheduler_scheduling_attempt_duration_seconds_bucket[5m])) by (le)) > 5
+  description: 5 minute rolling P99 scheduler attempt latency exceeded 5 seconds. {{$value}}s
+  severity: warning
+
+# `unschedulable` is excluded -- that is an expected transient, and how a pod
+# waits for a node still becoming Ready.
+- expr: sum(rate(scheduler_schedule_attempts_total{result="error"}[5m])) > 0
+  description: Scheduler attempts returning error observed. {{$value}} errors/s
+  severity: error
+
+# A queue that never empties means the workload did not converge. The 5 minute
+# floor separates that from the transient above.
+- expr: min_over_time((sum(scheduler_pending_pods{queue=~"backoff|unschedulable"}))[5m:]) > 0
+  description: Scheduler backoff or unschedulable queue remained non-empty for 5 minutes. {{$value}} pods
+  severity: error
+
+# Catches a stalled run before the convergence gate above would.
+- expr: (sum(rate(scheduler_schedule_attempts_total{result="scheduled"}[2m])) == 0) and (sum(scheduler_pending_pods{queue="active"}) > 0)
+  description: Scheduler active queue has work but scheduling throughput is zero. {{$value}} pods/s
+  severity: error

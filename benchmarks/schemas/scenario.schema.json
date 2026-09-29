@@ -1,0 +1,518 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dsx-ai-factory/nke/benchmarks/schemas/scenario.schema.json",
+  "title": "Benchmark scenario",
+  "description": "A scenario is one pinned, runnable recipe for a workload at a specific software stack. A workload is the thing measured and groups scenarios; a scenario validates. Two scenarios sharing a slug but pinning different stacks are the comparable pair.",
+  "type": "object",
+  "required": [
+    "slug",
+    "workload",
+    "intent",
+    "topology",
+    "sizing",
+    "stack",
+    "engine_config",
+    "metrics",
+    "slo",
+    "upstream"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "slug": {
+      "description": "Stable machine name for this scenario. Used in paths and cross-references, so it must describe the workload rather than the cluster it happened to run on.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "workload": {
+      "description": "The workload class this scenario measures. Groups scenarios; matches the parent directory under benchmarks/workloads/.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "description": {
+      "type": "string"
+    },
+    "intent": {
+      "description": "Why this scenario exists and what it characterizes.",
+      "type": "object",
+      "required": [
+        "goal",
+        "characterizes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "goal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "characterizes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "topology": {
+      "description": "The cluster shape this scenario was validated on. Describes one bed; see `sizing` for how the workload scales to a different one.",
+      "type": "object",
+      "required": [
+        "node_count",
+        "node_type",
+        "roles"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "node_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "node_type": {
+          "description": "Publicly marketed hardware description — part names and observable properties such as core count, memory and NIC line rate. Enough for a reader to judge whether a number transfers to their own hardware.",
+          "type": "object",
+          "required": [
+            "cpu",
+            "cpu_cores",
+            "memory_gib"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "cpu": {
+              "type": "string",
+              "minLength": 1
+            },
+            "cpu_cores": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "memory_gib": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "nic_speed_gbps": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "arch": {
+              "type": "string",
+              "enum": [
+                "x86_64",
+                "aarch64"
+              ]
+            }
+          }
+        },
+        "roles": {
+          "type": "object",
+          "required": [
+            "control_plane",
+            "worker"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "control_plane": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "worker": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "monitoring": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "sizing": {
+      "description": "How the workload scales. `derivation` is the rule that lets a reader size this to THEIR cluster — the epic's Definition of Done requires it. `observed` is what the rule resolved to for the published run, which is what makes the result reproducible and comparable.",
+      "type": "object",
+      "required": [
+        "derivation",
+        "observed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "derivation": {
+          "type": "object",
+          "required": [
+            "rule",
+            "inputs"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "rule": {
+              "description": "Human-readable statement of how run parameters follow from cluster shape.",
+              "type": "string",
+              "minLength": 1
+            },
+            "inputs": {
+              "description": "Cluster properties the rule reads.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          }
+        },
+        "observed": {
+          "description": "Concrete parameter values for the published run. Keys are workload-specific.",
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "integer",
+              "boolean",
+              "array"
+            ]
+          }
+        }
+      }
+    },
+    "stack": {
+      "description": "The software stack this scenario was validated against. Required in full: two scenarios of the same workload at different stack versions must be distinguishable and comparable, which is only true if every component is pinned.",
+      "type": "object",
+      "required": [
+        "kubernetes",
+        "cni",
+        "engine",
+        "container_runtime",
+        "node_os"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kubernetes": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "cni": {
+          "type": "object",
+          "required": [
+            "name",
+            "version",
+            "build"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "build": {
+              "description": "Provenance of the running build. `vendor` denotes a distribution-specific build without naming its registry path, which is a sanitization rule class. Keeping this field is what lets two runs on different builds still be compared honestly.",
+              "type": "string",
+              "enum": [
+                "upstream",
+                "vendor"
+              ]
+            },
+            "dataplane": {
+              "description": "Optional dataplane component and version, e.g. OVS for OVN-Kubernetes.",
+              "type": "string"
+            }
+          }
+        },
+        "engine": {
+          "description": "The benchmark engine actually executed, named as the upstream project. A scenario that pinned a wrapper instead could not be reconstructed by anyone who does not have that wrapper.",
+          "type": "object",
+          "required": [
+            "name",
+            "version"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Release tag where the engine publishes one, otherwise a commit SHA on a best-effort basis. Not every upstream engine is versioned, and for runs already completed the exact commit is not always recoverable -- record what is known."
+            },
+            "build": {
+              "type": "string",
+              "enum": [
+                "upstream",
+                "vendor"
+              ]
+            }
+          }
+        },
+        "container_runtime": {
+          "type": "string",
+          "minLength": 1
+        },
+        "node_os": {
+          "type": "object",
+          "required": [
+            "distro",
+            "kernel"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "distro": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kernel": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "etcd": {
+          "description": "etcd version. Optional only because the measurement tooling does not yet collect it; required in spirit and should be filled whenever known.",
+          "type": "string"
+        },
+        "simulator": {
+          "description": "Node simulator, where the scenario ran against fake nodes rather than real machines. Optional because most scenarios use neither. REQUIRED whenever one was used: a node count produced by a simulator is not the same measurement as the same count of real machines, and a reader who cannot tell which they are looking at will read a simulated tier as hardware. `topology` stays the real cluster the simulator ran on; the simulated node counts belong in sizing.observed.",
+          "type": "object",
+          "required": [
+            "name",
+            "version",
+            "simulates"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Release tag, otherwise a commit SHA. Where a scenario does not depend on a specific release, say which interface it does depend on instead -- that is more useful to a reader than a version they have no reason to match."
+            },
+            "simulates": {
+              "description": "What the simulator stands in for, so a reader knows exactly which part of the result is not real hardware.",
+              "type": "string",
+              "minLength": 1
+            },
+            "project": {
+              "type": "string",
+              "pattern": "^https://"
+            }
+          }
+        }
+      }
+    },
+    "engine_config": {
+      "description": "Relative path to the checked-in, engine-native config this scenario runs. Mandatory by design: a scenario with nothing to point at is not a recipe and must not validate. The path is additionally checked to resolve.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^/].*$"
+    },
+    "metrics": {
+      "description": "The metrics contract. Split into the small set every scenario carries and whatever this workload actually measures — result shapes differ sharply across workloads and the contract is designed for that, not around it.",
+      "type": "object",
+      "required": [
+        "required"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "workload_specific": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "slo": {
+      "description": "The pass/fail rules this scenario is judged against, inline rather than by reference — a reader must be able to judge their own run from the scenario alone.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "metric",
+          "op",
+          "value",
+          "severity"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "metric": {
+            "type": "string",
+            "minLength": 1
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              "lt",
+              "lte",
+              "gt",
+              "gte",
+              "eq"
+            ]
+          },
+          "value": {
+            "type": "number"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "error",
+              "warning"
+            ]
+          },
+          "applies_to": {
+            "description": "Optional scope, e.g. the network paths or sizes a threshold applies to.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "dashboard": {
+      "description": "Relative path, or list of paths, to the Grafana dashboard(s) this scenario is read with. Dashboards describe subsystems rather than workloads, so they live in benchmarks/dashboards/<kubernetes-minor>/ and are referenced rather than bundled. A directory is valid from its release until the next one exists, so reference the newest at or below this scenario's stack.kubernetes.",
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[^/].*$"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[^/].*$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      ]
+    },
+    "alerts": {
+      "description": "Relative path, or list of paths, to the alerting rules a run is watched with. Shared rules live in benchmarks/alerts/<kubernetes-minor>/ and follow the same newest-at-or-below rule as dashboards; rules scoped to one workload sit beside the scenario. Optional -- but a scenario shipping none should say so in its README. Thresholds calibrated for one environment may be wrong in another.",
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[^/].*$"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[^/].*$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      ]
+    },
+    "prerequisites": {
+      "description": "What a cluster must satisfy before this scenario is meaningful.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "node_labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "namespaces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mtu": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "host": {
+              "type": "integer"
+            },
+            "pod": {
+              "type": "integer"
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        },
+        "baseline_validation": {
+          "description": "Ordered checks to run before trusting a result from this scenario.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "upstream": {
+      "description": "How to run this scenario using only the upstream project. Structured rather than prose so presence and shape stay machine-checkable — this asserts the scenario names its engine, version, config and argv, NOT that argv executes unmodified on another cluster.",
+      "type": "object",
+      "required": [
+        "project",
+        "engine",
+        "engine_version",
+        "config",
+        "argv"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "docs": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "engine": {
+          "type": "string",
+          "minLength": 1
+        },
+        "engine_version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Release tag where the engine publishes one, otherwise a commit SHA on a best-effort basis. Should match stack.engine.version."
+        },
+        "config": {
+          "description": "Relative path to the config passed to the engine. Checked to resolve.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^/].*$"
+        },
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

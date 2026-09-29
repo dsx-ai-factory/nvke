@@ -1,0 +1,71 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Shared control-plane alerting rules.
+#
+# These do not judge a run. ClusterLoader2 does not consume this file -- it
+# writes its verdict to junit.xml under --report-dir.
+#
+# severity: error tracks an SLO a scenario is judged against; severity: warning
+# explains a violation rather than constituting one.
+#
+# Thresholds are the SIG-Scalability SLOs:
+#   https://github.com/kubernetes/community/blob/main/sig-scalability/slos/slos.md
+#
+# The etcd disk rules assume real disks. On virtualized or shared storage they
+# report the storage layer rather than a control-plane problem.
+
+# --- SLO rules: each tracks an `slo` entry a scenario may declare -----------
+
+# post_p99_ms, delete_p99_ms -- one rule, both are the same SIG mutating SLO.
+- expr: histogram_quantile(0.99, sum(rate(apiserver_request_duration_seconds_bucket{job="apiserver", verb=~"POST|PUT|DELETE|PATCH", subresource!~"log|exec|portforward|attach|proxy"}[5m])) by (le, resource, verb)) > 1
+  description: Mutating API p99 for {{$labels.verb}}/{{$labels.resource}} above the 1s SIG-Scalability SLO. {{$value}}s
+  severity: error
+
+# get_p99_ms. GET only: scope=resource is a single object, which LIST never is.
+# Verified on 1.34.2 -- GET appears only at scope=resource, LIST only at
+# scope=namespace|cluster.
+- expr: histogram_quantile(0.99, sum(rate(apiserver_request_duration_seconds_bucket{job="apiserver", verb="GET", subresource!~"log|exec|portforward|attach|proxy", scope="resource"}[5m])) by (le, resource, scope)) > 1
+  description: Read-only API p99 for GET/{{$labels.resource}} at scope=resource above the 1s SIG-Scalability SLO. {{$value}}s
+  severity: error
+
+# The looser half of the same SLO. No `slo` entry mirrors it, but shipping only
+# the tight half would misreport a compliant cluster on collection LISTs.
+- expr: histogram_quantile(0.99, sum(rate(apiserver_request_duration_seconds_bucket{job="apiserver", verb="LIST", subresource!~"log|exec|portforward|attach|proxy", scope=~"namespace|cluster"}[5m])) by (le, resource, scope)) > 30
+  description: Read-only API p99 for LIST/{{$labels.resource}} at scope={{$labels.scope}} above the 30s SIG-Scalability SLO. {{$value}}s
+  severity: error
+
+# scheduler_throughput_pods_per_s -- DELIBERATELY NOT ALERTED ON. Engines
+# measure it second-by-second; a scrape interval plus rate() smoothing makes a
+# Prometheus-derived pods/s a different quantity sharing a unit. The engine
+# that measures it owns this gate.
+
+# --- Supporting signals: explain a violation, do not judge the run ----------
+
+# Label-partitioned by flow_schema/priority_level/reason, so the counter is
+# absent until a rejection happens. Absence means "no rejections", not "metric
+# unavailable" -- do not add an `or vector(0)` fallback.
+- expr: sum(rate(apiserver_flowcontrol_rejected_requests_total{job="apiserver"}[5m])) by (priority_level, flow_schema, reason) > 0
+  description: API Priority and Fairness rejecting requests in {{$labels.priority_level}}/{{$labels.flow_schema}} ({{$labels.reason}}). {{$value}} req/s
+  severity: warning
+
+# etcd disk. See the note above before trusting these off real hardware.
+- expr: avg_over_time(histogram_quantile(0.99, rate(etcd_disk_wal_fsync_duration_seconds_bucket[2m]))[10m:]) > 0.01
+  description: 10m average etcd WAL fsync p99 on {{$labels.pod}} above 10ms. {{$value}}s
+  severity: warning
+
+- expr: avg_over_time(histogram_quantile(0.99, rate(etcd_disk_backend_commit_duration_seconds_bucket[2m]))[10m:]) > 0.03
+  description: 10m average etcd backend commit p99 on {{$labels.pod}} above 30ms. {{$value}}s
+  severity: warning
+
+# A deliberate leader transfer is quick; an unplanned election stalls writes
+# for the configured election timeout.
+- expr: rate(etcd_server_leader_changes_seen_total[2m]) > 0
+  description: etcd leader change observed during the run
+  severity: warning
+
+# Control-plane liveness. A component vanishing mid-run invalidates the run
+# rather than failing an SLO, hence warning.
+- expr: up{job=~"apiserver|kube-etcd|kube-controller-manager|kube-scheduler|kubelet"} == 0
+  description: "{{$labels.job}} on {{$labels.instance}} is down"
+  severity: warning
