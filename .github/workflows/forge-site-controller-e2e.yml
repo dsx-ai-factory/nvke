@@ -912,10 +912,34 @@ jobs:
               printf '  %-22s = %s\n' "${label}" "${value}"
               printf '  %-22s   [%s]\n' "" "${source}"
             done
+          } | tee "${OUT}"
+
+          # The same text on the run's Summary page, so "what did this
+          # qualify?" is answerable without downloading run-inputs.txt. The
+          # file, not a second rendering of the rows: the withholding above is
+          # the only copy of that rule and re-deriving it here is how the two
+          # would drift into disagreeing about what is safe to print.
+          #
+          # Collapsed, because the test summary below it is what a reader
+          # wants first and this is forty lines of provenance.
+          {
+            echo "<details><summary>Resolved inputs — site controller (${SITE_STAGE})</summary>"
+            echo
+            echo '```'
+            cat "${OUT}"
+            echo '```'
+            echo
+            echo "</details>"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          # Appended after the summary, so it stays in the artifact and off
+          # the page. No credentials in it, but it is another forty lines and
+          # the log already printed it once.
+          {
             echo
             echo "--- e2e-config.yaml (what the suite reads) ---"
             cat controller/test/e2e/e2e-config.yaml
-          } | tee "${OUT}"
+          } | tee -a "${OUT}"
 
       # Three nested timeouts, shortest first, because only the shortest one
       # tears the node down:
@@ -1005,6 +1029,22 @@ jobs:
             -e2e.versions="controller=${SITE_CONTROLLER_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}" \
             -e2e.capabilities="${CAPABILITIES}" \
             "${keep[@]}" 2>&1 | tee site-e2e.log
+
+      # The lane this was written for. An hour of a bare-metal machine ended
+      # in a green tick and nothing else: which specs ran, and which of them
+      # this architecture actually covered, was only in the artifact below.
+      #
+      # Without include-failure-text, unlike the backend lanes: those copy
+      # their report into a directory a redaction pass then scrubs, and gate
+      # on its marker. This lane has no such pass, and a Gomega message here
+      # is about real hardware. Spec names, counts and durations go up; what a
+      # spec printed stays in site-e2e.log.
+      - name: Summarise the E2E results
+        if: always()
+        uses: ./.github/actions/summarize-junit
+        with:
+          path: controller/test/e2e/site-e2e.junit.xml
+          title: site controller (${{ env.SITE_STAGE }}, ${{ env.SITE_ARCH }})
 
       # The Ginkgo log carries every phase boundary, remote command and
       # failure. An hour-long run is worth more than a scroll-back in the job

@@ -208,6 +208,17 @@ jobs:
         run: ./hack/local-backend-e2e.sh
         working-directory: controller
 
+      # Without include-failure-text, unlike the other two lanes: this script
+      # is the developer entrypoint and has no redaction pass, so nothing here
+      # certifies that a spec's own output is safe to put on a summary page.
+      # Spec names and counts are, and they are the point.
+      - name: Summarise the E2E results
+        if: always()
+        uses: ./.github/actions/summarize-junit
+        with:
+          path: controller/.local/backend-e2e/junit*.xml
+          title: local-entrypoint-e2e (${{ matrix.arch }}, post-init CNI ${{ matrix.install_cni_after_init }})
+
       - name: Upload diagnostics
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

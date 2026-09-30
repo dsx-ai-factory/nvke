@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+  <testsuites tests="7" disabled="3" errors="0" failures="0" time="1863.5">
+      <testsuite name="NKE E2E Suite" package="/work/controller/test/e2e" tests="7" disabled="1" skipped="2" errors="0" failures="0" time="1863.5" timestamp="2026-09-30T08:46:17">
+          <properties>
+              <property name="SuiteSucceeded" value="true"></property>
+              <property name="LabelFilter" value="site-controller"></property>
+              <property name="RandomSeed" value="1790757977"></property>
+          </properties>
+          <testcase name="[It] Site controller on Forge provisions a node [site-controller]" classname="NKE E2E Suite" status="passed" time="640.006812018">
+              <system-err>&gt; Enter [It] provisions a node&#xA;&#34;msg&#34;=&#34;this body must never reach a job summary&#34;&#xA;</system-err>
+          </testcase>
+          <testcase name="[It] Site controller on Forge bootstraps the site controller [site-controller]" classname="NKE E2E Suite" status="passed" time="491.568519061"></testcase>
+          <testcase name="[It] Site controller on Forge tenant creates the cluster [site-controller, lifecycle]" classname="NKE E2E Suite" status="passed" time="731.9"></testcase>
+          <testcase name="[It] CWE management-plane health serves /healthz [health]" classname="NKE E2E Suite" status="skipped" time="0">
+              <skipped message="skipped"></skipped>
+          </testcase>
+          <testcase name="[It] Parallel tenant cluster lifecycle deletes the clusters [nico-vms, extended]" classname="NKE E2E Suite" status="skipped" time="0">
+              <skipped message="skipped"></skipped>
+          </testcase>
+          <testcase name="[It] a spec nobody has written yet [health]" classname="NKE E2E Suite" status="pending" time="0">
+              <skipped message="pending"></skipped>
+          </testcase>
+          <testcase name="[AfterSuite]" classname="NKE E2E Suite" status="passed" time="0.02"></testcase>
+      </testsuite>
+  </testsuites>

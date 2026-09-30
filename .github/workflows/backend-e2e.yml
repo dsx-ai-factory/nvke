@@ -300,6 +300,19 @@ jobs:
             echo "Diagnostics are absent or were not marked safe to upload."
           fi
 
+      # After the step above, deliberately: collect_diagnostics copies the
+      # JUnit files into the state dir, redact_diagnostics scrubs every file
+      # there, and only then is the marker written. So the failure text is
+      # shown on exactly the runs where this lane's own scrubber ran and
+      # verified itself -- the same verdict that gates the artifact upload.
+      - name: Summarise the E2E results
+        if: always()
+        uses: ./.github/actions/summarize-junit
+        with:
+          path: controller/.local/backend-e2e/${{ env.NKE_E2E_RUN_ID }}/junit*.xml
+          title: ${{ inputs.backend }}-e2e (${{ inputs.arch }})
+          include-failure-text: ${{ steps.diagnostics.outputs.safe == 'true' }}
+
       - name: Show redacted failure diagnostics
         if: failure() && steps.diagnostics.outputs.safe == 'true'
         shell: bash

@@ -306,6 +306,18 @@ jobs:
             echo "Diagnostics are absent or were not marked safe to upload."
           fi
 
+      # After the step above: the suite writes its report into the state dir,
+      # redact_diagnostics scrubs every file there, and only then is the
+      # marker written. So the failure text is shown on exactly the runs where
+      # this lane's own scrubber ran and verified itself.
+      - name: Summarise the E2E results
+        if: always()
+        uses: ./.github/actions/summarize-junit
+        with:
+          path: ${{ env.NKE_E2E_STATE_DIR }}/junit.xml
+          title: nico-vms-e2e (${{ matrix.arch }})
+          include-failure-text: ${{ steps.diagnostics.outputs.safe == 'true' }}
+
       # Runner egress has answered FinalizeArtifact with 403; a lost upload must not fail a passing suite.
       - name: Upload redacted diagnostics
         if: always() && steps.diagnostics.outputs.safe == 'true'
