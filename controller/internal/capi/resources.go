@@ -91,19 +91,16 @@ func SetPausedAnnotation(obj metav1.Object, paused bool) {
 	obj.SetAnnotations(annotations)
 }
 
-// clusterScaffoldBuilders is the provider factory for cluster scaffold
-// manifests: one builder per supported db.ProviderType. Adding a provider
-// means adding an entry here, not a new switch arm at each call site.
-var clusterScaffoldBuilders = map[db.ProviderType]func(db.Cluster) (json.RawMessage, error){
-	db.ProviderTypeCAPI: capiClusterScaffoldManifest,
-	db.ProviderTypeNico: nicoClusterScaffoldManifest,
-}
-
 // ClusterScaffoldManifest builds the infrastructure-provider manifest (CAPI
 // InfraCluster or NicoCluster) for the cluster, dispatching on its provider
-// type.
+// type through a builder-per-provider factory. Adding a provider means
+// adding an entry here, not a new switch arm at each call site.
 func ClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error) {
-	build, ok := clusterScaffoldBuilders[cluster.ProviderType]
+	builders := map[db.ProviderType]func(db.Cluster) (json.RawMessage, error){
+		db.ProviderTypeCAPI: capiClusterScaffoldManifest,
+		db.ProviderTypeNico: nicoClusterScaffoldManifest,
+	}
+	build, ok := builders[cluster.ProviderType]
 	if !ok {
 		return nil, fmt.Errorf("unsupported provider type %q for cluster %s", cluster.ProviderType, cluster.ID)
 	}
