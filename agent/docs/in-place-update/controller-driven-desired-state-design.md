@@ -10,71 +10,72 @@
 
 ## Problem
 
-NKE records each node's observed agent version, but today it neither establishes
-an authoritative desired agent version when a cluster is created nor
-continuously converges nodes to that version afterward. The existing
-cluster-lock proposal adds desired state, but a control-plane rollout blocks
-unrelated topology and cluster updates for the duration of convergence.
+NKE records each node's observed agent version but does not maintain a desired
+version throughout the cluster lifecycle. Provisioning already depends on the
+agent for preflight, file preparation, kubeadm init or join, and status polling.
+Waiting until after join to update the agent can leave these steps using an
+agent that cannot perform the requested work.
 
-Node provisioning also depends on the agent before kubeadm. Preflight, file
-preparation, kubeadm init, kubeadm join, and join-status polling all call the
-agent. Deferring agent convergence until after a node joins can therefore leave
-the lifecycle workflow dependent on an agent that is too old for the requested
-cluster configuration.
-
-The earlier cluster-lock rollout proposal solved safety by blocking conflicting
-cluster-wide changes during node-agent rollout. The remaining design question is
-whether normal convergence needs that broad lock, or whether NKE can keep the
-same safety properties with lifecycle ownership, reconciliation, and narrower
-execution coordination. The following decision summarizes the controller-driven
-approach selected from that discussion.
+The earlier cluster-lock proposal adds desired state but blocks unrelated
+topology and cluster updates while control-plane agents converge. The decision
+below keeps convergence in the lifecycle where it is needed and coordinates
+conflicting operations at the node boundary.
 
 ## Decision
 
-NKE treats the node-agent version as cluster desired state from the beginning
-of the cluster lifecycle.
+**Desired node-agent versions are cluster desired state, scoped by node role.
+Lifecycle workflows converge nodes to their snapshotted target before preflight
+and kubeadm; background reconciliation handles later drift on joined nodes.**
 
-`CreateCluster` persists the initial node-agent desired state. When a host
-becomes reachable, the workflow responsible for its pre-join lifecycle invokes
-the in-place node-agent upgrade operation directly. It verifies that the
-running agent matches the workflow's snapshotted desired version before
-continuing with node preflight, kubeadm initialization, or kubeadm join. The
-lifecycle workflow does not wait for a separate controller to converge the
-node.
+This proposal covers node-agent convergence and the coordination it needs; it
+does not redesign cluster orchestration or upgrades of other system components.
 
-After the node completes its lifecycle operation and becomes an existing joined
-node, a dedicated node-agent controller continuously reconciles its observed
-running version with the cluster's latest desired version. Existing
-control-plane node-agent upgrades use the existing rollout executor for serial
-execution, node guards, and recovery; worker upgrades require extending its
-target selection.
+### Design invariants
 
-Normal node-agent convergence does not hold a long-lived cluster-wide update
-lock. Provisioning and join run outside the rollout executor, so this design
-adds `node_operation_owner` instead of introducing another rollout engine.
+- When a desired version is defined, the lifecycle workflow verifies an exact
+  match before preflight or kubeadm. If undefined, it records the running version
+  without upgrading; required operations still follow the compatibility contract.
+- Only one disruptive operation may own a node at a time.
+- A desired version change does not preempt an active operation or change its
+  snapshotted target.
+- Background convergence acts on joined nodes only after lifecycle ownership
+  ends.
+
+### Why not the cluster-wide lock?
+
+A cluster-wide lock makes unrelated updates wait for the entire agent rollout,
+including retries on a single failing node. Per-node ownership makes only work
+on the same node wait. Existing control-plane node-agent upgrades use the
+rollout executor for serial execution, node guards, and recovery; worker
+upgrades require extending its target selection. Provisioning and join run
+outside that executor and participate in the same node ownership mechanism.
 
 ### Safety during convergence
 
 | Problem | Rule | Why |
 |---|---|---|
-| Provisioning and background convergence could act on the same node | The lifecycle workflow owns the node until join completes; the reconciler waits. For existing joined nodes, an executor node guard acquires the same ownership before an upgrade. | One disruptive operation directs a node at a time. |
-| A rolling update temporarily leaves different nodes on different agent versions | The controller follows the Day 1 compatibility contract: discover each agent's capabilities, use the typed RPC when available, and use the fallback path when needed. | NKE can continue checking health, driving upgrades, and recovering failures while the fleet is only partially converged. |
+| An agent upgrade could restart the agent while join or deletion is using it | Hold node ownership through the operation. A competing workflow waits; the reconciler defers and re-evaluates after release. | Conflicting work cannot run concurrently on that node. |
+| A rolling update leaves different nodes exposing different agent capabilities | Follow the [Day 1 compatibility contract](#day-1-controller-agent-compatibility-contract) for every controller-to-agent call. | Health checks, upgrades, and recovery remain usable during partial convergence. |
 
 ## API contract
 
-The safety model starts with how desired state enters the system. The API only
-needs to define the desired node-agent version; the lifecycle and
-reconciliation sections define how that intent is executed.
+The API persists the target on the cluster, separately for `controlPlane` and
+`workers`. Per-node observations record what is running; the authoritative target
+remains on the cluster.
 
-`CreateCluster` persists node-agent desired state by role:
+### CreateCluster
+
+`CreateCluster` persists the initial role-scoped desired state:
 
 ```json
-"nodeAgentConfig": {
-  "controlPlane": {
-    "version": "v0.1.33"
-  },
-  "workers": {
-    "version": "v0.1.33"
+{
+  "nodeAgentConfig": {
+    "controlPlane": {
+      "version": "v0.1.33"
+    },
+    "workers": {
+      "version": "v0.1.33"
+    }
   }
 }
 ```
@@ -83,45 +84,37 @@ An explicit desired version is an exact release. When the desired version is
 omitted, it remains undefined and NKE records each node's actual agent version
 by polling the node-agent version RPC.
 
+### UpdateCluster
+
 `UpdateCluster` is the only API path that changes the desired node-agent
-version after provisioning:
+version after creation:
 
 ```json
-"nodeAgentConfig": {
-  "controlPlane": {
-    "version": "v0.1.34"
-  },
-  "workers": {
-    "version": "v0.1.34"
+{
+  "nodeAgentConfig": {
+    "controlPlane": {
+      "version": "v0.1.34"
+    },
+    "workers": {
+      "version": "v0.1.34"
+    }
   }
 }
 ```
 
-A different desired version updates desired state. Active lifecycle and
-reconciliation attempts keep using their snapshotted desired version; if desired
-state changes while a node operation is running, the reconciler handles the
-remaining desired-versus-observed drift after the node operation finishes or
-releases ownership. Unrelated cluster updates are not rejected merely because
-node-agent convergence is active.
+The API accepts a new desired version without waiting for agent convergence.
+Controllers and workflows update observations and execution status, not desired
+state. During initial cluster creation, the desired configuration cannot change.
 
 ### Node-agent update method
 
 A required site-scoped NKE controller setting, `NODE_AGENT_UPDATE_METHOD`,
 selects `apt` or `bundle`.
 
-## Lifecycle workflow integration
+## Shared node-agent convergence operation
 
-The node lifecycle workflow is the first consumer of node-agent desired state.
-When a desired version is defined, it must ensure the agent is compatible before
-running kubeadm because preflight, preparation, init, join, and join-status
-polling all depend on the agent.
-
-Infrastructure provisioning continues until the host is running and its
-bootstrap agent is reachable. The workflow that owns the node's pre-join
-lifecycle then performs node-agent convergence directly.
-
-Conceptually, both lifecycle workflows and the background reconciler use one
-shared operation:
+Both lifecycle workflows and background upgrade workflows use the same
+operation after acquiring node ownership:
 
 ```text
 EnsureNodeAgentVersion(
@@ -131,25 +124,24 @@ EnsureNodeAgentVersion(
 )
 ```
 
-It:
+1. Read and persist the running version and observation time. If the target is
+   undefined or already matches, return `Unchanged`.
+2. Discover upgrade capabilities and start or resume the idempotent upgrade
+   using the typed RPC or the Day 1 fallback path.
+3. Poll durable operation status across agent restarts. Both paths must provide
+   equivalent durable status.
+4. Establish a fresh authenticated connection, verify the exact target version,
+   and persist the new observation before returning success.
 
-1. Gets the running node-agent version.
-2. Records the observed version and returns `Unchanged` when the desired
-   version is undefined.
-3. Returns `Unchanged` when the running version already matches the
-   snapshotted target.
-4. Discovers whether the agent supports the typed self-upgrade RPC.
-5. Starts or resumes the idempotent in-place upgrade through the typed RPC or
-   the Day 1 fallback path.
-6. Polls durable operation status across agent restarts. The typed RPC and
-   fallback path must provide equivalent durable status.
-7. Establishes a fresh authenticated connection.
-8. Verifies the exact running version.
-9. Persists the observed version and observation time.
-10. Returns success only after exact verification.
+The caller holds ownership throughout this operation. The sections below show
+where each caller invokes it and when that caller releases the node.
 
-The workflow proceeds to node preparation or kubeadm only after this operation
-succeeds.
+## Lifecycle workflow integration
+
+The lifecycle workflow snapshots the role's desired version and update method,
+then provisions the host until the bootstrap agent is reachable. It invokes
+`EnsureNodeAgentVersion` directly before preflight and preparation; kubeadm
+proceeds only after that operation succeeds or returns `Unchanged`.
 
 ### Provisioning and join sequence
 
@@ -165,11 +157,11 @@ sequenceDiagram
 
     API->>DB: Persist node-agent desired state
     Lifecycle->>DB: Snapshot role target and update method
+    Lifecycle->>DB: Atomically acquire node operation owner
     Lifecycle->>Lifecycle: Provision host until agent is reachable
     Lifecycle->>Agent: Get running version and capabilities
-    Lifecycle->>DB: Acquire node operation owner
 
-    alt Running version differs from snapshotted desired version
+    alt Desired version is defined and running version differs
         Lifecycle->>Agent: StartNodeAgentUpgrade
         Agent->>Updater: Start independent updater
         Lifecycle->>Agent: Poll durable operation status
@@ -177,22 +169,14 @@ sequenceDiagram
         Lifecycle->>Agent: Reconnect and get running version
         Agent-->>Lifecycle: Exact desired version
         Lifecycle->>DB: Persist fresh observed version
-    else Running version already matches
+    else Desired version is undefined or already matches
         Lifecycle->>DB: Persist fresh observed version
     end
 
     Lifecycle->>Lifecycle: Run node preflight and preparation
-    Lifecycle->>Kubeadm: Execute kubeadm init or join
+    Lifecycle->>Kubeadm: Execute kubeadm init or join and wait for completion
     Lifecycle->>DB: Release node operation owner
 ```
-
-There is no final reread-and-repeat loop. The workflow uses snapshot semantics:
-
-> A lifecycle workflow must bring the node to its snapshotted, compatible
-> desired agent version before proceeding. A desired version accepted after that
-> workflow begins does not preempt it and is reconciled afterward.
-
-During initial cluster creation, the desired configuration cannot change.
 
 ### Existing workflow split
 
@@ -207,27 +191,24 @@ For control-plane-controller-managed nodes:
 6. `JoinNode` uses the persisted lifecycle snapshot and proceeds with kubeadm
    join.
 
+The lifecycle retains node ownership across the `ProvisionNode` to `JoinNode`
+handoff, including the `ReadyToJoin` interval. Background convergence cannot
+enter between those workflows.
+
 For workers and legacy paths where provisioning and join occur in one workflow,
 the same workflow runs `EnsureNodeAgentVersion` immediately before the
 remaining preflight and join sequence.
 
 ## Background reconciliation
 
-Lifecycle workflows cover nodes while they are being created or joined. After
-that ownership ends, the background reconciler keeps existing nodes aligned
-with the latest desired node-agent version.
+After join, the node-agent controller compares the latest role target with each
+node's observed version. Database change events and periodic resynchronization
+trigger reconciliation using desired versions, observations, lifecycle and
+health conditions, and node ownership.
 
-The node-agent controller handles continuous convergence outside active
-lifecycle workflows.
-
-It watches:
-
-- cluster desired node-agent versions;
-- node observed agent versions;
-- node lifecycle and health conditions;
-- `node_operation_owner`;
-- database change events;
-- periodic database resynchronization.
+An undefined target requires observation only. An owned node is deferred. For
+an eligible joined node with version drift, the rollout executor's node guard
+acquires ownership and the upgrade workflow calls `EnsureNodeAgentVersion`.
 
 ### Reconciliation sequence
 
@@ -242,9 +223,9 @@ sequenceDiagram
 
     Reconciler->>DB: Load current desired and observed node versions
 
-    alt Node is owned by a lifecycle workflow
+    alt Node is owned by another operation
         Reconciler-->>DB: Defer until node operation owner is released
-    else Existing joined node differs from desired version
+    else Eligible joined node differs from a defined desired version
         Reconciler->>DB: Atomically acquire node operation owner
         Reconciler->>DB: Record Running and write workflow outbox
         DB-->>Temporal: Start workflow from committed outbox
@@ -254,63 +235,56 @@ sequenceDiagram
         Agent-->>Temporal: Exact running version
         Temporal->>DB: Persist observed version
         Temporal->>DB: Release node operation owner
-    else Node already matches
-        Reconciler-->>DB: No action
+    else Desired version is undefined or node already matches
+        Reconciler-->>DB: Continue observation without an upgrade
     end
 ```
 
-The controller handles:
-
-- a newer desired node-agent version accepted during an earlier lifecycle workflow;
-- replacement nodes booted from an older OS image;
-- nodes restored or reprovisioned from older artifacts;
-- drift detected by periodic health observation;
-- temporarily unreachable nodes that later recover.
+This also covers drift from older OS images or restored artifacts and nodes
+that become reachable again. Each attempt records what actually ran; the next
+reconcile compares that observation with the current target.
 
 ## Execution coordination
 
-Lifecycle integration and background reconciliation define when node-agent
-convergence runs. Execution coordination prevents two workflows or controllers
-from running disruptive operations on the same node at the same time. For this
-design, provisioning, join, node-agent upgrade, Kubernetes upgrade,
-remediation, and deletion are treated as disruptive for the node they act on.
+An agent upgrade can restart the agent while a join workflow is using it;
+deletion can remove a node while an upgrade is still running. Both workflows
+could then fail or act on a node whose state has changed underneath them.
+Execution coordination prevents this overlap on the same node.
 
-If disruptive operations overlap, one workflow can restart or replace the agent
-while another workflow is using it, or can change node state while another
-workflow is still making kubeadm progress. The proposal introduces one
-persisted coordination field:
+Here, disruptive work means work that changes the node or requires exclusive
+use of its agent: provisioning, join, node-agent or Kubernetes upgrade,
+remediation, and deletion. Join itself need not interrupt an existing node;
+it is included because an agent restart can interrupt join.
+
+The proposal adds one field to the node row in PostgreSQL:
 
 | Field | Problem it solves |
 |---|---|
-| `node_operation_owner` | Prevents overlapping disruptive work on the same node. A workflow atomically acquires it before acting and releases it when finished; another workflow waits, skips, or explicitly supersedes according to the operation type. |
+| `node_operation_owner` | Identifies the operation holding the node; empty means available. Atomic acquisition prevents two operations from starting disruptive work on the same node. |
 
-Provisioning and join acquire `node_operation_owner` directly because they run
-outside the rollout executor. Existing-node node-agent upgrades acquire it
-through the rollout executor's node guard. If desired state changes while an
-operation owns a node, the new reconcile waits for the owner to release the node
-and then compares desired state with the freshly observed agent version.
+1. Before disruptive work, acquire ownership atomically if the field is empty.
+   Lifecycle workflows do this directly; existing-node upgrades use the rollout
+   executor's node guard.
+2. If another operation owns the node, a competing workflow waits and retries;
+   a reconciler defers this node and can continue processing other nodes. Neither
+   steals ownership nor aborts the active operation.
+3. Hold ownership until the operation completes, including agent restarts and
+   retries. Only the matching owner may release it. Lifecycle ownership spans
+   provisioning and join as described above.
+4. After release, re-evaluate eligibility and compare the latest desired version
+   with the fresh observation before starting another upgrade.
 
-## Day 1 controller-agent compatibility contract
+### Example: a desired version changes during join
 
-Execution coordination prevents conflicting actions on the same node, but
-rollout still leaves the fleet temporarily mixed across agent versions. The Day
-1 compatibility contract is capability-based rather than a strict
-controller-version and agent-version matrix.
+`CreateCluster` sets the desired version to `v0.1.33`. A node booted with an older
+agent is upgraded to `v0.1.33` before kubeadm. Later, while a scale-out node is
+joining with a snapshot of `v0.1.33`, `UpdateCluster` changes the role target to
+`v0.1.34`.
 
-Today the NKE controller is usually newer than some node agents it manages.
-During rollout, the controller should assume that different nodes may expose
-different agent capabilities and choose the safest supported path per node.
-
-- Agent protobuf changes remain additive and backward compatible where
-  possible.
-- The controller discovers agent capabilities before invoking a newly added
-  RPC.
-- If the agent supports the typed RPC, the controller uses it.
-- If the agent does not support the typed RPC, the controller may fall back to
-  the existing shell-script runbook path for that operation.
-- The design does not require a rigid rule such as controller `X` only supports
-  agent `Y..Z`; that would be too restrictive for mixed environments and open
-  source deployments.
+The joining node remains owned by its lifecycle operation and finishes using
+`v0.1.33`. It records that actual version and releases ownership after join.
+The reconciler then sees `v0.1.33` versus `v0.1.34` and schedules the next
+upgrade. Other eligible joined nodes can converge while that node is joining.
 
 ## Agent RPC and independent updater
 
@@ -333,12 +307,33 @@ or command. For older agents that do not expose these RPCs, the Day 1
 compatibility contract allows the controller to use the existing shell-script
 runbook path instead.
 
-The same operation ID and request returns existing status; different inputs for
-the same ID return `AlreadyExists`. A conflicting updater operation returns
-`FailedPrecondition`. Status remains readable after agent restart.
+Repeating the same operation ID and request returns existing status; different
+inputs for the same ID return `AlreadyExists`. A conflicting updater operation
+returns `FailedPrecondition`. Status remains readable after agent restart.
 
 The agent persists request and status under
 `/var/lib/nke/agent-upgrades/<operation-id>/` and starts the independent systemd
 updater without blocking. The updater owns staging, installation, restart,
 verification, and local restoration. Atomic status writes and a local singleton
 guard make retries resumable without depending on the gRPC server process.
+
+## Day 1 controller-agent compatibility contract
+
+Today the NKE controller is usually newer than some agents it manages. During
+rollout, different nodes expose different capabilities, so compatibility is a
+responsibility of every controller caller of the agent API.
+
+### Compatibility model
+
+Discover capabilities before invoking a newly introduced RPC. Use the typed RPC
+when supported; otherwise use the equivalent shell-script runbook path. For
+node-agent upgrades, that fallback must provide the same durable operation
+status, retry behavior, and exact post-restart version verification described
+in the shared operation. An unavailable RPC does not mean the requested work
+succeeded. Protobuf changes should remain additive and backward compatible.
+
+This contract avoids a strict controller/agent version matrix: agents baked
+into different OS images can vary within one cluster, controllers can be
+upgraded ahead of agents, and open source deployments should not need to
+upgrade every component in lockstep. Callers select a supported path per node
+throughout convergence.
