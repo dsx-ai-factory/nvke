@@ -2,9 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Base images for the image this repository ships. Fully qualified and
-# digest-pinned in an ARG, which is the form Dependabot can parse -- a FROM
-# whose registry is a variable is not, which is why these followed a floating
-# tag until now.
+# digest-pinned in an ARG.
+#
+# Dependabot does NOT update these. Its docker ecosystem reads an image named on
+# a FROM and does not resolve an ARG default, so these digests are bumped by
+# hand. Nothing in this file is covered: all three FROM lines below go through
+# an ARG or a previous stage. See the header of hack/base-image-check.sh for the
+# evidence and the trade-off in closing it.
 #
 # Internal builds override these rather than BASE_REGISTRY, for example
 #   docker build --build-arg GOLANG_IMAGE=dockerhub.nvidia.com/golang:1.27.1@sha256:... .

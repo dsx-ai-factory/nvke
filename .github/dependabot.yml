@@ -88,6 +88,13 @@ updates:
       - dependency-name: "github.com/NVIDIA/ncx-infra-controller-rest"
 
   # Dockerfiles anywhere in the tree (controller/, controller/hack/*, agent/, ...).
+  #
+  # This only reaches an image named on a FROM. Two forms in this tree are
+  # invisible to it: a variable registry (FROM ${BASE_REGISTRY}/alpine:3.24.1)
+  # and an image named through an ARG (ARG ALPINE_IMAGE=docker.io/alpine:...).
+  # The second one matters -- it is how the two published images name their
+  # golang and alpine bases, so those digests are bumped by hand. Recorded with
+  # the evidence in the header of hack/base-image-check.sh.
   - package-ecosystem: docker
     directories:
       - "/**/*"
