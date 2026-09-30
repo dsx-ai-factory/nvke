@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Helm 4 support requires Tilt 0.36 or newer.
+version_settings(constraint=">=0.36.0")
+
+dev_name = os.getenv("DEV_NAME", "nke")
+context = "kind-" + dev_name + "-management"
+kubeconfig = os.path.abspath(".local/dev/" + dev_name + "/kubeconfig")
+if k8s_context() != context or os.getenv("KUBECONFIG") != kubeconfig:
+    fail("Run make dev to use the development kubeconfig and management context.")
+allow_k8s_contexts(context)
+
+local_resource(
+    "management-state",
+    cmd=["make", "dev-sync"],
+    deps=[
+        "apis", "controllers", "config/state", "config/crd", "config/rbac",
+        "hack/dev.sh", "hack/boilerplate.go.txt", "hack/boilerplate.yaml.txt",
+        "Makefile", "go.mod", "go.sum",
+    ],
+    # install-state regenerates these outputs; watching them would retrigger itself.
+    ignore=["apis/**/zz_generated.deepcopy.go", "config/crd/bases", "config/rbac/role.yaml"],
+)
+docker_build("management-engine", ".", dockerfile="Dockerfile")
+metrics_port = os.getenv("METRICS_LOCAL_PORT", "")
+runtime = decode_yaml_stream(helm(
+    "chart",
+    name="management-engine",
+    namespace="management-engine-system",
+    values=["config/samples/runtime-values.yaml"],
+    set=["manager.image.repository=management-engine", "manager.image.tag=dev"],
+))
+for resource in runtime:
+    if resource["kind"] == "Deployment":
+        for container in resource["spec"]["template"]["spec"]["containers"]:
+            if container["name"] == "manager":
+                container["args"].append("--zap-log-level=" + os.getenv("MANAGER_LOG_LEVEL", "debug"))
+k8s_yaml(encode_yaml_stream(runtime))
+
+controller_log_url = "http://localhost:" + os.getenv("TILT_PORT", "10351") + "/r/management-engine/overview?source=runtime&term=%22controller%22%3A%22"
+k8s_resource(
+    "management-engine-controller-manager",
+    new_name="management-engine",
+    objects=["management-engine-controller-manager:serviceaccount"],
+    resource_deps=["management-state"],
+    port_forwards=[metrics_port + ":8443"] if metrics_port else [],
+    links=[
+        link(controller_log_url + "nkecluster%22", "NKECluster logs"),
+    ],
+)

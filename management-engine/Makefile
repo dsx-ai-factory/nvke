@@ -44,10 +44,12 @@ help: ## Display this help.
 license: ## Add the repository's license header to source files.
 	$(GO) run github.com/google/addlicense@v1.1.1 -f ../hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" -ignore 'bin/**' -ignore 'dist/**' .
 
-.PHONY: manifests
-manifests: controller-gen kustomize generate kubebuilder ## Generate CRDs, RBAC, the installer bundle, and Helm chart.
+.PHONY: manifests-state manifests
+manifests-state: controller-gen generate ## Generate datastore CRDs and RBAC.
 	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=hack/boilerplate.yaml.txt paths=./apis/... output:crd:artifacts:config=config/crd/bases
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role,headerFile=hack/boilerplate.yaml.txt paths=./controllers/... output:rbac:artifacts:config=config/rbac
+
+manifests: manifests-state kustomize kubebuilder ## Generate state, the runtime bundle, and Helm chart.
 	mkdir -p dist
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
 	"$(KUBEBUILDER)" edit --plugins=helm/v2-alpha --manifests=./dist/install.yaml --output-dir=.
@@ -134,9 +136,33 @@ require-host-context:
 require-state-context:
 	@test -n "$(STATE_CONTEXT)" || { echo 'Set STATE_CONTEXT to the datastore cluster'; exit 1; }
 
+DEV_NAME ?= nke
+KIND_NODE_IMAGE ?= kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
+TILT_PORT ?= 10351
+export DEV_NAME KIND_NODE_IMAGE TILT_PORT
+
+.PHONY: dev-up dev dev-sync dev-refresh dev-down test-install
+dev-up: ## Create or reuse the named development environment and prepare credentials.
+	bash hack/dev.sh up
+
+dev: dev-up ## Prepare or reuse the development clusters, then start Tilt.
+	bash hack/dev.sh tilt
+
+dev-sync: ## Update datastore CRDs and RBAC without refreshing credentials.
+	bash hack/dev.sh sync
+
+dev-refresh: ## Renew datastore credentials and report their expiration.
+	bash hack/dev.sh refresh
+
+dev-down: ## Delete this environment's clusters and local credentials; stop Tilt first.
+	bash hack/dev.sh down
+
+test-install: ## Test the runtime in the prepared environment; run before Tilt.
+	IMG="$(IMG)" bash hack/dev.sh test
+
 .PHONY: install install-state
 install: install-state ## Install the datastore resources using STATE_CONTEXT.
-install-state: require-state-context manifests kustomize ## Install CRDs and identity/RBAC on the datastore cluster.
+install-state: require-state-context manifests-state kustomize ## Install CRDs and identity/RBAC on the datastore cluster.
 	"$(KUSTOMIZE)" build config/state | "$(KUBECTL)" --context "$(STATE_CONTEXT)" apply --server-side --field-manager=management-engine-state -f -
 
 .PHONY: deploy
@@ -157,6 +183,7 @@ $(LOCALBIN):
 
 ## Tool Binaries
 KUBECTL ?= kubectl
+KIND ?= $(LOCALBIN)/kind
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 KUBEBUILDER ?= $(LOCALBIN)/kubebuilder
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
@@ -180,6 +207,13 @@ GOLANGCI_LINT_VERSION ?= v2.13.2
 # this module and for cluster-api-provider-provisioned/. Included after the
 # pins above so the ones derived from go.mod keep their values.
 include ../make/tool-versions.mk
+
+.PHONY: kind
+kind: $(LOCALBIN) ## Install the pinned Kind CLI for the development environment.
+	$(call go-install-tool,$(KIND),sigs.k8s.io/kind,$(KIND_VERSION))
+
+dev-up dev dev-sync dev-refresh dev-down test-install: kind
+dev-up dev dev-sync dev-refresh dev-down test-install: export PATH := $(LOCALBIN):$(PATH)
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
