@@ -163,7 +163,7 @@
           "legendFormat": "{{verb}} {{resource}}"
         }
       ],
-      "description": "POST/PUT/DELETE/PATCH. SLO is 1s at p99. Backs `post_p99_ms` and delete_p99_ms."
+      "description": "POST/PUT/DELETE/PATCH. SLO is 1s at p99."
     },
     {
       "id": 3,
@@ -216,7 +216,7 @@
           "legendFormat": "{{verb}} {{resource}}"
         }
       ],
-      "description": "Single-resource reads. SLO is 1s at p99. Backs `get_p99_ms`."
+      "description": "Single-resource reads. SLO is 1s at p99."
     },
     {
       "id": 4,
@@ -484,11 +484,11 @@
           "legendFormat": "{{priority_level}} / {{flow_schema}} ({{reason}})"
         }
       ],
-      "description": "The published run recorded zero rejections. This counter is label-partitioned by flow_schema/priority_level/reason, so it is absent from /metrics until a rejection actually occurs. An empty panel therefore means no rejections, not a broken query -- which is why it carries no `or vector(0)` fallback: a synthetic zero would render identically whether the metric was absent or genuinely zero."
+      "description": "This counter is label-partitioned by flow_schema/priority_level/reason, so it is absent from /metrics until a rejection occurs. An empty panel therefore means no rejections, provided the API server is being scraped (see Control-plane component up). It carries no `or vector(0)` fallback: a synthetic zero would render identically whether the metric was absent or genuinely zero."
     },
     {
       "id": 11,
-      "title": "Inflight requests vs configured caps",
+      "title": "Inflight requests by kind",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -521,7 +521,7 @@
           "legendFormat": "{{request_kind}}"
         }
       ],
-      "description": "Compare against the cluster's max-requests-inflight and max-mutating-requests-inflight. The published run used 400 read-only / 200 mutating and peaked at 34."
+      "description": "Summed across API servers, so it reads higher than any one server carries. With API Priority and Fairness enabled (the default), max-requests-inflight and max-mutating-requests-inflight add up to one concurrency limit per API server, not two separate caps; compare that limit with a single server's inflight, not this sum."
     },
     {
       "id": 12,
@@ -558,7 +558,7 @@
           "legendFormat": "{{verb}}"
         }
       ],
-      "description": "Backs `peak_apiserver_reqs_per_sec`."
+      "description": "Requests per second by verb, summed across API servers."
     },
     {
       "id": 13,
@@ -617,7 +617,7 @@
           "legendFormat": "{{instance}} quota"
         }
       ],
-      "description": "Backs `etcd_size_increase_mb`, which is the delta across the run rather than an absolute."
+      "description": "Allocated database size per etcd member, with the backend quota."
     },
     {
       "id": 15,
@@ -819,7 +819,7 @@
           "legendFormat": "{{instance}}"
         }
       ],
-      "description": "Cores, not percent. Backs `max_apiserver_cpu_cores`."
+      "description": "Process CPU per API server, in cores, not percent."
     },
     {
       "id": 20,
@@ -856,7 +856,7 @@
           "legendFormat": "{{instance}}"
         }
       ],
-      "description": "Backs `max_apiserver_memory_gib`."
+      "description": "Process resident memory per API server."
     },
     {
       "id": 21,

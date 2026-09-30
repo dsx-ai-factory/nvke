@@ -12,9 +12,9 @@ alert-profile format benchmark engines such as kube-burner consume directly.
 `rules`; loading these into Prometheus unchanged will not work. The PromQL in
 `expr` is portable, so converting is mechanical if that is what you want.
 
-**These do not judge a run.** They are a second signal while one is in flight;
-the benchmark engine's own output is the verdict. Some engines consume an
-alerts file directly, others do not — the scenario says which.
+An engine may load these files; where it does, a firing `severity: error` rule
+fails the run. Otherwise they are a second signal to watch while a run is in
+flight.
 
 Rules here describe *subsystems*, so several scenarios share one file. Rules
 scoped to a single workload — those selecting on its own namespace or pod names

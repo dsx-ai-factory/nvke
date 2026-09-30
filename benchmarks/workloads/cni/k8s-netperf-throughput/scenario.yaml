@@ -94,8 +94,7 @@ stack:
   node_os:
     distro: Ubuntu 22.04.4 LTS
     kernel: 5.15.0-113-generic
-  # etcd version was not captured for this run. Record it for scenarios
-  # published from later runs.
+  etcd: 3.6.5
 
 engine_config: engine/netperf.yml
 

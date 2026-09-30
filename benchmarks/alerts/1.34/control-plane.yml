@@ -3,8 +3,8 @@
 
 # Shared control-plane alerting rules.
 #
-# These do not judge a run. ClusterLoader2 does not consume this file -- it
-# writes its verdict to junit.xml under --report-dir.
+# An engine may load this file; where it does, a firing severity: error rule
+# fails the run.
 #
 # severity: error tracks an SLO a scenario is judged against; severity: warning
 # explains a violation rather than constituting one.
