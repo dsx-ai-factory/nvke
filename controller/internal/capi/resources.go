@@ -15,8 +15,7 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
-
+	"github.com/dsx-ai-factory/nke/controller/internal/capi/nico"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
@@ -91,49 +90,48 @@ func SetPausedAnnotation(obj metav1.Object, paused bool) {
 	obj.SetAnnotations(annotations)
 }
 
-// ClusterScaffoldManifest builds the infrastructure-provider manifest (CAPI
-// InfraCluster or NicoCluster) for the cluster, dispatching on its provider
-// type through a builder-per-provider factory. Adding a provider means
-// adding an entry here, not a new switch arm at each call site.
-func ClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error) {
-	builders := map[db.ProviderType]func(db.Cluster) (json.RawMessage, error){
-		db.ProviderTypeCAPI: capiClusterScaffoldManifest,
-		db.ProviderTypeNico: nicoClusterScaffoldManifest,
-	}
-	build, ok := builders[cluster.ProviderType]
-	if !ok {
-		return nil, fmt.Errorf("unsupported provider type %q for cluster %s", cluster.ProviderType, cluster.ID)
-	}
-	return build(cluster)
+// ClusterScaffold builds the infrastructure-provider manifest for a cluster.
+// Each provider type has its own implementation, selected by
+// GetClusterScaffold, so provider-specific logic lives in its own package
+// instead of behind a switch shared by every provider.
+type ClusterScaffold interface {
+	GetClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error)
 }
 
-func capiClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error) {
+// GetClusterScaffold selects the ClusterScaffold implementation for the
+// cluster's provider type. Adding a provider means adding a case here and
+// its own implementation package, not a new switch arm at each call site.
+func GetClusterScaffold(cluster db.Cluster) (ClusterScaffold, error) {
+	switch cluster.ProviderType {
+	case db.ProviderTypeCAPI:
+		return capiClusterScaffold{}, nil
+	case db.ProviderTypeNico:
+		return nico.New(), nil
+	default:
+		return nil, fmt.Errorf("unsupported provider type %q for cluster %s", cluster.ProviderType, cluster.ID)
+	}
+}
+
+// ClusterScaffoldManifest builds the infrastructure-provider manifest (CAPI
+// InfraCluster or NicoCluster) for the cluster.
+func ClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error) {
+	scaffold, err := GetClusterScaffold(cluster)
+	if err != nil {
+		return nil, err
+	}
+	return scaffold.GetClusterScaffoldManifest(cluster)
+}
+
+// capiClusterScaffold builds cluster scaffold manifests for clusters where
+// the caller supplies the CAPI infrastructure template directly.
+type capiClusterScaffold struct{}
+
+func (capiClusterScaffold) GetClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error) {
 	provider, err := cluster.CAPIProvider()
 	if err != nil {
 		return nil, err
 	}
 	return provider.InfraCluster, nil
-}
-
-func nicoClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error) {
-	provider, err := cluster.NicoProvider()
-	if err != nil {
-		return nil, err
-	}
-	nicoCluster := nicov1.NicoCluster{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: nicov1.GroupVersion.String(),
-			Kind:       "NicoCluster",
-		},
-		Spec: nicov1.NicoClusterSpec{
-			SiteID: provider.SiteID.String(),
-		},
-	}
-	manifest, err := json.Marshal(nicoCluster)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build NicoCluster manifest for cluster %s: %w", cluster.ID, err)
-	}
-	return manifest, nil
 }
 
 func ParseManifest(raw []byte) (*unstructured.Unstructured, error) {

@@ -22,6 +22,7 @@ import (
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nke/controller/internal/capi/nico"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
@@ -133,6 +134,34 @@ func TestResources_ClusterScaffoldManifest(t *testing.T) {
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unsupported provider type")
+	})
+}
+
+func TestResources_GetClusterScaffold(t *testing.T) {
+	t.Run("capi provider selects an implementation that reads the capi payload", func(t *testing.T) {
+		want := json.RawMessage(`{"kind":"ForgeCluster"}`)
+		scaffold, err := capi.GetClusterScaffold(db.Cluster{ID: uuid.New(), ProviderType: db.ProviderTypeCAPI})
+		require.NoError(t, err)
+		require.NotNil(t, scaffold)
+
+		got, err := scaffold.GetClusterScaffoldManifest(db.Cluster{
+			ID:           uuid.New(),
+			ProviderType: db.ProviderTypeCAPI,
+			Capi:         &db.CAPIClusterProvider{InfraCluster: want},
+		})
+		require.NoError(t, err)
+		require.JSONEq(t, string(want), string(got))
+	})
+
+	t.Run("nico provider selects the nico package's implementation", func(t *testing.T) {
+		scaffold, err := capi.GetClusterScaffold(db.Cluster{ID: uuid.New(), ProviderType: db.ProviderTypeNico})
+		require.NoError(t, err)
+		assert.IsType(t, &nico.Client{}, scaffold)
+	})
+
+	t.Run("unsupported provider errors", func(t *testing.T) {
+		_, err := capi.GetClusterScaffold(db.Cluster{ID: uuid.New(), ProviderType: db.ProviderType("unknown")})
+		require.Error(t, err)
 	})
 }
 
