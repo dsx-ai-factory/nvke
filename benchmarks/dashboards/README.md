@@ -27,8 +27,9 @@ partitioned by *patch* instead, because a result records one specific run.
 All use inline PromQL and need no recording rules. Queries filter on an
 optional `k8s_cluster_name` label by regex, which matches everything when the
 label is absent, so a single-cluster Prometheus needs no relabeling. A Prometheus
-holding several clusters must name them in `k8s_cluster_name`: under any other
-label, the panels sum across clusters.
+holding several clusters must name them in `k8s_cluster_name` and select one:
+queries do not group by cluster, so under "All", or any multi-cluster selection,
+aggregated panels add or blend the clusters together.
 
 ## 1.34
 

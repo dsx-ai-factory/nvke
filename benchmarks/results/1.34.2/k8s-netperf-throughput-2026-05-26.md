@@ -19,9 +19,9 @@ same-node, pod-to-pod cross-node, pod-to-service) at four concurrency levels.
 
 Cross-node — the representative overlay path — reaches **225.01 Gb/s at L
 (56.2% of the 400 Gb/s line rate)**. Host-to-host, which bypasses the CNI
-entirely, peaks at **388.46 Gb/s (97.1%)**. TCP efficiency clears the RFC 6349
-bar on every cell. UDP loss stays low on uncongested paths and climbs sharply on
-the loaded overlay — 17–34% cross-node at S through L.
+entirely, peaks at **388.46 Gb/s (97.1%)**. TCP efficiency clears the 99% bar
+on every cell. UDP loss stays low on uncongested paths and climbs sharply on
+the loaded overlay — 16–34% cross-node at S through L.
 
 **Key finding — overlay forwarding runs on the host CPU.** TCP efficiency is
 healthy throughout: every cell clears 99%. The ~0.05% of retransmits at full
@@ -45,8 +45,8 @@ concurrency range are what this run measured, not a ceiling on OVN-Kubernetes
 or on NKE. A different cluster should apply the scenario's `sizing.derivation`
 rather than read XL as "as far as it goes."
 
-This result publishes the cells that are reproducible from the checked-in
-scenario and engine config, and no others.
+This result publishes only cells the checked-in scenario and engine configs
+reproduce, apart from the two deviations below.
 
 **XL cross-node and XL pod-to-service are omitted.** Those cells were originally
 measured with a modified k8s-netperf build raising the ClusterIP data-port count
@@ -57,9 +57,9 @@ would defeat the purpose of the scenario, so the rows are dropped rather than
 carried with a caveat. They will return if and when the port-count change is
 available upstream or as a checked-in patch.
 
-Two further deviations of the original run from the scenario's matrix are noted
-inline below: XL host-to-host was measured at `p64` rather than `p32`, and the
-request-response phase at XL ran at `p16` on the overlay paths.
+Two deviations of the original run from the scenario's matrix are noted inline
+below: the XL host-to-host stream and UDP phases ran at `p64` rather than `p32`,
+and XL same-node request-response ran at `p16` rather than `p32`.
 
 ## Environment
 
@@ -121,8 +121,8 @@ Column guide:
 | M-svc | 8K p8 | 126.85 (31.7%) | 3050 | 6.97% | 14.5 / 16.6 | 10.9 | 12.4 |
 | L-svc | 8K p16 | 226.60 (56.6%) | 6924 | 27.73% | 25.1 / 31.2 | 10.8 | 23.0 |
 
-‡ XL host-to-host was measured at `p64`, not the `p32` the scenario's matrix
-specifies. The host-network path saturates later than the overlay paths, so the
+‡ XL host-to-host's stream and UDP phases were measured at `p64`, not the `p32`
+the scenario's matrix specifies. The host-network path saturates later than the overlay paths, so the
 original run pushed it further. Reproducing the scenario as checked in gives XL
 host-to-host at `p32`, which will read lower.
 
@@ -156,19 +156,21 @@ Request-response uses smaller messages than the stream anchor: 256 B at S and M,
 | M-svc | 256B p8 | 135658.65 | 219.67 |
 | L-svc | 1K p16 | 278514.86 | 224.00 |
 
-‡ The XL request-response phase ran at `p16`, not `p32`. That is why XL-same
+‡ XL same-node request-response ran at `p16`, not `p32`. That is why XL-same
 reads marginally *below* L-same: it is the same concurrency, not a regression.
 
 ![TCP request-response rate and p99 latency vs t-shirt size, one line per path](charts/k8s-netperf-throughput-2026-05-26-tcp-rr-vs-size.svg)
 
 **The request-response knee.** TCP_RR counts round trips per second, which
-scales with parallel streams rather than bandwidth (roughly, op/s ≈ streams ÷
-RTT). Host-to-host doubles cleanly from S to XL: 102k → 221k → 446k → 849k. The
+scales with transactions in flight rather than bandwidth (roughly, op/s ≈
+streams × transactions in flight ÷ RTT; this run used netperf's `-b 2` burst).
+Host-to-host doubles cleanly from S to XL: 102k → 221k → 446k → 849k. The
 overlay's lower rate is the veth and OVS tax — at the same `p16`, cross-node
 manages ~273k round trips against host-to-host's ~446k, because every overlay
-round trip pays for Geneve wrap and unwrap plus extra veth and OVS hops. That
-stretches mean RTT to ~59 µs against ~36 µs host-to-host and ~14 µs same-node,
-and since op/s ≈ streams ÷ RTT, the longer RTT caps the rate directly.
+round trip pays for Geneve wrap and unwrap plus extra veth and OVS hops. At equal
+concurrency that makes the mean overlay round trip ~1.6× as long as
+host-to-host's, and same-node's ~0.4×, and the longer round trip caps the rate
+directly.
 Pod-to-service tracks cross-node almost exactly at ~278k, so the added Service
 and conntrack layer adds effectively nothing.
 
@@ -179,13 +181,14 @@ Judged against the `slo` block in the
 
 - **Execution completeness** — every published size × path cell produced its
   samples (3 × 60 s) with no fatal errors. **PASS.**
-- **TCP efficiency ≥ 99%** (RFC 6349 §4.2) — efficiency is
+- **TCP efficiency ≥ 99%** (scenario gate; efficiency as defined in RFC 6349
+  §4.2) — efficiency is
   `(transmitted − retransmitted) / transmitted`. The RFC defines this in bytes;
   approximated here with near-uniform MSS packets. Worst case is XL
   host-to-host: ~148,938 retransmissions over a 388 Gb/s × 60 s transfer
   (~327M packets of ~8900 B) → ~0.05% retransmitted → **~99.95% efficiency**.
   All cells ≥ 99%. **PASS.**
-- **UDP loss ≤ 5%** (RFC 6349; k8s-netperf documentation) — within budget on
+- **UDP loss ≤ 5%** (scenario gate) — within budget on
   host-to-host and same-node at S, M and L (≤ 4.00%), but **exceeded on every
   overlay cell** (cross-node 16.02–33.90%, pod-to-service 6.97–27.73%) and at XL
   on host-to-host (32.04%) and same-node (14.21%). **FAIL on overlay paths.**
@@ -226,7 +229,7 @@ the measurement, not a defect in the run.
   softirq, because NIC receive-side scaling funnels each high-rate flow onto one
   queue. That core runs near 100% (`ksoftirqd` plus `netserver`) while the
   64-core node averages 30–40%. `ovs-vswitchd` takes further host CPU on this
-  path. The high overlay UDP loss (17–34%) and retransmissions line up with
+  path. The high overlay UDP loss (16–34%) and retransmissions line up with
   receiver buffer pressure (`rx_out_of_buffer`), not with OVS or conntrack
   datapath drops — OVS `lost` delta was zero throughout. Request-response p99 is
   higher than same-node (~211–228 µs against 47–53 µs), reflecting the extra
@@ -239,7 +242,7 @@ the measurement, not a defect in the run.
 ## Reproducing this
 
 See [How to replicate](../../workloads/cni/k8s-netperf-throughput/README.md#how-to-replicate)
-in the scenario. Everything needed is checked in: the engine config, the pinned
+in the scenario. Everything needed is checked in: the engine configs, the pinned
 upstream tool and version, and the four invocations.
 
 Absolute throughput will differ on different hardware and is not the comparison

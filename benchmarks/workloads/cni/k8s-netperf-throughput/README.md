@@ -28,6 +28,8 @@ to the network layer rather than the load generator:
 | **pod-to-service** | Cross-node plus a ClusterIP hop, isolating the Service and conntrack layer. |
 
 Four concurrency levels per path: S/M/L/XL = 4/8/16/32 concurrent flows.
+`UDP_STREAM` runs at 1/4/16/32, `TCP_RR` runs with `burst: 2` (netperf `-b 2`),
+and pod-to-service stops at L.
 
 Measures TCP stream throughput as a fraction of line rate, TCP efficiency under
 sustained load, UDP loss on an overdriven path, and TCP request-response rate
@@ -60,7 +62,8 @@ uses single-replica Deployments and tears down the namespace afterwards.
 
 | Artifact | Role |
 |---|---|
-| [engine/netperf.yml](engine/netperf.yml) | Test matrix. Engine-native — hand to upstream unchanged. |
+| [engine/netperf.yml](engine/netperf.yml) | Test matrix for host-to-host, same-node and cross-node. Engine-native — hand to upstream unchanged. |
+| [engine/netperf-service.yml](engine/netperf-service.yml) | The same S–L tests with `service: true`, for pod-to-service. |
 | [scenario.yaml](scenario.yaml) | Topology, stack, sizing rule, metrics contract, SLOs |
 | [networking-ovn.json](../../../dashboards/1.34/networking-ovn.json) | Grafana dashboard, shared: OVN-controller flow-installation and CNI-request metrics. 12 panels, inline PromQL — no recording rules required. Lives in `benchmarks/dashboards/1.34/` because it is a subsystem view, not specific to this workload. |
 
@@ -70,18 +73,20 @@ for why.
 
 Upstream: [k8s-netperf](https://github.com/cloud-bulldozer/k8s-netperf) `v0.1.41`
 
-One run per path, same config each time:
+One run per path:
 
 ```bash
-k8s-netperf --config engine/netperf.yml --hostNet   # host-to-host
-k8s-netperf --config engine/netperf.yml --local     # pod-to-pod same-node
-k8s-netperf --config engine/netperf.yml             # pod-to-pod cross-node
-k8s-netperf --config engine/netperf.yml --across    # cross-node, cross-zone
+k8s-netperf --config engine/netperf.yml --hostNet        # host-to-host
+k8s-netperf --config engine/netperf.yml --local          # pod-to-pod same-node
+k8s-netperf --config engine/netperf.yml                  # pod-to-pod cross-node
+k8s-netperf --config engine/netperf-service.yml          # pod-to-service
 ```
 
-**Pod-to-service is not a flag.** It is selected per test by `service: true` in
-the config file, and k8s-netperf skips service tests under `--hostNet`. The
-shipped config carries service variants of the TCP_STREAM anchor at S, M and L.
+**Pod-to-service is not a flag.** It is selected per test by `service: true`, so
+it has its own config: the S, M and L tests of `netperf.yml`, each with
+`service: true`, run with no placement flag. Mixing them into `netperf.yml`
+would also run them under `--local`, producing same-node Service cells this
+scenario does not measure.
 
 Flag names have changed between k8s-netperf releases — verify against upstream
 docs for the version installed. No wrapper script is shipped: the commands above
@@ -144,23 +149,23 @@ in a way the SLOs above are not.
 
 ### Verified against upstream
 
-The config vocabulary and invocations above were run against a live
-OVN-Kubernetes cluster using only the upstream `k8s-netperf` v0.1.41 release
-binary — no wrapper, no orchestrator:
+The config vocabulary and the host-to-host, same-node and cross-node invocations
+above were run against a live OVN-Kubernetes cluster using only the upstream
+`k8s-netperf` v0.1.41 release binary — no wrapper, no orchestrator:
 
 - The config parses, and `service: true` selects the ClusterIP path. The results
-  table reports a `SERVICE` column, `false` and `true` for the two entries.
+  table reports it in the `SERVICE` column.
 - `--local` places both ends on one node — the results table reports
   `SAME NODE true`.
-- Without zone labels the tool warns `No zone label` and
-  `Single node per zone and/or no zone labels`, which is what the `--across`
-  prerequisite above prevents.
 - `--clean=true` removes the `netperf` namespace afterwards.
 
 The cluster used was a 10-worker simulation at pod MTU 1440, so its throughput
 figures are not comparable to the published result and are not reproduced here.
 The message size was recomputed to 1024 for that MTU, per `sizing.derivation` —
 which is the rule doing its job rather than an exception to it.
+
+`burst: 2` and `netperf-service.yml` were not part of that check. Both configs
+load in the pinned release's own config parser, but neither has been run.
 
 ## Environment
 
@@ -179,9 +184,7 @@ Stack the published result came from. A different stack is a different scenario.
 | OS / kernel | Ubuntu 22.04.4 LTS / 5.15.0-113-generic |
 
 Prerequisites: worker nodes labelled `node-role.kubernetes.io/worker`;
-`--across` additionally needs workers spanning ≥2
-`topology.kubernetes.io/zone` values; `netperf` namespace creatable and
-deletable.
+`netperf` namespace creatable and deletable.
 
 `build: vendor` means a distribution-specific OVN-Kubernetes build, not an
 upstream release artefact. Comparable to another vendor build of the same
@@ -194,12 +197,13 @@ version; read against an upstream build with care.
    the largest power of two at which added concurrency stops raising throughput.
    Past that you are measuring the load generator.
 2. If your pod MTU is not 8940, recompute the `TCP_STREAM` anchor as the largest
-   power of two below it and edit `engine/netperf.yml`. Skipping this makes your
-   numbers incomparable — some cells fragment, others do not.
+   power of two below it, and the UDP size as just under it, in both
+   `engine/netperf.yml` and `engine/netperf-service.yml`. Skipping this makes
+   your numbers incomparable — some cells fragment, others do not.
 3. Run the `prerequisites.baseline_validation` steps.
 4. Install upstream k8s-netperf at the pinned version.
-5. Run all four invocations with the same config file. Changing the matrix
-   between paths destroys the comparison.
+5. Run all four invocations. Keep `netperf-service.yml` in step with
+   `netperf.yml`: changing the matrix between paths destroys the comparison.
 6. Judge against the SLOs below.
 
 Roughly 30–60 minutes per path on comparable hardware. Paths are independent and
@@ -213,9 +217,9 @@ The scenario's `slo` block is the pass/fail contract. All three are
 
 | Metric | Gate | Source |
 |---|---|---|
-| `tcp_efficiency_pct` | ≥ 99% | RFC 6349 §4.2 |
-| `udp_loss_pct` | ≤ 5% | RFC 6349; k8s-netperf docs |
-| `execution_completeness_pct` | = 100% | Every size × path cell must produce samples |
+| `tcp_efficiency_pct` | ≥ 99% | Scenario gate; efficiency as defined in RFC 6349 §4.2 |
+| `udp_loss_pct` | ≤ 5% | Scenario gate |
+| `execution_completeness_pct` | = 100% | Every size × path cell the configs run must produce samples |
 
 **Read throughput as a fraction of line rate.** An absolute number means nothing
 against different hardware. What carries across clusters is the host-to-host

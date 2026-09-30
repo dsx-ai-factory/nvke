@@ -36,7 +36,7 @@ partitioned by *patch* instead, because a result records one specific run.
 
 | File | Covers |
 |---|---|
-| [control-plane.yml](1.34/control-plane.yml) | API request latency by verb and scope, kubelet pod startup, API Priority and Fairness, etcd disk and leader changes, control-plane liveness |
+| [control-plane.yml](1.34/control-plane.yml) | API request latency by verb and scope, API Priority and Fairness, etcd disk and leader changes, control-plane liveness |
 | [scheduler.yml](1.34/scheduler.yml) | Scheduling attempts returning error, backoff and unschedulable queue convergence, stalled-throughput detection, attempt-latency diagnostic |
 
 `scheduler.yml` tracks no *performance* SLO, and that is not an omission.
@@ -55,6 +55,5 @@ warranted, belongs in the scenario that measured it.
 warning` explains a violation rather than constituting one.
 
 Thresholds are calibrated for the hardware the published results came from. The
-API-latency and pod-startup bars are the SIG-Scalability SLOs and travel
-anywhere. The etcd disk rules assume real disks — on virtualized or shared
+API-latency bars are the SIG-Scalability SLOs and travel anywhere. The etcd disk rules assume real disks — on virtualized or shared
 storage they report the storage layer rather than a control-plane problem.

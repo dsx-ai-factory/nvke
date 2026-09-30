@@ -1,0 +1,95 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Pod-to-service matrix for the OVN-Kubernetes throughput scenario.
+#
+# The S, M and L tests of netperf.yml, each with `service: true`, so the client
+# reaches the server through a ClusterIP Service. Run it with no placement flag:
+# the client is then on another node, making this the cross-node path plus the
+# Service hop. Keep it in step with netperf.yml; the comparison between paths
+# depends on both files carrying the same matrix.
+#
+# XL is absent. Stock k8s-netperf exposes 16 Service data ports and
+# super-netperf gives each stream its own, so at 32 streams half of them target
+# ports the Service does not expose, and the result measures the harness rather
+# than the CNI.
+---
+tests:
+  # --- S (4 streams) ---
+  - TCPStream_8k_p4_svc:
+    parallelism: 4
+    profile: "TCP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8192
+    service: true
+
+  - UDPStream_8k_p1_svc:
+    parallelism: 1
+    profile: "UDP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8192
+    service: true
+
+  - TCPRR_256_p4_svc:
+    parallelism: 4
+    profile: "TCP_RR"
+    duration: 60
+    samples: 3
+    messagesize: 256
+    burst: 2
+    service: true
+
+  # --- M (8 streams) ---
+  - TCPStream_8k_p8_svc:
+    parallelism: 8
+    profile: "TCP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8192
+    service: true
+
+  - UDPStream_8k_p4_svc:
+    parallelism: 4
+    profile: "UDP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8192
+    service: true
+
+  - TCPRR_256_p8_svc:
+    parallelism: 8
+    profile: "TCP_RR"
+    duration: 60
+    samples: 3
+    messagesize: 256
+    burst: 2
+    service: true
+
+  # --- L (16 streams) ---
+  - TCPStream_8k_p16_svc:
+    parallelism: 16
+    profile: "TCP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8192
+    service: true
+
+  # 8800 B: just under the 8940 pod MTU, so loss is congestion, not fragmentation.
+  - UDPStream_8800_p16_svc:
+    parallelism: 16
+    profile: "UDP_STREAM"
+    duration: 60
+    samples: 3
+    messagesize: 8800
+    service: true
+
+  - TCPRR_1k_p16_svc:
+    parallelism: 16
+    profile: "TCP_RR"
+    duration: 60
+    samples: 3
+    messagesize: 1024
+    burst: 2
+    service: true

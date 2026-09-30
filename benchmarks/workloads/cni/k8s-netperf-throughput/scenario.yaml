@@ -48,7 +48,9 @@ sizing:
       slower NIC or fewer cores saturates earlier, and running past saturation
       measures the load generator rather than the network. The TCP_STREAM anchor
       message size is the largest power of two below the pod MTU (8192 at MTU
-      8940); recompute it if your MTU differs.
+      8940); recompute it if your MTU differs. UDP_STREAM runs at 1, 4, 16 and
+      32 streams, and TCP_RR with burst 2 (netperf -b 2). `observed` records
+      where the published run departed from this at XL.
     inputs:
       - Worker NIC line rate
       - Worker logical CPU count
@@ -56,6 +58,13 @@ sizing:
   observed:
     sizes: [S, M, L, XL]
     parallelism: [4, 8, 16, 32]
+    udp_parallelism: [1, 4, 16, 32]
+    tcp_rr_parallelism: [4, 8, 16, 16]
+    tcp_rr_burst: 2
+    # XL host-to-host departed from the ladder above: stream and UDP at 64,
+    # request-response at 32.
+    host_to_host_xl_parallelism: 64
+    host_to_host_xl_tcp_rr_parallelism: 32
     tcp_stream_anchor_bytes: 8192
     udp_message_bytes: [8192, 8192, 8800, 8800]
     tcp_rr_message_bytes: [256, 256, 1024, 1024]
@@ -110,7 +119,7 @@ slo:
     value: 99.0
     unit: percent
     severity: error
-    source: "RFC 6349 section 4.2 (TCP Efficiency)"
+    source: "Scenario gate. TCP efficiency as defined in RFC 6349 section 4.2"
   - metric: udp_loss_pct
     op: lte
     value: 5.0
@@ -121,13 +130,13 @@ slo:
       - pod-to-pod-same-node
       - pod-to-pod-cross-node
       - pod-to-service
-    source: "RFC 6349; k8s-netperf output-and-results documentation"
+    source: "Scenario gate"
   - metric: execution_completeness_pct
     op: gte
     value: 100.0
     unit: percent
     severity: error
-    source: "Every size x path cell must produce its samples for the matrix to be readable"
+    source: "Every size x path cell the engine configs run must produce its samples for the matrix to be readable"
 
 dashboard: ../../../dashboards/1.34/networking-ovn.json
 
@@ -155,23 +164,21 @@ upstream:
   engine: k8s-netperf
   engine_version: v0.1.41
   config: engine/netperf.yml
-  # One invocation per network path. k8s-netperf selects the path by flag, so the
-  # test matrix in the config file is held constant across all four runs — that
-  # is what makes the paths comparable.
+  # One invocation per network path, in this order: host-to-host, pod-to-pod
+  # same-node, pod-to-pod cross-node, pod-to-service. netperf-service.yml repeats
+  # the S to L tests of netperf.yml, which is what makes the paths comparable.
   argv:
     - "k8s-netperf --config engine/netperf.yml --hostNet"
     - "k8s-netperf --config engine/netperf.yml --local"
     - "k8s-netperf --config engine/netperf.yml"
-    - "k8s-netperf --config engine/netperf.yml --across"
+    - "k8s-netperf --config engine/netperf-service.yml"
   notes: >-
     Path selection is split between the command line and the config file.
-    Command line: --hostNet runs host-network only, bypassing the CNI for the
-    hardware reference; --local places client and server on the same node;
-    no placement flag runs pod-to-pod across nodes; --across additionally
-    forces them into different availability zones and requires worker nodes
-    labelled across at least two topology.kubernetes.io/zone values. Config
-    file: the pod-to-service path is selected per test by `service: true`,
-    not by a flag, and k8s-netperf skips service tests under --hostNet.
+    --hostNet runs host-network only, bypassing the CNI for the hardware
+    reference; --local places client and server on the same node; no placement
+    flag places them on different nodes. Pod-to-service is selected per test by
+    `service: true`, so it has its own config, netperf-service.yml (S to L),
+    run with no placement flag.
     Verify flag names against the upstream documentation for the version you
     install; they have changed between releases. This scenario is not
     guaranteed to execute verbatim on a different cluster.

@@ -1,7 +1,7 @@
 {
   "uid": "nke-benchmarks-worker-nodes",
   "title": "Worker Nodes",
-  "description": "Node resource utilization (node-exporter) and kubelet pod-lifecycle and runtime health. Despite the name, no query filters on node role, so this covers every node the node-exporter and kubelet jobs scrape -- including control-plane nodes on a self-managed cluster. Use the node variable to narrow it. Inline PromQL, no recording rules required.",
+  "description": "Node resource utilization (node-exporter) and kubelet pod-lifecycle and runtime health. Despite the name, no query filters on node role, so this covers every node the node-exporter and kubelet jobs scrape -- including control-plane nodes on a self-managed cluster. The node variable narrows only the kubelet panels. Inline PromQL, no recording rules required.",
   "schemaVersion": 39,
   "version": 1,
   "editable": true,
