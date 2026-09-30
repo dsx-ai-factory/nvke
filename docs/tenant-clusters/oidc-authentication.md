@@ -41,8 +41,9 @@ OIDC authentication also requires:
   to render the `nke-system/nke-rbac` ConfigMap, which names the SPIFFE
   identities NKE binds in each tenant cluster.
 - `tenantAccess.enabled: true`, the default.
-- Network access from every tenant API server to `issuerURL`, or to
-  `discoveryURL` when set, to fetch the issuer's signing keys.
+- Network access from every tenant API server to the discovery document at
+  `issuerURL`, or at `discoveryURL` when set, and to the `jwks_uri` that
+  document names, which serves the signing keys.
 
 With `nkeOIDCAuth.enabled: true`, the chart fails to render when
 `spiffe.trustDomain` is empty or `tenantAccess.enabled` is `false`. It does not
