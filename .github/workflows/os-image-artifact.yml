@@ -1022,6 +1022,7 @@ jobs:
       # require-all is false because the same file also covers the four
       # qcow2s, which ship as OCI artifacts rather than release assets.
       - name: Verify the release assets
+        if: startsWith(github.ref, 'refs/tags/os-image/')
         uses: ./.github/actions/verify-release-assets
         with:
           release-id: ${{ steps.release.outputs.id }}
@@ -1031,6 +1032,7 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/os-image/')
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           RELEASE_ID: ${{ steps.release.outputs.id }}
