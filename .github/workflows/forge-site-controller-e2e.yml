@@ -71,6 +71,10 @@ on:
         description: Published CWE tag to qualify, e.g. v0.1.1-rc.8. Leave empty to build the CWE from this checkout, which is the only pairing that currently works -- see the resolve step.
         type: string
         required: false
+      capi-provisioned-version:
+        description: "cluster-api-provider-provisioned version under qualification, e.g. v0.1.0-rc.1. One value for the image archive staged onto the node and the reference the bootstrap uses."
+        type: string
+        required: false
       kubernetes-version:
         description: "Kubernetes version under qualification, e.g. 1.36.3. It selects the nke-kubeadm-distro package on every node and the version CWE builds the cluster with, so one value decides both."
         type: string
@@ -251,12 +255,15 @@ jobs:
       # which is published to GHCR alone, so the GHCR login below stays either
       # way.
       SITE_IMAGE_REGISTRY: ${{ inputs.image-registry || vars.SITE_E2E_IMAGE_REGISTRY || vars.FORGE_E2E_IMAGE_REGISTRY || 'ghcr' }}
-      # The only published capi-provisioned tag. One value for the archive
-      # site-inputs pulls and the reference the suite bootstraps with. Named
-      # for the component, as -e2e.versions and the config field are; the
-      # make variable it feeds keeps the SITE_ prefix its siblings share, so
-      # the two names meet at the site-inputs step below.
-      CAPI_PROVISIONED_VERSION: v0.1.0-rc.1
+      # One value for the archive site-inputs pulls and the reference the suite
+      # bootstraps with. Named for the component, as -e2e.versions and the
+      # config field are; the make variable it feeds keeps the SITE_ prefix its
+      # siblings share, so the two names meet at the site-inputs step below.
+      #
+      # Defaulted rather than required: v0.1.0-rc.1 was the only published tag
+      # when this lane was written, and a run that names none should still get
+      # a working one rather than fail on an empty reference.
+      CAPI_PROVISIONED_VERSION: ${{ inputs.capi-provisioned-version || vars.SITE_E2E_CAPI_PROVISIONED_VERSION || 'v0.1.0-rc.1' }}
       # The NGC org the NVCR images are published under. A repository
       # variable, not the nvcr environment's NKE_NGC_ORG: that environment
       # gates the publish jobs, and this job has no business entering it.
@@ -736,6 +743,7 @@ jobs:
           OUT: ${{ runner.temp }}/run-inputs.txt
           IN_STAGE: ${{ inputs.stage }}
           IN_CONTROLLER_VERSION: ${{ inputs.controller-version }}
+          IN_CAPI_PROVISIONED_VERSION: ${{ inputs.capi-provisioned-version }}
           IN_KUBERNETES_VERSION: ${{ inputs.kubernetes-version }}
           IN_CNI_OVN_VERSION: ${{ inputs.cni-ovn-version }}
           IN_OS_IMAGE_BOOTLOADER_AMD64: ${{ inputs.os-image-bootloader-amd64 }}
@@ -757,6 +765,7 @@ jobs:
           WAS_NGC_ORG: ${{ vars.FORGE_E2E_NGC_ORG }}
           WAS_STAGE: ${{ vars.FORGE_E2E_STAGE }}
           WAS_CONTROLLER_VERSION: ${{ vars.FORGE_E2E_CONTROLLER_VERSION }}
+          VAR_CAPI_PROVISIONED_VERSION: ${{ vars.SITE_E2E_CAPI_PROVISIONED_VERSION }}
           VAR_KUBERNETES_VERSION: ${{ vars.SITE_E2E_KUBERNETES_VERSION }}
           VAR_CNI_OVN_VERSION: ${{ vars.SITE_E2E_CNI_OVN_VERSION }}
           VAR_OS_IMAGE_BOOTLOADER_AMD64: ${{ vars.SITE_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
@@ -793,6 +802,7 @@ jobs:
             "Forge SSH key group|FORGE_SSH_KEY_GROUP_ID||FORGE_SSH_KEY_GROUP_ID|FORGE_SSH_KEY_GROUP_ID||"
             "CPU instance type|FORGE_INSTANCE_TYPE_CPU_ID||FORGE_INSTANCE_TYPE_CPU_ID|FORGE_INSTANCE_TYPE_CPU_ID||"
             "GPU instance type|FORGE_INSTANCE_TYPE_GPU_ID||FORGE_INSTANCE_TYPE_GPU_ID|FORGE_INSTANCE_TYPE_GPU_ID||"
+            "capi-provisioned version|CAPI_PROVISIONED_VERSION|IN_CAPI_PROVISIONED_VERSION|VAR_CAPI_PROVISIONED_VERSION|SITE_E2E_CAPI_PROVISIONED_VERSION||"
             "kubernetes version|KUBERNETES_VERSION|IN_KUBERNETES_VERSION|VAR_KUBERNETES_VERSION|SITE_E2E_KUBERNETES_VERSION||"
             "cni-ovn version|CNI_OVN_VERSION|IN_CNI_OVN_VERSION|VAR_CNI_OVN_VERSION|SITE_E2E_CNI_OVN_VERSION||"
             "amd64 OS image bootloader|OS_IMAGE_BOOTLOADER_AMD64|IN_OS_IMAGE_BOOTLOADER_AMD64|VAR_OS_IMAGE_BOOTLOADER_AMD64|SITE_E2E_OS_IMAGE_BOOTLOADER_AMD64||"
