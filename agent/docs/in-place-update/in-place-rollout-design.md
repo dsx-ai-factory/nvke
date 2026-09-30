@@ -3,6 +3,9 @@
 > Status: draft for review
 >
 > Tracks: [dsx-ai-factory/nke#205](https://github.com/dsx-ai-factory/nke/issues/205)
+>
+> This is the cluster-lock design that was considered before selecting the
+> controller-driven desired-state approach.
 
 ## Problem
 
@@ -20,7 +23,7 @@ framework, one node at a time. This design prioritizes in-place rollout for
 control-plane node agents while preserving the capability to roll out node
 agents installed on worker nodes. Control-plane rollout holds the cluster update
 lock; worker rollout does not. The APT or bundle update method is configured
-through CWE configuration. The agent RPC delegates self-replacement to an
+through NKE controller configuration. The agent RPC delegates self-replacement to an
 independent systemd updater.
 
 ## Architecture sequences
@@ -67,7 +70,7 @@ sequenceDiagram
     alt This role phase is Failed for the generation
         Reconciler-->>DB: No action and wait for explicit API retry
     else The role has drift
-        Reconciler->>DB: Record Running + workflow ID + CWE method<br/>and write workflow outbox
+        Reconciler->>DB: Record Running + workflow ID + NKE controller method<br/>and write workflow outbox
         opt Control-plane phase
             Reconciler->>DB: Confirm generation-owned cluster lock
         end
@@ -93,13 +96,13 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Operation as CWE per-node operation
+    participant Operation as NKE controller per-node operation
     participant RPC as nke-agent upgrade RPC
     participant Systemd as systemd
     participant Updater as Independent updater service
     participant Agent as nke-agent.service
 
-    Operation->>RPC: Start target version + CWE-configured method
+    Operation->>RPC: Start target version + NKE-controller-configured method
     RPC->>RPC: Persist idempotent request and status
     RPC->>Systemd: Start updater without blocking
     Systemd->>Updater: Run outside the agent service cgroup
@@ -189,14 +192,14 @@ configuration or explicit retry. `Pending` means that revision is committed in
 PostgreSQL but the reconciler has not yet recorded `Running` or started its
 Temporal workflow.
 
-### CWE update method
+### Node-agent update method
 
-A required site-scoped CWE setting, `NODE_AGENT_UPDATE_METHOD`, selects `apt` or
-`bundle`. The reconciler validates it and snapshots the resolved value into each
-workflow and node operation. Changing this setting does not reinstall an agent
-or alter an in-flight workflow; it applies to the next desired-state generation.
-Artifact locations and qualification remain release configuration, not API
-input.
+A required site-scoped NKE controller setting, `NODE_AGENT_UPDATE_METHOD`,
+selects `apt` or `bundle`. The reconciler validates it and snapshots the
+resolved value into each workflow and node operation. Changing this setting does
+not reinstall an agent or alter an in-flight workflow; it applies to the next
+desired-state generation. Artifact locations and qualification remain release
+configuration, not API input.
 
 ### Database model
 
@@ -334,7 +337,7 @@ GetNodeAgentUpgradeStatus(operation_id)
 StartNodeAgentRollback(operation_id, upgrade_operation_id)
 ```
 
-`method` is `APT` or `BUNDLE` and is supplied only by the controller from its CWE
+`method` is `APT` or `BUNDLE` and is supplied only from NKE controller
 configuration; it is not cluster API input. The RPCs accept no package name,
 URL, path, install arguments, or command. The Debian package remains named
 `nke-agent`. `InstallPackages` normalizes each package argument by removing an
