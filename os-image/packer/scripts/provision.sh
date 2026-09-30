@@ -135,8 +135,8 @@ fi
 sudo rm -f /var/lib/dbus/machine-id
 sudo rm -f /home/ubuntu/.ssh/authorized_keys
 
-sudo install -d -m 0755 /etc/cloud/cloud.cfg.d
-sudo install -m 0644 "${SRC}/99-nke-network.cfg" /etc/cloud/cloud.cfg.d/99-nke-network.cfg
+sudo install -d -m 0755 /etc/netplan
+sudo install -m 0600 "${SRC}/00-dhcp-all.yaml" /etc/netplan/00-dhcp-all.yaml
 
 # cidata/autoinstall-lvm.pkrtpl sets kernel.package to the NVIDIA-tuned
 # flavor specifically so, per its own comment, "there's no generic kernel to
