@@ -143,6 +143,19 @@ test "${root_bytes}" -ge "${minimum_root_bytes}"
 systemctl is-enabled nke-agent.service
 systemctl is-enabled spire-agent.service
 systemctl is-enabled nke-spire-configure.service
+# multipathd must stay masked, both units: it races Longhorn for newly
+# attached volumes and leaves them unformattable (see provision.sh for the
+# mechanism). is-enabled exits non-zero for a masked unit, so compare its
+# output rather than relying on its status.
+test "$(systemctl is-enabled multipathd.service)" = masked
+test "$(systemctl is-enabled multipathd.socket)" = masked
+# errexit does not apply to a negated command, so branch explicitly rather
+# than writing `! systemctl is-active` -- that would let the rest of the
+# assertions run, and pass, with multipathd active.
+if systemctl is-active --quiet multipathd.service; then
+  echo "boot-smoke: multipathd.service is active; it will claim Longhorn volumes" >&2
+  exit 1
+fi
 test -x /usr/local/bin/nke-agent
 test -x /usr/local/bin/nke-agent-updater
 # The mode bits say nothing about whether the binary runs: -version exits 0
