@@ -156,7 +156,11 @@ concurrency:
   # concurrently and could exhaust it. Today nothing does -- gb200 is ytl and
   # everything else is az61 -- but declaring a second GPU shape at an existing
   # site would break that, and the fix then is an explicit site input.
-  group: Forge site controller e2e ${{ inputs.arch || vars.SITE_E2E_ARCH || 'amd64' }} ${{ inputs.gpu || vars.SITE_E2E_GPU }}
+  # The GPU half drops the SITE_E2E_GPU fallback for the same reason the env
+  # block below does, and has to: the group is the proxy for the site, so a
+  # run pinned to az61 keyed on gb200 would queue behind a ytl run it shares
+  # no hardware with.
+  group: Forge site controller e2e ${{ inputs.arch || vars.SITE_E2E_ARCH || 'amd64' }} ${{ inputs.gpu }}
   cancel-in-progress: false
 
 jobs:
@@ -247,7 +251,12 @@ jobs:
       # grammar has to be remembered, and ARCH is needed on its own anyway,
       # for SITE_ARCH.
       ARCH: ${{ inputs.arch || vars.SITE_E2E_ARCH }}
-      GPU: ${{ inputs.gpu || vars.SITE_E2E_GPU }}
+      # The SITE_E2E_GPU fallback is dropped on purpose: it is gb200, which
+      # resolves to ytl, and the CoreDNS failure this branch is investigating
+      # is an az61 one. No GPU puts the workers on the CPU shape, which is
+      # az61. Revert with the line below before this branch goes anywhere.
+      #   GPU: ${{ inputs.gpu || vars.SITE_E2E_GPU }}
+      GPU: ${{ inputs.gpu }}
       # A label cannot carry a boolean, so a PR run never keeps its node.
       KEEP_SITE: ${{ inputs.keep-site || false }}
       # ghcr or nvcr. Only the runner pulls from it: every image it names is
