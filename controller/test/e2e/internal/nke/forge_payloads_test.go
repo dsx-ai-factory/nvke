@@ -270,7 +270,7 @@ func TestBuildForgeNodePayloadsAptSuiteFollowsTheImage(t *testing.T) {
 	}
 }
 
-// An unrecognised release has to fail here rather than on the node, where it
+// An unrecognized release has to fail here rather than on the node, where it
 // surfaces as a package that cannot be found minutes into a boot.
 func TestBuildForgeNodePayloadsRejectsAnUnknownRelease(t *testing.T) {
 	for _, tc := range []struct{ name, url, want string }{

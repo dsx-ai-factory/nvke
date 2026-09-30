@@ -132,19 +132,14 @@ func requireVersion(component string) (string, error) {
 // Required rather than optional because the OS image is the component under
 // qualification. A run that named none for the architecture it is about to
 // boot has not said what it is qualifying.
-func requireNodeArtifacts(arch string) (bootLoaderURL, imageURL string, err error) {
-	for _, artifact := range []struct {
-		component string
-		into      *string
-	}{
-		{"os-image-bootloader", &bootLoaderURL},
-		{"os-image", &imageURL},
-	} {
-		value, err := requireVersionForArch(artifact.component, arch)
-		if err != nil {
-			return "", "", err
-		}
-		*artifact.into = value
+func requireNodeArtifacts(arch string) (string, string, error) {
+	bootLoaderURL, err := requireVersionForArch("os-image-bootloader", arch)
+	if err != nil {
+		return "", "", err
+	}
+	imageURL, err := requireVersionForArch("os-image", arch)
+	if err != nil {
+		return "", "", err
 	}
 	return bootLoaderURL, imageURL, nil
 }

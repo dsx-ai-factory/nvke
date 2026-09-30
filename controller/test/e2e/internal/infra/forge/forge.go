@@ -26,6 +26,16 @@ import (
 )
 
 const (
+	// cloudInitDiagnosticTimeout bounds the diagnostic collection. The context
+	// that reached this point may already be at its deadline, and a node that
+	// has stopped answering must not turn a reported failure into a hang.
+	cloudInitDiagnosticTimeout = 2 * time.Minute
+
+	// cloudInitStatusError is the status cloud-init reports when a module
+	// failed outright, as opposed to the "degraded done" it reports for a
+	// warning.
+	cloudInitStatusError = "error"
+
 	// DefaultEndpoint is production NGC. Staging is
 	// https://api.stg.ngc.nvidia.com.
 	DefaultEndpoint = "https://api.ngc.nvidia.com"
@@ -341,10 +351,6 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	return infra.Node{Name: req.Name, IP: address, Arch: instanceType.Arch()}, &session{Conn: conn, release: release}, nil
 }
 
-// cloudInitStatusError is the status cloud-init reports when a module failed
-// outright, as opposed to the "degraded done" it reports for a warning.
-const cloudInitStatusError = "error"
-
 // cloudInitReport is the part of `cloud-init status --format=json` the node
 // preflight reads.
 type cloudInitReport struct {
@@ -392,11 +398,6 @@ func awaitCloudInit(ctx context.Context, conn Conn, name string) error {
 	}
 	return nil
 }
-
-// cloudInitDiagnosticTimeout bounds the diagnostic collection. The context
-// that reached this point may already be at its deadline, and a node that has
-// stopped answering must not turn a reported failure into a hang.
-const cloudInitDiagnosticTimeout = 2 * time.Minute
 
 // cloudInitDiagnostics reports why cloud-init degraded. `cloud-init status
 // --wait` gives an exit code and the word "done", which is not enough to act

@@ -7,7 +7,6 @@ import (
 	_ "embed"
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 	"text/template"
 )
@@ -17,6 +16,18 @@ var (
 	nicoForgeIPXETmpl string
 	//go:embed nico_forge_prekubeadm.tmpl
 	nicoForgePreKubeadmTmpl string
+
+	// archInURL and bootLoaderArchInURL match the architecture an artifact
+	// names. The two spell it differently: the OS image uses the Go/Debian
+	// names and the EFI imager uses the uname ones.
+	archInURL           = regexp.MustCompile(`\b(amd64|arm64)\b`)
+	bootLoaderArchInURL = regexp.MustCompile(`\b(x86_64|aarch64)\b`)
+
+	// ubuntuReleaseInURL matches the Ubuntu release in an OS image filename,
+	// as in nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2. The point release is
+	// optional and ignored: NKE publishes a suite per Ubuntu release, not per
+	// point.
+	ubuntuReleaseInURL = regexp.MustCompile(`ubuntu-(\d+\.\d+)`)
 )
 
 // NodeInputs is everything building an NKE node from an image needs that a
@@ -139,16 +150,22 @@ func BuildForgeNodePayloads(inputs NodeInputs) (NodePayloads, error) {
 	return NodePayloads{IPXEScript: ipxe, PreKubeadmCommands: commands}, nil
 }
 
-// archInURL and bootLoaderArchInURL match the architecture an artifact names.
-// The two artifacts spell it differently: the OS image uses the Go/Debian
-// names and the EFI imager uses the uname ones.
-var (
-	archInURL           = regexp.MustCompile(`\b(amd64|arm64)\b`)
-	bootLoaderArchInURL = regexp.MustCompile(`\b(x86_64|aarch64)\b`)
-)
+// ubuntuReleaseInURL matches the Ubuntu release in an OS image filename, as in
+// nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2. The point release is optional
+// and ignored: NKE publishes a suite per Ubuntu release, not per point.
 
-// unameArch is the imager's spelling of each architecture.
-var unameArch = map[string]string{"amd64": "x86_64", "arm64": "aarch64"}
+// unameArch is the imager's spelling of an architecture, empty for one it does
+// not name.
+func unameArch(arch string) string {
+	switch arch {
+	case "amd64":
+		return "x86_64"
+	case "arm64":
+		return "aarch64"
+	default:
+		return ""
+	}
+}
 
 // checkArch refuses an image or imager built for a different machine than the
 // one being created.
@@ -167,7 +184,7 @@ func (i NodeInputs) checkArch() error {
 		pattern         *regexp.Regexp
 	}{
 		{"OS image", i.ImageURL, i.Arch, archInURL},
-		{"boot loader", i.BootLoaderURL, unameArch[i.Arch], bootLoaderArchInURL},
+		{"boot loader", i.BootLoaderURL, unameArch(i.Arch), bootLoaderArchInURL},
 	} {
 		if artifact.want == "" {
 			continue
@@ -181,17 +198,19 @@ func (i NodeInputs) checkArch() error {
 	return nil
 }
 
-// ubuntuReleaseInURL matches the Ubuntu release in an OS image filename, as in
-// nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2. The point release is optional
-// and ignored: NKE publishes a suite per Ubuntu release, not per point.
-var ubuntuReleaseInURL = regexp.MustCompile(`ubuntu-(\d+\.\d+)`)
-
-// aptSuites maps an Ubuntu release to the NKE apt suite built for it. Adding a
-// release means publishing its suite first; see
-// agent/scripts/upload-s3-apt-intake.sh, whose default list is these two.
-var aptSuites = map[string]string{
-	"24.04": "noble",
-	"26.04": "resolute",
+// aptSuite is the NKE apt suite built for an Ubuntu release, and the list of
+// releases that have one. Adding a release means publishing its suite first;
+// see agent/scripts/upload-s3-apt-intake.sh, whose default list is these two.
+func aptSuite(release string) (string, []string) {
+	known := []string{"24.04", "26.04"}
+	switch release {
+	case "24.04":
+		return "noble", known
+	case "26.04":
+		return "resolute", known
+	default:
+		return "", known
+	}
 }
 
 // aptSuiteFor reads the suite out of the image URL rather than guessing one.
@@ -203,14 +222,9 @@ func aptSuiteFor(imageURL string) (string, error) {
 	if match == nil {
 		return "", fmt.Errorf("cannot tell which Ubuntu release %q is, so cannot pick an apt suite: set NodeInputs.AptSuite", imageURL)
 	}
-	suite, ok := aptSuites[match[1]]
-	if !ok {
-		known := make([]string, 0, len(aptSuites))
-		for release := range aptSuites {
-			known = append(known, release)
-		}
-		sort.Strings(known)
-		return "", fmt.Errorf("no NKE apt suite is known for Ubuntu %s (only %s); publish one and add it to aptSuites", match[1], strings.Join(known, ", "))
+	suite, known := aptSuite(match[1])
+	if suite == "" {
+		return "", fmt.Errorf("no NKE apt suite is known for Ubuntu %s (only %s); publish one and add it to aptSuite", match[1], strings.Join(known, ", "))
 	}
 	return suite, nil
 }
