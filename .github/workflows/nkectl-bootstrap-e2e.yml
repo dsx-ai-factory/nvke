@@ -87,11 +87,19 @@ jobs:
           - arch: amd64
             runner: linux-amd64-cpu16
           - arch: arm64
-            # Stays on the self-hosted fleet. An arc-arm64-vtpm class exists
-            # and this lane gets as far as `kubeadm init` on it, but the
-            # nested control plane never becomes healthy -- see the writeup
-            # on the PR that moved the other lanes.
-            runner: linux-arm64-cpu16
+            # arc-arm64-vtpm rather than the shared arc-arm64 class: this is
+            # the only lane that wants /dev/vtpmx, and gitlab-runners!35
+            # established the module cannot go on a pool the CAPD lanes share
+            # -- a TPM on the node makes swtpm inside a CAPD node emit an EK
+            # certificate SPIRE refuses. So the device gets its own pool, and
+            # this class is the only consumer of it.
+            #
+            # The "nested control plane never becomes healthy" that kept this
+            # lane here was overlayfs: the kind node image declares
+            # VOLUME /var/lib/containerd, and nerdctl put that anonymous
+            # volume on the pod's own overlayfs root, where overlay cannot
+            # mount an upperdir. Fixed by pinning nerdctl's data root.
+            runner: arc-arm64-vtpm
     # A full run takes 12-17 minutes on this pool, most of it the node image
     # build and CWE's three sequential control-plane joins. The margin covers
     # a cold image cache and a slow mirror; queue time does not count.
