@@ -10,9 +10,9 @@ exporters at its own.
 The default values run two replicas of every Collector except the node
 DaemonSet, and the gateways, the watchdog and the large-target pool autoscale on
 CPU and memory. Every signal is exported over OTLP/HTTP to one endpoint, the
-bundled backend until a site sets its own. A smaller cluster, such as a
-single-node site controller, lowers the replicas and requests in its values; the
-templates carry the full topology.
+bundled backend until a site sets its own. A smaller cluster, such as a site
+controller, lowers the replicas and requests in its values; the templates carry
+the full topology.
 
 The chart version is `version:` in [Chart.yaml](Chart.yaml). A release tag
 `nktp/vX.Y.Z` has to equal it; see [RELEASE.md](../../../../RELEASE.md).

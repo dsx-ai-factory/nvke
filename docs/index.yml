@@ -64,6 +64,19 @@ navigation:
           - page: Troubleshooting and FAQ
             path: operations/faq.md
 
+      - section: Site Telemetry (NKTP)
+        contents:
+          - page: Getting Started
+            path: nktp/site-telemetry/getting-started.md
+          - page: Configuration
+            path: nktp/site-telemetry/configuration.md
+          - page: Monitoring Your Service
+            path: nktp/site-telemetry/monitoring-a-service.md
+          - page: Verification
+            path: nktp/site-telemetry/verification.md
+          - page: Troubleshooting
+            path: nktp/site-telemetry/troubleshooting.md
+
       - section: Reference
         contents:
           - page: nkectl CLI

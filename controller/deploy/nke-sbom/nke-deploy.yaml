@@ -9,7 +9,7 @@
 # That order in turn follows the management-software phases:
 #
 #   untaint -> storage class -> cert-manager -> CAPI core -> CAPNICo
-#            -> Postgres -> Temporal -> CWE
+#            -> NKTP -> Postgres -> Temporal -> CWE
 #
 # Outside this deploy path, and before it:
 #   untaint        a bootstrap cluster is all control-plane and tainted
@@ -46,6 +46,12 @@
 #   secrets        four of them carry real credentials, so they are template
 #                  items rendered from BootstrapConfig rather than committed.
 #
+# The nktp item installs the monitoring CRDs, so it has
+# to precede every item that creates a monitor: temporal, spire and controller
+# each switch on their own in their overlays. The chart itself monitors the API
+# server, etcd and CoreDNS. Components that ship no monitor of their own are
+# not scraped; their monitors belong with them, not in this path.
+#
 # SPIRE IS IN, deliberately. That run used --disable-mtls end to end, but its
 # own notes record that os-image/SPEC.md lists that as NOT a supported
 # production mode, and the reference image ships mTLS on. The flag is a property
@@ -58,6 +64,7 @@ items:
   - {name: spire-server-nodeport, type: manifest}
   - {name: spire-oidc-provider-nodeport, type: manifest}
   - {name: capnico, type: manifest}
+  - {name: nktp, type: helm}
   - {name: postgresql, type: helm}
   - {name: spire-crds, type: helm}
   - {name: temporal, type: helm}

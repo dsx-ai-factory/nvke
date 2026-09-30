@@ -152,11 +152,25 @@ podSecurityContext: null
 securityContext:
   readOnlyRootFilesystem: false
 
+# Telemetry to the nktp item, which installs before this one: its node
+# Collectors scrape the ServiceMonitor, the metrics NetworkPolicy admits their
+# namespace, and traces go to its traces gateway. The chart defaults the first
+# two on; the e2e targets turn them off because their clusters have no
+# monitoring CRDs.
+#
+# insecure is plaintext gRPC inside the cluster: the nktp chart configures no
+# TLS on its gateway receivers.
 metrics:
   networkPolicy:
-    enabled: false
+    enabled: true
+    additionalNamespaces:
+      - nktp
 serviceMonitor:
-  enabled: false
+  enabled: true
+tracing:
+  enabled: true
+  endpoint: nktp-gateway-traces-collector.nktp.svc.cluster.local:4317
+  insecure: true
 
 # /readyz, not /api/version. /api/version proves only that HTTP is serving;
 # /readyz returns {"status":"ok","checks":{"database":"ok","temporal":"ok"}},

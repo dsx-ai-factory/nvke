@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# NKTP, the telemetry pipeline, with its bundled Operator, monitoring CRDs,
+# node-exporter, kube-state-metrics and metrics-server.
+#
+# path, not repository, for the same reason as the controller item: this
+# repository owns the chart, and the checkout this path is installed from
+# carries the version it was written against. The published chart is on an
+# internal registry that would need a login this path does not have. The
+# version below is only reported; the path decides what installs. The chart's
+# dependency archives are not committed, so use-nke-sbom.sh builds them from its
+# Chart.lock first.
+#
+# Early, straight after capnico: it installs the monitoring CRDs, and the
+# temporal, spire and controller items each create a monitor that needs them.
+# Installing it first also means the rest of the install is observed.
+chart:
+  name: nktp
+  version: "0.1.0-rc.2"
+  path: ../../../nktp/deploy/charts/nktp
+release:
+  name: nktp
+  namespace: nktp
+values:
+  - values.yaml
