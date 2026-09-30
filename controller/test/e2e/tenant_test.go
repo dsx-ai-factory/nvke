@@ -162,6 +162,9 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		shape: clusterShape{
 			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
 			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			// etcdEncryption asserts what creation configured, so the cluster
+			// has to be created encrypted for it to have anything to check.
+			etcdEncrypted: true,
 		},
 		// 15m, matching the nico-containers entry below. The roll waits on a
 		// replacement node reaching KubernetesReady, and the local-entrypoint
@@ -430,6 +433,9 @@ func nicoForgeTenant() testSpec {
 			// which cwedeploy never touches.
 			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
 			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			// etcdEncryption asserts what creation configured, so the cluster
+			// has to be created encrypted for it to have anything to check.
+			etcdEncrypted: true,
 		},
 		// Generous next to the simulator lanes: these timeouts cover a bare
 		// machine booting an OS image over the network and installing
@@ -440,8 +446,27 @@ func nicoForgeTenant() testSpec {
 		// machines are. Run 36051890151 failed the delete at 1800.306s
 		// against the 30 minutes this used to be, while the instances were
 		// still reporting Terminating.
-		options:  nke.Options{Provision: 90 * time.Minute, Delete: 45 * time.Minute, Poll: 30 * time.Second},
-		validate: validations{provisioningOnly: true},
+		options: nke.Options{Provision: 90 * time.Minute, Delete: 45 * time.Minute, Poll: 30 * time.Second},
+		// Every validation that asserts against the cluster as built. The ones
+		// left off all add, remove, replace, reboot or roll a node, and a
+		// GB200 is too scarce to spend on churn: scale, nodeReplacement,
+		// manualScaleDown, nodePoolLifecycle, nodePoolCascade, reboot,
+		// upgrade, cpRotation and the three controlPlaneController mutations.
+		//
+		// Off for a reason other than cost:
+		//   postReadyChecks and kubeVipRouteWithdrawal want a control-plane
+		//   VIP, which no Forge tenant here is created with.
+		//   certificateRenewal restarts every control-plane node in turn.
+		//   brownfieldEtcdEncryption and brownfieldOIDC mutate a running
+		//   cluster and roll the control plane to do it.
+		validate: validations{
+			clusterConfig:          true,
+			openVSwitch:            true,
+			ovnNetworking:          true,
+			csrApproval:            true,
+			etcdEncryption:         true,
+			controlPlaneController: true,
+		},
 	}
 }
 
