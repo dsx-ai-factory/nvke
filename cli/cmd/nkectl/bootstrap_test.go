@@ -441,7 +441,7 @@ func runtimeOnPath(name string) (string, error) { return "/usr/local/bin/" + nam
 func setBootstrapEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("NKECTL_CWE_IMAGE", "nvcr.io/org/controller:edge")
-	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "cluster-api-provider-provisioned:local")
+	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "cluster-api-provider-provisioned:latest")
 }
 
 func TestCWEDeployConfigUsesSiteSpecTrustDomain(t *testing.T) {
@@ -579,35 +579,79 @@ func TestBootstrapSiteRejectsBootstrapProviderFlag(t *testing.T) {
 	}
 }
 
-// TestRunBootstrapSiteMissingCWEImage confirms the command fails with a
-// clear, actionable error when NKECTL_CWE_IMAGE is not set, rather than
-// reaching helm with an empty image reference.
-//
-// It must also fail before the Kind cluster is built. What to deploy is
-// settled up front, so a setting the operator never provided costs them a
-// message rather than a cluster that is stood up only to be torn down.
-func TestRunBootstrapSiteMissingCWEImage(t *testing.T) {
-	setBootstrapEnv(t)
+// TestRunBootstrapSiteDefaultsImagesToTheLocalBuild confirms the bootstrap
+// side-loads the local build's tags when neither image variable is set.
+func TestRunBootstrapSiteDefaultsImagesToTheLocalBuild(t *testing.T) {
 	t.Setenv("NKECTL_CWE_IMAGE", "")
+	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "")
+	startFakeCWEAPI(t, true)
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
 		siteSpec:         writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:  runner,
 		cweRunner:        fakeCWERunner{},
+		kubeconfigOut:    filepath.Join(t.TempDir(), "site.kubeconfig"),
 		lookPath:         runtimeOnPath,
 		dialContext:      refuseDial,
+		dumpSpireEntries: func(context.Context, string, string) (int, error) { return 1, nil },
 		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
 	})
-	if err == nil {
-		t.Fatal("expected an error for a missing NKECTL_CWE_IMAGE")
+	if err != nil {
+		t.Fatalf("bootstrap with default images: %v", err)
 	}
-	if !strings.Contains(err.Error(), "NKECTL_CWE_IMAGE") {
-		t.Errorf("error does not name the missing setting: %v", err)
+	for _, image := range []string{"nke-controller:latest", "cluster-api-provider-provisioned:latest"} {
+		if !runner.sawArgs("image", "inspect", image) {
+			t.Errorf("default image %s was not used; calls: %v", image, runner.calls)
+		}
 	}
+}
 
-	if runner.sawArgs("create", "cluster") {
-		t.Errorf("a missing NKECTL_CWE_IMAGE should be caught before the cluster is built; calls: %v", runner.calls)
+// TestEnsureImageAvailableRefusesToPullAHostlessRef: a local build that is
+// not in the image store fails with the build command and the two variables.
+// Nothing is pulled, and the inspect failure stays in the message.
+func TestEnsureImageAvailableRefusesToPullAHostlessRef(t *testing.T) {
+	var pulled bool
+	engine := bootstrapengine.New(runnerFunc(
+		func(_ context.Context, _ map[string]string, _ string, args ...string) (string, error) {
+			if len(args) > 0 && args[0] == "pull" {
+				pulled = true
+			}
+			return "no such image: nke-controller:latest", errors.New("exit status 1")
+		},
+	), nil)
+
+	err := ensureImageAvailable(context.Background(), engine,
+		&bootstrapengine.Cluster{Name: "c"}, "nke-controller:latest", slog.New(slog.DiscardHandler))
+	if err == nil {
+		t.Fatal("expected an error for a local build that is not in the store")
+	}
+	for _, want := range []string{"make -C cli images", "NKECTL_CWE_IMAGE", "docker.io/<org>/<name>", "no such image"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+	if pulled {
+		t.Error("a reference without a registry was pulled")
+	}
+}
+
+// TestHasRegistryHost pins the rule: the first path component names a registry
+// when it holds a dot or a colon, or is localhost. Docker Hub short names such
+// as myorg/image:tag do not count; write docker.io/myorg/image:tag.
+func TestHasRegistryHost(t *testing.T) {
+	for ref, want := range map[string]bool{
+		"nke-controller:latest":                   false,
+		"cluster-api-provider-provisioned:latest": false,
+		"nvcr.io/org/nke-controller:edge":         true,
+		"localhost:5000/nke-controller:dev":       true,
+		"localhost/nke-controller:dev":            true,
+		"ghcr.io/spiffe/spire-server@sha256:abcd": true,
+		"library/postgres:18.6":                   false,
+	} {
+		if got := hasRegistryHost(ref); got != want {
+			t.Errorf("hasRegistryHost(%q) = %v, want %v", ref, got, want)
+		}
 	}
 }
 

@@ -164,12 +164,10 @@ const defaultTenantKubeconfigTimeout = 2 * time.Minute
 
 // Config describes a CWE deployment.
 type Config struct {
-	// CWEImage is the full image reference to deploy, e.g.
-	// "nvcr.io/<org>/nke-controller:edge" (published by
-	// .github/workflows/image-nvcr.yml on every push to main -- see that
-	// workflow for how the tag is resolved). Required; this package does not
-	// default it; a registry org identifier does not belong hardcoded in a
-	// tracked file of a repository being prepared to go public.
+	// CWEImage is the image reference to deploy. Defaults to nke-controller:latest,
+	// the local build's tag, from the bootstrap manifest. NKECTL_CWE_IMAGE
+	// overrides it, for example with the image .github/workflows/image-nvcr.yml
+	// publishes.
 	CWEImage string
 
 	// SPIFFEClusterName identifies the ephemeral Kind cluster to SPIRE. It is
@@ -214,10 +212,10 @@ type Config struct {
 
 	// ProvisionedProviderImage is the cluster-api-provider-provisioned image to
 	// run as the CAPI infrastructure provider for hosts that already exist.
-	// Required for site-cluster creation. Published by
-	// .github/workflows/image-provisioned-nvcr.yml on every push to main, the
-	// same way CWEImage is; a checkout build still works and is what the e2e
-	// lane uses. Either way the image is loaded into the cluster rather than
+	// Defaults to cluster-api-provider-provisioned:latest, the local build's
+	// tag, from the bootstrap manifest. NKECTL_CAPI_PROVISIONED_IMAGE overrides
+	// it, for example with the image .github/workflows/image-provisioned-nvcr.yml
+	// publishes. Either way the image is loaded into the cluster rather than
 	// pulled, because the bootstrap cluster has no pull secret.
 	ProvisionedProviderImage string
 
@@ -259,14 +257,14 @@ type Config struct {
 // bootstrapengine.DefaultConfig's env-driven shape.
 func DefaultConfig() Config {
 	return Config{
-		CWEImage: os.Getenv("NKECTL_CWE_IMAGE"),
+		CWEImage: envOr("NKECTL_CWE_IMAGE", defaultImage(manifest.ComponentController, manifest.ImageController)),
 		// No cluster-name variable of its own: the bootstrap cluster has one
 		// name, NKECTL_BOOTSTRAP_CLUSTER_NAME, and SPIRE is told that one.
 		// Callers set SPIFFEClusterName; an empty trust domain is derived from
 		// it below.
 		SPIFFETrustDomain: os.Getenv("NKECTL_SPIFFE_TRUST_DOMAIN"),
 
-		ProvisionedProviderImage: os.Getenv("NKECTL_CAPI_PROVISIONED_IMAGE"),
+		ProvisionedProviderImage: envOr("NKECTL_CAPI_PROVISIONED_IMAGE", defaultImage(manifest.ComponentProvisioned, manifest.ImageManager)),
 		CWEPort:                  envPort("NKECTL_CWE_PORT", DefaultCWEPort),
 
 		HelmTimeout:  envDuration("NKECTL_CWE_HELM_TIMEOUT", 5*time.Minute),
@@ -746,6 +744,25 @@ func effectiveCWEPort(cfg Config) int32 {
 // The Service is named after the release.
 func spireServiceHost() string {
 	return spireReleaseName + "-server." + spireNamespace + ".svc.cluster.local"
+}
+
+// envOr returns the environment variable's value, or fallback when it is unset
+// or empty.
+func envOr(name, fallback string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// defaultImage returns the image reference the bootstrap manifest carries for
+// one of the images this repository builds. Empty when the manifest has none.
+func defaultImage(component, image string) string {
+	comp, ok := manifest.Load().Components[component]
+	if !ok {
+		return ""
+	}
+	return comp.Images[image].Ref
 }
 
 // manifestChart returns the identity of a chart the bootstrap installs, as

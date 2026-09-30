@@ -283,15 +283,18 @@ leaves nothing schedulable and the node never reaches `Ready`.
 
 ### 3. Point at your images
 
-Both are required and the bootstrap fails without them. Nothing else has to be
-pointed at: `nkectl` installs the CWE chart and the provisioned provider's
-manifests from the copies embedded in the binary, of the commit it was built
-from, so a released binary needs no checkout.
+`make -C cli images` builds both with nerdctl on this host, tagged
+`nke-controller:latest` and `cluster-api-provider-provisioned:latest`, and the
+bootstrap side-loads them by default. To use images you pushed to a registry
+instead, name them:
 
 ```bash
-export NKECTL_CWE_IMAGE=<cwe-controller image>
+export NKECTL_CWE_IMAGE=<nke-controller image>
 export NKECTL_CAPI_PROVISIONED_IMAGE=<provisioned provider image>
 ```
+
+`nkectl` carries the CWE chart and the provisioned provider's manifests. Step 4
+lists what it fetches.
 
 ### 4. Bootstrap
 
