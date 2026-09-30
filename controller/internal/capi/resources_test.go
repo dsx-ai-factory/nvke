@@ -117,6 +117,15 @@ func TestResources_ClusterScaffoldManifest(t *testing.T) {
 		assert.Equal(t, siteID.String(), gotSiteID)
 	})
 
+	t.Run("missing provider payload errors", func(t *testing.T) {
+		_, err := capi.ClusterScaffoldManifest(db.Cluster{
+			ID:           uuid.New(),
+			ProviderType: db.ProviderTypeNico,
+		})
+		require.Error(t, err)
+		require.ErrorIs(t, err, db.ErrMissingProviderPayload)
+	})
+
 	t.Run("unsupported provider errors", func(t *testing.T) {
 		_, err := capi.ClusterScaffoldManifest(db.Cluster{
 			ID:           uuid.New(),

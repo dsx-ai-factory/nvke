@@ -91,36 +91,52 @@ func SetPausedAnnotation(obj metav1.Object, paused bool) {
 	obj.SetAnnotations(annotations)
 }
 
+// clusterScaffoldBuilders is the provider factory for cluster scaffold
+// manifests: one builder per supported db.ProviderType. Adding a provider
+// means adding an entry here, not a new switch arm at each call site.
+var clusterScaffoldBuilders = map[db.ProviderType]func(db.Cluster) (json.RawMessage, error){
+	db.ProviderTypeCAPI: capiClusterScaffoldManifest,
+	db.ProviderTypeNico: nicoClusterScaffoldManifest,
+}
+
+// ClusterScaffoldManifest builds the infrastructure-provider manifest (CAPI
+// InfraCluster or NicoCluster) for the cluster, dispatching on its provider
+// type.
 func ClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error) {
-	switch cluster.ProviderType {
-	case db.ProviderTypeCAPI:
-		provider, err := cluster.CAPIProvider()
-		if err != nil {
-			return nil, err
-		}
-		return provider.InfraCluster, nil
-	case db.ProviderTypeNico:
-		provider, err := cluster.NicoProvider()
-		if err != nil {
-			return nil, err
-		}
-		nicoCluster := nicov1.NicoCluster{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: nicov1.GroupVersion.String(),
-				Kind:       "NicoCluster",
-			},
-			Spec: nicov1.NicoClusterSpec{
-				SiteID: provider.SiteID.String(),
-			},
-		}
-		manifest, err := json.Marshal(nicoCluster)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build NicoCluster manifest for cluster %s: %w", cluster.ID, err)
-		}
-		return manifest, nil
-	default:
+	build, ok := clusterScaffoldBuilders[cluster.ProviderType]
+	if !ok {
 		return nil, fmt.Errorf("unsupported provider type %q for cluster %s", cluster.ProviderType, cluster.ID)
 	}
+	return build(cluster)
+}
+
+func capiClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error) {
+	provider, err := cluster.CAPIProvider()
+	if err != nil {
+		return nil, err
+	}
+	return provider.InfraCluster, nil
+}
+
+func nicoClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error) {
+	provider, err := cluster.NicoProvider()
+	if err != nil {
+		return nil, err
+	}
+	nicoCluster := nicov1.NicoCluster{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: nicov1.GroupVersion.String(),
+			Kind:       "NicoCluster",
+		},
+		Spec: nicov1.NicoClusterSpec{
+			SiteID: provider.SiteID.String(),
+		},
+	}
+	manifest, err := json.Marshal(nicoCluster)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build NicoCluster manifest for cluster %s: %w", cluster.ID, err)
+	}
+	return manifest, nil
 }
 
 func ParseManifest(raw []byte) (*unstructured.Unstructured, error) {
