@@ -556,7 +556,7 @@ jobs:
           done
           if [ "${pairs}" -eq 0 ]; then
             echo "::error::no OS image pair for any architecture. A dispatch takes these from its inputs;" \
-                 "a labelled pull request takes them from the FORGE_E2E_OS_IMAGE_<ARCH> repository variables."
+                 "a labelled pull request takes them from the SITE_E2E_OS_IMAGE_<ARCH> repository variables."
             exit 1
           fi
 
