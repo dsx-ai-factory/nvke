@@ -78,7 +78,7 @@ NKECTL_LDFLAGS := \
 	$(RELEASE_LDFLAGS)
 
 .PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check check-no-docker \
-	ensure-capd-image ensure-provisioned-provider-image ensure-cwe-image images \
+	ensure-capd-image ensure-provisioned-provider-image images \
 	nodes-up nodes-down nodes-status nodes-hosts nodes-attested
 
 # The platforms shipped on a release. nkectl is the one binary here a human
@@ -196,10 +196,6 @@ ensure-provisioned-provider-image:
 # The controller image records the commit it was built from; the Dockerfile
 # defaults both to v0.0.0 otherwise.
 CWE_IMAGE_BUILD_ARGS = --build-arg BUILD_VERSION=$(NKECTL_VERSION) --build-arg GIT_VERSION=$(NKECTL_COMMIT)
-
-ensure-cwe-image:
-	@nerdctl image inspect $(CWE_IMAGE) >/dev/null 2>&1 || \
-	  nerdctl build -t $(CWE_IMAGE) $(CWE_IMAGE_BUILD_ARGS) -f ../controller/Dockerfile ..
 
 # `images` always rebuilds. An `ensure-*` target keeps a stale image after a
 # `git pull`; this target does not. BuildKit's cache keeps a no-op rebuild cheap.

@@ -269,6 +269,11 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	if err := requireNoControlPlane(ctx, inv.Cluster.Nodes, opts.dialContext); err != nil {
 		return err
 	}
+	// The two images this repository builds are side-loaded, not pulled. A
+	// build that was never made fails here, before the cluster exists.
+	if err := requireLocalImages(ctx, engine, cweCfg.CWEImage, cweCfg.ProvisionedProviderImage); err != nil {
+		return err
+	}
 
 	logger.Info("creating ephemeral bootstrap kind cluster", "cluster", cfg.ClusterName)
 	cluster, err := engine.Create(ctx, cfg)
@@ -730,12 +735,12 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 // elapses. What to install is decided by cweDeployConfig; this only carries it
 // out.
 //
-// The CWE and provisioned-provider images are loaded into the kind cluster directly
-// (bootstrapengine's existing Engine.LoadImage, via `kind load docker-image`)
-// rather than pulled from inside the cluster: the cluster is ephemeral and has
-// no image pull secret configured, and this way authenticating to whatever
-// registry hosts them is the caller's problem, not nkectl's — `docker login`
-// once on the host, same as any other pull, before running this command.
+// The CWE and provisioned-provider images are loaded into the kind cluster
+// from the host's image store (Engine.LoadImage) rather than pulled from
+// inside it: the cluster is ephemeral and has no pull secret. A reference
+// with a registry host is pulled onto the host first when it is not cached;
+// authenticating to that registry is the caller's job. A reference without a
+// registry host must already be in the store (`make -C cli images`).
 //
 // SPIRE needs no such handling: its chart and images are public.
 
@@ -822,8 +827,9 @@ func requireContainerRuntime(lookPath func(string) (string, error)) error {
 }
 
 // ensureImageAvailable makes sure image is present in containerd's image
-// store before handing it to Engine.LoadImage, pulling it if it is not
-// already cached from a previous run. That store is the one kind loads from.
+// store before handing it to Engine.LoadImage. A reference with a registry
+// host is pulled when it is not cached. One without must already be there;
+// requireLocalImages checks that before the cluster is created.
 func ensureImageAvailable(
 	ctx context.Context,
 	engine *bootstrapengine.Engine,
@@ -842,10 +848,7 @@ func ensureImageAvailable(
 				bootstrapengine.RuntimeCLI, err)
 		}
 		if !hasRegistryHost(image) {
-			return fmt.Errorf("image %s is not in the local image store (%w\n%s) and names no registry to pull it from; "+
-				"build it with `make -C cli images`, or set NKECTL_CWE_IMAGE / NKECTL_CAPI_PROVISIONED_IMAGE "+
-				"to an image the runtime can pull (for Docker Hub, write docker.io/<org>/<name>)",
-				image, err, strings.TrimSpace(out))
+			return missingLocalImageError(image, err, out)
 		}
 		logger.Info("image not cached locally; pulling", "image", image, "runtime", bootstrapengine.RuntimeCLI)
 		if out, err := engine.Runner.Run(ctx, nil, bootstrapengine.RuntimeCLI, "pull", image); err != nil {
@@ -858,14 +861,40 @@ func ensureImageAvailable(
 }
 
 // hasRegistryHost reports whether an image reference names a registry: its
-// first path component holds a dot or a colon, or is localhost. A reference
-// without one is a local build the runtime cannot pull.
+// first path component holds a dot or a colon, is localhost, or has an upper
+// case letter (repository names are lower case, so the reference parser reads
+// it as a domain). A reference without one is a local build the runtime
+// cannot pull.
 func hasRegistryHost(image string) bool {
 	first, _, found := strings.Cut(image, "/")
 	if !found {
 		return false
 	}
-	return first == "localhost" || strings.ContainsAny(first, ".:")
+	return first == "localhost" || strings.ContainsAny(first, ".:") || strings.ToLower(first) != first
+}
+
+// requireLocalImages checks that every image without a registry host is in
+// the local image store. Such an image cannot be pulled later, so this runs
+// before the cluster is created.
+func requireLocalImages(ctx context.Context, engine *bootstrapengine.Engine, images ...string) error {
+	for _, image := range images {
+		if hasRegistryHost(image) {
+			continue
+		}
+		if out, err := engine.Runner.Run(ctx, nil, bootstrapengine.RuntimeCLI, "image", "inspect", image); err != nil {
+			return missingLocalImageError(image, err, out)
+		}
+	}
+	return nil
+}
+
+// missingLocalImageError names the build command and the two variables that
+// replace a local build, and keeps the inspect failure.
+func missingLocalImageError(image string, err error, out string) error {
+	return fmt.Errorf("image %s is not in the local image store (%w\n%s) and names no registry to pull it from; "+
+		"build it with `make -C cli images`, or set NKECTL_CWE_IMAGE / NKECTL_CAPI_PROVISIONED_IMAGE "+
+		"to an image the runtime can pull (for Docker Hub, write docker.io/<org>/<name>)",
+		image, err, strings.TrimSpace(out))
 }
 
 // dumpSiteSpec prints the loaded, defaulted site spec as YAML so the operator

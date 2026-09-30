@@ -212,7 +212,7 @@ nkectl bootstrap site -f sitespec.yaml --dry-run
 
 # Run bootstrap
 REGISTRY_API_KEY="<your-registry-api-key>" \
-NKECTL_CWE_IMAGE="nvcr.io/<org>/controller:edge" \
+NKECTL_CWE_IMAGE="nvcr.io/<org>/nke-controller:edge" \
 NKECTL_CAPI_PROVISIONED_IMAGE="nvcr.io/<org>/cluster-api-provider-provisioned:edge" \
   nkectl bootstrap site -f sitespec.yaml
 ```

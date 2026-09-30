@@ -9,6 +9,11 @@
 # record for whoever mirrors these artifacts. The bootstrap does not verify
 # them.
 #
+# Two kinds of image entries: images the bootstrap pulls, with a digest; and
+# the two images you build, with the default tag `make -C cli images` gives
+# them and no digest. NKECTL_CWE_IMAGE and NKECTL_CAPI_PROVISIONED_IMAGE
+# replace those two.
+#
 # Not listed:
 # - The controller chart, the Postgres chart and the provisioned provider's
 #   manifest. They ship inside nkectl.
