@@ -34,6 +34,27 @@ set -Eeuo pipefail
 
 STATE_DIR="${RUNNER_TEMP:-${TMPDIR:-/tmp}/bootstrap-e2e-host}"
 
+# nerdctl's data root, which is where anonymous volumes live -- and the kind
+# node image declares VOLUME /var/lib/containerd, so the node's own containerd
+# keeps its snapshots there.
+#
+# Not nerdctl's default /var/lib/nerdctl. On a container runner /var/lib is
+# the pod's overlayfs root, and an inner containerd mounting overlay with its
+# upperdir on overlayfs is refused by the kernel:
+#
+#   failed to mount rootfs component: mount source: "overlay" ...
+#   err: invalid argument
+#
+# Every control-plane sandbox then fails to start, so `kubeadm init` waits on
+# an API server that never exists and reports only "connection refused" on
+# 6443. On a VM runner /var/lib is real disk, which is why the same code
+# passes there -- the fleet, not the suite, was the variable.
+#
+# Under containerd's own root on purpose: that path already has to be
+# non-overlay for the CWE image build, so this inherits one requirement
+# instead of adding a second one somewhere else.
+NERDCTL_DATA_ROOT="/var/lib/containerd-nerdctl/nerdctl"
+
 log() { printf '[bootstrap-e2e-host] %s\n' "$*"; }
 
 # wait_for_socket waits up to $2 seconds for socket $1. As root: containerd's
@@ -78,6 +99,18 @@ install_runtime() {
     -e "s#^state = .*#state = \"/run/containerd-nerdctl\"#" \
     -e "s#/run/containerd/containerd.sock#${CONTAINERD_ADDRESS}#" \
     /etc/containerd-nerdctl/config.toml
+
+  # Asserted, not assumed: if this lands on overlayfs the failure surfaces
+  # twelve minutes later as an API server that never came up, with nothing
+  # pointing here. See NERDCTL_DATA_ROOT above.
+  sudo mkdir -p /etc/nerdctl "${NERDCTL_DATA_ROOT}"
+  data_root_fstype="$(stat -f -c %T "${NERDCTL_DATA_ROOT}")"
+  if [ "${data_root_fstype}" = "overlayfs" ]; then
+    echo "::error::${NERDCTL_DATA_ROOT} is on overlayfs; the kind node's containerd cannot mount overlay there"
+    exit 1
+  fi
+  log "nerdctl data root ${NERDCTL_DATA_ROOT} is on ${data_root_fstype}"
+  printf 'data_root = "%s"\n' "${NERDCTL_DATA_ROOT}" | sudo tee /etc/nerdctl/nerdctl.toml >/dev/null
 
   sudo tee /etc/systemd/system/containerd-nerdctl.service >/dev/null <<'UNIT'
 [Unit]
