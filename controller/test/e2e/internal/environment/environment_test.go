@@ -311,8 +311,10 @@ func TestResolvePicksTheSiteByCapability(t *testing.T) {
 }
 
 func TestSiteRequiresOneOfSubnetOrPrefix(t *testing.T) {
-	base := ForgeSite{ID: "a", VpcID: "v", SSHKeyGroupID: "k",
-		InstanceTypes: []ForgeInstanceType{{Name: "cpu", ID: "1"}}}
+	base := ForgeSite{
+		ID: "a", VpcID: "v", SSHKeyGroupID: "k",
+		InstanceTypes: []ForgeInstanceType{{Name: "cpu", ID: "1"}},
+	}
 
 	neither := base
 	if _, err := (&Forge{Sites: map[string]ForgeSite{"s": neither}}).Site("s"); err == nil {

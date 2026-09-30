@@ -11,6 +11,12 @@ import (
 )
 
 const (
+	// DefaultArch is the CPU architecture a run that named none gets. Every
+	// site onboarded so far has an amd64 CPU shape, so this keeps a run
+	// without -e2e.capabilities resolving as it did before architectures were
+	// told apart.
+	DefaultArch = "amd64"
+
 	// ForgeProvider is the provider name environments/forge.yaml declares.
 	ForgeProvider = "forge"
 
@@ -237,11 +243,6 @@ func (s Selection) WorkerType() ForgeInstanceType {
 	}
 	return s.CPU
 }
-
-// DefaultArch is the CPU architecture a run that named none gets. Every site
-// onboarded so far has an amd64 CPU shape, so this keeps a run without
-// -e2e.capabilities resolving as it did before architectures were told apart.
-const DefaultArch = "amd64"
 
 // Resolve picks the site and the machine shapes that satisfy a run's
 // capabilities, searching every declared site rather than a pre-chosen one.
