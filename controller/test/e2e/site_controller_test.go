@@ -448,7 +448,7 @@ func collectSiteDiagnostics(ctx context.Context, session infra.Session, secrets 
 func nodeInputs(kubernetesVersion string) nke.NodeInputs {
 	inputs := nke.NodeInputs{
 		KubernetesVersion: kubernetesVersion,
-		CNIVersion:        cmp.Or(optionalVersion("nke-cni-ovn"), forgeDefaultCNIVersion),
+		CNIVersion:        cmp.Or(optionalVersion("cni-ovn"), forgeDefaultCNIVersion),
 	}
 	if siteDisableMTLS {
 		inputs.AgentArgs = nke.AgentArgsNoMTLS
