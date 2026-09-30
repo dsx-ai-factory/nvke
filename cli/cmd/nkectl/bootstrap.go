@@ -285,7 +285,7 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 			dir := opts.diagnosticsDir
 			logger.Info("bootstrap failed; collecting cluster diagnostics", "dir", dir)
 			cwedeploy.New(opts.cweRunner, logger).
-				DumpDiagnostics(ctx, cluster.KubeconfigPath, dir)
+				DumpDiagnostics(ctx, cluster.KubeconfigPath, inv.ClusterName, dir)
 		}
 
 		if opts.keepBootstrapKind || (siteClusterCreated && err != nil) {

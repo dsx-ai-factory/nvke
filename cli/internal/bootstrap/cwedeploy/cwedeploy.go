@@ -937,8 +937,30 @@ func (e *Engine) tenantKubeconfigOnce(ctx context.Context, kubeconfigPath, clust
 	return decoded, nil
 }
 
-// DumpDiagnostics writes everything the cluster can say about why a bootstrap
-// failed into dir.
+// capiResources are the Cluster API objects whose conditions say how far
+// provisioning got. `kubectl get all` covers no custom resource, so a bundle
+// without these says nothing about a cluster that never reported provisioned.
+//
+// Fetched one type at a time: a single `get` of several types fails whole when
+// any one of them is not installed, and which providers a bootstrap reached
+// before it failed is exactly what is unknown here. Group-qualified so a
+// plural another CRD shares cannot resolve to the wrong group.
+var capiResources = []string{
+	"clusters.cluster.x-k8s.io",
+	"machines.cluster.x-k8s.io",
+	"machinesets.cluster.x-k8s.io",
+	"machinedeployments.cluster.x-k8s.io",
+	"kubeadmcontrolplanes.controlplane.cluster.x-k8s.io",
+	"kubeadmconfigs.bootstrap.cluster.x-k8s.io",
+	"provisionedclusters.infrastructure.cluster.x-k8s.io",
+	"provisionedmachines.infrastructure.cluster.x-k8s.io",
+	"provisionedmachinetemplates.infrastructure.cluster.x-k8s.io",
+	"provisionedhostclaims.infrastructure.cluster.x-k8s.io",
+}
+
+// DumpDiagnostics writes everything the bootstrap cluster and the site cluster
+// it built can say about why a bootstrap failed into dir. clusterName names the
+// site cluster; an empty one collects the bootstrap cluster alone.
 //
 // It runs before the cluster is torn down, which is the only moment it can:
 // `bootstrap site` removes the cluster on every exit path, so by the time a
@@ -950,18 +972,48 @@ func (e *Engine) tenantKubeconfigOnce(ctx context.Context, kubeconfigPath, clust
 //
 // `kubectl cluster-info dump` is the bulk of it: every namespace's objects and
 // pod logs, one file each. The rest covers what it omits — the events and
-// object state that explain a pod which never started, and which helm releases
-// actually landed.
+// object state that explain a pod which never started, the Cluster API objects
+// that record where provisioning stopped, and which helm releases landed.
 //
 // Every step is best-effort. This runs on a path where something has already
 // gone wrong, and failing to collect diagnostics must not replace the original
 // error with one about diagnostics.
-func (e *Engine) DumpDiagnostics(ctx context.Context, kubeconfigPath, dir string) {
+func (e *Engine) DumpDiagnostics(ctx context.Context, kubeconfigPath, clusterName, dir string) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		e.log.Warn("could not create the diagnostics directory", "dir", dir, "err", err)
 		return
 	}
 
+	e.dumpCluster(ctx, kubeconfigPath, dir)
+
+	var capi strings.Builder
+	for _, resource := range capiResources {
+		out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"get", resource, "-A", "-o", "yaml")
+		if err != nil {
+			out += "\n" + err.Error()
+		}
+		fmt.Fprintf(&capi, "### %s\n%s\n", resource, out)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "capi-resources.txt"), []byte(capi.String()), 0o600); err != nil {
+		e.log.Warn("could not write a diagnostics file", "file", "capi-resources.txt", "err", err)
+	}
+
+	out, err := e.Runner.Run(ctx, "helm", "--kubeconfig", kubeconfigPath, "list", "-A")
+	if err != nil {
+		out += "\n" + err.Error()
+	}
+	if err := os.WriteFile(filepath.Join(dir, "helm-releases.txt"), []byte(out), 0o600); err != nil {
+		e.log.Warn("could not write a diagnostics file", "file", "helm-releases.txt", "err", err)
+	}
+
+	e.dumpSiteCluster(ctx, kubeconfigPath, clusterName, dir)
+}
+
+// dumpCluster writes one cluster's namespace objects, pod logs, events and pod
+// descriptions into dir. The bootstrap cluster and the site cluster need the
+// same evidence about a pod that never started, so both go through this.
+func (e *Engine) dumpCluster(ctx context.Context, kubeconfigPath, dir string) {
 	if _, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"cluster-info", "dump", "--all-namespaces", "--output-directory", dir); err != nil {
 		e.log.Warn("cluster-info dump did not complete", "err", err)
@@ -979,12 +1031,53 @@ func (e *Engine) DumpDiagnostics(ctx context.Context, kubeconfigPath, dir string
 			e.log.Warn("could not write a diagnostics file", "file", name, "err", err)
 		}
 	}
+}
 
-	out, err := e.Runner.Run(ctx, "helm", "--kubeconfig", kubeconfigPath, "list", "-A")
+// dumpSiteCluster writes the site cluster's state into a site-cluster
+// subdirectory of dir.
+//
+// A bootstrap that times out waiting for the cluster to provision fails for a
+// reason only that cluster holds: nothing in the bootstrap cluster describes a
+// site-cluster pod that never went Ready, so the bundle shows a healthy
+// bootstrap stack next to an unexplained timeout. Skipped when the site
+// cluster's admin kubeconfig is not published yet, which means the failure came
+// before there was a cluster to talk to.
+//
+// The kubeconfig is staged outside dir. dir is archived and shipped, and that
+// file is an admin credential for the cluster.
+func (e *Engine) dumpSiteCluster(ctx context.Context, kubeconfigPath, clusterName, dir string) {
+	if clusterName == "" {
+		return
+	}
+
+	kubeconfig, err := e.tenantKubeconfigOnce(ctx, kubeconfigPath, clusterName)
 	if err != nil {
-		out += "\n" + err.Error()
+		e.log.Warn("no site cluster diagnostics: its admin kubeconfig is not published",
+			"cluster", clusterName, "err", err)
+		return
 	}
-	if err := os.WriteFile(filepath.Join(dir, "helm-releases.txt"), []byte(out), 0o600); err != nil {
-		e.log.Warn("could not write a diagnostics file", "file", "helm-releases.txt", "err", err)
+
+	staging, err := os.MkdirTemp("", "nkectl-site-diagnostics-")
+	if err != nil {
+		e.log.Warn("could not stage the site cluster kubeconfig", "err", err)
+		return
 	}
+	defer func() {
+		if err := os.RemoveAll(staging); err != nil {
+			e.log.Warn("could not remove the staged site cluster kubeconfig", "dir", staging, "err", err)
+		}
+	}()
+
+	sitePath := filepath.Join(staging, "kubeconfig")
+	if err := os.WriteFile(sitePath, kubeconfig, 0o600); err != nil {
+		e.log.Warn("could not stage the site cluster kubeconfig", "err", err)
+		return
+	}
+
+	siteDir := filepath.Join(dir, "site-cluster")
+	if err := os.MkdirAll(siteDir, 0o750); err != nil {
+		e.log.Warn("could not create the site cluster diagnostics directory", "dir", siteDir, "err", err)
+		return
+	}
+	e.dumpCluster(ctx, sitePath, siteDir)
 }

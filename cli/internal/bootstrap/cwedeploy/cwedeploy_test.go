@@ -619,29 +619,112 @@ func TestDeploy_PinsImageByDigest(t *testing.T) {
 	}
 }
 
+// siteKubeconfigToken marks the decoded site kubeconfig. It appears in no
+// base64 encoding of the document holding it, which is what lets
+// TestDumpDiagnostics_KeepsTheSiteKubeconfigOutOfTheBundle tell the credential
+// itself apart from the encoded blob the fake runner returns everywhere.
+const siteKubeconfigToken = "a-site-admin-credential"
+
+func siteKubeconfigOutput() fakeOutput {
+	return fakeOutput{output: base64.StdEncoding.EncodeToString(
+		[]byte("apiVersion: v1\nkind: Config\nusers:\n- user:\n    token: " + siteKubeconfigToken + "\n"),
+	)}
+}
+
 // TestDumpDiagnostics covers the failure-path bundle: it must collect the
-// cluster dump plus the extras that explain a pod which never started, and it
-// must not turn a diagnostics problem into the error the caller sees.
+// cluster dump plus the extras that explain a pod which never started, the
+// Cluster API objects that say where provisioning stopped, and the same
+// evidence from the site cluster, whose pods nothing in the bootstrap cluster
+// describes.
 func TestDumpDiagnostics(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
-	runner := &fakeRunner{outputs: []fakeOutput{{output: "collected"}}}
+	runner := &fakeRunner{outputs: []fakeOutput{siteKubeconfigOutput()}}
 
-	New(runner, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", dir)
+	New(runner, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", "nke-site", dir)
 
-	var dumped bool
-	for _, call := range runner.calls {
-		if strings.Contains(joinArgs(call.args), "cluster-info dump") &&
-			strings.Contains(joinArgs(call.args), "--output-directory "+dir) {
-			dumped = true
+	siteDir := filepath.Join(dir, "site-cluster")
+	for _, want := range []string{dir, siteDir} {
+		var dumped bool
+		for _, call := range runner.calls {
+			if strings.Contains(joinArgs(call.args), "cluster-info dump") &&
+				strings.Contains(joinArgs(call.args), "--output-directory "+want) {
+				dumped = true
+			}
+		}
+		if !dumped {
+			t.Errorf("no cluster-info dump into %s; calls were %+v", want, runner.calls)
 		}
 	}
-	if !dumped {
-		t.Errorf("no cluster-info dump into %s; calls were %+v", dir, runner.calls)
-	}
-	for _, name := range []string{"all-resources.txt", "pods-described.txt", "helm-releases.txt"} {
+
+	for _, name := range []string{
+		"all-resources.txt",
+		"pods-described.txt",
+		"capi-resources.txt",
+		"helm-releases.txt",
+		filepath.Join("site-cluster", "all-resources.txt"),
+		filepath.Join("site-cluster", "pods-described.txt"),
+	} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Errorf("%s was not written: %v", name, err)
 		}
+	}
+
+	body, err := os.ReadFile(filepath.Join(dir, "capi-resources.txt"))
+	if err != nil {
+		t.Fatalf("reading capi-resources.txt: %v", err)
+	}
+	for _, resource := range capiResources {
+		if !strings.Contains(string(body), "### "+resource) {
+			t.Errorf("capi-resources.txt has no section for %s", resource)
+		}
+	}
+}
+
+// TestDumpDiagnostics_KeepsTheSiteKubeconfigOutOfTheBundle pins the reason the
+// kubeconfig is staged elsewhere: dir is archived and shipped off the node, and
+// the site cluster's admin credential must not travel with it.
+func TestDumpDiagnostics_KeepsTheSiteKubeconfigOutOfTheBundle(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
+	runner := &fakeRunner{outputs: []fakeOutput{siteKubeconfigOutput()}}
+
+	New(runner, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", "nke-site", dir)
+
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return err
+		}
+		body, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		if strings.Contains(string(body), siteKubeconfigToken) {
+			t.Errorf("%s carries the site cluster kubeconfig", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking the bundle: %v", err)
+	}
+}
+
+// TestDumpDiagnostics_SkipsAnUnpublishedSiteCluster covers the failure that
+// comes before there is a site cluster to talk to: the bootstrap cluster's own
+// bundle is still collected, and no empty site-cluster directory is left to
+// suggest one was inspected.
+func TestDumpDiagnostics_SkipsAnUnpublishedSiteCluster(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
+	runner := &fakeRunner{outputs: []fakeOutput{{
+		output: "Error from server (NotFound): secrets \"nke-site-kubeconfig\" not found",
+		err:    errors.New("exit status 1"),
+	}}}
+
+	New(runner, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", "nke-site", dir)
+
+	if _, err := os.Stat(filepath.Join(dir, "all-resources.txt")); err != nil {
+		t.Errorf("the bootstrap cluster bundle was not written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "site-cluster")); !os.IsNotExist(err) {
+		t.Errorf("site-cluster exists without a published kubeconfig (stat err %v)", err)
 	}
 }
 
@@ -652,7 +735,7 @@ func TestDumpDiagnostics_SurvivesAFailingCluster(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
 	runner := &fakeRunner{outputs: []fakeOutput{{output: "unreachable", err: errors.New("exit status 1")}}}
 
-	New(runner, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", dir)
+	New(runner, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", "nke-site", dir)
 
 	body, err := os.ReadFile(filepath.Join(dir, "all-resources.txt"))
 	if err != nil {
