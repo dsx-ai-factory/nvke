@@ -15,7 +15,7 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/capi/nico"
+	"github.com/dsx-ai-factory/nke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
@@ -90,48 +90,15 @@ func SetPausedAnnotation(obj metav1.Object, paused bool) {
 	obj.SetAnnotations(annotations)
 }
 
-// ClusterScaffold builds the infrastructure-provider manifest for a cluster.
-// Each provider type has its own implementation, selected by
-// GetClusterScaffold, so provider-specific logic lives in its own package
-// instead of behind a switch shared by every provider.
-type ClusterScaffold interface {
-	GetClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error)
-}
-
-// GetClusterScaffold selects the ClusterScaffold implementation for the
-// cluster's provider type. Adding a provider means adding a case here and
-// its own implementation package, not a new switch arm at each call site.
-func GetClusterScaffold(cluster db.Cluster) (ClusterScaffold, error) {
-	switch cluster.ProviderType {
-	case db.ProviderTypeCAPI:
-		return capiClusterScaffold{}, nil
-	case db.ProviderTypeNico:
-		return nico.New(), nil
-	default:
-		return nil, fmt.Errorf("unsupported provider type %q for cluster %s", cluster.ProviderType, cluster.ID)
-	}
-}
-
 // ClusterScaffoldManifest builds the infrastructure-provider manifest (CAPI
-// InfraCluster or NicoCluster) for the cluster.
+// InfraCluster or NicoCluster) for the cluster, via the provider client
+// factory in internal/clients.
 func ClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error) {
-	scaffold, err := GetClusterScaffold(cluster)
+	scaffold, err := clients.GetClusterScaffold(cluster)
 	if err != nil {
 		return nil, err
 	}
 	return scaffold.GetClusterScaffoldManifest(cluster)
-}
-
-// capiClusterScaffold builds cluster scaffold manifests for clusters where
-// the caller supplies the CAPI infrastructure template directly.
-type capiClusterScaffold struct{}
-
-func (capiClusterScaffold) GetClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error) {
-	provider, err := cluster.CAPIProvider()
-	if err != nil {
-		return nil, err
-	}
-	return provider.InfraCluster, nil
 }
 
 func ParseManifest(raw []byte) (*unstructured.Unstructured, error) {

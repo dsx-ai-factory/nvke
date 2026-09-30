@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package nico implements the NICo provider's capability clients — starting
-// with capi.ClusterScaffold — so provider-specific behavior lives in its own
-// package rather than behind a switch shared with other providers.
+// with clients.ClusterScaffold — so provider-specific behavior lives in its
+// own package rather than behind a switch shared with other providers.
 package nico
 
 import (

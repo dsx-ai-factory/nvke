@@ -14,7 +14,7 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/capi/nico"
+	"github.com/dsx-ai-factory/nke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
