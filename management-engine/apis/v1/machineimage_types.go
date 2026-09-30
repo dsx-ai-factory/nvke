@@ -23,7 +23,7 @@ type MachineImageSpec struct {
 	// different purpose, such as "fde" for full disk encryption.
 	// +optional
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`
 	Variant string `json:"variant,omitempty"`
 	// BuildDate is the date the image was built, as YYYY-MM-DD.
 	// +kubebuilder:validation:Format=date
