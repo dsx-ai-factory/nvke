@@ -162,7 +162,7 @@ concurrency:
   # no hardware with. It repeats the same l40 default rather than reading the
   # env, which is not in scope here, so the key keeps naming the shape the run
   # actually asks for.
-  group: Forge site controller e2e ${{ inputs.arch || vars.SITE_E2E_ARCH || 'amd64' }} ${{ inputs.gpu || 'l40' }}
+  group: Forge site controller e2e ${{ inputs.arch || 'amd64' }} ${{ inputs.gpu || 'l40' }}
   cancel-in-progress: false
 
 jobs:
@@ -252,7 +252,11 @@ jobs:
       # variable per key is easier to set correctly than a string whose
       # grammar has to be remembered, and ARCH is needed on its own anyway,
       # for SITE_ARCH.
-      ARCH: ${{ inputs.arch || vars.SITE_E2E_ARCH }}
+      # Pinned for the same reason GPU below is: SITE_E2E_ARCH tracks whatever
+      # the GB200 work needs and is arm64 today, and az61 declares no arm64
+      # shape, so reading it resolves to no site at all. Revert with:
+      #   ARCH: ${{ inputs.arch || vars.SITE_E2E_ARCH }}
+      ARCH: ${{ inputs.arch || 'amd64' }}
       # The SITE_E2E_GPU fallback is dropped on purpose: it is gb200, which
       # resolves to ytl, and what this branch qualifies is az61. l40 is that
       # site's gpu.l40sx8, so the tenant workers take L40S behind a
