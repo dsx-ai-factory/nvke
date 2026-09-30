@@ -135,6 +135,9 @@ fi
 sudo rm -f /var/lib/dbus/machine-id
 sudo rm -f /home/ubuntu/.ssh/authorized_keys
 
+sudo install -d -m 0755 /etc/cloud/cloud.cfg.d
+sudo install -m 0644 "${SRC}/99-nke-network.cfg" /etc/cloud/cloud.cfg.d/99-nke-network.cfg
+
 # cidata/autoinstall-lvm.pkrtpl sets kernel.package to the NVIDIA-tuned
 # flavor specifically so, per its own comment, "there's no generic kernel to
 # reboot into or purge afterward" -- but curtin installs it alongside the
