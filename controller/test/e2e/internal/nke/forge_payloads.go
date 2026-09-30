@@ -45,9 +45,6 @@ type NodeInputs struct {
 	KubernetesVersion string
 	// CNIVersion selects the nke-cni-ovn-images package, e.g. "1.4.0".
 	CNIVersion string
-	// SpireVersion selects the spire-agent package, e.g. "1.14.1+tpm1.9.0".
-	SpireVersion string
-
 	// AptSuite is the NKE apt suite the node installs its packages from, one
 	// per Ubuntu release. Empty derives it from ImageURL, which is where the
 	// answer already is: the suite has to match the release the image was
@@ -90,7 +87,6 @@ func (i NodeInputs) validate() error {
 		{"Arch", i.Arch},
 		{"KubernetesVersion", i.KubernetesVersion},
 		{"CNIVersion", i.CNIVersion},
-		{"SpireVersion", i.SpireVersion},
 	} {
 		if strings.TrimSpace(field.value) == "" {
 			missing = append(missing, field.name)

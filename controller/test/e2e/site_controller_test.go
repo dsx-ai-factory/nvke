@@ -449,7 +449,6 @@ func nodeInputs(kubernetesVersion string) nke.NodeInputs {
 	inputs := nke.NodeInputs{
 		KubernetesVersion: kubernetesVersion,
 		CNIVersion:        cmp.Or(optionalVersion("nke-cni-ovn"), forgeDefaultCNIVersion),
-		SpireVersion:      cmp.Or(optionalVersion("spire-agent"), forgeDefaultSpireVersion),
 	}
 	if siteDisableMTLS {
 		inputs.AgentArgs = nke.AgentArgsNoMTLS

@@ -29,7 +29,6 @@ func completeForgeInputs() NodeInputs {
 		Arch:              "amd64",
 		KubernetesVersion: "1.34.2",
 		CNIVersion:        "1.4.0",
-		SpireVersion:      "1.14.1+tpm1.9.0",
 	}
 }
 
@@ -64,7 +63,6 @@ func TestBuildForgeNodePayloadsRendersEveryInput(t *testing.T) {
 		"nke-cni-ovn-images-" + inputs.CNIVersion,
 		"nke-cni-ovn-charts-" + inputs.CNIVersion,
 		"openvswitch-switch",
-		"spire-agent=" + inputs.SpireVersion,
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("pre-kubeadm commands should install %q", want)
@@ -103,7 +101,7 @@ func TestBuildForgeNodePayloadsNamesEveryMissingInput(t *testing.T) {
 	if err == nil {
 		t.Fatal("empty inputs should not render")
 	}
-	for _, field := range []string{"BootLoaderURL", "ImageURL", "KubernetesVersion", "CNIVersion", "SpireVersion"} {
+	for _, field := range []string{"BootLoaderURL", "ImageURL", "KubernetesVersion", "CNIVersion"} {
 		if !strings.Contains(err.Error(), field) {
 			t.Errorf("error should name %q, got %v", field, err)
 		}
@@ -408,5 +406,23 @@ func TestBuildForgeNodePayloadsLuksKeyFollowsTheArch(t *testing.T) {
 				t.Errorf("luks key present = %v, want %v, in:\n%s", got, tc.want, payloads.IPXEScript)
 			}
 		})
+	}
+}
+
+// The NKE OS image pre-installs spire-agent and owns its units, its first-boot
+// renderer and its TPM plugin checksum. Installing the apt repository's build
+// over that swaps an image-owned package for a generic one, so the pre-kubeadm
+// commands must not mention it at all.
+func TestBuildForgeNodePayloadsDoesNotInstallSpireAgent(t *testing.T) {
+	payloads, err := BuildForgeNodePayloads(completeForgeInputs())
+	if err != nil {
+		t.Fatalf("building payloads: %v", err)
+	}
+	joined := strings.Join(payloads.PreKubeadmCommands, "\n")
+	if strings.Contains(joined, "spire-agent") {
+		t.Errorf("the node's own spire-agent should be left alone, got:\n%s", joined)
+	}
+	if strings.Contains(joined, "--allow-downgrades") {
+		t.Error("nothing here should need a downgrade")
 	}
 }
