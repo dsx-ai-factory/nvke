@@ -145,6 +145,12 @@ jobs:
       - name: Verify the embedded provisioned provider manifest is up to date
         run: make -C cli provider-manifest-check
 
+      # The controller chart installs its release CRDs from one rendered file,
+      # built from the management-engine CRDs with the same pinned kubectl, so it
+      # is checked here beside the other rendered bundle.
+      - name: Verify the controller chart's release CRDs are up to date
+        run: make chart-crds-check
+
   # The third generated artifact. buf downloads its two remote plugins, both
   # version-pinned in agent/buf.gen.yaml, so this needs the network the other
   # two jobs do not.

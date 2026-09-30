@@ -87,6 +87,7 @@ checkout, and do not stub a dependency to make the build pass.
 | `cluster-api-provider-provisioned/api/v1alpha1/zz_generated.deepcopy.go` | controller-gen output | **No — regenerate** |
 | `cluster-api-provider-provisioned/config/crd/bases/*.yaml` | controller-gen output | **No — regenerate** |
 | `cluster-api-provider-provisioned/config/rbac/role.yaml` | controller-gen output | **No — regenerate** |
+| `controller/deploy/charts/controller/files/crds.yaml` | `make chart-crds` output (kustomize over the `management-engine` CRDs) | **No — regenerate** |
 | `agent/pkg/agent/proto/*.pb.go` | buf/protoc output | **No — regenerate** |
 | `agent/THIRD_PARTY_NOTICES.md` | go-licenses output | **No — regenerate** |
 | `controller/deploy/charts/` | Helm charts | Yes, but bump the chart version |

@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The CRDs the controller chart installs.
+#
+# The CRDs are controller-gen output under management-engine/config/crd/bases,
+# and stay that way: the annotations below are what only the chart needs, so they
+# are added here, on the way into the chart, and not in the CRD definitions.
+#
+#   helm.sh/resource-policy: keep         `helm uninstall` leaves the CRDs in
+#                                         place, because deleting a CRD deletes
+#                                         every resource of its kind
+#   argocd.argoproj.io/sync-wave: "-2"    Argo CD applies the CRDs before the
+#                                         resources that need them
+#   argocd.argoproj.io/sync-options: Prune=false
+#                                         Argo CD never prunes them
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../management-engine/config/crd/bases/internal.nke.nvidia.com_machineimages.yaml
+  - ../../../management-engine/config/crd/bases/internal.nke.nvidia.com_clusterreleases.yaml
+  - ../../../management-engine/config/crd/bases/internal.nke.nvidia.com_nodepoolreleases.yaml
+commonAnnotations:
+  helm.sh/resource-policy: keep
+  argocd.argoproj.io/sync-wave: "-2"
+  argocd.argoproj.io/sync-options: Prune=false

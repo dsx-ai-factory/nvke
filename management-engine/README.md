@@ -140,6 +140,7 @@ make build test lint
 make generate manifests # after changing API types
 make generate-check # verify generated CRDs and deepcopy code
 make test-integration
+make -C .. chart-crds # if you changed MachineImage, ClusterRelease or NodePoolRelease
 make chart-check
 ```
 

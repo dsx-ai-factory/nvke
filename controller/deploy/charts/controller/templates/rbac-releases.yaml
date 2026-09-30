@@ -1,0 +1,34 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "controller.fullname" . }}-releases
+  labels:
+    {{- include "controller.labels" . | nindent 4 }}
+rules:
+  # Read the releases. CWE resolves osProfile names from these
+  # cluster-scoped resources and does not write them.
+  - apiGroups:
+      - internal.nke.nvidia.com
+    resources:
+      - machineimages
+      - clusterreleases
+      - nodepoolreleases
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "controller.fullname" . }}-releases
+  labels:
+    {{- include "controller.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "controller.fullname" . }}-releases
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "controller.serviceAccountName" . }}
+    namespace: {{ include "controller.namespace" . }}

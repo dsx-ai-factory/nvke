@@ -1,0 +1,405 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# GENERATED FILE -- do not edit. Regenerate with `make chart-crds`.
+#
+# `kubectl kustomize controller/deploy/release-crds`: the release CRDs from
+# management-engine/config/crd/bases plus the annotations only the chart needs.
+# Edit the Go types and regenerate there, or the overlay, then regenerate this.
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+    argocd.argoproj.io/sync-wave: "-2"
+    controller-gen.kubebuilder.io/version: v0.20.1
+    helm.sh/resource-policy: keep
+  name: clusterreleases.internal.nke.nvidia.com
+spec:
+  group: internal.nke.nvidia.com
+  names:
+    kind: ClusterRelease
+    listKind: ClusterReleaseList
+    plural: clusterreleases
+    singular: clusterrelease
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.machineImageRef.name
+      name: Image
+      type: string
+    - jsonPath: .spec.lifecycle.deprecated
+      name: Deprecated
+      type: boolean
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ClusterRelease is what an operator publishes to make a control-plane release
+          available to the engine, and how that release is managed once published.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              ClusterReleaseSpec is the published content of a control-plane release: the
+              machine image its nodes boot and the initialization applied to them.
+            properties:
+              lifecycle:
+                default: {}
+                description: |-
+                  ReleaseLifecycle is how an operator manages an already-published Release
+                  without altering what that Release provisions.
+                properties:
+                  deprecated:
+                    default: false
+                    description: |-
+                      Deprecated allows resources already depending on the Release to keep
+                      using it, but rejects new cluster or node pool creation referencing it.
+                    type: boolean
+                type: object
+              machineImageRef:
+                description: |-
+                  MachineImageReference names a cluster-scoped MachineImage. Only the name is
+                  selectable; the kind and scope are fixed.
+                properties:
+                  name:
+                    description: ResourceName is a Kubernetes DNS subdomain name,
+                      not a provider identifier.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: machineImageRef is immutable
+                  rule: self == oldSelf
+              machineInit:
+                description: |-
+                  MachineInit is the first-boot configuration a Release pairs with its image.
+                  It lives on the Release rather than the MachineImage so one image can back
+                  several Releases whose initialization differs.
+                properties:
+                  userDataTemplate:
+                    description: |-
+                      UserDataTemplate is rendered with machine-specific values, such as the
+                      hostname and the selected Kubernetes version, and the result is stored in
+                      the machine's CAPI bootstrap Secret. It must begin with a cloud-init
+                      header.
+                    maxLength: 65536
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: userDataTemplate must not be blank
+                      rule: self.trim() != ''
+                    - message: userDataTemplate must begin with a cloud-init header
+                      rule: self.startsWith('#cloud-config\n') || self.startsWith('#cloud-config\r\n')
+                        || self.startsWith('#!') || self.startsWith('#include') ||
+                        self.startsWith('#cloud-boothook') || self.startsWith('#part-handler')
+                        || self.startsWith('#cloud-config-archive') || self.startsWith('Content-Type:')
+                    - message: userDataTemplate has unbalanced Go template delimiters
+                      rule: self.split('{{').size() == self.split('}}').size()
+                required:
+                - userDataTemplate
+                type: object
+                x-kubernetes-validations:
+                - message: machineInit is immutable
+                  rule: self == oldSelf
+            required:
+            - machineImageRef
+            - machineInit
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+    argocd.argoproj.io/sync-wave: "-2"
+    controller-gen.kubebuilder.io/version: v0.20.1
+    helm.sh/resource-policy: keep
+  name: machineimages.internal.nke.nvidia.com
+spec:
+  group: internal.nke.nvidia.com
+  names:
+    kind: MachineImage
+    listKind: MachineImageList
+    plural: machineimages
+    singular: machineimage
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.operatingSystem.family
+      name: OS
+      type: string
+    - jsonPath: .spec.operatingSystem.version
+      name: Version
+      type: string
+    - jsonPath: .spec.architecture
+      name: Arch
+      type: string
+    - jsonPath: .spec.variant
+      name: Variant
+      type: string
+    - jsonPath: .spec.buildDate
+      name: Built
+      type: string
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: MachineImage is an immutable node image published as engine configuration.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              MachineImageSpec is the immutable identity of a bootable machine image and
+              the boot contract a provider needs to launch it. The whole spec is immutable.
+            properties:
+              architecture:
+                description: |-
+                  Architecture is a Go/OCI architecture name such as "amd64" or "arm64".
+                  The vocabulary is not enumerated here: which architectures are qualified
+                  is an operator decision, not a schema one.
+                maxLength: 32
+                minLength: 1
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
+              buildDate:
+                description: BuildDate is the date the image was built, as YYYY-MM-DD.
+                format: date
+                type: string
+              nico:
+                description: NICo holds the boot contract of the NICo infrastructure
+                  provider.
+                properties:
+                  ipxeScript:
+                    description: |-
+                      IPXEScript is a Go template rendered with machine-specific values, such as
+                      the disk selection strategy, and the result becomes the iPXE script of the
+                      NICo machine resource. The #!ipxe magic occupies the first line on its own
+                      and a command follows it.
+                    maxLength: 16384
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: 'ipxeScript must begin with a #!ipxe line of its own'
+                      rule: self.startsWith('#!ipxe\n') || self.startsWith('#!ipxe\r\n')
+                    - message: 'ipxeScript must contain a command after the #!ipxe
+                        line'
+                      rule: self.replace('#!ipxe', '').trim() != ''
+                    - message: ipxeScript has unbalanced Go template delimiters
+                      rule: self.split('{{').size() == self.split('}}').size()
+                required:
+                - ipxeScript
+                type: object
+              operatingSystem:
+                description: OperatingSystem identifies the distribution an image
+                  was built from.
+                properties:
+                  family:
+                    description: |-
+                      Family is the distribution name, such as "ubuntu". Like Architecture, it
+                      is shape-checked rather than enumerated.
+                    maxLength: 63
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                  version:
+                    description: Version is the distribution version, such as "24.04".
+                    maxLength: 32
+                    minLength: 1
+                    pattern: ^[0-9]+(\.[0-9]+)*$
+                    type: string
+                required:
+                - family
+                - version
+                type: object
+              variant:
+                description: |-
+                  Variant distinguishes images built from the same operating system for a
+                  different purpose, such as "fde" for full disk encryption.
+                maxLength: 63
+                pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                type: string
+            required:
+            - architecture
+            - buildDate
+            - nico
+            - operatingSystem
+            type: object
+            x-kubernetes-validations:
+            - message: machine image spec is immutable; publish a new name instead
+              rule: self == oldSelf
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+    argocd.argoproj.io/sync-wave: "-2"
+    controller-gen.kubebuilder.io/version: v0.20.1
+    helm.sh/resource-policy: keep
+  name: nodepoolreleases.internal.nke.nvidia.com
+spec:
+  group: internal.nke.nvidia.com
+  names:
+    kind: NodePoolRelease
+    listKind: NodePoolReleaseList
+    plural: nodepoolreleases
+    singular: nodepoolrelease
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.machineImageRef.name
+      name: Image
+      type: string
+    - jsonPath: .spec.lifecycle.deprecated
+      name: Deprecated
+      type: boolean
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          NodePoolRelease is what an operator publishes to make a worker release
+          available to the engine, and how that release is managed once published.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              NodePoolReleaseSpec is the published content of a worker release: the machine
+              image its nodes boot and the initialization applied to them.
+            properties:
+              lifecycle:
+                default: {}
+                description: |-
+                  ReleaseLifecycle is how an operator manages an already-published Release
+                  without altering what that Release provisions.
+                properties:
+                  deprecated:
+                    default: false
+                    description: |-
+                      Deprecated allows resources already depending on the Release to keep
+                      using it, but rejects new cluster or node pool creation referencing it.
+                    type: boolean
+                type: object
+              machineImageRef:
+                description: |-
+                  MachineImageReference names a cluster-scoped MachineImage. Only the name is
+                  selectable; the kind and scope are fixed.
+                properties:
+                  name:
+                    description: ResourceName is a Kubernetes DNS subdomain name,
+                      not a provider identifier.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: machineImageRef is immutable
+                  rule: self == oldSelf
+              machineInit:
+                description: |-
+                  MachineInit is the first-boot configuration a Release pairs with its image.
+                  It lives on the Release rather than the MachineImage so one image can back
+                  several Releases whose initialization differs.
+                properties:
+                  userDataTemplate:
+                    description: |-
+                      UserDataTemplate is rendered with machine-specific values, such as the
+                      hostname and the selected Kubernetes version, and the result is stored in
+                      the machine's CAPI bootstrap Secret. It must begin with a cloud-init
+                      header.
+                    maxLength: 65536
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: userDataTemplate must not be blank
+                      rule: self.trim() != ''
+                    - message: userDataTemplate must begin with a cloud-init header
+                      rule: self.startsWith('#cloud-config\n') || self.startsWith('#cloud-config\r\n')
+                        || self.startsWith('#!') || self.startsWith('#include') ||
+                        self.startsWith('#cloud-boothook') || self.startsWith('#part-handler')
+                        || self.startsWith('#cloud-config-archive') || self.startsWith('Content-Type:')
+                    - message: userDataTemplate has unbalanced Go template delimiters
+                      rule: self.split('{{').size() == self.split('}}').size()
+                required:
+                - userDataTemplate
+                type: object
+                x-kubernetes-validations:
+                - message: machineInit is immutable
+                  rule: self == oldSelf
+            required:
+            - machineImageRef
+            - machineInit
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources: {}

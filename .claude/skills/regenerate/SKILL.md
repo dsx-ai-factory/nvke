@@ -1,6 +1,6 @@
 ---
 name: regenerate
-description: Regenerate generated artifacts (OpenAPI Go code, gRPC protos, CAPI deepcopy/CRD/RBAC, third-party notices, go.work) after editing their sources. Use whenever a change touches openapi.yaml, a .proto file, CAPI types/markers, dependencies, or when a *-check CI gate reports drift.
+description: Regenerate generated artifacts (OpenAPI Go code, gRPC protos, CAPI deepcopy/CRD/RBAC, the controller chart's release CRDs, third-party notices, go.work) after editing their sources. Use whenever a change touches openapi.yaml, a .proto file, CAPI types/markers, the release CRD types, dependencies, or when a *-check CI gate reports drift.
 ---
 
 # Regenerate, never hand-edit
@@ -14,6 +14,8 @@ source + output together.
 | `controller/api/openapi.yaml` | `make generate` in `controller/` | spec + `api/*.gen.go` |
 | `agent/pkg/agent/proto/node_agent.proto` | `make protos` in `agent/` | `.proto` + `*.pb.go` |
 | CAPI types/markers in `cluster-api-provider-provisioned/` | `make generate manifests` there | types + deepcopy, CRDs, `config/rbac/role.yaml` |
+| `MachineImage`, `ClusterRelease` or `NodePoolRelease` types/markers in `management-engine/apis/v1/` | `make -C management-engine manifests`, then `make chart-crds` at the root | types + `config/crd/bases` + the chart's `files/crds.yaml` |
+| `controller/deploy/release-crds/kustomization.yaml` | `make chart-crds` at the root | overlay + `files/crds.yaml` |
 | `agent/go.mod` dependencies | `make notices` in `agent/` | `go.mod`/`go.sum` + `THIRD_PARTY_NOTICES.md` |
 | any module `go.mod`/`go.sum` | `make work-sync` at the root | `go.work` + `go.work.sum` |
 
@@ -28,7 +30,8 @@ Rules that trip people up:
   Flox is optional — plain `make` works without it. If you do activate it,
   match the CLI version in `.flox-cli-version`.
 - Drift gates in CI: `make check-protos` and `make notices-check` (agent),
-  `make generate-check` (provisioned provider), `go-work-check` (workspace).
+  `make generate-check` (provisioned provider), `make chart-crds-check` (the
+  controller chart's release CRDs), `go-work-check` (workspace).
   If one fails, regenerate and commit the result — do not revert the output.
 - `controller/deploy/charts/` READMEs are helm-docs output of `values.yaml`
   comments; edit the comment, not just the README.

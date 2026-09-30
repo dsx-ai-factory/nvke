@@ -44,6 +44,11 @@ import yaml
 RELEASE = "cloud-workflow-engine"
 
 EXPECTED_NAMES = {
+    ("CustomResourceDefinition", "clusterreleases.internal.nke.nvidia.com"),
+    ("CustomResourceDefinition", "machineimages.internal.nke.nvidia.com"),
+    ("CustomResourceDefinition", "nodepoolreleases.internal.nke.nvidia.com"),
+    ("ClusterRole", "cloud-workflow-engine-releases"),
+    ("ClusterRoleBinding", "cloud-workflow-engine-releases"),
     ("Namespace", "nke-system"),
     ("NetworkPolicy", "cloud-workflow-engine-metrics"),
     ("ServiceAccount", "cloud-workflow-engine"),

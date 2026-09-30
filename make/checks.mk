@@ -51,6 +51,40 @@ internal-config-check: ## Check the tree names no internal infrastructure. (run 
 	@python3 -B ./hack/test_internal_config_check.py
 	@./hack/internal-config-check.sh
 
+CHART_CRDS_KUSTOMIZE := controller/deploy/release-crds
+CHART_CRDS_FILE := $(CHART)/files/crds.yaml
+
+.PHONY: chart-crds chart-crds-check
+chart-crds: ## Regenerate the release CRDs the controller chart installs.
+	@# Pinned kubectl: the rendered bytes are compared, so the renderer has to
+	@# be the same one everywhere or the check below fails on version drift.
+	@$(call require_tool,kubectl,$(KUBECTL_VERSION))
+	@mkdir -p "$(dir $(CHART_CRDS_FILE))"
+	@{ \
+		printf '%s\n' \
+			'# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.' \
+			'# SPDX-License-Identifier: Apache-2.0' \
+			'#' \
+			'# GENERATED FILE -- do not edit. Regenerate with `make chart-crds`.' \
+			'#' \
+			'# `kubectl kustomize $(CHART_CRDS_KUSTOMIZE)`: the release CRDs from' \
+			'# management-engine/config/crd/bases plus the annotations only the chart needs.' \
+			'# Edit the Go types and regenerate there, or the overlay, then regenerate this.'; \
+		printf '%s\n' '---'; \
+		kubectl kustomize --load-restrictor=LoadRestrictionsNone $(CHART_CRDS_KUSTOMIZE); \
+	} > "$(CHART_CRDS_FILE)"
+	@echo "  wrote $(CHART_CRDS_FILE)"
+
+chart-crds-check: ## Verify the release CRDs in the controller chart are up to date.
+	@# Tracking first: git diff says nothing about an untracked path, so a
+	@# never-committed file would pass silently.
+	@git ls-files --error-unmatch "$(CHART_CRDS_FILE)" > /dev/null 2>&1 \
+		|| { echo "$(CHART_CRDS_FILE) is not tracked by git. Run 'make chart-crds' and commit it."; exit 1; }
+	@$(MAKE) --no-print-directory chart-crds
+	@git diff --exit-code -- "$(CHART_CRDS_FILE)" \
+		|| { echo "ERROR: $(CHART_CRDS_FILE) is stale. Run 'make chart-crds' and commit it."; exit 1; }
+	@echo "  $(CHART_CRDS_FILE) is up to date."
+
 # helm lint and helm template both pass on a manifest Kubernetes would reject, so
 # kubeconform parses what was rendered. A chart that renders nothing also passes
 # helm template silently, hence the count.
@@ -229,6 +263,7 @@ gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory nktp-chart-check
 	@$(MAKE) --no-print-directory -C controller generate-check
 	@$(MAKE) --no-print-directory -C cli provider-manifest-check
+	@$(MAKE) --no-print-directory chart-crds-check
 	@$(MAKE) --no-print-directory vulncheck
 	@echo
 	@echo "Merge-gate jobs not run locally:"
