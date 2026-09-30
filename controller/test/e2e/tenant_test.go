@@ -1410,14 +1410,11 @@ func nicoSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec 
 // required inputs: they are not what a nico-forge run qualifies, and a resolved
 // combination from the qualify tool will supply them once the run verb exists.
 //
-// Kubernetes and the CNI are what the recorded Forge exercises ran. The SPIRE
-// pin is weaker evidence — those runs installed spire-agent unpinned, so this
-// is the version the repo's own Forge scaffolding names rather than one
-// observed on the hardware.
+// Kubernetes and the CNI are what the recorded Forge exercises ran. There is
+// no SPIRE pin: the OS image owns its spire-agent, so the lane installs none.
 const (
 	forgeDefaultKubernetesVersion = "1.36.3"
 	forgeDefaultCNIVersion        = "1.4.0"
-	forgeDefaultSpireVersion      = "1.14.1+tpm1.9.0"
 )
 
 // nicoForgeSpec builds a CAPNico topology on real Forge. The manifests are the
@@ -1527,7 +1524,6 @@ func forgeRolePayloads(controlPlaneArch, workerArch, kubernetesVersion string) (
 			Arch:              arch,
 			KubernetesVersion: kubernetesVersion,
 			CNIVersion:        cmp.Or(optionalVersion("nke-cni-ovn"), forgeDefaultCNIVersion),
-			SpireVersion:      cmp.Or(optionalVersion("spire-agent"), forgeDefaultSpireVersion),
 		})
 	}
 

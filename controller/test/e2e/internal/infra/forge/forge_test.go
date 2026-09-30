@@ -172,7 +172,6 @@ func newTestProvider(t *testing.T, forge *fakeForge, dialer Dialer) *Provider {
 		Node: nke.NodeInputs{
 			KubernetesVersion: "1.34.2",
 			CNIVersion:        "1.4.0",
-			SpireVersion:      "1.14.1+tpm1.9.0",
 		},
 		Tools:        completeTools(),
 		HTTPClient:   srv.Client(),
@@ -371,7 +370,6 @@ func newSlowCreateProvider(t *testing.T, forge *fakeForge, dialer Dialer, perReq
 		Node: nke.NodeInputs{
 			KubernetesVersion: "1.34.2",
 			CNIVersion:        "1.4.0",
-			SpireVersion:      "1.14.1+tpm1.9.0",
 		},
 		Tools:         completeTools(),
 		HTTPClient:    client,
