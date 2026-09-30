@@ -95,6 +95,14 @@ func createFailureProbes(node string) []probe {
 
 	return []probe{
 		{label: "node containers", args: []string{"ps", "-a"}},
+		// The node image declares VOLUME /var/lib/containerd, so the node's
+		// containerd stores snapshots in an anonymous volume. Overlay cannot
+		// be mounted with its upperdir on overlayfs, so if that volume lands
+		// on the runner's own root every sandbox fails to start and nothing
+		// says why. These two report the backing filesystem directly.
+		{label: "volumes", args: []string{"volume", "ls"}},
+		nodeShell("/var/lib/containerd backing filesystem",
+			`stat -f -c %T /var/lib/containerd; findmnt -T /var/lib/containerd || true`),
 		{label: node + ": boot output", args: []string{"logs", node}},
 		nodeShell("kubelet journal", "journalctl -u kubelet --no-pager -n 2000"),
 		nodeShell("containers", "crictl ps -a"),
