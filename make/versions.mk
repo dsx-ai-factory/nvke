@@ -52,7 +52,8 @@ show-versions: ## Print every pinned tool version.
 		"GO_LICENSES_VERSION"    "$(GO_LICENSES_VERSION)" \
 		"VACUUM_VERSION"         "$(VACUUM_VERSION)" \
 		"REDOCLY_VERSION"        "$(REDOCLY_VERSION)" \
-		"FERN_VERSION"           "$(FERN_VERSION)"
+		"FERN_VERSION"           "$(FERN_VERSION)" \
+		"SYFT_VERSION"           "$(SYFT_VERSION)"
 	@echo
 	@echo "Pinned in .flox/env/manifest.toml, and printed here from the live"
 	@echo "environment rather than from a second copy of the number:"

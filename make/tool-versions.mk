@@ -106,6 +106,13 @@ REDOCLY_VERSION     ?= 2.57.0
 # fern/fern.config.json pins the same number; move both together.
 FERN_VERSION        ?= 5.143.6
 
+# syft generates the SPDX SBOMs that ship with every released artifact. The
+# version is pinned here rather than left to anchore/sbom-action's bundled
+# default, so a re-run of an old tag produces the same document a consumer
+# already has, and a syft bump is a reviewable commit rather than a silent
+# change in what the release describes.
+SYFT_VERSION ?= v1.41.2
+
 # Development tools invoked by module Makefiles. These were declared where they
 # were used -- buf in agent/, setup-envtest and ginkgo in controller/, and
 # controller-gen separately in two modules -- so nothing stopped two copies of

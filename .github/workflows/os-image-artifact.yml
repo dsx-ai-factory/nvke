@@ -354,12 +354,19 @@ jobs:
             echo "s5cmd_version=$(make --no-print-directory print-S5CMD_VERSION)"
             echo "s5cmd_sha256_amd64=$(make --no-print-directory print-S5CMD_SHA256_AMD64)"
             echo "s5cmd_sha256_arm64=$(make --no-print-directory print-S5CMD_SHA256_ARM64)"
+            echo "syft_version=$(make --no-print-directory print-SYFT_VERSION)"
+            echo "luks_passphrase=$(make --no-print-directory -C os-image/packer print-LUKS_PASSPHRASE)"
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up ORAS
         uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
         with:
           version: ${{ steps.versions.outputs.oras_version }}
+
+      - name: Set up syft
+        uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          syft-version: ${{ steps.versions.outputs.syft_version }}
 
       - name: Resolve version and tags
         id: meta
@@ -406,11 +413,11 @@ jobs:
       # cost is negligible and it keeps this step identical across the
       # matrix.
       # dpkg-dev: dpkg-scanpackages indexes the CNI debs fetch-artifacts.sh builds.
-      - name: Install QEMU, cloud-localds, swtpm, OVMF/AAVMF, 7z, xorriso, and dpkg-dev
+      - name: Install QEMU, cloud-localds, swtpm, OVMF/AAVMF, 7z, xorriso, dpkg-dev, and libguestfs
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-system-x86 qemu-system-arm qemu-utils cloud-image-utils genisoimage unzip swtpm ovmf qemu-efi-aarch64 p7zip-full xorriso dpkg-dev
+          sudo apt-get install -y -qq qemu-system-x86 qemu-system-arm qemu-utils cloud-image-utils genisoimage unzip swtpm ovmf qemu-efi-aarch64 p7zip-full xorriso dpkg-dev libguestfs-tools jq
           qemu-system-x86_64 --version | head -1
           qemu-system-aarch64 --version | head -1
           qemu-img --version | head -1
@@ -757,6 +764,30 @@ jobs:
           )"
           echo "disk=${disk}" >> "$GITHUB_OUTPUT"
 
+      # Before the push, not after: a disk whose package database cannot be
+      # read is a disk we cannot describe, and that is worth failing on while
+      # nothing has been published yet. It also means pull-request runs, which
+      # build but never push, still exercise this.
+      #
+      # The FDE disk needs the build-time LUKS passphrase to open. It is the
+      # documented placeholder (`changeit`, see this workflow's release body
+      # and os-image/docs/full-disk-encryption.md), read from the Makefile that
+      # baked it in rather than repeated here.
+      - name: Extract an SBOM from the qcow2
+        env:
+          DISK: ${{ steps.disks.outputs.disk }}
+          VARIANT: ${{ matrix.variant }}
+          LUKS_PASSPHRASE: ${{ steps.versions.outputs.luks_passphrase }}
+        run: |
+          set -euo pipefail
+          # Only the FDE disk carries a LUKS container; offering the
+          # passphrase to the other variant would be harmless but misleading.
+          passphrase=""
+          [[ "${VARIANT}" == "fde" ]] && passphrase="${LUKS_PASSPHRASE}"
+          LUKS_PASSPHRASE="${passphrase}" \
+            os-image/packer/scripts/extract-image-sbom.sh \
+              "dist/${DISK}" "dist/${DISK%.qcow2}.spdx.json"
+
       # --artifact-platform is still marked experimental in the ORAS CLI. It is
       # load-bearing: without it the manifest has no platform in its config and
       # `oras pull --platform linux/${{ matrix.arch }}` cannot select this disk.
@@ -821,6 +852,11 @@ jobs:
           set -euo pipefail
           mkdir -p assets
           ( cd dist && sha256sum "${DISK}" ) > "assets/checksums-${BUILD}.txt"
+          # The SBOM is small enough to attach, unlike the disk it describes,
+          # so it is both hashed here and copied into the upload.
+          sbom="${DISK%.qcow2}.spdx.json"
+          ( cd dist && sha256sum "${sbom}" ) >> "assets/checksums-${BUILD}.txt"
+          cp "dist/${sbom}" "assets/${sbom}"
           if [[ "${BUILD}" == "amd64-non-fde" ]]; then
             cp os-image/bin/nke-os-image-check assets/nke-os-image-check
             ( cd assets && sha256sum nke-os-image-check >> "checksums-${BUILD}.txt" )
@@ -1163,15 +1199,22 @@ jobs:
             Verify a node closed that window with `luks-tpm-verify` before trusting
             TPM-only unlock in production.
 
-            `checksums.txt` covers all eight qcow2s and the checker binary. The
-            disks themselves are the OCI artifacts above; they are too large to
-            attach here.
+            `checksums.txt` covers all eight qcow2s, their SBOMs and the checker
+            binary. The disks themselves are the OCI artifacts above; they are
+            too large to attach here.
+
+            Each disk has an SPDX 2.3 SBOM attached beside it, named after the
+            disk it describes -- `nke-node-fde-ubuntu-26.04-amd64.spdx.json`
+            for `nke-node-fde-ubuntu-26.04-amd64.qcow2`, and so on. It lists
+            the image's dpkg package set, read out of the built disk rather
+            than derived from the Packer templates.
 
             `checksums.txt.sigstore.json` is the build-provenance attestation
             over `checksums.txt`; see [RELEASE.md](RELEASE.md) for the verify
             commands.
           files: |
             dist/nke-os-image-check
+            dist/*.spdx.json
             dist/checksums.txt
             dist/checksums.txt.sigstore.json
           fail_on_unmatched_files: true
