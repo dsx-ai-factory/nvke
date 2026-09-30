@@ -76,40 +76,106 @@ ensure_appliance_kernel() {
 }
 ensure_appliance_kernel
 
-# --key selectors. `all:key:...` would be one line, but it landed in libguestfs
-# 1.49 and the runner fleet is not pinned to a release that has it, so the LUKS
-# device is found first and named explicitly -- a form every version accepts.
-# The probe is its own appliance boot, which is why it only runs when there is
-# a passphrase to use.
-key_args=()
-if [[ -n "${LUKS_PASSPHRASE}" ]]; then
-  mapfile -t luks_devices < <(
-    guestfish --ro --add "${DISK}" -- run : list-filesystems |
-      awk -F': *' '$2 == "crypto_LUKS" { print $1 }'
-  )
-  if [[ "${#luks_devices[@]}" -eq 0 ]]; then
-    echo "::error::${DISK} was given a LUKS passphrase but carries no crypto_LUKS device" >&2
-    exit 1
-  fi
-  for device in "${luks_devices[@]}"; do
-    key_args+=(--key "${device}:key:${LUKS_PASSPHRASE}")
-  done
-  echo "Unlocking ${#luks_devices[@]} LUKS device(s): ${luks_devices[*]}"
-fi
-
+# The disk is opened explicitly -- LUKS, then LVM, then the root filesystem --
+# rather than with guestfish --inspector, so the same sequence serves both
+# variants and every step can be checked.
+#
+# Two libguestfs behaviours this depends on, both measured rather than assumed:
+#
+#   * list-filesystems does not report a LUKS partition at all. It is not that
+#     the type comes back as something unexpected -- the device is simply
+#     absent from the listing, so a container is found with vfs-type on each
+#     partition instead.
+#   * cryptsetup-open will not take the passphrase as an argument; it prompts,
+#     which fails on a runner with "getline: Inappropriate ioctl for device".
+#     --keys-from-stdin is what supplies it, and it drops the key parameter
+#     from the command's signature.
 WORK="$(mktemp -d)"
-trap 'rm -rf "${WORK}"' EXIT
 ROOT="${WORK}/root"
 mkdir -p "${ROOT}/var/lib/dpkg" "${ROOT}/etc" "${ROOT}/usr/lib"
 
-# Appliance startup dominates the runtime, so both reads happen in one
-# invocation. --inspector finds and mounts the guest's root filesystem, which
-# for both variants is an LVM logical volume, and for the FDE variant is one
-# inside the LUKS container the keys above open.
-echo "Reading the package database out of ${DISK}..."
-guestfish --ro --add "${DISK}" "${key_args[@]}" --inspector \
-  tar-out /var/lib/dpkg "${WORK}/dpkg.tar" : \
-  download /usr/lib/os-release "${ROOT}/usr/lib/os-release"
+# One appliance for the whole sequence: booting it is the expensive part, and
+# finding the root filesystem takes several steps that each need a decision
+# made in the shell.
+if [[ -n "${LUKS_PASSPHRASE}" ]]; then
+  # One line is consumed per prompt, so the file holds more than can be asked
+  # for. It lives in the mktemp directory the trap below removes, and carries
+  # the build-time placeholder passphrase the release notes already publish,
+  # not a secret.
+  KEYS="${WORK}/keys"
+  : > "${KEYS}"
+  chmod 0600 "${KEYS}"
+  for _ in $(seq 1 16); do printf '%s\n' "${LUKS_PASSPHRASE}" >> "${KEYS}"; done
+  eval "$(guestfish --listen --keys-from-stdin < "${KEYS}")"
+else
+  eval "$(guestfish --listen)"
+fi
+
+cleanup() {
+  guestfish --remote -- exit >/dev/null 2>&1 || true
+  rm -rf "${WORK}"
+}
+trap cleanup EXIT
+
+gf() { guestfish --remote -- "$@"; }
+
+gf add-drive "${DISK}" readonly:true
+gf run
+
+if [[ -n "${LUKS_PASSPHRASE}" ]]; then
+  opened=0
+  while read -r partition; do
+    [[ -n "${partition}" ]] || continue
+    [[ "$(gf vfs-type "${partition}" 2>/dev/null)" == "crypto_LUKS" ]] || continue
+    gf cryptsetup-open "${partition}" "nkeluks${opened}"
+    echo "Opened the LUKS container on ${partition}"
+    opened=$((opened + 1))
+  done < <(gf list-partitions)
+
+  if [[ "${opened}" -eq 0 ]]; then
+    echo "::error::${DISK} was given a LUKS passphrase but carries no LUKS partition" >&2
+    echo "partitions and their types:" >&2
+    while read -r partition; do
+      echo "  ${partition}: $(gf vfs-type "${partition}" 2>/dev/null)" >&2
+    done < <(gf list-partitions)
+    exit 1
+  fi
+
+  # The FDE layout is LVM-on-LUKS, so the volume group only appears once the
+  # container above is open.
+  gf vgscan
+  gf vg-activate-all true
+fi
+
+# The root filesystem is identified by what is on it, not by its device path:
+# that path differs between the two variants and between Ubuntu releases, and
+# the package database is what is being looked for anyway.
+root_device=""
+while read -r line; do
+  device="${line%%:*}"
+  fstype="${line#*: }"
+  case "${fstype}" in
+    ext2 | ext3 | ext4 | xfs | btrfs) ;;
+    *) continue ;;
+  esac
+  gf umount-all >/dev/null 2>&1 || true
+  gf mount-ro "${device}" / >/dev/null 2>&1 || continue
+  if [[ "$(gf exists /var/lib/dpkg/status)" == "true" ]]; then
+    root_device="${device}"
+    break
+  fi
+done < <(gf list-filesystems)
+
+if [[ -z "${root_device}" ]]; then
+  echo "::error::no filesystem in ${DISK} carries /var/lib/dpkg/status" >&2
+  echo "filesystems found:" >&2
+  gf list-filesystems >&2 || true
+  exit 1
+fi
+echo "Reading the package database from ${root_device} in ${DISK}..."
+
+gf tar-out /var/lib/dpkg "${WORK}/dpkg.tar"
+gf download /usr/lib/os-release "${ROOT}/usr/lib/os-release"
 
 tar -xf "${WORK}/dpkg.tar" -C "${ROOT}/var/lib/dpkg"
 
