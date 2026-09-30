@@ -149,7 +149,13 @@ systemctl is-enabled nke-spire-configure.service
 # output rather than relying on its status.
 test "$(systemctl is-enabled multipathd.service)" = masked
 test "$(systemctl is-enabled multipathd.socket)" = masked
-! systemctl is-active --quiet multipathd.service
+# errexit does not apply to a negated command, so branch explicitly rather
+# than writing `! systemctl is-active` -- that would let the rest of the
+# assertions run, and pass, with multipathd active.
+if systemctl is-active --quiet multipathd.service; then
+  echo "boot-smoke: multipathd.service is active; it will claim Longhorn volumes" >&2
+  exit 1
+fi
 test -x /usr/local/bin/nke-agent
 test -x /usr/local/bin/nke-agent-updater
 # The mode bits say nothing about whether the binary runs: -version exits 0
