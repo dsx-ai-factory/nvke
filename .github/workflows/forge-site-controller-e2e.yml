@@ -159,8 +159,10 @@ concurrency:
   # The GPU half drops the SITE_E2E_GPU fallback for the same reason the env
   # block below does, and has to: the group is the proxy for the site, so a
   # run pinned to az61 keyed on gb200 would queue behind a ytl run it shares
-  # no hardware with.
-  group: Forge site controller e2e ${{ inputs.arch || vars.SITE_E2E_ARCH || 'amd64' }} ${{ inputs.gpu }}
+  # no hardware with. It repeats the same l40 default rather than reading the
+  # env, which is not in scope here, so the key keeps naming the shape the run
+  # actually asks for.
+  group: Forge site controller e2e ${{ inputs.arch || vars.SITE_E2E_ARCH || 'amd64' }} ${{ inputs.gpu || 'l40' }}
   cancel-in-progress: false
 
 jobs:
@@ -252,11 +254,14 @@ jobs:
       # for SITE_ARCH.
       ARCH: ${{ inputs.arch || vars.SITE_E2E_ARCH }}
       # The SITE_E2E_GPU fallback is dropped on purpose: it is gb200, which
-      # resolves to ytl, and the CoreDNS failure this branch is investigating
-      # is an az61 one. No GPU puts the workers on the CPU shape, which is
-      # az61. Revert with the line below before this branch goes anywhere.
+      # resolves to ytl, and what this branch qualifies is az61. l40 is that
+      # site's gpu.l40sx8, so the tenant workers take L40S behind a
+      # cpu.himem.t1 control plane. The capability is spelled l40 and not
+      # l40s: it is matched against `provides` in environments/forge.yaml, and
+      # l40s resolves to no shape at all.
+      # Revert with the line below before this branch goes anywhere.
       #   GPU: ${{ inputs.gpu || vars.SITE_E2E_GPU }}
-      GPU: ${{ inputs.gpu }}
+      GPU: ${{ inputs.gpu || 'l40' }}
       # A label cannot carry a boolean, so a PR run never keeps its node.
       KEEP_SITE: ${{ inputs.keep-site || false }}
       # ghcr or nvcr. Only the runner pulls from it: every image it names is
