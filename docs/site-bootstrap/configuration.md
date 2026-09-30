@@ -18,7 +18,7 @@ cluster:
       ip: "10.0.0.3"
 
   k8sVersion: "1.34.2"     # plain semver, no leading "v"
-  cniName: "ovn-kubernetes" # "calico" or "ovn-kubernetes"
+  cniName: "ovn-kubernetes" # "calico" is accepted for development
   podCidr: "192.168.0.0/16"
   serviceCidr: "10.96.0.0/12"
 

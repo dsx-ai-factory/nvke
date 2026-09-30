@@ -202,7 +202,7 @@ CWE writes no cloud-init for hosts it did not create. Install them yourself:
 ```yaml
 runcmd:
   - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-kubeadm-distro-<k8s-version>
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-calico-images-<stream> nke-cni-calico-manifests-<stream>
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-<stream> nke-cni-ovn-charts-<stream>
 ```
 
 Skip this and the bootstrap runs its full 30 minutes before failing on
@@ -266,7 +266,7 @@ cp-03,10.10.50.4,<sha256 of the node's TPM EK>
 
 ```bash
 nkectl generate sitespec my-site --nodes hosts.csv \
-  --set cluster.cniName=calico \
+  --set cluster.podCidr=10.100.0.0/16 \
   --set spire.trustDomain=site.example.com \
   --set spire.caCertFile=./spire-ca.crt \
   --set spire.caKeyFile=./spire-ca.key > sitespec.yaml
@@ -307,18 +307,16 @@ REGISTRY_API_KEY=<key> nkectl bootstrap site -f sitespec.yaml
 The key can come from the environment, from `--registry-api-key`, or from
 `registry.apiKey` in the spec; the flag wins.
 
-Where Docker Hub is slow or blocked, point the seed cluster at a mirror with
-`NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR`. The Postgres and controller charts are
-carried in the `nkectl` binary and are never pulled. The Temporal and SPIRE
-charts are, and each has a knob — `NKECTL_CWE_TEMPORAL_CHART`,
-`NKECTL_CWE_SPIRE_CHART` and `NKECTL_CWE_SPIRE_CRDS_CHART`, an OCI reference or
-a local path — so every Helm chart the bootstrap pulls can come from a mirror
-or from disk.
-`clusterctl init` still fetches Cluster API and cert-manager from `github.com`.
-For the full set of third-party images
-the bootstrap pulls — Postgres, Temporal, and the SPIRE stack — and to mirror
-them into a local or private registry,
-see [`hack/mirror-bootstrap-images.sh`](../hack/mirror-bootstrap-images.sh).
+`nkectl get bootstrap-manifest` lists the charts and images the bootstrap
+fetches. [`hack/mirror-bootstrap-images.sh`](../hack/mirror-bootstrap-images.sh)
+copies those images into a local or private registry. To change where they
+come from:
+
+- `NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR=<host>` pulls the Docker Hub images from a mirror.
+- `NKECTL_CWE_TEMPORAL_CHART`, `NKECTL_CWE_SPIRE_CHART` and
+  `NKECTL_CWE_SPIRE_CRDS_CHART` take an OCI reference or a local path.
+
+Cluster API and cert-manager come from `github.com` through `clusterctl init`.
 
 It creates a throwaway kind cluster, installs Postgres, Temporal, SPIRE, CAPI and
 CWE into it, builds the site cluster on your hosts through `nke-agent`, and

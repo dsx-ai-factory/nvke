@@ -51,7 +51,7 @@ nkectl generate sitespec my-tier0-site --nodes hosts.csv > sitespec.yaml
 
 # Override fields the CSV does not carry
 nkectl generate sitespec my-tier0-site --nodes hosts.csv \
-  --set cluster.cniName=calico \
+  --set cluster.controlPlaneVIP=10.10.50.100 \
   --set cluster.podCidr=10.100.0.0/16 > sitespec.yaml
 ```
 
@@ -77,6 +77,11 @@ etcd encryption key; the key file is a convenience for installing a controller
 later and the copy a disaster recovery needs. Move it off the host. On failure it writes cluster
 diagnostics to `cluster-diagnostics/` first; `--keep-bootstrap-cluster` keeps
 the Kind cluster for debugging.
+
+The Kind cluster runs Postgres, Temporal, SPIRE, Cluster API and CWE.
+`nkectl get bootstrap-manifest` lists the charts and images the bootstrap
+fetches, with their versions. The `NKECTL_*` variables in the
+[README](../README.md) point a chart or an image at another location.
 
 ### 3. Install an infrastructure provider
 

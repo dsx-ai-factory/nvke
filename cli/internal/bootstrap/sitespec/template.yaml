@@ -34,7 +34,7 @@ cluster:
   # Kubernetes version to install — plain semantic version, no leading "v".
   k8sVersion: "1.34.2"
 
-  # CNI plugin: "calico" or "ovn-kubernetes".
+  # CNI plugin: "ovn-kubernetes". "calico" is accepted for development.
   cniName: "ovn-kubernetes"
   # Optional CNI plugin version. Empty uses the node-agent's built-in default.
   # The value is plugin-specific — a Calico version such as "3.31.4" is not

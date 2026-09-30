@@ -201,7 +201,7 @@ nkectl generate sitespec my-tier0-site --nodes hosts.csv > sitespec.yaml
 
 The result needs no editing. Fill in `tpm_ek_thumbprint` per host to enable TPM
 attestation, and use `--set` for anything the CSV does not carry — for example
-`--set cluster.cniName=calico`. See [configuration.md](configuration.md) for
+`--set cluster.podCidr=10.100.0.0/16`. See [configuration.md](configuration.md) for
 every field.
 
 3. Run bootstrap:
