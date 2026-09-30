@@ -182,6 +182,21 @@ func (n *NodePool) CAPIProvider() (CAPINodePoolProvider, error) {
 	return *cloneCAPINodePoolProvider(*n.Capi), nil
 }
 
+// ResolveProviderType infers the node pool's provider type from which
+// provider payload is set. NodePool has no persisted ProviderType field the
+// way Cluster does, so this is the node-pool equivalent of
+// Cluster.ResolveProviderType.
+func (n *NodePool) ResolveProviderType() (ProviderType, error) {
+	switch {
+	case n.Nico != nil:
+		return ProviderTypeNico, nil
+	case n.Capi != nil:
+		return ProviderTypeCAPI, nil
+	default:
+		return "", fmt.Errorf("%w: node pool %s has no provider payload set", ErrMissingProviderPayload, n.ID)
+	}
+}
+
 func (n *NodePool) SetNico(provider NicoNodePoolProvider) {
 	n.Nico = cloneNicoNodePoolProvider(provider)
 	n.Capi = nil

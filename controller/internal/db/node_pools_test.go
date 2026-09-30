@@ -87,3 +87,21 @@ func TestNodePoolProviderGettersAndSetters(t *testing.T) {
 	require.Equal(t, "next-config", nodePool.Nico.ConfigProfile)
 	require.Equal(t, "32Gi", nodePool.SystemReservedMemory)
 }
+
+func TestNodePoolResolveProviderType(t *testing.T) {
+	nico := db.NodePool{ID: uuid.New()}
+	nico.SetNico(db.NicoNodePoolProvider{})
+	providerType, err := nico.ResolveProviderType()
+	require.NoError(t, err)
+	require.Equal(t, db.ProviderTypeNico, providerType)
+
+	capi := db.NodePool{ID: uuid.New()}
+	capi.SetCapi(db.CAPINodePoolProvider{})
+	providerType, err = capi.ResolveProviderType()
+	require.NoError(t, err)
+	require.Equal(t, db.ProviderTypeCAPI, providerType)
+
+	empty := db.NodePool{ID: uuid.New()}
+	_, err = empty.ResolveProviderType()
+	require.ErrorIs(t, err, db.ErrMissingProviderPayload)
+}
