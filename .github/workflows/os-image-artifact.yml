@@ -766,10 +766,11 @@ jobs:
     if: >-
       github.repository == 'dsx-ai-factory/nke' &&
       github.event.inputs.dry_run != 'true' &&
-      startsWith(github.ref, 'refs/tags/os-image/')
+      (startsWith(github.ref, 'refs/tags/os-image/') ||
+       github.event_name == 'workflow_dispatch')
     name: Publish to S3 (${{ matrix.arch }}, ubuntu ${{ matrix.ubuntu_release }})
     runs-on: ubuntu-latest
-    environment: s3-publish
+    environment: ${{ startsWith(github.ref, 'refs/tags/os-image/') && 's3-publish' || 's3-publish-non-prod' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -817,10 +818,13 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "${S3_URI}" || -z "${ROLE_ARN}" || -z "${CF_DOMAIN}" ]]; then
-            echo "::error::S3_PUBLISH_S3_URI / S3_PUBLISH_AWS_ROLE_ARN / S3_PUBLISH_CLOUDFRONT_DOMAIN not set in the s3-publish environment"
+            echo "::error::S3_PUBLISH_S3_URI / S3_PUBLISH_AWS_ROLE_ARN / S3_PUBLISH_CLOUDFRONT_DOMAIN not set in the selected S3 publishing environment"
             exit 1
           fi
-          release="${GITHUB_REF_NAME#os-image/}"
+          release="sha-${GITHUB_SHA}"
+          if [[ "${GITHUB_REF}" == refs/tags/os-image/* ]]; then
+            release="${GITHUB_REF_NAME#os-image/}"
+          fi
           tag="${release}${SUFFIX}-${ARCH}"
           mkdir -p dist
           oras pull "${REPO_NON_FDE}:${tag}" -o dist
