@@ -71,6 +71,14 @@ on:
         description: Published CWE tag to qualify, e.g. v0.1.1-rc.8. Leave empty to build the CWE from this checkout, which is the only pairing that currently works -- see the resolve step.
         type: string
         required: false
+      kubernetes-version:
+        description: "Kubernetes version under qualification, e.g. 1.36.3. It selects the nke-kubeadm-distro package on every node and the version CWE builds the cluster with, so one value decides both."
+        type: string
+        required: false
+      cni-ovn-version:
+        description: "OVN CNI version under qualification, e.g. 1.4.0. It selects the nke-cni-ovn-images and -charts packages."
+        type: string
+        required: false
       os-image-bootloader-amd64:
         description: HTTPS URL of the amd64 qcow-imager EFI. Must be plain HTTPS -- iPXE cannot pull an OCI artifact.
         type: string
@@ -214,6 +222,11 @@ jobs:
       # `arch` asked for, so it needs both pairs, while a single-architecture
       # run needs one. Which pair each machine takes is decided by the suite
       # from the instance type it resolved, not here.
+      # Components the run qualifies that are not artifacts it downloads. Empty
+      # leaves the suite on its own constant, which is what a developer running
+      # by hand gets; CI states them so a run records what it qualified.
+      KUBERNETES_VERSION: ${{ inputs.kubernetes-version || vars.SITE_E2E_KUBERNETES_VERSION }}
+      CNI_OVN_VERSION: ${{ inputs.cni-ovn-version || vars.SITE_E2E_CNI_OVN_VERSION }}
       OS_IMAGE_BOOTLOADER_AMD64: ${{ inputs.os-image-bootloader-amd64 || vars.SITE_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
       OS_IMAGE_AMD64: ${{ inputs.os-image-amd64 || vars.SITE_E2E_OS_IMAGE_AMD64 }}
       OS_IMAGE_BOOTLOADER_ARM64: ${{ inputs.os-image-bootloader-arm64 || vars.SITE_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
@@ -541,6 +554,16 @@ jobs:
                  "a labelled pull request takes them from the FORGE_E2E_OS_IMAGE_<ARCH> repository variables."
             exit 1
           fi
+
+          # Keyed as the suite reads them: optionalVersion("kube") and
+          # optionalVersion("cni-ovn"). Omitted rather than passed empty
+          # when unset, because an empty value would override the suite's
+          # constant with nothing rather than leave it in place.
+          for pair in "kube=${KUBERNETES_VERSION}" "cni-ovn=${CNI_OVN_VERSION}"; do
+            [ -n "${pair#*=}" ] || continue
+            versions="${versions},${pair}"
+            echo "component version: ${pair}"
+          done
           echo "OS_IMAGE_VERSIONS=${versions#,}" >> "${GITHUB_ENV}"
 
       # No stored identity: tbot joins with the repository's OIDC token
@@ -709,6 +732,8 @@ jobs:
           OUT: ${{ runner.temp }}/run-inputs.txt
           IN_STAGE: ${{ inputs.stage }}
           IN_CONTROLLER_VERSION: ${{ inputs.controller-version }}
+          IN_KUBERNETES_VERSION: ${{ inputs.kubernetes-version }}
+          IN_CNI_OVN_VERSION: ${{ inputs.cni-ovn-version }}
           IN_OS_IMAGE_BOOTLOADER_AMD64: ${{ inputs.os-image-bootloader-amd64 }}
           IN_OS_IMAGE_AMD64: ${{ inputs.os-image-amd64 }}
           IN_OS_IMAGE_BOOTLOADER_ARM64: ${{ inputs.os-image-bootloader-arm64 }}
@@ -728,6 +753,8 @@ jobs:
           WAS_NGC_ORG: ${{ vars.FORGE_E2E_NGC_ORG }}
           WAS_STAGE: ${{ vars.FORGE_E2E_STAGE }}
           WAS_CONTROLLER_VERSION: ${{ vars.FORGE_E2E_CONTROLLER_VERSION }}
+          VAR_KUBERNETES_VERSION: ${{ vars.SITE_E2E_KUBERNETES_VERSION }}
+          VAR_CNI_OVN_VERSION: ${{ vars.SITE_E2E_CNI_OVN_VERSION }}
           VAR_OS_IMAGE_BOOTLOADER_AMD64: ${{ vars.SITE_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
           VAR_OS_IMAGE_AMD64: ${{ vars.SITE_E2E_OS_IMAGE_AMD64 }}
           VAR_OS_IMAGE_BOOTLOADER_ARM64: ${{ vars.SITE_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
@@ -761,6 +788,8 @@ jobs:
             "Forge SSH key group|FORGE_SSH_KEY_GROUP_ID||FORGE_SSH_KEY_GROUP_ID|FORGE_SSH_KEY_GROUP_ID||"
             "CPU instance type|FORGE_INSTANCE_TYPE_CPU_ID||FORGE_INSTANCE_TYPE_CPU_ID|FORGE_INSTANCE_TYPE_CPU_ID||"
             "GPU instance type|FORGE_INSTANCE_TYPE_GPU_ID||FORGE_INSTANCE_TYPE_GPU_ID|FORGE_INSTANCE_TYPE_GPU_ID||"
+            "kubernetes version|KUBERNETES_VERSION|IN_KUBERNETES_VERSION|VAR_KUBERNETES_VERSION|SITE_E2E_KUBERNETES_VERSION||"
+            "cni-ovn version|CNI_OVN_VERSION|IN_CNI_OVN_VERSION|VAR_CNI_OVN_VERSION|SITE_E2E_CNI_OVN_VERSION||"
             "amd64 OS image bootloader|OS_IMAGE_BOOTLOADER_AMD64|IN_OS_IMAGE_BOOTLOADER_AMD64|VAR_OS_IMAGE_BOOTLOADER_AMD64|SITE_E2E_OS_IMAGE_BOOTLOADER_AMD64||"
             "amd64 OS image|OS_IMAGE_AMD64|IN_OS_IMAGE_AMD64|VAR_OS_IMAGE_AMD64|SITE_E2E_OS_IMAGE_AMD64||"
             "arm64 OS image bootloader|OS_IMAGE_BOOTLOADER_ARM64|IN_OS_IMAGE_BOOTLOADER_ARM64|VAR_OS_IMAGE_BOOTLOADER_ARM64|SITE_E2E_OS_IMAGE_BOOTLOADER_ARM64||"
