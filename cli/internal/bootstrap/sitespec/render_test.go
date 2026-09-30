@@ -21,20 +21,35 @@ func threeNodes() []Node {
 	}
 }
 
+func oneNode() []Node {
+	return threeNodes()[:1]
+}
+
 // TestExampleMatchesTemplate keeps the shipped example and the embedded
 // template from drifting. It compares what they mean rather than their bytes:
 // the two are allowed to differ in wording, and pinning bytes would make every
 // edit to one a failure in the other.
 func TestExampleMatchesTemplate(t *testing.T) {
-	fromExample, err := Load(filepath.Join("..", "..", "..", "examples", "sitespec.yaml"))
+	example, err := os.ReadFile(filepath.Join("..", "..", "..", "examples", "sitespec.yaml"))
 	if err != nil {
-		t.Fatalf("load cli/examples/sitespec.yaml: %v", err)
+		t.Fatalf("read cli/examples/sitespec.yaml: %v", err)
+	}
+	fromExample, err := decodeBytes(example)
+	if err != nil {
+		t.Fatalf("decode cli/examples/sitespec.yaml: %v", err)
+	}
+	fromExample.SetDefaults()
+	if err := fromExample.Validate(); err != nil {
+		t.Fatalf("validate cli/examples/sitespec.yaml: %v", err)
 	}
 	fromTemplate, err := decodeBytes(templateYAML)
 	if err != nil {
 		t.Fatalf("decode cli/internal/bootstrap/sitespec/template.yaml: %v", err)
 	}
 	fromTemplate.SetDefaults()
+	// The generator template leaves this optional because Build also supports a
+	// single node. The shipped three-node example must set it.
+	fromTemplate.Cluster.ControlPlaneVIP = fromExample.Cluster.ControlPlaneVIP
 
 	if diff := specDiff(fromTemplate, fromExample); diff != "" {
 		t.Errorf("cli/internal/bootstrap/sitespec/template.yaml and cli/examples/sitespec.yaml describe different site specs.\n"+
@@ -94,7 +109,7 @@ func TestBuildRoundTrip(t *testing.T) {
 // rather than marshalling a struct: an operator reads and commits this file,
 // and the explanations are most of its value.
 func TestRenderKeepsComments(t *testing.T) {
-	built, err := Build("my-tier0-site", threeNodes(), nil)
+	built, err := Build("my-tier0-site", oneNode(), nil)
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -118,7 +133,7 @@ func TestRenderKeepsComments(t *testing.T) {
 // appear as an empty string. cniVersion empty means "use the agent default",
 // which is not the same as cniVersion set to "".
 func TestRenderOmitsUnsetOptionalFields(t *testing.T) {
-	built, err := Build("my-tier0-site", threeNodes(), nil)
+	built, err := Build("my-tier0-site", oneNode(), nil)
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -157,7 +172,7 @@ func TestRenderNeverEmitsAPIKey(t *testing.T) {
 	const secret = "nvapi-not-a-real-key"
 	t.Setenv("REGISTRY_API_KEY", secret)
 
-	built, err := Build("my-tier0-site", threeNodes(), nil)
+	built, err := Build("my-tier0-site", oneNode(), nil)
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -172,7 +187,7 @@ func TestRenderNeverEmitsAPIKey(t *testing.T) {
 
 // TestBuildIgnoresEnvironment: no bound variable may change the output.
 func TestBuildIgnoresEnvironment(t *testing.T) {
-	clean, err := Build("my-tier0-site", threeNodes(), nil)
+	clean, err := Build("my-tier0-site", oneNode(), nil)
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -186,7 +201,7 @@ func TestBuildIgnoresEnvironment(t *testing.T) {
 	}
 	t.Setenv("NKECTL_CLUSTER_NODES", "someone:10.0.0.9")
 
-	dirty, err := Build("my-tier0-site", threeNodes(), nil)
+	dirty, err := Build("my-tier0-site", oneNode(), nil)
 	if err != nil {
 		t.Fatalf("Build with the environment set: %v", err)
 	}
@@ -217,6 +232,7 @@ func TestBuildRejects(t *testing.T) {
 		"bad cidr":               {"s", threeNodes(), []string{"cluster.podCidr=nope"}, pathPodCidr},
 		"cluster name not label": {"Not_A_Label", threeNodes(), nil, pathClusterName},
 		"even node count":        {"s", threeNodes()[:2], nil, pathNodes},
+		"multi-node without VIP": {"s", threeNodes(), nil, pathControlPlaneVIP},
 		"bad node ip":            {"s", []Node{{Name: "a", IP: "999.1.1.1"}}, nil, "ip"},
 		"bad thumbprint":         {"s", []Node{{Name: "a", IP: "10.0.0.1", TPMEKThumbprint: "xyz"}}, nil, "tpmEkThumbprint"},
 	} {
@@ -379,7 +395,7 @@ func TestRenderPlacesOptionalFieldsInPosition(t *testing.T) {
 // file has to say `false`, not `"false"`. A quoted string does not decode into
 // the struct, so a wrong style here is a generated file that does not load.
 func TestRenderEtcdEncryptionIsABool(t *testing.T) {
-	built, err := Build("my-tier0-site", threeNodes(), []string{"cluster.etcdEncryption=false"})
+	built, err := Build("my-tier0-site", oneNode(), []string{"cluster.etcdEncryption=false"})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -396,7 +412,7 @@ func TestRenderEtcdEncryptionIsABool(t *testing.T) {
 
 	// Explicitly on is the default, so it stays a comment like any other
 	// optional field left at its default.
-	built, err = Build("my-tier0-site", threeNodes(), []string{"cluster.etcdEncryption=true"})
+	built, err = Build("my-tier0-site", oneNode(), []string{"cluster.etcdEncryption=true"})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -408,7 +424,7 @@ func TestRenderEtcdEncryptionIsABool(t *testing.T) {
 		t.Errorf("explicit true rendered as %q; the default should stay a comment", line)
 	}
 
-	_, err = Build("my-tier0-site", threeNodes(), []string{"cluster.etcdEncryption=maybe"})
+	_, err = Build("my-tier0-site", oneNode(), []string{"cluster.etcdEncryption=maybe"})
 	if err == nil || !strings.Contains(err.Error(), "cluster.etcdEncryption") || !strings.Contains(err.Error(), "maybe") {
 		t.Errorf("Build with a non-boolean value: err = %v, want one naming the path and the value", err)
 	}

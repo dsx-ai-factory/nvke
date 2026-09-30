@@ -691,7 +691,7 @@ func TestRemediateMachinesRecordsIntentUnderTheController(t *testing.T) {
 			t.Parallel()
 
 			clusterID := uuid.New()
-			cluster := db.Cluster{ID: clusterID, Name: "test-cluster"}
+			cluster := db.Cluster{ID: clusterID, Name: "test-cluster", ControlPlaneVIP: "10.0.0.100"}
 
 			// Three healthy nodes, one of them marked: enough for canStartRemediation,
 			// and deliberately at the quorum floor so the exemption is exercised.
@@ -748,4 +748,36 @@ func TestRemediateMachinesRecordsIntentUnderTheController(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRemediateMachinesWithoutControlPlaneVIPDoesNotReplaceNode(t *testing.T) {
+	t.Parallel()
+
+	cluster := db.Cluster{ID: uuid.New(), Name: "legacy-no-vip"}
+	healthy := func(name string) db.Node {
+		return db.Node{
+			ID: uuid.New(), ClusterID: cluster.ID, ControlPlane: true, Name: name,
+			Conditions: db.NodeConditions{
+				Joined:          db.NewCondition(true, "Joined"),
+				Provisioned:     db.NewCondition(true, "Provisioned"),
+				KubernetesReady: db.NewCondition(true, "Ready"),
+				NodeAgentReady:  db.NewCondition(true, "Ready"),
+			},
+		}
+	}
+	marked := healthy("cp-0")
+	marked.Conditions.MarkedForRecycling = db.NewCondition(true, "Marked")
+	cp := &controlPlane{
+		nodes:                     []db.Node{marked, healthy("cp-1"), healthy("cp-2")},
+		clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3},
+	}
+	mockTx := &testutil.MockTx{}
+	r := &reconciler{db: mockTx, logger: slog.Default()}
+
+	requeue, err := r.remediateMachines(context.Background(), cluster, cp)
+
+	require.NoError(t, err)
+	assert.False(t, requeue)
+	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+	mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }

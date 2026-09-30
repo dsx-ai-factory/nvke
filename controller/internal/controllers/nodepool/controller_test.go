@@ -619,3 +619,75 @@ func TestUnit_NodePoolControllerReconcileCAPIInfraTemplateChange(t *testing.T) {
 	mockDB.AssertExpectations(t)
 	mockTx.AssertExpectations(t)
 }
+
+func TestUnit_NodePoolControllerControlPlaneSurgeRequiresVIP(t *testing.T) {
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name            string
+		controlPlaneVIP string
+		wantDesired     int
+	}{
+		{name: "without VIP", wantDesired: 0},
+		{name: "with VIP", controlPlaneVIP: "172.31.0.10", wantDesired: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clusterID := uuid.New()
+			poolID := uuid.New()
+			currentNodeSetID := uuid.New()
+			oldNodeSetID := uuid.New()
+			pool := db.NodePool{
+				ID:                poolID,
+				ClusterID:         clusterID,
+				ControlPlane:      true,
+				DesiredCount:      1,
+				MaxSurge:          1,
+				CurrentNodeSetID:  &currentNodeSetID,
+				KubernetesVersion: "1.31.0",
+				Nico:              &db.NicoNodePoolProvider{},
+			}
+			currentNodeSet := db.NodeSet{
+				ID:                currentNodeSetID,
+				NodePoolID:        poolID,
+				KubernetesVersion: pool.KubernetesVersion,
+				Nico:              &db.NicoNodePoolProvider{},
+			}
+			oldNodeSet := db.NodeSet{
+				ID:           oldNodeSetID,
+				NodePoolID:   poolID,
+				DesiredCount: 0,
+				Nico:         &db.NicoNodePoolProvider{},
+			}
+			oldNode := db.Node{ID: uuid.New(), NodePoolID: poolID, NodeSetID: oldNodeSetID, ControlPlane: true}
+
+			mockDB := &testutil.MockDB{}
+			mockTx := &testutil.MockTx{}
+			mockDB.MockTx = mockTx
+			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+			mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
+			mockTx.On("GetNodeSet", mock.Anything, currentNodeSetID).Return(currentNodeSet, nil)
+			mockTx.On("ListNodeSets", mock.Anything, db.NodeSetFilters{NodePoolID: &poolID}).Return([]db.NodeSet{currentNodeSet, oldNodeSet}, nil)
+			mockTx.On("ListNodes", mock.Anything, db.NodeFilters{NodeSetID: &oldNodeSetID}).Return([]db.Node{oldNode}, nil)
+			mockTx.On("GetNodeSet", mock.Anything, oldNodeSetID).Return(oldNodeSet, nil)
+			mockTx.On("UpdateNodeSet", mock.Anything, mock.MatchedBy(func(nodeSet *db.NodeSet) bool {
+				return nodeSet.ID == oldNodeSetID && nodeSet.DesiredCount == 0
+			})).Return(oldNodeSet, nil)
+			mockTx.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
+				ID:              clusterID,
+				ControlPlaneVIP: tc.controlPlaneVIP,
+			}, nil)
+			updatedCurrentNodeSet := currentNodeSet
+			updatedCurrentNodeSet.DesiredCount = 1
+			mockTx.On("UpdateNodeSet", mock.Anything, mock.MatchedBy(func(nodeSet *db.NodeSet) bool {
+				return nodeSet.ID == currentNodeSetID && nodeSet.DesiredCount == 1
+			})).Return(updatedCurrentNodeSet, nil).Maybe()
+
+			npc := nodepool.NewController(config.Config{}, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
+			_, err := npc.Reconcile(ctx, dbreconcile.NodePoolKey(poolID))
+			require.NoError(t, err)
+			mockTx.AssertNumberOfCalls(t, "UpdateNodeSet", 1+tc.wantDesired)
+			mockDB.AssertExpectations(t)
+			mockTx.AssertExpectations(t)
+		})
+	}
+}

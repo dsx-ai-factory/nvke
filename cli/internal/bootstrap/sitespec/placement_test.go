@@ -83,8 +83,8 @@ func TestSetScalarPlacementIsOrderIndependent(t *testing.T) {
 			// Each example's prose stays with its own key. The VIP intro sits
 			// between serviceCidr and controlPlaneVIP; the port intro sits
 			// between controlPlaneVIP and nodeAgentPort.
-			mustBefore(t, out, "serviceCidr:", "Optional IPv4 API endpoint")
-			mustBefore(t, out, "Optional IPv4 API endpoint", "controlPlaneVIP:")
+			mustBefore(t, out, "serviceCidr:", "IPv4 API endpoint advertised by kube-vip")
+			mustBefore(t, out, "IPv4 API endpoint advertised by kube-vip", "controlPlaneVIP:")
 			mustBefore(t, out, "controlPlaneVIP:", "gRPC port nke-agent listens on")
 			mustBefore(t, out, "gRPC port nke-agent listens on", "nodeAgentPort:")
 

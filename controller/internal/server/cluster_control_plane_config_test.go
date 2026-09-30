@@ -109,7 +109,62 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 	t.Run("flag ON accepts a valid Forge cluster-level control plane with no node pools", func(t *testing.T) {
 		svc := clusterService{useControlPlaneController: true}
 		req := validForgeCreateClusterRequest()
+		cp := validForgeControlPlaneConfig()
+		cp.DesiredCount = 1
+		req.ControlPlaneConfig = cp
+
+		err := svc.ValidateCreateClusterRequestFields(req)
+		require.NoError(t, err)
+	})
+
+	t.Run("flag ON rejects multiple control-plane nodes without a VIP", func(t *testing.T) {
+		svc := clusterService{useControlPlaneController: true}
+		req := validForgeCreateClusterRequest()
 		req.ControlPlaneConfig = validForgeControlPlaneConfig()
+
+		err := svc.ValidateCreateClusterRequestFields(req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "controlPlaneVIP")
+	})
+
+	t.Run("flag ON accepts multiple control-plane nodes with a VIP", func(t *testing.T) {
+		svc := clusterService{useControlPlaneController: true}
+		req := validForgeCreateClusterRequest()
+		req.ControlPlaneVIP = "172.31.0.10"
+		req.ControlPlaneConfig = validForgeControlPlaneConfig()
+
+		err := svc.ValidateCreateClusterRequestFields(req)
+		require.NoError(t, err)
+	})
+
+	t.Run("flag OFF accepts one control-plane node without a VIP", func(t *testing.T) {
+		svc := clusterService{useControlPlaneController: false}
+		req := validForgeCreateClusterRequest()
+		req.NodePools = &[]api.NodePoolCreateConfig{validForgeNodePoolCreateConfig("cp")}
+
+		err := svc.ValidateCreateClusterRequestFields(req)
+		require.NoError(t, err)
+	})
+
+	t.Run("flag OFF rejects aggregate control-plane capacity above one without a VIP", func(t *testing.T) {
+		svc := clusterService{useControlPlaneController: false}
+		req := validForgeCreateClusterRequest()
+		first := validForgeNodePoolCreateConfig("cp-a")
+		second := validForgeNodePoolCreateConfig("cp-b")
+		req.NodePools = &[]api.NodePoolCreateConfig{first, second}
+
+		err := svc.ValidateCreateClusterRequestFields(req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "controlPlaneVIP")
+	})
+
+	t.Run("flag OFF accepts aggregate control-plane capacity above one with a VIP", func(t *testing.T) {
+		svc := clusterService{useControlPlaneController: false}
+		req := validForgeCreateClusterRequest()
+		req.ControlPlaneVIP = "172.31.0.10"
+		first := validForgeNodePoolCreateConfig("cp-a")
+		second := validForgeNodePoolCreateConfig("cp-b")
+		req.NodePools = &[]api.NodePoolCreateConfig{first, second}
 
 		err := svc.ValidateCreateClusterRequestFields(req)
 		require.NoError(t, err)
@@ -153,13 +208,14 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 	})
 }
 
-func TestApplyClusterLevelControlPlaneSpecUpdate_ScaleDown(t *testing.T) {
+func TestApplyClusterLevelControlPlaneSpecUpdate_DesiredCount(t *testing.T) {
 	svc := clusterService{useControlPlaneController: true}
 	ctx := context.Background()
 
-	newCAPICluster := func(current int) *db.Cluster {
+	newCAPICluster := func(current int, vip string) *db.Cluster {
 		return &db.Cluster{
-			ID: uuid.New(),
+			ID:              uuid.New(),
+			ControlPlaneVIP: vip,
 			ControlPlaneConfig: db.ControlPlaneConfig{
 				DesiredCount: current,
 			},
@@ -170,7 +226,7 @@ func TestApplyClusterLevelControlPlaneSpecUpdate_ScaleDown(t *testing.T) {
 	}
 
 	t.Run("allows scale-down below current", func(t *testing.T) {
-		cluster := newCAPICluster(3)
+		cluster := newCAPICluster(3, "")
 		spec := db.ConfigSpecFromFull(cluster.ControlPlaneConfig)
 		desired := 2
 		err := svc.applyClusterLevelControlPlaneSpecUpdate(ctx, cluster, &api.UpdateClusterControlPlaneConfig{
@@ -181,7 +237,7 @@ func TestApplyClusterLevelControlPlaneSpecUpdate_ScaleDown(t *testing.T) {
 	})
 
 	t.Run("allows equal desiredCount", func(t *testing.T) {
-		cluster := newCAPICluster(3)
+		cluster := newCAPICluster(3, "")
 		spec := db.ConfigSpecFromFull(cluster.ControlPlaneConfig)
 		desired := 3
 		err := svc.applyClusterLevelControlPlaneSpecUpdate(ctx, cluster, &api.UpdateClusterControlPlaneConfig{
@@ -191,8 +247,20 @@ func TestApplyClusterLevelControlPlaneSpecUpdate_ScaleDown(t *testing.T) {
 		require.Equal(t, 3, cluster.ControlPlaneConfig.DesiredCount)
 	})
 
-	t.Run("allows scale-up", func(t *testing.T) {
-		cluster := newCAPICluster(3)
+	t.Run("rejects scale-up without a VIP", func(t *testing.T) {
+		cluster := newCAPICluster(3, "")
+		spec := db.ConfigSpecFromFull(cluster.ControlPlaneConfig)
+		desired := 5
+		err := svc.applyClusterLevelControlPlaneSpecUpdate(ctx, cluster, &api.UpdateClusterControlPlaneConfig{
+			DesiredCount: &desired,
+		}, &spec)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "controlPlaneVIP")
+		require.Equal(t, 3, cluster.ControlPlaneConfig.DesiredCount)
+	})
+
+	t.Run("allows scale-up with a VIP", func(t *testing.T) {
+		cluster := newCAPICluster(3, "172.31.0.10")
 		spec := db.ConfigSpecFromFull(cluster.ControlPlaneConfig)
 		desired := 5
 		err := svc.applyClusterLevelControlPlaneSpecUpdate(ctx, cluster, &api.UpdateClusterControlPlaneConfig{
@@ -203,7 +271,7 @@ func TestApplyClusterLevelControlPlaneSpecUpdate_ScaleDown(t *testing.T) {
 	})
 
 	t.Run("rejects desiredCount below 1", func(t *testing.T) {
-		cluster := newCAPICluster(3)
+		cluster := newCAPICluster(3, "")
 		spec := db.ConfigSpecFromFull(cluster.ControlPlaneConfig)
 		desired := 0
 		err := svc.applyClusterLevelControlPlaneSpecUpdate(ctx, cluster, &api.UpdateClusterControlPlaneConfig{
@@ -212,6 +280,89 @@ func TestApplyClusterLevelControlPlaneSpecUpdate_ScaleDown(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "desiredCount must be at least 1")
 	})
+}
+
+func TestApplyClusterControlPlaneConfigUpdate_MaxSurgeWithoutVIP(t *testing.T) {
+	svc := clusterService{useControlPlaneController: true}
+	cluster := &db.Cluster{
+		ID: uuid.New(),
+		ControlPlaneConfig: db.ControlPlaneConfig{
+			DesiredCount: 1,
+		},
+	}
+	maxSurge := 1
+
+	err := svc.applyClusterControlPlaneConfigUpdate(context.Background(), nil, cluster, &api.UpdateClusterControlPlaneConfig{
+		MaxSurge: &maxSurge,
+	})
+	require.NoError(t, err)
+	require.Equal(t, maxSurge, cluster.ControlPlaneConfig.MaxSurge)
+}
+
+func TestApplyClusterControlPlaneConfigUpdate_RolloutRequiresVIP(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		controlPlaneVIP string
+		wantBadRequest  bool
+	}{
+		{name: "without VIP", wantBadRequest: true},
+		{name: "with VIP", controlPlaneVIP: "172.31.0.10"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldConfigID := uuid.New()
+			newConfigID := uuid.New()
+			instanceTypeID := uuid.New()
+			currentSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
+			currentSpec.SetNico(db.NicoControlPlaneProvider{
+				InstanceTypePreference: []uuid.UUID{instanceTypeID},
+				OSProfile:              "os-v1",
+				ConfigProfile:          "cfg-v1",
+			})
+			cluster := &db.Cluster{
+				ID:                uuid.New(),
+				ProviderType:      db.ProviderTypeNico,
+				Nico:              &db.NicoClusterProvider{},
+				KubernetesVersion: "1.34.2",
+				ControlPlaneVIP:   tc.controlPlaneVIP,
+				ControlPlaneConfig: db.ControlPlaneConfig{
+					ConfigurationID:        oldConfigID,
+					DesiredCount:           1,
+					ControlPlaneConfigSpec: currentSpec,
+				},
+			}
+			newProfile := "cfg-v2"
+			tx := &testutil.MockTx{}
+			currentConfigCall := tx.On("GetControlPlaneConfiguration", mock.Anything, oldConfigID).Return(db.ControlPlaneConfiguration{
+				ID: oldConfigID, ClusterID: cluster.ID, Config: currentSpec,
+			}, nil)
+			createConfigCall := tx.On("CreateControlPlaneConfiguration", mock.Anything, mock.MatchedBy(func(row *db.ControlPlaneConfiguration) bool {
+				provider, err := row.Config.NicoProvider()
+				return err == nil && provider.ConfigProfile == newProfile
+			})).Return(db.ControlPlaneConfiguration{
+				ID: newConfigID, ClusterID: cluster.ID,
+			}, nil)
+			if tc.wantBadRequest {
+				currentConfigCall.Maybe()
+				createConfigCall.Maybe()
+			} else {
+				currentConfigCall.Once()
+				createConfigCall.Once()
+			}
+
+			svc := clusterService{useControlPlaneController: true}
+			err := svc.applyClusterControlPlaneConfigUpdate(context.Background(), tx, cluster, &api.UpdateClusterControlPlaneConfig{
+				Nico: &api.NicoControlPlaneProviderUpdate{ConfigProfile: &newProfile},
+			})
+			if tc.wantBadRequest {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "controlPlaneVIP")
+				tx.AssertNotCalled(t, "CreateControlPlaneConfiguration", mock.Anything, mock.Anything)
+				return
+			}
+			require.NoError(t, err)
+			tx.AssertExpectations(t)
+		})
+	}
 }
 
 func TestCreateNodePool_RejectsControlPlanePoolWhenControllerEnabled(t *testing.T) {

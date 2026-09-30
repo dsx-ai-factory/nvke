@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -25,6 +26,9 @@ var (
 	// ErrLastJoinedControlPlaneNodePool is returned when a live node-pool delete
 	// would leave no joined control-plane node.
 	ErrLastJoinedControlPlaneNodePool = errors.New("cannot delete the last joined control-plane node pool; delete the cluster instead")
+	// ErrControlPlaneVIPRequired is returned when deleting a control-plane node
+	// would make the controller replace it without a stable API endpoint.
+	ErrControlPlaneVIPRequired = errors.New("controlPlaneVIP is required to replace a control-plane node; recreate the cluster with controlPlaneVIP configured")
 	// ErrNodePoolDeleting is returned when node-pool teardown is already in
 	// progress; callers should treat the request as a no-op success.
 	ErrNodePoolDeleting = errors.New("node pool is deleting")
@@ -51,7 +55,8 @@ func guardLiveNodeDelete(ctx context.Context, tx db.Tx, nodeID uuid.UUID) (db.No
 	// concurrent last-CP races (two txs each thinking the other survives) and
 	// must stay held through the caller's mark-deleting/commit. It also rejects
 	// when cluster teardown already owns the cluster (ErrClusterDeleting).
-	if err := lockClusterForLiveDelete(ctx, tx, node.ClusterID); err != nil {
+	cluster, err := lockClusterForLiveDelete(ctx, tx, node.ClusterID)
+	if err != nil {
 		return db.Node{}, err
 	}
 
@@ -79,6 +84,9 @@ func guardLiveNodeDelete(ctx context.Context, tx db.Tx, nodeID uuid.UUID) (db.No
 	}
 
 	if dbNode.ControlPlane {
+		if strings.TrimSpace(cluster.ControlPlaneVIP) == "" {
+			return db.Node{}, ErrControlPlaneVIPRequired
+		}
 		if err := ensureSurvivingJoinedControlPlane(ctx, tx, dbNode.ClusterID, liveControlPlaneDeleteExclusion{
 			ExcludeNodeID: &dbNode.ID,
 		}); err != nil {
@@ -104,7 +112,7 @@ func guardLiveNodePoolDelete(ctx context.Context, tx db.Tx, nodePoolID uuid.UUID
 	// Same cluster-row mutex as guardLiveNodeDelete: serialize last-CP races and
 	// reject deletes once cluster teardown is in progress. Lock is held until
 	// this transaction commits after the caller marks the pool deleting.
-	if err := lockClusterForLiveDelete(ctx, tx, nodePool.ClusterID); err != nil {
+	if _, err := lockClusterForLiveDelete(ctx, tx, nodePool.ClusterID); err != nil {
 		return db.NodePool{}, err
 	}
 
@@ -143,18 +151,18 @@ type liveControlPlaneDeleteExclusion struct {
 // lockClusterForLiveDelete locks the cluster row for the remainder of the
 // transaction so concurrent live deletes serialize on a shared mutex. Returns
 // ErrClusterDeleting when cluster teardown already owns the cluster.
-func lockClusterForLiveDelete(ctx context.Context, tx db.Tx, clusterID uuid.UUID) error {
+func lockClusterForLiveDelete(ctx context.Context, tx db.Tx, clusterID uuid.UUID) (db.Cluster, error) {
 	cluster, err := tx.GetClusterForUpdate(ctx, clusterID)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
-			return ErrClusterNotFound
+			return db.Cluster{}, ErrClusterNotFound
 		}
-		return fmt.Errorf("failed to get cluster: %w", err)
+		return db.Cluster{}, fmt.Errorf("failed to get cluster: %w", err)
 	}
 	if cluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
-		return ErrClusterDeleting
+		return db.Cluster{}, ErrClusterDeleting
 	}
-	return nil
+	return cluster, nil
 }
 
 // ensureSurvivingJoinedControlPlane rejects a live control-plane node or

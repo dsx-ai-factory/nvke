@@ -17,6 +17,8 @@ cp-02,10.10.50.3,
 cp-03,10.10.50.4,
 `
 
+const threeNodeVIPSet = "cluster.controlPlaneVIP=10.10.50.10"
+
 // runGenerate drives the real command tree, so the flags, argument count and
 // output plumbing are exercised rather than just the package beneath them.
 func runGenerate(t *testing.T, args ...string) (stdout, stderr string, err error) {
@@ -40,7 +42,7 @@ func writeCSV(t *testing.T, content string) string {
 }
 
 func TestGenerateSiteSpecWritesToStdout(t *testing.T) {
-	stdout, _, err := runGenerate(t, "generate", "sitespec", "my-tier0-site", "--nodes", writeCSV(t, threeHostCSV))
+	stdout, _, err := runGenerate(t, "generate", "sitespec", "my-tier0-site", "--nodes", writeCSV(t, threeHostCSV), "--set", threeNodeVIPSet)
 	if err != nil {
 		t.Fatalf("generate sitespec: %v", err)
 	}
@@ -49,6 +51,7 @@ func TestGenerateSiteSpecWritesToStdout(t *testing.T) {
 		`clusterName: "my-tier0-site"`,
 		`name: "cp-01"`,
 		`ip: "10.10.50.4"`,
+		`controlPlaneVIP: "10.10.50.10"`,
 		"SPDX-License-Identifier: Apache-2.0",
 	} {
 		if !strings.Contains(stdout, want) {
@@ -61,7 +64,7 @@ func TestGenerateSiteSpecWritesToStdout(t *testing.T) {
 // generate writes, bootstrap site accepts, with no editing in between. Every
 // other test proves a part of that; this one proves the whole of it.
 func TestGenerateSiteSpecThenBootstrapDryRun(t *testing.T) {
-	stdout, _, err := runGenerate(t, "generate", "sitespec", "my-tier0-site", "--nodes", writeCSV(t, threeHostCSV))
+	stdout, _, err := runGenerate(t, "generate", "sitespec", "my-tier0-site", "--nodes", writeCSV(t, threeHostCSV), "--set", threeNodeVIPSet)
 	if err != nil {
 		t.Fatalf("generate sitespec: %v", err)
 	}
@@ -79,6 +82,7 @@ func TestGenerateSiteSpecThenBootstrapDryRun(t *testing.T) {
 func TestGenerateSiteSpecSetReachesTheFile(t *testing.T) {
 	stdout, _, err := runGenerate(t, "generate", "sitespec", "my-tier0-site",
 		"--nodes", writeCSV(t, threeHostCSV),
+		"--set", threeNodeVIPSet,
 		"--set", "cluster.cniName=calico",
 		"--set", "cluster.podCidr=10.100.0.0/16")
 	if err != nil {
@@ -96,7 +100,7 @@ func TestGenerateSiteSpecReadsStdin(t *testing.T) {
 	root := newRootCmd("test", "none", "clean", "now")
 	root.SetOut(&out)
 	root.SetIn(strings.NewReader(threeHostCSV))
-	root.SetArgs([]string{"generate", "sitespec", "my-tier0-site", "--nodes", "-"})
+	root.SetArgs([]string{"generate", "sitespec", "my-tier0-site", "--nodes", "-", "--set", threeNodeVIPSet})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("generate sitespec --nodes -: %v", err)
 	}

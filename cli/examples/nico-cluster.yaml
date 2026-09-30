@@ -27,6 +27,10 @@ controlPlaneKubernetesVersion: 1.34.2
 cniPlugin: calico
 etcdEncrypted: false
 
+# Required because this example creates three control-plane nodes. Replace it
+# with an unused, routable address from the site's control-plane network.
+controlPlaneVIP: 10.0.0.100
+
 nico:
   orgID: dipfedrcvjiw
   siteID: 00000000-0000-0000-0000-000000000000

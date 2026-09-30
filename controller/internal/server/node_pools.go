@@ -144,7 +144,15 @@ func (s *nodePoolService) CreateNodePool(
 		if err != nil {
 			return fmt.Errorf("failed to list node pools for pod CIDR capacity validation: %w", err)
 		}
+		previousControlPlaneCount := desiredControlPlaneNodeCount(nodePools)
 		nodePools = append(nodePools, dbNodePool)
+		if err := validateControlPlaneCapacityChange(
+			cluster.ControlPlaneVIP,
+			previousControlPlaneCount,
+			desiredControlPlaneNodeCount(nodePools),
+		); err != nil {
+			return err
+		}
 		if err := validateStoredPodCIDRCapacity(cluster, podCIDRNodePoolsWithClusterCP(s.useControlPlaneController, cluster, nodePools)); err != nil {
 			return newBadRequestErrorf("%s", err)
 		}
@@ -388,6 +396,7 @@ func (s *nodePoolService) UpdateNodePool(
 			(req.Body.DesiredNodeCount != nil || req.Body.MaxSurge != nil)
 		var nodePools []db.NodePool
 		previousRequiredNodeBlocks := 0
+		previousControlPlaneCount := 0
 		if capacityCanIncrease {
 			clusterID := cluster.ID
 			nodePools, err = tx.ListNodePools(ctx, db.NodePoolFilters{ClusterID: &clusterID})
@@ -395,6 +404,7 @@ func (s *nodePoolService) UpdateNodePool(
 				return fmt.Errorf("failed to list node pools for pod CIDR capacity validation: %w", err)
 			}
 			previousRequiredNodeBlocks = requiredPodCIDRNodeBlocks(podCIDRNodePoolsWithClusterCP(s.useControlPlaneController, cluster, nodePools), cluster.ControlPlaneConfig.MaxSurge)
+			previousControlPlaneCount = desiredControlPlaneNodeCount(nodePools)
 		}
 
 		if err := s.validateUpdateNodePoolRequest(cluster, req.Body); err != nil {
@@ -411,6 +421,18 @@ func (s *nodePoolService) UpdateNodePool(
 		if err := validateUpdatedNodePool(cluster, &dbNodePool); err != nil {
 			return err
 		}
+		if dbNodePool.ControlPlane && dbNodePool.CurrentNodeSetID != nil {
+			currentNodeSet, err := tx.GetNodeSet(ctx, *dbNodePool.CurrentNodeSetID)
+			if err != nil {
+				return fmt.Errorf("failed to get current node set: %w", err)
+			}
+			if err := validateControlPlaneRollout(
+				cluster.ControlPlaneVIP,
+				nodePoolReplacementConfigChanged(oldNodePool, dbNodePool) && db.NodePoolNeedsNewNodeSet(dbNodePool, currentNodeSet),
+			); err != nil {
+				return err
+			}
+		}
 		if capacityCanIncrease {
 			found := false
 			for i := range nodePools {
@@ -422,6 +444,13 @@ func (s *nodePoolService) UpdateNodePool(
 			}
 			if !found {
 				return fmt.Errorf("node pool %s is missing from cluster %s", dbNodePool.ID, cluster.ID)
+			}
+			if err := validateControlPlaneCapacityChange(
+				cluster.ControlPlaneVIP,
+				previousControlPlaneCount,
+				desiredControlPlaneNodeCount(nodePools),
+			); err != nil {
+				return err
 			}
 			augmentedNodePools := podCIDRNodePoolsWithClusterCP(s.useControlPlaneController, cluster, nodePools)
 			if requiredPodCIDRNodeBlocks(augmentedNodePools, cluster.ControlPlaneConfig.MaxSurge) > previousRequiredNodeBlocks {
@@ -467,6 +496,24 @@ func (s *nodePoolService) UpdateNodePool(
 	}
 
 	return api.UpdateNodePool200JSONResponse(apiNodePoolFromDB(&updatedNodePool)), nil
+}
+
+func nodePoolReplacementConfigChanged(old, updated db.NodePool) bool {
+	if old.KubernetesVersion != updated.KubernetesVersion ||
+		old.SystemReservedMemory != updated.SystemReservedMemory ||
+		old.KubeReservedMemory != updated.KubeReservedMemory ||
+		old.TeleportEnabled != updated.TeleportEnabled {
+		return true
+	}
+
+	switch {
+	case old.Nico != nil && updated.Nico != nil:
+		return !old.Nico.Equal(*updated.Nico)
+	case old.Capi != nil && updated.Capi != nil:
+		return !old.Capi.Equal(*updated.Capi)
+	default:
+		return true
+	}
 }
 
 func applyUpdateNodePoolRequest(cluster db.Cluster, dbNodePool *db.NodePool, req *api.UpdateNodePoolRequest) error {

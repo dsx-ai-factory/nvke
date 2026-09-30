@@ -54,6 +54,27 @@ func (c *Client) UpgradeClusterControlPlane(ctx context.Context, id openapi_type
 	return resp.JSON200, nil
 }
 
+// UpgradeClusterControlPlaneExpectingRefusal sends a version and maxSurge update,
+// requires HTTP 400, and returns the validation message.
+func (c *Client) UpgradeClusterControlPlaneExpectingRefusal(ctx context.Context, id openapi_types.UUID, version string) (string, error) {
+	enableRecycling := true
+	maxSurge := 1
+	resp, err := c.api.UpdateClusterWithResponse(ctx, id, api.UpdateClusterRequest{
+		ControlPlaneKubernetesVersion: &version,
+		EnableCPNodeRecycling:         &enableRecycling,
+		ControlPlaneConfig: &api.UpdateClusterControlPlaneConfig{
+			MaxSurge: &maxSurge,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("upgrading cluster %s control plane to %s: %w", id, version, err)
+	}
+	if resp.StatusCode() != 400 || resp.JSON400 == nil {
+		return "", fmt.Errorf("upgrading cluster %s control plane to %s: want 400, got %s: %s", id, version, resp.Status(), resp.Body)
+	}
+	return resp.JSON400.Message, nil
+}
+
 // UpdateControlPlaneDesiredCount patches the cluster-level control-plane config
 // to the given desired count and returns the updated cluster. It is used by
 // control-plane-controller provisioning, where the control plane is managed
@@ -74,6 +95,23 @@ func (c *Client) UpdateControlPlaneDesiredCount(ctx context.Context, id openapi_
 		return nil, fmt.Errorf("updating cluster %s control-plane desired count to %d: unexpected status %s: %s", id, desired, resp.Status(), resp.Body)
 	}
 	return resp.JSON200, nil
+}
+
+// UpdateControlPlaneDesiredCountExpectingRefusal requires a cluster-level
+// desired-count update to fail with 400 and returns the validation message.
+func (c *Client) UpdateControlPlaneDesiredCountExpectingRefusal(ctx context.Context, id openapi_types.UUID, desired int) (string, error) {
+	resp, err := c.api.UpdateClusterWithResponse(ctx, id, api.UpdateClusterRequest{
+		ControlPlaneConfig: &api.UpdateClusterControlPlaneConfig{
+			DesiredCount: &desired,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("updating cluster %s control-plane desired count to %d: %w", id, desired, err)
+	}
+	if resp.StatusCode() != 400 || resp.JSON400 == nil {
+		return "", fmt.Errorf("updating cluster %s control-plane desired count to %d: want 400, got %s: %s", id, desired, resp.Status(), resp.Body)
+	}
+	return resp.JSON400.Message, nil
 }
 
 // UpdateControlPlaneConfigProfile patches the cluster-level control-plane config

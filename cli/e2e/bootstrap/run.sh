@@ -19,7 +19,8 @@
 #   4. Every site spec node reports Ready through the kubeconfig the command
 #      wrote -- the cluster an operator gets, not the bootstrap cluster.
 #      Check the API endpoint, BGP next-hops and readiness through the VIP.
-#      Set NKECTL_E2E_CONTROL_PLANE_VIP="" to disable VIP coverage.
+#      Set NKECTL_E2E_CONTROL_PLANE_VIP="" only with NKECTL_E2E_NODES=1 to
+#      exercise the supported single-node configuration without kube-vip.
 #   5. Traefik serves a whoami Deployment on that cluster: hosts that already
 #      existed now serve traffic like any other cluster.
 #
@@ -89,6 +90,10 @@ BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap.log"
 # BGP-learned /32 instead of ARPing for another node's loopback address.
 # An explicit empty value disables the VIP; an unset variable uses the default.
 CONTROL_PLANE_VIP="${NKECTL_E2E_CONTROL_PLANE_VIP-172.26.1.1}"
+if [ -z "${CONTROL_PLANE_VIP}" ] && [ "${NODE_COUNT}" -gt 1 ]; then
+  printf 'FAIL: NKECTL_E2E_CONTROL_PLANE_VIP may be empty only when NKECTL_E2E_NODES=1; multi-node control planes require kube-vip\n' >&2
+  exit 1
+fi
 if [ -n "${CONTROL_PLANE_VIP}" ] && ! command -v jq >/dev/null 2>&1; then
   printf 'FAIL: jq is required for the control-plane VIP checks\n' >&2
   exit 1

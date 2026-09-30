@@ -196,6 +196,7 @@ cluster:
       ip: 10.0.0.2
     - name: node3
       ip: 10.0.0.3
+  controlPlaneVIP: 10.0.0.100
   k8sVersion: "1.32.0"
   cniName: calico
   podCidr: "10.100.0.0/16"

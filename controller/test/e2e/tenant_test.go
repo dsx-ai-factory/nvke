@@ -153,6 +153,15 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		},
 		options: nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 	}),
+	Entry("CAPD single control-plane node without kube-vip", Ordered, ContinueOnFailure, Label("capd", "no-vip"), testSpec{
+		buildSpec: capdSpec,
+		shape: clusterShape{
+			controlPlanePools:      []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			withoutControlPlaneVIP: true,
+		},
+		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		validate: validations{provisioningOnly: true, noVIPNodePoolScale: true, noVIPUpgrade: true},
+	}),
 	// Opt-in via the "cp-controller" label: it exercises cluster-level
 	// control-plane-controller provisioning (no control-plane node pool) and its
 	// update, rolling-update and delete specs, so it needs a flag-on CWE and
@@ -173,6 +182,15 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			controlPlaneControllerRollingUpdate: true,
 			controlPlaneControllerDelete:        true,
 		},
+	}),
+	Entry("CAPD control-plane controller without kube-vip", Ordered, ContinueOnFailure, Label("capd", "cp-controller", "no-vip"), testSpec{
+		buildSpec: capdSpec,
+		shape: clusterShape{
+			controlPlaneConfig:     &nke.ControlPlaneConfigSpec{DesiredCount: 1},
+			withoutControlPlaneVIP: true,
+		},
+		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		validate: validations{provisioningOnly: true, controlPlaneController: true, noVIPControllerScale: true, noVIPUpgrade: true},
 	}),
 	// The same for nico-containers, so the cp-controller path is not CAPD-only.
 	// Three control-plane nodes because the rolling-update spec needs a
@@ -464,8 +482,8 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				!controlPlaneControllerEnabled() {
 				Skip("requires CWE deployed with " + controlPlaneControllerEnv + " on")
 			}
-			if spec.validate.cpRotation && controlPlaneControllerEnabled() {
-				Skip("rotates a control-plane node pool; requires CWE deployed with " + controlPlaneControllerEnv + "=false")
+			if (spec.validate.cpRotation || spec.validate.noVIPNodePoolScale) && controlPlaneControllerEnabled() {
+				Skip("requires control-plane node-pool provisioning with " + controlPlaneControllerEnv + "=false")
 			}
 			test = expectSucceed(setupTenantTest(ctx, expectSucceed(resolve()), spec.options))
 			if spec.createVia == clientNkectl {
@@ -555,6 +573,15 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			}
 			if spec.validate.controlPlaneControllerUpdate {
 				validateControllerManagedControlPlaneUpdate(&test)
+			}
+			if spec.validate.noVIPNodePoolScale {
+				validateNoVIPNodePoolScaleRefused(&test)
+			}
+			if spec.validate.noVIPControllerScale {
+				validateNoVIPControllerScaleRefused(&test)
+			}
+			if spec.validate.noVIPUpgrade {
+				validateNoVIPUpgradeRefused(&test)
 			}
 			if spec.validate.controlPlaneControllerRollingUpdate {
 				validateControllerManagedControlPlaneRollingUpdate(&test)
@@ -717,6 +744,8 @@ type clusterShape struct {
 	workerPools       []nke.NodePoolSpec
 	etcdEncrypted     bool
 	controlPlaneVIP   string
+	// withoutControlPlaneVIP suppresses automatic VIP allocation.
+	withoutControlPlaneVIP bool
 	// controlPlaneConfig provisions the control plane through the cluster-level
 	// control-plane controller. Set it instead of controlPlanePools, never both:
 	// the cp-controller entries use it for controller-only fields, and the
@@ -787,6 +816,10 @@ type validations struct {
 	// the new count in CWE and the tenant API. Requires the same flag-on CWE as
 	// controlPlaneController (self-skips otherwise).
 	controlPlaneControllerUpdate bool
+	// The noVIP flags add rejection checks to single-node no-VIP rows.
+	noVIPNodePoolScale   bool
+	noVIPControllerScale bool
+	noVIPUpgrade         bool
 	// controlPlaneControllerRollingUpdate PATCHes the cluster-level
 	// controlPlaneConfig with a new config profile to bump the control-plane
 	// configuration revision and asserts the controller-managed control-plane
@@ -926,7 +959,7 @@ func (t *tenantTest) initCluster(ctx context.Context, b testSpec) {
 
 	// A backend with no preferred VIP wants none: CWE reads an empty one as
 	// "do not configure kube-vip", which is how a real site runs.
-	if preferred := preferredControlPlaneVIP(t.spec.Backend); preferred != "" && t.spec.ControlPlane.ControlPlaneVIP == "" {
+	if preferred := preferredControlPlaneVIP(t.spec.Backend); preferred != "" && t.spec.ControlPlane.ControlPlaneVIP == "" && !b.shape.withoutControlPlaneVIP {
 		vip, err := t.availableControlPlaneVIP(ctx, preferred)
 		Expect(err).NotTo(HaveOccurred(), "should select an unused control-plane VIP")
 		t.spec.ControlPlane.ControlPlaneVIP = vip

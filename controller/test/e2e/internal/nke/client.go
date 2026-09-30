@@ -263,6 +263,36 @@ func (c *Client) UpdateNodePoolDesiredCount(ctx context.Context, id openapi_type
 	return resp.JSON200, nil
 }
 
+// UpdateNodePoolDesiredCountExpectingRefusal requires a desired-count update
+// to fail with 400 and returns the server's validation message.
+func (c *Client) UpdateNodePoolDesiredCountExpectingRefusal(ctx context.Context, id openapi_types.UUID, desired int) (string, error) {
+	resp, err := c.api.UpdateNodePoolWithResponse(ctx, id, api.UpdateNodePoolRequest{
+		DesiredNodeCount: &desired,
+	})
+	if err != nil {
+		return "", fmt.Errorf("updating node pool %s desired count: %w", id, err)
+	}
+	if resp.StatusCode() != 400 || resp.JSON400 == nil {
+		return "", fmt.Errorf("updating node pool %s desired count to %d: want 400, got %s: %s", id, desired, resp.Status(), resp.Body)
+	}
+	return resp.JSON400.Message, nil
+}
+
+// UpdateNodePoolSystemReservedMemoryExpectingRefusal requires a node-pool
+// configuration update to fail with 400 and returns the validation message.
+func (c *Client) UpdateNodePoolSystemReservedMemoryExpectingRefusal(ctx context.Context, id openapi_types.UUID, memory string) (string, error) {
+	resp, err := c.api.UpdateNodePoolWithResponse(ctx, id, api.UpdateNodePoolRequest{
+		SystemReservedMemory: &memory,
+	})
+	if err != nil {
+		return "", fmt.Errorf("updating node pool %s system-reserved memory: %w", id, err)
+	}
+	if resp.StatusCode() != 400 || resp.JSON400 == nil {
+		return "", fmt.Errorf("updating node pool %s system-reserved memory to %q: want 400, got %s: %s", id, memory, resp.Status(), resp.Body)
+	}
+	return resp.JSON400.Message, nil
+}
+
 // DeleteNodeOption configures the DeleteNode request body.
 type DeleteNodeOption func(*api.DeleteNodeRequest)
 

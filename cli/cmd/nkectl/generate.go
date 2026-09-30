@@ -59,7 +59,8 @@ The generated file depends only on the arguments given: unlike bootstrap site,
 this command ignores the inventory environment variables, so a site spec never
 carries a value nobody typed.`,
 		Example: `  # Generate a site spec and bootstrap from it
-  nkectl generate sitespec my-tier0-site --nodes hosts.csv > sitespec.yaml
+  nkectl generate sitespec my-tier0-site --nodes hosts.csv \
+    --set cluster.controlPlaneVIP=10.10.50.10 > sitespec.yaml
   nkectl bootstrap site -f sitespec.yaml
 
   # Override fields the CSV does not carry

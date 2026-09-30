@@ -471,7 +471,8 @@ func TestNodeService_DeleteNode(t *testing.T) {
 					},
 				}, nil)
 				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
-					ID: clusterID,
+					ID:              clusterID,
+					ControlPlaneVIP: "10.0.0.100",
 				}, nil)
 				controlPlane := true
 				tx.On("ListNodePools", mock.Anything, db.NodePoolFilters{
@@ -510,7 +511,8 @@ func TestNodeService_DeleteNode(t *testing.T) {
 					ControlPlane: true,
 				}, nil)
 				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
-					ID: clusterID,
+					ID:              clusterID,
+					ControlPlaneVIP: "10.0.0.100",
 				}, nil)
 				controlPlane := true
 				tx.On("ListNodePools", mock.Anything, db.NodePoolFilters{
@@ -535,6 +537,21 @@ func TestNodeService_DeleteNode(t *testing.T) {
 					return input.NodeID == nodeID
 				})).Return(db.WorkflowOutbox{}, nil)
 			},
+		},
+		{
+			name:   "reject control-plane node replacement without VIP",
+			nodeID: nodeID,
+			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNode", mock.Anything, nodeID).Return(db.Node{
+					ID: nodeID, ClusterID: clusterID,
+				}, nil)
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID}, nil)
+				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{
+					ID: nodeID, ClusterID: clusterID, ControlPlane: true,
+				}, nil)
+			},
+			want400:         true,
+			want400Contains: "controlPlaneVIP",
 		},
 		{
 			name:   "noop while cluster deleting",
@@ -1113,7 +1130,7 @@ func TestNodeService_DeleteControlPlaneNodeThroughController(t *testing.T) {
 			tx := &mockTx{}
 			tx.On("GetNode", mock.Anything, tt.target.ID).Return(tt.target, nil)
 			tx.On("GetNodeForUpdate", mock.Anything, tt.target.ID).Return(tt.target, nil)
-			tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID}, nil)
+			tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, ControlPlaneVIP: "10.0.0.100"}, nil)
 			tx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Maybe()
 			tx.On("ListNodes", mock.Anything, mock.Anything).Return(tt.clusterNodes, nil).Maybe()
 

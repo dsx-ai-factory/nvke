@@ -132,8 +132,9 @@ type Cluster struct {
 	// CniVersion is an optional CNI plugin version (e.g. "3.31.4" for Calico).
 	// Empty lets the node-agent use its compiled-in default.
 	CniVersion string `yaml:"cniVersion"`
-	// ControlPlaneVIP is an optional IPv4 API endpoint advertised by kube-vip
-	// over BGP. Empty uses the IP of the node that initializes the cluster.
+	// ControlPlaneVIP is an IPv4 API endpoint advertised by kube-vip over BGP.
+	// It may be empty only for a single-node control plane, which then uses the
+	// initializing node's IP as its fixed endpoint.
 	ControlPlaneVIP string `yaml:"controlPlaneVIP,omitempty"`
 	// PodCidr is the pod network CIDR. Multiple CIDRs may be given as a
 	// comma-separated string.
@@ -528,10 +529,14 @@ func (v *validator) checkCIDR(path, value string, allowList bool) {
 	}
 }
 
-// checkControlPlaneVIP requires an optional IPv4 VIP to avoid node IPs and
-// pod and service CIDRs.
+// checkControlPlaneVIP requires a stable endpoint for multi-node control planes
+// and validates a configured IPv4 VIP against node IPs and cluster CIDRs.
 func (v *validator) checkControlPlaneVIP(c Cluster) {
 	if c.ControlPlaneVIP == "" {
+		if len(c.Nodes) > 1 {
+			v.addf("%s is required when %s contains more than one node because kube-vip provides a stable control-plane endpoint",
+				pathControlPlaneVIP, pathNodes)
+		}
 		return
 	}
 

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -230,6 +231,16 @@ func (a *Controller) reconcileNodePool(ctx context.Context, tx db.Tx, nodePool d
 	// Only surge when there are deprecated nodes to migrate, enabling faster rollout
 	// Cap surge to the number of deprecated nodes (no point surging more than what we're migrating)
 	surgeNodes := min(nodePool.MaxSurge, nodesInNonCurrentNodeSets)
+	if nodePool.ControlPlane && surgeNodes > 0 {
+		cluster, err := tx.GetCluster(ctx, nodePool.ClusterID)
+		if err != nil {
+			return fmt.Errorf("failed to get cluster: %w", err)
+		}
+		if strings.TrimSpace(cluster.ControlPlaneVIP) == "" {
+			logger.Warn("Skipping control-plane surge because controlPlaneVIP is not configured")
+			surgeNodes = 0
+		}
+	}
 
 	// Set the desired count of the current nodeSet to be the desired count of the node pool
 	// less the actual node count of nodes assigned to non-current NodeSets,
@@ -267,15 +278,8 @@ func (a *Controller) createNicoNodeSetIfChanged(
 	logger *slog.Logger,
 ) (db.NodePool, db.NodeSet, error) {
 	nicoNodePoolProvider, _ := nodePool.NicoProvider()
-	currentNicoNodePoolProvider, _ := currentNodeSet.NicoProvider()
 
-	configChanged := nodePool.CurrentNodeSetID == nil ||
-		nodePool.KubernetesVersion != currentNodeSet.KubernetesVersion ||
-		nodePool.SystemReservedMemory != currentNodeSet.SystemReservedMemory ||
-		nodePool.KubeReservedMemory != currentNodeSet.KubeReservedMemory ||
-		nodePool.TeleportEnabled != currentNodeSet.TeleportEnabled ||
-		!nicoNodePoolProvider.Equal(currentNicoNodePoolProvider)
-	if !configChanged {
+	if !db.NodePoolNeedsNewNodeSet(nodePool, currentNodeSet) {
 		return nodePool, currentNodeSet, nil
 	}
 	newNodeSet := buildBaseNodeSet(nodePool)
@@ -291,15 +295,8 @@ func (a *Controller) createCAPINodeSetIfChanged(
 	logger *slog.Logger,
 ) (db.NodePool, db.NodeSet, error) {
 	capiNodePoolProvider, _ := nodePool.CAPIProvider()
-	currentCapiNodePoolProvider, _ := currentNodeSet.CAPIProvider()
 
-	configChanged := nodePool.CurrentNodeSetID == nil ||
-		nodePool.KubernetesVersion != currentNodeSet.KubernetesVersion ||
-		nodePool.SystemReservedMemory != currentNodeSet.SystemReservedMemory ||
-		nodePool.KubeReservedMemory != currentNodeSet.KubeReservedMemory ||
-		nodePool.TeleportEnabled != currentNodeSet.TeleportEnabled ||
-		!capiNodePoolProvider.Equal(currentCapiNodePoolProvider)
-	if !configChanged {
+	if !db.NodePoolNeedsNewNodeSet(nodePool, currentNodeSet) {
 		return nodePool, currentNodeSet, nil
 	}
 	newNodeSet := buildBaseNodeSet(nodePool)

@@ -69,7 +69,7 @@ is a file `bootstrap site` accepts.
 | `cluster.k8sVersion` | string | yes | Plain semantic version, e.g. `1.32.0` (no leading `v`). |
 | `cluster.cniName` | string | yes | `ovn-kubernetes`. `calico` is accepted for development. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the node-agent default. |
-| `cluster.controlPlaneVIP` | string | no | Optional IPv4 control-plane VIP. Empty uses the IP of the node that initializes the cluster. See below. |
+| `cluster.controlPlaneVIP` | string | for multiple nodes | IPv4 control-plane VIP. Required when `cluster.nodes` has more than one entry. A single-node cluster may omit it and use that node's IP as its fixed endpoint. See below. |
 | `cluster.podCidr` | string | yes | Valid CIDR. A comma-separated list of CIDRs is allowed. |
 | `cluster.serviceCidr` | string | yes | Valid CIDR. |
 | `cluster.nodeAgentPort` | string | no | Port number 1–65535. Defaults to `15005`. |
@@ -98,6 +98,8 @@ being silently ignored.
   comma-separated list and validates each entry.
 - `controlPlaneVIP`, when set, must parse as a routable unicast IPv4 address,
   must not equal a node IP, and must not fall inside `podCidr` or `serviceCidr`.
+- `controlPlaneVIP` is required when `cluster.nodes` contains more than one
+  node.
 
 ## Environment variable overrides
 
@@ -224,12 +226,14 @@ kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- \
 
 ## The control-plane VIP
 
-`cluster.controlPlaneVIP` is an optional IPv4 address that fronts the Kubernetes
-API for every control-plane node. When set, CWE runs kube-vip on each node,
+`cluster.controlPlaneVIP` is an IPv4 address that fronts the Kubernetes API for
+every control-plane node. It is required when `cluster.nodes` contains more than
+one node. When set, CWE runs kube-vip on each node,
 kubeadm uses the VIP as the `controlPlaneEndpoint`, and the kubeconfig `bootstrap
-site` writes points at it. Empty uses the IP of the node that initializes the
-cluster. CWE selects a control-plane node that reports ready to join, so the
-endpoint does not necessarily use the first node listed in the site spec.
+site` writes points at it. A single-node cluster may leave it empty and use that
+node's IP as its fixed endpoint. CWE selects a control-plane node that reports
+ready to join, so the endpoint does not necessarily use the first node listed in
+the site spec.
 
 The VIP must be routable to the control-plane nodes over BGP. kube-vip
 advertises it with local AS 65100 to each node's default gateway, peer AS

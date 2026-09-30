@@ -122,6 +122,9 @@ func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestO
 		if errors.Is(err, nodes.ErrLastJoinedControlPlaneNode) {
 			return api.DeleteNode400JSONResponse{Message: err.Error()}, nil
 		}
+		if errors.Is(err, nodes.ErrControlPlaneVIPRequired) {
+			return api.DeleteNode400JSONResponse{Message: err.Error()}, nil
+		}
 		if errors.Is(err, db.ErrNotFound) || errors.Is(err, errClusterNotFound) {
 			return api.DeleteNode404Response{}, nil
 		}

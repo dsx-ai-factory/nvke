@@ -340,6 +340,9 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 		if err := validateCreateClusterLevelControlPlane(req, nodePools, providerType); err != nil {
 			return err
 		}
+		if err := validateControlPlaneCapacityChange(req.ControlPlaneVIP, 0, req.ControlPlaneConfig.DesiredCount); err != nil {
+			return err
+		}
 	} else {
 		// Legacy mode: the control plane is provided via a control-plane node pool,
 		// and a cluster-level controlPlaneConfig is not accepted.
@@ -354,6 +357,9 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 		}
 		if controlPlaneNodeCount == 0 {
 			return fmt.Errorf("cluster must have at least one control plane node")
+		}
+		if err := validateControlPlaneCapacityChange(req.ControlPlaneVIP, 0, controlPlaneNodeCount); err != nil {
+			return err
 		}
 	}
 
@@ -529,8 +535,10 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 			if req.Body.EnableOidc != nil && *req.Body.EnableOidc {
 				return errOIDCWithKubernetesUpgrade
 			}
-
 			if err := ValidateKubernetesVersionSkewWithControlPlane(dbCluster.KubernetesVersion, *req.Body.ControlPlaneKubernetesVersion); err != nil {
+				return err
+			}
+			if err := validateControlPlaneUpgrade(dbCluster.ControlPlaneVIP); err != nil {
 				return err
 			}
 
@@ -738,6 +746,12 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 		}
 		cluster.ControlPlaneConfig.MaxSurge = *req.MaxSurge
 	}
+	if !s.useControlPlaneController &&
+		cluster.ControlPlaneConfig.ConfigurationID == uuid.Nil &&
+		req.ProvisioningMonitorDisabled == nil &&
+		!hasClusterLevelControlPlaneUpdate(req) {
+		return nil
+	}
 
 	controlPlaneConfigSpec := db.ConfigSpecFromFull(cluster.ControlPlaneConfig)
 	// KubernetesVersion lives in the spec row and should track the current
@@ -783,6 +797,12 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 		if err := validateMergedClusterControlPlaneSpec(*cluster, controlPlaneConfigSpec); err != nil {
 			return err
 		}
+	}
+	if err := validateControlPlaneRollout(
+		cluster.ControlPlaneVIP,
+		db.IsControlPlaneRolloutRequired(cluster.ControlPlaneConfig.ControlPlaneConfigSpec, controlPlaneConfigSpec),
+	); err != nil {
+		return err
 	}
 
 	// Diff the entire spec against the current row and create a new row only
@@ -841,6 +861,13 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 	if req.DesiredCount != nil {
 		if *req.DesiredCount < 1 {
 			return newBadRequestErrorf("controlPlaneConfig.desiredCount must be at least 1")
+		}
+		if err := validateControlPlaneCapacityChange(
+			cluster.ControlPlaneVIP,
+			cluster.ControlPlaneConfig.DesiredCount,
+			*req.DesiredCount,
+		); err != nil {
+			return err
 		}
 		cluster.ControlPlaneConfig.DesiredCount = *req.DesiredCount
 	}
@@ -1233,6 +1260,10 @@ func ValidateKubernetesVersionSkewWithControlPlane(currentVersion, newVersion st
 	}
 	if newMajor == currentMajor && newMinor == currentMinor && newPatch < currentPatch {
 		return fmt.Errorf("%w: kubernetes version downgrade not supported (current: %s, requested: %s)",
+			errVersionSkewViolation, currentVersion, newVersion)
+	}
+	if newMajor == currentMajor && newMinor == currentMinor && newPatch == currentPatch {
+		return fmt.Errorf("%w: requested kubernetes version must be greater than the current version (current: %s, requested: %s)",
 			errVersionSkewViolation, currentVersion, newVersion)
 	}
 

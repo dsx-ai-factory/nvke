@@ -83,7 +83,6 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 		}
 		return nil
 	}
-
 	if !cluster.EnableCPNodeRecycling {
 		return nil
 	}
@@ -101,6 +100,11 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 			// provisioning) with no further upgrade-code changes.
 			target := cluster.ControlPlaneConfig.DesiredCount + cp.surgeBudget()
 			if deficit := target - len(surgeNodes); deficit > 0 {
+				if controlPlaneReplacementBlocked(cluster) {
+					logger.Warn("Skipping control plane scale-up because controlPlaneVIP is not configured",
+						"nodesNeedingRolloutCount", len(nodesNeedingRollout))
+					return nil
+				}
 				created, err := r.scaleUp(ctx, cluster, deficit, "surge nodes during upgrade", allocator)
 				if err != nil {
 					return fmt.Errorf("failed to scale up control plane before recycling: %w", err)
@@ -110,7 +114,12 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 				}
 			}
 		} else if len(surgeNodes) == 0 {
-			// Legacy node-pool mode: add a single surge node only when none is present.
+			// Legacy node-pool mode adds a single surge node when none is present.
+			if controlPlaneReplacementBlocked(cluster) {
+				logger.Warn("Skipping control plane scale-up because controlPlaneVIP is not configured",
+					"nodesNeedingRolloutCount", len(nodesNeedingRollout))
+				return nil
+			}
 			if _, err := r.scaleUp(ctx, cluster, 1, "surge node during upgrade", allocator); err != nil {
 				return fmt.Errorf("failed to scale up control plane before recycling: %w", err)
 			}

@@ -27,6 +27,10 @@ type controlPlane struct {
 	useController                 bool
 }
 
+func controlPlaneReplacementBlocked(cluster db.Cluster) bool {
+	return strings.TrimSpace(cluster.ControlPlaneVIP) == ""
+}
+
 // readControlPlane reads the control plane from the database.
 func readControlPlane(ctx context.Context, database db.Queries, cluster db.Cluster, useController bool) (*controlPlane, error) {
 	cpTrue := true

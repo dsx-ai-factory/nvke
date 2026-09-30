@@ -848,9 +848,11 @@ paths:
         Also returns 202, with no further effect, if the node, pool or cluster
         is already being deleted or a delete is already requested.
 
-        Returns 400 for, among others: deleting a control-plane node that would
-        leave fewer than 3 healthy, joined control-plane nodes; an invalid
-        `machineHealthIssue`.
+        Returns 400 when deletion would leave no joined control-plane node or
+        `machineHealthIssue` is invalid. Delete the cluster to remove its last
+        joined control-plane node.
+        Deleting a control-plane node requires controlPlaneVIP because the controller
+        replaces it. Worker node deletion is unaffected.
       operationId: deleteNode
       requestBody:
         required: false
@@ -1012,9 +1014,13 @@ components:
           type: string
           format: ipv4
           description: |
-            Virtual IP for the API server (kube-vip). Omit to skip. When omitted, the first
-            control-plane node's IP is the API server endpoint. Must not fall inside the pod
-            or service CIDR. An explicit empty string is rejected.
+            Virtual IP for the API server through kube-vip. Omit to skip kube-vip and
+            use the first control-plane node's IP as the API server endpoint. Must not
+            fall inside the pod or service CIDR. An explicit empty string is rejected.
+            Without a VIP, a new cluster must have exactly one desired control-plane
+            node. Control-plane scale-up above one node, upgrades, and configuration
+            changes that replace control-plane nodes require a VIP. Recreate a no-VIP
+            cluster with controlPlaneVIP to make those operations available.
           x-go-type-skip-optional-pointer: true
           x-order: 9
         teleportEnabled:
@@ -1059,7 +1065,7 @@ components:
         desiredCount:
           type: integer
           minimum: 1
-          description: Number of control-plane nodes.
+          description: The desired number of cluster-level control plane nodes. Creating a cluster with or increasing this count above 1 requires controlPlaneVIP on the cluster.
           x-go-type-skip-optional-pointer: true
         maxSurge:
           type: integer
@@ -1186,7 +1192,7 @@ components:
         desiredCount:
           type: integer
           minimum: 1
-          description: Number of control-plane nodes.
+          description: The desired number of cluster-level control plane nodes. Must be at least 1. Values above 1 require controlPlaneVIP on the cluster.
           x-go-type-skip-optional-pointer: true
         maxSurge:
           type: integer
@@ -1225,11 +1231,15 @@ components:
         Changes to `osProfile` or the Kubernetes version start a control-plane
         rollout. All fields are optional. A provider payload that does not match the
         cluster's provider is rejected with 400.
+        Rollout-triggering changes require controlPlaneVIP. maxSurge alone does not
+        trigger a rollout and remains mutable without a VIP.
       properties:
         desiredCount:
           type: integer
           minimum: 1
-          description: Number of control-plane nodes.
+          description: |
+            The desired number of cluster-level control plane nodes. Must be at least 1.
+            Increasing the count above 1 requires controlPlaneVIP on the cluster.
         maxSurge:
           type: integer
           minimum: 0
@@ -1357,6 +1367,7 @@ components:
             Target control-plane version, as X.Y.Z with no leading "v". Must be newer than
             the current version by at most one minor version and keep every worker pool
             within 3 minor versions.
+            The cluster must have controlPlaneVIP configured.
         teleportEnabled:
           x-fern-ignore: true
           type: boolean
@@ -1541,7 +1552,7 @@ components:
         desiredNodeCount:
           type: integer
           minimum: 0
-          description: Number of nodes.
+          description: The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster.
           x-order: 14
         description:
           type: string
@@ -1586,6 +1597,9 @@ components:
       description: |
         All fields are optional. A provider payload that does not match the node pool's
         cluster is rejected with 400.
+        Updating a control-plane pool in a way that creates a replacement node set
+        requires controlPlaneVIP. maxSurge alone does not create a replacement
+        and remains mutable without a VIP.
       # No required fields since all fields are optional
       properties:
         autoProvisionDisabled:
@@ -1609,7 +1623,7 @@ components:
         desiredNodeCount:
           type: integer
           minimum: 0
-          description: Number of nodes.
+          description: The desired number of nodes in the pool. Increasing aggregate control-plane capacity above 1 requires controlPlaneVIP on the cluster.
         recycleBudget:
           type: integer
           minimum: 0

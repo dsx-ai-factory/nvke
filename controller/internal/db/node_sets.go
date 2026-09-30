@@ -41,6 +41,28 @@ type NodeSet struct {
 	Capi *CAPINodePoolProvider `bun:"capi,type:jsonb"`
 }
 
+// NodePoolNeedsNewNodeSet reports whether reconciling nodePool requires a replacement node set.
+func NodePoolNeedsNewNodeSet(nodePool NodePool, current NodeSet) bool {
+	if nodePool.CurrentNodeSetID == nil ||
+		nodePool.KubernetesVersion != current.KubernetesVersion ||
+		nodePool.SystemReservedMemory != current.SystemReservedMemory ||
+		nodePool.KubeReservedMemory != current.KubeReservedMemory ||
+		nodePool.TeleportEnabled != current.TeleportEnabled {
+		return true
+	}
+
+	switch {
+	case nodePool.Nico != nil:
+		currentProvider, _ := current.NicoProvider()
+		return !nodePool.Nico.Equal(currentProvider)
+	case nodePool.Capi != nil:
+		currentProvider, _ := current.CAPIProvider()
+		return !nodePool.Capi.Equal(currentProvider)
+	default:
+		return true
+	}
+}
+
 func (n *NodeSet) NicoProvider() (NicoNodePoolProvider, error) {
 	if n.Nico == nil {
 		return NicoNodePoolProvider{}, fmt.Errorf("%w: node set %s nico", ErrMissingProviderPayload, n.ID)

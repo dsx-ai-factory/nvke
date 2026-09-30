@@ -593,6 +593,7 @@ func TestClusterService_CreateClusterRejectsInsufficientPodCIDRCapacity(t *testi
 			Nico:                          nicoClusterProvider(uuid.New(), uuid.New()),
 			CniPlugin:                     "ovn-kubernetes",
 			ControlPlaneKubernetesVersion: "1.29.0",
+			ControlPlaneVIP:               "192.168.1.10",
 			Network: &api.ClusterNetworkCreateConfig{
 				PodCIDR:     "10.240.0.0/23",
 				ServiceCIDR: "10.120.0.0/24",
@@ -1046,10 +1047,11 @@ func TestValidateKubernetesVersionSkewWithControlPlane(t *testing.T) {
 			expectError:    false,
 		},
 		{
-			name:           "valid upgrade - same version",
+			name:           "invalid - same version",
 			currentVersion: "1.30.14",
 			newVersion:     "1.30.14",
-			expectError:    false,
+			expectError:    true,
+			errorMsg:       "must be greater than the current version",
 		},
 		{
 			name:           "invalid - major version downgrade",
@@ -1857,6 +1859,7 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig_CreatesSnapshotOnVersio
 	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
 		ID:                clusterID,
 		KubernetesVersion: "1.30.0",
+		ControlPlaneVIP:   "172.31.0.10",
 		ProviderType:      db.ProviderTypeCAPI,
 		ControlPlaneConfig: db.ControlPlaneConfig{
 			ConfigurationID: oldCfgID,

@@ -65,3 +65,60 @@ func TestNodeSetResolveProviderType(t *testing.T) {
 	_, err = empty.ResolveProviderType()
 	require.ErrorIs(t, err, db.ErrMissingProviderPayload)
 }
+
+func TestNodePoolNeedsNewNodeSet(t *testing.T) {
+	currentID := uuid.New()
+	basePool := db.NodePool{
+		CurrentNodeSetID:     &currentID,
+		KubernetesVersion:    "1.34.2",
+		SystemReservedMemory: "1Gi",
+		KubeReservedMemory:   "512Mi",
+		TeleportEnabled:      true,
+		Nico: &db.NicoNodePoolProvider{
+			OSProfile:     "os-v1",
+			ConfigProfile: "cfg-v1",
+		},
+	}
+	current := db.NodeSet{
+		ID:                   currentID,
+		KubernetesVersion:    "1.34.2",
+		SystemReservedMemory: "1Gi",
+		KubeReservedMemory:   "512Mi",
+		TeleportEnabled:      true,
+		Nico: &db.NicoNodePoolProvider{
+			OSProfile:     "os-v1",
+			ConfigProfile: "cfg-v1",
+		},
+	}
+
+	tests := []struct {
+		name string
+		pool db.NodePool
+		want bool
+	}{
+		{name: "matching configuration", pool: basePool},
+		{name: "max surge alone", pool: func() db.NodePool {
+			pool := basePool
+			pool.MaxSurge = 1
+			return pool
+		}()},
+		{name: "config profile changed", pool: func() db.NodePool {
+			pool := basePool
+			provider := *pool.Nico
+			provider.ConfigProfile = "cfg-v2"
+			pool.Nico = &provider
+			return pool
+		}(), want: true},
+		{name: "reserved memory changed", pool: func() db.NodePool {
+			pool := basePool
+			pool.SystemReservedMemory = "2Gi"
+			return pool
+		}(), want: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, db.NodePoolNeedsNewNodeSet(tc.pool, current))
+		})
+	}
+}

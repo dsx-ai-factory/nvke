@@ -229,6 +229,7 @@ func newControllerTest(ctx context.Context, t *testing.T) *controllerTest {
 		ID:                clusterID,
 		Name:              "test-cluster",
 		KubernetesVersion: testKubernetesVersion,
+		ControlPlaneVIP:   "10.0.0.100",
 	}
 	cluster.SetNicoProvider(db.NicoClusterProvider{
 		OrgID:  "test-org",
