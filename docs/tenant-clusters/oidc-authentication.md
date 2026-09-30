@@ -46,12 +46,15 @@ OIDC authentication also requires:
 
 With `nkeOIDCAuth.enabled: true`, the chart fails to render when
 `spiffe.trustDomain` is empty or `tenantAccess.enabled` is `false`. It does not
-check `issuerURL` or the CA Secret. When either is wrong, cluster provisioning
-and the `UpdateCluster` rollout fail.
+check `issuerURL` or the CA Secret. When `issuerURL` is empty or the CA Secret
+cannot be read, cluster provisioning and the `UpdateCluster` rollout fail.
+Neither checks that tenant API servers can reach the issuer. An unreachable
+issuer leaves OIDC authentication unavailable on a cluster that otherwise
+reports success.
 
 Enabling OIDC authentication on an existing cluster also needs
 `nkeOIDCAuth.enabled: true`, because the chart grants the NKE Controller read
-access to the CA Secret only then. Every cluster created afterwards gets OIDC
+access to the CA Secret only then. Every cluster created afterward gets OIDC
 authentication too.
 
 The API has no per-cluster override: `CreateClusterRequest` has no OIDC field.
@@ -120,7 +123,8 @@ returns `200`, as long as it passes the checks below.
 The request returns `400` when:
 
 - it sets `"enableOidc": false`;
-- the cluster is not yet provisioned, or is being deleted;
+- OIDC authentication is not yet enabled, and the cluster is not yet
+  provisioned or is being deleted;
 - it also sets `enableEtcdEncryption: true`;
 - it also sets a non-empty `controlPlaneKubernetesVersion`.
 
