@@ -84,7 +84,7 @@ make -C controller run-local              # Postgres, Temporal, then CWE
 Swagger is on <http://localhost:8080/api/docs/>. Infrastructure credentials are
 configured on the Cluster API provider rather than CWE.
 
-[first-cluster.md](first-cluster.md#path-a--the-api-alone) covers this path in
+[first-cluster.md](first-cluster.md#api-only) covers this path in
 full, and goes on to tenant clusters.
 
 ## agent (nke-agent)

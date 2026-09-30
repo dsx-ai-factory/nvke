@@ -16,13 +16,14 @@ the source checkout path in `tilt_config.json`:
     "nico",
     "dsx-imds-attestation"
   ],
-  "dsx_imds_attestation_source_dir": "../../dsx-identity"
+  "dsx_imds_attestation_source_dir": "../../dsx-identity",
+  "node_image_attestation_method": "dsxImds"
 }
 ```
 
 The provider builds both plugins, installs the agent plugin in the local CAPD
 node image, deploys this fixture, configures the server plugin through the
-SPIRE chart, and configures CWE's deployment-wide node-attestation method and
+SPIRE chart, and configures CWE's new-node attestation default and
 metadata endpoint. Tilt's default attestation mode remains unchanged unless
 the provider is enabled.
 

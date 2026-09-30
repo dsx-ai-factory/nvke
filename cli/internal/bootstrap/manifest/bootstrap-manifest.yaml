@@ -1,0 +1,107 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The bootstrap manifest lists the charts `nkectl bootstrap site` fetches and
+# installs with Helm, and the images the bootstrap runs. nkectl embeds this
+# file. `nkectl get bootstrap-manifest` prints it.
+#
+# nkectl installs each chart at the version listed here. The digests are a
+# record for whoever mirrors these artifacts. The bootstrap does not verify
+# them.
+#
+# Not listed:
+# - The controller chart, the Postgres chart and the provisioned provider's
+#   manifest. They ship inside nkectl.
+# - The components `clusterctl init` installs: Cluster API core, the kubeadm
+#   providers and cert-manager.
+# - The kindest/node image kind boots.
+#
+# This file is hand-authored. A later check compares it to what the charts
+# render.
+
+components:
+  # Upstream release. controller/Tiltfile pins the same version as
+  # CHART_VERSION_TEMPORAL; keep the two in step.
+  temporal:
+    chart:
+      repo: https://go.temporal.io/helm-charts
+      name: temporal
+      version: "0.74.0"
+      sha256: 14a8efe1cc92c91befac151db91f20f9a13962788e9d710c86655add6d966d37
+    images:
+      server:
+        ref: docker.io/temporalio/server:1.30.3
+        digest: sha256:a3d0f727caad0ecca5dc6e94766135aab448551f2c6c0d33d3c67576458e6a0d
+      admin-tools:
+        ref: docker.io/temporalio/admin-tools:1.30.3
+        digest: sha256:2c2272b008f1af295b3719963e6feeef64f838d1105d895cf6acfcf96dd31741
+      ui:
+        ref: docker.io/temporalio/ui:2.48.1
+        digest: sha256:edb5dd1b3e0ddb35611939dde9b573533afd6fbafbbf077b73c7131a30ca91ff
+
+  # The Postgres chart ships inside nkectl, so it has no chart entry. The
+  # image is an upstream release.
+  postgresql:
+    images:
+      postgres:
+        ref: docker.io/library/postgres:18.6
+        digest: sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+
+  # Upstream release.
+  spire-crds:
+    chart:
+      repo: https://spiffe.github.io/helm-charts-hardened/
+      name: spire-crds
+      version: "0.6.1"
+      sha256: ce982e63fc375e392b014fc99e621a55442ab886052413e9bb052f72d66580a8
+
+  # Upstream release. tpm-attestor is pulled only when the site spec lists TPM
+  # thumbprints.
+  spire:
+    chart:
+      repo: https://spiffe.github.io/helm-charts-hardened/
+      name: spire
+      version: "0.30.1"
+      sha256: 7c32126bb1909076cdf9fd0419dbf9e5b012f152bb09a96a4259917d70581fac
+    images:
+      server:
+        ref: ghcr.io/spiffe/spire-server:1.15.3
+        digest: sha256:4082f30d3e0ddc4000a171392c4ea174345ee44d161ee917c70b97b2ecfba141
+      agent:
+        ref: ghcr.io/spiffe/spire-agent:1.15.3
+        digest: sha256:41b0dcd8b258a69db9e2768292a060766fb76fd866e4bc925849981ea1b825ff
+      controller-manager:
+        ref: ghcr.io/spiffe/spire-controller-manager:0.7.0
+        digest: sha256:d7b9e710f5428ea25daa35a07083fe517ed70c23df902d21c54a0f444455a84b
+      csi-driver:
+        ref: ghcr.io/spiffe/spiffe-csi-driver:0.2.7
+        digest: sha256:9dfe4f0caff096164fd921aa7f15319804df2fc0325f1d90bc793ef3256ab1cd
+      csi-node-driver-registrar:
+        ref: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.15.0
+        digest: sha256:11f199f6bec47403b03cb49c79a41f445884b213b382582a60710b8c6fdc316a
+      busybox:
+        ref: docker.io/library/busybox:1.37.0-uclibc
+        digest: sha256:8d7b1636e974e0adfd8d945955fca609304f0a56c18799dfd032d6e661382d84
+      # The chart pins this image by digest. The tag is a name only.
+      bash:
+        ref: cgr.dev/chainguard/bash:latest
+        digest: sha256:90041f375e30f41aa7e0390075d8a69dc61900771d52fa98d63ee5d03d866a58
+      tpm-attestor:
+        ref: ghcr.io/spiffe/spire-tpm-plugin-tpm-attestor-server:v1.9.0
+        digest: sha256:9d3c69f9a9a59b274e7d6d9f8e75d89691d7d9204f2063d7917685a17b8828dc
+
+  # Built by you from controller/Dockerfile. NKECTL_CWE_IMAGE names the
+  # image the bootstrap runs; the ref below is a placeholder. The controller
+  # chart ships inside nkectl, so there is no chart entry.
+  controller:
+    images:
+      controller:
+        ref: cwe-controller:local
+
+  # Built by you from cluster-api-provider-provisioned/Dockerfile.
+  # NKECTL_CAPI_PROVISIONED_IMAGE names the image the bootstrap runs; the ref
+  # below is the local build's tag. Its manifest ships inside nkectl.
+  cluster-api-provider-provisioned:
+    images:
+      manager:
+        ref: cluster-api-provider-provisioned:local

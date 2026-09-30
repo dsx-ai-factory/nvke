@@ -59,10 +59,10 @@ func TestIntegration_NodeAgentClientExternalMTLS(t *testing.T) {
 		wantError         bool
 	}
 	tests := map[string]parameters{
-		"external mTLS overrides a node with SPIFFE disabled": {
+		"external mTLS on a pinned node with SPIFFE disabled": {
 			clientCertificate: trustedClient,
 		},
-		"external mTLS overrides a node with SPIFFE enabled": {
+		"external mTLS on a pinned node with SPIFFE enabled": {
 			clientCertificate: trustedClient,
 			spiffeEnabled:     true,
 		},
@@ -94,7 +94,9 @@ func TestIntegration_NodeAgentClientExternalMTLS(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			response, err := client.GetKubeadmStatus(ctx, db.Node{IP: host, SpiffeEnabled: params.spiffeEnabled})
+			response, err := client.GetKubeadmStatus(ctx, db.Node{
+				IP: host, SpiffeEnabled: params.spiffeEnabled, NodeAgentExternalMTLSEnabled: true,
+			})
 			if params.wantError {
 				require.Error(t, err)
 				assert.Zero(t, recorder.calls.Load(), "an unauthenticated connection must not reach the RPC handler")
@@ -128,7 +130,12 @@ func TestIntegration_NodeAgentClientInsecureTransportRegression(t *testing.T) {
 
 	host, port, err := net.SplitHostPort(listener.Addr().String())
 	require.NoError(t, err)
-	client := &NodeAgentClient{transport: &Transport{cfg: config.Config{NodeAgent: config.NodeAgentConfig{Port: port}}}}
+	client := &NodeAgentClient{
+		transport: &Transport{
+			cfg:                       config.Config{NodeAgent: config.NodeAgentConfig{Port: port}},
+			externalClientCertificate: &tls.Certificate{}, // Available credentials must not override the node's pinned transport.
+		},
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

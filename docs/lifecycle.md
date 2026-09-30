@@ -26,7 +26,7 @@ The cluster at this point is a plain kubeadm cluster. No NKE services are instal
 - `nkectl`, `nerdctl`, `kind` on the init node
 - Network reach from the init node to all nodes on port 15005
 
-**See:** [Site Controller Bootstrap](site-bootstrap/overview.md) · [Your First Cluster — Path C](first-cluster.md#path-c--a-real-site)
+**See:** [Site Controller Bootstrap](site-bootstrap/overview.md) · [Your First Cluster — Real Site](first-cluster.md#real-site)
 
 ## Day 1 — Configuration
 

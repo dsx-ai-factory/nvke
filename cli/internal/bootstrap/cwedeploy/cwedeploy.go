@@ -38,6 +38,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/manifest"
 	"github.com/dsx-ai-factory/nke/controller/deploy/charts"
 )
 
@@ -65,29 +66,6 @@ const (
 	spireCRDsReleaseName = "spire-crds"
 	spireReleaseName     = "spire"
 	cweReleaseName       = "cloud-workflow-engine"
-
-	// temporalChartRepo/temporalChartName are passed via `helm ... --repo`
-	// rather than a `helm repo add`, so this package does not mutate the
-	// caller's global Helm repo list. Version pin matches controller/
-	// Tiltfile's CHART_VERSION_TEMPORAL. Config.TemporalChartRef replaces
-	// the repo lookup with a chart reference of the operator's choosing.
-	temporalChartRepo    = "https://go.temporal.io/helm-charts"
-	temporalChartName    = "temporal"
-	temporalChartVersion = "0.74.0"
-
-	// The SPIFFE project's hardened SPIRE charts, passed via `helm ... --repo`
-	// for the same reason Temporal is: this package does not mutate the
-	// caller's global Helm repo list. Everything here is public, so a
-	// bootstrap needs no registry credential to install it.
-	//
-	// The CRDs are their own release because a chart cannot depend on its own
-	// CRDs being applied first. Config.SPIREChartRef and
-	// Config.SPIRECRDsChartRef replace the repo lookup for each.
-	spireChartRepo        = "https://spiffe.github.io/helm-charts-hardened/"
-	spireChartName        = "spire"
-	spireChartVersion     = "0.30.1"
-	spireCRDsChartName    = "spire-crds"
-	spireCRDsChartVersion = "0.6.1"
 
 	// spireServerPort is the port the SPIRE server is reached on inside the
 	// cluster: the port its Service listens on, the port its own agents dial,
@@ -422,15 +400,34 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	}
 	defer cleanup()
 
-	temporalChart := chartArgs(cfg.TemporalChartRef, temporalChartName, temporalChartRepo)
-	e.log.Info("installing temporal", "namespace", temporalNamespace, "version", temporalChartVersion, "chart", temporalChart[0])
-	temporalArgs := append([]string{"upgrade", "--install", temporalReleaseName}, temporalChart...)
+	// Chart identities come from the embedded bootstrap manifest, so what the
+	// bootstrap installs is pinned in one place. Each chart is passed via
+	// `helm --repo` rather than `helm repo add`, so this package does not
+	// mutate the caller's global Helm repo list; Config.*ChartRef replaces
+	// each repo lookup. The CRDs are their own release because a chart cannot
+	// depend on its own CRDs being applied first.
+	temporalChart, err := manifestChart(manifest.ComponentTemporal)
+	if err != nil {
+		return err
+	}
+	spireCRDsChart, err := manifestChart(manifest.ComponentSPIRECRDs)
+	if err != nil {
+		return err
+	}
+	spireChart, err := manifestChart(manifest.ComponentSPIRE)
+	if err != nil {
+		return err
+	}
+
+	temporalChartArgs := chartArgs(cfg.TemporalChartRef, temporalChart.Name, temporalChart.Repo)
+	e.log.Info("installing temporal", "namespace", temporalNamespace, "version", temporalChart.Version, "chart", temporalChartArgs[0])
+	temporalArgs := append([]string{"upgrade", "--install", temporalReleaseName}, temporalChartArgs...)
 	temporalArgs = append(temporalArgs,
 		"--namespace", temporalNamespace, "--create-namespace",
 		"--values", temporalValues,
 		"--set-string", "server.config.persistence.default.sql.password="+password,
 		"--set-string", "server.config.persistence.visibility.sql.password="+password,
-		"--version", temporalChartVersion,
+		"--version", temporalChart.Version,
 		"--wait", "--timeout", helmTimeout.String(),
 	)
 	if _, err := e.helm(ctx, kubeconfigPath, temporalArgs...); err != nil {
@@ -442,12 +439,12 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	if cfg.DisableMTLS {
 		e.log.Warn("SPIFFE is disabled: skipping SPIRE, and CWE will dial node agents in plaintext")
 	} else {
-		spireCRDsChart := chartArgs(cfg.SPIRECRDsChartRef, spireCRDsChartName, spireChartRepo)
-		e.log.Info("installing SPIRE CRDs", "namespace", spireNamespace, "version", spireCRDsChartVersion, "chart", spireCRDsChart[0])
-		spireCRDsArgs := append([]string{"upgrade", "--install", spireCRDsReleaseName}, spireCRDsChart...)
+		spireCRDsChartArgs := chartArgs(cfg.SPIRECRDsChartRef, spireCRDsChart.Name, spireCRDsChart.Repo)
+		e.log.Info("installing SPIRE CRDs", "namespace", spireNamespace, "version", spireCRDsChart.Version, "chart", spireCRDsChartArgs[0])
+		spireCRDsArgs := append([]string{"upgrade", "--install", spireCRDsReleaseName}, spireCRDsChartArgs...)
 		spireCRDsArgs = append(spireCRDsArgs,
 			"--namespace", spireNamespace, "--create-namespace",
-			"--version", spireCRDsChartVersion,
+			"--version", spireCRDsChart.Version,
 			"--wait", "--timeout", helmTimeout.String(),
 		)
 		if _, err := e.helm(ctx, kubeconfigPath, spireCRDsArgs...); err != nil {
@@ -462,11 +459,11 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 
 		// CWE uses SPIFFE workload identity even when the site spec contains no
 		// external TPM nodes, so the SPIRE deployment is always required.
-		e.log.Info("installing SPIRE", "namespace", spireNamespace, "version", spireChartVersion,
+		e.log.Info("installing SPIRE", "namespace", spireNamespace, "version", spireChart.Version,
 			"clusterName", spireClusterName, "trustDomain", spireTrustDomain,
 			"tpmThumbprints", len(cfg.TPMEKFingerprints))
 		if _, err := e.helm(ctx, kubeconfigPath,
-			spireInstallArgs(cfg, spireValues, spireClusterName, spireTrustDomain, helmTimeout)...,
+			spireInstallArgs(cfg, spireChart, spireValues, spireClusterName, spireTrustDomain, helmTimeout)...,
 		); err != nil {
 			return fmt.Errorf("cwedeploy: installing SPIRE: %w", err)
 		}
@@ -751,6 +748,18 @@ func spireServiceHost() string {
 	return spireReleaseName + "-server." + spireNamespace + ".svc.cluster.local"
 }
 
+// manifestChart returns the identity of a chart the bootstrap installs, as
+// the embedded bootstrap manifest pins it. The manifest ships in the binary,
+// so a missing entry is a build defect; TestDeploy_ChartsMatchTheBootstrapManifest
+// guards the pairing.
+func manifestChart(component string) (manifest.Chart, error) {
+	comp, ok := manifest.Load().Components[component]
+	if !ok || comp.Chart == nil {
+		return manifest.Chart{}, fmt.Errorf("cwedeploy: the embedded bootstrap manifest pins no chart for %q", component)
+	}
+	return *comp.Chart, nil
+}
+
 // chartArgs returns the chart half of a `helm upgrade --install`: the override
 // verbatim when set, otherwise the upstream chart name and its --repo. The
 // first element is always the chart. An override carries no --repo because
@@ -770,13 +779,13 @@ func chartArgs(override, name, repo string) []string {
 // nkectl cannot know ahead of time is computed here — the trust domain and
 // cluster name, CWE's admin identity, the CA to chain to, and the thumbprints
 // allowed to attest.
-func spireInstallArgs(cfg Config, valuesPath, clusterName, trustDomain string, timeout time.Duration) []string {
+func spireInstallArgs(cfg Config, chart manifest.Chart, valuesPath, clusterName, trustDomain string, timeout time.Duration) []string {
 	prefix := spireServerValuesPrefix
 	args := append([]string{"upgrade", "--install", spireReleaseName},
-		chartArgs(cfg.SPIREChartRef, spireChartName, spireChartRepo)...)
+		chartArgs(cfg.SPIREChartRef, chart.Name, chart.Repo)...)
 	args = append(args,
 		"--namespace", spireNamespace, "--create-namespace",
-		"--version", spireChartVersion,
+		"--version", chart.Version,
 		"--values", valuesPath,
 		"--set-string", "global.spire.clusterName="+clusterName,
 		"--set-string", "global.spire.trustDomain="+trustDomain,

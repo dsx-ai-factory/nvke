@@ -13,8 +13,6 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 )
 
 const (
@@ -29,10 +27,7 @@ func validatePostReadyCertificateRenewal(test *tenantTest) {
 	It("renews every control-plane certificate and returns the cluster to Ready", func(ctx context.Context) {
 		tenantClient := expectSucceed(test.tenantClients.GetClient(ctx, test.cluster.Name))
 		expectedPools := expectedNodeCounts(test.spec)
-		expectedControlPlanes := 0
-		for _, pool := range test.spec.ControlPlane.Pools {
-			expectedControlPlanes += pool.DesiredNodeCount
-		}
+		expectedControlPlanes := controlPlaneNodeCount(test.spec)
 		Expect(expectedControlPlanes).To(BeNumerically(">", 0), "certificate renewal requires control-plane nodes")
 
 		By("Waiting for every static control-plane component to be Ready before renewal")
@@ -65,7 +60,7 @@ func validatePostReadyCertificateRenewal(test *tenantTest) {
 
 		By("Verifying CWE and the tenant API report every node Ready after renewal")
 		Eventually(func(ctx context.Context) error {
-			if err := test.nke.AssertNodeConditions(ctx, test.cluster.ID, expectedPools, nke.IsNodeReady); err != nil {
+			if err := test.assertDesiredNodesReady(ctx); err != nil {
 				return err
 			}
 			_, err := validateNodesReadyInCluster(ctx, test, tenantClient, expectedPools)

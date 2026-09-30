@@ -1,6 +1,7 @@
 {
   "uid": "nktp-watchdog",
   "title": "NKTP Watchdog",
+  "description": "NKTP's monitoring Collector. Other NKTP Collectors send it their internal metrics, logs, and traces. It forwards that diagnostic telemetry to the configured backend (bundled LGTM by default) and scrapes OpenTelemetry Operator metrics. These panels show Watchdog traffic, failures, queue use, process resources, Operator scrape reachability, and Target Allocator reports.",
   "schemaVersion": 39,
   "refresh": "30s",
   "time": { "from": "now-30m", "to": "now" },
@@ -78,13 +79,15 @@
       ]
     },
     {
-      "id": 7, "type": "stat", "title": "Scrape targets up",
+      "id": 7, "type": "stat", "title": "Operator scrape targets up",
+      "description": "Number of discovered nktp-operator endpoints whose latest scrape succeeded (up = 1). Other Watchdog inputs are excluded. A positive count can hide failed endpoints; no value means Operator scrape telemetry is absent, not that all targets are healthy.",
       "gridPos": { "x": 0, "y": 21, "w": 6, "h": 7 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "expr": "sum by (job) (up{job=~\"nktp-operator|nktp-watchdog-targetallocator\"})", "legendFormat": "{{job}}", "instant": true, "refId": "A" }]
+      "targets": [{ "expr": "sum(up{job=\"nktp-operator\"})", "legendFormat": "Operator", "instant": true, "refId": "A" }]
     },
     {
       "id": 8, "type": "timeseries", "title": "Allocator collectors",
+      "description": "Sum of discovered and allocatable Watchdog collectors reported by Target Allocator replicas. With multiple allocator replicas, the same collectors may be counted more than once.",
       "gridPos": { "x": 6, "y": 21, "w": 9, "h": 7 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "min": 0 } },
@@ -95,6 +98,7 @@
     },
     {
       "id": 9, "type": "timeseries", "title": "Targets per collector",
+      "description": "Targets assigned to each Watchdog Collector as reported by the Target Allocator. Each allocator replica can report the same assignment; this is not a count of successful scrapes.",
       "gridPos": { "x": 15, "y": 21, "w": 9, "h": 7 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "min": 0 } },

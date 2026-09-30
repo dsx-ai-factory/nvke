@@ -7,10 +7,10 @@ organization.
 ## Reporting a vulnerability
 
 **Report security vulnerabilities to NVIDIA PSIRT.** Do not open a GitHub
-issue, a pull request, or a GitHub Security Advisory. NVIDIA product security
-policy routes every external vulnerability report through PSIRT so that
-disclosure is coordinated across all affected NVIDIA products, not just this
-repository.
+issue, a pull request, or a GitHub Security Advisory to report a vulnerability.
+NVIDIA product security policy routes every external report through PSIRT so
+that disclosure is coordinated across all affected NVIDIA products, not just
+this repository.
 
 - **Web:** [Security Vulnerability Submission Form](https://www.nvidia.com/object/submit-security-vulnerability.html)
 - **Email:** psirt@nvidia.com — encrypt with the [NVIDIA public PGP key](https://www.nvidia.com/en-us/security/pgp-key)
@@ -30,48 +30,32 @@ discussion on the public thread and redirect the reporter to PSIRT.
 
 ## Response and acknowledgement
 
-PSIRT acknowledges receipt of every report, coordinates with the reporter
-through the investigation, and provides progress updates as remediation
-proceeds. See [PSIRT Policies](https://www.nvidia.com/en-us/security/psirt-policies/)
-for NVIDIA's full coordinated-disclosure policy.
+PSIRT coordinates with reporters through the investigation and provides
+progress updates as appropriate. See
+[NVIDIA PSIRT Policies](https://www.nvidia.com/en-us/security/psirt-policies/)
+for the public coordinated-disclosure and remediation policy. The response
+and resolution timeline depends on the case; this repository does not set a
+separate public deadline.
 
-Alongside that process, the maintainers of this repository aim to:
-
-| Stage | Target |
-|---|---|
-| Acknowledge a report forwarded by PSIRT | 5 business days |
-| Confirm or reject, with a severity assessment | 10 business days |
-| Give the reporter a remediation timeline | 14 business days |
-
-If you have not heard anything within a few business days of filing, resend to
-psirt@nvidia.com rather than opening a public issue.
-
-## Remediation targets
-
-Severity is assessed with CVSS v3.1. These are the targets the maintainers work
-to once a report is confirmed; PSIRT owns the disclosure date.
-
-| Severity | CVSS v3.1 | Target fix available |
-|---|---|---|
-| Critical | 9.0 – 10.0 | 14 calendar days, out-of-band release |
-| High | 7.0 – 8.9 | 30 calendar days |
-| Medium | 4.0 – 6.9 | 90 calendar days, next scheduled release |
-| Low | 0.1 – 3.9 | Next scheduled release |
-
-Dependency vulnerabilities are picked up by Dependabot and follow the same
-targets, measured from the date a fixed upstream version becomes available.
+If you need to follow up on a report, contact psirt@nvidia.com rather than
+opening a public issue.
 
 ## Embargo and coordinated disclosure
 
 Confirmed vulnerabilities are handled under embargo. PSIRT manages the
-timeline: the issue stays confidential while a fix is prepared, and an advisory
-is published when the embargo lifts. NVIDIA is a CVE Numbering Authority and
-assigns CVE identifiers for resolved issues that require action from users.
+timeline: the issue stays confidential while a fix is prepared, and any NVIDIA
+security bulletin or CVE information is published only when PSIRT authorizes
+disclosure. NVIDIA is a CVE Numbering Authority and assigns CVE identifiers
+for resolved issues that require action from users.
 
 Maintainers support this by developing fixes privately and holding public
 discussion — issues, pull requests, commit messages and release notes — until
-PSIRT lifts the embargo. Please keep anything you report confidential until the
-advisory is published.
+PSIRT lifts the embargo. Please keep anything you report confidential until
+PSIRT authorizes disclosure.
+
+For fix development, maintainers may use an **unpublished draft** GitHub
+Security Advisory only to create a temporary private fork. It is not a
+reporting channel and must not be published.
 
 ## Supported versions
 
@@ -91,9 +75,9 @@ until the project reaches 1.0.
 
 ## Reporter credit
 
-We credit reporters by name in the published advisory and in the release notes
-of the release that carries the fix, unless you ask to stay anonymous. Tell
-PSIRT your preference, and the name or handle you want used, when you file.
+NVIDIA may credit reporters in a published security bulletin or related release
+notes, in coordination with PSIRT. Tell PSIRT if you prefer anonymity, or the
+name or handle you would like used, when you file.
 
 NVIDIA does not run a bug bounty program. We do acknowledge externally reported
 issues resolved under our coordinated vulnerability disclosure policy.

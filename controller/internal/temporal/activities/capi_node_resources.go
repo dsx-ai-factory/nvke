@@ -23,7 +23,6 @@ import (
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/capi"
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
@@ -128,7 +127,7 @@ func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context,
 		return err
 	}
 
-	userData, err := a.renderCAPIBootstrapUserData(ctx, createCtx.nodeSet, spireJoinToken)
+	userData, err := a.renderCAPIBootstrapUserData(ctx, createCtx.node, createCtx.nodeSet, spireJoinToken)
 	if err != nil {
 		return fmt.Errorf("failed to render CAPI bootstrap user data: %w", err)
 	}
@@ -165,14 +164,14 @@ func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context,
 }
 
 func (a *Activities) createCAPISpireJoinToken(ctx context.Context, createCtx *capiMachineCreateContext) (string, string, error) {
-	if a.cfg.NodeAgent.SpireAttestationMethod != config.SpireAttestationMethodJoinToken {
+	if createCtx.node.SpireAttestationMethod != db.SpireAttestationMethodJoinToken {
 		return "", "", nil
 	}
 	// A site stood up without SPIFFE has no SPIRE server to mint against, and no
 	// trust domain to build the alternate ID from. Asking anyway fails with
 	// "trust domain is missing", which is not retryable, so the node never gets
 	// a CAPI machine and the cluster sits in Provisioning for good.
-	if !a.cfg.SpiffeEnabled {
+	if !createCtx.node.SpiffeEnabled {
 		return "", "", nil
 	}
 

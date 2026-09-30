@@ -83,10 +83,10 @@ controllers:
     enabled: true
 
 nodeAgent:
-  # -- SPIRE node attestation method used by every cluster managed by this
-  # controller deployment. Set this value once when the environment is first
-  # deployed. Changing it in an existing environment is unsupported and
-  # requires a separately coordinated migration. dsxImds also requires SPIFFE
+  # -- SPIRE node attestation method pinned to newly created nodes. Changing
+  # this deployment default does not reconfigure existing nodes; keep their
+  # attestation plugins available until those nodes are retired or migrated.
+  # dsxImds also requires SPIFFE
   # to be enabled and a DSX node image that installs the plugin and supplies
   # DSX_IMDS_PLUGIN_CHECKSUM through /etc/spire-agent/spire-agent.env.
   spireAttestationMethod: "tpm"
@@ -102,8 +102,9 @@ nodeAgent:
     # /etc/spire-agent/spire-agent.env file.
     pluginChecksum: ""
   tlsJwt:
-    # -- Add JWT node authentication to the existing secure node-agent transport
-    # for every node agent managed by this controller. Requires either
+    # -- Pin JWT node authentication for newly created nodes. Existing nodes
+    # retain their stored transport; keep issuer/JWKS settings available while
+    # JWT-enabled nodes remain. Requires either
     # spiffe.enabled or nodeAgent.externalMTLS.enabled.
     enabled: false
     # -- Identity issuer expected in node-agent JWTs.
@@ -119,8 +120,9 @@ nodeAgent:
     # arguments when TLS/JWT is enabled.
     dsxIdentityExchangeURL: ""
   externalMTLS:
-    # -- Present an externally managed client certificate instead of the
-    # controller SPIRE X509-SVID.
+    # -- Pin an externally managed client certificate transport for newly
+    # created nodes instead of the controller SPIRE X509-SVID. Keep the Secret
+    # available while nodes using this transport remain.
     enabled: false
     secret:
       # -- Name of the externally managed Secret containing the client identity.
@@ -264,9 +266,11 @@ serviceMonitor:
   name: cloud-workflow-engine-metrics
   # -- Additional labels for the ServiceMonitor
   labels: {}
-  # -- Selector labels to match the service
-  matchLabels:
-    app.kubernetes.io/name: cloud-workflow-engine
+  # -- Selector labels to match the service. Values here win over the
+  # selector labels the chart derives from `nameOverride`/`fullnameOverride`,
+  # so an unset value here (the default) lets the derived labels through
+  # instead of silently overriding them with a stale literal.
+  matchLabels: {}
 
 # This block is for setting up the ingress.
 # https://kubernetes.io/docs/concepts/services-networking/ingress/

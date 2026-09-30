@@ -23,14 +23,15 @@ body:
       required: true
 
   - type: dropdown
-    id: criticality
+    id: requester_impact
     attributes:
-      label: Priority
+      label: Impact to you
+      description: Choose the option closest to your situation. Maintainers assess priority during triage.
       options:
-        - Critical (currently preventing usage)
-        - High
-        - Medium
-        - Low (would be nice)
+        - Prevents me from using the project
+        - Significantly impairs my work
+        - Causes confusion or extra work
+        - Minor suggestion
     validations:
       required: true
 

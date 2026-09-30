@@ -100,11 +100,12 @@ func (te *collectorTestEnv) createNodeSet(ctx context.Context, t *testing.T, np 
 func (te *collectorTestEnv) createEligibleNode(ctx context.Context, t *testing.T, np db.NodePool, ns db.NodeSet, name string) db.Node {
 	t.Helper()
 	node := db.Node{
-		ID:         uuid.New(),
-		NodePoolID: np.ID,
-		NodeSetID:  ns.ID,
-		Name:       name,
-		IP:         "10.0.0.1",
+		ID:                     uuid.New(),
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+		NodePoolID:             np.ID,
+		NodeSetID:              ns.ID,
+		Name:                   name,
+		IP:                     "10.0.0.1",
 		Nico: &db.NicoNodeProvider{
 			ForgeInstanceID: "forge-" + name,
 			ForgeMachineID:  "machine-" + name,
@@ -306,7 +307,8 @@ func TestListTeleportRolloutStats(t *testing.T) {
 
 		// CAPNICo node without a Forge instance ID is eligible.
 		noForge := db.Node{
-			ID: uuid.New(), NodePoolID: np.ID, NodeSetID: ns.ID,
+			SpireAttestationMethod: db.SpireAttestationMethodTPM,
+			ID:                     uuid.New(), NodePoolID: np.ID, NodeSetID: ns.ID,
 			Name: "no-forge",
 			Nico: &db.NicoNodeProvider{ForgeInstanceID: "", ForgeMachineID: "m"},
 			IP:   "10.0.0.1",
@@ -315,7 +317,8 @@ func TestListTeleportRolloutStats(t *testing.T) {
 		require.NoError(t, err)
 
 		pendingHash := db.Node{
-			ID: uuid.New(), NodePoolID: np.ID, NodeSetID: ns.ID,
+			SpireAttestationMethod: db.SpireAttestationMethodTPM,
+			ID:                     uuid.New(), NodePoolID: np.ID, NodeSetID: ns.ID,
 			Name: "pending-hash",
 			Nico: &db.NicoNodeProvider{ForgeInstanceID: "forge-x", ForgeMachineID: "m"},
 			IP:   "10.0.0.1",

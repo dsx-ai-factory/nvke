@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
@@ -36,7 +37,9 @@ type resourceSchema struct {
 	cel        *schemacel.Validator
 }
 
-func loadResourceSchema(t *testing.T, resource string) resourceSchema {
+// loadCRD reads a generated CRD as controller-gen emitted it, before defaulting
+// and conversion, so tests can read the markers back off the schema.
+func loadCRD(t *testing.T, resource string) apiextensionsv1.CustomResourceDefinition {
 	t.Helper()
 	data, err := os.ReadFile("../crds/internal.nke.nvidia.com_" + resource + ".yaml")
 	if err != nil {
@@ -46,6 +49,12 @@ func loadResourceSchema(t *testing.T, resource string) resourceSchema {
 	if err := yaml.UnmarshalStrict(data, &crd); err != nil {
 		t.Fatal(err)
 	}
+	return crd
+}
+
+func loadResourceSchema(t *testing.T, resource string) resourceSchema {
+	t.Helper()
+	crd := loadCRD(t, resource)
 	apiextensionsv1.SetDefaults_CustomResourceDefinition(&crd)
 
 	var internal apiextensions.CustomResourceDefinition
@@ -193,7 +202,41 @@ var baseResources = map[string]string{
 			"release": {"name": "ubuntu", "version": "1.0"}
 		}
 	}`,
+	"machineimages": `{
+		"apiVersion": "internal.nke.nvidia.com/v1",
+		"kind": "MachineImage",
+		"metadata": {"name": "nke-nico-vms-24.04-amd64-fde"},
+		"spec": {
+			"operatingSystem": {"family": "ubuntu", "version": "24.04"},
+			"architecture": "amd64",
+			"variant": "fde",
+			"buildDate": "2026-03-23",
+			"nico": {"ipxeScript": "#!ipxe\nchain ${boot-loader} disk_strategy={{ .DiskSelectionStrategy }}\n"}
+		}
+	}`,
+	"clusterreleases": `{
+		"apiVersion": "internal.nke.nvidia.com/v1",
+		"kind": "ClusterRelease",
+		"metadata": {"name": "nke-nico-vms-24.04-amd64-fde"},
+		"spec": {
+			"machineImageRef": {"name": "nke-nico-vms-24.04-amd64-fde"},
+			"machineInit": {"userDataTemplate": "#cloud-config\nhostname: {{ .Hostname }}\n"}
+		}
+	}`,
+	"nodepoolreleases": `{
+		"apiVersion": "internal.nke.nvidia.com/v1",
+		"kind": "NodePoolRelease",
+		"metadata": {"name": "nke-nico-vms-24.04-amd64-fde"},
+		"spec": {
+			"machineImageRef": {"name": "nke-nico-vms-24.04-amd64-fde"},
+			"machineInit": {"userDataTemplate": "#cloud-config\nhostname: {{ .Hostname }}\n"}
+		}
+	}`,
 }
+
+// releaseResources are the two kinds that share the release shape. Every rule
+// below is asserted on both, so neither drifts from the other unnoticed.
+var releaseResources = []string{"clusterreleases", "nodepoolreleases"}
 
 func baseResource(t *testing.T, resource string) map[string]any {
 	t.Helper()
@@ -202,6 +245,31 @@ func baseResource(t *testing.T, resource string) map[string]any {
 		t.Fatalf("no base resource for %q", resource)
 	}
 	return decodeJSON[map[string]any](t, []byte(data))
+}
+
+func specOf(t *testing.T, obj map[string]any) map[string]any {
+	t.Helper()
+	spec, ok := obj["spec"].(map[string]any)
+	if !ok {
+		t.Fatalf("resource has no spec: %#v", obj)
+	}
+	return spec
+}
+
+func ipxe(script string) map[string]any {
+	return map[string]any{"ipxeScript": script}
+}
+
+func userData(template string) map[string]any {
+	return map[string]any{"userDataTemplate": template}
+}
+
+// mutate copies the base resource and applies change to its spec.
+func mutate(t *testing.T, resource string, change func(spec map[string]any)) map[string]any {
+	t.Helper()
+	obj := baseResource(t, resource)
+	change(specOf(t, obj))
+	return obj
 }
 
 func decodeJSON[T any](t *testing.T, data []byte) T {
@@ -571,6 +639,249 @@ func TestResourceCollectionUniqueness(t *testing.T) {
 			obj := baseResource(t, tt.resource)
 			setField(obj, tt.path, decodeJSON[[]any](t, []byte(tt.items)))
 			schemas[tt.resource].check(t, tt.invalid, obj, nil)
+		})
+	}
+}
+
+func TestMachineImageAdmission(t *testing.T) {
+	schema := loadResourceSchema(t, "machineimages")
+	for _, tt := range []struct {
+		name    string
+		change  func(spec map[string]any)
+		invalid bool
+	}{
+		{name: "arm64", change: func(s map[string]any) { s["architecture"] = "arm64" }},
+		{name: "no variant", change: func(s map[string]any) { delete(s, "variant") }},
+		// Neither vocabulary is enumerated, so an architecture or distribution
+		// nobody has qualified yet is still a well-formed resource.
+		{name: "unqualified architecture", change: func(s map[string]any) { s["architecture"] = "riscv64" }},
+		{name: "unqualified OS family", change: func(s map[string]any) { s["operatingSystem"] = map[string]any{"family": "debian", "version": "12"} }},
+		{name: "uppercase architecture", change: func(s map[string]any) { s["architecture"] = "AMD64" }, invalid: true},
+		{name: "empty architecture", change: func(s map[string]any) { s["architecture"] = "" }, invalid: true},
+		{name: "missing architecture", change: func(s map[string]any) { delete(s, "architecture") }, invalid: true},
+		{name: "uppercase OS family", change: func(s map[string]any) { s["operatingSystem"] = map[string]any{"family": "Ubuntu", "version": "24.04"} }, invalid: true},
+		{name: "missing OS version", change: func(s map[string]any) { s["operatingSystem"] = map[string]any{"family": "ubuntu"} }, invalid: true},
+		{name: "non-numeric OS version", change: func(s map[string]any) { s["operatingSystem"] = map[string]any{"family": "ubuntu", "version": "noble"} }, invalid: true},
+		{name: "uppercase variant", change: func(s map[string]any) { s["variant"] = "FDE" }, invalid: true},
+		{name: "build date with time", change: func(s map[string]any) { s["buildDate"] = "2026-03-23T00:00:00Z" }, invalid: true},
+		{name: "build date not a date", change: func(s map[string]any) { s["buildDate"] = "March 2026" }, invalid: true},
+		{name: "missing boot contract", change: func(s map[string]any) { delete(s, "nico") }, invalid: true},
+		{name: "empty iPXE script", change: func(s map[string]any) { s["nico"] = ipxe("") }, invalid: true},
+		{name: "whitespace iPXE script", change: func(s map[string]any) { s["nico"] = ipxe("   \n  ") }, invalid: true},
+		{name: "iPXE script without the magic line", change: func(s map[string]any) { s["nico"] = ipxe("chain ${boot-loader}\n") }, invalid: true},
+		// iPXE itself requires the magic on the first line, so a blank line
+		// ahead of it is a broken script rather than harmless formatting.
+		{name: "blank line before the magic line", change: func(s map[string]any) { s["nico"] = ipxe("\n#!ipxe\nchain ${boot-loader}\n") }, invalid: true},
+		{name: "command on the magic line", change: func(s map[string]any) { s["nico"] = ipxe("#!ipxe chain ${boot-loader}\n") }, invalid: true},
+		{name: "magic glued to the next word", change: func(s map[string]any) { s["nico"] = ipxe("#!ipxecho\n") }, invalid: true},
+		{name: "magic line with no command", change: func(s map[string]any) { s["nico"] = ipxe("#!ipxe\n") }, invalid: true},
+		{name: "magic line with a Windows newline", change: func(s map[string]any) { s["nico"] = ipxe("#!ipxe\r\nboot\r\n") }},
+		{name: "template action left open", change: func(s map[string]any) { s["nico"] = ipxe("#!ipxe\nchain {{ .DiskSelectionStrategy\n") }, invalid: true},
+		{name: "template action never opened", change: func(s map[string]any) { s["nico"] = ipxe("#!ipxe\nchain .DiskSelectionStrategy }}\n") }, invalid: true},
+		// Counting delimiters is not parsing: a template that renders to
+		// nothing useful is still admitted, and fails where it is rendered.
+		{name: "template action referencing an unknown value", change: func(s map[string]any) { s["nico"] = ipxe("#!ipxe\nchain {{ .Nonexistent }}\n") }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			schema.check(t, tt.invalid, mutate(t, "machineimages", tt.change), nil)
+		})
+	}
+}
+
+// A machine image carries no lifecycle state, so nothing in its spec may change.
+func TestMachineImageSpecImmutable(t *testing.T) {
+	schema := loadResourceSchema(t, "machineimages")
+	published := baseResource(t, "machineimages")
+	schema.admit(t, published, nil)
+
+	for _, tt := range []struct {
+		name    string
+		change  func(spec map[string]any)
+		invalid bool
+	}{
+		{name: "unchanged", change: func(map[string]any) {}},
+		{name: "change architecture", change: func(s map[string]any) { s["architecture"] = "arm64" }, invalid: true},
+		{name: "change build date", change: func(s map[string]any) { s["buildDate"] = "2026-04-01" }, invalid: true},
+		{name: "change iPXE script", change: func(s map[string]any) { s["nico"] = ipxe("#!ipxe\nexit\n") }, invalid: true},
+		{name: "remove variant", change: func(s map[string]any) { delete(s, "variant") }, invalid: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			schema.check(t, tt.invalid, mutate(t, "machineimages", tt.change), runtime.DeepCopyJSON(published))
+		})
+	}
+}
+
+func TestReleaseAdmission(t *testing.T) {
+	for _, resource := range releaseResources {
+		t.Run(resource, func(t *testing.T) {
+			schema := loadResourceSchema(t, resource)
+			for _, tt := range []struct {
+				name    string
+				change  func(spec map[string]any)
+				invalid bool
+			}{
+				{name: "minimal release", change: func(map[string]any) {}},
+				{name: "missing image reference", change: func(s map[string]any) { delete(s, "machineImageRef") }, invalid: true},
+				{name: "image reference not a DNS name", change: func(s map[string]any) { s["machineImageRef"] = map[string]any{"name": "Not A Name"} }, invalid: true},
+				{name: "missing machine init", change: func(s map[string]any) { delete(s, "machineInit") }, invalid: true},
+				{name: "empty user data", change: func(s map[string]any) { s["machineInit"] = userData("") }, invalid: true},
+				{name: "blank user data", change: func(s map[string]any) { s["machineInit"] = userData("  \n ") }, invalid: true},
+				{name: "user data without a cloud-init header", change: func(s map[string]any) { s["machineInit"] = userData("hostname: {{ .Hostname }}\n") }, invalid: true},
+				{name: "include file user data", change: func(s map[string]any) { s["machineInit"] = userData("#include\nhttp://example.test/init\n") }},
+				{name: "multipart user data", change: func(s map[string]any) {
+					s["machineInit"] = userData("Content-Type: multipart/mixed; boundary=BOUNDARY\n")
+				}},
+				{name: "user data template action left open", change: func(s map[string]any) { s["machineInit"] = userData("#cloud-config\nhostname: {{ .Hostname\n") }, invalid: true},
+				{name: "user data template action never opened", change: func(s map[string]any) { s["machineInit"] = userData("#cloud-config\nhostname: .Hostname }}\n") }, invalid: true},
+				// User data is not required to be cloud-config: cloud-init also
+				// accepts a script, an include file and MIME multipart.
+				{name: "shell script user data", change: func(s map[string]any) {
+					s["machineInit"] = userData("#!/bin/bash\nhostnamectl set-hostname {{ .Hostname }}\n")
+				}},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					schema.check(t, tt.invalid, mutate(t, resource, tt.change), nil)
+				})
+			}
+		})
+	}
+}
+
+// Lifecycle is the mutable boundary: deprecating a release must succeed while
+// every field describing what it provisions must not change.
+func TestReleaseImmutabilityBoundary(t *testing.T) {
+	for _, resource := range releaseResources {
+		t.Run(resource, func(t *testing.T) {
+			schema := loadResourceSchema(t, resource)
+			published := baseResource(t, resource)
+			schema.admit(t, published, nil)
+
+			for _, tt := range []struct {
+				name    string
+				change  func(spec map[string]any)
+				invalid bool
+			}{
+				{name: "unchanged", change: func(map[string]any) {}},
+				{name: "deprecate", change: func(s map[string]any) { s["lifecycle"] = map[string]any{"deprecated": true} }},
+				{name: "undeprecate", change: func(s map[string]any) { s["lifecycle"] = map[string]any{"deprecated": false} }},
+				{name: "change image reference", change: func(s map[string]any) { s["machineImageRef"] = map[string]any{"name": "other-image"} }, invalid: true},
+				{name: "change user data", change: func(s map[string]any) { s["machineInit"] = userData("#cloud-config\nhostname: other\n") }, invalid: true},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					schema.check(t, tt.invalid, mutate(t, resource, tt.change), runtime.DeepCopyJSON(published))
+				})
+			}
+		})
+	}
+}
+
+// mutableReleaseField is the single field a published release may still change.
+const mutableReleaseField = "lifecycle"
+
+// specSchema returns the spec property of a generated CRD, before conversion
+// and defaulting, so the tests below can read the markers as controller-gen
+// emitted them.
+func specSchema(t *testing.T, resource string) apiextensionsv1.JSONSchemaProps {
+	t.Helper()
+	crd := loadCRD(t, resource)
+	spec, ok := crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"]
+	if !ok {
+		t.Fatalf("%s has no spec schema", resource)
+	}
+	return spec
+}
+
+func hasImmutabilityRule(rules []apiextensionsv1.ValidationRule) bool {
+	for _, rule := range rules {
+		if rule.Rule == "self == oldSelf" {
+			return true
+		}
+	}
+	return false
+}
+
+// The immutability convention is enforced here rather than left to review. A
+// field added to a release spec without its own rule, or an optional field
+// added without the presence rule that a field-level rule cannot provide,
+// fails this test instead of shipping quietly mutable.
+func TestReleaseImmutabilityConventionIsComplete(t *testing.T) {
+	for _, resource := range releaseResources {
+		t.Run(resource, func(t *testing.T) {
+			spec := specSchema(t, resource)
+			// A field-level rule is enough only where the field is always
+			// there to carry it: required, or defaulted before validation.
+			alwaysPresent := make(map[string]bool, len(spec.Required))
+			for _, name := range spec.Required {
+				alwaysPresent[name] = true
+			}
+			for name, property := range spec.Properties {
+				if property.Default != nil {
+					alwaysPresent[name] = true
+				}
+			}
+			var specRules string
+			for _, rule := range spec.XValidations {
+				specRules += rule.Rule + "\n"
+			}
+
+			if _, ok := spec.Properties[mutableReleaseField]; !ok {
+				t.Fatalf("spec has no %s field", mutableReleaseField)
+			}
+
+			for name, property := range spec.Properties {
+				t.Run(name, func(t *testing.T) {
+					if name == mutableReleaseField {
+						if hasImmutabilityRule(property.XValidations) {
+							t.Errorf("spec.%s must stay mutable: deprecating a release is the one edit a published release allows", name)
+						}
+						return
+					}
+					if !hasImmutabilityRule(property.XValidations) {
+						t.Errorf(`spec.%s has no immutability rule; add +kubebuilder:validation:XValidation:rule="self == oldSelf" to the field`, name)
+					}
+					if alwaysPresent[name] {
+						return
+					}
+					// A field-level rule is skipped while the field is absent,
+					// so a field that can be omitted also needs its presence
+					// pinned at the spec level, where the rule always runs.
+					presence := fmt.Sprintf("has(self.%s) == has(oldSelf.%s)", name, name)
+					if !strings.Contains(specRules, presence) {
+						t.Errorf("spec.%s can be omitted and is immutable, so the spec needs the rule %q", name, presence)
+					}
+				})
+			}
+		})
+	}
+}
+
+// A machine image has no lifecycle, so it takes the stricter whole-spec rule
+// and needs none of the per-field bookkeeping above.
+func TestMachineImageSpecRuleCoversEverything(t *testing.T) {
+	spec := specSchema(t, "machineimages")
+	if !hasImmutabilityRule(spec.XValidations) {
+		t.Error(`machine image spec needs +kubebuilder:validation:XValidation:rule="self == oldSelf" on the spec type`)
+	}
+	if _, ok := spec.Properties[mutableReleaseField]; ok {
+		t.Errorf("machine image spec gained a %s field, so the whole-spec rule is now wrong", mutableReleaseField)
+	}
+}
+
+// Defaulting has to leave lifecycle present and false, because the immutability
+// rule and the resolver both read it without checking for its absence.
+func TestReleaseLifecycleDefaults(t *testing.T) {
+	for _, resource := range releaseResources {
+		t.Run(resource, func(t *testing.T) {
+			obj := baseResource(t, resource)
+			loadResourceSchema(t, resource).admit(t, obj, nil)
+
+			lifecycle, ok := specOf(t, obj)["lifecycle"].(map[string]any)
+			if !ok {
+				t.Fatal("lifecycle default missing")
+			}
+			if lifecycle["deprecated"] != false {
+				t.Fatalf("unexpected lifecycle default: %#v", lifecycle)
+			}
 		})
 	}
 }

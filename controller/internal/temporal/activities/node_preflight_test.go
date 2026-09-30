@@ -218,12 +218,13 @@ func setupNodePreflightRequestTest(
 	require.NoError(t, err)
 
 	node := db.Node{
-		ID:         uuid.New(),
-		NodePoolID: nodePoolID,
-		NodeSetID:  nodeSetID,
-		ClusterID:  cluster.ID,
-		Name:       "w-1",
-		IP:         "10.0.0.10",
+		ID:                     uuid.New(),
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+		NodePoolID:             nodePoolID,
+		NodeSetID:              nodeSetID,
+		ClusterID:              cluster.ID,
+		Name:                   "w-1",
+		IP:                     "10.0.0.10",
 	}
 	// Only a nico node carries a nico payload; a CAPI node is left without one
 	// rather than given an empty shell.

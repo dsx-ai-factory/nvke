@@ -271,13 +271,14 @@ func seedCWEGofailDBTx(ctx context.Context, database db.Tx) error {
 	}
 
 	node := db.Node{
-		ID:           CWEGofailNodeID,
-		ClusterID:    CWEGofailClusterID,
-		NodePoolID:   cweGofailNodePoolID,
-		NodeSetID:    cweGofailNodeSetID,
-		ControlPlane: true,
-		Name:         cweGofailControlNode,
-		IP:           "127.0.0.1",
+		ID:                     CWEGofailNodeID,
+		ClusterID:              CWEGofailClusterID,
+		NodePoolID:             cweGofailNodePoolID,
+		NodeSetID:              cweGofailNodeSetID,
+		ControlPlane:           true,
+		Name:                   cweGofailControlNode,
+		IP:                     "127.0.0.1",
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
 		Conditions: db.NodeConditions{
 			Joined:          db.NewCondition(true, "seeded"),
 			KubernetesReady: db.NewCondition(true, "seeded"),

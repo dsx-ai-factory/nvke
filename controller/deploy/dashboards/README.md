@@ -40,10 +40,11 @@ boards against the Prometheus that actually scrapes that cluster.
 | File | Title | What it shows |
 |---|---|---|
 | [`nke-site-controller-health-reference.json`](nke-site-controller-health-reference.json) | Reference - NKE Site Controller Health | Glance board for the site controller: NKE, SPIRE, Temporal, cert-manager, and node Ready. Optional collapsed rows for apiserver/etcd, PostgreSQL/CNPG, Argo CD, Longhorn, and Teleport. |
-| [`nke-etcd-reference.json`](nke-etcd-reference.json) | Reference - etcd | etcd mixin panels (leader, RPC, streams, DB size, disk sync, memory, client/peer traffic, elections, peer RTT). Empty until kubeadm etcd is scraped. |
+| [`nke-etcd-reference.json`](nke-etcd-reference.json) | Reference - etcd | Panels adapted from the upstream etcd mixin (reusable monitoring dashboard definitions). You do not need to install the mixin to use this dashboard; you do need a Prometheus scrape of etcd. |
 | [`nke-cnpg-per-cluster-reference.json`](nke-cnpg-per-cluster-reference.json) | Reference - CNPG Per Cluster | CloudNativePG health by Kubernetes cluster and namespace. Default nke-stack Postgres is not CNPG; empty panels are expected there. |
 | [`nke-ovn-kubernetes-controller-reference.json`](nke-ovn-kubernetes-controller-reference.json) | Reference - OVN-Kubernetes Controller | ovnkube-controller restarts and node-agent DaemonSet readiness (kube-state-metrics). NB–SB timestamps need an ovnkube scrape on the cluster that runs the CNI. Empty on Calico. |
 | [`nke-provisioning-duration-reference.json`](nke-provisioning-duration-reference.json) | Reference - NKE Provisioning Duration | Node provision/teardown duration, success vs give-up rate, and in-progress nodes from controller `/metrics`. |
+| [`nke-cluster-upgrade-overview-reference.json`](nke-cluster-upgrade-overview-reference.json) | Reference - NKE Cluster Upgrade Overview | Upgrade progress for GPU clusters: kubelet, Calico, control plane, and OS profile. Applies only to GPU clusters. |
 
 Controller series match both `cwe_*` (existing sites) and `nke_controller_*`
 (greenfield prefix). Site-controller Ready/Version/Restarts match both

@@ -29,7 +29,7 @@ const (
 
 func validateKubeletServingCSRApproval(test *tenantTest) {
 	It("approves a new serving CSR created by a real kubelet", func(ctx context.Context) {
-		_, workerPool := expectScalePools(ctx, test)
+		workerPool := expectWorkerPool(ctx, test)
 		worker := expectSucceed(test.nke.WaitForReadyNodeInPool(ctx, workerPool.ID))
 		tenantClient := expectSucceed(test.tenantClients.GetClient(ctx, test.cluster.Name))
 		adminClient := expectSucceed(test.tenantClients.GetAdminClient(ctx, test.cluster.Name))

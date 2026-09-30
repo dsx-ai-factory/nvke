@@ -5,8 +5,9 @@
 # Shared by the CNI packages' bundle.sh: arguments, the lock file, and the
 # images (pulled by digest, repacked deterministically). A caller sets CNI,
 # sources this, then runs parse_bundle_args "$@", fetch and verify_artifact for
-# its own files, stage_images, finish_bundle. Builds enforce the committed
-# lock; --write-lock regenerates it and is a reviewed change, never a build.
+# its own files, stage_images, finish_bundle. Builds fetch what the committed
+# lock names; --write-lock resolves upstream afresh and is a reviewed change,
+# never a build.
 
 # shellcheck disable=SC2034  # VERSION, STAGE, WORK are set here for the caller.
 
@@ -94,6 +95,32 @@ pull_images() {
   "$CRANE" pull --platform "linux/${ARCH}" "$@" "$out"
 }
 
+# mirror_has_digest <mirror_ref> <digest> reports whether the mirror serves the
+# exact manifest the lock names. One probe, no retry: this only chooses a
+# transport, and the canonical reference is always there to fall back to.
+mirror_has_digest() {
+  local mirror_ref="$1" digest="$2"
+  "$CRANE" manifest "${mirror_ref%:*}@${digest}" >/dev/null 2>&1
+}
+
+# warn_if_tag_moved <ref> <locked_digest> reports a tag that no longer resolves
+# to what the lock pins. Informational by design: the build fetches the locked
+# digest either way. Upstream branch tags such as ovn-kubernetes' release-X.Y
+# move on every merge, which is a reason to review a lock refresh, not a reason
+# to fail a build that names a digest.
+# It reads the tag through the configured mirror: a build that cannot reach
+# Docker Hub directly should not be making this call to docker.io. A stale
+# pull-through cache can then report a tag that has not moved, or miss one that
+# has, which is a cost this can carry -- the digest it would name is never
+# fetched from here.
+warn_if_tag_moved() {
+  local ref="$1" want="$2" probe now
+  probe="$(image_transport_ref "$ref")"
+  now="$("$CRANE" digest --platform "linux/${ARCH}" "$probe" 2>/dev/null || true)"
+  [[ -n "$now" && "$now" != "$want" ]] || return 0
+  echo "${CNI}: note: ${ref} now resolves to ${now}, the lock pins ${want}; 'make lock' adopts it" >&2
+}
+
 # image_transport_ref keeps the locked and installed image identity unchanged
 # while allowing CI or another caller to route Docker Hub reads through a
 # pull-through registry mirror. Other registries are never rewritten.
@@ -139,7 +166,7 @@ tar_paths_safe() {
 # are byte-identical, plus a sha256sum sidecar naming the installed file.
 stage_images() {
   local -a refs pinned=() fallback_pinned=() transport_refs=()
-  local ref mirror_ref transport_ref digest want repo placeholder manifest leftover ref_src i
+  local ref mirror_ref transport_ref digest repo placeholder manifest leftover ref_src i
   local using_mirror=false
   IMAGE_LINES=()
   # amd64's lock decides which images ship; other arches pin their own digests
@@ -157,30 +184,43 @@ stage_images() {
     mirror_ref="$(image_transport_ref "$ref")"
     transport_ref="$ref"
     digest=""
-    if [[ "$mirror_ref" != "$ref" ]]; then
-      if digest="$(try_retry "crane digest ${mirror_ref} for ${ref}" "$CRANE" digest --platform "linux/${ARCH}" "$mirror_ref")" &&
-        [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    if [[ "$WRITE_LOCK" == false ]]; then
+      # A build fetches the digest the lock names, and never asks what the tag
+      # points at now. Resolving the tag here instead would make every build
+      # depend on today's upstream head: ovn-kubernetes' release-X.Y moves with
+      # every merge to the branch, and each move broke every build in the repo
+      # until someone landed a lock refresh.
+      digest="$(lock_value image "$ref")"
+      [[ -n "$digest" ]] || die "${LOCK} has no digest for ${ref}; run 'make lock' first"
+      [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+        die "${LOCK} has a malformed digest for ${ref}: ${digest}"
+      if [[ "$mirror_ref" != "$ref" ]] && mirror_has_digest "$mirror_ref" "$digest"; then
         transport_ref="$mirror_ref"
         using_mirror=true
-      else
-        echo "${CNI}: mirror ${mirror_ref} unavailable for ${ref}; falling back to ${ref}" >&2
-        digest=""
       fi
-    fi
-    if [[ -z "$digest" ]]; then
-      digest="$(retry "crane digest ${ref}" "$CRANE" digest --platform "linux/${ARCH}" "$ref")"
+      warn_if_tag_moved "$ref" "$digest"
+    else
+      # --write-lock is the one place a digest enters the repository, so it is
+      # the one place the tag is resolved. Reviewing that diff is the gate.
+      if [[ "$mirror_ref" != "$ref" ]]; then
+        if digest="$(try_retry "crane digest ${mirror_ref} for ${ref}" "$CRANE" digest --platform "linux/${ARCH}" "$mirror_ref")" &&
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+          transport_ref="$mirror_ref"
+          using_mirror=true
+        else
+          echo "${CNI}: mirror ${mirror_ref} unavailable for ${ref}; falling back to ${ref}" >&2
+          digest=""
+        fi
+      fi
+      if [[ -z "$digest" ]]; then
+        digest="$(retry "crane digest ${ref}" "$CRANE" digest --platform "linux/${ARCH}" "$ref")"
+      fi
+      [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+        die "crane digest ${transport_ref} for ${ref} returned ${digest}"
     fi
     transport_refs+=("$transport_ref")
-    [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
-      die "crane digest ${transport_ref} for ${ref} returned ${digest}"
-    if [[ "$WRITE_LOCK" == false ]]; then
-      want="$(lock_value image "$ref")"
-      [[ -n "$want" ]] || die "${LOCK} has no digest for ${ref}; run 'make lock' first"
-      [[ "$want" == "$digest" ]] ||
-        die "${ref} digest mismatch: lock has ${want}, registry serves ${digest}"
-    fi
     IMAGE_LINES+=("image ${ref} ${digest}")
-    # Pull by digest so the archive cannot drift from what was verified.
+    # Pull by digest so the archive cannot drift from what was locked.
     pinned+=("${transport_ref%:*}@${digest}")
     fallback_pinned+=("${ref%:*}@${digest}")
   done

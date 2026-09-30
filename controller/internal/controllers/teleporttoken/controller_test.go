@@ -140,12 +140,13 @@ func setupTestEnv(ctx context.Context, t *testing.T) *testEnv {
 func (te *testEnv) createNode(ctx context.Context, t *testing.T, name, forgeID, ekHash string) db.Node {
 	t.Helper()
 	node := db.Node{
-		ID:         uuid.New(),
-		ClusterID:  te.cluster.ID,
-		NodePoolID: te.nodePool.ID,
-		NodeSetID:  te.nodeSet.ID,
-		Name:       name,
-		IP:         "10.0.0.1",
+		ID:                     uuid.New(),
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+		ClusterID:              te.cluster.ID,
+		NodePoolID:             te.nodePool.ID,
+		NodeSetID:              te.nodeSet.ID,
+		Name:                   name,
+		IP:                     "10.0.0.1",
 		Nico: &db.NicoNodeProvider{
 			ForgeInstanceID: forgeID,
 			ForgeMachineID:  "machine-" + name,
@@ -354,12 +355,13 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 
 		node := db.Node{
-			ID:         uuid.New(),
-			ClusterID:  te.cluster.ID,
-			NodePoolID: te.nodePool.ID,
-			NodeSetID:  te.nodeSet.ID,
-			Name:       "registered-node",
-			IP:         "10.0.0.1",
+			ID:                     uuid.New(),
+			SpireAttestationMethod: db.SpireAttestationMethodTPM,
+			ClusterID:              te.cluster.ID,
+			NodePoolID:             te.nodePool.ID,
+			NodeSetID:              te.nodeSet.ID,
+			Name:                   "registered-node",
+			IP:                     "10.0.0.1",
 			Conditions: db.NodeConditions{
 				TeleportRegistered: db.Condition{Status: db.ConditionStatusTrue},
 			},
@@ -381,12 +383,13 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 
 		node := db.Node{
-			ID:         uuid.New(),
-			ClusterID:  te.cluster.ID,
-			NodePoolID: te.nodePool.ID,
-			NodeSetID:  te.nodeSet.ID,
-			Name:       "capi-node",
-			IP:         "10.0.0.1",
+			ID:                     uuid.New(),
+			SpireAttestationMethod: db.SpireAttestationMethodTPM,
+			ClusterID:              te.cluster.ID,
+			NodePoolID:             te.nodePool.ID,
+			NodeSetID:              te.nodeSet.ID,
+			Name:                   "capi-node",
+			IP:                     "10.0.0.1",
 			Nico: &db.NicoNodeProvider{
 				ForgeInstanceID: "",
 				ForgeMachineID:  "machine-1",
@@ -405,11 +408,12 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 
 		node := db.Node{
-			ID:           uuid.New(),
-			ClusterID:    te.cluster.ID,
-			ControlPlane: true,
-			Name:         "cp-no-pool",
-			IP:           "10.0.0.9",
+			ID:                     uuid.New(),
+			SpireAttestationMethod: db.SpireAttestationMethodTPM,
+			ClusterID:              te.cluster.ID,
+			ControlPlane:           true,
+			Name:                   "cp-no-pool",
+			IP:                     "10.0.0.9",
 			Nico: &db.NicoNodeProvider{
 				ForgeInstanceID: "forge-cp",
 				ForgeMachineID:  "machine-cp",
@@ -428,12 +432,13 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 
 		node := db.Node{
-			ID:         uuid.New(),
-			ClusterID:  te.cluster.ID,
-			NodePoolID: te.nodePool.ID,
-			NodeSetID:  te.nodeSet.ID,
-			Name:       "no-hash-node",
-			IP:         "10.0.0.1",
+			ID:                     uuid.New(),
+			SpireAttestationMethod: db.SpireAttestationMethodTPM,
+			ClusterID:              te.cluster.ID,
+			NodePoolID:             te.nodePool.ID,
+			NodeSetID:              te.nodeSet.ID,
+			Name:                   "no-hash-node",
+			IP:                     "10.0.0.1",
 			Nico: &db.NicoNodeProvider{
 				ForgeInstanceID: "forge-1",
 				ForgeMachineID:  "machine-1",
@@ -718,11 +723,12 @@ func TestCreateTokenForNode(t *testing.T) {
 		controller := te.newController(mockTeleport)
 
 		node := db.Node{
-			ID:           uuid.New(),
-			ClusterID:    te.cluster.ID,
-			ControlPlane: true,
-			Name:         "cp-no-pool",
-			IP:           "10.0.0.9",
+			ID:                     uuid.New(),
+			SpireAttestationMethod: db.SpireAttestationMethodTPM,
+			ClusterID:              te.cluster.ID,
+			ControlPlane:           true,
+			Name:                   "cp-no-pool",
+			IP:                     "10.0.0.9",
 			Nico: &db.NicoNodeProvider{
 				ForgeInstanceID: "forge-cp",
 				ForgeMachineID:  "machine-cp",
@@ -1196,12 +1202,13 @@ func TestTeleportDependencyKeyMappers(t *testing.T) {
 	_, err := te.database.CreateNodeSet(ctx, &otherNodeSet)
 	require.NoError(t, err)
 	otherNode := db.Node{
-		ID:         uuid.New(),
-		ClusterID:  te.cluster.ID,
-		NodePoolID: te.nodePool.ID,
-		NodeSetID:  otherNodeSet.ID,
-		Name:       "other-node",
-		IP:         "10.0.0.3",
+		ID:                     uuid.New(),
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+		ClusterID:              te.cluster.ID,
+		NodePoolID:             te.nodePool.ID,
+		NodeSetID:              otherNodeSet.ID,
+		Name:                   "other-node",
+		IP:                     "10.0.0.3",
 		Nico: &db.NicoNodeProvider{
 			ForgeInstanceID: "forge-3",
 			ForgeMachineID:  "machine-other-node",

@@ -11,6 +11,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 )
 
+func testMachineInit() MachineInit {
+	return MachineInit{UserDataTemplate: "#cloud-config\nhostname: {{ .Hostname }}\n"}
+}
+
 func TestTypedResourcesRoundTrip(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := AddToScheme(scheme); err != nil {
@@ -57,6 +61,39 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 				}
 			},
 		},
+		{
+			resource: "machineimages", kind: "MachineImage",
+			object: &MachineImage{
+				ObjectMeta: metav1.ObjectMeta{Name: "nke-nico-vms-24.04-amd64-fde"},
+				Spec: MachineImageSpec{
+					OperatingSystem: OperatingSystem{Family: "ubuntu", Version: "24.04"},
+					Architecture:    "amd64",
+					Variant:         "fde",
+					BuildDate:       "2026-03-23",
+					NICo:            NICoBoot{IPXEScript: "#!ipxe\nboot\n"},
+				},
+			},
+		},
+		{
+			resource: "clusterreleases", kind: "ClusterRelease",
+			object: &ClusterRelease{
+				ObjectMeta: metav1.ObjectMeta{Name: "nke-nico-vms-24.04-amd64-fde"},
+				Spec: ClusterReleaseSpec{
+					MachineImageRef: MachineImageReference{Name: "nke-nico-vms-24.04-amd64-fde"},
+					MachineInit:     testMachineInit(),
+				},
+			},
+		},
+		{
+			resource: "nodepoolreleases", kind: "NodePoolRelease",
+			object: &NodePoolRelease{
+				ObjectMeta: metav1.ObjectMeta{Name: "nke-nico-vms-24.04-amd64-fde"},
+				Spec: NodePoolReleaseSpec{
+					MachineImageRef: MachineImageReference{Name: "nke-nico-vms-24.04-amd64-fde"},
+					MachineInit:     testMachineInit(),
+				},
+			},
+		},
 	} {
 		t.Run(tt.kind, func(t *testing.T) {
 			encoded, err := runtime.Encode(codecs.LegacyCodec(GroupVersion), tt.object)
@@ -79,7 +116,7 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 		})
 	}
 
-	for _, kind := range []string{"NKEClusterList", "NodePoolList"} {
+	for _, kind := range []string{"NKEClusterList", "NodePoolList", "MachineImageList", "ClusterReleaseList", "NodePoolReleaseList"} {
 		if _, err := scheme.New(GroupVersion.WithKind(kind)); err != nil {
 			t.Fatal(err)
 		}
@@ -190,4 +227,36 @@ func firstAuthenticator(t *testing.T, obj map[string]any) map[string]any {
 		t.Fatalf("jwt[0] is %T, want an object", jwt[0])
 	}
 	return first
+}
+
+// Deprecating a release goes through the Go types, so a decode/edit/encode
+// cycle must not itself look like a change to the immutable content. Without
+// this, the spec-level rule could pass its own unit tests and still reject
+// every write a controller or nkectl makes.
+func TestLifecycleEditRoundTripsThroughGoTypes(t *testing.T) {
+	for _, resource := range releaseResources {
+		t.Run(resource, func(t *testing.T) {
+			schema := loadResourceSchema(t, resource)
+			published := baseResource(t, resource)
+			schema.admit(t, published, nil)
+
+			var updated map[string]any
+			switch resource {
+			case "clusterreleases":
+				release := decodeJSON[ClusterRelease](t, encodeJSON(t, published))
+				release.Spec.Lifecycle.Deprecated = true
+				updated = decodeJSON[map[string]any](t, encodeJSON(t, release))
+			default:
+				release := decodeJSON[NodePoolRelease](t, encodeJSON(t, published))
+				release.Spec.Lifecycle.Deprecated = true
+				updated = decodeJSON[map[string]any](t, encodeJSON(t, release))
+			}
+			schema.admit(t, updated, published)
+
+			// The same round trip that permits the deprecation must still
+			// refuse a content edit, so the check above is not vacuous.
+			specOf(t, updated)["machineImageRef"] = map[string]any{"name": "other-image"}
+			schema.check(t, true, updated, published)
+		})
+	}
 }

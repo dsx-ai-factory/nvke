@@ -21,7 +21,7 @@ const (
 
 func validateLabelReboot(test *tenantTest) {
 	It("reboots a worker node via the nke.nvidia.com/reboot label", func(ctx context.Context) {
-		_, workerPool := expectScalePools(ctx, test)
+		workerPool := expectWorkerPool(ctx, test)
 
 		By("Waiting for a Ready worker to reboot")
 		worker := expectSucceed(test.nke.WaitForReadyNodeInPool(ctx, workerPool.ID))

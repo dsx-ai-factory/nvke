@@ -30,7 +30,7 @@ const (
 
 func validatePostReadyNodeOperations(test *tenantTest) {
 	It("applies the requested condition to a Ready tenant Node", func(ctx context.Context) {
-		_, workerPool := expectScalePools(ctx, test)
+		workerPool := expectWorkerPool(ctx, test)
 		worker := expectSucceed(test.nke.WaitForReadyNodeInPool(ctx, workerPool.ID))
 		tenantClient := expectSucceed(test.tenantClients.GetClient(ctx, test.cluster.Name))
 
@@ -60,7 +60,7 @@ func validatePostReadyNodeOperations(test *tenantTest) {
 	}, Label("lifecycle", "post-ready", "node-condition"), NodeTimeout(10*time.Minute))
 
 	It("taints, restarts, and observes a new Lease through the kubelet reconfigure workflow", func(ctx context.Context) {
-		_, workerPool := expectScalePools(ctx, test)
+		workerPool := expectWorkerPool(ctx, test)
 		worker := expectSucceed(test.nke.WaitForReadyNodeInPool(ctx, workerPool.ID))
 		tenantClient := expectSucceed(test.tenantClients.GetClient(ctx, test.cluster.Name))
 		previousRenewTime := expectSucceed(nodeLeaseRenewTime(ctx, tenantClient, worker.Name))

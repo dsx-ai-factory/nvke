@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/manifest"
 )
 
 // fakeCall records one CommandRunner.Run invocation.
@@ -391,18 +393,20 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 		t.Errorf("postgres call = %q, want the postgres password set", postgres)
 	}
 
-	if !strings.Contains(temporal, "upgrade --install temporal temporal --repo "+temporalChartRepo) {
-		t.Errorf("temporal call = %q, want the temporal release/chart/repo", temporal)
+	if !strings.Contains(temporal, "upgrade --install temporal temporal --repo https://go.temporal.io/helm-charts") ||
+		!hasArgs(temporal, "--version", "0.74.0") {
+		t.Errorf("temporal call = %q, want the temporal release/chart/repo/version", temporal)
 	}
 	if !strings.Contains(temporal, "server.config.persistence.default.sql.password=test-password") {
 		t.Errorf("temporal call = %q, want the shared postgres password set on both persistence stores", temporal)
 	}
 
-	if !strings.Contains(spireCRDs, "upgrade --install spire-crds "+spireCRDsChartName) ||
-		!strings.Contains(spireCRDs, "--repo "+spireChartRepo) {
+	if !strings.Contains(spireCRDs, "upgrade --install spire-crds spire-crds") ||
+		!strings.Contains(spireCRDs, "--repo https://spiffe.github.io/helm-charts-hardened/") ||
+		!hasArgs(spireCRDs, "--version", "0.6.1") {
 		t.Errorf("SPIRE CRDs call = %q, want the pinned CRD chart", spireCRDs)
 	}
-	if !strings.Contains(spire, "upgrade --install spire "+spireChartName) ||
+	if !strings.Contains(spire, "upgrade --install spire spire") ||
 		!strings.Contains(spire, "global.spire.clusterName=test-kind") ||
 		!strings.Contains(spire, "global.spire.trustDomain=test-kind.nke.local") ||
 		!strings.Contains(spire, "spire-server.adminIDs[0]=spiffe://test-kind.nke.local/nke-service/cloud-workflow-engine") {
@@ -664,17 +668,17 @@ func TestDumpDiagnostics_SurvivesAFailingCluster(t *testing.T) {
 // set at. A value set at the wrong depth is silently ignored by helm rather
 // than rejected, so nothing else would catch it.
 func TestSpireInstallArgs(t *testing.T) {
-	got := joinArgs(spireInstallArgs(Config{}, "/tmp/values.yaml", "kind", "kind.nke.local", time.Minute))
+	got := joinArgs(spireInstallArgs(Config{}, testSpireChart(t), "/tmp/values.yaml", "kind", "kind.nke.local", time.Minute))
 	for _, want := range []string{
-		"upgrade --install spire " + spireChartName,
-		"--repo " + spireChartRepo,
-		"--version " + spireChartVersion,
+		"upgrade --install spire spire",
+		"--repo https://spiffe.github.io/helm-charts-hardened/",
+		"--version 0.30.1",
 		"--values /tmp/values.yaml",
 		"global.spire.clusterName=kind",
 		"global.spire.trustDomain=kind.nke.local",
 		spireServerValuesPrefix + ".adminIDs[0]=spiffe://kind.nke.local/nke-service/cloud-workflow-engine",
 	} {
-		if !strings.Contains(got, want) {
+		if !hasArgs(got, strings.Fields(want)...) {
 			t.Errorf("install = %q, want it to contain %q", got, want)
 		}
 	}
@@ -792,7 +796,7 @@ func TestSpireAndCWEAgreeOnTheClassName(t *testing.T) {
 	for _, call := range runner.calls {
 		args := joinArgs(call.args)
 		switch {
-		case strings.Contains(args, "upgrade --install "+spireReleaseName+" "+spireChartName):
+		case strings.Contains(args, "upgrade --install "+spireReleaseName+" spire"):
 			spire = args
 		case strings.Contains(args, "upgrade --install "+cweReleaseName):
 			cwe = args
@@ -825,7 +829,7 @@ func TestSpireServesThePortCWEExpects(t *testing.T) {
 			"join-token operations would dial a port nothing serves", got, cweAPIAddressDefault)
 	}
 
-	args := joinArgs(spireInstallArgs(Config{}, "/tmp/values.yaml", "kind", "kind.nke.local", time.Minute))
+	args := joinArgs(spireInstallArgs(Config{}, testSpireChart(t), "/tmp/values.yaml", "kind", "kind.nke.local", time.Minute))
 	if !strings.Contains(args, "--set "+spireServerValuesPrefix+".service.port="+spireServerPort) {
 		t.Errorf("SPIRE install does not move the Service off the chart's default port: %s", args)
 	}
@@ -854,7 +858,7 @@ func TestDeploy_DisableMTLSSkipsSpire(t *testing.T) {
 	}
 
 	all := strings.Join(helmCalls(runner), "\n")
-	if strings.Contains(all, spireCRDsChartName) || strings.Contains(all, "upgrade --install spire ") {
+	if strings.Contains(all, "spire-crds") || strings.Contains(all, "upgrade --install spire ") {
 		t.Errorf("calls = %q, want no SPIRE release when mTLS is disabled", all)
 	}
 	if strings.Contains(all, "nodeAttestor.tpmDirect.enabled=true") {
@@ -876,19 +880,19 @@ func TestSpireInstallArgs_PullsTheChartFromTheConfiguredRef(t *testing.T) {
 		wantChart string
 		wantRepo  bool
 	}{
-		{name: "default is the hardened chart repo", ref: "", wantChart: spireChartName, wantRepo: true},
+		{name: "default is the hardened chart repo", ref: "", wantChart: "spire", wantRepo: true},
 		{name: "OCI reference is used verbatim without --repo", ref: "oci://mirror.example.com/spiffe/spire", wantChart: "oci://mirror.example.com/spiffe/spire"},
 		{name: "local tarball is used verbatim without --repo", ref: "/srv/charts/spire-0.30.1.tgz", wantChart: "/srv/charts/spire-0.30.1.tgz"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got := joinArgs(spireInstallArgs(Config{SPIREChartRef: tt.ref}, "/tmp/values.yaml", "kind", "kind.nke.local", time.Minute))
+			got := joinArgs(spireInstallArgs(Config{SPIREChartRef: tt.ref}, testSpireChart(t), "/tmp/values.yaml", "kind", "kind.nke.local", time.Minute))
 			if !strings.HasPrefix(got, "upgrade --install spire "+tt.wantChart+" ") {
 				t.Errorf("install = %q, want chart %q", got, tt.wantChart)
 			}
 			if gotRepo := strings.Contains(got, "--repo "); gotRepo != tt.wantRepo {
 				t.Errorf("install = %q, has --repo = %v, want %v", got, gotRepo, tt.wantRepo)
 			}
-			if !strings.Contains(got, "--version "+spireChartVersion) {
+			if !hasArgs(got, "--version", "0.30.1") {
 				t.Errorf("install = %q, want the version pin kept", got)
 			}
 		})
@@ -907,9 +911,9 @@ func TestDeploy_PullsTemporalAndSPIREChartsFromTheConfiguredRef(t *testing.T) {
 		chart string
 		repo  string
 	}{
-		{name: temporalReleaseName, set: func(c *Config, ref string) { c.TemporalChartRef = ref }, call: 1, chart: temporalChartName, repo: temporalChartRepo},
-		{name: spireCRDsReleaseName, set: func(c *Config, ref string) { c.SPIRECRDsChartRef = ref }, call: 2, chart: spireCRDsChartName, repo: spireChartRepo},
-		{name: spireReleaseName, set: func(c *Config, ref string) { c.SPIREChartRef = ref }, call: 3, chart: spireChartName, repo: spireChartRepo},
+		{name: temporalReleaseName, set: func(c *Config, ref string) { c.TemporalChartRef = ref }, call: 1, chart: "temporal", repo: "https://go.temporal.io/helm-charts"},
+		{name: spireCRDsReleaseName, set: func(c *Config, ref string) { c.SPIRECRDsChartRef = ref }, call: 2, chart: "spire-crds", repo: "https://spiffe.github.io/helm-charts-hardened/"},
+		{name: spireReleaseName, set: func(c *Config, ref string) { c.SPIREChartRef = ref }, call: 3, chart: "spire", repo: "https://spiffe.github.io/helm-charts-hardened/"},
 	} {
 		t.Run(tt.name+" defaults to the upstream repo", func(t *testing.T) {
 			runner := &fakeRunner{}
@@ -963,4 +967,68 @@ func TestDefaultConfig_ChartRefs(t *testing.T) {
 			t.Errorf("DefaultConfig %s = %q, want %q", tt.field, tt.got, tt.want)
 		}
 	}
+}
+
+// TestDeploy_ChartsMatchTheBootstrapManifest: every chart Deploy pulls is one
+// the embedded bootstrap manifest pins, and every chart the manifest pins is
+// pulled. Identities live in the manifest alone; this test fails when either
+// side gains or loses a chart.
+func TestDeploy_ChartsMatchTheBootstrapManifest(t *testing.T) {
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", testConfig(t)); err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
+	}
+
+	pinned := map[string]manifest.Chart{}
+	for name, comp := range manifest.Load().Components {
+		if comp.Chart != nil {
+			pinned[name] = *comp.Chart
+		}
+	}
+
+	pulled := 0
+	for _, call := range helmCalls(runner) {
+		if !strings.Contains(call, " --repo ") {
+			continue // embedded charts install from a path and pull nothing
+		}
+		pulled++
+		matched := false
+		for name, chart := range pinned {
+			if hasArgs(call, chart.Name, "--repo", chart.Repo) && hasArgs(call, "--version", chart.Version) {
+				delete(pinned, name)
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			t.Errorf("Deploy pulls a chart the bootstrap manifest does not pin: %q", call)
+		}
+	}
+	for name, chart := range pinned {
+		t.Errorf("the bootstrap manifest pins %s (%s %s from %s) but Deploy never pulls it", name, chart.Name, chart.Version, chart.Repo)
+	}
+	if pulled == 0 {
+		t.Fatal("no pulled charts found; the assertion matched nothing")
+	}
+}
+
+// testSpireChart is the SPIRE chart as the embedded bootstrap manifest pins it.
+func testSpireChart(t *testing.T) manifest.Chart {
+	t.Helper()
+	comp, ok := manifest.Load().Components[manifest.ComponentSPIRE]
+	if !ok || comp.Chart == nil {
+		t.Fatal("the embedded bootstrap manifest pins no spire chart")
+	}
+	return *comp.Chart
+}
+
+// hasArgs reports whether call holds args as adjacent whole tokens.
+func hasArgs(call string, args ...string) bool {
+	fields := strings.Fields(call)
+	for i := 0; i+len(args) <= len(fields); i++ {
+		if slices.Equal(fields[i:i+len(args)], args) {
+			return true
+		}
+	}
+	return false
 }

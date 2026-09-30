@@ -157,7 +157,8 @@ objects.
 | Concern | Contract |
 | --- | --- |
 | Group/version | `internal.nke.nvidia.com/v1`, currently served and stored. “Internal” identifies the storage contract; Go types remain importable. |
-| Resources | Namespaced `NKECluster` / `nkeclusters` and `NodePool` / `nodepools`, with corresponding list kinds. |
+| Tenant resources | Namespaced `NKECluster` / `nkeclusters` and `NodePool` / `nodepools`, with corresponding list kinds. |
+| Operator resources | Cluster-scoped `MachineImage` / `machineimages`, `ClusterRelease` / `clusterreleases` and `NodePoolRelease` / `nodepoolreleases`, with corresponding list kinds. |
 | Org mapping | One stable namespace per org per management cluster. Public routing must use the authenticated org's authoritative mapping, never a caller-supplied namespace or derived slug. |
 | Names and identity | Client-selected Kubernetes DNS subdomain names, at most 253 characters. Names are immutable; UIDs distinguish recreations. Provider names may need shorter derived forms. |
 | Metadata and concurrency | Standard Kubernetes metadata and opaque `resourceVersion`. Public projections must preserve concurrency checks and expose only permitted fields. |
@@ -189,6 +190,8 @@ storage-version migration before removing the old version; these manifests alone
 do not migrate stored objects. Go consumers must update imports to `apis/v1`.
 
 ## Resource examples
+
+### Tenant resources
 
 [NKECluster](apis/v1/nkecluster_types.go) defines cluster access, authentication,
 networking, release selection, control-plane class and accelerated runtime.
@@ -237,3 +240,47 @@ spec:
 Status carries conditions, observed generation and resolved release. NodePool
 also carries its cluster UID binding and observed/ready/updated replica counts;
 unknown counts are absent and observed zero counts remain explicit.
+
+### Operator resources
+
+[MachineImage](apis/v1/machineimage_types.go) defines the immutable
+identity of a bootable machine image: operating system, architecture, variant,
+build date and the NICo iPXE boot contract.
+
+```yaml
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-nico-vms-24.04-amd64-fde
+spec:
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  architecture: amd64
+  variant: fde
+  buildDate: "2026-03-23"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      chain ${boot-loader} disk_strategy={{ .DiskSelectionStrategy }}
+```
+
+[ClusterRelease](apis/v1/clusterrelease_types.go) defines a control-plane release, and
+[NodePoolRelease](apis/v1/nodepoolrelease_types.go) defines a worker release: the
+machine image its nodes boot and the initialization applied to them.
+
+```yaml
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-nico-vms-24.04-amd64-fde
+spec:
+  machineImageRef:
+    name: nke-nico-vms-24.04-amd64-fde
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      hostname: {{ .Hostname }}
+  lifecycle: # mutable fields
+    deprecated: false
+```
