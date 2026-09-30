@@ -6,6 +6,7 @@ package e2e
 import (
 	"flag"
 	"fmt"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sort"
 	"strings"
 	"sync"
@@ -171,5 +172,11 @@ var _ = AfterSuite(func() {
 
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
+	// controller-runtime discards its own logs until a logger is set, and says
+	// so once with a stack trace the first time a client is built. Point it at
+	// Ginkgo's so its diagnostics land in the run log with everything else:
+	// the tenant client talks to a machine through a relay, and its retries
+	// and REST-layer warnings are what a slow or flaky run needs explained.
+	ctrllog.SetLogger(GinkgoLogr)
 	RunSpecs(t, "NKE E2E Suite")
 }

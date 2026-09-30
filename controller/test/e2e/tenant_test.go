@@ -162,9 +162,6 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		shape: clusterShape{
 			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
 			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
-			// etcdEncryption asserts what creation configured, so the cluster
-			// has to be created encrypted for it to have anything to check.
-			etcdEncrypted: true,
 		},
 		// 15m, matching the nico-containers entry below. The roll waits on a
 		// replacement node reaching KubernetesReady, and the local-entrypoint
@@ -402,9 +399,9 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	// declarations answer -e2e.capabilities instead, so the machine is chosen
 	// by what the run needs rather than pinned in the table.
 	//
-	// provisioningOnly to start with. Create, node readiness and delete are
-	// what a first run on Forge has to get through before any deeper
-	// assertion is worth attempting.
+	// The validations it runs, and why the rest are off, are on the entry
+	// itself: what this site's capacity and shape allow rather than what the
+	// subtree offers.
 	Entry("nico-forge", Ordered, ContinueOnFailure, Label("nico-forge"), nicoForgeTenant()),
 )...)
 
@@ -433,9 +430,6 @@ func nicoForgeTenant() testSpec {
 			// which cwedeploy never touches.
 			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
 			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
-			// etcdEncryption asserts what creation configured, so the cluster
-			// has to be created encrypted for it to have anything to check.
-			etcdEncrypted: true,
 		},
 		// Generous next to the simulator lanes: these timeouts cover a bare
 		// machine booting an OS image over the network and installing
@@ -447,13 +441,13 @@ func nicoForgeTenant() testSpec {
 		// against the 30 minutes this used to be, while the instances were
 		// still reporting Terminating.
 		options: nke.Options{Provision: 90 * time.Minute, Delete: 45 * time.Minute, Poll: 30 * time.Second},
-		// Every validation that asserts against the cluster as built. The ones
-		// left off all add, remove, replace, reboot or roll a node, and a
-		// GB200 is too scarce to spend on churn: scale, nodeReplacement,
-		// manualScaleDown, nodePoolLifecycle, nodePoolCascade, reboot,
-		// upgrade, cpRotation and the three controlPlaneController mutations.
+		// Everything that asserts against the cluster as it stands. The ones
+		// left off all add, remove, replace, reboot or roll a node: scale,
+		// nodeReplacement, manualScaleDown, nodePoolLifecycle,
+		// nodePoolCascade, reboot, upgrade, cpRotation and the three
+		// controlPlaneController mutations.
 		//
-		// Off for a reason other than cost:
+		// Off for other reasons:
 		//   postReadyChecks and kubeVipRouteWithdrawal want a control-plane
 		//   VIP, which no Forge tenant here is created with.
 		//   certificateRenewal restarts every control-plane node in turn.
@@ -464,7 +458,6 @@ func nicoForgeTenant() testSpec {
 			openVSwitch:            true,
 			ovnNetworking:          true,
 			csrApproval:            true,
-			etcdEncryption:         true,
 			controlPlaneController: true,
 		},
 	}
