@@ -1,28 +1,31 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package activities
+package shared_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
-func TestCAPIMachineBuilders_BuildCAPIBootstrapSecret(t *testing.T) {
-	createCtx := &capiMachineCreateContext{
-		node:      db.Node{Name: "worker-0"},
-		cluster:   db.Cluster{Name: "cluster-a"},
-		namespace: "capi-cluster-a",
-	}
+func TestBuildBootstrapSecret(t *testing.T) {
+	node := db.Node{Name: "worker-0"}
+	cluster := db.Cluster{Name: "cluster-a"}
 
-	secret := buildCAPIBootstrapSecret(createCtx, "user-data")
+	secret := shared.BuildBootstrapSecret(node, cluster, "capi-cluster-a", "user-data")
 
 	assert.Equal(t, "worker-0-bootstrap-data", secret.Name)
 	assert.Equal(t, "capi-cluster-a", secret.Namespace)
@@ -30,13 +33,18 @@ func TestCAPIMachineBuilders_BuildCAPIBootstrapSecret(t *testing.T) {
 	assert.Equal(t, []byte("user-data"), secret.Data["value"])
 }
 
-func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
+func TestBuildMachine(t *testing.T) {
 	nodeID := uuid.MustParse("60000000-0000-0000-0000-000000000001")
 	nodeSetID := uuid.MustParse("60000000-0000-0000-0000-000000000002")
 	controlPlaneNodeID := uuid.MustParse("60000000-0000-0000-0000-000000000003")
 	controlPlaneNodeSetID := uuid.MustParse("60000000-0000-0000-0000-000000000004")
 	missingVersionNodeSetID := uuid.MustParse("60000000-0000-0000-0000-000000000005")
 	bootstrapSecretName := "worker-0-bootstrap-data"
+	infrastructureRef := clusterv1.ContractVersionedObjectReference{
+		APIGroup: "infrastructure.cluster.x-k8s.io",
+		Kind:     "NicoMachine",
+		Name:     "worker-0",
+	}
 
 	type parameters struct {
 		node              db.Node
@@ -105,14 +113,14 @@ func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
 
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {
-			machine, err := buildCAPIMachineForNode(
+			machine, err := shared.BuildMachine(
 				params.node,
 				params.nodeSet,
 				params.nodePool,
 				params.cluster,
 				"capi-cluster-a",
 				params.bootstrapSecret,
-				testInfrastructureRef(),
+				infrastructureRef,
 			)
 			if params.wantErrContain != "" {
 				require.ErrorContains(t, err, params.wantErrContain)
@@ -135,4 +143,31 @@ func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestApplyMachine_PreservesExistingFailureDomain(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, clusterv1.AddToScheme(scheme))
+	existing := &clusterv1.Machine{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: clusterv1.GroupVersion.String(),
+			Kind:       "Machine",
+		},
+		ObjectMeta: metav1.ObjectMeta{Name: "cp-0", Namespace: "nke-system"},
+		Spec: clusterv1.MachineSpec{
+			ClusterName:   "cluster-a",
+			FailureDomain: "fd-a",
+		},
+	}
+	k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build()
+	desired := existing.DeepCopy()
+	desired.Spec.FailureDomain = "fd-b"
+
+	require.NoError(t, shared.ApplyMachine(context.Background(), k8sClient, "cloud-workflow-engine", desired))
+
+	actual := &clusterv1.Machine{}
+	require.NoError(t, k8sClient.Get(context.Background(), client.ObjectKeyFromObject(existing), actual))
+	assert.Equal(t, "fd-a", actual.Spec.FailureDomain)
 }

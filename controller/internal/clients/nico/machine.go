@@ -5,10 +5,10 @@ package nico
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path"
-	"strings"
 	"text/template"
 
 	"github.com/google/uuid"
@@ -18,6 +18,7 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
@@ -41,7 +42,9 @@ type NodeConfig struct {
 }
 
 // ResolveNodeConfig resolves NodeConfig from the node set's and node pool's
-// NICo provider payloads, validating that every field is present.
+// NICo provider payloads. Cluster/NodePool/NodeSet ingress already validates
+// these fields at create/update time, so this doesn't re-validate them —
+// malformed data is trusted not to reach this layer.
 func ResolveNodeConfig(nodeSet db.NodeSet, nodePool db.NodePool) (NodeConfig, error) {
 	nicoNodePoolProvider, err := nodePool.NicoProvider()
 	if err != nil {
@@ -51,11 +54,8 @@ func ResolveNodeConfig(nodeSet db.NodeSet, nodePool db.NodePool) (NodeConfig, er
 	if err != nil {
 		return NodeConfig{}, err
 	}
-	if err := validateResolvedNodeConfig(nodeSet, nicoNodeSetProvider, nicoNodePoolProvider); err != nil {
-		return NodeConfig{}, err
-	}
 
-	config := NodeConfig{
+	return NodeConfig{
 		OSProfile:                nicoNodeSetProvider.OSProfile,
 		DiskSelectionStrategy:    nicoNodeSetProvider.DiskSelectionStrategy,
 		KubernetesVersion:        nodeSet.KubernetesVersion,
@@ -68,42 +68,7 @@ func ResolveNodeConfig(nodeSet db.NodeSet, nodePool db.NodePool) (NodeConfig, er
 		IsControlPlaneRole:       nodePool.ControlPlane,
 		InfinibandPartitionID:    nicoNodePoolProvider.InfinibandPartitionID,
 		NVLinkLogicalPartitionID: nicoNodePoolProvider.NvLinkLogicalPartitionID,
-	}
-
-	if config.OSProfile == "" {
-		return NodeConfig{}, fmt.Errorf("os profile is empty")
-	}
-	if config.InstanceTypeID == uuid.Nil {
-		return NodeConfig{}, fmt.Errorf("instance type is empty")
-	}
-	if len(config.SubnetIDs) == 0 && len(config.VpcPrefixIDs) == 0 {
-		return NodeConfig{}, fmt.Errorf("both subnetIDs and vpcPrefixIDs are empty")
-	}
-
-	return config, nil
-}
-
-func validateResolvedNodeConfig(nodeSet db.NodeSet, nicoNodeSetProvider, nicoProvider db.NicoNodePoolProvider) error {
-	missingFields := make([]string, 0, 4)
-
-	if nicoNodeSetProvider.OSProfile == "" {
-		missingFields = append(missingFields, "nodeSet.osProfile")
-	}
-	if nodeSet.KubernetesVersion == "" {
-		missingFields = append(missingFields, "nodeSet.kubernetesVersion")
-	}
-	if nicoProvider.InstanceTypeID == uuid.Nil {
-		missingFields = append(missingFields, "nodePool.instanceTypeID")
-	}
-	if len(nicoProvider.SubnetIDs) == 0 && len(nicoProvider.VpcPrefixIDs) == 0 {
-		missingFields = append(missingFields, "nodePool.subnetIDs|vpcPrefixIDs")
-	}
-
-	if len(missingFields) > 0 {
-		return fmt.Errorf("resolved node context is incomplete: missing %s", strings.Join(missingFields, ", "))
-	}
-
-	return nil
+	}, nil
 }
 
 // RenderInfraMachine builds the NicoMachine CWE constructs for a NICo-backed
@@ -144,6 +109,53 @@ func (*Client) RenderInfraMachine(profilesDir, namespace string, node db.Node, n
 	)
 }
 
+// CreateMachine seeds a control-plane instance type if needed, renders and
+// applies the NicoMachine, renders and applies the bootstrap secret, and
+// applies the generic CAPI Machine pointing at the NicoMachine. There's no
+// NICo-equivalent of a SPIRE join token: this path never calls
+// deps.CreateSpireJoinToken.
+func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDeps, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) error {
+	nodePool, err := deps.SeedControlPlaneInstanceType(ctx, node, nodePool)
+	if err != nil {
+		return err
+	}
+
+	infraMachineObj, err := c.RenderInfraMachine(deps.ProfilesDir, deps.Namespace, node, nodeSet, nodePool, cluster)
+	if err != nil {
+		return err
+	}
+	nicoMachine, ok := infraMachineObj.(*nicov1.NicoMachine)
+	if !ok {
+		return fmt.Errorf("expected *nicov1.NicoMachine, got %T", infraMachineObj)
+	}
+	if err := deps.K8sClient.Patch(ctx, nicoMachine, client.Apply, client.FieldOwner(deps.FieldManagerName), client.ForceOwnership); err != nil {
+		return fmt.Errorf("failed to apply NicoMachine %s: %w", nicoMachine.Name, err)
+	}
+
+	userData, err := deps.RenderNicoBootstrapUserData(ctx, node, nodeSet, nodePool, cluster)
+	if err != nil {
+		return err
+	}
+	bootstrapSecret := shared.BuildBootstrapSecret(node, cluster, deps.Namespace, userData)
+	if err := deps.K8sClient.Patch(ctx, bootstrapSecret, client.Apply, client.FieldOwner(deps.FieldManagerName), client.ForceOwnership); err != nil {
+		return fmt.Errorf("failed to apply bootstrap secret %s: %w", bootstrapSecret.Name, err)
+	}
+
+	machine, err := shared.BuildMachine(node, nodeSet, nodePool, cluster, deps.Namespace, bootstrapSecret.Name, clusterv1.ContractVersionedObjectReference{
+		APIGroup: nicov1.GroupVersion.Group,
+		Kind:     "NicoMachine",
+		Name:     nicoMachine.Name,
+	})
+	if err != nil {
+		return err
+	}
+	if err := shared.ApplyMachine(ctx, deps.K8sClient, deps.FieldManagerName, machine); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func buildMachine(
 	node db.Node,
 	cluster db.Cluster,
@@ -181,7 +193,7 @@ func buildMachine(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      node.Name,
 			Namespace: namespace,
-			Labels:    machineLabels(cluster.Name, controlPlane),
+			Labels:    shared.MachineLabels(cluster.Name, controlPlane),
 		},
 		Spec: nicov1.NicoMachineSpec{
 			VPCID:                    nicoProvider.VpcID.String(),
@@ -196,16 +208,6 @@ func buildMachine(
 			Labels: instanceLabels,
 		},
 	}, nil
-}
-
-func machineLabels(clusterName string, controlPlane bool) map[string]string {
-	labels := map[string]string{
-		clusterv1.ClusterNameLabel: clusterName,
-	}
-	if controlPlane {
-		labels[clusterv1.MachineControlPlaneLabel] = ""
-	}
-	return labels
 }
 
 // BuildInstanceLabels is the subset of instance labels CWE still writes on

@@ -15,25 +15,11 @@ import (
 	"github.com/GehirnInc/crypt/sha512_crypt"
 	"github.com/google/uuid"
 
-	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
-
 	"github.com/dsx-ai-factory/nke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/teleport"
 	"github.com/dsx-ai-factory/nke/controller/internal/utils"
 )
-
-func (a *Activities) buildNicoMachineForNode(createCtx *capiMachineCreateContext) (*nicov1.NicoMachine, error) {
-	obj, err := nico.New().RenderInfraMachine(a.cfg.ProfilesDir, createCtx.namespace, createCtx.node, createCtx.nodeSet, createCtx.nodePool, createCtx.cluster)
-	if err != nil {
-		return nil, err
-	}
-	nicoMachine, ok := obj.(*nicov1.NicoMachine)
-	if !ok {
-		return nil, fmt.Errorf("expected *nicov1.NicoMachine, got %T", obj)
-	}
-	return nicoMachine, nil
-}
 
 func (a *Activities) renderTemplateLessForgeCAPIBootstrapUserData(ctx context.Context, createCtx *capiMachineCreateContext) (string, error) {
 	provisioningConfig, err := nico.ResolveNodeConfig(createCtx.nodeSet, createCtx.nodePool)
