@@ -93,12 +93,14 @@ func TestCreateNodeSet_ValidatesProviderPayload(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("missing provider payload is rejected", func(t *testing.T) {
+		t.Parallel()
 		_, err := dbImpl.CreateNodeSet(ctx, &db.NodeSet{ID: uuid.New(), NodePoolID: nodePool.ID})
 		require.Error(t, err)
 		require.ErrorIs(t, err, db.ErrMissingProviderPayload)
 	})
 
 	t.Run("conflicting provider payload is rejected", func(t *testing.T) {
+		t.Parallel()
 		nodeSet := &db.NodeSet{
 			ID:         uuid.New(),
 			NodePoolID: nodePool.ID,
@@ -111,6 +113,7 @@ func TestCreateNodeSet_ValidatesProviderPayload(t *testing.T) {
 	})
 
 	t.Run("valid payload is accepted", func(t *testing.T) {
+		t.Parallel()
 		nodeSet := &db.NodeSet{ID: uuid.New(), NodePoolID: nodePool.ID}
 		nodeSet.SetNico(db.NicoNodePoolProvider{})
 		_, err := dbImpl.CreateNodeSet(ctx, nodeSet)
@@ -148,6 +151,7 @@ func TestUpdateNodeSet_ValidatesProviderPayload(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("clearing the provider payload is rejected", func(t *testing.T) {
+		t.Parallel()
 		stale := *nodeSet
 		stale.Nico = nil
 		_, err := dbImpl.UpdateNodeSet(ctx, &stale)
@@ -156,6 +160,7 @@ func TestUpdateNodeSet_ValidatesProviderPayload(t *testing.T) {
 	})
 
 	t.Run("setting both provider payloads is rejected", func(t *testing.T) {
+		t.Parallel()
 		conflicted := *nodeSet
 		conflicted.Capi = &db.CAPINodePoolProvider{}
 		_, err := dbImpl.UpdateNodeSet(ctx, &conflicted)
