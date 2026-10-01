@@ -12,9 +12,11 @@
 #            -> NKTP -> Postgres -> Temporal -> CWE
 #
 # Outside this deploy path, and before it:
-#   untaint        a bootstrap cluster is all control-plane and tainted
-#                  NoSchedule. Nothing schedules until it is removed, and
-#                  clusterctl init times out on cert-manager with no hint why.
+#   untaint        a bootstrap cluster is all control-plane. Nothing schedules
+#                  while the NoSchedule taint is on the nodes, and clusterctl
+#                  init times out on cert-manager with no hint why. nkectl
+#                  bootstrap site removes the taint by default; check before
+#                  going on, and remove it by hand if the site spec kept it.
 #   clusterctl init  brings cert-manager AND CAPI core AND the kubeadm
 #                  providers. cert-manager first because CAPI's own manifests
 #                  embed an Issuer and a Certificate.
