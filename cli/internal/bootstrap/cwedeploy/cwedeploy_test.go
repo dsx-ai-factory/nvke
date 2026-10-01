@@ -409,7 +409,7 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 	if !strings.Contains(spire, "upgrade --install spire spire") ||
 		!strings.Contains(spire, "global.spire.clusterName=test-kind") ||
 		!strings.Contains(spire, "global.spire.trustDomain=test-kind.nke.local") ||
-		!strings.Contains(spire, "spire-server.adminIDs[0]=spiffe://test-kind.nke.local/nke-service/cloud-workflow-engine") {
+		!strings.Contains(spire, "spire-server.adminIDs[0]=spiffe://test-kind.nke.local/nke-service/nke-controller") {
 		t.Errorf("SPIRE call = %q, want the pinned chart and CWE identity", spire)
 	}
 
@@ -550,7 +550,7 @@ func TestWaitReady_SucceedsOnOKStatus(t *testing.T) {
 	if call.name != "kubectl" {
 		t.Errorf("call.name = %q, want %q", call.name, "kubectl")
 	}
-	wantProxyPath := "/api/v1/namespaces/cloud-workflow-engine/services/cloud-workflow-engine:http/proxy/readyz"
+	wantProxyPath := "/api/v1/namespaces/nke-controller/services/nke-controller:http/proxy/readyz"
 	if !strings.Contains(joinArgs(call.args), wantProxyPath) {
 		t.Errorf("args = %q, want it to include %q", joinArgs(call.args), wantProxyPath)
 	}
@@ -676,7 +676,7 @@ func TestSpireInstallArgs(t *testing.T) {
 		"--values /tmp/values.yaml",
 		"global.spire.clusterName=kind",
 		"global.spire.trustDomain=kind.nke.local",
-		spireServerValuesPrefix + ".adminIDs[0]=spiffe://kind.nke.local/nke-service/cloud-workflow-engine",
+		spireServerValuesPrefix + ".adminIDs[0]=spiffe://kind.nke.local/nke-service/nke-controller",
 	} {
 		if !hasArgs(got, strings.Fields(want)...) {
 			t.Errorf("install = %q, want it to contain %q", got, want)

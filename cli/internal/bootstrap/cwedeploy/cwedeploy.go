@@ -50,10 +50,11 @@ const (
 	postgresNamespace = "postgres"
 	temporalNamespace = "temporal"
 	spireNamespace    = "spire-server"
-	cweNamespace      = "cloud-workflow-engine"
-
-	// Namespace is cweNamespace for callers that have to name it in a message.
-	Namespace = cweNamespace
+	// cweNamespace is the controller's namespace, and cweReleaseName its
+	// release, fullname, ServiceAccount and pod name label: all the same name,
+	// the one greenfield sites use. spire-values.yaml, cwe-values.yaml and
+	// cwe-nodeport.yaml carry it too and must change with it.
+	cweNamespace = "nke-controller"
 
 	// tenantSecretsNamespace is where CWE publishes each cluster's kubeconfig
 	// and where it puts the cluster's CAPI objects. It matches
@@ -65,7 +66,7 @@ const (
 	temporalReleaseName  = "temporal"
 	spireCRDsReleaseName = "spire-crds"
 	spireReleaseName     = "spire"
-	cweReleaseName       = "cloud-workflow-engine"
+	cweReleaseName       = cweNamespace
 
 	// spireServerPort is the port the SPIRE server is reached on inside the
 	// cluster: the port its Service listens on, the port its own agents dial,
@@ -806,7 +807,7 @@ func spireInstallArgs(cfg Config, chart manifest.Chart, valuesPath, clusterName,
 		"--values", valuesPath,
 		"--set-string", "global.spire.clusterName="+clusterName,
 		"--set-string", "global.spire.trustDomain="+trustDomain,
-		"--set-string", prefix+".adminIDs[0]=spiffe://"+trustDomain+"/nke-service/cloud-workflow-engine",
+		"--set-string", prefix+".adminIDs[0]=spiffe://"+trustDomain+"/nke-service/"+cweReleaseName,
 		// Both halves of the two agreements CWE depends on. See the constants.
 		"--set-string", prefix+".controllerManager.className="+spireControllerManagerClass,
 		// --set, not --set-string: the chart's schema types these as integers.

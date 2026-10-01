@@ -375,7 +375,8 @@ nkectl config set-site --name my-site --url https://<cwe-url> \
 
 That kubeconfig is also how `nkectl` authenticates to CWE once the site has API
 authentication on. The CLI always mints for `nke-clients/nke-client` and reads
-the audience from `cloud-workflow-engine/nke-auth-config`. Create that service
+the audience from ConfigMap `nke-auth-config` in namespace `nke-controller`, or
+in `cloud-workflow-engine` when that is absent. Create that service
 account, admit it, and grant the kubeconfig identity the permissions in
 [Configuring NKE API Authentication](../controller/docs/configuring-api-authentication.md).
 Without them, `get clusters` fails at minting or CWE returns 403.

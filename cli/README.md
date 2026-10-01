@@ -80,9 +80,10 @@ nkectl delete nodepool <name> --cluster <name>
 `nkectl config set-site` command configures the management-cluster kubeconfig with the site.
 nkectl commands use it to mint an audience-scoped token for the admitted
 identity `nke-clients/nke-client`. The audience comes from ConfigMap
-`nke-auth-config` in `cloud-workflow-engine`.
+`nke-auth-config`, looked up in namespace `nke-controller` first and then
+`cloud-workflow-engine`.
 
-If that ConfigMap is missing, the CLI treats authentication as off and sends no
+If neither namespace holds that ConfigMap, the CLI treats authentication as off and sends no
 `Authorization` header — the same as a CWE that was installed with
 `apiAuth.enabled` unset.
 

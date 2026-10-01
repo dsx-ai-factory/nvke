@@ -15,8 +15,15 @@
 #
 # appDb.postgresPassword is supplied on the `helm upgrade --install` command
 # line, not hardcoded here, matching postgres-values.yaml/temporal-values.yaml.
-fullnameOverride: cloud-workflow-engine
-namespaceOverride: cloud-workflow-engine
+#
+# The four names below are cwedeploy's cweNamespace. nameOverride sets the pod
+# label cwe-nodeport.yaml selects on, and the chart pins serviceAccount.name
+# rather than deriving it, so both are set here alongside the fullname.
+fullnameOverride: nke-controller
+nameOverride: nke-controller
+namespaceOverride: nke-controller
+serviceAccount:
+  name: nke-controller
 
 podSecurityContext: null
 securityContext:

@@ -13,8 +13,8 @@
 #
 # Two values have to agree with things outside this file:
 #
-#   selector   the labels the CWE chart puts on its pods. fullnameOverride in
-#              cwe-values.yaml fixes the instance name, so these are stable.
+#   selector   the labels the CWE chart puts on its pods. The release name
+#              and nameOverride in cwe-values.yaml fix both, so these are stable.
 #   port       Config.CWEPort in cwedeploy.go. cmd/nkectl/bootstrap.go uses the
 #              same value for both sides of the kind cluster's port mapping.
 #
@@ -24,15 +24,15 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: cloud-workflow-engine-external
+  name: nke-controller-external
   labels:
-    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/name: nke-controller
     app.kubernetes.io/managed-by: nkectl
 spec:
   type: NodePort
   selector:
-    app.kubernetes.io/name: cloud-workflow-engine
-    app.kubernetes.io/instance: cloud-workflow-engine
+    app.kubernetes.io/name: nke-controller
+    app.kubernetes.io/instance: nke-controller
   ports:
     - name: http
       protocol: TCP

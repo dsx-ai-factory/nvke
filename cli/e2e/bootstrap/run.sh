@@ -671,6 +671,30 @@ if [ ! -s "${TENANT_KUBECONFIG}" ]; then
 fi
 log "PASS: bootstrap site created the site cluster through the CWE API"
 
+# The controller reached this point by answering /readyz through its Service
+# and the host through its external NodePort. What that does not show is that
+# it runs under the name greenfield sites use, as the ServiceAccount its
+# SPIFFE ID names, with SPIRE registered to issue that ID.
+CONTROLLER_NAME=nke-controller
+bootstrap_kubeconfig="$(mktemp)"
+KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name "${BOOTSTRAP_KIND_CLUSTER}" \
+  > "${bootstrap_kubeconfig}" || fail "could not read the bootstrap cluster's kubeconfig"
+bk() { kubectl --kubeconfig "${bootstrap_kubeconfig}" "$@"; }
+sa="$(bk -n "${CONTROLLER_NAME}" get deployment "${CONTROLLER_NAME}" \
+  -o 'jsonpath={.spec.template.spec.serviceAccountName}')" ||
+  fail "no deployment ${CONTROLLER_NAME} in namespace ${CONTROLLER_NAME}"
+[ "${sa}" = "${CONTROLLER_NAME}" ] ||
+  fail "the controller runs as ServiceAccount ${sa}, not ${CONTROLLER_NAME}"
+endpoints="$(bk -n "${CONTROLLER_NAME}" get endpoints "${CONTROLLER_NAME}-external" \
+  -o 'jsonpath={.subsets[*].addresses[*].ip}')"
+[ -n "${endpoints}" ] || fail "Service ${CONTROLLER_NAME}-external has no endpoints"
+spiffe_id="spiffe://${SPIRE_TRUST_DOMAIN}/nke-service/${CONTROLLER_NAME}"
+bk -n spire-server exec spire-server-0 -c spire-server -- \
+  /opt/spire/bin/spire-server entry show -spiffeID "${spiffe_id}" | grep -q "Entry ID" ||
+  fail "SPIRE has no entry for ${spiffe_id}"
+rm -f "${bootstrap_kubeconfig}"
+log "PASS: the controller runs as ${CONTROLLER_NAME} and SPIRE issues ${spiffe_id}"
+
 # ── Stage 3: every node attested to SPIRE over TPM ──────────────────────
 
 log "waiting for every node's spire-agent to attest"

@@ -604,9 +604,10 @@ func requireNoBootstrapCluster(ctx context.Context, engine *bootstrapengine.Engi
 	}
 	return fmt.Errorf("bootstrap cluster %q from an earlier run is still running. If that run built an encrypted "+
 		"site cluster and did not save its key, the key is in this cluster: get its kubeconfig with "+
-		"`KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name %s`, save any etcd-encryption-key-* Secret "+
-		"in namespace %s, then delete it with `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s` and re-run",
-		name, name, cwedeploy.Namespace, name)
+		"`KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name %s`, save every etcd-encryption-key-* Secret it "+
+		"holds from the namespace it is in (`kubectl get secrets -A | grep etcd-encryption-key-`), then delete it with "+
+		"`KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s` and re-run",
+		name, name, name)
 }
 
 // requireNoControlPlane refuses to bootstrap over a host that already accepts

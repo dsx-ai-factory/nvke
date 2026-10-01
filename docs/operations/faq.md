@@ -16,16 +16,15 @@ See [Pre-Provisioned Nodes](../site-bootstrap/pre-provisioned-nodes.md) for the 
 
 ### Bootstrap fails with "bootstrap cluster … from an earlier run is still running"
 
-Before deleting the leftover Kind cluster, export the etcd encryption key if it was generated during the failed run — it may be the only recoverable copy. The key is in the `cloud-workflow-engine` namespace of the bootstrap cluster, not the default kubeconfig:
+Before deleting the leftover Kind cluster, export the etcd encryption key if it was generated during the failed run — it may be the only recoverable copy. The key is in the controller's namespace of the bootstrap cluster, not the default kubeconfig: `nke-controller`, or `cloud-workflow-engine` if an older `nkectl` created the cluster. Search all namespaces and save each key from the namespace it is in:
 
 ```bash
 umask 077
 export KIND_EXPERIMENTAL_PROVIDER=nerdctl
 kind get kubeconfig --name nkectl-bootstrap > bootstrap.kubeconfig
-kubectl --kubeconfig bootstrap.kubeconfig -n cloud-workflow-engine \
-  get secrets | grep etcd-encryption-key-
-# Save the Secret identified above:
-kubectl --kubeconfig bootstrap.kubeconfig -n cloud-workflow-engine \
+kubectl --kubeconfig bootstrap.kubeconfig get secrets -A | grep etcd-encryption-key-
+# Save each Secret listed above, from the namespace it is listed in:
+kubectl --kubeconfig bootstrap.kubeconfig -n <namespace> \
   get secret <etcd-encryption-key-name> -o yaml > etcd-encryption-key-backup.yaml
 ```
 

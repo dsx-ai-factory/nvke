@@ -1101,7 +1101,7 @@ func TestRunBootstrapSiteRetainsClusterWhenKeyCaptureFails(t *testing.T) {
 		"kubeconfig is at " + kubeconfigOut,
 		"do not delete it",
 		"umask 077 && kubectl --kubeconfig",
-		"-n cloud-workflow-engine get secret etcd-encryption-key-",
+		"-n nke-controller get secret etcd-encryption-key-",
 		"-o json > " + keyOut,
 	} {
 		if !strings.Contains(err.Error(), want) {
@@ -1283,7 +1283,7 @@ func TestRunBootstrapSiteRefusesWhileAnEarlierBootstrapClusterRuns(t *testing.T)
 		"still running",
 		"kind get kubeconfig --name nkectl-bootstrap",
 		"etcd-encryption-key-",
-		"namespace cloud-workflow-engine",
+		"get secrets -A | grep etcd-encryption-key-",
 		"kind delete cluster --name nkectl-bootstrap",
 	} {
 		if !strings.Contains(msg, want) {

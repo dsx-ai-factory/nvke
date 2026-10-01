@@ -13,14 +13,19 @@ import (
 
 	"gopkg.in/yaml.v3"
 	authnv1 "k8s.io/api/authentication/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+// authConfigNamespaces are the namespaces the controller runs in, in the order
+// they are searched: a greenfield site's name first, then the name every
+// earlier site keeps. The first that holds the ConfigMap is used.
+var authConfigNamespaces = []string{"nke-controller", "cloud-workflow-engine"}
+
 const (
-	authConfigNamespace = "cloud-workflow-engine"
 	authConfigMap       = "nke-auth-config"
 	authConfigKey       = "auth.yaml"
 	tokenNamespace      = "nke-clients"
@@ -30,7 +35,8 @@ const (
 )
 
 // Source supplies audience-scoped tokens for nkectl's CWE identity. Mint
-// returns no credential when the management cluster has no CWE auth ConfigMap.
+// returns no credential when the management cluster has no CWE auth ConfigMap
+// in either controller namespace.
 type Source struct {
 	client   kubernetes.Interface
 	endpoint string
@@ -110,21 +116,30 @@ func (s *Source) Mint(ctx context.Context) (string, error) {
 }
 
 func (s *Source) audience(ctx context.Context) (string, bool, error) {
-	configMap, err := s.client.CoreV1().
-		ConfigMaps(authConfigNamespace).
-		Get(ctx, authConfigMap, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		return "", false, nil
+	var configMap *corev1.ConfigMap
+	var namespace string
+	for _, candidate := range authConfigNamespaces {
+		found, err := s.client.CoreV1().
+			ConfigMaps(candidate).
+			Get(ctx, authConfigMap, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return "", false, fmt.Errorf("reading CWE authentication ConfigMap %s/%s: %w",
+				candidate, authConfigMap, err)
+		}
+		configMap, namespace = found, candidate
+		break
 	}
-	if err != nil {
-		return "", false, fmt.Errorf("reading CWE authentication ConfigMap %s/%s: %w",
-			authConfigNamespace, authConfigMap, err)
+	if configMap == nil {
+		return "", false, nil
 	}
 
 	raw, ok := configMap.Data[authConfigKey]
 	if !ok {
 		return "", false, fmt.Errorf("CWE authentication ConfigMap %s/%s has no %q key",
-			authConfigNamespace, authConfigMap, authConfigKey)
+			namespace, authConfigMap, authConfigKey)
 	}
 
 	var config struct {
@@ -132,11 +147,11 @@ func (s *Source) audience(ctx context.Context) (string, bool, error) {
 	}
 	if err := yaml.Unmarshal([]byte(raw), &config); err != nil {
 		return "", false, fmt.Errorf("parsing %q from CWE authentication ConfigMap %s/%s: %w",
-			authConfigKey, authConfigNamespace, authConfigMap, err)
+			authConfigKey, namespace, authConfigMap, err)
 	}
 	if len(config.Audiences) == 0 || config.Audiences[0] == "" {
 		return "", false, fmt.Errorf("CWE authentication ConfigMap %s/%s sets no audiences",
-			authConfigNamespace, authConfigMap)
+			namespace, authConfigMap)
 	}
 	return config.Audiences[0], true, nil
 }

@@ -111,8 +111,9 @@ providers` and `get kubeconfig` read the cluster directly and need it.
 
 CWE API commands (`get`/`create`/`patch`/`delete` clusters) use that
 kubeconfig to authenticate: they read the audience from ConfigMap
-`cloud-workflow-engine/nke-auth-config` and mint a TokenRequest for
-`nke-clients/nke-client`. If the ConfigMap is absent, authentication is off
+`nke-auth-config` in `nke-controller`, or in `cloud-workflow-engine` when that
+is absent, and mint a TokenRequest for
+`nke-clients/nke-client`. If neither holds the ConfigMap, authentication is off
 and the CLI sends no bearer token.
 
 The kubeconfig identity needs `create` on `serviceaccounts/token` for
