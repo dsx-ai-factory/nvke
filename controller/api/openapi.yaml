@@ -1020,6 +1020,13 @@ components:
           format: date-time
           description: When the cluster was created
           x-order: 15
+        nextCertRenewalDue:
+          type: string
+          format: date-time
+          description: |
+            The next scheduled certificate-renewal time. A value in the past is
+            overdue unless a certificate-renewal operation is currently accepted.
+          x-order: 16
         conditions:
           $ref: "#/components/schemas/ClusterConditions"
           description: Conditions representing various aspects of the Cluster's state
@@ -2031,15 +2038,80 @@ components:
         updateInProgress:
           description: |
             The mutually-exclusive cluster mutation currently in flight
-            (etcd_encryption, k8s_upgrade, cp_nodes_recycling, or oidc_enable).
-            Absent when no such operation is running. Replaces the per-operation
-            boolean flags for new operation types.
+            (etcd_encryption, k8s_upgrade, cp_nodes_recycling, oidc_enable, or
+            certificate_renewal). Absent when no such operation is running.
+            Replaces the per-operation boolean flags for new operation types.
           x-order: 6
           $ref: "#/components/schemas/UpdateInProgress"
         updateFailed:
           description: The condition indicating that the most recent cluster update failed.
           x-order: 7
           $ref: "#/components/schemas/Condition"
+        certificateRenewal:
+          description: The accepted, succeeded, or failed state of the most recent certificate-renewal cycle.
+          x-order: 8
+          $ref: "#/components/schemas/CertificateRenewalStatus"
+
+    CertificateRenewalStatus:
+      type: object
+      required:
+        - cycleID
+        - state
+        - forced
+        - startedAt
+      properties:
+        cycleID:
+          type: string
+          description: The Temporal workflow ID that owns this certificate-renewal cycle.
+          x-order: 1
+        state:
+          type: string
+          enum:
+            - accepted
+            - succeeded
+            - failed
+          description: The lifecycle state of the most recent certificate-renewal cycle.
+          x-order: 2
+        outcome:
+          type: string
+          enum:
+            - unchanged
+            - renewed
+          description: Whether a successful cycle renewed certificates or found no certificates due.
+          x-order: 3
+        forced:
+          type: boolean
+          description: Whether the workflow was explicitly forced by an operator.
+          x-order: 4
+        scheduledFor:
+          type: string
+          format: date-time
+          description: The scheduled due time associated with this cycle, when applicable.
+          x-order: 5
+        startedAt:
+          type: string
+          format: date-time
+          description: When the workflow accepted the cycle and acquired the cluster mutation lock.
+          x-order: 6
+        completedAt:
+          type: string
+          format: date-time
+          description: When the cycle succeeded or failed.
+          x-order: 7
+        failedNodeID:
+          type: string
+          format: uuid
+          description: The control-plane node being processed when the cycle failed, when applicable.
+          x-order: 8
+        phase:
+          type: string
+          description: The workflow phase that failed, when applicable.
+          x-order: 9
+        message:
+          type: string
+          maxLength: 1024
+          description: A bounded operator-facing failure summary.
+          x-order: 10
 
     UpdateInProgress:
       type: object
@@ -2055,6 +2127,7 @@ components:
             - k8s_upgrade
             - cp_nodes_recycling
             - oidc_enable
+            - certificate_renewal
           description: The kind of long-running cluster mutation in flight.
           x-order: 1
         message:

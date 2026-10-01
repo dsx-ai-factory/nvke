@@ -1118,6 +1118,33 @@ func APIClusterFromDB(dbCluster *db.Cluster) api.Cluster {
 		updateFailed := apiConditionFromDB(*dbCluster.Conditions.UpdateFailed)
 		conditions.UpdateFailed = &updateFailed
 	}
+	// Project the recorded cycle separately from UpdateInProgress: a failed cycle
+	// can still own the mutation lock. Empty optional diagnostics remain absent;
+	// overdue status is derived by consumers from NextCertRenewalDue.
+	if status := dbCluster.Conditions.CertificateRenewal; status != nil {
+		apiStatus := api.CertificateRenewalStatus{
+			CycleID:      status.CycleID,
+			State:        api.CertificateRenewalStatusState(status.State),
+			Forced:       status.Forced,
+			ScheduledFor: status.ScheduledFor,
+			StartedAt:    status.StartedAt,
+			CompletedAt:  status.CompletedAt,
+			FailedNodeID: status.FailedNodeID,
+		}
+		if status.Outcome != "" {
+			outcome := api.CertificateRenewalStatusOutcome(status.Outcome)
+			apiStatus.Outcome = &outcome
+		}
+		if status.Phase != "" {
+			phase := status.Phase
+			apiStatus.Phase = &phase
+		}
+		if status.Message != "" {
+			message := status.Message
+			apiStatus.Message = &message
+		}
+		conditions.CertificateRenewal = &apiStatus
+	}
 
 	return api.Cluster{
 		ID:                            dbCluster.ID,
@@ -1134,7 +1161,8 @@ func APIClusterFromDB(dbCluster *db.Cluster) api.Cluster {
 			PodCIDR:     dbCluster.PodCIDR,
 			ServiceCIDR: dbCluster.ServiceCIDR,
 		},
-		CreatedAt: dbCluster.CreatedAt,
+		CreatedAt:          dbCluster.CreatedAt,
+		NextCertRenewalDue: dbCluster.NextCertRenewalDue,
 
 		Nico:  apiNicoClusterProviderFromDB(dbCluster.Nico),
 		Infra: apiInfraClusterProviderFromDB(dbCluster.Capi),

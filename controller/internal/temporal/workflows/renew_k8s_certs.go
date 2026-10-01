@@ -4,7 +4,11 @@
 package workflows
 
 import (
+	"crypto/sha256"
+	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,32 +16,56 @@ import (
 	"go.temporal.io/sdk/workflow"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
+	adaptercwe "github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/cwe"
+	rolloutkubevip "github.com/dsx-ai-factory/nke/controller/internal/rollout/guards/kubevip"
+	rollouttemporal "github.com/dsx-ai-factory/nke/controller/internal/rollout/temporal"
 	"github.com/dsx-ai-factory/nke/controller/internal/temporal/activities"
 )
 
+const (
+	certificateRenewalFailure   = "Kubernetes certificate renewal failed"
+	certificateRenewalPreflight = "preflight"
+	certificateRenewalRenewNode = "renew-node"
+)
+
+// RenewK8sCertsInput selects a threshold-based or forced cycle. V2 requires a
+// positive threshold even when Force bypasses expiry selection; Force must not
+// accompany ScheduledFor. The original workflow ignores the V2-only controls.
 type RenewK8sCertsInput struct {
-	ClusterID     uuid.UUID `json:"clusterID"`
-	ThresholdDays int       `json:"thresholdDays"`
+	ClusterID     uuid.UUID  `json:"clusterID"`
+	ThresholdDays int        `json:"thresholdDays"`
+	Force         bool       `json:"force"`
+	ScheduledFor  *time.Time `json:"scheduledFor,omitempty"`
 }
 
+// RenewK8sCertsNodeResult records a node's completed contribution to the cycle.
+// V2 appends it only after postflight succeeds; a missing entry does not prove
+// that the node was never mutated.
 type RenewK8sCertsNodeResult struct {
-	NodeID       uuid.UUID
-	NodeName     string
-	Output       string
-	ErrorMessage string
-	ExitCode     int
+	NodeID       uuid.UUID                    `json:"nodeID"`
+	NodeName     string                       `json:"nodeName"`
+	Outcome      db.CertificateRenewalOutcome `json:"outcome"`
+	Output       string                       `json:"output"`
+	ErrorMessage string                       `json:"errorMessage"`
+	ExitCode     int                          `json:"exitCode"`
 }
 
+// RenewK8sCertsResult aggregates V2 nodes that passed renewal and postflight.
+// Outcome is renewed if any such node renewed, otherwise unchanged; callers must
+// still check the workflow error because Results may cover only a partial cycle.
 type RenewK8sCertsResult struct {
-	Results []RenewK8sCertsNodeResult
+	Outcome db.CertificateRenewalOutcome `json:"outcome"`
+	Results []RenewK8sCertsNodeResult    `json:"results"`
 }
 
+// RenewK8sCerts preserves the v1 typed-activity command sequence for existing
+// Temporal histories. New scheduled and forced cycles use RenewK8sCertsV2.
 func RenewK8sCerts(ctx workflow.Context, input RenewK8sCertsInput) (RenewK8sCertsResult, error) {
 	logger := workflow.GetLogger(ctx)
 	logger.Info("Renewing Kubernetes certs", "clusterID", input.ClusterID, "thresholdDays", input.ThresholdDays)
 
 	var a *activities.Activities
-
 	var controlPlaneNodes []db.Node
 	if err := workflow.ExecuteActivity(
 		withDBOptions(ctx),
@@ -52,15 +80,9 @@ func RenewK8sCerts(ctx workflow.Context, input RenewK8sCertsInput) (RenewK8sCert
 	}
 
 	results := make([]RenewK8sCertsNodeResult, 0, len(controlPlaneNodes))
-
-	// Renew one control-plane node at a time. The renewal transaction restarts static
-	// control-plane pods, including etcd, so parallel renewal could risk quorum
-	// loss or API disruption.
 	for _, node := range controlPlaneNodes {
 		var result activities.KubernetesCertificateRenewalResult
 		workflowInfo := workflow.GetInfo(ctx)
-		// Activity retries reuse this ID and therefore reattach to the accepted
-		// agent operation; RunID keeps a later workflow run from aliasing it.
 		operationID := fmt.Sprintf(
 			"k8s-cert-renewal/%s/%s/%s",
 			workflowInfo.WorkflowExecution.ID,
@@ -96,4 +118,340 @@ func RenewK8sCerts(ctx workflow.Context, input RenewK8sCertsInput) (RenewK8sCert
 	}
 
 	return RenewK8sCertsResult{Results: results}, nil
+}
+
+// RenewK8sCertsV2 renews kubeadm-managed leaf certificates one control-plane
+// node at a time. Forced invocations are operator-started and must use a unique
+// Temporal workflow ID so their cycle cannot alias a scheduled invocation.
+// Each node's renewal runs between the kube-vip drain and restore guard used by
+// the other apiserver-restarting rollouts, so worker kubelets pinned to that node
+// fail over before its kube-apiserver restarts; restore runs on a disconnected
+// context after success, failure or cancellation, and a failed drain or restore
+// fails the cycle. Acceptance owns the cluster mutation lock; successful node
+// results and health gates are required before advancing the due time. Failure
+// cleanup observes the
+// dispatched executor independently of cancellation and retains ownership when
+// termination cannot be confirmed. The original workflow remains separate for
+// existing V1 histories.
+func RenewK8sCertsV2(ctx workflow.Context, input RenewK8sCertsInput) (RenewK8sCertsResult, error) {
+	if input.ClusterID == uuid.Nil {
+		return RenewK8sCertsResult{}, errors.New("clusterID is required")
+	}
+	if input.ThresholdDays <= 0 {
+		return RenewK8sCertsResult{}, errors.New("thresholdDays must be positive")
+	}
+	if input.Force && input.ScheduledFor != nil {
+		return RenewK8sCertsResult{}, errors.New("forced certificate renewal cannot have a scheduled due time")
+	}
+
+	cycleID := workflow.GetInfo(ctx).WorkflowExecution.ID
+	logger := workflow.GetLogger(ctx)
+	logger.Info(
+		"Renewing Kubernetes certificates",
+		"clusterID", input.ClusterID,
+		"cycleID", cycleID,
+		"thresholdDays", input.ThresholdDays,
+		"forced", input.Force,
+	)
+
+	var a *activities.Activities
+	var begin activities.BeginCertificateRenewalResult
+	// Resolve acceptance even after cancellation: Begin may already have committed the mutation lock.
+	acceptanceCtx, _ := workflow.NewDisconnectedContext(ctx)
+	if err := workflow.ExecuteActivity(
+		withDBOptions(acceptanceCtx),
+		a.BeginCertificateRenewal,
+		activities.BeginCertificateRenewalInput{
+			ClusterID:    input.ClusterID,
+			CycleID:      cycleID,
+			Forced:       input.Force,
+			ScheduledFor: input.ScheduledFor,
+		},
+	).Get(acceptanceCtx, &begin); err != nil {
+		return RenewK8sCertsResult{}, fmt.Errorf("failed to begin certificate renewal: %w", err)
+	}
+	if begin.AlreadyCompleted {
+		return RenewK8sCertsResult{Outcome: begin.Outcome}, nil
+	}
+
+	result, failure, err := renewK8sCerts(ctx, input, cycleID)
+	if err != nil {
+		cleanupCtx, _ := workflow.NewDisconnectedContext(ctx)
+		if clearErr := failCertificateRenewal(cleanupCtx, input.ClusterID, cycleID, failure, err); clearErr != nil {
+			logger.Error("Failed to persist certificate-renewal failure", "error", clearErr)
+		}
+		return result, fmt.Errorf("%s: %w", certificateRenewalFailure, err)
+	}
+
+	if err := workflow.ExecuteActivity(
+		withDBOptions(ctx),
+		a.CompleteCertificateRenewal,
+		activities.CompleteCertificateRenewalInput{
+			ClusterID: input.ClusterID,
+			CycleID:   cycleID,
+			Outcome:   result.Outcome,
+		},
+	).Get(ctx, nil); err != nil {
+		cleanupCtx, _ := workflow.NewDisconnectedContext(ctx)
+		if clearErr := failCertificateRenewal(cleanupCtx, input.ClusterID, cycleID, certificateRenewalFailureDetails{phase: "complete"}, err); clearErr != nil {
+			logger.Error("Failed to persist certificate-renewal completion failure", "error", clearErr)
+		}
+		return result, fmt.Errorf("failed to complete certificate renewal: %w", err)
+	}
+	return result, nil
+}
+
+// certificateRenewalFailureDetails separates diagnostics from the operation whose
+// termination is uncertain. Healthy diagnostic postflight cannot clear that
+// uncertainty; cleanup needs the original node, operation ID and executor.
+type certificateRenewalFailureDetails struct {
+	nodeID              *uuid.UUID
+	phase               string
+	unresolvedOperation *activities.ResolveKubernetesCertificateRenewalInput
+}
+
+// renewK8sCerts fixes node order and membership for the entire cycle. Each node's
+// postflight is the gate to the next; on failure it stops the sequence and may
+// gather diagnostics, but leaves ownership resolution to the caller.
+func renewK8sCerts(
+	ctx workflow.Context,
+	input RenewK8sCertsInput,
+	cycleID string,
+) (RenewK8sCertsResult, certificateRenewalFailureDetails, error) {
+	if err := ctx.Err(); err != nil {
+		return RenewK8sCertsResult{}, certificateRenewalFailureDetails{phase: certificateRenewalPreflight}, err
+	}
+
+	var a *activities.Activities
+	var controlPlaneNodes []db.Node
+	if err := workflow.ExecuteActivity(
+		withDBOptions(ctx),
+		a.ListControlPlaneNodes,
+		input.ClusterID,
+	).Get(ctx, &controlPlaneNodes); err != nil {
+		return RenewK8sCertsResult{}, certificateRenewalFailureDetails{phase: "list-control-plane-nodes"}, fmt.Errorf("failed to list control-plane nodes: %w", err)
+	}
+	if len(controlPlaneNodes) == 0 {
+		return RenewK8sCertsResult{}, certificateRenewalFailureDetails{phase: certificateRenewalPreflight}, errors.New("no control-plane nodes found")
+	}
+	slices.SortFunc(controlPlaneNodes, func(left, right db.Node) int {
+		if byName := strings.Compare(left.Name, right.Name); byName != 0 {
+			return byName
+		}
+		return strings.Compare(left.ID.String(), right.ID.String())
+	})
+
+	expectedNodeIDs := make([]uuid.UUID, 0, len(controlPlaneNodes))
+	for _, node := range controlPlaneNodes {
+		expectedNodeIDs = append(expectedNodeIDs, node.ID)
+	}
+	if err := validateCertificateRenewalHealth(ctx, input.ClusterID, expectedNodeIDs, nil); err != nil {
+		return RenewK8sCertsResult{}, certificateRenewalFailureDetails{phase: certificateRenewalPreflight}, fmt.Errorf("certificate-renewal preflight failed: %w", err)
+	}
+
+	// The guard activities only need identities, so wrap the cycle's node
+	// snapshot instead of reloading inventory; the agent port is never read here.
+	rolloutCluster := adaptercwe.NewCluster(db.Cluster{ID: input.ClusterID}, controlPlaneNodes, controlPlaneNodes, "")
+
+	result := RenewK8sCertsResult{
+		Outcome: db.CertificateRenewalOutcomeUnchanged,
+		Results: make([]RenewK8sCertsNodeResult, 0, len(controlPlaneNodes)),
+	}
+	for _, node := range controlPlaneNodes {
+		nodeID := node.ID
+		renewalResult, unresolved, err := renewCertificatesOnNodeBehindKubeVipDrain(ctx, rolloutCluster, adaptercwe.NewNode(node, ""), activities.KubernetesCertificateRenewalInput{
+			NodeID:              node.ID,
+			OperationID:         certificateRenewalOperationID(cycleID, node.ID),
+			ThresholdDays:       input.ThresholdDays,
+			Force:               input.Force,
+			ExpectedEtcdMembers: len(controlPlaneNodes),
+		})
+		if err != nil {
+			renewErr := fmt.Errorf("failed to renew certificates on node %s: %w", node.ID, err)
+			diagnosticCtx, _ := workflow.NewDisconnectedContext(ctx)
+			if healthErr := validateCertificateRenewalHealth(diagnosticCtx, input.ClusterID, expectedNodeIDs, &nodeID); healthErr != nil {
+				workflow.GetLogger(ctx).Error(
+					"Certificate-renewal diagnostic postflight failed",
+					"nodeID", node.ID,
+					"error", healthErr,
+				)
+				renewErr = fmt.Errorf("%w; diagnostic postflight failed: %w", renewErr, healthErr)
+			}
+			return result, certificateRenewalFailureDetails{nodeID: &nodeID, phase: certificateRenewalRenewNode, unresolvedOperation: unresolved}, renewErr
+		}
+
+		if err := validateCertificateRenewalHealth(ctx, input.ClusterID, expectedNodeIDs, &nodeID); err != nil {
+			return result, certificateRenewalFailureDetails{nodeID: &nodeID, phase: "postflight"}, fmt.Errorf("certificate-renewal postflight failed for node %s: %w", node.ID, err)
+		}
+		outcome := renewalResult.Outcome
+		if outcome == db.CertificateRenewalOutcomeRenewed {
+			result.Outcome = db.CertificateRenewalOutcomeRenewed
+		}
+		result.Results = append(result.Results, RenewK8sCertsNodeResult{
+			NodeID:       node.ID,
+			NodeName:     node.Name,
+			Outcome:      outcome,
+			Output:       renewalResult.Output,
+			ErrorMessage: renewalResult.ErrorMessage,
+			ExitCode:     renewalResult.ExitCode,
+		})
+	}
+	return result, certificateRenewalFailureDetails{}, nil
+}
+
+// renewCertificatesOnNodeBehindKubeVipDrain brackets one node's renewal with the
+// kube-vip drain/restore node guard. Drain is persisted before dispatch and
+// restore always runs on a disconnected context, so a failed or canceled renewal
+// cannot leave the node's VIP drained. A drain or restore failure is joined into
+// the returned error; unresolved still describes only the renewal dispatch, so
+// mutation-lock resolution is unaffected. Agents without a kube-vip
+// configuration treat drain and restore as no-ops. An agent predating the drain
+// RPCs fails closed, as in the other apiserver-restarting rollouts: no renewal
+// is dispatched to a node whose VIP could not be drained.
+func renewCertificatesOnNodeBehindKubeVipDrain(
+	ctx workflow.Context,
+	cluster rollout.Cluster,
+	node rollout.Node,
+	input activities.KubernetesCertificateRenewalInput,
+) (activities.KubernetesCertificateRenewalResult, *activities.ResolveKubernetesCertificateRenewalInput, error) {
+	var result activities.KubernetesCertificateRenewalResult
+	var unresolved *activities.ResolveKubernetesCertificateRenewalInput
+	if err := ctx.Err(); err != nil {
+		return result, nil, err // Nothing was drained or dispatched.
+	}
+	err := rollouttemporal.RunWithNodeGuards(
+		rollouttemporal.WithRolloutNodeAgentApplyOptions(ctx),
+		cluster,
+		node,
+		[]rollout.NodeGuardRef{{Name: rolloutkubevip.GuardNameKubeVipDrainRestore}},
+		func() error {
+			var renewErr error
+			result, unresolved, renewErr = renewCertificatesOnNode(ctx, input)
+			return renewErr
+		},
+	)
+	return result, unresolved, err
+}
+
+// renewCertificatesOnNode records executor selection in workflow history before
+// dispatching legacy work. A canceled or failed activity can leave remote work
+// running; a non-nil resolution input identifies what cleanup must observe,
+// including dispatches whose acceptance is unknown.
+func renewCertificatesOnNode(
+	ctx workflow.Context,
+	input activities.KubernetesCertificateRenewalInput,
+) (activities.KubernetesCertificateRenewalResult, *activities.ResolveKubernetesCertificateRenewalInput, error) {
+	var a *activities.Activities
+	var result activities.KubernetesCertificateRenewalResult
+	if err := ctx.Err(); err != nil {
+		return result, nil, err
+	}
+	pending := &activities.ResolveKubernetesCertificateRenewalInput{NodeID: input.NodeID, OperationID: input.OperationID}
+	err := workflow.ExecuteActivity(certificateRenewalNodeOptions(ctx), a.RenewKubernetesCertificates, input).Get(ctx, &result)
+	var applicationErr *temporal.ApplicationError
+	if errors.As(err, &applicationErr) && applicationErr.Type() == activities.CertificateRenewalLegacyRequired {
+		if err := ctx.Err(); err != nil {
+			return result, nil, err // Typed work was rejected and legacy work has not been dispatched.
+		}
+		pending.Legacy = true
+		err = workflow.ExecuteActivity(certificateRenewalNodeOptions(ctx), a.RenewLegacyKubernetesCertificates, input).Get(ctx, &result)
+	}
+	if err != nil {
+		return result, pending, err
+	}
+	if result.Outcome != db.CertificateRenewalOutcomeUnchanged && result.Outcome != db.CertificateRenewalOutcomeRenewed {
+		return result, pending, fmt.Errorf("invalid renewal outcome %q from node %s", result.Outcome, input.NodeID)
+	}
+	return result, nil, nil
+}
+
+func certificateRenewalNodeOptions(ctx workflow.Context) workflow.Context {
+	return workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 75 * time.Minute,
+		HeartbeatTimeout:    defaultRunbookActivityHeartbeatTimeout(),
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval: 30 * time.Second,
+			MaximumInterval: 2 * time.Minute,
+			MaximumAttempts: 3,
+		},
+	})
+}
+
+func certificateRenewalHealthOptions(ctx workflow.Context) workflow.Context {
+	return workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 5 * time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval: 10 * time.Second,
+			MaximumInterval: 30 * time.Second,
+			MaximumAttempts: 3,
+		},
+	})
+}
+
+func validateCertificateRenewalHealth(
+	ctx workflow.Context,
+	clusterID uuid.UUID,
+	expectedNodeIDs []uuid.UUID,
+	postflightNodeID *uuid.UUID,
+) error {
+	var a *activities.Activities
+	return workflow.ExecuteActivity(
+		certificateRenewalHealthOptions(ctx),
+		a.ValidateCertificateRenewalHealth,
+		activities.ValidateCertificateRenewalHealthInput{
+			ClusterID:        clusterID,
+			ExpectedNodeIDs:  expectedNodeIDs,
+			PostflightNodeID: postflightNodeID,
+		},
+	).Get(ctx, nil)
+}
+
+// failCertificateRenewal uses bounded status-only resolution before deciding
+// whether to release the mutation lock. Callers must supply a disconnected
+// context so cancellation cannot skip cleanup; a resolution failure is persisted
+// as retained ownership, not treated as proof that node work was canceled.
+func failCertificateRenewal(
+	ctx workflow.Context,
+	clusterID uuid.UUID,
+	cycleID string,
+	failure certificateRenewalFailureDetails,
+	workflowErr error,
+) error {
+	var a *activities.Activities
+	retainMutationLock := false
+	message := workflowErr.Error()
+	if failure.unresolvedOperation != nil {
+		resolutionCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			ScheduleToCloseTimeout: 5 * time.Minute,
+			StartToCloseTimeout:    5 * time.Minute,
+			HeartbeatTimeout:       defaultRunbookActivityHeartbeatTimeout(),
+			RetryPolicy:            &temporal.RetryPolicy{MaximumAttempts: 1},
+		})
+		if err := workflow.ExecuteActivity(resolutionCtx, a.ResolveKubernetesCertificateRenewal, *failure.unresolvedOperation).Get(ctx, nil); err != nil {
+			retainMutationLock = true
+			// Put retention first so the bounded database diagnostic cannot hide it.
+			message = fmt.Sprintf("cluster mutation lock retained: termination of operation %s is unconfirmed (%v); %s",
+				failure.unresolvedOperation.OperationID, err, message)
+		}
+	}
+	return workflow.ExecuteActivity(
+		withDBOptions(ctx),
+		a.FailCertificateRenewal,
+		activities.FailCertificateRenewalInput{
+			ClusterID:          clusterID,
+			CycleID:            cycleID,
+			FailedNodeID:       failure.nodeID,
+			Phase:              failure.phase,
+			Message:            message,
+			RetainMutationLock: retainMutationLock,
+		},
+	).Get(ctx, nil)
+}
+
+// certificateRenewalOperationID is stable across activity retries and runs of the
+// same workflow ID. Hashing gives both executors a bounded, shell-safe identity;
+// distinct intended cycles must therefore use distinct workflow IDs.
+func certificateRenewalOperationID(cycleID string, nodeID uuid.UUID) string {
+	digest := sha256.Sum256([]byte(cycleID + "/" + nodeID.String()))
+	return fmt.Sprintf("k8s-cert-renewal-%x", digest)
 }

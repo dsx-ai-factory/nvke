@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -45,6 +46,37 @@ func TestClusterConditions_UpdateInProgress_NilOmitEmpty(t *testing.T) {
 	assert.NotContains(t, string(raw), "updateFailed")
 }
 
+// TestClusterConditions_CertificateRenewal_RoundTrip preserves the failed cycle's
+// identity and node diagnostic across the JSON boundary used for DB conditions.
+func TestClusterConditions_CertificateRenewal_RoundTrip(t *testing.T) {
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	nodeID := uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+	in := db.ClusterConditions{CertificateRenewal: &db.CertificateRenewalStatus{
+		CycleID:      "scheduled-cycle",
+		State:        db.CertificateRenewalStateFailed,
+		Forced:       false,
+		ScheduledFor: &now,
+		StartedAt:    now,
+		CompletedAt:  &now,
+		FailedNodeID: &nodeID,
+		Phase:        "postflight",
+		Message:      "etcd unhealthy",
+	}}
+
+	raw, err := json.Marshal(in)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"certificateRenewal"`)
+	assert.Contains(t, string(raw), `"failed"`)
+
+	var out db.ClusterConditions
+	require.NoError(t, json.Unmarshal(raw, &out))
+	require.NotNil(t, out.CertificateRenewal)
+	assert.Equal(t, "scheduled-cycle", out.CertificateRenewal.CycleID)
+	assert.Equal(t, db.CertificateRenewalStateFailed, out.CertificateRenewal.State)
+	assert.Equal(t, nodeID, *out.CertificateRenewal.FailedNodeID)
+	assert.Equal(t, "etcd unhealthy", out.CertificateRenewal.Message)
+}
+
 func TestClusterConditions_UpdateFailed_RoundTrip(t *testing.T) {
 	updateFailed := db.NewCondition(true, "Etcd encryption update failed")
 	in := db.ClusterConditions{
@@ -69,4 +101,5 @@ func TestOperationType_Values(t *testing.T) {
 	assert.Equal(t, "etcd_encryption", string(db.OperationTypeEtcdEncryption))
 	assert.Equal(t, "k8s_upgrade", string(db.OperationTypeK8sUpgrade))
 	assert.Equal(t, "cp_nodes_recycling", string(db.OperationTypeCPNodesRecycling))
+	assert.Equal(t, "certificate_renewal", string(db.OperationTypeCertRenewal))
 }

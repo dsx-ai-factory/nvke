@@ -16,6 +16,19 @@ const (
 	BearerAuthScopes = "bearerAuth.Scopes"
 )
 
+// Defines values for CertificateRenewalStatusState.
+const (
+	CertificateRenewalStatusStateAccepted  CertificateRenewalStatusState = "accepted"
+	CertificateRenewalStatusStateFailed    CertificateRenewalStatusState = "failed"
+	CertificateRenewalStatusStateSucceeded CertificateRenewalStatusState = "succeeded"
+)
+
+// Defines values for CertificateRenewalStatusOutcome.
+const (
+	CertificateRenewalStatusOutcomeRenewed   CertificateRenewalStatusOutcome = "renewed"
+	CertificateRenewalStatusOutcomeUnchanged CertificateRenewalStatusOutcome = "unchanged"
+)
+
 // Defines values for ConditionStatus.
 const (
 	ConditionStatusFalse   ConditionStatus = "False"
@@ -37,11 +50,51 @@ const (
 
 // Defines values for UpdateInProgressType.
 const (
-	UpdateInProgressTypeCpNodesRecycling UpdateInProgressType = "cp_nodes_recycling"
-	UpdateInProgressTypeEtcdEncryption   UpdateInProgressType = "etcd_encryption"
-	UpdateInProgressTypeK8SUpgrade       UpdateInProgressType = "k8s_upgrade"
-	UpdateInProgressTypeOidcEnable       UpdateInProgressType = "oidc_enable"
+	UpdateInProgressTypeCertificateRenewal UpdateInProgressType = "certificate_renewal"
+	UpdateInProgressTypeCpNodesRecycling   UpdateInProgressType = "cp_nodes_recycling"
+	UpdateInProgressTypeEtcdEncryption     UpdateInProgressType = "etcd_encryption"
+	UpdateInProgressTypeK8SUpgrade         UpdateInProgressType = "k8s_upgrade"
+	UpdateInProgressTypeOidcEnable         UpdateInProgressType = "oidc_enable"
 )
+
+// CertificateRenewalStatus defines model for CertificateRenewalStatus.
+type CertificateRenewalStatus struct {
+	// CycleID The Temporal workflow ID that owns this certificate-renewal cycle.
+	CycleID string `json:"cycleID"`
+
+	// State The lifecycle state of the most recent certificate-renewal cycle.
+	State CertificateRenewalStatusState `json:"state"`
+
+	// Outcome Whether a successful cycle renewed certificates or found no certificates due.
+	Outcome *CertificateRenewalStatusOutcome `json:"outcome,omitempty"`
+
+	// Forced Whether the workflow was explicitly forced by an operator.
+	Forced bool `json:"forced"`
+
+	// ScheduledFor The scheduled due time associated with this cycle, when applicable.
+	ScheduledFor *time.Time `json:"scheduledFor,omitempty"`
+
+	// StartedAt When the workflow accepted the cycle and acquired the cluster mutation lock.
+	StartedAt time.Time `json:"startedAt"`
+
+	// CompletedAt When the cycle succeeded or failed.
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+
+	// FailedNodeID The control-plane node being processed when the cycle failed, when applicable.
+	FailedNodeID *openapi_types.UUID `json:"failedNodeID,omitempty"`
+
+	// Phase The workflow phase that failed, when applicable.
+	Phase *string `json:"phase,omitempty"`
+
+	// Message A bounded operator-facing failure summary.
+	Message *string `json:"message,omitempty"`
+}
+
+// CertificateRenewalStatusState The lifecycle state of the most recent certificate-renewal cycle.
+type CertificateRenewalStatusState string
+
+// CertificateRenewalStatusOutcome Whether a successful cycle renewed certificates or found no certificates due.
+type CertificateRenewalStatusOutcome string
 
 // CloudInitFile defines model for CloudInitFile.
 type CloudInitFile struct {
@@ -87,14 +140,14 @@ type Cluster struct {
 	// TeleportEnabled Whether Teleport SSH enrollment is enabled for nodes in this cluster.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
 
+	// CreatedAt When the cluster was created
+	CreatedAt time.Time `json:"createdAt"`
+
 	// Conditions Conditions representing various aspects of the Cluster's state
 	Conditions ClusterConditions `json:"conditions"`
 
 	// ControlPlaneConfig Cluster-level control plane configuration.
 	ControlPlaneConfig *ControlPlaneConfig `json:"controlPlaneConfig,omitempty"`
-
-	// CreatedAt When the cluster was created
-	CreatedAt time.Time `json:"createdAt"`
 
 	// Infra CAPI infrastructure fields for a cluster: the caller supplies the CAPI manifests
 	// directly. Not to be used merely because a cluster is provisioned through CAPI —
@@ -102,18 +155,23 @@ type Cluster struct {
 	Infra   *InfraClusterProvider `json:"infra,omitempty"`
 	Network ClusterNetwork        `json:"network"`
 
+	// NextCertRenewalDue The next scheduled certificate-renewal time. A value in the past is
+	// overdue unless a certificate-renewal operation is currently accepted.
+	NextCertRenewalDue *time.Time `json:"nextCertRenewalDue,omitempty"`
+
 	// Nico Nico identity fields for a cluster. Mutually exclusive with `infra`.
 	Nico *NicoClusterProvider `json:"nico,omitempty"`
 }
 
 // ClusterConditions Conditions representing various aspects of the Cluster's state
 type ClusterConditions struct {
-	ControlPlaneUpgrading *Condition `json:"controlPlaneUpgrading,omitempty"`
-	CpNodesRecycling      *Condition `json:"cpNodesRecycling,omitempty"`
-	Deleting              Condition  `json:"deleting"`
-	Provisioned           Condition  `json:"provisioned"`
-	Provisioning          Condition  `json:"provisioning"`
-	UpdateFailed          *Condition `json:"updateFailed,omitempty"`
+	CertificateRenewal    *CertificateRenewalStatus `json:"certificateRenewal,omitempty"`
+	ControlPlaneUpgrading *Condition                `json:"controlPlaneUpgrading,omitempty"`
+	CpNodesRecycling      *Condition                `json:"cpNodesRecycling,omitempty"`
+	Deleting              Condition                 `json:"deleting"`
+	Provisioned           Condition                 `json:"provisioned"`
+	Provisioning          Condition                 `json:"provisioning"`
+	UpdateFailed          *Condition                `json:"updateFailed,omitempty"`
 
 	// UpdateInProgress A mutually-exclusive cluster mutation in flight.
 	UpdateInProgress *UpdateInProgress `json:"updateInProgress,omitempty"`

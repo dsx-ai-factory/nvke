@@ -263,6 +263,47 @@ func TestAPIClusterFromDB_CreatedAt(t *testing.T) {
 	assert.Equal(t, createdAt, got.CreatedAt)
 }
 
+// TestAPIClusterFromDB_CertificateRenewalStatus keeps the due time and failure
+// context visible together so API consumers can identify an overdue failed cycle.
+func TestAPIClusterFromDB_CertificateRenewalStatus(t *testing.T) {
+	due := time.Date(2026, time.September, 4, 12, 0, 0, 0, time.UTC)
+	completedAt := due.Add(time.Minute)
+	failedNodeID := uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+
+	got := APIClusterFromDB(&db.Cluster{
+		ID:                 uuid.New(),
+		Name:               "test",
+		CniPlugin:          db.CNICalico,
+		KubernetesVersion:  "1.30.0",
+		NextCertRenewalDue: &due,
+		Conditions: db.ClusterConditions{CertificateRenewal: &db.CertificateRenewalStatus{
+			CycleID:      "renew-k8s-certs-test-cycle",
+			State:        db.CertificateRenewalStateFailed,
+			Forced:       false,
+			ScheduledFor: &due,
+			StartedAt:    due,
+			CompletedAt:  &completedAt,
+			FailedNodeID: &failedNodeID,
+			Phase:        "postflight",
+			Message:      "etcd unhealthy",
+		}},
+	})
+
+	require.NotNil(t, got.NextCertRenewalDue)
+	assert.True(t, got.NextCertRenewalDue.Equal(due))
+	require.NotNil(t, got.Conditions.CertificateRenewal)
+	status := got.Conditions.CertificateRenewal
+	assert.Equal(t, "renew-k8s-certs-test-cycle", status.CycleID)
+	assert.Equal(t, api.CertificateRenewalStatusStateFailed, status.State)
+	assert.False(t, status.Forced)
+	require.NotNil(t, status.FailedNodeID)
+	assert.Equal(t, failedNodeID, *status.FailedNodeID)
+	require.NotNil(t, status.Phase)
+	assert.Equal(t, "postflight", *status.Phase)
+	require.NotNil(t, status.Message)
+	assert.Equal(t, "etcd unhealthy", *status.Message)
+}
+
 func TestDbNodePoolFromAPI_TeleportDefault(t *testing.T) {
 	baseReq := func(teleport *bool) *api.CreateNodePoolRequest {
 		return &api.CreateNodePoolRequest{

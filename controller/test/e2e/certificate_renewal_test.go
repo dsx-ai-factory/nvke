@@ -16,13 +16,14 @@ import (
 )
 
 const (
-	renewK8sCertsWorkflowType = "RenewK8sCerts"
-	// Fresh kubeadm certificates normally have about one year of residual life.
-	// A much larger threshold makes the E2E exercise renewal and static-pod
-	// restart rather than the unchanged fast path.
-	forceCertificateRenewalThresholdDays = 10_000
+	renewK8sCertsWorkflowType            = "RenewK8sCertsV2"
+	forceCertificateRenewalThresholdDays = 30
 )
 
+// validatePostReadyCertificateRenewal forces a uniquely identified V2 cycle so
+// fresh certificates cannot take the unchanged path. Ready nodes and changed
+// static-pod container IDs demonstrate restart and recovery, not CA rotation or
+// independent verification of certificate contents.
 func validatePostReadyCertificateRenewal(test *tenantTest) {
 	It("renews every control-plane certificate and returns the cluster to Ready", func(ctx context.Context) {
 		tenantClient := expectSucceed(test.tenantClients.GetClient(ctx, test.cluster.Name))
@@ -41,9 +42,11 @@ func validatePostReadyCertificateRenewal(test *tenantTest) {
 		input := struct {
 			ClusterID     string `json:"clusterID"`
 			ThresholdDays int    `json:"thresholdDays"`
+			Force         bool   `json:"force"`
 		}{
 			ClusterID:     test.cluster.ID.String(),
 			ThresholdDays: forceCertificateRenewalThresholdDays,
+			Force:         true,
 		}
 		rawInput := expectSucceed(json.Marshal(input))
 		workflowID := fmt.Sprintf("e2e-renew-k8s-certs-%s-%d", test.cluster.ID, time.Now().UnixNano())

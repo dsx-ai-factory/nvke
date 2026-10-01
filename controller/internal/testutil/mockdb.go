@@ -5,7 +5,6 @@ package testutil
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -68,11 +67,6 @@ func (m *MockDB) UpdateCluster(ctx context.Context, cluster *db.Cluster) (db.Clu
 		return db.Cluster{}, args.Error(1)
 	}
 	return v, args.Error(1)
-}
-
-func (m *MockDB) UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID uuid.UUID, nextDue time.Time) error {
-	args := m.Called(ctx, clusterID, nextDue)
-	return args.Error(0)
 }
 
 func (m *MockDB) DeleteCluster(ctx context.Context, clusterID uuid.UUID) error {
@@ -316,11 +310,6 @@ func (m *MockTx) UpdateCluster(ctx context.Context, cluster *db.Cluster) (db.Clu
 		return db.Cluster{}, args.Error(1)
 	}
 	return v, args.Error(1)
-}
-
-func (m *MockTx) UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID uuid.UUID, nextDue time.Time) error {
-	args := m.Called(ctx, clusterID, nextDue)
-	return args.Error(0)
 }
 
 func (m *MockTx) SyncClusterControlPlaneConfigFromCPNodePools(ctx context.Context, clusterID uuid.UUID) error {

@@ -201,10 +201,6 @@ func (w *DB) UpdateCluster(ctx context.Context, cluster *db.Cluster) (db.Cluster
 	return updated, nil
 }
 
-func (w *DB) UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID uuid.UUID, nextDue time.Time) error {
-	return w.DB.UpdateClusterNextCertRenewalDue(ctx, clusterID, nextDue)
-}
-
 func (w *DB) DeleteCluster(ctx context.Context, id uuid.UUID) error {
 	if err := w.DB.DeleteCluster(ctx, id); err != nil {
 		return err

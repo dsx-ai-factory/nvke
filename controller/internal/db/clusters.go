@@ -399,16 +399,55 @@ func preserveClusterControlPlaneOverrides(existing Cluster, merged *ControlPlane
 	merged.SetNico(nicoProvider)
 }
 
+// CertificateRenewalState is the persisted lifecycle state of the most recent
+// certificate-renewal cycle.
+type CertificateRenewalState string
+
+const (
+	CertificateRenewalStateAccepted  CertificateRenewalState = "accepted"
+	CertificateRenewalStateSucceeded CertificateRenewalState = "succeeded"
+	CertificateRenewalStateFailed    CertificateRenewalState = "failed"
+)
+
+// CertificateRenewalOutcome reports whether a successful cycle changed leaf
+// certificates or was a no-op.
+type CertificateRenewalOutcome string
+
+const (
+	CertificateRenewalOutcomeUnchanged CertificateRenewalOutcome = "unchanged"
+	CertificateRenewalOutcomeRenewed   CertificateRenewalOutcome = "renewed"
+)
+
+// CertificateRenewalStatus records the most recent cycle, keyed by its Temporal
+// workflow ID rather than run ID. Failed does not imply that mutation ownership
+// was released: UpdateInProgress is retained if node termination is unconfirmed.
+// NextCertRenewalDue advances only on success; consumers derive overdue status
+// from that timestamp instead of persisting a time-dependent boolean.
+type CertificateRenewalStatus struct {
+	CycleID      string                    `json:"cycleID"`
+	State        CertificateRenewalState   `json:"state"`
+	Outcome      CertificateRenewalOutcome `json:"outcome,omitempty"`
+	Forced       bool                      `json:"forced"`
+	ScheduledFor *time.Time                `json:"scheduledFor,omitempty"`
+	StartedAt    time.Time                 `json:"startedAt"`
+	CompletedAt  *time.Time                `json:"completedAt,omitempty"`
+	FailedNodeID *uuid.UUID                `json:"failedNodeID,omitempty"`
+	Phase        string                    `json:"phase,omitempty"`
+	Message      string                    `json:"message,omitempty"`
+}
+
 type ClusterConditions struct {
 	Provisioning          Condition `json:"provisioning"`
 	Provisioned           Condition `json:"provisioned"`
 	Deleting              Condition `json:"deleting"`
 	ControlPlaneUpgrading Condition `json:"controlPlaneUpgrading"`
 	CPNodesRecycling      Condition `json:"cpNodesRecycling"`
-	// UpdateInProgress marks a mutually-exclusive cluster operation started by
-	// UpdateCluster; legacy operation flags may still be populated by controllers.
-	UpdateInProgress *UpdateInProgress `json:"updateInProgress,omitempty"`
-	UpdateFailed     *Condition        `json:"updateFailed,omitempty"`
+	// UpdateInProgress marks a mutually-exclusive cluster mutation, including
+	// certificate-renewal workflow ownership retained after an unresolved failure.
+	// Legacy operation flags may still be populated by controllers.
+	UpdateInProgress   *UpdateInProgress         `json:"updateInProgress,omitempty"`
+	UpdateFailed       *Condition                `json:"updateFailed,omitempty"`
+	CertificateRenewal *CertificateRenewalStatus `json:"certificateRenewal,omitempty"`
 }
 
 type ClusterFilters struct {
@@ -461,7 +500,6 @@ type ClusterQueries interface {
 	GetClusterForUpdate(ctx context.Context, id uuid.UUID) (Cluster, error)
 	CreateCluster(ctx context.Context, cluster *Cluster) (Cluster, error)
 	UpdateCluster(ctx context.Context, cluster *Cluster) (Cluster, error)
-	UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID uuid.UUID, nextDue time.Time) error
 	DeleteCluster(ctx context.Context, id uuid.UUID) error
 	// SyncClusterControlPlaneConfigFromCPNodePools sets control_plane_config from all control-plane
 	// node pools for the cluster that are not marked deleting.
@@ -542,18 +580,6 @@ func (q *queriesImpl) UpdateCluster(ctx context.Context, cluster *Cluster) (Clus
 		return Cluster{}, err
 	}
 	return *cluster, notFoundErrIfNoRowsAffected(res)
-}
-
-func (q *queriesImpl) UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID uuid.UUID, nextDue time.Time) error {
-	res, err := q.db.NewUpdate().
-		Model(&Cluster{}).
-		Set("next_cert_renewal_due = ?", nextDue).
-		Where("id = ?", clusterID).
-		Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to update cluster next cert renewal due: %w", err)
-	}
-	return notFoundErrIfNoRowsAffected(res)
 }
 
 func (q *queriesImpl) DeleteCluster(ctx context.Context, id uuid.UUID) error {

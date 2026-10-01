@@ -55,9 +55,17 @@ service NodeAgent {
   // reads, creates, or mounts the host's admin.conf or super-admin.conf.
   rpc ReconcileKubeVip(ReconcileKubeVipRequest) returns (ReconcileKubeVipResponse) {}
 
-  // StartKubernetesCertificateRenewal starts an asynchronous control-plane
+  // StartKubernetesCertificateRenewal starts a V1 asynchronous control-plane
   // certificate renewal operation. The operation_id is an idempotency key.
+  // Callers that require forced renewal or strict etcd membership validation
+  // must use StartKubernetesCertificateRenewalV2.
   rpc StartKubernetesCertificateRenewal(StartKubernetesCertificateRenewalRequest) returns (StartKubernetesCertificateRenewalResponse) {}
+
+  // StartKubernetesCertificateRenewalV2 starts an asynchronous control-plane
+  // certificate renewal operation with forced-renewal and exact etcd-membership
+  // semantics. Its distinct method name lets callers detect V1-only agents
+  // before any renewal operation is accepted.
+  rpc StartKubernetesCertificateRenewalV2(StartKubernetesCertificateRenewalV2Request) returns (StartKubernetesCertificateRenewalV2Response) {}
 
   // GetKubernetesCertificateRenewalStatus returns the current status for a
   // previously started certificate renewal operation.
@@ -1180,7 +1188,22 @@ message StartKubernetesCertificateRenewalRequest {
   int32 threshold_days = 2;
 }
 
+message StartKubernetesCertificateRenewalV2Request {
+  // Stable caller-provided idempotency key.
+  string operation_id = 1;
+  // Renew certificates whose residual lifetime is less than this many days.
+  int32 threshold_days = 2;
+  // Renew all kubeadm-managed leaf certificates regardless of residual lifetime.
+  bool force = 3;
+  // Expected positive number of voting etcd members.
+  int32 expected_etcd_members = 4;
+}
+
 message StartKubernetesCertificateRenewalResponse {
+  KubernetesCertificateRenewalOperation operation = 1;
+}
+
+message StartKubernetesCertificateRenewalV2Response {
   KubernetesCertificateRenewalOperation operation = 1;
 }
 

@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 
@@ -52,6 +54,7 @@ type fakeKubeVipClient struct {
 	drainStatus   []*nkeproto.NodeAgentOperationStatus
 	drainPolls    int
 
+	restoreStartErr error
 	restoreStartReq *nkeproto.StartKubeVipRestoreRequest
 	restoreStatus   []*nkeproto.NodeAgentOperationStatus
 	restorePolls    int
@@ -89,6 +92,9 @@ func (c *fakeKubeVipClient) StartKubeVipRestore(
 	req *nkeproto.StartKubeVipRestoreRequest,
 	_ ...grpc.CallOption,
 ) (*nkeproto.StartKubeVipRestoreResponse, error) {
+	if c.restoreStartErr != nil {
+		return nil, c.restoreStartErr
+	}
 	if c.restoreStartReq == nil {
 		c.restoreStartReq = req
 		return &nkeproto.StartKubeVipRestoreResponse{
@@ -219,6 +225,27 @@ func TestKubeVipDrainRestoreGuard_PostApplyRestoresAfterPreApplyCheckFailure(t *
 	done, err = guard.CheckPostApply(context.Background(), cluster, node, rollout.OutcomeFailedRestored, state)
 	require.NoError(t, err)
 	assert.True(t, done)
+}
+
+// An agent that predates the drain and restore RPCs fails closed, as for the
+// other apiserver-restarting rollouts: an undrained node is never restarted.
+func TestKubeVipDrainRestoreGuard_UnimplementedAgentFailsClosed(t *testing.T) {
+	unimplemented := status.Error(codes.Unimplemented, "unknown method")
+	node := fakeNode{id: uuid.New(), name: "cp-0", role: rollout.NodeRoleControlPlane, endpoint: "10.0.0.10:50051"}
+	cluster := &fakeCluster{id: uuid.New(), name: "tenant-a", nodes: []rollout.Node{node}}
+	client := &fakeKubeVipClient{drainStartErr: unimplemented, restoreStartErr: unimplemented}
+	guard := NewGuard(dialerFor(client))
+
+	state, err := guard.PreApply(context.Background(), cluster, node)
+	require.NoError(t, err)
+
+	done, err := guard.CheckPreApply(context.Background(), cluster, node, state)
+	require.Error(t, err)
+	assert.False(t, done)
+	require.Error(t, guard.PostApply(context.Background(), cluster, node, rollout.OutcomeApplied, state))
+	done, err = guard.CheckPostApply(context.Background(), cluster, node, rollout.OutcomeApplied, state)
+	require.Error(t, err)
+	assert.False(t, done)
 }
 
 func TestNodeAgentOperationDone_NilStatusFails(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"reflect"
 	"testing"
 	"time"
 
@@ -18,7 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile"
 	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
@@ -28,34 +28,59 @@ import (
 
 const certRenewalInterval = 12 * time.Hour
 
+// TestUnit_ControllerReconcile keeps scheduling separate from completion: start
+// success or failure cannot advance due time, and accepted or failed cycles must
+// not be blindly relaunched by later reconciles.
 func TestUnit_ControllerReconcile(t *testing.T) {
-	t.Run("starts workflow and advances due time", func(t *testing.T) {
+	t.Run("starts due workflow without advancing due time", func(t *testing.T) {
 		ctx := context.Background()
 		clusterID := uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 		mockDB := &testutil.MockDB{}
-		mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
-			ID: clusterID,
-		}, nil).Once()
-		mockDB.On("UpdateClusterNextCertRenewalDue", mock.Anything, clusterID, mock.MatchedBy(func(next time.Time) bool {
-			return next.After(time.Now())
-		})).Return(nil).Once()
+		mockDB.On("GetCluster", mock.Anything, clusterID).Return(provisionedCertificateRenewalCluster(clusterID), nil).Once()
+		controlPlane := true
+		mockDB.On("ListNodes", mock.Anything, db.NodeFilters{ClusterID: &clusterID, ControlPlane: &controlPlane}).
+			Return(readyCertificateRenewalNodes(clusterID), nil).Once()
 
 		temporalClient := &mockWorkflowStarter{}
 		temporalClient.On("ExecuteWorkflow", mock.Anything, mock.MatchedBy(func(opts client.StartWorkflowOptions) bool {
 			return opts.TaskQueue == "test-task-queue" &&
-				opts.ID == constants.RenewK8sCertsWorkflowPrefix+clusterID.String() &&
+				opts.ID == scheduledWorkflowID(clusterID, nil) &&
 				opts.WorkflowIDConflictPolicy == enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING &&
-				opts.WorkflowIDReusePolicy == enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE
-		}), mock.Anything, mock.MatchedBy(func(input workflows.RenewK8sCertsInput) bool {
-			return input.ClusterID == clusterID && input.ThresholdDays == 14
+				opts.WorkflowIDReusePolicy == enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY
+		}), mock.MatchedBy(func(candidate interface{}) bool {
+			return reflect.ValueOf(candidate).Pointer() == reflect.ValueOf(workflows.RenewK8sCertsV2).Pointer()
+		}), mock.MatchedBy(func(input workflows.RenewK8sCertsInput) bool {
+			return input.ClusterID == clusterID && input.ThresholdDays == 14 && !input.Force && input.ScheduledFor == nil
 		})).Return(mockWorkflowRun{id: "run"}, nil).Once()
 
 		controller := newController(mockDB, temporalClient)
 		result, err := controller.Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
 
 		require.NoError(t, err)
-		require.Equal(t, reconcile.Result{RequeueAfter: certRenewalInterval}, result)
+		require.Equal(t, reconcile.Result{RequeueAfter: time.Minute}, result)
 		mockDB.AssertExpectations(t)
+		temporalClient.AssertExpectations(t)
+	})
+
+	t.Run("uses due time in scheduled cycle", func(t *testing.T) {
+		ctx := context.Background()
+		clusterID := uuid.New()
+		due := time.Now().Add(-time.Minute).UTC()
+		mockDB := &testutil.MockDB{}
+		cluster := provisionedCertificateRenewalCluster(clusterID)
+		cluster.NextCertRenewalDue = &due
+		mockDB.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil).Once()
+		temporalClient := &mockWorkflowStarter{}
+		temporalClient.On("ExecuteWorkflow", mock.Anything, mock.MatchedBy(func(opts client.StartWorkflowOptions) bool {
+			return opts.ID == scheduledWorkflowID(clusterID, &due)
+		}), mock.Anything, mock.MatchedBy(func(input workflows.RenewK8sCertsInput) bool {
+			return input.ScheduledFor != nil && input.ScheduledFor.Equal(due)
+		})).Return(mockWorkflowRun{id: "run"}, nil).Once()
+
+		result, err := newController(mockDB, temporalClient).Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
+
+		require.NoError(t, err)
+		require.Equal(t, reconcile.Result{RequeueAfter: time.Minute}, result)
 		temporalClient.AssertExpectations(t)
 	})
 
@@ -67,6 +92,9 @@ func TestUnit_ControllerReconcile(t *testing.T) {
 		mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
 			ID:                 clusterID,
 			NextCertRenewalDue: &nextDue,
+			Conditions: db.ClusterConditions{
+				Provisioned: db.Condition{Status: db.ConditionStatusTrue},
+			},
 		}, nil).Once()
 
 		temporalClient := &mockWorkflowStarter{}
@@ -80,24 +108,110 @@ func TestUnit_ControllerReconcile(t *testing.T) {
 		temporalClient.AssertNotCalled(t, "ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
-	t.Run("does not advance due time when workflow start fails", func(t *testing.T) {
+	t.Run("does not alter due time when workflow start fails", func(t *testing.T) {
+		ctx := context.Background()
+		clusterID := uuid.New()
+		mockDB := &testutil.MockDB{}
+		mockDB.On("GetCluster", mock.Anything, clusterID).Return(provisionedCertificateRenewalCluster(clusterID), nil).Once()
+		controlPlane := true
+		mockDB.On("ListNodes", mock.Anything, db.NodeFilters{ClusterID: &clusterID, ControlPlane: &controlPlane}).
+			Return(readyCertificateRenewalNodes(clusterID), nil).Once()
+
+		temporalClient := &mockWorkflowStarter{}
+		temporalClient.On("ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(nil, errors.New("temporal unavailable")).Once()
+
+		result, err := newController(mockDB, temporalClient).Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
+
+		require.ErrorContains(t, err, "start cert renewal workflow")
+		require.Equal(t, reconcile.Result{}, result)
+		mockDB.AssertExpectations(t)
+		temporalClient.AssertExpectations(t)
+	})
+
+	t.Run("does not relaunch accepted scheduled cycle", func(t *testing.T) {
+		ctx := context.Background()
+		clusterID := uuid.New()
+		due := time.Now().Add(-time.Minute).UTC()
+		mockDB := &testutil.MockDB{}
+		mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
+			ID:                 clusterID,
+			NextCertRenewalDue: &due,
+			Conditions: db.ClusterConditions{
+				Provisioned: db.Condition{Status: db.ConditionStatusTrue},
+				CertificateRenewal: &db.CertificateRenewalStatus{
+					State: db.CertificateRenewalStateAccepted, ScheduledFor: &due,
+				},
+			},
+		}, nil).Once()
+
+		temporalClient := &mockWorkflowStarter{}
+		result, err := newController(mockDB, temporalClient).Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
+
+		require.NoError(t, err)
+		require.Equal(t, reconcile.Result{RequeueAfter: time.Minute}, result)
+		temporalClient.AssertNotCalled(t, "ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("leaves failed scheduled cycle overdue without automatic restart", func(t *testing.T) {
+		ctx := context.Background()
+		clusterID := uuid.New()
+		due := time.Now().Add(-time.Minute).UTC()
+		mockDB := &testutil.MockDB{}
+		mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
+			ID:                 clusterID,
+			NextCertRenewalDue: &due,
+			Conditions: db.ClusterConditions{
+				Provisioned: db.Condition{Status: db.ConditionStatusTrue},
+				CertificateRenewal: &db.CertificateRenewalStatus{
+					State: db.CertificateRenewalStateFailed, ScheduledFor: &due, Phase: "postflight", Message: "etcd unhealthy",
+				},
+			},
+		}, nil).Once()
+
+		temporalClient := &mockWorkflowStarter{}
+		result, err := newController(mockDB, temporalClient).Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
+
+		require.NoError(t, err)
+		require.Equal(t, reconcile.Result{RequeueAfter: 15 * time.Minute}, result)
+		temporalClient.AssertNotCalled(t, "ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("defers while another cluster mutation is in progress", func(t *testing.T) {
+		ctx := context.Background()
+		clusterID := uuid.New()
+		mockDB := &testutil.MockDB{}
+		mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
+			ID: clusterID,
+			Conditions: db.ClusterConditions{
+				Provisioned: db.Condition{Status: db.ConditionStatusTrue},
+				UpdateInProgress: &db.UpdateInProgress{
+					Type: db.OperationTypeK8sUpgrade,
+				},
+			},
+		}, nil).Once()
+
+		temporalClient := &mockWorkflowStarter{}
+		result, err := newController(mockDB, temporalClient).Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
+
+		require.NoError(t, err)
+		require.Equal(t, reconcile.Result{RequeueAfter: time.Minute}, result)
+		temporalClient.AssertNotCalled(t, "ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("skips unprovisioned cluster", func(t *testing.T) {
 		ctx := context.Background()
 		clusterID := uuid.New()
 		mockDB := &testutil.MockDB{}
 		mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID}, nil).Once()
 
 		temporalClient := &mockWorkflowStarter{}
-		temporalClient.On("ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			Return(nil, errors.New("temporal unavailable")).Once()
+		result, err := newController(mockDB, temporalClient).Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
 
-		controller := newController(mockDB, temporalClient)
-		result, err := controller.Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
-
-		require.ErrorContains(t, err, "start cert renewal workflow")
+		require.NoError(t, err)
 		require.Equal(t, reconcile.Result{}, result)
-		mockDB.AssertNotCalled(t, "UpdateClusterNextCertRenewalDue", mock.Anything, mock.Anything, mock.Anything)
 		mockDB.AssertExpectations(t)
-		temporalClient.AssertExpectations(t)
+		temporalClient.AssertNotCalled(t, "ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("skips deleting cluster", func(t *testing.T) {
@@ -112,8 +226,7 @@ func TestUnit_ControllerReconcile(t *testing.T) {
 		}, nil).Once()
 
 		temporalClient := &mockWorkflowStarter{}
-		controller := newController(mockDB, temporalClient)
-		result, err := controller.Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
+		result, err := newController(mockDB, temporalClient).Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
 
 		require.NoError(t, err)
 		require.Equal(t, reconcile.Result{}, result)
@@ -128,14 +241,158 @@ func TestUnit_ControllerReconcile(t *testing.T) {
 		mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{}, db.ErrNotFound).Once()
 
 		temporalClient := &mockWorkflowStarter{}
-		controller := newController(mockDB, temporalClient)
-		result, err := controller.Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
+		result, err := newController(mockDB, temporalClient).Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
 
 		require.NoError(t, err)
 		require.Equal(t, reconcile.Result{}, result)
 		mockDB.AssertExpectations(t)
 		temporalClient.AssertNotCalled(t, "ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
+}
+
+// TestUnit_ControllerReconcileWaitsForInitialControlPlane models Provisioned being
+// set after only the first node joins. Starting then would consume the initial
+// cycle with a health failure before the remaining control plane can become ready.
+func TestUnit_ControllerReconcileWaitsForInitialControlPlane(t *testing.T) {
+	ctx := context.Background()
+	clusterID := uuid.New()
+	cluster := provisionedCertificateRenewalCluster(clusterID)
+	mockDB := &testutil.MockDB{}
+	temporalClient := &mockWorkflowStarter{}
+	controller := newController(mockDB, temporalClient)
+	controlPlane := true
+	readyNodes := readyCertificateRenewalNodes(clusterID)
+
+	steps := []struct {
+		name            string
+		nodeCount       int
+		joined          db.ConditionStatus
+		kubernetesReady db.ConditionStatus
+		nodeAgentReady  db.ConditionStatus
+	}{
+		{"no control-plane nodes yet", 0, db.ConditionStatusTrue, db.ConditionStatusTrue, db.ConditionStatusTrue},
+		{"only the initial node has joined", 1, db.ConditionStatusTrue, db.ConditionStatusTrue, db.ConditionStatusTrue},
+		{"remaining nodes have not joined", 3, db.ConditionStatusFalse, db.ConditionStatusTrue, db.ConditionStatusTrue},
+		{"remaining nodes are not Kubernetes ready", 3, db.ConditionStatusTrue, db.ConditionStatusUnknown, db.ConditionStatusTrue},
+		{"remaining nodes are not agent ready", 3, db.ConditionStatusTrue, db.ConditionStatusTrue, ""},
+		{"all control-plane nodes are ready", 3, db.ConditionStatusTrue, db.ConditionStatusTrue, db.ConditionStatusTrue},
+	}
+	for i, step := range steps {
+		t.Run(step.name, func(t *testing.T) {
+			nodes := append([]db.Node(nil), readyNodes[:step.nodeCount]...)
+			for j := 1; j < len(nodes); j++ {
+				nodes[j].Conditions.Joined.Status = step.joined
+				nodes[j].Conditions.KubernetesReady.Status = step.kubernetesReady
+				nodes[j].Conditions.NodeAgentReady.Status = step.nodeAgentReady
+			}
+			mockDB.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil).Once()
+			mockDB.On("ListNodes", mock.Anything, db.NodeFilters{ClusterID: &clusterID, ControlPlane: &controlPlane}).
+				Return(nodes, nil).Once()
+			ready := i == len(steps)-1
+			if ready {
+				temporalClient.On("ExecuteWorkflow", mock.Anything, mock.MatchedBy(func(opts client.StartWorkflowOptions) bool {
+					return opts.ID == scheduledWorkflowID(clusterID, nil)
+				}), mock.Anything, mock.MatchedBy(func(input workflows.RenewK8sCertsInput) bool {
+					return input.ClusterID == clusterID && input.ScheduledFor == nil && !input.Force
+				})).Return(mockWorkflowRun{id: "run"}, nil).Once()
+			}
+
+			result, err := controller.Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
+
+			require.NoError(t, err)
+			require.Equal(t, reconcile.Result{RequeueAfter: time.Minute}, result)
+			mockDB.AssertExpectations(t)
+			if ready {
+				temporalClient.AssertExpectations(t)
+			} else {
+				temporalClient.AssertNotCalled(t, "ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+			}
+		})
+	}
+}
+
+// TestUnit_ControllerReconcileStartsInitialRenewalForSingleControlPlane shows a
+// one-node cluster is not deferred once its only node is ready.
+func TestUnit_ControllerReconcileStartsInitialRenewalForSingleControlPlane(t *testing.T) {
+	ctx := context.Background()
+	clusterID := uuid.New()
+	cluster := provisionedCertificateRenewalCluster(clusterID)
+	cluster.ControlPlaneConfig.DesiredCount = 1
+	mockDB := &testutil.MockDB{}
+	temporalClient := &mockWorkflowStarter{}
+	controller := newController(mockDB, temporalClient)
+	controlPlane := true
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil).Once()
+	mockDB.On("ListNodes", mock.Anything, db.NodeFilters{ClusterID: &clusterID, ControlPlane: &controlPlane}).
+		Return(readyCertificateRenewalNodes(clusterID)[:1], nil).Once()
+	temporalClient.On("ExecuteWorkflow", mock.Anything, mock.MatchedBy(func(opts client.StartWorkflowOptions) bool {
+		return opts.ID == scheduledWorkflowID(clusterID, nil)
+	}), mock.Anything, mock.MatchedBy(func(input workflows.RenewK8sCertsInput) bool {
+		return input.ClusterID == clusterID && input.ScheduledFor == nil && !input.Force
+	})).Return(mockWorkflowRun{id: "run"}, nil).Once()
+
+	result, err := controller.Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
+
+	require.NoError(t, err)
+	require.Equal(t, reconcile.Result{RequeueAfter: time.Minute}, result)
+	mockDB.AssertExpectations(t)
+	temporalClient.AssertExpectations(t)
+}
+
+func TestUnit_ControllerReconcileInitialControlPlaneListError(t *testing.T) {
+	clusterID := uuid.New()
+	mockDB := &testutil.MockDB{}
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(provisionedCertificateRenewalCluster(clusterID), nil).Once()
+	controlPlane := true
+	listErr := errors.New("database unavailable")
+	mockDB.On("ListNodes", mock.Anything, db.NodeFilters{ClusterID: &clusterID, ControlPlane: &controlPlane}).Return(nil, listErr).Once()
+	temporalClient := &mockWorkflowStarter{}
+
+	result, err := newController(mockDB, temporalClient).Reconcile(context.Background(), dbreconcile.ClusterKey(clusterID))
+
+	require.ErrorIs(t, err, listErr)
+	require.Equal(t, reconcile.Result{}, result)
+	mockDB.AssertExpectations(t)
+	temporalClient.AssertNotCalled(t, "ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestScheduledCycleMatches(t *testing.T) {
+	due := time.Now().UTC()
+	same := due
+	other := due.Add(time.Second)
+
+	require.True(t, scheduledCycleMatches(&db.CertificateRenewalStatus{}, nil))
+	require.True(t, scheduledCycleMatches(&db.CertificateRenewalStatus{ScheduledFor: &same}, &due))
+	require.False(t, scheduledCycleMatches(&db.CertificateRenewalStatus{Forced: true, ScheduledFor: &same}, &due))
+	require.False(t, scheduledCycleMatches(&db.CertificateRenewalStatus{ScheduledFor: &other}, &due))
+	require.False(t, scheduledCycleMatches(nil, &due))
+}
+
+func provisionedCertificateRenewalCluster(clusterID uuid.UUID) db.Cluster {
+	return db.Cluster{
+		ID:                 clusterID,
+		ControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3},
+		Conditions: db.ClusterConditions{
+			Provisioned: db.Condition{Status: db.ConditionStatusTrue},
+		},
+	}
+}
+
+func readyCertificateRenewalNodes(clusterID uuid.UUID) []db.Node {
+	nodes := make([]db.Node, 3)
+	for i := range nodes {
+		nodes[i] = db.Node{
+			ID:           uuid.New(),
+			ClusterID:    clusterID,
+			ControlPlane: true,
+			Conditions: db.NodeConditions{
+				Joined:          db.Condition{Status: db.ConditionStatusTrue},
+				KubernetesReady: db.Condition{Status: db.ConditionStatusTrue},
+				NodeAgentReady:  db.Condition{Status: db.ConditionStatusTrue},
+			},
+		}
+	}
+	return nodes
 }
 
 func newController(mockDB *testutil.MockDB, temporalClient workflowStarter) *Controller {

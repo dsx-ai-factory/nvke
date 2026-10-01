@@ -84,6 +84,7 @@ const (
 	OperationTypeK8sUpgrade       OperationType = "k8s_upgrade"
 	OperationTypeCPNodesRecycling OperationType = "cp_nodes_recycling"
 	OperationTypeOIDCEnable       OperationType = "oidc_enable"
+	OperationTypeCertRenewal      OperationType = "certificate_renewal"
 )
 
 // UpdateInProgress represents a mutually-exclusive cluster mutation in flight.

@@ -49,6 +49,8 @@ const (
 	APIEncryptionRewriteCompleteLabel     string = "nke.io/k8s-api-encryption-rewrite-complete=true"
 	APIEncryptionEnabledLabel             string = "nke.io/k8s-api-encryption-enabled=true"
 	APIEncryptionSecondaryKeyEnabledLabel string = "nke.io/k8s-api-encryption-secondary-key-configured=true"
+
+	kubectlGetCommand = "get"
 )
 
 type (
@@ -471,7 +473,7 @@ func (n *NodeAgentServer) RestartAPIPods(
 	output, err := n.Runner.Run(
 		"kubectl",
 		[]string{
-			"get",
+			kubectlGetCommand,
 			"pods",
 			"--no-headers",
 			"-o", //nolint:goconst // kubectl argv fragment; naming each CLI flag reads worse than the literal
@@ -670,7 +672,7 @@ func (n *NodeAgentServer) getPodStatus(podName string) (string, error) {
 		[]string{
 			"-n",
 			"kube-system",
-			"get",
+			kubectlGetCommand,
 			"pod",
 			podName,
 			"-o",

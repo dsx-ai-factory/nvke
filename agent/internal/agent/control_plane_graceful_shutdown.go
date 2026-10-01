@@ -564,7 +564,30 @@ func (s *NodeAgentServer) rootedPath(path string) string {
 	return filepath.Join(s.RootPath, strings.TrimPrefix(path, "/"))
 }
 
+// staticPodContainer retains CRI identity labels so callers can distinguish a
+// kubeadm component from an unrelated workload with the same container name.
+type staticPodContainer struct {
+	ID     string            `json:"id"`
+	Labels map[string]string `json:"labels"`
+}
+
 func listStaticPodContainerIDs(runner nkeutils.CommandRunner, containerName string) ([]string, error) {
+	containers, err := listStaticPodContainers(runner, containerName)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(containers))
+	for _, container := range containers {
+		ids = append(ids, container.ID)
+	}
+	return ids, nil
+}
+
+// listStaticPodContainers queries running local containers without depending on
+// the API server. The name label alone does not prove static-pod identity: callers
+// needing an exact kubeadm pod must also check namespace and pod-name labels.
+// Stderr is kept separate so runtime warnings do not corrupt the JSON response.
+func listStaticPodContainers(runner nkeutils.CommandRunner, containerName string) ([]staticPodContainer, error) {
 	output, err := runner.RunSplitOutput("crictl", []string{
 		"ps",
 		"--label", "io.kubernetes.container.name=" + containerName,
@@ -577,22 +600,20 @@ func listStaticPodContainerIDs(runner nkeutils.CommandRunner, containerName stri
 		return nil, fmt.Errorf("crictl ps %s: %w: %s", containerName, err, strings.TrimSpace(string(output.Stderr)))
 	}
 	var ps struct {
-		Containers []struct {
-			ID string `json:"id"`
-		} `json:"containers"`
+		Containers []staticPodContainer `json:"containers"`
 	}
 	if err := json.Unmarshal(output.Stdout, &ps); err != nil {
 		return nil, fmt.Errorf("parse crictl ps %s JSON: %w: %s", containerName, err, strings.TrimSpace(string(output.Stdout)))
 	}
-	ids := make([]string, 0, len(ps.Containers))
+	containers := make([]staticPodContainer, 0, len(ps.Containers))
 	for _, container := range ps.Containers {
-		id := strings.TrimSpace(container.ID)
-		if id == "" {
+		container.ID = strings.TrimSpace(container.ID)
+		if container.ID == "" {
 			continue
 		}
-		ids = append(ids, id)
+		containers = append(containers, container)
 	}
-	return ids, nil
+	return containers, nil
 }
 
 func (s *NodeAgentServer) waitForStaticPodExit(
