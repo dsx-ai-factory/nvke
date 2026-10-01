@@ -128,7 +128,8 @@ want   "configMap.name is honoured"           'name: my-auth'                   
 
 echo "configMap.create=false (the default) mounts a ConfigMap it does not create:"
 out="$(render --set apiAuth.enabled=true)"
-absent "renders no ConfigMap of its own"      '^kind: ConfigMap'                     "${out}"
+# By source template, not kind: the chart renders other ConfigMaps regardless.
+absent "renders no ConfigMap of its own"      '^# Source: .*/templates/configmap-auth\.yaml$' "${out}"
 want   "still mounts the named one"           'name: nke-auth-config'                "${out}"
 # auth.Load runs once at startup, so a configuration edit that does not restart
 # the pods does nothing at all. Reloader is what restarts them, here and below.

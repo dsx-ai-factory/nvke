@@ -57,6 +57,7 @@ EXPECTED_NAMES = {
     ("RoleBinding", "cloud-workflow-engine"),
     ("RoleBinding", "cloud-workflow-engine-nke-rbac"),
     ("Service", "cloud-workflow-engine"),
+    ("ConfigMap", "nke-controller-config"),
     ("Deployment", "cloud-workflow-engine"),
     ("ServiceMonitor", "cloud-workflow-engine-metrics"),
     ("Pod", "cloud-workflow-engine-test-connection"),

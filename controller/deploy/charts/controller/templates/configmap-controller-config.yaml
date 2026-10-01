@@ -1,0 +1,103 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The controller's non-secret settings, in the shape internal/controllerconfig
+# loads; nothing mounts it yet. controllerconfig has no defaults and refuses
+# padding, so every key is rendered, with the Go default wherever deployment.yaml
+# leaves a variable unset or empty, and values are trimmed where the environment
+# path trims them.
+{{- $tracing := .Values.tracing }}
+{{- $traceToEndpoint := and $tracing.enabled $tracing.endpoint }}
+{{- $dsxImds := eq .Values.nodeAgent.spireAttestationMethod "dsxImds" }}
+{{- $tlsJwt := .Values.nodeAgent.tlsJwt }}
+{{- $mtls := .Values.temporal.mtls }}
+{{- $teleport := .Values.teleport }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "controller.controllerConfig.name" . }}
+  namespace: {{ include "controller.namespace" . }}
+  labels:
+    {{- include "controller.labels" . | nindent 4 }}
+data:
+  {{ include "controller.controllerConfig.file" . }}: |
+    fieldManager:
+      name: {{ .Values.identity.fieldManagerName | default "cloud-workflow-engine" | quote }}
+      rebootMachineName: {{ .Values.identity.fieldManagerRebootMachineName | default "cloud-workflow-engine-reboot-machine" | quote }}
+      machineHealthIssueName: {{ .Values.identity.fieldManagerMachineHealthIssueName | default "cloud-workflow-engine-machine-health-issue" | quote }}
+    managedByLabelValue: {{ .Values.identity.managedByLabelValue | default "cloud-workflow-engine" | quote }}
+    metricsListenAddress: {{ .Values.metrics.listenAddress | default "127.0.0.1:9090" | quote }}
+    supportedInfraProviders:
+      {{- range splitList "," (.Values.supportedInfraProviders | default "nico") }}
+      - {{ trim . | quote }}
+      {{- end }}
+    tracing:
+      enabled: {{ if $tracing.enabled }}true{{ else }}false{{ end }}
+      endpoint: {{ if $traceToEndpoint }}{{ $tracing.endpoint | quote }}{{ else }}""{{ end }}
+      insecure: {{ if $traceToEndpoint }}{{ include "controller.controllerConfig.orGoDefault" (list $tracing.insecure true) }}{{ else }}true{{ end }}
+      serviceName: {{ if $traceToEndpoint }}{{ $tracing.serviceName | default "cloud-workflow-engine" | quote }}{{ else }}"cloud-workflow-engine"{{ end }}
+    certRenewal:
+      controllerEnabled: {{ include "controller.controllerConfig.orGoDefault" (list .Values.scheduledMaintenance.certRenewal.enabled true) }}
+      interval: {{ .Values.scheduledMaintenance.certRenewal.interval | default "12h" | quote }}
+      thresholdDays: {{ include "controller.controllerConfig.orGoDefault" (list .Values.scheduledMaintenance.certRenewal.thresholdDays 30) | int }}
+    kubeadmImageRepository: {{ .Values.kubeadm.imageRepository | default "registry.k8s.io" | quote }}
+    cniImageRegistry: {{ .Values.cni.imageRegistry | quote }}
+    installCNIAfterInit: {{ .Values.cni.installAfterInit }}
+    nicoControllersEnabled: {{ include "controller.controllerConfig.orGoDefault" (list .Values.controllers.nico.enabled true) }}
+    profilesDir: {{ .Values.profiles.path | default "./profiles" | quote }}
+    runbooksDir: {{ if .Values.profiles.image.enabled }}{{ printf "%s/runbooks" .Values.profiles.path | quote }}{{ else }}""{{ end }}
+    tenantAccessEnabled: {{ .Values.tenantAccess.enabled }}
+    nodeAgent:
+      spireAttestationMethod: {{ .Values.nodeAgent.spireAttestationMethod | quote }}
+      dsxImds:
+        endpoint: {{ if $dsxImds }}{{ trim .Values.nodeAgent.dsxImds.endpoint | quote }}{{ else }}"http://169.254.169.254"{{ end }}
+        pluginChecksum: {{ if $dsxImds }}{{ .Values.nodeAgent.dsxImds.pluginChecksum | quote }}{{ else }}""{{ end }}
+        operatorTenant: {{ if $dsxImds }}{{ trim .Values.nodeAgent.dsxImds.operatorTenant | quote }}{{ else }}""{{ end }}
+      tlsJWT:
+        enabled: {{ $tlsJwt.enabled }}
+        issuer: {{ if $tlsJwt.enabled }}{{ $tlsJwt.issuer | quote }}{{ else }}""{{ end }}
+        jwksURI: {{ if $tlsJwt.enabled }}{{ $tlsJwt.jwksURI | quote }}{{ else }}""{{ end }}
+        algorithms: {{ if $tlsJwt.enabled }}{{ $tlsJwt.algorithms | toJson }}{{ else }}[]{{ end }}
+        subjectTrustDomain: {{ if $tlsJwt.enabled }}{{ $tlsJwt.subjectTrustDomain | quote }}{{ else }}""{{ end }}
+        dsxIdentityExchangeURL: {{ if $tlsJwt.enabled }}{{ trim $tlsJwt.dsxIdentityExchangeURL | quote }}{{ else }}""{{ end }}
+        subjectTenant: {{ if $tlsJwt.enabled }}{{ trim $tlsJwt.subjectTenant | quote }}{{ else }}""{{ end }}
+        subjectService: {{ if $tlsJwt.enabled }}{{ trim $tlsJwt.subjectService | quote }}{{ else }}""{{ end }}
+      externalMTLSEnabled: {{ .Values.nodeAgent.externalMTLS.enabled }}
+    oidc:
+      managementOIDCAuth:
+        enabled: {{ .Values.nkeOIDCAuth.enabled }}
+        issuerURL: {{ .Values.nkeOIDCAuth.issuerURL | quote }}
+        discoveryURL: {{ .Values.nkeOIDCAuth.discoveryURL | quote }}
+        caBundleSecretRef:
+          namespace: {{ .Values.nkeOIDCAuth.caBundleSecret.namespace | quote }}
+          name: {{ .Values.nkeOIDCAuth.caBundleSecret.name | quote }}
+          key: {{ .Values.nkeOIDCAuth.caBundleSecret.key | quote }}
+      {{- /* Empty until fleet-wide providers have a value an operator can set. */}}
+      providers: []
+    temporal:
+      hostPort: {{ printf "%v:%v" .Values.temporal.host .Values.temporal.port | quote }}
+      namespace: {{ .Values.temporal.cloudWorkflow.namespace | default "cloud-workflow-engine" | quote }}
+      taskQueue: {{ .Values.temporal.cloudWorkflow.queue | default "cloud-workflow-engine-tasks" | quote }}
+      tls:
+        caCert: {{ if $mtls.enabled }}{{ printf "%s/%s" $mtls.mountPath $mtls.caCertFile | quote }}{{ else }}""{{ end }}
+        clientCert: {{ if $mtls.enabled }}{{ printf "%s/%s" $mtls.mountPath $mtls.clientCertFile | quote }}{{ else }}""{{ end }}
+        clientKey: {{ if $mtls.enabled }}{{ printf "%s/%s" $mtls.mountPath $mtls.clientKeyFile | quote }}{{ else }}""{{ end }}
+        serverName: {{ if $mtls.enabled }}{{ $mtls.serverName | quote }}{{ else }}""{{ end }}
+    {{- /* SPIRE_SERVER_ADDRESS stays an env var: its default comes from the downward API. */}}
+    spire:
+      spiffeEnabled: {{ .Values.spiffe.enabled }}
+      spiffeEndpointSocket: {{ .Values.spiffe.endpointSocket | default "unix:///tmp/spire-agent/agent.sock" | quote }}
+      spiffeJWTExchangeEndpoint: {{ .Values.spiffe.jwtExchangeEndpoint | quote }}
+      serverNamespace: {{ .Values.spiffe.spire.serverNamespace | default "spire-server" | quote }}
+      className: {{ .Values.spiffe.spire.className | default "spire-mgmt-spire" | quote }}
+      tpmPubhashesConfigMapName: {{ .Values.spiffe.spire.tpmPubhashesConfigMapName | default "tpm-pubhashes" | quote }}
+      serverPort: {{ .Values.spiffe.spire.serverPort | default "9091" | quote }}
+      joinTokenTTL: {{ .Values.spiffe.spire.joinTokenTTL | default "1h" | quote }}
+    teleport:
+      enabled: {{ if $teleport.enabled }}true{{ else }}false{{ end }}
+      identityFile: {{ if $teleport.enabled }}{{ $teleport.identityFile | quote }}{{ else }}""{{ end }}
+      proxyAddress: {{ if $teleport.enabled }}{{ $teleport.proxyAddress | quote }}{{ else }}""{{ end }}
+      environment: {{ if $teleport.enabled }}{{ $teleport.environment | default "non-prod" | quote }}{{ else }}"non-prod"{{ end }}
+      managedByLabelValue: {{ $teleport.managedByLabelValue | default "nke-cloud-workflow-engine" | quote }}
+      tokenNamePrefix: {{ $teleport.tokenNamePrefix | default "nke-cwe-" | quote }}
+    permissiveMode: {{ if .Values.apiAuth.enabled }}{{ .Values.apiAuth.permissive }}{{ else }}false{{ end }}

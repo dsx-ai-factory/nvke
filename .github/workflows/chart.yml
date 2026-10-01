@@ -30,6 +30,8 @@ on:
     paths:
       - 'controller/deploy/charts/**'
       - 'controller/hack/chart-*-assertions.*'
+      - 'controller/internal/config/**'
+      - 'controller/internal/controllerconfig/**'
       - 'make/checks.mk'
       - 'make/versions.mk'
       - 'Makefile'
@@ -88,6 +90,16 @@ jobs:
       # Install kubeconform before running the fail-closed chart target.
       - name: Set up kubeconform
         uses: ./.github/actions/setup-kubeconform
+
+      # chart-controller-config-check runs the controller's own config loader.
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
 
       # One entry point covers linting, rendered-manifest validation, apiAuth,
       # tenant RBAC, and package-version assertions locally and in CI.

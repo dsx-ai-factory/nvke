@@ -95,6 +95,28 @@ create a way for the mount and the path to disagree.
 auth.yaml
 {{- end }}
 
+{{/* The nke-controller-config ConfigMap and its file key. */}}
+{{- define "controller.controllerConfig.name" -}}
+nke-controller-config
+{{- end }}
+
+{{- define "controller.controllerConfig.file" -}}
+config.yaml
+{{- end }}
+
+{{/*
+(list value goDefault): the value, or goDefault when it is null or empty, as the
+controller treats an empty variable. sprig's default would also replace false and 0.
+*/}}
+{{- define "controller.controllerConfig.orGoDefault" -}}
+{{- $value := index . 0 -}}
+{{- if or (kindIs "invalid" $value) (eq (toString $value) "") -}}
+{{- index . 1 -}}
+{{- else -}}
+{{- $value -}}
+{{- end -}}
+{{- end }}
+
 {{/*
 Refuse the ways apiAuth's values can disagree with each other or with the chart,
 each of which otherwise renders clean and does the wrong thing silently.
