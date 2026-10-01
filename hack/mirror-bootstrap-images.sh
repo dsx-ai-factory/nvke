@@ -2,49 +2,34 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Mirror the container images `nkectl bootstrap site` runs into a local or
-# private registry. The list comes from `nkectl get bootstrap-manifest`, so it
-# is the list this nkectl was built with. Each image keeps its upstream path
-# under TARGET_REGISTRY: docker.io/temporalio/server becomes
-# TARGET_REGISTRY/temporalio/server.
+# Mirror the images `nkectl bootstrap site` runs into a registry. The list is
+# `nkectl get bootstrap-manifest`. Each image keeps its upstream path under
+# TARGET_REGISTRY, the layout NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR expects; that
+# variable takes a TLS host[:port] with no path. Images from other registries
+# are mirrored too, for a registry that will serve them later. Images with no
+# registry host (the two this repository builds) are skipped: the bootstrap
+# side-loads them.
 #
-# That layout is what NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR expects, so the
-# bootstrap pulls the Docker Hub images from the mirror when that variable
-# names TARGET_REGISTRY. The bootstrap has no such redirect for the other
-# registries (ghcr.io, registry.k8s.io, cgr.dev) yet; their images are mirrored
-# too, for a registry that will serve them later.
-#
-# Images with no registry host (the two this repository builds) are skipped.
-# The bootstrap side-loads those from the local image store.
-#
-# Usage:
-#   hack/mirror-bootstrap-images.sh [TARGET_REGISTRY]
-#
-#   TARGET_REGISTRY  registry host, with an optional path prefix, to mirror into.
-#                    Defaults to localhost:5000. Examples: localhost:5000,
-#                    10.0.0.1:5000, nvcr.io/myorg.
+# Usage: hack/mirror-bootstrap-images.sh [TARGET_REGISTRY]
+#   TARGET_REGISTRY  host, with an optional path prefix. Default localhost:5000.
 #
 # Env:
-#   NKECTL=<path>    nkectl binary to read the manifest from. Defaults to
-#                    `nkectl` on PATH, then `go run` from this checkout.
-#   MANIFEST=<file>  read the manifest from a file instead of nkectl.
-#   DRY_RUN=1        print the copies without running crane.
-#   INSECURE=1       copy over plain HTTP / skip TLS verification. Defaults on
-#                    for localhost / 127.0.0.1 targets, off otherwise.
-#   CRANE=<path>     crane binary to use. Defaults to `crane` on PATH.
+#   NKECTL=<path>    nkectl to read the manifest from; default `nkectl` on PATH,
+#                    then `go run` from this checkout.
+#   MANIFEST=<file>  read the manifest from a file instead.
+#   DRY_RUN=1        print the copies without running crane (also true, yes).
+#   INSECURE=1       plain HTTP / no TLS verification; default on for loopback.
+#   CRANE=<path>     crane binary; default `crane` on PATH.
 #
-# Requires `crane` (github.com/google/go-containerregistry/cmd/crane):
-#   go install github.com/google/go-containerregistry/cmd/crane@latest
-#
-# crane copies the manifest bytes as-is and preserves digests. A Docker
-# pull/tag/push round-trip re-serializes the manifest and changes the digest,
-# and the SPIRE chart pins one image by digest, so that pull would then fail.
+# Requires crane (go install github.com/google/go-containerregistry/cmd/crane@latest).
+# crane preserves digests; a Docker pull/tag/push round-trip changes them, and
+# the SPIRE chart pins one image by digest.
 
 set -Eeuo pipefail
 
 TARGET="${1:-localhost:5000}"
 CRANE="${CRANE:-crane}"
-DRY_RUN="${DRY_RUN:-0}"
+case "${DRY_RUN:-0}" in 1|true|yes) DRY_RUN=1 ;; *) DRY_RUN=0 ;; esac
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [ "${DRY_RUN}" != "1" ]; then
@@ -91,15 +76,18 @@ list_images() {
 }
 
 # has_host reports whether an image reference names a registry host: the
-# first path component contains a dot or a colon, or is localhost.
+# first path component contains a dot or a colon, is localhost, or has an
+# upper-case letter (repository names are lower case). Same rule as nkectl.
 has_host() {
   case "$1" in
-    */*) first="${1%%/*}"; case "$first" in *.*|*:*|localhost) return 0 ;; esac ;;
+    */*) first="${1%%/*}"; case "$first" in *.*|*:*|localhost|*[A-Z]*) return 0 ;; esac ;;
   esac
   return 1
 }
 
-mapfile -t entries < <(read_manifest | list_images)
+manifest="$(read_manifest)" || { echo "error: reading the bootstrap manifest failed" >&2; exit 1; }
+entries=()
+while IFS= read -r line; do entries+=("$line"); done < <(list_images <<<"$manifest")
 [ "${#entries[@]}" -gt 0 ] || { echo "error: the manifest lists no images" >&2; exit 1; }
 
 echo "Mirroring bootstrap images to ${TARGET} (insecure=${INSECURE}, dry_run=${DRY_RUN})"
@@ -121,7 +109,7 @@ for entry in "${entries[@]}"; do
     copied=$((copied + 1))
     continue
   fi
-  if "$CRANE" copy "${crane_flags[@]}" "${src}" "${dst}"; then
+  if "$CRANE" copy ${crane_flags[@]+"${crane_flags[@]}"} "${src}" "${dst}"; then
     copied=$((copied + 1))
   else
     echo "    FAILED" >&2
@@ -133,4 +121,8 @@ if [ "${failed}" -ne 0 ]; then
   echo "one or more images failed to mirror" >&2
   exit 1
 fi
-echo "done: ${copied} images mirrored to ${TARGET}"
+if [ "${DRY_RUN}" = "1" ]; then
+  echo "done: ${copied} copies planned to ${TARGET}"
+else
+  echo "done: ${copied} images mirrored to ${TARGET}"
+fi
