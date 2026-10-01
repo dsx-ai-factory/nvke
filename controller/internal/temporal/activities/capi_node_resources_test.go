@@ -588,14 +588,6 @@ func TestActivities_UpdateCAPIMachineWaitNodeCondition(t *testing.T) {
 	}
 }
 
-func testInfrastructureRef() clusterv1.ContractVersionedObjectReference {
-	return clusterv1.ContractVersionedObjectReference{
-		APIGroup: "infrastructure.cluster.x-k8s.io",
-		Kind:     "NicoMachine",
-		Name:     "worker-0",
-	}
-}
-
 func testCAPIMachineWithNicoInfraRef(addresses clusterv1.MachineAddresses) *clusterv1.Machine {
 	return &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
