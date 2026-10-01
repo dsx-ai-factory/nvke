@@ -70,7 +70,7 @@ is a file `bootstrap site` accepts.
 | `cluster.cniName` | string | yes | `ovn-kubernetes`. `calico` is accepted for development. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the node-agent default. |
 | `cluster.controlPlaneVIP` | string | for multiple nodes | IPv4 control-plane VIP. Required when `cluster.nodes` has more than one entry. A single-node cluster may omit it and use that node's IP as its fixed endpoint. See below. |
-| `cluster.podCidr` | string | yes | Valid CIDR. A comma-separated list of CIDRs is allowed. |
+| `cluster.podCidr` | string | yes | Valid CIDR. A comma-separated list of CIDRs is allowed. Must not overlap `serviceCidr`. |
 | `cluster.serviceCidr` | string | yes | Valid CIDR. |
 | `cluster.nodeAgentPort` | string | no | Port number 1–65535. Defaults to `15005`. |
 | `cluster.etcdEncryption` | bool | no | Encrypt the Kubernetes API's etcd data at rest. Defaults to `true`. Decided at bootstrap only: a cluster built with it `false` cannot be encrypted afterwards. See below. |
@@ -95,7 +95,8 @@ being silently ignored.
 - The site spec must contain an odd number of nodes and at least one node.
 - Node names and IPs must be unique across all nodes.
 - `podCidr` / `serviceCidr` are parsed as CIDRs; `podCidr` also accepts a
-  comma-separated list and validates each entry.
+  comma-separated list and validates each entry. No `podCidr` entry may
+  overlap `serviceCidr`.
 - `controlPlaneVIP`, when set, must parse as a routable unicast IPv4 address,
   and must not fall inside `podCidr` or `serviceCidr`. It may equal a declared
   node IP.

@@ -376,6 +376,7 @@ func (inv *SiteSpec) appendDataChecks(v *validator) {
 	v.checkCNI(inv.Cluster.CniName)
 	v.checkCIDR(pathPodCidr, inv.Cluster.PodCidr, true)
 	v.checkCIDR(pathServiceCidr, inv.Cluster.ServiceCidr, false)
+	v.checkCIDRsDisjoint(inv.Cluster)
 	v.checkControlPlaneVIP(inv.Cluster)
 	v.checkNodeAgentPort(inv.Cluster.NodeAgentPort)
 	v.checkRegistry(inv.Registry)
@@ -562,6 +563,26 @@ func (v *validator) checkControlPlaneVIP(c Cluster) {
 		v.checkVIPOutsideCIDR(vip, c.ControlPlaneVIP, pathPodCidr, cidr)
 	}
 	v.checkVIPOutsideCIDR(vip, c.ControlPlaneVIP, pathServiceCidr, c.ServiceCidr)
+}
+
+// checkCIDRsDisjoint refuses a pod CIDR that overlaps the service CIDR.
+// kubeadm accepts the pair and the cluster then fails to route. Malformed
+// CIDRs are reported by checkCIDR and skipped here.
+func (v *validator) checkCIDRsDisjoint(c Cluster) {
+	svc, err := netip.ParsePrefix(strings.TrimSpace(c.ServiceCidr))
+	if err != nil {
+		return
+	}
+	for _, p := range strings.Split(c.PodCidr, ",") {
+		p = strings.TrimSpace(p)
+		pod, err := netip.ParsePrefix(p)
+		if err != nil {
+			continue
+		}
+		if pod.Overlaps(svc) {
+			v.addf("%s %q overlaps %s %q", pathPodCidr, p, pathServiceCidr, c.ServiceCidr)
+		}
+	}
 }
 
 // checkVIPOutsideCIDR reports when the VIP falls inside cidr. A malformed or

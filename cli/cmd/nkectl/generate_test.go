@@ -84,11 +84,11 @@ func TestGenerateSiteSpecSetReachesTheFile(t *testing.T) {
 		"--nodes", writeCSV(t, threeHostCSV),
 		"--set", threeNodeVIPSet,
 		"--set", "cluster.cniName=calico",
-		"--set", "cluster.podCidr=10.100.0.0/16")
+		"--set", "cluster.podCidr=10.244.0.0/16")
 	if err != nil {
 		t.Fatalf("generate sitespec: %v", err)
 	}
-	for _, want := range []string{`cniName: "calico"`, `podCidr: "10.100.0.0/16"`} {
+	for _, want := range []string{`cniName: "calico"`, `podCidr: "10.244.0.0/16"`} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("--set did not reach the file; %q is absent:\n%s", want, stdout)
 		}
