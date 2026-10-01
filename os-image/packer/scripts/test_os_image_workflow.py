@@ -3,8 +3,14 @@
 
 """Static publication-boundary checks for the OS-image workflow."""
 
+import json
+import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
+import tempfile
+import textwrap
 import unittest
 
 
@@ -132,6 +138,42 @@ class OSImageWorkflowTest(unittest.TestCase):
             f'{{ubuntu_release:"{defaults[0]}",tag_suffix:""}}',
             self.workflow,
         )
+
+    @unittest.skipUnless(shutil.which("jq"), "the matrix step needs jq")
+    def test_matrix_builds_each_arch_flavor_and_variant_once(self):
+        pick = self.step("      - name: Pick\n", "\n  validate-packer:")
+        script = textwrap.dedent(pick.split("run: |\n", 1)[1])
+        with tempfile.NamedTemporaryFile() as output:
+            subprocess.run(
+                ["bash", "-c", script],
+                env={**os.environ, "WANT": "", "GITHUB_OUTPUT": output.name},
+                check=True,
+                capture_output=True,
+            )
+            legs = json.loads(Path(output.name).read_text().split("=", 1)[1])
+        self.assertEqual(
+            sorted((leg["arch"], leg["ubuntu_release"], leg["variant"]) for leg in legs),
+            sorted(
+                (arch, release, variant)
+                for arch in ("amd64", "arm64")
+                for release in ("26.04.1", "24.04.5")
+                for variant in ("fde", "non-fde")
+            ),
+        )
+
+    def test_each_variant_bakes_and_checks_only_its_own_image(self):
+        # A dropped or mistyped guard rebakes both variants in every job, or
+        # skips one, and nothing fails until a later step.
+        for start, end, variant in (
+            ("- name: Build the FDE node image", "\n      - name:", "fde"),
+            ("- name: Validate FDE TPM unlock (demo-fde.sh)", "\n      - name:", "fde"),
+            ("- name: Build the non-FDE node image", "\n      - name:", "non-fde"),
+            ("- name: Boot-smoke the non-FDE qcow2", "\n      - name:", "non-fde"),
+        ):
+            with self.subTest(step=start):
+                self.assertIn(
+                    f"if: matrix.variant == '{variant}'", self.step(start, end)
+                )
 
     def test_publication_and_release_payloads_remain_qcow2_only(self):
         publish = self.step(
