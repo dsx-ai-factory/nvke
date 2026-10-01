@@ -30,6 +30,29 @@ TODO:  Need to refine the requirements around spire-agent below
 | Unit ordering | `nke-spire-configure.service` before `spire-agent.service` before `nke-agent.service`. `nke-agent` waits for the workload API socket before exec. |
 | First-boot renderer | `/usr/lib/nke/spire-configure.sh`, driven by `nke-spire-configure.service`. Renders `/etc/spire-agent/agent.conf` from instance identity. Does nothing unless `/etc/nke/spire.env` exists. |
 | Plugin checksum | `/etc/spire-agent/spire-agent.env` holds `TPM_PLUGIN_CHECKSUM` and `DSX_IMDS_PLUGIN_CHECKSUM`, written by the .deb's postinst from the plugins it installed. `spire-agent.service` runs with `-expandEnv`, so an `agent.conf` that cloud-init wrote with the literal `${TPM_PLUGIN_CHECKSUM}` or `${DSX_IMDS_PLUGIN_CHECKSUM}` resolves against this image's own plugins. The two config paths are exclusive: a profile supplies `agent.conf` and no `/etc/nke/spire.env`, or it supplies `/etc/nke/spire.env` and the renderer writes `agent.conf`. |
+| Conntrack limits | `conntrack-tune.service` **enabled**, ordered before `network.target`; runs `/usr/lib/nke/configure-conntrack.sh` every boot. Raises `net.netfilter.nf_conntrack_max` and `nf_conntrack_buckets` to `min(max(RAM_MiB × 64, 1024), 600000)` and never lowers either, and sets `nf_conntrack_tcp_timeout_time_wait` to 60s and `nf_conntrack_udp_timeout_stream` to 120s. `/etc/modules-load.d/nf_conntrack.conf` loads `nf_conntrack` at boot. See [Conntrack limits](#conntrack-limits). |
+
+### Conntrack limits
+
+The kernel caps its default conntrack table at 262144 entries on hosts with
+more than 4 GiB of RAM, and many short-lived connections through Services
+exhaust it. The image raises it to 600000 on any node with 9375 MiB of RAM or
+more. The image cannot know which CNI a node will run, so the value it sets is
+the same for both; what happens next depends on whether the cluster runs
+kube-proxy:
+
+| CNI | kube-proxy | Effective `nf_conntrack_max` |
+|---|---|---|
+| OVN-Kubernetes | Not deployed | 600000, from `conntrack-tune.service` |
+| Calico | Deployed | `max(32768 × logical CPUs, 131072)`, from kube-proxy's defaults; from Kubernetes 1.36, 1048576 on nodes with more than 32 logical CPUs |
+
+kube-proxy computes its own limit from the node's CPU count (not RAM) and
+writes it every time it starts. Through Kubernetes 1.37 it writes that value
+even when it is lower than the current one, so on Calico nodes with 18 or
+fewer logical CPUs it replaces the image's 600000 with less (262144 on an
+8-CPU node), and nodes with 19 or more get more. The 600000 floor therefore
+holds only on OVN-Kubernetes clusters. kube-proxy leaves the two timeouts the
+image sets alone.
 
 ## Must not bake (instance identity)
 
@@ -124,6 +147,7 @@ server, not this image.
 | Agent env | `/etc/default/nke-agent` (`AGENT_ARGS`) |
 | SPIRE config | `/etc/spire-agent/agent.conf` (rendered, not a baked secret) |
 | SPIRE data | `/var/lib/spire-agent` |
+| Conntrack tuning | `/usr/lib/nke/configure-conntrack.sh` (logs to `journalctl -u conntrack-tune`) |
 
 ## Out of scope for this image
 

@@ -487,6 +487,20 @@ The site SPIRE server must also register a workload entry for root
 `nke-agent` (unix attestor, uid 0) and a `/nke-service/...` identity for
 whatever will dial the node (controller or `nke-os-image-check`).
 
+## Conntrack limits
+
+`conntrack-tune.service` raises `nf_conntrack_max` to 600000 at boot (less on
+VMs with under 9375 MiB of RAM) and never lowers it. On Calico clusters
+kube-proxy re-sets the limit from the node's CPU count when it starts, which
+is lower than 600000 on nodes with 18 or fewer logical CPUs; see
+[SPEC.md](SPEC.md#conntrack-limits). The unit's status shows only what it
+wrote at boot, so read the live values on the node:
+
+```bash
+sysctl net.netfilter.nf_conntrack_max net.netfilter.nf_conntrack_buckets net.netfilter.nf_conntrack_count
+journalctl -u conntrack-tune
+```
+
 ## Checker
 
 From the repository root (`make build` writes `bin/nke-os-image-check`):

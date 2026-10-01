@@ -217,7 +217,8 @@ class GuestUpdaterTest(unittest.TestCase):
                 shutil.copy(PACKER_DIR / "scripts/fetch-artifacts.sh", scripts)
                 files = repo / "os-image/files"
                 files.mkdir()
-                for name in ("nke-agent-spire.conf", "wait-spiffe-socket.sh"):
+                for name in ("nke-agent-spire.conf", "wait-spiffe-socket.sh",
+                             "conntrack-tune.service", "configure-conntrack.sh"):
                     shutil.copy(PACKER_DIR.parent / "files" / name, files)
                 updater = repo / "agent/bin/linux_arm64/nke-agent-updater"
                 updater.parent.mkdir(parents=True)
@@ -251,6 +252,8 @@ class GuestUpdaterTest(unittest.TestCase):
                 self.assertEqual(len(calls), 5, calls)
                 self.assertIn(f"-C {repo}/agent deb-arm64", calls[0])
                 self.assertTrue((artifacts / "nke-agent-spire.conf").is_file())
+                self.assertTrue((artifacts / "conntrack-tune.service").is_file())
+                self.assertTrue((artifacts / "configure-conntrack.sh").is_file())
 
 
 if __name__ == "__main__":
