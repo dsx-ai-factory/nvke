@@ -34,7 +34,8 @@
 set -euo pipefail
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-  sed -n '2,30p' "${BASH_SOURCE[0]}"
+  # The header comment, however long it grows.
+  awk 'NR > 1 && !/^#/ { exit } NR > 1' "${BASH_SOURCE[0]}"
   exit 0
 fi
 
@@ -229,13 +230,16 @@ wait_ssh() {
 # so the prompt alone proves nothing; it must still be the latest thing on
 # the console LOCKED_GRACE seconds later, with the guest never having
 # reached systemd in the real root. Prints "locked", "unlocked", "died" (qemu
-# exited), "panic" (kernel panic on the console), or "timeout" (prompt never
-# seen and no SSH). Only "locked" is a pass; the rest prove nothing.
+# exited), "panic" (kernel panic on the console), "initramfs" (dropped to the
+# initramfs emergency shell), or "timeout" (prompt never seen and no SSH).
+# Only "locked" is a pass; the rest prove nothing.
 wait_locked() {
   local log="${VM_RUNWORK}/qemu.log"
   local deadline=$((SECONDS + BOOT_TIMEOUT)) prompt_at=""
   while (( SECONDS <= deadline )); do
-    if grep -aq 'Welcome to' "${log}" || ssh_guest true 2>/dev/null; then
+    # systemd's banner in the real root. A bare "Welcome to" also matches
+    # GRUB's, before the disk is even opened.
+    if grep -aq 'Welcome to Ubuntu' "${log}" || ssh_guest true 2>/dev/null; then
       echo "unlocked"
       return
     fi
@@ -245,6 +249,12 @@ wait_locked() {
     fi
     if grep -aq 'Kernel panic' "${log}"; then
       echo "panic"
+      return
+    fi
+    # initramfs-tools prints "ALERT! ... Dropping to a shell!" when it gives
+    # up, which would otherwise sit quietly past LOCKED_GRACE like a prompt.
+    if grep -aq 'ALERT!' "${log}"; then
+      echo "initramfs"
       return
     fi
     if [[ -z "${prompt_at}" ]] && grep -aq 'Please unlock disk' "${log}"; then
