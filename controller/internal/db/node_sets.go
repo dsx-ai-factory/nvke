@@ -70,6 +70,21 @@ func (n *NodeSet) ResolveProviderType() (ProviderType, error) {
 	}
 }
 
+// validateProviderPayload rejects a node set with neither or both of
+// Nico/Capi set. ResolveProviderType alone doesn't catch "both set" — it
+// returns the Nico branch without complaint — so persistence call sites use
+// this instead.
+func (n *NodeSet) validateProviderPayload() error {
+	switch {
+	case n.Nico == nil && n.Capi == nil:
+		return fmt.Errorf("%w: node set %s has no provider payload set", ErrMissingProviderPayload, n.ID)
+	case n.Nico != nil && n.Capi != nil:
+		return fmt.Errorf("node set %s has both nico and capi provider payloads set", n.ID)
+	default:
+		return nil
+	}
+}
+
 func (n *NodeSet) SetNico(provider NicoNodePoolProvider) {
 	n.Nico = cloneNicoNodePoolProvider(provider)
 	n.Capi = nil
@@ -130,7 +145,14 @@ func (q *queriesImpl) GetNodeSet(ctx context.Context, id uuid.UUID) (NodeSet, er
 	return config, nil
 }
 
+// CreateNodeSet persists a new node set. NodeSet has no HTTP ingress of its
+// own — it's only ever constructed by reconcilers — so this is the one place
+// that can catch a node set built with a missing or conflicting provider
+// payload before it reaches Postgres.
 func (q *queriesImpl) CreateNodeSet(ctx context.Context, nodeSet *NodeSet) (NodeSet, error) {
+	if err := nodeSet.validateProviderPayload(); err != nil {
+		return NodeSet{}, fmt.Errorf("refusing to create node set %s: %w", nodeSet.ID, err)
+	}
 	_, err := q.db.NewInsert().Model(nodeSet).Exec(ctx)
 	if err != nil {
 		return NodeSet{}, err
@@ -139,6 +161,9 @@ func (q *queriesImpl) CreateNodeSet(ctx context.Context, nodeSet *NodeSet) (Node
 }
 
 func (q *queriesImpl) UpdateNodeSet(ctx context.Context, nodeSet *NodeSet) (NodeSet, error) {
+	if err := nodeSet.validateProviderPayload(); err != nil {
+		return NodeSet{}, fmt.Errorf("refusing to update node set %s: %w", nodeSet.ID, err)
+	}
 	nodeSet.UpdatedAt = time.Now()
 	res, err := q.db.NewUpdate().Model(nodeSet).WherePK().Exec(ctx)
 	if err != nil {

@@ -4,6 +4,7 @@
 package db_test
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
 )
 
 func TestNodeSetProviderSetters(t *testing.T) {
@@ -64,4 +66,100 @@ func TestNodeSetResolveProviderType(t *testing.T) {
 	empty := db.NodeSet{ID: uuid.New()}
 	_, err = empty.ResolveProviderType()
 	require.ErrorIs(t, err, db.ErrMissingProviderPayload)
+}
+
+func TestCreateNodeSet_ValidatesProviderPayload(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	bunDB := testutil.SetupDB(ctx, t, (*db.Cluster)(nil), (*db.NodePool)(nil), (*db.NodeSet)(nil))
+	dbImpl := db.NewDB(bunDB)
+
+	cluster := newValidCluster(withName("nodeset-create-case"))
+	_, err := bunDB.NewInsert().Model(&cluster).Exec(ctx)
+	require.NoError(t, err)
+
+	nodePool := db.NodePool{
+		ID:                   uuid.New(),
+		ClusterID:            cluster.ID,
+		Name:                 "pool",
+		NodeNamePrefix:       "w",
+		SystemReservedMemory: "1Gi",
+		KubernetesVersion:    "1.34.2",
+		NodeLabels:           []string{},
+		Nico:                 &db.NicoNodePoolProvider{},
+	}
+	_, err = bunDB.NewInsert().Model(&nodePool).Exec(ctx)
+	require.NoError(t, err)
+
+	t.Run("missing provider payload is rejected", func(t *testing.T) {
+		_, err := dbImpl.CreateNodeSet(ctx, &db.NodeSet{ID: uuid.New(), NodePoolID: nodePool.ID})
+		require.Error(t, err)
+		require.ErrorIs(t, err, db.ErrMissingProviderPayload)
+	})
+
+	t.Run("conflicting provider payload is rejected", func(t *testing.T) {
+		nodeSet := &db.NodeSet{
+			ID:         uuid.New(),
+			NodePoolID: nodePool.ID,
+			Nico:       &db.NicoNodePoolProvider{},
+			Capi:       &db.CAPINodePoolProvider{},
+		}
+		_, err := dbImpl.CreateNodeSet(ctx, nodeSet)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "both nico and capi")
+	})
+
+	t.Run("valid payload is accepted", func(t *testing.T) {
+		nodeSet := &db.NodeSet{ID: uuid.New(), NodePoolID: nodePool.ID}
+		nodeSet.SetNico(db.NicoNodePoolProvider{})
+		_, err := dbImpl.CreateNodeSet(ctx, nodeSet)
+		require.NoError(t, err)
+	})
+}
+
+func TestUpdateNodeSet_ValidatesProviderPayload(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	bunDB := testutil.SetupDB(ctx, t, (*db.Cluster)(nil), (*db.NodePool)(nil), (*db.NodeSet)(nil))
+	dbImpl := db.NewDB(bunDB)
+
+	cluster := newValidCluster(withName("nodeset-update-case"))
+	_, err := bunDB.NewInsert().Model(&cluster).Exec(ctx)
+	require.NoError(t, err)
+
+	nodePool := db.NodePool{
+		ID:                   uuid.New(),
+		ClusterID:            cluster.ID,
+		Name:                 "pool",
+		NodeNamePrefix:       "w",
+		SystemReservedMemory: "1Gi",
+		KubernetesVersion:    "1.34.2",
+		NodeLabels:           []string{},
+		Nico:                 &db.NicoNodePoolProvider{},
+	}
+	_, err = bunDB.NewInsert().Model(&nodePool).Exec(ctx)
+	require.NoError(t, err)
+
+	nodeSet := &db.NodeSet{ID: uuid.New(), NodePoolID: nodePool.ID}
+	nodeSet.SetNico(db.NicoNodePoolProvider{})
+	_, err = dbImpl.CreateNodeSet(ctx, nodeSet)
+	require.NoError(t, err)
+
+	t.Run("clearing the provider payload is rejected", func(t *testing.T) {
+		stale := *nodeSet
+		stale.Nico = nil
+		_, err := dbImpl.UpdateNodeSet(ctx, &stale)
+		require.Error(t, err)
+		require.ErrorIs(t, err, db.ErrMissingProviderPayload)
+	})
+
+	t.Run("setting both provider payloads is rejected", func(t *testing.T) {
+		conflicted := *nodeSet
+		conflicted.Capi = &db.CAPINodePoolProvider{}
+		_, err := dbImpl.UpdateNodeSet(ctx, &conflicted)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "both nico and capi")
+	})
 }
