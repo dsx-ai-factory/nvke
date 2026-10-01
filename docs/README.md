@@ -83,6 +83,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [operations/upgrade.md](operations/upgrade.md) | Upgrading NVKE and tenant cluster Kubernetes versions |
 | [operations/crd-group-migration.md](operations/crd-group-migration.md) | Copying existing CRs to the `internal.nvke.nvidia.com` group on an existing site |
 | [operations/label-domain-migration.md](operations/label-domain-migration.md) | What the move to the `nvke.nvidia.com` label and annotation domain means for an existing site |
+| [site-operations/certificate-renewal.md](site-operations/certificate-renewal.md) | Site-management certificate renewal for NVKE fleet operators |
 | [operations/observability.md](operations/observability.md) | Temporal UI, CWE logs, database health, and CAPNICo diagnostics |
 | [operations/faq.md](operations/faq.md) | Common bootstrap and tenant cluster failure modes |
 | [nktp/site-telemetry/getting-started.md](nktp/site-telemetry/getting-started.md) | Telemetry on a site controller: what NKTP collects and what the deploy path needs |

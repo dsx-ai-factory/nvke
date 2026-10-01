@@ -62,6 +62,8 @@ navigation:
             path: operations/crd-group-migration.md
           - page: The NVKE label and annotation domain
             path: operations/label-domain-migration.md
+          - page: Site Certificate Renewal
+            path: site-operations/certificate-renewal.md
 
       - section: Telemetry (NKTP)
         contents:

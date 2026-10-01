@@ -50,6 +50,11 @@ The cluster's etcd data is encrypted at rest from its first `kubeadm init`, and 
 
 If you are running a self-managed site (with NICo as the infrastructure provider), keep `nvkectl` available for subsequent operations. See [Infrastructure Providers](infrastructure-providers.md) for installing NICo itself onto the site cluster.
 
+## Site maintenance
+
+For planned renewal of site-management cluster certificates, use the
+[manual certificate-renewal procedure](../site-operations/certificate-renewal.md).
+
 ## Next Steps
 
 - [Installation](installation.md) — download and install `nvkectl`
