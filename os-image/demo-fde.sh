@@ -273,7 +273,14 @@ wait_locked() {
 # Tears down the VM started by the most recent start_vm.
 stop_vm() {
   kill "${VM_QPID}" 2>/dev/null || true
-  # Reap it, so the next boot's hostfwd can bind SSH_PORT.
+  # Reap it, so the next boot's hostfwd can bind SSH_PORT. A qemu stuck on
+  # shutdown gets 30s before SIGKILL, rather than hanging until the job timeout.
+  local i
+  for (( i = 0; i < 30; i++ )); do
+    kill -0 "${VM_QPID}" 2>/dev/null || break
+    sleep 1
+  done
+  kill -9 "${VM_QPID}" 2>/dev/null || true
   wait "${VM_QPID}" 2>/dev/null || true
   # Fallback by disk path in case $VM_QPID somehow isn't qemu's own pid (e.g.
   # a future refactor backgrounds it indirectly again).
