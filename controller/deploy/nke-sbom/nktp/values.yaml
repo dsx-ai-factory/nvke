@@ -35,11 +35,6 @@ opentelemetry-kube-stack:
   kubeProxy:
     enabled: false
   opentelemetry-operator:
-    admissionWebhooks:
-      certManager:
-        # cert-manager is a prerequisite of this path, so the webhook
-        # certificate comes from it and is renewed.
-        enabled: true
     # The Operator creates a NetworkPolicy owned by its own Deployment, with
     # blockOwnerDeletion set. NKE's API server runs the
     # OwnerReferencesPermissionEnforcement admission plugin, which allows that

@@ -15,7 +15,6 @@ changes and why, and how a site overrides it.
 | **The API audit log path** (`filelog/kube-api-audit.include`) | NKE's kubeadm configuration writes the API server's audit log to `/var/log/kubernetes_audit/audit.log`, not the chart's default path. |
 | **Control-plane monitors** (`kubeScheduler`, `kubeControllerManager`, `kubeProxy` off) | NKE binds the scheduler and controller manager to `127.0.0.1`, and OVN clusters run no kube-proxy. Left on, they would show as permanently down targets. The API server, etcd and CoreDNS monitors stay on and work. |
 | **metrics-server on** | Nothing else serves `metrics.k8s.io` on a site controller, and the Collector autoscalers read it. |
-| **cert-manager for the webhook certificate** | cert-manager is a prerequisite, so the certificate is issued and renewed rather than self-signed for a year. |
 | **Sizing** | One replica of everything, autoscalers starting at one, small requests and limits for every Collector and Target Allocator, and one kube-state-metrics Deployment for all object types instead of five. Sized for the smaller clusters a site controller runs on. |
 | **Process-scraper access** | `SYS_PTRACE`, `DAC_READ_SEARCH`, the host's `/etc/passwd`, `mute_process_user_error` and the `process.cgroup` attribute, so per-process metrics resolve executables, I/O and owners, and attribute container processes to their Pod. |
 
