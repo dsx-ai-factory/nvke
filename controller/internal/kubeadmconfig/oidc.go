@@ -7,13 +7,18 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 
+	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	corev1 "k8s.io/api/core/v1"
 	apiserverv1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
 )
 
 const (
@@ -31,6 +36,17 @@ const (
 	// `kubeadm join` reads to pin the cluster CA. The read happens before the
 	// joining node holds any credential, so it is necessarily anonymous.
 	clusterInfoPath = "/api/v1/namespaces/kube-public/configmaps/cluster-info"
+
+	operatorUsernameValidationExpression = "!user.username.startsWith('system:')" +
+		" && !user.username.startsWith('kubeadm:')" +
+		" && !user.username.startsWith('nke:')" +
+		" && !user.username.startsWith('nvidia:')"
+	operatorGroupsValidationExpression = "user.groups.all(group, !group.startsWith('system:')" +
+		" && !group.startsWith('kubeadm:')" +
+		" && !group.startsWith('nke:')" +
+		" && !group.startsWith('nvidia:'))"
+	operatorUsernameValidationMessage = "username uses a reserved prefix"
+	operatorGroupsValidationMessage   = "groups use a reserved prefix"
 )
 
 // publicInfoPaths are the non-resource URLs upstream's own bootstrap policy
@@ -123,6 +139,16 @@ type OIDCClaimValidationRule = apiserverv1.ClaimValidationRule
 
 type OIDCUserValidationRule = apiserverv1.UserValidationRule
 
+// OperatorJWTPolicy carries platform-owned identity rules that are not part of
+// an operator's provider configuration. ManagementJWTTrustDomain must be a
+// bare SPIFFE trust domain. ReservedSubjects contains privileged identities
+// reissued by a token exchange under subjects that the trust domain cannot
+// predict.
+type OperatorJWTPolicy struct {
+	ManagementJWTTrustDomain string
+	ReservedSubjects         []string
+}
+
 // GenerateAPIServerAuthenticationConfig renders the AuthenticationConfiguration
 // document into the on-node File the greenfield bootstrap stages and the
 // brownfield rollout delivers to each control-plane node.
@@ -214,6 +240,129 @@ func BuildOIDCAuthenticationConfig(clusterName string, oidc config.NkeOIDCAuth, 
 		authConfig.JWT[0].Issuer.CertificateAuthority = string(caBundle)
 	}
 	return authConfig, nil
+}
+
+// BuildOperatorJWTAuthenticator maps one validated operator provider to the
+// kube-apiserver authentication API. Its reserved-prefix rules run against the
+// final username and groups after claim mapping. Policy can reserve a complete
+// SPIFFE trust domain and exact subjects used by a token exchange.
+func BuildOperatorJWTAuthenticator(
+	provider controllerconfig.OIDCProvider,
+	policy OperatorJWTPolicy,
+) (apiserverv1.JWTAuthenticator, error) {
+	usernamePrefix := provider.UsernamePrefix
+	authenticator := apiserverv1.JWTAuthenticator{
+		Issuer: apiserverv1.Issuer{
+			URL:                  provider.IssuerURL,
+			Audiences:            append([]string(nil), provider.Audiences...),
+			CertificateAuthority: provider.CABundle,
+			AudienceMatchPolicy:  apiserverv1.AudienceMatchPolicyMatchAny,
+		},
+		ClaimMappings: apiserverv1.ClaimMappings{
+			Username: apiserverv1.PrefixedClaimOrExpression{
+				Claim:  provider.UsernameClaim,
+				Prefix: &usernamePrefix,
+			},
+		},
+	}
+
+	if provider.GroupsClaim != "" {
+		groupsPrefix := provider.GroupsPrefix
+		authenticator.ClaimMappings.Groups = apiserverv1.PrefixedClaimOrExpression{
+			Claim:  provider.GroupsClaim,
+			Prefix: &groupsPrefix,
+		}
+	}
+
+	requiredClaimNames := make([]string, 0, len(provider.RequiredClaims))
+	for claim := range provider.RequiredClaims {
+		requiredClaimNames = append(requiredClaimNames, claim)
+	}
+	sort.Strings(requiredClaimNames)
+
+	if len(requiredClaimNames) > 0 {
+		authenticator.ClaimValidationRules = make([]apiserverv1.ClaimValidationRule, 0, len(requiredClaimNames))
+		for _, claim := range requiredClaimNames {
+			authenticator.ClaimValidationRules = append(authenticator.ClaimValidationRules, apiserverv1.ClaimValidationRule{
+				Claim:         claim,
+				RequiredValue: provider.RequiredClaims[claim],
+			})
+		}
+	}
+
+	if err := injectReservedNamespaceValidation(&authenticator, policy); err != nil {
+		return apiserverv1.JWTAuthenticator{}, err
+	}
+
+	return authenticator, nil
+}
+
+func injectReservedNamespaceValidation(authenticator *apiserverv1.JWTAuthenticator, policy OperatorJWTPolicy) error {
+	rules := []apiserverv1.UserValidationRule{
+		{
+			Expression: operatorUsernameValidationExpression,
+			Message:    operatorUsernameValidationMessage,
+		},
+		{
+			Expression: operatorGroupsValidationExpression,
+			Message:    operatorGroupsValidationMessage,
+		},
+	}
+
+	if policy.ManagementJWTTrustDomain != "" {
+		if err := validateManagementJWTTrustDomain(policy.ManagementJWTTrustDomain); err != nil {
+			return err
+		}
+
+		reservedPrefix := strconv.Quote("spiffe://" + policy.ManagementJWTTrustDomain + "/")
+		rules = append(rules,
+			apiserverv1.UserValidationRule{
+				Expression: fmt.Sprintf("!user.username.startsWith(%s)", reservedPrefix),
+				Message:    operatorUsernameValidationMessage,
+			},
+			apiserverv1.UserValidationRule{
+				Expression: fmt.Sprintf("user.groups.all(group, !group.startsWith(%s))", reservedPrefix),
+				Message:    operatorGroupsValidationMessage,
+			},
+		)
+	}
+
+	for i, subject := range policy.ReservedSubjects {
+		if strings.TrimSpace(subject) == "" {
+			return fmt.Errorf("reserved subject at index %d must not be empty", i)
+		}
+
+		quoted := strconv.Quote(subject)
+		rules = append(rules,
+			apiserverv1.UserValidationRule{
+				Expression: fmt.Sprintf("user.username != %s", quoted),
+				Message:    operatorUsernameValidationMessage,
+			},
+			apiserverv1.UserValidationRule{
+				Expression: fmt.Sprintf("user.groups.all(group, group != %s)", quoted),
+				Message:    operatorGroupsValidationMessage,
+			},
+		)
+	}
+
+	authenticator.UserValidationRules = append(authenticator.UserValidationRules, rules...)
+	return nil
+}
+
+func validateManagementJWTTrustDomain(value string) error {
+	if value == "" {
+		return fmt.Errorf("management JWT trust domain is required when management OIDC is enabled")
+	}
+
+	trustDomain, err := spiffeid.TrustDomainFromString(value)
+	if err != nil {
+		return fmt.Errorf("invalid management JWT trust domain %q: %w", value, err)
+	}
+	if trustDomain.Name() != value {
+		return fmt.Errorf("management JWT trust domain %q must be a bare SPIFFE trust domain", value)
+	}
+
+	return nil
 }
 
 // ReadOIDCCABundle reads the issuer CA bundle (PEM) from the operator-managed
