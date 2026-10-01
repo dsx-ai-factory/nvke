@@ -30,7 +30,7 @@ go.sum @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
 /cli/ @dsx-ai-factory/nke-write @lia-campbell @jonathanmeier5 @TerryHowe
 
 # area/os-image
-/os-image/ @dsx-ai-factory/nke-write @j-griffith @jdubs @pdmack
+/os-image/ @dsx-ai-factory/nke-write @dsx-ai-factory/nke-team-node-os @j-griffith @jdubs @pdmack
 
 # area/generated — vendored AICR charts
 /generated/ @dsx-ai-factory/nke-write @nhammernik @TerryHowe
