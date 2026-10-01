@@ -98,11 +98,10 @@ concurrency:
 env:
   REPO_FDE: ghcr.io/dsx-ai-factory/nke/os-image-fde
   REPO_NON_FDE: ghcr.io/dsx-ai-factory/nke/os-image-non-fde
-  # The S3 build cache. This workflow only reads it; os-image-cache.yml, on
-  # main, is the only writer, and the write role trusts nothing else.
-  BUILD_CACHE_BUCKET: dgxc-eks-gha-cache-2a09007c
+  # The S3 build cache. The bucket and its two roles are repository variables;
+  # this workflow only reads, and os-image-cache.yml, on main, is the only
+  # writer.
   BUILD_CACHE_REGION: us-east-1
-  BUILD_CACHE_READ_ROLE: arn:aws:iam::920052440457:role/NkeGhaCacheReadRole
   BUILD_CACHE_ISO_PREFIX: nke/os-image/iso
 
 jobs:
@@ -424,14 +423,20 @@ jobs:
       # against Ubuntu's SHA256SUMS and downloads again on a mismatch, so the
       # cache can speed a build up but cannot change what it bakes. So none of
       # these three steps can fail the bake: a miss or an STS or S3 outage
-      # falls back to Ubuntu's mirror.
+      # falls back to Ubuntu's mirror, and so do unset repository variables. The
+      # role gate keeps an empty role-to-assume from falling back to whatever
+      # ambient credentials the ARC pod has. The credentials go to the restore
+      # step only, not to the job environment the bake's scripts run in.
       - name: Configure AWS credentials for the build cache
         id: cache_aws
+        if: vars.NKE_GHA_CACHE_READ_ROLE_ARN != ''
         continue-on-error: true
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ env.BUILD_CACHE_READ_ROLE }}
+          role-to-assume: ${{ vars.NKE_GHA_CACHE_READ_ROLE_ARN }}
           aws-region: ${{ env.BUILD_CACHE_REGION }}
+          output-credentials: true
+          output-env-credentials: false
 
       - name: Install s5cmd
         id: s5cmd
@@ -464,20 +469,27 @@ jobs:
         continue-on-error: true
         # A stalled transfer would otherwise eat the whole job budget.
         timeout-minutes: 15
+        env:
+          BUCKET: ${{ vars.NKE_GHA_CACHE_BUCKET }}
+          AWS_REGION: ${{ env.BUILD_CACHE_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ steps.cache_aws.outputs.aws-access-key-id }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.cache_aws.outputs.aws-secret-access-key }}
+          AWS_SESSION_TOKEN: ${{ steps.cache_aws.outputs.aws-session-token }}
         run: |
           set -euo pipefail
           iso_url="$(make --no-print-directory -C os-image/packer print-ISO_URL \
             ARCH=${{ matrix.arch }} UBUNTU_RELEASE=${{ matrix.ubuntu_release }})"
-          key="s3://${BUILD_CACHE_BUCKET}/${BUILD_CACHE_ISO_PREFIX}/${iso_url##*/}"
+          # The annotation names the object, not the bucket.
+          object="${BUILD_CACHE_ISO_PREFIX}/${iso_url##*/}"
           mkdir -p os-image/packer/iso-cache
           start="$(date +%s.%N)"
-          if s5cmd cp "${key}" os-image/packer/iso-cache/; then
+          if s5cmd cp "s3://${BUCKET}/${object}" os-image/packer/iso-cache/; then
             speed="$(awk -v b="$(stat -c %s "os-image/packer/iso-cache/${iso_url##*/}")" \
               -v s="$(date +%s.%N)" -v t="${start}" \
               'BEGIN { m = b / 1048576; d = s - t; printf "%d MiB in %.1fs, %.0f MiB/s", m, d, m / d }')"
-            echo "::notice::restored ${key}: ${speed}"
+            echo "::notice::restored ${object}: ${speed}"
           else
-            echo "::notice::could not restore ${key} from the build cache; the build downloads it from Ubuntu"
+            echo "::notice::could not restore ${object} from the build cache; the build downloads it from Ubuntu"
           fi
 
       # Self-timeout, 30s inside the job's real timeout-minutes deadline (see

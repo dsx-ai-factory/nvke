@@ -34,10 +34,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Keep in step with os-image-artifact.yml.
-  BUILD_CACHE_BUCKET: dgxc-eks-gha-cache-2a09007c
+  # Keep in step with os-image-artifact.yml. The bucket and the write role are
+  # repository variables.
   BUILD_CACHE_REGION: us-east-1
-  BUILD_CACHE_WRITE_ROLE: arn:aws:iam::920052440457:role/NkeGhaCacheWriteRole
   BUILD_CACHE_ISO_PREFIX: nke/os-image/iso
 
 jobs:
@@ -65,12 +64,12 @@ jobs:
       - name: Configure AWS credentials for the build cache
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ env.BUILD_CACHE_WRITE_ROLE }}
+          role-to-assume: ${{ vars.NKE_GHA_CACHE_WRITE_ROLE_ARN }}
           aws-region: ${{ env.BUILD_CACHE_REGION }}
 
       - name: Download, verify and upload
         env:
-          BUCKET: ${{ env.BUILD_CACHE_BUCKET }}
+          BUCKET: ${{ vars.NKE_GHA_CACHE_BUCKET }}
           ARCH: ${{ matrix.arch }}
           UBUNTU_RELEASE: ${{ matrix.ubuntu_release }}
         run: |
@@ -91,7 +90,7 @@ jobs:
             --query LastModified --output text 2>/dev/null || true)"
           if [[ -n "${written}" ]] &&
             (( $(date +%s) - $(date -d "${written}" +%s) < 14 * 86400 )); then
-            echo "s3://${BUCKET}/${key} was written ${written}; nothing to do"
+            echo "${key} was written ${written}; nothing to do"
             exit 0
           fi
 
@@ -105,4 +104,4 @@ jobs:
           curl -fL --retry 5 --retry-all-errors --retry-delay 5 -C - -o "${name}" "${iso_url}"
           echo "${want}  ${name}" | sha256sum -c -
           aws s3 cp "${name}" "s3://${BUCKET}/${key}" --only-show-errors
-          echo "::notice::cached ${iso_url} as s3://${BUCKET}/${key}"
+          echo "::notice::cached ${iso_url} as ${key}"

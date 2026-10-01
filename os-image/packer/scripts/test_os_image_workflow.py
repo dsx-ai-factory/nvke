@@ -157,7 +157,6 @@ class OSImageWorkflowTest(unittest.TestCase):
             sorted(baked), sorted(r.strip() for r in cached.group(1).split(","))
         )
         for line in (
-            "BUILD_CACHE_BUCKET: dgxc-eks-gha-cache-2a09007c",
             "BUILD_CACHE_REGION: us-east-1",
             "BUILD_CACHE_ISO_PREFIX: nke/os-image/iso",
         ):
