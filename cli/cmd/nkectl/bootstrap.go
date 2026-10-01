@@ -371,7 +371,55 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 		}
 		logger.Info("wrote SPIRE bootstrap resources", "clusterStaticEntries", count)
 	}
+	// Every node is a control-plane node, so until the taint is gone nothing
+	// schedules. This is the last step: the kubeconfig, the key and the SPIRE
+	// resources are all on disk, so a failure here loses nothing and the error
+	// names the command that finishes the job by hand.
+	if err == nil {
+		err = makeControlPlaneSchedulable(ctx, inv, siteKubeconfigPath(inv.ClusterName, opts), opts, logger)
+	}
 	return err
+}
+
+// untaintTimeout bounds the untaint's API calls. The cluster is up and every
+// node has joined by then, so a List and a handful of Updates are quick when
+// the API server answers at all.
+const untaintTimeout = 2 * time.Minute
+
+// makeControlPlaneSchedulable removes the control-plane taint from every node
+// of the finished cluster when the site spec asks for it, which is the
+// default, and logs the outcome either way.
+func makeControlPlaneSchedulable(
+	ctx context.Context,
+	inv *sitespec.SiteSpec,
+	kubeconfigPath string,
+	opts *bootstrapSiteOptions,
+	logger *slog.Logger,
+) error {
+	if !inv.Cluster.SchedulableControlPlaneEnabled() {
+		logger.Info("cluster.schedulableControlPlane is false; the control-plane taint stays on every node")
+		return nil
+	}
+
+	run := opts.untaintControlPlane
+	if run == nil {
+		run = func(ctx context.Context, kubeconfigPath string, logger *slog.Logger) ([]string, error) {
+			client, err := untaint.NewClient(kubeconfigPath)
+			if err != nil {
+				return nil, err
+			}
+			return untaint.ControlPlane(ctx, client, logger)
+		}
+	}
+	untaintCtx, cancel := context.WithTimeout(ctx, untaintTimeout)
+	defer cancel()
+	changed, err := run(untaintCtx, kubeconfigPath, logger)
+	if err != nil {
+		return fmt.Errorf("making the control-plane nodes schedulable: %w; the cluster is up and its kubeconfig is at %s, "+
+			"finish by hand with `%s --kubeconfig %s`", err, kubeconfigPath, untaint.ManualCommand, kubeconfigPath)
+	}
+	logger.Info("control-plane nodes are schedulable", "untainted", len(changed))
+	return nil
 }
 
 func dumpSpireBootstrapEntries(
@@ -464,17 +512,6 @@ func createSiteCluster(
 		}
 	}
 
-	// Every node is a control-plane node, so until the taint is gone nothing
-	// schedules. Last, so a failure here still leaves the kubeconfig and the
-	// key on disk; the error names the command that finishes the job by hand.
-	if inv.Cluster.SchedulableControlPlaneEnabled() {
-		if err := removeControlPlaneTaint(ctx, kubeconfigPath, opts, logger); err != nil {
-			return true, err
-		}
-	} else {
-		logger.Info("cluster.schedulableControlPlane is false; the control-plane taint stays on every node")
-	}
-
 	fmt.Fprintf(os.Stdout, "\nCluster %q is ready. Talk to it with:\n  kubectl --kubeconfig %s get nodes\n",
 		created.Name, kubeconfigPath)
 	if keyPath != "" {
@@ -482,28 +519,6 @@ func createSiteCluster(
 			"and keep it with the cluster's other credentials.\n", keyPath)
 	}
 	return true, nil
-}
-
-// removeControlPlaneTaint makes every node of the finished cluster
-// schedulable and logs the result.
-func removeControlPlaneTaint(ctx context.Context, kubeconfigPath string, opts *bootstrapSiteOptions, logger *slog.Logger) error {
-	run := opts.untaintControlPlane
-	if run == nil {
-		run = func(ctx context.Context, kubeconfigPath string, logger *slog.Logger) ([]string, error) {
-			client, err := untaint.NewClient(kubeconfigPath)
-			if err != nil {
-				return nil, err
-			}
-			return untaint.ControlPlane(ctx, client, logger)
-		}
-	}
-	changed, err := run(ctx, kubeconfigPath, logger)
-	if err != nil {
-		return fmt.Errorf("making the control-plane nodes schedulable: %w; the cluster is up and its kubeconfig is at %s, "+
-			"finish by hand with `%s --kubeconfig %s`", err, kubeconfigPath, untaint.ManualCommand, kubeconfigPath)
-	}
-	logger.Info("control-plane nodes are schedulable", "untainted", len(changed))
-	return nil
 }
 
 // etcdKeyPath is where the cluster's etcd encryption key is written.

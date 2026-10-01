@@ -708,23 +708,6 @@ if ! wait_until "${NKECTL_E2E_NODE_READY_TIMEOUT_SECONDS:-1200}" 5 all_nodes_rea
 fi
 log "PASS: all ${ready_nodes} pre-provisioned hosts are Ready nodes"
 
-# ── Stage 4b: the control-plane taint is gone ───────────────────────────
-#
-# The site spec leaves cluster.schedulableControlPlane at its default, so
-# nkectl must have removed node-role.kubernetes.io/control-plane from every
-# node. The workloads below carry no toleration for it; a node still tainted
-# would show up as a scheduling timeout with no cause, which is what this
-# check turns into a named failure.
-
-log "checking that no node still carries the control-plane taint"
-tainted_nodes=$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes \
-  -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .spec.taints[*]}{.key}{" "}{end}{"\n"}{end}' \
-  | awk '/node-role.kubernetes.io\/control-plane/ {print $1}')
-if [ -n "${tainted_nodes}" ]; then
-  fail "nodes still carry the control-plane taint: $(printf '%s' "${tainted_nodes}" | tr '\n' ' ')"
-fi
-log "PASS: every node is schedulable"
-
 # ── Stage 4a: control-plane VIP ───────────────────────────
 #
 # Node IPs are the expected BGP next-hops and valid endpoints without a VIP.
@@ -858,6 +841,27 @@ hello_world_served() {
   curl -fsS --max-time 5 -H "Host: hello.nke.local" \
     "http://${INIT_NODE_IP}:${TRAEFIK_NODE_PORT}/" | grep -q "Hostname:"
 }
+
+# ── Stage 4c: the control-plane taint is gone ───────────────────────────
+#
+# The site spec leaves cluster.schedulableControlPlane at its default, so
+# nkectl must have removed node-role.kubernetes.io/control-plane from every
+# node. The workloads below carry no toleration for it; a node still tainted
+# would show up as a scheduling timeout with no cause, which is what this
+# check turns into a named failure.
+
+log "checking that no node still carries the control-plane taint"
+tainted_nodes=""
+for node_name in $(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes -o jsonpath='{.items[*].metadata.name}'); do
+  if kubectl --kubeconfig "${TENANT_KUBECONFIG}" get node "${node_name}" -o jsonpath='{.spec.taints[*].key}' \
+    | tr ' ' '\n' | grep -Fxq 'node-role.kubernetes.io/control-plane'; then
+    tainted_nodes="${tainted_nodes}${node_name} "
+  fi
+done
+if [ -n "${tainted_nodes}" ]; then
+  fail "nodes still carry the control-plane taint: ${tainted_nodes}"
+fi
+log "PASS: every node is schedulable"
 
 # ── Stage 5: hello world ────────────────────────────────────────────────
 #

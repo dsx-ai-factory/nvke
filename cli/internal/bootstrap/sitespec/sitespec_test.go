@@ -695,14 +695,14 @@ func TestLoadDefaultsSchedulableControlPlaneOn(t *testing.T) {
 }
 
 func TestLoadEnvDisablesSchedulableControlPlane(t *testing.T) {
-	t.Setenv("CLUSTER_SCHEDULABLE_CP", "false")
+	t.Setenv("CLUSTER_SCHEDULABLE_CONTROL_PLANE", "false")
 
 	inv, err := Load(writeTemp(t, validYAML))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if inv.Cluster.SchedulableControlPlaneEnabled() {
-		t.Error("CLUSTER_SCHEDULABLE_CP=false did not keep the control-plane taint")
+		t.Error("CLUSTER_SCHEDULABLE_CONTROL_PLANE=false did not keep the control-plane taint")
 	}
 }
 

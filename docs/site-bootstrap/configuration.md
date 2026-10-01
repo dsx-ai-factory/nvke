@@ -72,7 +72,7 @@ Any field can be supplied or overridden via an environment variable. A set varia
 | `CLUSTER_SYSTEM_RESERVED_MEMORY` | `cluster.kubeletConfig.systemReservedMemory` |
 | `CLUSTER_NODE_AGENT_PORT` | `cluster.nodeAgentPort` |
 | `CLUSTER_ETCD_ENCRYPTION` | `cluster.etcdEncryption` |
-| `CLUSTER_SCHEDULABLE_CP` | `cluster.schedulableControlPlane` |
+| `CLUSTER_SCHEDULABLE_CONTROL_PLANE` | `cluster.schedulableControlPlane` |
 | `REGISTRY_BOOTSTRAP_REPO` | `registry.bootstrapRepo` |
 | `REGISTRY_BOOTSTRAP_CHART` | `registry.bootstrapChart` |
 | `REGISTRY_API_KEY` | `registry.apiKey` |

@@ -1220,12 +1220,12 @@ func TestRunBootstrapSiteRefusesAnExistingKeyFile(t *testing.T) {
 	}
 }
 
-// refuseDial stands in for a site spec host with nothing on the API port, so
-// the pre-create probe passes without dialling anything real.
 // skipUntaint stands in for the control-plane untaint in tests that are not
 // about it, so no Kubernetes client is built from the fake kubeconfig.
 func skipUntaint(context.Context, string, *slog.Logger) ([]string, error) { return nil, nil }
 
+// refuseDial stands in for a site spec host with nothing on the API port, so
+// the pre-create probe passes without dialling anything real.
 func refuseDial(context.Context, string, string) (net.Conn, error) {
 	return nil, errors.New("connection refused")
 }
@@ -1379,14 +1379,16 @@ func TestRunBootstrapSiteKeepsTheTaintWhenAsked(t *testing.T) {
 	}
 }
 
-// TestRunBootstrapSiteReportsAnUntaintFailure: the cluster is built by then,
-// so the kubeconfig and key stay on disk and the error says how to finish.
+// TestRunBootstrapSiteReportsAnUntaintFailure: the untaint is the last step,
+// so the kubeconfig, the key and the SPIRE export are all on disk when it
+// fails, and the error says how to finish by hand.
 func TestRunBootstrapSiteReportsAnUntaintFailure(t *testing.T) {
 	setBootstrapEnv(t)
 	startFakeCWEAPI(t, true)
 
 	kubeconfigOut := filepath.Join(t.TempDir(), "nke-site.kubeconfig")
 	keyOut := filepath.Join(t.TempDir(), "key.json")
+	spireEntriesDumped := false
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
 		siteSpec:         writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:  &recordingRunner{next: fakeBootstrapRunner{}},
@@ -1395,13 +1397,19 @@ func TestRunBootstrapSiteReportsAnUntaintFailure(t *testing.T) {
 		encryptionKeyOut: keyOut,
 		lookPath:         runtimeOnPath,
 		dialContext:      refuseDial,
-		dumpSpireEntries: func(context.Context, string, string) (int, error) { return 0, nil },
+		dumpSpireEntries: func(context.Context, string, string) (int, error) {
+			spireEntriesDumped = true
+			return 1, nil
+		},
 		untaintControlPlane: func(context.Context, string, *slog.Logger) ([]string, error) {
 			return nil, errors.New("nodes is forbidden")
 		},
 	})
 	if err == nil {
 		t.Fatal("runBootstrapSite returned nil, want the untaint failure")
+	}
+	if !spireEntriesDumped {
+		t.Error("the SPIRE export did not run; the untaint must come after it")
 	}
 	for _, want := range []string{"nodes is forbidden", "kubectl taint nodes --all node-role.kubernetes.io/control-plane-", kubeconfigOut} {
 		if !strings.Contains(err.Error(), want) {

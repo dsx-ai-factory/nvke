@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,12 +25,17 @@ const ControlPlaneTaintKey = "node-role.kubernetes.io/control-plane"
 // an operator to run by hand when the command could not.
 const ManualCommand = "kubectl taint nodes --all " + ControlPlaneTaintKey + "-"
 
+// requestTimeout bounds each API request, so an API server that accepts the
+// connection and never answers does not hang the caller.
+const requestTimeout = 30 * time.Second
+
 // NewClient builds a Kubernetes client from a kubeconfig file.
 func NewClient(kubeconfig string) (kubernetes.Interface, error) {
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("loading kubeconfig %s: %w", kubeconfig, err)
 	}
+	config.Timeout = requestTimeout
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("creating client for kubeconfig %s: %w", kubeconfig, err)

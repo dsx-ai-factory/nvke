@@ -118,7 +118,7 @@ A set variable takes precedence over the file value.
 | `CLUSTER_SYSTEM_RESERVED_MEMORY` | `cluster.kubeletConfig.systemReservedMemory` |
 | `CLUSTER_NODE_AGENT_PORT` | `cluster.nodeAgentPort` |
 | `CLUSTER_ETCD_ENCRYPTION` | `cluster.etcdEncryption` |
-| `CLUSTER_SCHEDULABLE_CP` | `cluster.schedulableControlPlane` |
+| `CLUSTER_SCHEDULABLE_CONTROL_PLANE` | `cluster.schedulableControlPlane` |
 | `REGISTRY_BOOTSTRAP_REPO` | `registry.bootstrapRepo` |
 | `REGISTRY_BOOTSTRAP_CHART` | `registry.bootstrapChart` |
 | `REGISTRY_API_KEY` | `registry.apiKey` |
@@ -215,8 +215,8 @@ cluster it hands over can run workloads. Other taints are left alone, and a
 node that already lacks the taint is not touched.
 
 Set it to `false` to keep the taint, for a site that adds dedicated worker
-nodes before it runs workloads. The command then prints nothing more about it;
-remove the taint later with:
+nodes before it runs workloads. The command logs that the taint was kept.
+Remove it later with:
 
 ```bash
 kubectl taint nodes --all node-role.kubernetes.io/control-plane- \
