@@ -33,7 +33,6 @@ const (
 	BackendNicoForge Backend = "nico-forge"
 
 	capiSpecKey          = "spec"
-	capiNameKey          = "name"
 	nodeRoleWorker       = "worker"
 	nodeRoleControlPlane = "control-plane"
 )
@@ -297,7 +296,7 @@ func buildCAPNicoRequest(spec ClusterSpec, payloads func(controlPlane bool) Node
 				"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
 				"kind":       "NicoCluster",
 				"metadata": map[string]any{
-					capiNameKey: name,
+					"name": name,
 				},
 				capiSpecKey: map[string]any{
 					"siteID": siteID.String(),
@@ -391,7 +390,7 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec, p
 				"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
 				"kind":       "NicoMachineTemplate",
 				"metadata": map[string]any{
-					capiNameKey: fmt.Sprintf("%s-%s-template", clusterName, spec.Name),
+					"name": fmt.Sprintf("%s-%s-template", clusterName, spec.Name),
 				},
 				capiSpecKey: map[string]any{
 					"template": map[string]any{
@@ -461,13 +460,13 @@ func buildCAPDRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	if req.Infra == nil {
 		return api.CreateClusterRequest{}, fmt.Errorf("CAPD cluster skeleton is missing infra.cluster")
 	}
-	if err := setMapPath(req.Infra.Cluster, req.Name, "metadata", capiNameKey); err != nil {
+	if err := setMapPath(req.Infra.Cluster, req.Name, "metadata", "name"); err != nil {
 		return api.CreateClusterRequest{}, fmt.Errorf("setting infra cluster name: %w", err)
 	}
 	if len(spec.CAPDFailureDomains) > 0 {
 		domains := make([]map[string]any, 0, len(spec.CAPDFailureDomains))
 		for _, domain := range spec.CAPDFailureDomains {
-			domains = append(domains, map[string]any{capiNameKey: domain.Name, "controlPlane": domain.ControlPlane})
+			domains = append(domains, map[string]any{"name": domain.Name, "controlPlane": domain.ControlPlane})
 		}
 		if err := setMapPath(req.Infra.Cluster, domains, capiSpecKey, "failureDomains"); err != nil {
 			return api.CreateClusterRequest{}, fmt.Errorf("setting CAPD failure domains: %w", err)

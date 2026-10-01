@@ -18,13 +18,13 @@ import (
 )
 
 // assertCAPDControlPlaneFailureDomains checks the live CAPI placement contract
-// after the control plane settles. CAPD publishes its spec domains to Cluster
-// status, and the controller chooses a domain for each new CAPI Machine.
+// after the control plane settles. CAPD publishes eligible domains to Cluster
+// status and observed placement to Machine status; CWE requests Machine domains.
 func assertCAPDControlPlaneFailureDomains(ctx context.Context, test *tenantTest, desired int, want map[string]int) {
 	GinkgoHelper()
 	Eventually(func(ctx context.Context) error {
 		return capdControlPlaneFailureDomainsAt(ctx, test, desired, want)
-	}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(5*time.Second).
+	}).WithContext(ctx).WithTimeout(2*time.Minute).WithPolling(5*time.Second).
 		Should(Succeed(), "CAPI control-plane Machines should be balanced across eligible failure domains")
 }
 
@@ -84,6 +84,7 @@ func capdControlPlaneFailureDomainsAt(ctx context.Context, test *tenantTest, des
 		byName[machine.GetName()] = machine
 	}
 	got := make(map[string]int, len(want))
+	observedCounts := make(map[string]int, eligible)
 	for _, name := range names {
 		machine, ok := byName[name]
 		if !ok {
@@ -92,18 +93,28 @@ func capdControlPlaneFailureDomainsAt(ctx context.Context, test *tenantTest, des
 		if _, ok := machine.GetLabels()["cluster.x-k8s.io/control-plane"]; !ok {
 			return fmt.Errorf("CAPI Machine %q lacks the control-plane label", name)
 		}
-		requested, found, err := unstructured.NestedString(machine.Object, "spec", "failureDomain")
+		requested, _, err := unstructured.NestedString(machine.Object, "spec", "failureDomain")
 		if err != nil {
 			return fmt.Errorf("reading CAPI Machine %q requested domain: %w", name, err)
 		}
-		if (eligible == 0 && found) || (eligible > 0 && (!found || requested == "")) {
-			return fmt.Errorf("CAPI Machine %q requested domain %q (present: %t); eligible domains: %d", name, requested, found, eligible)
+		if (eligible == 0 && requested != "") || (eligible > 0 && requested == "") {
+			return fmt.Errorf("CAPI Machine %q requested domain %q; eligible domains: %d", name, requested, eligible)
 		}
 		if requested != "" && !gotPublished[requested] {
 			return fmt.Errorf("CAPI Machine %q was placed in ineligible domain %q", name, requested)
 		}
 		if requested != "" {
 			got[requested]++
+		}
+		if eligible > 0 {
+			observed, _, err := unstructured.NestedString(machine.Object, "status", "failureDomain")
+			if err != nil {
+				return fmt.Errorf("reading CAPI Machine %q observed domain: %w", name, err)
+			}
+			if observed == "" || !gotPublished[observed] {
+				return fmt.Errorf("CAPI Machine %q observed in missing or ineligible domain %q", name, observed)
+			}
+			observedCounts[observed]++
 		}
 	}
 	if want != nil && !maps.Equal(got, want) {
@@ -112,15 +123,17 @@ func capdControlPlaneFailureDomainsAt(ctx context.Context, test *tenantTest, des
 	if eligible == 0 {
 		return nil
 	}
-	fewest, most := math.MaxInt, 0
-	for domain, eligible := range wantPublished {
-		if eligible {
-			fewest = min(fewest, got[domain])
-			most = max(most, got[domain])
+	for label, counts := range map[string]map[string]int{"requested": got, "observed": observedCounts} {
+		fewest, most := math.MaxInt, 0
+		for domain, canHostControlPlane := range wantPublished {
+			if canHostControlPlane {
+				fewest = min(fewest, counts[domain])
+				most = max(most, counts[domain])
+			}
 		}
-	}
-	if most-fewest > 1 {
-		return fmt.Errorf("control-plane Machine placements are unbalanced: %v", got)
+		if most-fewest > 1 {
+			return fmt.Errorf("control-plane Machine %s placements are unbalanced: %v", label, counts)
+		}
 	}
 	return nil
 }
@@ -134,12 +147,19 @@ func capdControlPlaneMachineDomainAt(ctx context.Context, test *tenantTest, name
 	if _, ok := machine.GetLabels()["cluster.x-k8s.io/control-plane"]; !ok {
 		return "", fmt.Errorf("CAPI Machine %q lacks the control-plane label", name)
 	}
-	requested, found, err := unstructured.NestedString(machine.Object, "spec", "failureDomain")
+	observed, _, err := unstructured.NestedString(machine.Object, "status", "failureDomain")
+	if err != nil {
+		return "", fmt.Errorf("reading CAPI Machine %q observed domain: %w", name, err)
+	}
+	requested, _, err := unstructured.NestedString(machine.Object, "spec", "failureDomain")
 	if err != nil {
 		return "", fmt.Errorf("reading CAPI Machine %q requested domain: %w", name, err)
 	}
-	if !found || requested == "" {
-		return "", fmt.Errorf("CAPI Machine %q has no requested failure domain", name)
+	if observed != "" {
+		return observed, nil
+	}
+	if requested == "" {
+		return "", fmt.Errorf("CAPI Machine %q has no observed or requested failure domain", name)
 	}
 	return requested, nil
 }

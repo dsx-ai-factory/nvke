@@ -157,7 +157,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	// control-plane-controller provisioning (no control-plane node pool) and its
 	// update, rolling-update and delete specs.
 	Entry("CAPD control-plane controller (no CP node pool)", Ordered, ContinueOnFailure, Label("capd", "cp-controller"), testSpec{
-		buildSpec: capdSpec,
+		buildSpec: capdControlPlaneControllerSpec,
 		shape: clusterShape{
 			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
 			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
@@ -941,6 +941,9 @@ func setupTenantTest(ctx context.Context, mgmt managementCluster, timeouts nke.O
 func (t *tenantTest) initCluster(ctx context.Context, b testSpec) {
 	GinkgoHelper()
 	t.spec = b.buildSpec(t.cfg, clusterNamePrefix, b.shape)
+	if b.validate.controlPlaneController && t.spec.Backend == nke.BackendCAPD {
+		Expect(t.spec.CAPDFailureDomains).NotTo(BeEmpty(), "CAPD control-plane-controller rows must advertise failure domains")
+	}
 	t.spec.Name = fmt.Sprintf("%s-%s", t.spec.Name, t.spec.Backend) // CreateCluster appends a timestamp
 
 	if t.cfg.Lifecycle.ReuseCluster != "" {

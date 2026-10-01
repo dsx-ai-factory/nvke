@@ -202,10 +202,11 @@ lifecycle validations.
 The CAPD `cp-controller` row advertises two control-plane failure domains and
 one worker-only domain through `DockerCluster.spec.failureDomains`. Its create,
 1-to-3 scale, and rolling-update validations inspect the live CAPI Cluster and
-Machines: requested domains must match eligible domains, placement must remain
+Machines: requested and observed domains must be eligible, placement must remain
 balanced, and no control-plane Machine may use the worker-only domain. The
-unreachable-node delete validation also checks that the replacement refills the
-deleted Machine's domain. A second, provisioning-only `cp-controller` row
+quorum-safe scale-down and unreachable-node delete validations check that
+placement stays balanced and the replacement refills the deleted Machine's
+domain. A second, provisioning-only `cp-controller` row
 advertises just a worker-only domain and checks that its control-plane Machine
 has no requested domain. The full CAPD backend E2E job runs both
 rows in its controller-managed leg. To run them against a flag-on local
