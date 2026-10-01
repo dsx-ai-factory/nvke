@@ -694,9 +694,10 @@ all_nodes_ready() {
 
 # ── Stage 4: every pre-provisioned host is a Ready node ─────────────────
 #
-# Every site spec node joins as a control-plane node and CWE untaints them, so
-# all must be Ready and schedulable. CWE joins them one at a time, ~6 min
-# apart, so the third kubelet starts ~13 min after the cluster is created.
+# Every site spec node joins as a control-plane node and nkectl removes the
+# control-plane taint once they have all joined, so all must be Ready and
+# schedulable. CWE joins them one at a time, ~6 min apart, so the third
+# kubelet starts ~13 min after the cluster is created.
 
 log "waiting for ${expected_nodes} nodes to report Ready"
 total_nodes=0
@@ -706,6 +707,23 @@ if ! wait_until "${NKECTL_E2E_NODE_READY_TIMEOUT_SECONDS:-1200}" 5 all_nodes_rea
   fail "${ready_nodes} of ${expected_nodes} site spec nodes became Ready (${total_nodes} exist)"
 fi
 log "PASS: all ${ready_nodes} pre-provisioned hosts are Ready nodes"
+
+# ── Stage 4b: the control-plane taint is gone ───────────────────────────
+#
+# The site spec leaves cluster.schedulableControlPlane at its default, so
+# nkectl must have removed node-role.kubernetes.io/control-plane from every
+# node. The workloads below carry no toleration for it; a node still tainted
+# would show up as a scheduling timeout with no cause, which is what this
+# check turns into a named failure.
+
+log "checking that no node still carries the control-plane taint"
+tainted_nodes=$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes \
+  -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .spec.taints[*]}{.key}{" "}{end}{"\n"}{end}' \
+  | awk '/node-role.kubernetes.io\/control-plane/ {print $1}')
+if [ -n "${tainted_nodes}" ]; then
+  fail "nodes still carry the control-plane taint: $(printf '%s' "${tainted_nodes}" | tr '\n' ' ')"
+fi
+log "PASS: every node is schedulable"
 
 # ── Stage 4a: control-plane VIP ───────────────────────────
 #
@@ -859,9 +877,6 @@ helm --kubeconfig "${TENANT_KUBECONFIG}" upgrade --install traefik traefik \
   --namespace traefik --create-namespace \
   --set service.spec.type=NodePort \
   --set "ports.web.nodePort=${TRAEFIK_NODE_PORT}" \
-  --set 'tolerations[0].key=node-role.kubernetes.io/control-plane' \
-  --set 'tolerations[0].operator=Exists' \
-  --set 'tolerations[0].effect=NoSchedule' \
   --wait --timeout 5m
 
 log "deploying the hello-world workload"

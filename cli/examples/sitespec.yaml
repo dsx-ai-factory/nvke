@@ -51,6 +51,12 @@ cluster:
   # afterwards. Set to false to opt out.
   # etcdEncryption: true
 
+  # Remove the control-plane NoSchedule taint from every node once the cluster
+  # is up. On by default: every node here is a control-plane node, so with the
+  # taint in place nothing schedules. Set to false to keep the taint, for a
+  # site that adds dedicated worker nodes before it runs workloads.
+  # schedulableControlPlane: true
+
   # Optional IPv4 API endpoint, advertised by kube-vip. Requires BGP routing
   # to the nodes and must not overlap node IPs, podCidr, or serviceCidr.
   # Empty uses the IP of the node that initializes the cluster.

@@ -55,6 +55,7 @@ func TestBuildRoundTrip(t *testing.T) {
 		"cluster.serviceCidr=10.200.0.0/16",
 		"cluster.nodeAgentPort=50051",
 		"cluster.etcdEncryption=false",
+		"cluster.schedulableControlPlane=false",
 		"cluster.kubeletConfig.systemReservedMemory=8Gi",
 		"registry.bootstrapRepo=nvcr.io/example/cwe",
 		"registry.bootstrapChart=cloud-workflow-engine",
@@ -126,7 +127,7 @@ func TestRenderOmitsUnsetOptionalFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
-	for _, unwanted := range []string{"cniVersion", "controlPlaneVIP", "etcdEncryption", "caCertFile", "caKeyFile", "apiKey"} {
+	for _, unwanted := range []string{"cniVersion", "controlPlaneVIP", "etcdEncryption", "schedulableControlPlane", "caCertFile", "caKeyFile", "apiKey"} {
 		if line := uncommentedLineFor(string(rendered), unwanted); line != "" {
 			t.Errorf("rendered site spec sets %s as %q; an unset optional field should stay a comment:\n%s",
 				unwanted, line, rendered)
@@ -410,6 +411,42 @@ func TestRenderEtcdEncryptionIsABool(t *testing.T) {
 
 	_, err = Build("my-tier0-site", threeNodes(), []string{"cluster.etcdEncryption=maybe"})
 	if err == nil || !strings.Contains(err.Error(), "cluster.etcdEncryption") || !strings.Contains(err.Error(), "maybe") {
+		t.Errorf("Build with a non-boolean value: err = %v, want one naming the path and the value", err)
+	}
+}
+
+// TestRenderSchedulableControlPlaneIsABool: same contract as etcdEncryption.
+// Only an explicit false is written, and it is written as a YAML bool.
+func TestRenderSchedulableControlPlaneIsABool(t *testing.T) {
+	built, err := Build("my-tier0-site", threeNodes(), []string{"cluster.schedulableControlPlane=false"})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if built.Cluster.SchedulableControlPlaneEnabled() {
+		t.Fatal("--set cluster.schedulableControlPlane=false left the untaint enabled")
+	}
+	rendered, err := built.Render()
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if line := uncommentedLineFor(string(rendered), "schedulableControlPlane"); line != "schedulableControlPlane: false" {
+		t.Errorf("rendered line = %q, want %q:\n%s", line, "schedulableControlPlane: false", rendered)
+	}
+
+	built, err = Build("my-tier0-site", threeNodes(), []string{"cluster.schedulableControlPlane=true"})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	rendered, err = built.Render()
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if line := uncommentedLineFor(string(rendered), "schedulableControlPlane"); line != "" {
+		t.Errorf("explicit true rendered as %q; the default should stay a comment", line)
+	}
+
+	_, err = Build("my-tier0-site", threeNodes(), []string{"cluster.schedulableControlPlane=maybe"})
+	if err == nil || !strings.Contains(err.Error(), "cluster.schedulableControlPlane") || !strings.Contains(err.Error(), "maybe") {
 		t.Errorf("Build with a non-boolean value: err = %v, want one naming the path and the value", err)
 	}
 }

@@ -271,12 +271,13 @@ func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	spireEntriesDumped := false
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:        writeSiteSpec(t, validSiteSpec),
-		bootstrapRunner: runner,
-		cweRunner:       fakeCWERunner{},
-		kubeconfigOut:   kubeconfigOut,
-		lookPath:        runtimeOnPath,
-		dialContext:     refuseDial,
+		siteSpec:            writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:     runner,
+		cweRunner:           fakeCWERunner{},
+		kubeconfigOut:       kubeconfigOut,
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
 		dumpSpireEntries: func(_ context.Context, source, outputDir string) (int, error) {
 			spireEntriesDumped = true
 			if source == "" {
@@ -317,13 +318,14 @@ func TestRunBootstrapSiteRetainsBootstrapClusterWhenSpireEntryDumpFails(t *testi
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:         writeSiteSpec(t, validSiteSpec),
-		bootstrapRunner:  runner,
-		cweRunner:        fakeCWERunner{},
-		kubeconfigOut:    filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
-		lookPath:         runtimeOnPath,
-		dialContext:      refuseDial,
-		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+		siteSpec:            writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:     runner,
+		cweRunner:           fakeCWERunner{},
+		kubeconfigOut:       filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
+		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
 		dumpSpireEntries: func(context.Context, string, string) (int, error) {
 			return 0, errors.New("dump failed")
 		},
@@ -342,14 +344,15 @@ func TestRunBootstrapSiteSkipsSpireEntryDumpWhenMTLSDisabled(t *testing.T) {
 
 	dumpCalled := false
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:         writeSiteSpec(t, validSiteSpec),
-		disableMTLS:      true,
-		bootstrapRunner:  fakeBootstrapRunner{},
-		cweRunner:        fakeCWERunner{},
-		kubeconfigOut:    filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
-		lookPath:         runtimeOnPath,
-		dialContext:      refuseDial,
-		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+		siteSpec:            writeSiteSpec(t, validSiteSpec),
+		disableMTLS:         true,
+		bootstrapRunner:     fakeBootstrapRunner{},
+		cweRunner:           fakeCWERunner{},
+		kubeconfigOut:       filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
+		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
 		dumpSpireEntries: func(context.Context, string, string) (int, error) {
 			dumpCalled = true
 			return 0, nil
@@ -374,14 +377,15 @@ func TestRunBootstrapSiteFailsWhenTheClusterNeverComesUp(t *testing.T) {
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:         writeSiteSpec(t, validSiteSpec),
-		bootstrapRunner:  runner,
-		cweRunner:        fakeCWERunner{},
-		clusterTimeout:   5 * time.Millisecond,
-		kubeconfigOut:    filepath.Join(t.TempDir(), "unused.kubeconfig"),
-		lookPath:         runtimeOnPath,
-		dialContext:      refuseDial,
-		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+		siteSpec:            writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:     runner,
+		cweRunner:           fakeCWERunner{},
+		clusterTimeout:      5 * time.Millisecond,
+		kubeconfigOut:       filepath.Join(t.TempDir(), "unused.kubeconfig"),
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
+		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
 	})
 	if err == nil {
 		t.Fatal("expected an error when the cluster never reports provisioned")
@@ -403,14 +407,15 @@ func TestRunBootstrapSiteRetainsClusterWhenKubeconfigIsNotPublished(t *testing.T
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:          writeSiteSpec(t, validSiteSpec),
-		bootstrapRunner:   runner,
-		cweRunner:         missingKubeconfigRunner{},
-		kubeconfigTimeout: 5 * time.Millisecond,
-		kubeconfigOut:     filepath.Join(t.TempDir(), "unused.kubeconfig"),
-		lookPath:          runtimeOnPath,
-		dialContext:       refuseDial,
-		encryptionKeyOut:  filepath.Join(t.TempDir(), "key.json"),
+		siteSpec:            writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:     runner,
+		cweRunner:           missingKubeconfigRunner{},
+		kubeconfigTimeout:   5 * time.Millisecond,
+		kubeconfigOut:       filepath.Join(t.TempDir(), "unused.kubeconfig"),
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
+		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
 	})
 	if err == nil {
 		t.Fatal("expected an error when the kubeconfig Secret is not published")
@@ -484,13 +489,14 @@ func TestRunBootstrapSiteUsesNerdctl(t *testing.T) {
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	_ = runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:         writeSiteSpec(t, validSiteSpec),
-		bootstrapRunner:  runner,
-		cweRunner:        fakeCWERunner{},
-		kubeconfigOut:    filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
-		lookPath:         runtimeOnPath,
-		dialContext:      refuseDial,
-		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+		siteSpec:            writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:     runner,
+		cweRunner:           fakeCWERunner{},
+		kubeconfigOut:       filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
+		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
 	})
 
 	if !slices.Contains(runner.names, bootstrapengine.RuntimeCLI) {
@@ -590,14 +596,15 @@ func TestRunBootstrapSiteDefaultsImagesToTheLocalBuild(t *testing.T) {
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:         writeSiteSpec(t, validSiteSpec),
-		bootstrapRunner:  runner,
-		cweRunner:        fakeCWERunner{},
-		kubeconfigOut:    filepath.Join(t.TempDir(), "site.kubeconfig"),
-		lookPath:         runtimeOnPath,
-		dialContext:      refuseDial,
-		dumpSpireEntries: func(context.Context, string, string) (int, error) { return 1, nil },
-		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+		siteSpec:            writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:     runner,
+		cweRunner:           fakeCWERunner{},
+		kubeconfigOut:       filepath.Join(t.TempDir(), "site.kubeconfig"),
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
+		dumpSpireEntries:    func(context.Context, string, string) (int, error) { return 1, nil },
+		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
 	})
 	if err != nil {
 		t.Fatalf("bootstrap with default images: %v", err)
@@ -652,12 +659,13 @@ func TestRunBootstrapSiteRefusesMissingLocalImageBeforeCreate(t *testing.T) {
 	})
 	runner := &recordingRunner{next: inner}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:         writeSiteSpec(t, validSiteSpec),
-		bootstrapRunner:  runner,
-		cweRunner:        fakeCWERunner{},
-		lookPath:         runtimeOnPath,
-		dialContext:      refuseDial,
-		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+		siteSpec:            writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:     runner,
+		cweRunner:           fakeCWERunner{},
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
+		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
 	})
 	if err == nil {
 		t.Fatal("expected an error when the default local image is not in the store")
@@ -807,13 +815,14 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 		startFakeCWEAPI(t, true)
 		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
 		err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-			siteSpec:        writeSiteSpec(t, validSiteSpec),
-			diagnosticsDir:  dir,
-			bootstrapRunner: fakeBootstrapRunner{},
-			cweRunner:       fakeCWERunner{},
-			kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
-			lookPath:        runtimeOnPath,
-			dialContext:     refuseDial,
+			siteSpec:            writeSiteSpec(t, validSiteSpec),
+			diagnosticsDir:      dir,
+			bootstrapRunner:     fakeBootstrapRunner{},
+			cweRunner:           fakeCWERunner{},
+			kubeconfigOut:       filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+			lookPath:            runtimeOnPath,
+			dialContext:         refuseDial,
+			untaintControlPlane: skipUntaint,
 			dumpSpireEntries: func(context.Context, string, string) (int, error) {
 				return 0, nil
 			},
@@ -834,13 +843,14 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
 		// CWE never reports healthy: the failure this exists for.
 		err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-			siteSpec:         writeSiteSpec(t, validSiteSpec),
-			diagnosticsDir:   dir,
-			bootstrapRunner:  fakeBootstrapRunner{},
-			cweRunner:        unhealthyCWERunner{},
-			lookPath:         runtimeOnPath,
-			dialContext:      refuseDial,
-			encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+			siteSpec:            writeSiteSpec(t, validSiteSpec),
+			diagnosticsDir:      dir,
+			bootstrapRunner:     fakeBootstrapRunner{},
+			cweRunner:           unhealthyCWERunner{},
+			lookPath:            runtimeOnPath,
+			dialContext:         refuseDial,
+			untaintControlPlane: skipUntaint,
+			encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
 		})
 		if err == nil {
 			t.Fatal("expected a real failure")
@@ -906,11 +916,12 @@ func TestRunBootstrapSiteWaitsForEveryControlPlaneNode(t *testing.T) {
 				// first read of the fake API has to land before the deadline.
 				// At 5ms it did on Linux and did not on the macOS runner,
 				// which reported "0 of 3". The deadline still ends the test.
-				clusterTimeout:   500 * time.Millisecond,
-				kubeconfigOut:    filepath.Join(t.TempDir(), "unused.kubeconfig"),
-				lookPath:         runtimeOnPath,
-				dialContext:      refuseDial,
-				encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+				clusterTimeout:      500 * time.Millisecond,
+				kubeconfigOut:       filepath.Join(t.TempDir(), "unused.kubeconfig"),
+				lookPath:            runtimeOnPath,
+				dialContext:         refuseDial,
+				untaintControlPlane: skipUntaint,
+				encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
 			})
 			if err == nil {
 				t.Fatalf("bootstrap reported success with %d of 3 control plane nodes joined", tc.joined)
@@ -946,12 +957,13 @@ func TestRunBootstrapSiteTearsDownOnceEveryNodeHasJoined(t *testing.T) {
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:        writeSiteSpec(t, threeNodeSiteSpec),
-		bootstrapRunner: runner,
-		cweRunner:       fakeCWERunner{},
-		kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
-		lookPath:        runtimeOnPath,
-		dialContext:     refuseDial,
+		siteSpec:            writeSiteSpec(t, threeNodeSiteSpec),
+		bootstrapRunner:     runner,
+		cweRunner:           fakeCWERunner{},
+		kubeconfigOut:       filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
 		dumpSpireEntries: func(context.Context, string, string) (int, error) {
 			return 0, nil
 		},
@@ -1013,13 +1025,14 @@ func TestRunBootstrapSiteSavesTheEtcdEncryptionKey(t *testing.T) {
 	keyOut := filepath.Join(t.TempDir(), "site-key.json")
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:         writeSiteSpec(t, validSiteSpec),
-		bootstrapRunner:  runner,
-		cweRunner:        fakeCWERunner{},
-		kubeconfigOut:    filepath.Join(t.TempDir(), "site.kubeconfig"),
-		encryptionKeyOut: keyOut,
-		lookPath:         runtimeOnPath,
-		dialContext:      refuseDial,
+		siteSpec:            writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:     runner,
+		cweRunner:           fakeCWERunner{},
+		kubeconfigOut:       filepath.Join(t.TempDir(), "site.kubeconfig"),
+		encryptionKeyOut:    keyOut,
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
 		dumpSpireEntries: func(context.Context, string, string) (int, error) {
 			return 0, nil
 		},
@@ -1080,13 +1093,14 @@ func TestRunBootstrapSiteRetainsClusterWhenKeyCaptureFails(t *testing.T) {
 	kubeconfigOut := filepath.Join(t.TempDir(), "site.kubeconfig")
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:         writeSiteSpec(t, validSiteSpec),
-		bootstrapRunner:  runner,
-		cweRunner:        missingEtcdKeyRunner{},
-		kubeconfigOut:    kubeconfigOut,
-		encryptionKeyOut: keyOut,
-		lookPath:         runtimeOnPath,
-		dialContext:      refuseDial,
+		siteSpec:            writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:     runner,
+		cweRunner:           missingEtcdKeyRunner{},
+		kubeconfigOut:       kubeconfigOut,
+		encryptionKeyOut:    keyOut,
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
 	})
 	if err == nil {
 		t.Fatal("expected an error when the key Secret cannot be read")
@@ -1151,13 +1165,14 @@ func TestRunBootstrapSiteSkipsKeyCaptureWhenEncryptionIsOff(t *testing.T) {
 	keyOut := filepath.Join(t.TempDir(), "key.json")
 	cwe := &recordingCWERunner{next: fakeCWERunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:         writeSiteSpec(t, strings.Replace(validSiteSpec, "  k8sVersion:", "  etcdEncryption: false\n  k8sVersion:", 1)),
-		bootstrapRunner:  &recordingRunner{next: fakeBootstrapRunner{}},
-		cweRunner:        cwe,
-		kubeconfigOut:    filepath.Join(t.TempDir(), "site.kubeconfig"),
-		encryptionKeyOut: keyOut,
-		lookPath:         runtimeOnPath,
-		dialContext:      refuseDial,
+		siteSpec:            writeSiteSpec(t, strings.Replace(validSiteSpec, "  k8sVersion:", "  etcdEncryption: false\n  k8sVersion:", 1)),
+		bootstrapRunner:     &recordingRunner{next: fakeBootstrapRunner{}},
+		cweRunner:           cwe,
+		kubeconfigOut:       filepath.Join(t.TempDir(), "site.kubeconfig"),
+		encryptionKeyOut:    keyOut,
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
 		dumpSpireEntries: func(context.Context, string, string) (int, error) {
 			return 0, nil
 		},
@@ -1184,12 +1199,13 @@ func TestRunBootstrapSiteRefusesAnExistingKeyFile(t *testing.T) {
 	}
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:         writeSiteSpec(t, validSiteSpec),
-		bootstrapRunner:  runner,
-		cweRunner:        fakeCWERunner{},
-		encryptionKeyOut: keyOut,
-		lookPath:         runtimeOnPath,
-		dialContext:      refuseDial,
+		siteSpec:            writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:     runner,
+		cweRunner:           fakeCWERunner{},
+		encryptionKeyOut:    keyOut,
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
 	})
 	if err == nil {
 		t.Fatal("expected an error when the key file already exists")
@@ -1206,6 +1222,10 @@ func TestRunBootstrapSiteRefusesAnExistingKeyFile(t *testing.T) {
 
 // refuseDial stands in for a site spec host with nothing on the API port, so
 // the pre-create probe passes without dialling anything real.
+// skipUntaint stands in for the control-plane untaint in tests that are not
+// about it, so no Kubernetes client is built from the fake kubeconfig.
+func skipUntaint(context.Context, string, *slog.Logger) ([]string, error) { return nil, nil }
+
 func refuseDial(context.Context, string, string) (net.Conn, error) {
 	return nil, errors.New("connection refused")
 }
@@ -1268,12 +1288,13 @@ func TestRunBootstrapSiteRefusesWhileAnEarlierBootstrapClusterRuns(t *testing.T)
 
 	runner := &recordingRunner{next: leftoverKindRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:         writeSiteSpec(t, validSiteSpec),
-		bootstrapRunner:  runner,
-		cweRunner:        fakeCWERunner{},
-		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
-		lookPath:         runtimeOnPath,
-		dialContext:      refuseDial,
+		siteSpec:            writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:     runner,
+		cweRunner:           fakeCWERunner{},
+		encryptionKeyOut:    filepath.Join(t.TempDir(), "key.json"),
+		lookPath:            runtimeOnPath,
+		dialContext:         refuseDial,
+		untaintControlPlane: skipUntaint,
 	})
 	if err == nil {
 		t.Fatal("expected an error while an earlier bootstrap cluster is still running")
@@ -1295,5 +1316,101 @@ func TestRunBootstrapSiteRefusesWhileAnEarlierBootstrapClusterRuns(t *testing.T)
 	}
 	if runner.sawArgs("create", "cluster") || runner.sawArgs("delete", "cluster") {
 		t.Errorf("the check must neither create nor delete a bootstrap cluster; calls: %v", runner.calls)
+	}
+}
+
+// TestRunBootstrapSiteRemovesTheControlPlaneTaint: the default site spec makes
+// every node schedulable, against the kubeconfig the command just wrote.
+func TestRunBootstrapSiteRemovesTheControlPlaneTaint(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPI(t, true)
+
+	kubeconfigOut := filepath.Join(t.TempDir(), "nke-site.kubeconfig")
+	untaintedWith := ""
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:         writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:  &recordingRunner{next: fakeBootstrapRunner{}},
+		cweRunner:        fakeCWERunner{},
+		kubeconfigOut:    kubeconfigOut,
+		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+		lookPath:         runtimeOnPath,
+		dialContext:      refuseDial,
+		dumpSpireEntries: func(context.Context, string, string) (int, error) { return 0, nil },
+		untaintControlPlane: func(_ context.Context, kubeconfigPath string, _ *slog.Logger) ([]string, error) {
+			untaintedWith = kubeconfigPath
+			return []string{"node1"}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("runBootstrapSite: %v", err)
+	}
+	if untaintedWith != kubeconfigOut {
+		t.Errorf("untaint ran against %q, want the written kubeconfig %q", untaintedWith, kubeconfigOut)
+	}
+}
+
+// TestRunBootstrapSiteKeepsTheTaintWhenAsked: schedulableControlPlane: false
+// is the opt-out for a site that brings its own workers.
+func TestRunBootstrapSiteKeepsTheTaintWhenAsked(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPI(t, true)
+
+	untaintCalled := false
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec: writeSiteSpec(t, strings.Replace(validSiteSpec,
+			"  k8sVersion:", "  schedulableControlPlane: false\n  k8sVersion:", 1)),
+		bootstrapRunner:  &recordingRunner{next: fakeBootstrapRunner{}},
+		cweRunner:        fakeCWERunner{},
+		kubeconfigOut:    filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+		lookPath:         runtimeOnPath,
+		dialContext:      refuseDial,
+		dumpSpireEntries: func(context.Context, string, string) (int, error) { return 0, nil },
+		untaintControlPlane: func(context.Context, string, *slog.Logger) ([]string, error) {
+			untaintCalled = true
+			return nil, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("runBootstrapSite: %v", err)
+	}
+	if untaintCalled {
+		t.Error("the control-plane taint was removed although schedulableControlPlane is false")
+	}
+}
+
+// TestRunBootstrapSiteReportsAnUntaintFailure: the cluster is built by then,
+// so the kubeconfig and key stay on disk and the error says how to finish.
+func TestRunBootstrapSiteReportsAnUntaintFailure(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPI(t, true)
+
+	kubeconfigOut := filepath.Join(t.TempDir(), "nke-site.kubeconfig")
+	keyOut := filepath.Join(t.TempDir(), "key.json")
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:         writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:  &recordingRunner{next: fakeBootstrapRunner{}},
+		cweRunner:        fakeCWERunner{},
+		kubeconfigOut:    kubeconfigOut,
+		encryptionKeyOut: keyOut,
+		lookPath:         runtimeOnPath,
+		dialContext:      refuseDial,
+		dumpSpireEntries: func(context.Context, string, string) (int, error) { return 0, nil },
+		untaintControlPlane: func(context.Context, string, *slog.Logger) ([]string, error) {
+			return nil, errors.New("nodes is forbidden")
+		},
+	})
+	if err == nil {
+		t.Fatal("runBootstrapSite returned nil, want the untaint failure")
+	}
+	for _, want := range []string{"nodes is forbidden", "kubectl taint nodes --all node-role.kubernetes.io/control-plane-", kubeconfigOut} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+	for _, path := range []string{kubeconfigOut, keyOut} {
+		if _, statErr := os.Stat(path); statErr != nil {
+			t.Errorf("%s is missing after the untaint failure: %v", path, statErr)
+		}
 	}
 }

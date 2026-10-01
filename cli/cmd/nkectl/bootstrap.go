@@ -29,6 +29,7 @@ import (
 	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitecluster"
 	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitespec"
 	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/spireentrydump"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/untaint"
 	"github.com/dsx-ai-factory/nke/cli/internal/clients"
 	"github.com/dsx-ai-factory/nke/cli/internal/config"
 )
@@ -101,6 +102,12 @@ type bootstrapSiteOptions struct {
 	// to avoid contacting a real cluster.
 	dumpSpireEntries func(context.Context, string, string) (int, error)
 
+	// untaintControlPlane overrides how the control-plane taint is removed
+	// from the finished cluster's nodes. Nil uses a Kubernetes client built
+	// from the cluster's kubeconfig; tests replace it to avoid contacting a
+	// real cluster.
+	untaintControlPlane func(ctx context.Context, kubeconfigPath string, logger *slog.Logger) ([]string, error)
+
 	// lookPath resolves the container runtime binary. Nil uses exec.LookPath;
 	// tests substitute it so they do not require a real nerdctl installation,
 	// the same seam bootstrapRunner and cweRunner provide for the commands.
@@ -139,6 +146,10 @@ nke-controller:latest and cluster-api-provider-provisioned:latest, which
 "make -C cli images" builds. NKECTL_CWE_IMAGE and NKECTL_CAPI_PROVISIONED_IMAGE
 name other images, such as ones pushed to a registry. cli/README.md lists every
 NKECTL_* variable.
+
+Every node becomes a control-plane node. Once the cluster is up, the
+control-plane NoSchedule taint is removed from each node so workloads can
+run; set cluster.schedulableControlPlane to false in the site spec to keep it.
 
 See the bundled examples/sitespec.yaml and docs/sitespec.md for the
 site spec file format.`,
@@ -453,6 +464,17 @@ func createSiteCluster(
 		}
 	}
 
+	// Every node is a control-plane node, so until the taint is gone nothing
+	// schedules. Last, so a failure here still leaves the kubeconfig and the
+	// key on disk; the error names the command that finishes the job by hand.
+	if inv.Cluster.SchedulableControlPlaneEnabled() {
+		if err := removeControlPlaneTaint(ctx, kubeconfigPath, opts, logger); err != nil {
+			return true, err
+		}
+	} else {
+		logger.Info("cluster.schedulableControlPlane is false; the control-plane taint stays on every node")
+	}
+
 	fmt.Fprintf(os.Stdout, "\nCluster %q is ready. Talk to it with:\n  kubectl --kubeconfig %s get nodes\n",
 		created.Name, kubeconfigPath)
 	if keyPath != "" {
@@ -460,6 +482,28 @@ func createSiteCluster(
 			"and keep it with the cluster's other credentials.\n", keyPath)
 	}
 	return true, nil
+}
+
+// removeControlPlaneTaint makes every node of the finished cluster
+// schedulable and logs the result.
+func removeControlPlaneTaint(ctx context.Context, kubeconfigPath string, opts *bootstrapSiteOptions, logger *slog.Logger) error {
+	run := opts.untaintControlPlane
+	if run == nil {
+		run = func(ctx context.Context, kubeconfigPath string, logger *slog.Logger) ([]string, error) {
+			client, err := untaint.NewClient(kubeconfigPath)
+			if err != nil {
+				return nil, err
+			}
+			return untaint.ControlPlane(ctx, client, logger)
+		}
+	}
+	changed, err := run(ctx, kubeconfigPath, logger)
+	if err != nil {
+		return fmt.Errorf("making the control-plane nodes schedulable: %w; the cluster is up and its kubeconfig is at %s, "+
+			"finish by hand with `%s --kubeconfig %s`", err, kubeconfigPath, untaint.ManualCommand, kubeconfigPath)
+	}
+	logger.Info("control-plane nodes are schedulable", "untainted", len(changed))
+	return nil
 }
 
 // etcdKeyPath is where the cluster's etcd encryption key is written.

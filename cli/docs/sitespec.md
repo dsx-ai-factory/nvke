@@ -74,6 +74,7 @@ is a file `bootstrap site` accepts.
 | `cluster.serviceCidr` | string | yes | Valid CIDR. |
 | `cluster.nodeAgentPort` | string | no | Port number 1–65535. Defaults to `15005`. |
 | `cluster.etcdEncryption` | bool | no | Encrypt the Kubernetes API's etcd data at rest. Defaults to `true`. Decided at bootstrap only: a cluster built with it `false` cannot be encrypted afterwards. See below. |
+| `cluster.schedulableControlPlane` | bool | no | Remove the control-plane `NoSchedule` taint from every node once the cluster is up. Defaults to `true`. See below. |
 | `cluster.kubeletConfig.systemReservedMemory` | string | no | e.g. `16Gi`. |
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
@@ -117,6 +118,7 @@ A set variable takes precedence over the file value.
 | `CLUSTER_SYSTEM_RESERVED_MEMORY` | `cluster.kubeletConfig.systemReservedMemory` |
 | `CLUSTER_NODE_AGENT_PORT` | `cluster.nodeAgentPort` |
 | `CLUSTER_ETCD_ENCRYPTION` | `cluster.etcdEncryption` |
+| `CLUSTER_SCHEDULABLE_CP` | `cluster.schedulableControlPlane` |
 | `REGISTRY_BOOTSTRAP_REPO` | `registry.bootstrapRepo` |
 | `REGISTRY_BOOTSTRAP_CHART` | `registry.bootstrapChart` |
 | `REGISTRY_API_KEY` | `registry.apiKey` |
@@ -199,6 +201,30 @@ control-plane node holds the key in its kube-apiserver configuration; the file
 is what a controller installed later is given, and the copy a restore onto new
 hosts needs. It is never overwritten, and the run refuses to start if it
 already exists.
+
+## Schedulable control plane
+
+Every site spec node is a control-plane node, and kubeadm taints each one
+`node-role.kubernetes.io/control-plane:NoSchedule`. With the taint in place
+nothing schedules: a Helm `--wait` or `clusterctl init` on the new cluster hangs
+until it times out, with no message saying why.
+
+`cluster.schedulableControlPlane` defaults to `true`. Once every node has
+joined, `nkectl bootstrap site` removes that taint from each node, so the
+cluster it hands over can run workloads. Other taints are left alone, and a
+node that already lacks the taint is not touched.
+
+Set it to `false` to keep the taint, for a site that adds dedicated worker
+nodes before it runs workloads. The command then prints nothing more about it;
+remove the taint later with:
+
+```bash
+kubectl taint nodes --all node-role.kubernetes.io/control-plane- \
+  --kubeconfig <clusterName>.kubeconfig
+```
+
+If the removal fails, the cluster is still up and the kubeconfig is on disk.
+The error names the command above so the step can be finished by hand.
 
 ## The control-plane VIP
 
