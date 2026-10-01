@@ -159,7 +159,7 @@ jobs:
     if: github.repository == 'dsx-ai-factory/nke' && needs.changes.outputs.run_e2e == 'true'
     name: Validate Packer project
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -167,6 +167,24 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      # Once per run here rather than in each of the eight bare-metal builds,
+      # which only need the binary.
+      - name: Test nke-os-image-check and the Packer scripts
+        working-directory: os-image
+        run: |
+          set -euo pipefail
+          make test
+          make -C packer test
 
       - name: Read pinned Packer version
         id: versions
@@ -319,13 +337,10 @@ jobs:
           echo "Publishing ${version} as: ${aliases[*]}"
           echo "Baking nke-agent ${agent_version} from source"
 
-      - name: Build and test nke-os-image-check
+      # validate-packer runs the tests; the release assets need the binary.
+      - name: Build nke-os-image-check
         working-directory: os-image
-        run: |
-          set -euo pipefail
-          make test
-          make build
-          make -C packer test
+        run: make build
 
       # qemu-system-arm provides qemu-system-aarch64; qemu-efi-aarch64
       # provides the AAVMF firmware the arm64 leg needs (arm64's equivalent
