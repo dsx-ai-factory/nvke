@@ -80,9 +80,11 @@ declare -a DIGESTS=(
 # Shapes that need no internal value to describe. Each is a PCRE2 pattern and a
 # label.
 declare -a SHAPES=(
-  # An NGC or Forge org id is a standalone sixteen-digit token. Checksums can
-  # contain that many consecutive digits too. A repeated digit is a placeholder.
-  '(?<![[:alnum:]_])(?!([0-9])\1{15})[0-9]{16}(?![[:alnum:]_])|sixteen-digit NGC or Forge org id'
+  # An NGC or Forge org id: sixteen digits, which nothing else here is shaped
+  # like. A repeated single digit is a placeholder and passes. A pinned
+  # checksum (a *_SHA256* make variable) can hold sixteen digits in a row, so
+  # those lines are skipped; \K reports only the id from the rest.
+  '^(?![ \t]*[A-Z0-9_]*SHA256[A-Z0-9_]*[ \t]*[?:]?=).*?\K(?<![0-9])(?!([0-9])\1{15})[0-9]{16}(?![0-9])|sixteen-digit NGC or Forge org id'
   # The internal switch and node naming scheme embeds a management address in
   # the hostname: 10-91-69-85.<site>.<domain>.
   '\b10-[0-9]{1,3}-[0-9]{1,3}-[0-9]{1,3}\.[a-zA-Z]|management address embedded in a hostname'
