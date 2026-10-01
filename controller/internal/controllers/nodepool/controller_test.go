@@ -34,12 +34,11 @@ func mustParse(s string) uuid.UUID {
 	return uuid.MustParse(s)
 }
 
-// setupProfilesDir creates a temp dir with osProfiles and configProfiles so
-// isOSProfileDeprecated / isConfigProfileDeprecated return false for test profile names.
-func setupProfilesDir(t *testing.T, osProfile, configProfile string) string {
+// setupProfilesDir creates a temp dir with a configProfiles entry so
+// isConfigProfileDeprecated returns false for the test profile name.
+func setupProfilesDir(t *testing.T, configProfile string) string {
 	t.Helper()
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "osProfiles", osProfile), 0o755))
 	configPath := filepath.Join(dir, "configProfiles", configProfile+".yaml")
 	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
 	require.NoError(t, os.WriteFile(configPath, []byte(""), 0o644))
@@ -59,7 +58,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(db.NodePool{}, db.ErrNotFound)
 
-		profilesDir := setupProfilesDir(t, osProfile, configProfile)
+		profilesDir := setupProfilesDir(t, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
 		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
@@ -122,7 +121,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			return ns.ID == newNodeSetID && ns.DesiredCount == 2
 		})).Return(newNodeSet, nil)
 
-		profilesDir := setupProfilesDir(t, osProfile, configProfile)
+		profilesDir := setupProfilesDir(t, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
 		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
@@ -153,7 +152,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
 
-		profilesDir := setupProfilesDir(t, osProfile, configProfile)
+		profilesDir := setupProfilesDir(t, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
 		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
@@ -186,7 +185,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
 
-		profilesDir := setupProfilesDir(t, osProfile, configProfile)
+		profilesDir := setupProfilesDir(t, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
 		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
@@ -244,7 +243,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			return ns.ID == currentNodeSetID && ns.DesiredCount == 3
 		})).Return(updatedSet, nil)
 
-		profilesDir := setupProfilesDir(t, osProfile, configProfile)
+		profilesDir := setupProfilesDir(t, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
 		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
@@ -327,7 +326,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			return ns.ID == newNodeSetID && ns.DesiredCount == 2
 		})).Return(updatedNewSet, nil)
 
-		profilesDir := setupProfilesDir(t, osProfile, configProfile)
+		profilesDir := setupProfilesDir(t, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
 		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
@@ -413,7 +412,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			return ns.ID == newNodeSetID && ns.DesiredCount == 2
 		})).Return(updatedNewSet, nil)
 
-		profilesDir := setupProfilesDir(t, osProfile, configProfile)
+		profilesDir := setupProfilesDir(t, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
 		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
@@ -480,7 +479,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			return ns.ID == currentNodeSetID && ns.DesiredCount == 2
 		})).Return(updatedCurrentSet, nil)
 
-		profilesDir := setupProfilesDir(t, osProfile, configProfile)
+		profilesDir := setupProfilesDir(t, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
 		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
@@ -537,7 +536,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			return ns.ID == currentNodeSetID && ns.DesiredCount == 5
 		})).Return(updatedSet, nil)
 
-		profilesDir := setupProfilesDir(t, osProfile, configProfile)
+		profilesDir := setupProfilesDir(t, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
 		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
@@ -606,7 +605,7 @@ func TestUnit_NodePoolControllerReconcileCAPIInfraTemplateChange(t *testing.T) {
 		return ns.ID == newNodeSetID && ns.DesiredCount == 2
 	})).Return(updatedNewSet, nil)
 
-	profilesDir := setupProfilesDir(t, "test-os-profile", "test-config-profile")
+	profilesDir := setupProfilesDir(t, "test-config-profile")
 	npc := nodepool.NewController(config.Config{ProfilesDir: profilesDir}, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 	mockDB.GetTx = func() db.Tx { return mockTx }
 

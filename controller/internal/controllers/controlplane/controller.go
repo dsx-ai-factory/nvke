@@ -32,6 +32,7 @@ type Controller struct {
 	logger                   *slog.Logger
 	controllerTemporalClient client.Client
 	k8sClient                ctrlclient.Client
+	k8sReader                ctrlclient.Reader
 }
 
 // NewController creates a new control plane Controller.
@@ -41,6 +42,7 @@ func NewController(
 	dbInstance *dbwrapper.DB,
 	controllerTemporalClient client.Client,
 	k8sClient ctrlclient.Client,
+	k8sReader ctrlclient.Reader,
 ) *Controller {
 	return &Controller{
 		cfg:                      cfg,
@@ -48,6 +50,7 @@ func NewController(
 		logger:                   logger.With("controller", "control-plane"),
 		controllerTemporalClient: controllerTemporalClient,
 		k8sClient:                k8sClient,
+		k8sReader:                k8sReader,
 	}
 }
 
@@ -96,7 +99,7 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 			return nil
 		}
 
-		reconciler := newReconciler(c.cfg, c.logger, tx, c.controllerTemporalClient, c.k8sClient)
+		reconciler := newReconciler(c.cfg, c.logger, tx, c.controllerTemporalClient, c.k8sClient, c.k8sReader)
 		return reconciler.reconcile(ctx, lockedCluster)
 	})
 	return reconcile.Result{}, err

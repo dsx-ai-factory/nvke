@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
+	enginev1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nke/controller/internal/auth"
@@ -201,7 +202,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	managementK8sClient, err := kube.NewRuntimeClient(spirev1alpha1.AddToScheme, nicov1.AddToScheme)
+	managementK8sClient, err := kube.NewRuntimeClient(spirev1alpha1.AddToScheme, nicov1.AddToScheme, enginev1.AddToScheme)
 	if err != nil {
 		logger.Error("Failed to create management-cluster Kubernetes client", "error", err)
 		os.Exit(1)
@@ -216,6 +217,7 @@ func main() {
 		},
 		spirev1alpha1.AddToScheme,
 		nicov1.AddToScheme,
+		enginev1.AddToScheme,
 	)
 	if err != nil {
 		logger.Error("Failed to create Kubernetes controller manager", "error", err)
@@ -476,6 +478,7 @@ func main() {
 		dbInstance,
 		temporalClient,
 		k8sControllerManager.GetClient(),
+		managementK8sClient,
 	)
 	if err := controlPlaneController.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up control plane controller", "error", err)
@@ -519,7 +522,7 @@ func main() {
 		logger.Info("Cert renewal controller disabled")
 	}
 
-	httpServer, err := server.NewServer(cfg, serverLogger, dbInstance, temporalClient, authenticator)
+	httpServer, err := server.NewServer(cfg, serverLogger, dbInstance, temporalClient, authenticator, managementK8sClient)
 	if err != nil {
 		logger.Error("Failed to construct HTTP server", "error", err)
 		os.Exit(1)

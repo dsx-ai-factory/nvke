@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
@@ -86,6 +87,12 @@ type stubNodePoolUpgradeConfig struct {
 	err error
 }
 
-func (s stubNodePoolUpgradeConfig) ResolveNodePoolUpgrade(_ string, nodePool db.NodePool, _ string, _ *slog.Logger) (db.NodePool, error) {
+func (s stubNodePoolUpgradeConfig) ResolveNodePoolUpgrade(
+	_ context.Context,
+	_ ctrlclient.Reader,
+	nodePool db.NodePool,
+	_ string,
+	_ *slog.Logger,
+) (db.NodePool, error) {
 	return nodePool, s.err
 }

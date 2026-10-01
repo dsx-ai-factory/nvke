@@ -7,8 +7,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
-	"path"
 	"strings"
 	"text/template"
 
@@ -23,21 +21,28 @@ import (
 )
 
 // renderBootstrapUserData renders the template-less Forge/NICo node's
-// cloud-init user data from its OS profile template.
-func (*Client) renderBootstrapUserData(ctx context.Context, deps shared.MachineCreateDeps, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) (string, error) {
+// cloud-init user data from the first-boot template of its release.
+func (*Client) renderBootstrapUserData(
+	ctx context.Context,
+	deps shared.MachineCreateDeps,
+	userDataTemplate string,
+	node db.Node,
+	nodeSet db.NodeSet,
+	nodePool db.NodePool,
+	cluster db.Cluster,
+) (string, error) {
 	provisioningConfig, err := ResolveNodeConfig(nodeSet, nodePool)
 	if err != nil {
 		return "", err
 	}
 
-	osProfileDir := path.Join(deps.ProfilesDir, "osProfiles", provisioningConfig.OSProfile)
 	teleportCfg, err := nicoMachineTeleportConfig(deps.Config, node, cluster, provisioningConfig.TeleportEnabled, provisioningConfig.NodePoolID, provisioningConfig.IsControlPlaneRole)
 	if err != nil {
 		return "", err
 	}
-	userData, err := getUserData(ctx, deps, osProfileDir, node, provisioningConfig.DiskSelectionStrategy, provisioningConfig.KubernetesVersion, teleportCfg, cluster)
+	userData, err := renderUserData(ctx, deps, userDataTemplate, node, provisioningConfig.DiskSelectionStrategy, provisioningConfig.KubernetesVersion, teleportCfg, cluster)
 	if err != nil {
-		return "", fmt.Errorf("failed to get user data for OS profile %s: %w", provisioningConfig.OSProfile, err)
+		return "", fmt.Errorf("failed to render user data for OS profile %s: %w", provisioningConfig.OSProfile, err)
 	}
 
 	return userData, nil
@@ -68,24 +73,6 @@ type TeleportUserDataConfig struct {
 	ProxyAddress string
 	JoinMethod   string
 	Labels       string
-}
-
-func getUserData(
-	ctx context.Context,
-	deps shared.MachineCreateDeps,
-	osProfileDir string,
-	node db.Node,
-	diskSelectionStrategy db.DiskSelectionStrategy,
-	kubernetesVersion string,
-	teleportCfg *TeleportUserDataConfig,
-	cluster db.Cluster,
-) (string, error) {
-	userDataTemplateBytes, err := os.ReadFile(path.Join(osProfileDir, "userData.tmpl"))
-	if err != nil {
-		return "", fmt.Errorf("failed to read user data template file: %w", err)
-	}
-
-	return renderUserData(ctx, deps, string(userDataTemplateBytes), node, diskSelectionStrategy, kubernetesVersion, teleportCfg, cluster)
 }
 
 func renderUserData(

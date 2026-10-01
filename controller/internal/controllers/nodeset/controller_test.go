@@ -23,12 +23,11 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
 )
 
-// setupProfilesDir creates a temp dir with osProfiles and configProfiles so
-// isOSProfileDeprecated / isConfigProfileDeprecated return false for test profile names.
-func setupProfilesDir(t *testing.T, osProfile, configProfile string) string {
+// setupProfilesDir creates a temp dir with a configProfiles entry so
+// isConfigProfileDeprecated returns false for the test profile name.
+func setupProfilesDir(t *testing.T, configProfile string) string {
 	t.Helper()
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "osProfiles", osProfile), 0o755))
 	configPath := filepath.Join(dir, "configProfiles", configProfile+".yaml")
 	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
 	require.NoError(t, os.WriteFile(configPath, []byte(""), 0o644))
@@ -44,7 +43,6 @@ func TestUnit_Reconcile(t *testing.T) {
 	nodePoolID := uuid.New()
 	nodeSetID := uuid.New()
 	instanceTypeID := uuid.New()
-	osProfile := "test-os-profile"
 	configProfile := "test-config-profile"
 
 	baseNodePool := db.NodePool{
@@ -277,7 +275,7 @@ func TestUnit_Reconcile(t *testing.T) {
 			mockDB := &testutil.MockDB{}
 			mockTx := &testutil.MockTx{}
 			params.setup(mockDB, mockTx, params.nodeSet)
-			params.cfg.ProfilesDir = setupProfilesDir(t, osProfile, configProfile)
+			params.cfg.ProfilesDir = setupProfilesDir(t, configProfile)
 			controller := nodeset.NewController(params.cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
 			result, err := controller.Reconcile(ctx, dbreconcile.NodeSetKey(params.nodeSet.ID))

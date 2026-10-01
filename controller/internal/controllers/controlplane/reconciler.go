@@ -25,6 +25,7 @@ type reconciler struct {
 	db                       db.Tx
 	controllerTemporalClient temporalclient.Client
 	k8sClient                ctrlclient.Client
+	k8sReader                ctrlclient.Reader
 
 	// nodePoolUpgradeConfig resolves the NodePoolUpgradeConfig client for a
 	// cluster. Defaults to clients.GetNodePoolUpgradeConfig; tests override it
@@ -39,6 +40,7 @@ func newReconciler(
 	db db.Tx,
 	controllerTemporalClient temporalclient.Client,
 	k8sClient ctrlclient.Client,
+	k8sReader ctrlclient.Reader,
 ) *reconciler {
 	return &reconciler{
 		cfg:                      cfg,
@@ -46,6 +48,7 @@ func newReconciler(
 		db:                       db,
 		controllerTemporalClient: controllerTemporalClient,
 		k8sClient:                k8sClient,
+		k8sReader:                k8sReader,
 		nodePoolUpgradeConfig:    clients.GetNodePoolUpgradeConfig,
 	}
 }

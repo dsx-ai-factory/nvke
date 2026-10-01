@@ -7,8 +7,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
-	"path"
 	"text/template"
 
 	"github.com/google/uuid"
@@ -72,9 +70,9 @@ func ResolveNodeConfig(nodeSet db.NodeSet, nodePool db.NodePool) (NodeConfig, er
 }
 
 // renderInfraMachine builds the NicoMachine CWE constructs for a NICo-backed
-// node. profilesDir is the OS/config profiles directory on disk, used to
-// read the OS profile's iPXE script.
-func (*Client) renderInfraMachine(profilesDir, namespace string, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) (client.Object, error) {
+// node. ipxeScriptTemplate is the iPXE script of the image the node's release
+// boots, which this renders with the node's disk selection strategy.
+func (*Client) renderInfraMachine(ipxeScriptTemplate, namespace string, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) (client.Object, error) {
 	config, err := ResolveNodeConfig(nodeSet, nodePool)
 	if err != nil {
 		return nil, err
@@ -84,10 +82,9 @@ func (*Client) renderInfraMachine(profilesDir, namespace string, node db.Node, n
 		return nil, err
 	}
 
-	osProfileDir := path.Join(profilesDir, "osProfiles", config.OSProfile)
-	ipxeScript, err := getIpxeScript(osProfileDir, string(config.DiskSelectionStrategy))
+	ipxeScript, err := renderIpxeScript(ipxeScriptTemplate, string(config.DiskSelectionStrategy))
 	if err != nil {
-		return nil, fmt.Errorf("failed to get iPXE script for OS profile %s: %w", config.OSProfile, err)
+		return nil, fmt.Errorf("failed to render iPXE script for OS profile %s: %w", config.OSProfile, err)
 	}
 
 	instanceLabels := BuildInstanceLabels(node, cluster, config.NodePoolID)
@@ -120,7 +117,18 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 		return err
 	}
 
-	infraMachineObj, err := c.renderInfraMachine(deps.ProfilesDir, deps.Namespace, node, nodeSet, nodePool, cluster)
+	config, err := ResolveNodeConfig(nodeSet, nodePool)
+	if err != nil {
+		return err
+	}
+	// Resolve once for both renderers below: two GETs per node instead of four,
+	// and the iPXE script and the user data come from the same read.
+	resolved, err := resolveRelease(ctx, deps.K8sClient, config.IsControlPlaneRole, config.OSProfile)
+	if err != nil {
+		return err
+	}
+
+	infraMachineObj, err := c.renderInfraMachine(resolved.image.Spec.NICo.IPXEScript, deps.Namespace, node, nodeSet, nodePool, cluster)
 	if err != nil {
 		return err
 	}
@@ -132,7 +140,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 		return fmt.Errorf("failed to apply NicoMachine %s: %w", nicoMachine.Name, err)
 	}
 
-	userData, err := c.renderBootstrapUserData(ctx, deps, node, nodeSet, nodePool, cluster)
+	userData, err := c.renderBootstrapUserData(ctx, deps, resolved.userDataTemplate, node, nodeSet, nodePool, cluster)
 	if err != nil {
 		return err
 	}
@@ -247,15 +255,6 @@ func uuidStrings(ids []uuid.UUID) []string {
 
 type ipxeData struct {
 	DiskSelectionStrategy string
-}
-
-func getIpxeScript(osProfileDir, diskSelectionStrategy string) (string, error) {
-	ipxeScriptBytes, err := os.ReadFile(path.Join(osProfileDir, "ipxeScript"))
-	if err != nil {
-		return "", fmt.Errorf("failed to read ipxeScript file: %w", err)
-	}
-
-	return renderIpxeScript(string(ipxeScriptBytes), diskSelectionStrategy)
 }
 
 func renderIpxeScript(ipxeScriptTemplate, diskSelectionStrategy string) (string, error) {

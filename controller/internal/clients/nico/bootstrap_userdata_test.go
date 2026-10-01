@@ -369,21 +369,31 @@ func parseAutoinstallWriteFiles(t *testing.T, userData string) []testWriteFile {
 func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
 	t.Parallel()
 
-	fixturePaths := []string{
-		filepath.Join("..", "..", "..", "profiles", "example", "profiles", "osProfiles", "example-ubuntu-24.04-amd64", "userData.tmpl"),
-		filepath.Join("..", "..", "..", "test", "fixtures", "profiles", "osProfiles", "nke-local-dev-kindest-arm64", "userData.tmpl"),
-		filepath.Join("..", "..", "..", "test", "fixtures", "profiles", "osProfiles", "nke-nico-vms-24.04-amd64-fde", "userData.tmpl"),
-		filepath.Join("..", "..", "..", "test", "fixtures", "profiles", "osProfiles", "nke-nico-vms-24.04-arm64-fde", "userData.tmpl"),
-		filepath.Join("..", "..", "..", "test", "fixtures", "profiles", "osProfiles", "test-fixture-amd64", "userData.tmpl"),
-		filepath.Join("..", "..", "..", "nico-sim", "test", "integration", "testutil", "testdata", "prod-userdata.tmpl"),
+	releasesDir := filepath.Join("..", "..", "..", "test", "fixtures", "releases")
+	fixtureTemplates := map[string]func(t *testing.T) string{}
+	for _, name := range []string{
+		"nke-local-dev-kindest-arm64",
+		"nke-nico-vms-24.04-amd64-fde",
+		"nke-nico-vms-24.04-arm64-fde",
+		"test-fixture-amd64",
+	} {
+		fixtureTemplates["release "+name] = func(t *testing.T) string {
+			t.Helper()
+			return releaseUserDataTemplate(t, filepath.Join(releasesDir, name+"-nodepoolrelease.yaml"))
+		}
+	}
+	fixtureTemplates["nico-sim prod-userdata"] = func(t *testing.T) string {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join("..", "..", "..", "nico-sim", "test", "integration", "testutil", "testdata", "prod-userdata.tmpl"))
+		require.NoError(t, err)
+		return string(data)
 	}
 
-	for _, fixturePath := range fixturePaths {
-		t.Run(fixturePath, func(t *testing.T) {
+	for fixtureName, load := range fixtureTemplates {
+		t.Run(fixtureName, func(t *testing.T) {
 			t.Parallel()
 
-			templateBytes, err := os.ReadFile(fixturePath)
-			require.NoError(t, err)
+			templateBytes := []byte(load(t))
 			cfg := config.Config{
 				DgxcTenantUser:               "test-admin",
 				DgxcTenantPassword:           "test-password",
@@ -475,6 +485,27 @@ func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
 			assert.Equal(t, `AGENT_ARGS="--secure-server-port 15005"`+"\n", defaultAgentConfigFile.Content)
 		})
 	}
+}
+
+// releaseUserDataTemplate reads the first-boot template out of a release
+// fixture, so these cases cover the templates CWE actually renders rather
+// than a copy of them.
+func releaseUserDataTemplate(t *testing.T, path string) string {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var release struct {
+		Spec struct {
+			MachineInit struct {
+				UserDataTemplate string `yaml:"userDataTemplate"`
+			} `yaml:"machineInit"`
+		} `yaml:"spec"`
+	}
+	require.NoError(t, yaml.Unmarshal(data, &release))
+	require.NotEmpty(t, release.Spec.MachineInit.UserDataTemplate)
+
+	return release.Spec.MachineInit.UserDataTemplate
 }
 
 // parseWriteFiles decodes write_files whether the document is a bare

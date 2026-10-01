@@ -136,7 +136,7 @@ func TestServerHealthEndpoints(t *testing.T) {
 		ManagedByK8sPlatform: false,
 		ProfilesDir:          "./profiles",
 	}
-	srv, err := NewServer(cfg, logger, mockDB, nil, nil)
+	srv, err := NewServer(cfg, logger, mockDB, nil, nil, nil)
 	require.NoError(t, err)
 
 	healthRR := httptest.NewRecorder()

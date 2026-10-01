@@ -31,7 +31,7 @@ func requestLogs(t *testing.T, tracingEnabled bool, traceparent string) (*httpte
 	var buf bytes.Buffer
 	logger := slog.New(otelx.LogHandler{Handler: slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})})
 	cfg := config.Config{ProfilesDir: "./profiles", Tracing: config.TracingConfig{Enabled: tracingEnabled}}
-	srv, err := server.NewServer(cfg, logger, &testutil.MockDB{}, nil, nil)
+	srv, err := server.NewServer(cfg, logger, &testutil.MockDB{}, nil, nil, nil)
 	require.NoError(t, err)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/clusters", strings.NewReader("not json"))

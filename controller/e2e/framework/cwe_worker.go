@@ -109,11 +109,7 @@ func StartCWEWorkerBinary(t testing.TB, cfg CWEWorkerBinaryConfig) *Process {
 	require.NotEmpty(t, cfg.DBConnectionString)
 	require.NotEmpty(t, cfg.KubeconfigPath)
 	require.NotEmpty(t, cfg.NodeAgent.Port)
-	// Fleet profiles are no longer baked into the worker binary. Point
-	// migrations that load osProfiles/metadata.yaml at the sanitized fixtures tree.
 	profilesDir := filepath.Join(RepoRoot(t), "test", "fixtures", "profiles")
-	_, err := os.Stat(filepath.Join(profilesDir, "osProfiles", "metadata.yaml"))
-	require.NoError(t, err, "expected fixture OS profile metadata under %s", profilesDir)
 
 	env := []string{
 		"DB_CONNECTION_STRING=" + cfg.DBConnectionString,

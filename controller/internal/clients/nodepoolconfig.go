@@ -4,25 +4,34 @@
 package clients
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/clients/capi"
 	"github.com/dsx-ai-factory/nke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
-// NodePoolUpgradeConfig resolves the OSProfile and/or KubernetesVersion a
+// NodePoolUpgradeConfig resolves the release and/or KubernetesVersion a
 // NodePool should move to when the cluster's target Kubernetes version
 // changes. Each provider has its own implementation, selected by
 // GetNodePoolUpgradeConfig, so provider-specific logic lives in its own
 // package instead of behind a switch shared by every provider.
 type NodePoolUpgradeConfig interface {
 	// ResolveNodePoolUpgrade returns nodePool updated to target
-	// targetKubernetesVersion, resolving any provider-specific fields
-	// (e.g. a NICo OSProfile) the version change requires. profilesDir is
-	// the OS/config profiles directory on disk.
-	ResolveNodePoolUpgrade(profilesDir string, nodePool db.NodePool, targetKubernetesVersion string, logger *slog.Logger) (db.NodePool, error)
+	// targetKubernetesVersion, resolving any provider-specific fields (e.g. a
+	// NICo release) the version change requires. reader reads the release
+	// resources the resolution selects from.
+	ResolveNodePoolUpgrade(
+		ctx context.Context,
+		reader ctrlclient.Reader,
+		nodePool db.NodePool,
+		targetKubernetesVersion string,
+		logger *slog.Logger,
+	) (db.NodePool, error)
 }
 
 // GetNodePoolUpgradeConfig selects the NodePoolUpgradeConfig implementation

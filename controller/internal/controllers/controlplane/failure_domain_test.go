@@ -243,6 +243,7 @@ func TestControllerReturnsErrorWhileClusterInfrastructureIsNotReady(t *testing.T
 		dbwrapper.New(mockDB, slog.Default()),
 		nil,
 		k8sClient,
+		k8sClient,
 	)
 
 	result, err := controller.Reconcile(context.Background(), dbreconcile.ClusterKey(clusterID))
@@ -357,6 +358,7 @@ func TestReconcilePlacesTheNodesItCreatedInTheSamePass(t *testing.T) {
 			slog.New(slog.DiscardHandler),
 			tx,
 			nil,
+			k8sClient,
 			k8sClient,
 		)
 		require.NoError(t, r.reconcile(ctx, cluster))

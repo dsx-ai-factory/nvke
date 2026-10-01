@@ -4,16 +4,25 @@
 package nico
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	enginev1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/machinerelease"
 )
 
 func discardLogger() *slog.Logger {
@@ -23,54 +32,37 @@ func discardLogger() *slog.Logger {
 func TestClient_ResolveNodePoolUpgrade(t *testing.T) {
 	t.Parallel()
 
-	tmpDir := t.TempDir()
-	profilesDir := filepath.Join(tmpDir, "profiles")
-	osProfilesDir := filepath.Join(profilesDir, "osProfiles")
-	require.NoError(t, os.MkdirAll(osProfilesDir, 0o755))
-
-	// Injected profile: KubernetesVersionInjected: true
-	require.NoError(t, os.WriteFile(filepath.Join(osProfilesDir, "metadata.yaml"), []byte(`profiles:
-  nke-injected:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-01"
-    ubuntu_version: "22.04"
-    kubernetes_version_injected: true
-  nke-embedded-1.31.9:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-01"
-    ubuntu_version: "22.04"
-  nke-embedded-1.32.0:
-    kubernetes_version: "1.32.0"
-    architecture: amd64
-    build_date: "2026-01-10"
-    ubuntu_version: "22.04"
-`), 0o644))
+	reader := testReleaseReader(t, releaseFixtures{
+		newReleaseFixture("nke-injected", "", "amd64", "", "2026-01-01", true, false),
+		newReleaseFixture("nke-embedded-1.31.9", "1.31.9", "amd64", "", "2026-01-01", false, false),
+		newReleaseFixture("nke-embedded-1.32.0", "1.32.0", "amd64", "", "2026-01-10", false, false),
+	})
 
 	nodePoolID := uuid.New()
 
-	t.Run("injected profile keeps OSProfile, updates KubernetesVersion", func(t *testing.T) {
+	// The fixtures are ClusterReleases, so these pools are control-plane pools;
+	// the non-control-plane branch reads NodePoolReleases and is covered below.
+	controlPlanePool := func(release string) db.NodePool {
+		pool := db.NodePool{ID: nodePoolID, KubernetesVersion: "1.31.9", ControlPlane: true}
+		pool.SetNico(db.NicoNodePoolProvider{OSProfile: release})
+		return pool
+	}
+
+	t.Run("injected release keeps its name, updates KubernetesVersion", func(t *testing.T) {
 		t.Parallel()
 
-		nodePool := db.NodePool{ID: nodePoolID, KubernetesVersion: "1.31.9"}
-		nodePool.SetNico(db.NicoNodePoolProvider{OSProfile: "nke-injected"})
-
-		updated, err := New().ResolveNodePoolUpgrade(profilesDir, nodePool, "1.32.0", discardLogger())
+		updated, err := New().ResolveNodePoolUpgrade(t.Context(), reader, controlPlanePool("nke-injected"), "1.32.0", discardLogger())
 		require.NoError(t, err)
 		assert.Equal(t, "1.32.0", updated.KubernetesVersion)
 		provider, err := updated.NicoProvider()
 		require.NoError(t, err)
-		assert.Equal(t, "nke-injected", provider.OSProfile, "injected profile should not be resolved to a new name")
+		assert.Equal(t, "nke-injected", provider.OSProfile, "an injected release should not be selected anew")
 	})
 
-	t.Run("embedded profile resolves a new OSProfile for the target version", func(t *testing.T) {
+	t.Run("embedded release selects a new release for the target version", func(t *testing.T) {
 		t.Parallel()
 
-		nodePool := db.NodePool{ID: nodePoolID, KubernetesVersion: "1.31.9"}
-		nodePool.SetNico(db.NicoNodePoolProvider{OSProfile: "nke-embedded-1.31.9"})
-
-		updated, err := New().ResolveNodePoolUpgrade(profilesDir, nodePool, "1.32.0", discardLogger())
+		updated, err := New().ResolveNodePoolUpgrade(t.Context(), reader, controlPlanePool("nke-embedded-1.31.9"), "1.32.0", discardLogger())
 		require.NoError(t, err)
 		assert.Equal(t, "1.32.0", updated.KubernetesVersion)
 		provider, err := updated.NicoProvider()
@@ -81,79 +73,66 @@ func TestClient_ResolveNodePoolUpgrade(t *testing.T) {
 	t.Run("missing nico payload errors", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := New().ResolveNodePoolUpgrade(profilesDir, db.NodePool{ID: nodePoolID}, "1.32.0", discardLogger())
+		_, err := New().ResolveNodePoolUpgrade(t.Context(), reader, db.NodePool{ID: nodePoolID}, "1.32.0", discardLogger())
 		require.Error(t, err)
+	})
+
+	t.Run("no reader errors", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := New().ResolveNodePoolUpgrade(t.Context(), nil, controlPlanePool("nke-injected"), "1.32.0", discardLogger())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "release reader is not configured")
 	})
 }
 
-func TestResolveOSProfile(t *testing.T) {
-	// Create a temporary directory for test profiles
-	tmpDir := t.TempDir()
-	profilesDir := filepath.Join(tmpDir, "profiles")
-	osProfilesDir := filepath.Join(profilesDir, "osProfiles")
-	require.NoError(t, os.MkdirAll(osProfilesDir, 0o755))
+// The upgrade is the path that reads the Kubernetes-version annotations, so it
+// is where a release that declares its version regime as neither embedded nor
+// injected is reported.
+func TestClient_ResolveNodePoolUpgradeRejectsBadInjectionAnnotation(t *testing.T) {
+	t.Parallel()
 
-	// Create test metadata.yaml
-	metadataContent := `profiles:
-  # AMD64 profiles
-  nke-1.31.9-260101:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-01"
-    ubuntu_version: "22.04"
+	fixture := newReleaseFixture("nke-undeclared", "1.31.9", "amd64", "", "2026-01-01", false, false)
+	fixture.release.Annotations[enginev1.MachineInitKubernetesVersionInjectedAnnotation] = "maybe"
+	reader := testReleaseReader(t, releaseFixtures{fixture})
 
-  nke-1.31.9-260115:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-15"
-    ubuntu_version: "22.04"
+	pool := db.NodePool{ID: uuid.New(), KubernetesVersion: "1.31.9", ControlPlane: true}
+	pool.SetNico(db.NicoNodePoolProvider{OSProfile: "nke-undeclared"})
 
-  nke-1.31.9-260120:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-20"
-    ubuntu_version: "22.04"
+	_, err := New().ResolveNodePoolUpgrade(t.Context(), reader, pool, "1.32.0", discardLogger())
+	require.ErrorIs(t, err, machinerelease.ErrInvalidRelease)
+	assert.Contains(t, err.Error(), "maybe")
+}
 
-  # ARM64 profiles
-  nke-1.31.9-260115-arm64:
-    kubernetes_version: "1.31.9"
-    architecture: arm64
-    build_date: "2026-01-15"
-    ubuntu_version: "22.04"
-    variant: "arm64"
+// A worker node pool stores a NodePoolRelease name, so resolution has to read
+// that kind rather than the ClusterRelease the control-plane pools use.
+func TestClient_ResolveNodePoolUpgradeReadsNodePoolReleases(t *testing.T) {
+	t.Parallel()
 
-  # OVN variant
-  nke-1.31.9-260115-ovn:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-15"
-    ubuntu_version: "22.04"
-    variant: "ovn"
+	scheme := runtime.NewScheme()
+	require.NoError(t, enginev1.AddToScheme(scheme))
+	reader := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(newNodePoolReleaseFixture("nke-worker-injected", true)...).Build()
 
-  nke-1.31.9-260120-ovn:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-20"
-    ubuntu_version: "22.04"
-    variant: "ovn"
+	pool := db.NodePool{ID: uuid.New(), KubernetesVersion: "1.31.9"}
+	pool.SetNico(db.NicoNodePoolProvider{OSProfile: "nke-worker-injected"})
 
-  # OSMO variant
-  nke-1.31.9-260110-osmo:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-10"
-    ubuntu_version: "22.04"
-    variant: "osmo"
+	updated, err := New().ResolveNodePoolUpgrade(t.Context(), reader, pool, "1.32.0", discardLogger())
+	require.NoError(t, err)
+	assert.Equal(t, "1.32.0", updated.KubernetesVersion)
+}
 
-  # Different K8s version
-  nke-1.30.5-260115:
-    kubernetes_version: "1.30.5"
-    architecture: amd64
-    build_date: "2026-01-15"
-    ubuntu_version: "22.04"
-`
-	metadataPath := filepath.Join(osProfilesDir, "metadata.yaml")
-	require.NoError(t, os.WriteFile(metadataPath, []byte(metadataContent), 0o644))
+func TestSelectUpgradeRelease(t *testing.T) {
+	releases := releaseFixtures{
+		newReleaseFixture("nke-1.31.9-260101", "1.31.9", "amd64", "", "2026-01-01", false, false),
+		newReleaseFixture("nke-1.31.9-260115", "1.31.9", "amd64", "", "2026-01-15", false, false),
+		newReleaseFixture("nke-1.31.9-260120", "1.31.9", "amd64", "", "2026-01-20", false, false),
+		newReleaseFixture("nke-1.31.9-260115-arm64", "1.31.9", "arm64", "arm64", "2026-01-15", false, false),
+		newReleaseFixture("nke-1.31.9-260115-ovn", "1.31.9", "amd64", "ovn", "2026-01-15", false, false),
+		newReleaseFixture("nke-1.31.9-260120-ovn", "1.31.9", "amd64", "ovn", "2026-01-20", false, false),
+		newReleaseFixture("nke-1.31.9-260110-osmo", "1.31.9", "amd64", "osmo", "2026-01-10", false, false),
+		newReleaseFixture("nke-1.30.5-260115", "1.30.5", "amd64", "", "2026-01-15", false, false),
+	}
 
 	tests := []struct {
 		name               string
@@ -174,42 +153,34 @@ func TestResolveOSProfile(t *testing.T) {
 		{
 			name:               "preserve amd64 architecture",
 			k8sVersion:         "1.31.9",
-			currentProfileName: "nke-1.30.5-260115", // amd64 profile
-			expectedProfile:    "nke-1.31.9-260120", // Newest amd64 for target version
+			currentProfileName: "nke-1.30.5-260115",
+			expectedProfile:    "nke-1.31.9-260120",
 			expectError:        false,
 		},
 		{
 			name:               "preserve arm64 architecture",
 			k8sVersion:         "1.31.9",
 			currentProfileName: "nke-1.31.9-260115-arm64",
-			expectedProfile:    "nke-1.31.9-260115-arm64", // Only arm64 profile available
+			expectedProfile:    "nke-1.31.9-260115-arm64",
 			expectError:        false,
 		},
 		{
 			name:               "preserve ovn variant",
 			k8sVersion:         "1.31.9",
 			currentProfileName: "nke-1.31.9-260115-ovn",
-			expectedProfile:    "nke-1.31.9-260120-ovn", // Newest ovn variant
+			expectedProfile:    "nke-1.31.9-260120-ovn",
 			expectError:        false,
 		},
 		{
 			name:               "preserve osmo variant",
 			k8sVersion:         "1.31.9",
 			currentProfileName: "nke-1.31.9-260110-osmo",
-			expectedProfile:    "nke-1.31.9-260110-osmo", // Only osmo profile
+			expectedProfile:    "nke-1.31.9-260110-osmo",
 			expectError:        false,
 		},
 		{
-			name:               "current profile not in metadata - returns error (no guessing)",
-			k8sVersion:         "1.31.9",
-			currentProfileName: "nke-unknown-profile",
-			expectedProfile:    "",
-			expectError:        true,
-			errorContains:      "not found in metadata",
-		},
-		{
 			name:               "no matching profile found",
-			k8sVersion:         "1.32.0", // Version doesn't exist
+			k8sVersion:         "1.32.0",
 			currentProfileName: "",
 			expectedProfile:    "",
 			expectError:        true,
@@ -217,7 +188,7 @@ func TestResolveOSProfile(t *testing.T) {
 		},
 		{
 			name:               "no matching arm64 profile for version",
-			k8sVersion:         "1.30.5", // No arm64 profiles for this version
+			k8sVersion:         "1.30.5",
 			currentProfileName: "nke-1.31.9-260115-arm64",
 			expectedProfile:    "",
 			expectError:        true,
@@ -226,15 +197,17 @@ func TestResolveOSProfile(t *testing.T) {
 		{
 			name:               "pick newest by build_date when multiple matches",
 			k8sVersion:         "1.31.9",
-			currentProfileName: "nke-1.31.9-260101", // amd64, no variant
-			expectedProfile:    "nke-1.31.9-260120", // Newest: 260120 > 260115 > 260101
+			currentProfileName: "nke-1.31.9-260101",
+			expectedProfile:    "nke-1.31.9-260120",
 			expectError:        false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := resolveOSProfile(profilesDir, tt.k8sVersion, tt.currentProfileName, discardLogger())
+			reader := testReleaseReader(t, releases)
+			result, err := selectUpgradeRelease(t.Context(), reader, true, tt.k8sVersion, tt.currentProfileName,
+				currentReleaseImage(t, reader, tt.currentProfileName), discardLogger())
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -249,135 +222,195 @@ func TestResolveOSProfile(t *testing.T) {
 	}
 }
 
-func TestResolveOSProfile_MetadataLoadError(t *testing.T) {
-	_, err := resolveOSProfile("/nonexistent/path", "1.31.9", "", discardLogger())
+func TestSelectUpgradeRelease_ListError(t *testing.T) {
+	reader := failingReleaseReader(t, fmt.Errorf("releases unavailable"))
+
+	_, err := selectUpgradeRelease(t.Context(), reader, true, "1.31.9", "", nil, discardLogger())
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to load OSProfile metadata")
+	assert.Contains(t, err.Error(), "listing ClusterReleases")
 }
 
-func TestResolveOSProfile_BuildDateOrdering(t *testing.T) {
-	// Test that build_date ordering works correctly (string comparison: "2026-01-20" > "2026-01-15")
-	tmpDir := t.TempDir()
-	profilesDir := filepath.Join(tmpDir, "profiles")
-	osProfilesDir := filepath.Join(profilesDir, "osProfiles")
-	require.NoError(t, os.MkdirAll(osProfilesDir, 0o755))
+// The selection cannot guess the metadata of a release that is not installed,
+// so resolving the current release fails before any selection happens.
+func TestResolveRelease_CurrentReleaseNotInstalled(t *testing.T) {
+	reader := testReleaseReader(t, releaseFixtures{
+		newReleaseFixture("nke-1.31.9-260101", "1.31.9", "amd64", "", "2026-01-01", false, false),
+	})
 
-	metadataContent := `profiles:
-  nke-1.30.5-260101:
-    kubernetes_version: "1.30.5"
-    architecture: amd64
-    build_date: "2026-01-01"
-    ubuntu_version: "22.04"
-  nke-1.31.9-260105:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-05"
-    ubuntu_version: "22.04"
-  nke-1.31.9-260120:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-20"
-    ubuntu_version: "22.04"
-  nke-1.31.9-260115:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-15"
-    ubuntu_version: "22.04"
-  nke-1.31.9-260110:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-10"
-    ubuntu_version: "22.04"
-  nke-1.31.9-260125:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-25"
-    ubuntu_version: "22.04"
-`
-	metadataPath := filepath.Join(osProfilesDir, "metadata.yaml")
-	require.NoError(t, os.WriteFile(metadataPath, []byte(metadataContent), 0o644))
+	_, err := resolveRelease(t.Context(), reader, true, "nke-unknown-profile")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `ClusterRelease "nke-unknown-profile" is not installed`)
+}
 
-	result, err := resolveOSProfile(profilesDir, "1.31.9", "nke-1.30.5-260101", discardLogger())
+func TestSelectUpgradeRelease_BuildDateOrdering(t *testing.T) {
+	reader := testReleaseReader(t, releaseFixtures{
+		newReleaseFixture("nke-1.30.5-260101", "1.30.5", "amd64", "", "2026-01-01", false, false),
+		newReleaseFixture("nke-1.31.9-260105", "1.31.9", "amd64", "", "2026-01-05", false, false),
+		newReleaseFixture("nke-1.31.9-260120", "1.31.9", "amd64", "", "2026-01-20", false, false),
+		newReleaseFixture("nke-1.31.9-260115", "1.31.9", "amd64", "", "2026-01-15", false, false),
+		newReleaseFixture("nke-1.31.9-260110", "1.31.9", "amd64", "", "2026-01-10", false, false),
+		newReleaseFixture("nke-1.31.9-260125", "1.31.9", "amd64", "", "2026-01-25", false, false),
+	})
+
+	result, err := selectUpgradeRelease(t.Context(), reader, true, "1.31.9", "nke-1.30.5-260101",
+		currentReleaseImage(t, reader, "nke-1.30.5-260101"), discardLogger())
 	require.NoError(t, err)
 	assert.Equal(t, "nke-1.31.9-260125", result, "Should pick profile with newest build_date (2026-01-25)")
 }
 
-func TestResolveOSProfile_VariantPreservation(t *testing.T) {
-	// Test that variant is correctly preserved when upgrading
-	tmpDir := t.TempDir()
-	profilesDir := filepath.Join(tmpDir, "profiles")
-	osProfilesDir := filepath.Join(profilesDir, "osProfiles")
-	require.NoError(t, os.MkdirAll(osProfilesDir, 0o755))
+func TestSelectUpgradeRelease_VariantPreservation(t *testing.T) {
+	reader := testReleaseReader(t, releaseFixtures{
+		newReleaseFixture("nke-1.30.5-260101-ovn", "1.30.5", "amd64", "ovn", "2026-01-01", false, false),
+		newReleaseFixture("nke-1.31.9-260115", "1.31.9", "amd64", "", "2026-01-15", false, false),
+		newReleaseFixture("nke-1.31.9-260115-ovn", "1.31.9", "amd64", "ovn", "2026-01-15", false, false),
+		newReleaseFixture("nke-1.31.9-260120-ovn", "1.31.9", "amd64", "ovn", "2026-01-20", false, false),
+	})
 
-	metadataContent := `profiles:
-  # Old version with ovn variant
-  nke-1.30.5-260101-ovn:
-    kubernetes_version: "1.30.5"
-    architecture: amd64
-    build_date: "2026-01-01"
-    ubuntu_version: "22.04"
-    variant: "ovn"
-
-  # New version - multiple profiles
-  nke-1.31.9-260115:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-15"
-    ubuntu_version: "22.04"
-
-  nke-1.31.9-260115-ovn:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-15"
-    ubuntu_version: "22.04"
-    variant: "ovn"
-
-  nke-1.31.9-260120-ovn:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-20"
-    ubuntu_version: "22.04"
-    variant: "ovn"
-`
-	metadataPath := filepath.Join(osProfilesDir, "metadata.yaml")
-	require.NoError(t, os.WriteFile(metadataPath, []byte(metadataContent), 0o644))
-
-	// Upgrading from ovn variant should select ovn variant in new version
-	result, err := resolveOSProfile(profilesDir, "1.31.9", "nke-1.30.5-260101-ovn", discardLogger())
+	result, err := selectUpgradeRelease(t.Context(), reader, true, "1.31.9", "nke-1.30.5-260101-ovn",
+		currentReleaseImage(t, reader, "nke-1.30.5-260101-ovn"), discardLogger())
 	require.NoError(t, err)
 	assert.Equal(t, "nke-1.31.9-260120-ovn", result, "Should preserve 'ovn' variant and pick newest")
 }
 
-func TestResolveOSProfile_LoggingBehavior(t *testing.T) {
-	// Verify that logging provides useful information
-	tmpDir := t.TempDir()
-	profilesDir := filepath.Join(tmpDir, "profiles")
-	osProfilesDir := filepath.Join(profilesDir, "osProfiles")
-	require.NoError(t, os.MkdirAll(osProfilesDir, 0o755))
+func TestSelectUpgradeRelease_SkipsDeprecatedAndKeepsInjected(t *testing.T) {
+	reader := testReleaseReader(t, releaseFixtures{
+		newReleaseFixture("nke-1.30.5-260101", "1.30.5", "amd64", "", "2026-01-01", false, true),
+		newReleaseFixture("nke-1.31.9-retired", "1.31.9", "amd64", "", "2026-02-01", false, true),
+		newReleaseFixture("nke-1.31.9-fixed", "1.31.9", "amd64", "", "2026-01-10", false, false),
+		newReleaseFixture("nke-injected", "", "amd64", "", "2026-01-20", true, false),
+	})
 
-	metadataContent := `profiles:
-  nke-1.30.5-260101-ovn:
-    kubernetes_version: "1.30.5"
-    architecture: amd64
-    build_date: "2026-01-01"
-    ubuntu_version: "22.04"
-    variant: "ovn"
-  nke-1.31.9-260115-ovn:
-    kubernetes_version: "1.31.9"
-    architecture: amd64
-    build_date: "2026-01-15"
-    ubuntu_version: "22.04"
-    variant: "ovn"
-`
-	metadataPath := filepath.Join(osProfilesDir, "metadata.yaml")
-	require.NoError(t, os.WriteFile(metadataPath, []byte(metadataContent), 0o644))
+	result, err := selectUpgradeRelease(t.Context(), reader, true, "1.35.0", "nke-1.30.5-260101",
+		currentReleaseImage(t, reader, "nke-1.30.5-260101"), discardLogger())
+	require.NoError(t, err)
+	assert.Equal(t, "nke-injected", result)
+}
 
-	// Use Info level to capture log output
+func TestSelectUpgradeRelease_LoggingBehavior(t *testing.T) {
+	reader := testReleaseReader(t, releaseFixtures{
+		newReleaseFixture("nke-1.30.5-260101-ovn", "1.30.5", "amd64", "ovn", "2026-01-01", false, false),
+		newReleaseFixture("nke-1.31.9-260115-ovn", "1.31.9", "amd64", "ovn", "2026-01-15", false, false),
+	})
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	result, err := resolveOSProfile(profilesDir, "1.31.9", "nke-1.30.5-260101-ovn", logger)
+	result, err := selectUpgradeRelease(t.Context(), reader, true, "1.31.9", "nke-1.30.5-260101-ovn",
+		currentReleaseImage(t, reader, "nke-1.30.5-260101-ovn"), logger)
 	require.NoError(t, err)
 	assert.Equal(t, "nke-1.31.9-260115-ovn", result)
-	// Note: Log output verification would require capturing logs, which we're not doing here
-	// but the test ensures the code path with logging executes without errors
+}
+
+// releaseFixture is a ClusterRelease and the MachineImage it boots.
+type releaseFixture struct {
+	release *enginev1.ClusterRelease
+	image   *enginev1.MachineImage
+}
+
+type releaseFixtures []releaseFixture
+
+func (f releaseFixtures) objects() []ctrlclient.Object {
+	objects := make([]ctrlclient.Object, 0, 2*len(f))
+	for _, fixture := range f {
+		objects = append(objects, fixture.release, fixture.image)
+	}
+	return objects
+}
+
+func testReleaseReader(t *testing.T, fixtures releaseFixtures) ctrlclient.Reader {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, enginev1.AddToScheme(scheme))
+	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(fixtures.objects()...).Build()
+}
+
+// currentReleaseImage resolves the image a named release boots, the way
+// ResolveNodePoolUpgrade does before it selects an upgrade target.
+func currentReleaseImage(t *testing.T, reader ctrlclient.Reader, name string) *enginev1.MachineImage {
+	t.Helper()
+	if name == "" {
+		return nil
+	}
+	resolved, err := resolveRelease(t.Context(), reader, true, name)
+	require.NoError(t, err)
+	return resolved.image
+}
+
+// failingReleaseReader reads releases from an API server that is down.
+func failingReleaseReader(t *testing.T, err error) ctrlclient.Reader {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, enginev1.AddToScheme(scheme))
+	return fake.NewClientBuilder().WithScheme(scheme).WithInterceptorFuncs(interceptor.Funcs{
+		List: func(context.Context, ctrlclient.WithWatch, ctrlclient.ObjectList, ...ctrlclient.ListOption) error {
+			return err
+		},
+	}).Build()
+}
+
+// newReleaseFixture builds a ClusterRelease named after, and booting, an image
+// with the given attributes. An injected release carries no Kubernetes version.
+func newReleaseFixture(name, version, architecture, variant, buildDate string, injected, deprecated bool) releaseFixture {
+	injectedValue := "false"
+	if injected {
+		injectedValue = "true"
+		version = ""
+	}
+	return releaseFixture{
+		release: &enginev1.ClusterRelease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+				Annotations: map[string]string{
+					enginev1.MachineInitKubernetesVersionAnnotation:         version,
+					enginev1.MachineInitKubernetesVersionInjectedAnnotation: injectedValue,
+				},
+			},
+			Spec: enginev1.ClusterReleaseSpec{
+				MachineImageRef: enginev1.MachineImageReference{Name: enginev1.ResourceName(name)},
+				MachineInit:     enginev1.MachineInit{UserDataTemplate: "#cloud-config\n"},
+				Lifecycle:       enginev1.ReleaseLifecycle{Deprecated: deprecated},
+			},
+		},
+		image: &enginev1.MachineImage{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec: enginev1.MachineImageSpec{
+				OperatingSystem: enginev1.OperatingSystem{Family: "ubuntu", Version: "22.04"},
+				Architecture:    architecture,
+				Variant:         variant,
+				BuildDate:       buildDate,
+				NICo:            enginev1.NICoBoot{IPXEScript: "#!ipxe\n"},
+			},
+		},
+	}
+}
+
+// newNodePoolReleaseFixture builds a NodePoolRelease and the MachineImage it
+// boots, the pair a worker pool's resolution reads.
+func newNodePoolReleaseFixture(name string, injected bool) []ctrlclient.Object {
+	injectedValue := "false"
+	if injected {
+		injectedValue = "true"
+	}
+	return []ctrlclient.Object{
+		&enginev1.NodePoolRelease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+				Annotations: map[string]string{
+					enginev1.MachineInitKubernetesVersionAnnotation:         "",
+					enginev1.MachineInitKubernetesVersionInjectedAnnotation: injectedValue,
+				},
+			},
+			Spec: enginev1.NodePoolReleaseSpec{
+				MachineImageRef: enginev1.MachineImageReference{Name: enginev1.ResourceName(name)},
+				MachineInit:     enginev1.MachineInit{UserDataTemplate: "#cloud-config\n"},
+			},
+		},
+		&enginev1.MachineImage{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec: enginev1.MachineImageSpec{
+				OperatingSystem: enginev1.OperatingSystem{Family: "ubuntu", Version: "22.04"},
+				Architecture:    "amd64",
+				BuildDate:       "2026-01-01",
+				NICo:            enginev1.NICoBoot{IPXEScript: "#!ipxe\n"},
+			},
+		},
+	}
 }

@@ -16,7 +16,7 @@ import (
 func TestClient_ResolveNodePoolUpgrade(t *testing.T) {
 	nodePool := db.NodePool{ID: uuid.New(), KubernetesVersion: "1.31.9"}
 
-	updated, err := New().ResolveNodePoolUpgrade("", nodePool, "1.32.0", nil)
+	updated, err := New().ResolveNodePoolUpgrade(t.Context(), nil, nodePool, "1.32.0", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "1.32.0", updated.KubernetesVersion)
 	assert.Equal(t, nodePool.ID, updated.ID)

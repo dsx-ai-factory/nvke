@@ -4,8 +4,6 @@
 package nico
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/google/uuid"
@@ -19,10 +17,7 @@ import (
 )
 
 func TestClient_renderInfraMachine(t *testing.T) {
-	profilesDir := t.TempDir()
-	osProfileDir := filepath.Join(profilesDir, "osProfiles", "test-os")
-	require.NoError(t, os.MkdirAll(osProfileDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(osProfileDir, "ipxeScript"), []byte("#!ipxe\n{{ .DiskSelectionStrategy }}"), 0o644))
+	const ipxeScriptTemplate = "#!ipxe\n{{ .DiskSelectionStrategy }}"
 
 	siteID := uuid.New()
 	vpcID := uuid.New()
@@ -51,7 +46,7 @@ func TestClient_renderInfraMachine(t *testing.T) {
 	node := db.Node{ID: uuid.New(), Name: "worker-0"}
 
 	t.Run("builds a NicoMachine for the node", func(t *testing.T) {
-		obj, err := New().renderInfraMachine(profilesDir, "nico-test-cluster", node, nodeSet, nodePool, cluster)
+		obj, err := New().renderInfraMachine(ipxeScriptTemplate, "nico-test-cluster", node, nodeSet, nodePool, cluster)
 		require.NoError(t, err)
 
 		nicoMachine, ok := obj.(*nicov1.NicoMachine)
@@ -65,7 +60,7 @@ func TestClient_renderInfraMachine(t *testing.T) {
 	})
 
 	t.Run("missing provider payload errors", func(t *testing.T) {
-		_, err := New().renderInfraMachine(profilesDir, "ns", db.Node{}, db.NodeSet{}, db.NodePool{}, db.Cluster{})
+		_, err := New().renderInfraMachine(ipxeScriptTemplate, "ns", db.Node{}, db.NodeSet{}, db.NodePool{}, db.Cluster{})
 		require.Error(t, err)
 		require.ErrorIs(t, err, db.ErrMissingProviderPayload)
 	})

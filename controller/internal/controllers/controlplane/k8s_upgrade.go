@@ -391,7 +391,7 @@ func (r *reconciler) updateNodePoolKubeVersion(
 	if err != nil {
 		return err
 	}
-	np, err = upgradeConfig.ResolveNodePoolUpgrade(r.cfg.ProfilesDir, np, cluster.KubernetesVersion, logger)
+	np, err = upgradeConfig.ResolveNodePoolUpgrade(ctx, r.k8sReader, np, cluster.KubernetesVersion, logger)
 	if err != nil {
 		return err
 	}

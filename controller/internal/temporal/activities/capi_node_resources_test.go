@@ -6,8 +6,6 @@ package activities
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/google/uuid"
@@ -25,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
+	enginev1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
@@ -131,7 +130,7 @@ func TestActivities_CreateCAPIInfraMachineForNode_TemplatelessNico_Idempotent(t 
 	}
 	cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "org-1", SiteID: siteID, VpcID: vpcID})
 	namespace := constants.NamespaceNKESystem
-	k8sClient := newCAPIMachineCreateClient(t)
+	k8sClient := newCAPIMachineCreateClient(t, testNicoWorkerRelease("test-os", "#!ipxe\n{{ .DiskSelectionStrategy }}", "#cloud-config\nhostname: {{ .Hostname }}\n")...)
 
 	mockDB := &testutil.MockDB{}
 	mockDB.On("GetNode", mock.Anything, nodeID).Return(node, nil)
@@ -662,29 +661,53 @@ func testNicoMachineForCAPIMachineReady(params nicoMachineRotationParameters) *n
 	return nicoMachine
 }
 
-func newCAPIMachineCreateClient(t *testing.T) client.Client {
+func newCAPIMachineCreateClient(t *testing.T, objects ...client.Object) client.Client {
 	t.Helper()
 
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, clusterv1.AddToScheme(scheme))
 	require.NoError(t, nicov1.AddToScheme(scheme))
+	require.NoError(t, enginev1.AddToScheme(scheme))
 	return fake.NewClientBuilder().
 		WithScheme(scheme).
+		WithObjects(objects...).
 		Build()
+}
+
+// testNicoWorkerRelease is the least a NICo worker node needs to provision: a
+// NodePoolRelease and the MachineImage it boots.
+func testNicoWorkerRelease(name, ipxe, userData string) []client.Object {
+	return []client.Object{
+		&enginev1.MachineImage{
+			ObjectMeta: metav1.ObjectMeta{Name: name + "-image"},
+			Spec: enginev1.MachineImageSpec{
+				OperatingSystem: enginev1.OperatingSystem{Family: "ubuntu", Version: "24.04"},
+				Architecture:    "amd64",
+				BuildDate:       "2026-01-01",
+				NICo:            enginev1.NICoBoot{IPXEScript: ipxe},
+			},
+		},
+		&enginev1.NodePoolRelease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+				Annotations: map[string]string{
+					enginev1.MachineInitKubernetesVersionAnnotation:         "",
+					enginev1.MachineInitKubernetesVersionInjectedAnnotation: "true",
+				},
+			},
+			Spec: enginev1.NodePoolReleaseSpec{
+				MachineImageRef: enginev1.MachineImageReference{Name: enginev1.ResourceName(name + "-image")},
+				MachineInit:     enginev1.MachineInit{UserDataTemplate: userData},
+			},
+		},
+	}
 }
 
 func testTemplateLessForgeCAPICfg(t *testing.T) config.Config {
 	t.Helper()
 
-	profilesDir := t.TempDir()
-	osProfileDir := filepath.Join(profilesDir, "osProfiles", "test-os")
-	require.NoError(t, os.MkdirAll(osProfileDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(osProfileDir, "ipxeScript"), []byte("#!ipxe\n{{ .DiskSelectionStrategy }}"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(osProfileDir, "userData.tmpl"), []byte("#cloud-config\nhostname: {{ .Hostname }}\n"), 0o644))
-
 	return config.Config{
-		ProfilesDir:                        profilesDir,
 		DgxcTenantUser:                     "nvidia",
 		DgxcTenantPassword:                 "password",
 		NodeAgent:                          config.NodeAgentConfig{Port: "15005"},

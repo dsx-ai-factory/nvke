@@ -5,43 +5,56 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"path"
+	"slices"
+
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	enginev1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
 
 	"github.com/dsx-ai-factory/nke/controller/api"
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
 )
 
 type osProfileService struct {
-	cfg    config.Config
-	logger *slog.Logger
+	k8sReader ctrlclient.Reader
+	logger    *slog.Logger
 }
 
-// NewOSProfileService creates a new OS profile service.
-func NewOSProfileService(cfg config.Config, logger *slog.Logger) *osProfileService {
+// NewOSProfileService creates a new OS profile service backed by the releases.
+func NewOSProfileService(logger *slog.Logger, k8sReader ctrlclient.Reader) *osProfileService {
 	return &osProfileService{
-		cfg:    cfg,
-		logger: logger,
+		k8sReader: k8sReader,
+		logger:    logger,
 	}
 }
 
-// ListOSProfiles returns a list of available OS profiles.
+// ListOSProfiles returns the names of the OS profiles that can be selected for
+// new clusters and node pools.
 func (s *osProfileService) ListOSProfiles(
 	ctx context.Context,
 	req api.ListOSProfilesRequestObject,
 ) (api.ListOSProfilesResponseObject, error) {
-	osProfiles, err := os.ReadDir(path.Join(s.cfg.ProfilesDir, "osProfiles"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read osProfiles directory: %w", err)
+	if s.k8sReader == nil {
+		return nil, errors.New("release reader is not configured")
 	}
 
-	osProfilesList := []api.OSProfile{}
-	for _, osProfile := range osProfiles {
-		if osProfile.IsDir() && osProfile.Name() != "deprecated" {
-			osProfilesList = append(osProfilesList, api.OSProfile{Name: osProfile.Name()})
+	var releases enginev1.ClusterReleaseList
+	if err := s.k8sReader.List(ctx, &releases); err != nil {
+		return nil, fmt.Errorf("failed to list ClusterReleases: %w", err)
+	}
+	names := make([]string, 0, len(releases.Items))
+	for i := range releases.Items {
+		if !releases.Items[i].Spec.Lifecycle.Deprecated {
+			names = append(names, releases.Items[i].Name)
 		}
+	}
+	slices.Sort(names)
+
+	osProfilesList := make([]api.OSProfile, 0, len(names))
+	for _, name := range names {
+		osProfilesList = append(osProfilesList, api.OSProfile{Name: name})
 	}
 
 	return api.ListOSProfiles200JSONResponse{OsProfiles: osProfilesList}, nil
