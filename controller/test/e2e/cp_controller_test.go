@@ -49,7 +49,7 @@ func validateControllerManagedControlPlane(test *tenantTest) {
 				eligible = eligible || domain.ControlPlane
 			}
 			if eligible {
-				By("Verifying the first control-plane Machine chose the first eligible failure domain")
+				By("Verifying the first control-plane Machine chose fd-a on the lexicographic tie")
 				assertCAPDControlPlaneFailureDomains(ctx, test, desired, map[string]int{"fd-a": 1})
 			} else {
 				By("Verifying no domain was requested when none is eligible for control-plane Machines")
@@ -383,6 +383,13 @@ func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 		if test.spec.Backend == nke.BackendCAPD {
 			By("Selecting the Machine in the less-used failure domain for deletion")
 			assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerUpdateDesiredCount, nil)
+			eligibleDomains := 0
+			for _, domain := range test.spec.CAPDFailureDomains {
+				if domain.ControlPlane {
+					eligibleDomains++
+				}
+			}
+			Expect(eligibleDomains).To(Equal(2), "the replacement-domain check requires exactly two eligible domains")
 			domainsByNode := make(map[string]string, len(cpNodes))
 			counts := make(map[string]int)
 			for _, node := range cpNodes {

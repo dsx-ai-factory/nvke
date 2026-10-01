@@ -209,8 +209,15 @@ placement stays balanced and the replacement refills the deleted Machine's
 domain. A second, provisioning-only `cp-controller` row
 advertises just a worker-only domain and checks that its control-plane Machine
 has no requested domain. The full CAPD backend E2E job runs both
-rows in its controller-managed leg. To run them against a flag-on local
-deployment, use:
+rows in its controller-managed leg.
+
+CAPD mirrors each requested domain into Machine status, so its observed-domain
+checks also verify that status propagation occurred. They cannot exercise the
+status-over-spec preference when those values differ; the control-plane
+`TestReadFailureDomains` unit test covers that case. An E2E drift scenario needs
+a backend where observed placement can differ from the request, such as CapNICo.
+
+To run these scenarios against a flag-on local deployment, use:
 
 ```bash
 make test-e2e ARGS='--label-filter="capd && cp-controller"'

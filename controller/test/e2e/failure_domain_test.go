@@ -123,16 +123,22 @@ func capdControlPlaneFailureDomainsAt(ctx context.Context, test *tenantTest, des
 	if eligible == 0 {
 		return nil
 	}
-	for label, counts := range map[string]map[string]int{"requested": got, "observed": observedCounts} {
+	for _, placement := range []struct {
+		label  string
+		counts map[string]int
+	}{
+		{label: "requested", counts: got},
+		{label: "observed", counts: observedCounts},
+	} {
 		fewest, most := math.MaxInt, 0
 		for domain, canHostControlPlane := range wantPublished {
 			if canHostControlPlane {
-				fewest = min(fewest, counts[domain])
-				most = max(most, counts[domain])
+				fewest = min(fewest, placement.counts[domain])
+				most = max(most, placement.counts[domain])
 			}
 		}
 		if most-fewest > 1 {
-			return fmt.Errorf("control-plane Machine %s placements are unbalanced: %v", label, counts)
+			return fmt.Errorf("control-plane Machine %s placements are unbalanced: %v", placement.label, placement.counts)
 		}
 	}
 	return nil
