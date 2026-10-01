@@ -219,6 +219,24 @@ func TestBootstrapSiteCommandWired(t *testing.T) {
 	}
 }
 
+// TestBootstrapSiteImageFlags pins the two image flags by name, so the
+// registration cannot drift from the help text and the docs that name them.
+func TestBootstrapSiteImageFlags(t *testing.T) {
+	root := newRootCmd("test", "test", "test", "test")
+	cmd, _, err := root.Find([]string{"bootstrap", siteSubcommand})
+	if err != nil {
+		t.Fatalf("find bootstrap site: %v", err)
+	}
+	for _, name := range []string{"controller-image", "provisioned-provider-image"} {
+		if cmd.Flags().Lookup(name) == nil {
+			t.Errorf("bootstrap site has no --%s flag", name)
+		}
+	}
+	if cmd.Flags().Lookup("cwe-image") != nil {
+		t.Error("bootstrap site still registers --cwe-image")
+	}
+}
+
 // TestRunBootstrapSiteDryRunValid confirms a valid site spec passes validation
 // and dry-run returns no error without dispatching anything.
 func TestRunBootstrapSiteDryRunValid(t *testing.T) {
@@ -458,7 +476,7 @@ func TestCWEDeployConfigUsesSiteSpecTrustDomain(t *testing.T) {
 
 	cfg, err := cweDeployConfig(&sitespec.SiteSpec{
 		Spire: sitespec.Spire{TrustDomain: "site.example.com"},
-	}, "bootstrap-cluster", false)
+	}, "bootstrap-cluster", false, "", "")
 	if err != nil {
 		t.Fatalf("cweDeployConfig: %v", err)
 	}
@@ -471,7 +489,7 @@ func TestCWEDeployConfigDefaultsTrustDomain(t *testing.T) {
 	setBootstrapEnv(t)
 	t.Setenv("NKECTL_SPIFFE_TRUST_DOMAIN", "")
 
-	cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "bootstrap-cluster", false)
+	cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "bootstrap-cluster", false, "", "")
 	if err != nil {
 		t.Fatalf("cweDeployConfig: %v", err)
 	}
@@ -1427,5 +1445,34 @@ func TestMakeControlPlaneSchedulableBuildsTheClientFromTheKubeconfig(t *testing.
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
 		}
+	}
+}
+
+// TestCWEDeployConfigImagePrecedence: a flag wins over its variable, and a
+// variable wins over the manifest default.
+func TestCWEDeployConfigImagePrecedence(t *testing.T) {
+	t.Setenv("NKECTL_CWE_IMAGE", "env.example/nke-controller:env")
+	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "")
+
+	cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "c", false, "flag.example/nke-controller:flag", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CWEImage != "flag.example/nke-controller:flag" {
+		t.Errorf("CWEImage = %q, want the flag", cfg.CWEImage)
+	}
+	if cfg.ProvisionedProviderImage != "cluster-api-provider-provisioned:latest" {
+		t.Errorf("ProvisionedProviderImage = %q, want the manifest default", cfg.ProvisionedProviderImage)
+	}
+
+	cfg, err = cweDeployConfig(&sitespec.SiteSpec{}, "c", false, "", "flag.example/provisioned:flag")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CWEImage != "env.example/nke-controller:env" {
+		t.Errorf("CWEImage = %q, want the variable", cfg.CWEImage)
+	}
+	if cfg.ProvisionedProviderImage != "flag.example/provisioned:flag" {
+		t.Errorf("ProvisionedProviderImage = %q, want the flag", cfg.ProvisionedProviderImage)
 	}
 }

@@ -82,7 +82,9 @@ The Kind cluster runs Postgres, Temporal, SPIRE, Cluster API and CWE.
 `nkectl get bootstrap-manifest` lists the charts and images the bootstrap
 fetches, with their versions. It leaves out the kind node image and what
 `clusterctl init` installs. The `NKECTL_*` variables in the
-[README](../README.md) point a chart or an image at another location.
+[README](../README.md) point a chart or an image at another location;
+`--controller-image` and `--provisioned-provider-image` do the same for the two
+built images for one run.
 
 ### 3. Install an infrastructure provider
 

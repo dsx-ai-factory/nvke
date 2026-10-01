@@ -299,8 +299,9 @@ export NKECTL_CWE_IMAGE=<nke-controller image>
 export NKECTL_CAPI_PROVISIONED_IMAGE=<provisioned provider image>
 ```
 
-`nkectl` carries the CWE chart and the provisioned provider's manifests. Step 4
-lists what it fetches.
+The `--controller-image` and `--provisioned-provider-image` flags do the same for one
+run. `nkectl` carries the CWE chart and the provisioned provider's manifests.
+Step 4 lists what it fetches.
 
 ### 4. Bootstrap
 
