@@ -3,7 +3,7 @@
 
 [Unit]
 Description=Raise nf_conntrack table limits
-Documentation=https://github.com/NVIDIA/nke/blob/main/os-image/SPEC.md https://docs.kernel.org/networking/nf_conntrack-sysctl.html
+Documentation=https://github.com/dsx-ai-factory/nke/blob/main/os-image/SPEC.md https://docs.kernel.org/networking/nf_conntrack-sysctl.html
 # nf_conntrack is loaded by /etc/modules-load.d/nf_conntrack.conf. Ordering
 # before network.target puts this ahead of the container runtime and kubelet,
 # so the limits are in place before the CNI or kube-proxy starts tracking
