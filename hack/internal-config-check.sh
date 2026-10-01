@@ -85,7 +85,7 @@ declare -a SHAPES=(
   '(?<![0-9])(?!([0-9])\1{15})[0-9]{16}(?![0-9])|sixteen-digit NGC or Forge org id'
   # The internal switch and node naming scheme embeds a management address in
   # the hostname: 10-91-69-85.<site>.<domain>.
-  '\b10-[0-9]{1,3}-[0-9]{1,3}-[0-9]{1,3}\.[a-z]|management address embedded in a hostname'
+  '\b10-[0-9]{1,3}-[0-9]{1,3}-[0-9]{1,3}\.[a-zA-Z]|management address embedded in a hostname'
 )
 
 # The scan covers what git would ship: every tracked file, plus untracked
@@ -118,7 +118,7 @@ shipped_files() {
 # anything matched is read from the output.
 scan() {
   # shellcheck disable=SC2016
-  if SCAN_OUT="$(shipped_files | xargs -0 -r sh -c 'rg "$@"; s=$?; [ "${s}" -le 1 ] || exit 255' rg "$@")"; then
+  if SCAN_OUT="$(shipped_files | xargs -0 -r sh -c 'rg --text "$@"; s=$?; [ "${s}" -le 1 ] || exit 255' rg "$@")"; then
     if [[ -n "${SCAN_OUT}" ]]; then SCAN_STATUS=0; else SCAN_STATUS=1; fi
   else
     SCAN_STATUS=2

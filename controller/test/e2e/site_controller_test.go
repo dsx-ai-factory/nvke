@@ -629,8 +629,9 @@ func TestDeployPathRefFollowsTheController(t *testing.T) {
 		return strings.TrimSpace(string(out))
 	}
 	git("init", "-q")
-	git("-c", "user.name=e2e", "-c", "user.email=e2e@example.com", "commit", "-q", "--allow-empty", "-m", "first")
-	git("tag", "controller/v0.1.1-rc.8")
+	git("-c", "user.name=e2e", "-c", "user.email=e2e@example.com", "-c", "commit.gpgsign=false",
+		"commit", "-q", "--allow-empty", "-m", "first")
+	git("-c", "tag.gpgsign=false", "tag", "controller/v0.1.1-rc.8")
 	commit := git("rev-parse", "--short=12", "HEAD")
 
 	for _, tc := range []struct{ name, configured, version, want string }{

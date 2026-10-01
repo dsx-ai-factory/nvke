@@ -97,7 +97,9 @@ identifiers also removes a resolution API call from the hot path of every run.
 Not from the file. Every `${NAME}` above is read from the process environment
 when the environment loads, and an unset one fails the run before anything is
 created. CI supplies them from repository variables, which is the same route
-`FORGE_TELEPORT_PROXY` and `FORGE_JUMP_HOST` already take.
+`FORGE_TELEPORT_PROXY` already takes. `FORGE_JUMP_HOST` and
+`FORGE_TELEPORT_JOIN_TOKEN` are repository secrets instead, so that the job
+log masks them.
 
 The split is between engineering and account. Which sites exist, which machine
 shapes they offer, and what those shapes `provides` is engineering: it is

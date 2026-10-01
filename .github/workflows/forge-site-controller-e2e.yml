@@ -213,15 +213,17 @@ jobs:
       # -- config.go leaves teleportIdentityFile empty and tsh reads the
       # environment, which is what a bot has instead of a login session.
       FORGE_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
-      # Not checked in: the jump host names internal topology. A repository
-      # variable rather than a secret, because a hostname is not a
-      # credential -- the credential is the Teleport identity.
-      FORGE_JUMP_HOST: ${{ vars.FORGE_JUMP_HOST }}
+      # Not checked in: the jump host names internal topology. A secret, not
+      # because a hostname is a credential -- the credential is the Teleport
+      # identity -- but because GitHub prints job-level env in every step's
+      # log header, and only a secret is masked there. A variable masked by a
+      # step is still in the clear in every header before that step.
+      FORGE_JUMP_HOST: ${{ secrets.FORGE_JUMP_HOST }}
       # The tbot join token. Names a Teleport resource rather than granting
       # anything on its own -- joining also requires this repository's OIDC
-      # identity, which is what the token is bound to -- so a variable, not
-      # a secret. Out of the file for the same reason as the jump host.
-      FORGE_TELEPORT_JOIN_TOKEN: ${{ vars.FORGE_TELEPORT_JOIN_TOKEN }}
+      # identity, which is what the token is bound to. A secret for the same
+      # reason as the jump host.
+      FORGE_TELEPORT_JOIN_TOKEN: ${{ secrets.FORGE_TELEPORT_JOIN_TOKEN }}
       # The jump host login, read by environments/forge.yaml beside
       # FORGE_JUMP_HOST. root because that is the only login the bot's role
       # grants, and the probe confirmed the certificate carries it. No
@@ -538,15 +540,9 @@ jobs:
         run: |
           set -Eeuo pipefail
           test -n "${FORGE_JUMP_HOST}" || {
-            echo "::error::the FORGE_JUMP_HOST repository variable is unset; the suite has no way to reach the node"
+            echo "::error::the FORGE_JUMP_HOST repository secret is unset; the suite has no way to reach the node"
             exit 1
           }
-          # A variable rather than a secret, and rightly so -- a hostname
-          # grants nothing. But it is the access path to the site, which is
-          # why environments/forge.yaml references it rather than naming it,
-          # and a job log is readable by more people than that file was
-          # withheld from. Masking holds for the rest of the job.
-          echo "::add-mask::${FORGE_JUMP_HOST}"
           # The repositories are the ones site-inputs pulled or tagged, so the
           # references the suite hands the bootstrap and the deploy path are
           # the ones the archives carry.
@@ -604,7 +600,6 @@ jobs:
           WAS_OS_IMAGE_BOOTLOADER: ${{ vars.FORGE_E2E_OS_IMAGE_BOOTLOADER }}
           WAS_OS_IMAGE: ${{ vars.FORGE_E2E_OS_IMAGE }}
           VAR_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
-          VAR_JUMP_HOST: ${{ vars.FORGE_JUMP_HOST }}
         run: |
           set -Eeuo pipefail
 
@@ -623,8 +618,8 @@ jobs:
             "image registry|SITE_IMAGE_REGISTRY|IN_IMAGE_REGISTRY|VAR_IMAGE_REGISTRY|SITE_E2E_IMAGE_REGISTRY|WAS_IMAGE_REGISTRY|FORGE_E2E_IMAGE_REGISTRY"
             "NGC org|SITE_E2E_NGC_ORG||VAR_NGC_ORG|SITE_E2E_NGC_ORG|WAS_NGC_ORG|FORGE_E2E_NGC_ORG"
             "Teleport proxy|FORGE_TELEPORT_PROXY||VAR_TELEPORT_PROXY|FORGE_TELEPORT_PROXY||"
-            "jump host|FORGE_JUMP_HOST||VAR_JUMP_HOST|FORGE_JUMP_HOST||"
-            "Teleport join token|FORGE_TELEPORT_JOIN_TOKEN||FORGE_TELEPORT_JOIN_TOKEN|FORGE_TELEPORT_JOIN_TOKEN||"
+            "jump host|FORGE_JUMP_HOST|||||"
+            "Teleport join token|FORGE_TELEPORT_JOIN_TOKEN|||||"
             "Forge org|FORGE_ORG_ID||FORGE_ORG_ID|FORGE_ORG_ID||"
             "Forge site|FORGE_SITE_ID||FORGE_SITE_ID|FORGE_SITE_ID||"
             "Forge VPC|FORGE_VPC_ID||FORGE_VPC_ID|FORGE_VPC_ID||"
@@ -696,6 +691,9 @@ jobs:
                 source="repository variable ${wasvarname} (deprecated, rename to ${varname})"
               else
                 source="workflow default"
+              fi
+              if [ "${withhold}" = 1 ]; then
+                source="repository secret ${resolved}"
               fi
               # The resolve step fills this one in from the checkout when no
               # published tag was asked for, so neither arm above named it.
@@ -797,6 +795,22 @@ jobs:
             -e2e.site-stage="${SITE_STAGE}" \
             -e2e.versions="controller=${SITE_CONTROLLER_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},os-image-bootloader=${OS_IMAGE_BOOTLOADER},os-image=${OS_IMAGE}" \
             "${keep[@]}" 2>&1 | tee site-e2e.log
+
+      # The suite names the jump host in its own errors ("not reachable
+      # through ..."), and those land in the log and the JUnit report. GitHub
+      # masks a secret in the job log, not in an uploaded artifact.
+      - name: Withhold the jump host from the run log
+        if: always()
+        shell: bash
+        working-directory: controller/test/e2e
+        run: |
+          set -Eeuo pipefail
+          [ -n "${FORGE_JUMP_HOST}" ] || exit 0
+          host="$(printf '%s' "${FORGE_JUMP_HOST}" | sed 's/[][\.*^$/]/\\&/g')"
+          for f in site-e2e.log site-e2e.junit.xml; do
+            [ -f "${f}" ] || continue
+            sed -i "s/${host}/<jump host>/g" "${f}"
+          done
 
       # The Ginkgo log carries every phase boundary, remote command and
       # failure. An hour-long run is worth more than a scroll-back in the job

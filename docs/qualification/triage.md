@@ -15,7 +15,8 @@ describes what to do when it stops doing it.
 
 ## Start with the artifacts
 
-Every run uploads these whether it passed or failed (`if: always()`):
+The upload runs whether the lane passed or failed (`if: always()`), and carries
+whichever of these the run produced:
 
 | Artifact | What it tells you |
 |---|---|
@@ -40,7 +41,7 @@ Work down. Each step has a different owner.
 flowchart TB
     R{"a red run"} --> A{"did the run reach Forge at all?"}
 
-    A -->|"no: it failed in a step before the lane"| NEVER["configuration or credentials, ours"]
+    A -->|"no: it failed in a step before the lane"| NEVER["setup, build, configuration<br/>or credentials, ours:<br/>read the failed step"]
     A -->|yes| B{"how far did it get?"}
 
     B -->|"the instance never became usable"| P{"which way?"}
@@ -49,7 +50,7 @@ flowchart TB
 
     P -->|"no machine was ever offered"| CAP["capacity: unschedulable,<br/>not a defect"]
     P -->|"never got an address"| DHCP["the DHCP fault"]
-    P -->|"Ready, but cloud-init never finished"| META["the metadata endpoint,<br/>broken by design right now"]
+    P -->|"Ready, but cloud-init never finished"| META["cloud-init: read its status and log;<br/>usually the metadata endpoint,<br/>broken by design right now"]
 ```
 
 Only the bootstrap and tenant branches are usually ours, which is why naming

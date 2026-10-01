@@ -17,6 +17,7 @@
 package environment
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -161,7 +162,11 @@ func (e *Environment) decodeInfrastructure(provider string, into any) error {
 	if len(e.Infrastructure) == 0 {
 		return fmt.Errorf("environment %q declares no infrastructure", e.Name)
 	}
-	if err := json.Unmarshal(e.Infrastructure, into); err != nil {
+	// Strict like the top level: a misspelled optional key, such as the jump
+	// host's key fingerprint, would otherwise drop the pin without a word.
+	dec := json.NewDecoder(bytes.NewReader(e.Infrastructure))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(into); err != nil {
 		return fmt.Errorf("decoding %s infrastructure in environment %q: %w", provider, e.Name, err)
 	}
 	return nil
