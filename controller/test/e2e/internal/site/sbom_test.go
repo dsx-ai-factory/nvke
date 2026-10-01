@@ -139,13 +139,18 @@ func TestSBOMRender(t *testing.T) {
 		}
 	}
 
-	var config map[string]map[string]string
+	var config struct {
+		Nico        map[string]string `json:"Nico"`
+		Registry    map[string]string `json:"Registry"`
+		Tenant      map[string]string `json:"Tenant"`
+		ClusterName string            `json:"ClusterName"`
+	}
 	if err := json.Unmarshal(files["bootstrap-config.json"], &config); err != nil {
 		t.Fatal(err)
 	}
-	if config["Nico"]["APIName"] != "forge" || config["Nico"]["Token"] != "tok" || config["Registry"]["Server"] != "ghcr.io" ||
-		config["Tenant"]["User"] != "admin" {
-		t.Errorf("bootstrap config = %v", config)
+	if config.Nico["APIName"] != "forge" || config.Nico["Token"] != "tok" || config.Registry["Server"] != "ghcr.io" ||
+		config.Tenant["User"] != "admin" || config.ClusterName != "e2e-site" {
+		t.Errorf("bootstrap config = %+v", config)
 	}
 }
 

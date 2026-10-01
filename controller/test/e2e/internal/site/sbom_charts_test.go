@@ -176,6 +176,15 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 		t.Fatalf("use-nke-sbom.sh --dry-run: %v\n%s", err, dryRun)
 	}
 	installs := helmInstalls(t, dryRun)
+	// A chart installed by path has to be among the exported assets, or the
+	// install fails on the site; --dry-run only prints the command.
+	for release, install := range installs {
+		if fields := strings.Fields(install); len(fields) > 4 && filepath.IsAbs(fields[4]) {
+			if _, err := os.Stat(filepath.Join(fields[4], "Chart.yaml")); err != nil {
+				t.Errorf("release %s installs %s, which DeployAssetPaths does not export: %v", release, fields[4], err)
+			}
+		}
+	}
 	for release, file := range map[string]string{
 		"controller": "controller.yaml",
 		"spire":      "spire.yaml",

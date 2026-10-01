@@ -335,7 +335,11 @@ func (d SBOM) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, er
 		}
 		files[name] = data
 	}
-	config, err := json.MarshalIndent(map[string]any{"Nico": d.Nico, "Registry": d.Registry, "Tenant": d.Tenant}, "", "  ")
+	// ClusterName is the name NKTP labels the site's telemetry with; NKE's
+	// kubeadm configuration names every cluster "kubernetes".
+	config, err := json.MarshalIndent(map[string]any{
+		"Nico": d.Nico, "Registry": d.Registry, "Tenant": d.Tenant, "ClusterName": t.SiteName,
+	}, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("render bootstrap config: %w", err)
 	}

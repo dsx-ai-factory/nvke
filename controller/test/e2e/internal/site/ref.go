@@ -27,16 +27,18 @@ const (
 	DeployPathRef = "HEAD"
 
 	// scriptsDir holds the install script and its helpers, deployDir the
-	// deploy paths and the charts they install by relative path, and hackDir
-	// the post-install script.
-	scriptsDir = "build"
-	deployDir  = "controller/deploy"
-	hackDir    = "controller/hack"
+	// deploy paths and the charts they install by relative path, hackDir
+	// the post-install script, and nktpChartDir the NKTP chart, which the
+	// nktp item installs by relative path from outside deployDir.
+	scriptsDir   = "build"
+	deployDir    = "controller/deploy"
+	hackDir      = "controller/hack"
+	nktpChartDir = "nktp/deploy/charts/nktp"
 )
 
 // DeployAssetPaths are what the SBOM deployer runs from.
 func DeployAssetPaths() []string {
-	return []string{scriptsDir, deployDir, hackDir}
+	return []string{scriptsDir, deployDir, hackDir, nktpChartDir}
 }
 
 // ExportRef writes paths as they are at ref in the repository at repo into a
