@@ -62,7 +62,7 @@ type capiMachineCreateContext struct {
 func (a *Activities) CreateCAPIInfraMachineForNode(ctx context.Context, input CreateCAPIInfraMachineForNodeInput) error {
 	node, err := a.db.GetNode(ctx, input.NodeID)
 	if err != nil {
-		return fmt.Errorf("failed to get node: %w", err)
+		return nonRetryableIfNotFound("failed to get node", err)
 	}
 	nodeSet, nodePool, err := nodes.GetNodeContext(ctx, a.db, node)
 	if err != nil {
@@ -274,7 +274,7 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 
 	node, err := a.db.GetNode(ctx, input.NodeID)
 	if err != nil {
-		return fmt.Errorf("failed to get node: %w", err)
+		return nonRetryableIfNotFound("failed to get node", err)
 	}
 	machine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
@@ -621,7 +621,10 @@ func (a *Activities) ApplyCAPIMachineRebootAnnotation(ctx context.Context, input
 
 	logger.Info("Applying CAPI machine reboot annotation", "nodeID", input.NodeID, "rebootTime", formattedRebootTime)
 	if err := a.applyCAPIMachineRebootAnnotation(ctx, input.NodeID, &formattedRebootTime); err != nil {
-		return ApplyCAPIMachineRebootAnnotationResult{}, fmt.Errorf("failed to apply machine reboot annotation: %w", err)
+		// Propagated directly, not re-wrapped: applyCAPIMachineRebootAnnotation
+		// already adds context, and re-wrapping with fmt.Errorf would strip the
+		// non-retryable marking nonRetryableIfNotFound sets for a missing node.
+		return ApplyCAPIMachineRebootAnnotationResult{}, err
 	}
 
 	return ApplyCAPIMachineRebootAnnotationResult{RebootStartedTime: rebootTime}, nil
@@ -632,7 +635,8 @@ func (a *Activities) DeleteCAPIMachineRebootAnnotation(ctx context.Context, inpu
 
 	logger.Info("Deleting CAPI machine reboot annotation", "nodeID", input.NodeID)
 	if err := a.applyCAPIMachineRebootAnnotation(ctx, input.NodeID, nil); err != nil {
-		return fmt.Errorf("failed to delete machine reboot annotation: %w", err)
+		// Propagated directly for the same reason as ApplyCAPIMachineRebootAnnotation.
+		return err
 	}
 
 	return nil
@@ -641,7 +645,7 @@ func (a *Activities) DeleteCAPIMachineRebootAnnotation(ctx context.Context, inpu
 func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeID uuid.UUID, annotation *string) error {
 	node, err := a.db.GetNode(ctx, nodeID)
 	if err != nil {
-		return fmt.Errorf("failed to get node: %w", err)
+		return nonRetryableIfNotFound("failed to get node", err)
 	}
 	namespace := constants.NamespaceNKESystem
 	machineName := node.Name
