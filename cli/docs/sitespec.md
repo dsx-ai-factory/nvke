@@ -43,8 +43,8 @@ this document uses. Run it with an unknown path to list what it accepts:
 
 ```bash
 nkectl generate sitespec my-tier0-site --nodes hosts.csv \
-  --set cluster.controlPlaneVIP=10.10.50.100 \
-  --set cluster.podCidr=10.100.0.0/16 > sitespec.yaml
+  --set cluster.controlPlaneVIP=10.10.50.10 \
+  --set cluster.podCidr=10.244.0.0/16 > sitespec.yaml
 ```
 
 Two fields are deliberately not settable. `cluster.nodes` comes from `--nodes`.

@@ -183,7 +183,7 @@ CWE consumes, and it becomes a SPIRE exec-auth kubeconfig when OIDC is on.
 ## Real Site
 
 Real hardware, a real NICo site, and a site controller that outlives your
-terminal. Steps 1 to 4 have been run end to end on leased bare metal, to a
+terminal. Steps 1 to 4 have been run end to end on leased bare metal with calico, to a
 `Ready` control-plane node; steps 5 to 7 have been run against mock NICo rather
 than a real site. Treat a surprise here as a bug in this page and say so.
 
@@ -266,13 +266,17 @@ cp-03,10.10.50.4,<sha256 of the node's TPM EK>
 
 ```bash
 nkectl generate sitespec my-site --nodes hosts.csv \
-  --set cluster.podCidr=10.100.0.0/16 \
+  --set cluster.controlPlaneVIP=10.10.50.10 \
+  --set cluster.podCidr=10.244.0.0/16 \
   --set spire.trustDomain=site.example.com \
   --set spire.caCertFile=./spire-ca.crt \
   --set spire.caKeyFile=./spire-ca.key > sitespec.yaml
 
 nkectl bootstrap site -f sitespec.yaml --dry-run   # validate, touch nothing
 ```
+
+`cluster.controlPlaneVIP` is advertised over BGP, so the network must peer
+with the nodes. See [sitespec.md](../cli/docs/sitespec.md).
 
 Read what it rendered. Unset fields get defaults that are silent rather than
 absent — the Kubernetes version, `systemReservedMemory` at 16Gi, and a literal
@@ -308,15 +312,18 @@ The key can come from the environment, from `--registry-api-key`, or from
 `registry.apiKey` in the spec; the flag wins.
 
 `nkectl get bootstrap-manifest` lists the charts and images the bootstrap
-fetches. [`hack/mirror-bootstrap-images.sh`](../hack/mirror-bootstrap-images.sh)
-copies those images into a local or private registry. To change where they
-come from:
+fetches. It leaves out the kind node image and what `clusterctl init` installs.
+[`hack/mirror-bootstrap-images.sh`](../hack/mirror-bootstrap-images.sh) copies
+the listed images into a local or private registry. To change where they come
+from:
 
 - `NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR=<host>` pulls the Docker Hub images from a mirror.
 - `NKECTL_CWE_TEMPORAL_CHART`, `NKECTL_CWE_SPIRE_CHART` and
   `NKECTL_CWE_SPIRE_CRDS_CHART` take an OCI reference or a local path.
 
-Cluster API and cert-manager come from `github.com` through `clusterctl init`.
+Images from `ghcr.io`, `registry.k8s.io` and `cgr.dev` come from those
+registries. Cluster API and cert-manager come from `github.com` through
+`clusterctl init`.
 
 It creates a throwaway kind cluster, installs Postgres, Temporal, SPIRE, CAPI and
 CWE into it, builds the site cluster on your hosts through `nke-agent`, and

@@ -108,7 +108,7 @@ NKE handles the following for you — you don't need deep expertise in these to 
 - **kubeadm internals** — NKE drives these via `nke-agent`
 - **Certificate lifecycle** — managed by `cert-manager` and `nke-agent`
 - **etcd operations** — managed by NKE with built-in encryption and `etcd-manager` for compaction and snapshots
-- **CNI configuration** — NKE configures Calico or OVN-Kubernetes during bootstrap based on your `cniName` setting
+- **CNI configuration** — NKE configures OVN-Kubernetes during bootstrap from your `cniName` setting; Calico is accepted for development
 
 ---
 
