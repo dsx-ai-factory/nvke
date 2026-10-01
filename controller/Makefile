@@ -76,6 +76,19 @@ lint: ## Lint source files. (run by the merge gate)
 fixture-releases: ## Regenerate test/fixtures/releases from test/fixtures/profiles.
 	go run ./hack/osprofiles-to-crs --profiles test/fixtures/profiles --output test/fixtures/releases --license Apache-2.0 --gitops=false
 
+RELEASE_CRD_DIR		?= $(REPO_ROOT)/management-engine/config/crd/bases
+RELEASE_CRD_NAMES	?= machineimages clusterreleases nodepoolreleases
+RELEASES_DIR		?= $(CURDIR)/test/fixtures/releases
+
+.PHONY: releases-install
+releases-install: ## Install the release CRDs and apply RELEASES_DIR to the cluster in KUBECONFIG (for CWE run outside the chart).
+	@set -eu; \
+	for name in $(RELEASE_CRD_NAMES); do \
+		kubectl apply --server-side --field-manager=releases -f "$(RELEASE_CRD_DIR)/internal.nke.nvidia.com_$$name.yaml"; \
+		kubectl wait --for=condition=Established --timeout=60s "crd/$$name.internal.nke.nvidia.com"; \
+	done; \
+	kubectl apply --server-side --field-manager=releases -f "$(RELEASES_DIR)"
+
 .PHONY: license
 license: ## Ensure license headers at code.
 	go run github.com/google/addlicense@$(ADDLICENSE_VERSION) -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" -ignore '.local/**' -ignore 'hack/**' -ignore 'test/fixtures/profiles/**' -ignore 'test/fixtures/capnico-crds/**' -ignore '**/testUserData.yaml' -ignore 'internal/kubeadmconfig/testdata/**' -ignore 'internal/controllers/tenantaccess/testdata/**' -ignore 'nico-sim/ui/vendor/**' -ignore 'nico-sim/test/integration/testutil/testdata/**' -ignore 'nico-sim/.dev/**' -ignore 'deploy/charts/**' .

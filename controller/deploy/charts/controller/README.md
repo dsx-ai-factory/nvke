@@ -96,6 +96,7 @@ A Helm chart to deploy the NKE controller service
 | profiles.image.tag | string | `""` | Tag for the profiles content image (used when digest is empty) |
 | profiles.path | string | `""` | Directory mounted/read as PROFILES_DIR |
 | readinessProbe | string | `nil` |  |
+| releaseCRDs.install | bool | `true` | Install the MachineImage, ClusterRelease and NodePoolRelease CRDs with the chart. |
 | replicaCount | int | `1` |  |
 | resources | object | `{}` |  |
 | scheduledMaintenance.certRenewal.enabled | bool | `true` | Enable CWE-owned periodic Kubernetes control-plane certificate renewal. |

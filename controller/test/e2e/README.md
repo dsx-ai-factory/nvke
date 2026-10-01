@@ -230,17 +230,18 @@ LOCAL_NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES=false make test-e2e-capd-lo
 The `nico-vms && os-profiles` matrix gives each supported active OS profile an
 isolated sanity lifecycle: create a one-control-plane/one-worker tenant cluster,
 wait for both nodes to become Ready in CWE, and delete the cluster. The matrix
-reads active profile names, architectures, and Kubernetes versions from fleet
-OS profile metadata, which is maintained outside this repository. Resolution order:
+reads active release names, architectures, and Kubernetes versions from the
+fleet releases (NodePoolReleases that are not deprecated, and the
+MachineImages they reference), which is maintained outside this repository.
+Resolution order:
 
-1. `$NKE_CONTROLLER_PROFILES_DIR/osProfiles/metadata.yaml` (the deprecated
-   `$CWE_PROFILES_DIR` is read when this is unset)
-2. `$PROFILES_DIR/osProfiles/metadata.yaml`
-3. sibling `../nke-site-deploy/cwe-profiles/profiles/osProfiles/metadata.yaml`
+1. `$NKE_CONTROLLER_RELEASES_DIR`
+2. sibling `../nke-site-deploy/cwe-profiles/releases`
    (an NVIDIA-internal fleet repository; external contributors use the
-   environment variables above instead)
+   environment variable above instead)
+3. the stub mirror in `test/fixtures/fleet-releases`
 
-If fleet metadata is unavailable, nico-vms matrix table entries are skipped at
+If no releases are found, nico-vms matrix table entries are skipped at
 suite init (no panic) so CAPD and other label filters can still run.
 
 Profiles with an embedded Kubernetes version use that version for their
@@ -262,9 +263,9 @@ make test-e2e ARGS='--label-filter="os-profiles && nke-260625-24.04-x86-fde"'
 
 When adding an OS profile:
 
-1. Add its directory and active metadata entry to the fleet profiles
-   directory (for NVIDIA maintainers, the internal fleet repository; otherwise
-   the directory `$NKE_CONTROLLER_PROFILES_DIR` points at).
+1. Add its MachineImage and NodePoolRelease to the fleet releases (for
+   NVIDIA maintainers, the internal fleet repository; otherwise the directory
+   `$NKE_CONTROLLER_RELEASES_DIR` points at).
 2. For a tenant profile, no separate e2e list update is required; the matrix
    includes it automatically on a runner of its architecture.
 3. If nico-vms cannot support it, add it to

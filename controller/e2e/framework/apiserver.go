@@ -71,11 +71,15 @@ func StartAPIServer(t testing.TB) string {
 	setControllerRuntimeLogger()
 
 	env := &envtest.Environment{
-		CRDDirectoryPaths: gofailCRDDirectoryPaths(t),
+		CRDDirectoryPaths:     gofailCRDDirectoryPaths(t),
+		ErrorIfCRDPathMissing: true,
 	}
 	cfg, err := env.Start()
 	require.NoError(t, err, "starting the envtest API server")
 	requireGofailAPIResources(t, cfg)
+	// The worker resolves every OS image from the release resources, so the
+	// tests install them.
+	installReleases(t, cfg)
 	t.Cleanup(func() {
 		require.NoError(t, env.Stop(), "stopping the envtest API server")
 	})
@@ -118,7 +122,7 @@ func gofailCRDDirectoryPaths(t testing.TB) []string {
 		require.True(t, info.IsDir(), "expected CRD path %s to be a directory", path)
 	}
 
-	return paths
+	return append(paths, releaseCRDPaths(t)...)
 }
 
 func requireGofailAPIResources(t testing.TB, cfg *rest.Config) {

@@ -1,0 +1,820 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Mirror of the active releases in nke-site-deploy/cwe-profiles/releases.
+# TestNicoVMSOSProfileMatrix reads it to check that every entry in
+# nicoVMSOSProfileExclusions still names an active release, and that every
+# release that is not excluded is one nico-vms can boot.
+#
+# Only some fields are true: each active NodePoolRelease's name, Kubernetes
+# version annotations and image reference, and each MachineImage's
+# architecture. The rest are placeholders that satisfy the CRDs; nothing reads
+# them. Deprecated releases are left out, because the matrix covers active
+# ones.
+#
+# The nke-nico-vms-* entries are the suite's own releases rather than fleet
+# ones, and the matrix needs them here because it reads this index on both
+# architectures.
+#
+# Refresh this when releases are added or retired upstream. A stale copy still
+# runs the matrix, but stops catching a release retired in nke-site-deploy.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-1.29.7-251119
+spec:
+  architecture: amd64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-1.29.7-251119
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.29.7"
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+spec:
+  machineImageRef:
+    name: nke-1.29.7-251119
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-1.31.12-251029-osmo
+spec:
+  architecture: amd64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-1.31.12-251029-osmo
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.31.12"
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+spec:
+  machineImageRef:
+    name: nke-1.31.12-251029-osmo
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-1.31.9-251124-24.04-arm64
+spec:
+  architecture: arm64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-1.31.9-251124-24.04-arm64
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.31.9"
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+spec:
+  machineImageRef:
+    name: nke-1.31.9-251124-24.04-arm64
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-1.34.2-251201-amd64-ytl
+spec:
+  architecture: amd64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-1.34.2-251201-amd64-ytl
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+spec:
+  machineImageRef:
+    name: nke-1.34.2-251201-amd64-ytl
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-1.34.2-251201-arm64-ytl
+spec:
+  architecture: arm64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-1.34.2-251201-arm64-ytl
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+spec:
+  machineImageRef:
+    name: nke-1.34.2-251201-arm64-ytl
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-1.34.2-251205-amd64-ytl
+spec:
+  architecture: amd64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-1.34.2-251205-amd64-ytl
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+spec:
+  machineImageRef:
+    name: nke-1.34.2-251205-amd64-ytl
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-1.34.2-260616-amd64-ytl
+spec:
+  architecture: amd64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-1.34.2-260616-amd64-ytl
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+spec:
+  machineImageRef:
+    name: nke-1.34.2-260616-amd64-ytl
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-1.34.2-260616-arm64-ytl
+spec:
+  architecture: arm64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-1.34.2-260616-arm64-ytl
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+spec:
+  machineImageRef:
+    name: nke-1.34.2-260616-arm64-ytl
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-260313-22.04-amd64
+spec:
+  architecture: amd64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-260313-22.04-amd64
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+spec:
+  machineImageRef:
+    name: nke-260313-22.04-amd64
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-260318-22.04-amd64
+spec:
+  architecture: amd64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-260318-22.04-amd64
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+spec:
+  machineImageRef:
+    name: nke-260318-22.04-amd64
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-260319-22.04-amd64-osmo
+spec:
+  architecture: amd64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-260319-22.04-amd64-osmo
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+spec:
+  machineImageRef:
+    name: nke-260319-22.04-amd64-osmo
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-260323-24.04-amd64-fde-nvmesh-6.8.0-100-generic
+spec:
+  architecture: amd64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-260323-24.04-amd64-fde-nvmesh-6.8.0-100-generic
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+spec:
+  machineImageRef:
+    name: nke-260323-24.04-amd64-fde-nvmesh-6.8.0-100-generic
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-260511-22.04-amd64
+spec:
+  architecture: amd64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-260511-22.04-amd64
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+spec:
+  machineImageRef:
+    name: nke-260511-22.04-amd64
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-260602-24.04-arm64-fde
+spec:
+  architecture: arm64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-260602-24.04-arm64-fde
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+spec:
+  machineImageRef:
+    name: nke-260602-24.04-arm64-fde
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-260602-24.04-x86-fde
+spec:
+  architecture: amd64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-260602-24.04-x86-fde
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+spec:
+  machineImageRef:
+    name: nke-260602-24.04-x86-fde
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-260611-24.04-amd64-fde
+spec:
+  architecture: amd64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-260611-24.04-amd64-fde
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+spec:
+  machineImageRef:
+    name: nke-260611-24.04-amd64-fde
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-260611-24.04-arm64-fde
+spec:
+  architecture: arm64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-260611-24.04-arm64-fde
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+spec:
+  machineImageRef:
+    name: nke-260611-24.04-arm64-fde
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-260625-24.04-arm64-fde
+spec:
+  architecture: arm64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-260625-24.04-arm64-fde
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+spec:
+  machineImageRef:
+    name: nke-260625-24.04-arm64-fde
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-260625-24.04-arm64-fde-na-0.1.29
+spec:
+  architecture: arm64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-260625-24.04-arm64-fde-na-0.1.29
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+spec:
+  machineImageRef:
+    name: nke-260625-24.04-arm64-fde-na-0.1.29
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-260625-24.04-x86-fde
+spec:
+  architecture: amd64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-260625-24.04-x86-fde
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+spec:
+  machineImageRef:
+    name: nke-260625-24.04-x86-fde
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-260625-24.04-x86-fde-na-0.1.29
+spec:
+  architecture: amd64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-260625-24.04-x86-fde-na-0.1.29
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+spec:
+  machineImageRef:
+    name: nke-260625-24.04-x86-fde-na-0.1.29
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-nico-vms-24.04-amd64-fde
+spec:
+  architecture: amd64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-nico-vms-24.04-amd64-fde
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+spec:
+  machineImageRef:
+    name: nke-nico-vms-24.04-amd64-fde
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-nico-vms-24.04-amd64-fde-old-agent
+spec:
+  architecture: amd64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-nico-vms-24.04-amd64-fde-old-agent
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+spec:
+  machineImageRef:
+    name: nke-nico-vms-24.04-amd64-fde-old-agent
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-nico-vms-24.04-arm64-fde
+spec:
+  architecture: arm64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-nico-vms-24.04-arm64-fde
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+spec:
+  machineImageRef:
+    name: nke-nico-vms-24.04-arm64-fde
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: MachineImage
+metadata:
+  name: nke-local-dev-kindest-arm64
+spec:
+  architecture: arm64
+  buildDate: "2026-01-01"
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  nico:
+    ipxeScript: |
+      #!ipxe
+      # Placeholder. The matrix never renders this.
+---
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePoolRelease
+metadata:
+  name: nke-local-dev-kindest-arm64
+  annotations:
+    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
+    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+spec:
+  machineImageRef:
+    name: nke-local-dev-kindest-arm64
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+      # Placeholder. The matrix never renders this.
+  lifecycle:
+    deprecated: false

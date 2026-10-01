@@ -4,7 +4,6 @@
 package e2e
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -23,7 +22,7 @@ import (
 )
 
 // errOSProfileMetadataUnavailable is returned when fleet OS profile metadata
-// cannot be located (sibling nke-site-deploy / NKE_CONTROLLER_PROFILES_DIR / PROFILES_DIR).
+// cannot be located (sibling nke-site-deploy / NKE_CONTROLLER_RELEASES_DIR).
 var errOSProfileMetadataUnavailable = errors.New("OS profile fleet metadata unavailable")
 
 func isOSProfileMetadataUnavailable(err error) bool {
@@ -210,38 +209,109 @@ func otherArchProfiles(index osProfileMetadataIndex) int {
 	return count
 }
 
+const (
+	annotationKubernetesVersion         = "internal.nke.nvidia.com/machine-init-kubernetes-version"
+	annotationKubernetesVersionInjected = "internal.nke.nvidia.com/machine-init-kubernetes-version-injected"
+	kindMachineImage                    = "MachineImage"
+	kindNodePoolRelease                 = "NodePoolRelease"
+)
+
+// releaseStub is the part of a MachineImage or NodePoolRelease manifest the
+// matrix reads.
+type releaseStub struct {
+	Kind     string `json:"kind"`
+	Metadata struct {
+		Name        string            `json:"name"`
+		Annotations map[string]string `json:"annotations"`
+	} `json:"metadata"`
+	Spec struct {
+		Architecture    string `json:"architecture"`
+		MachineImageRef struct {
+			Name string `json:"name"`
+		} `json:"machineImageRef"`
+		Lifecycle struct {
+			Deprecated bool `json:"deprecated"`
+		} `json:"lifecycle"`
+	} `json:"spec"`
+}
+
+// loadActiveOSProfileMetadata indexes the releases by the name of each
+// active (not deprecated) NodePoolRelease, taking the Kubernetes version from
+// its annotations and the architecture from the MachineImage it references.
 func loadActiveOSProfileMetadata() (osProfileMetadataIndex, error) {
-	metadataPath, err := resolveOSProfileMetadataPath()
+	dir, err := resolveReleasesDir()
 	if err != nil {
 		return osProfileMetadataIndex{}, err
 	}
-	data, err := os.ReadFile(metadataPath)
+	stubs, err := readReleaseStubs(dir)
 	if err != nil {
-		return osProfileMetadataIndex{}, fmt.Errorf("reading %s: %w", metadataPath, err)
+		return osProfileMetadataIndex{}, err
 	}
 
-	var index osProfileMetadataIndex
-	if err := yaml.Unmarshal(data, &index); err != nil {
-		return osProfileMetadataIndex{}, fmt.Errorf("parsing %s: %w", metadataPath, err)
+	architectures := map[string]string{}
+	for _, stub := range stubs {
+		if stub.Kind == kindMachineImage {
+			architectures[stub.Metadata.Name] = stub.Spec.Architecture
+		}
+	}
+
+	index := osProfileMetadataIndex{Profiles: map[string]osProfileMetadata{}}
+	for _, stub := range stubs {
+		if stub.Kind != kindNodePoolRelease || stub.Spec.Lifecycle.Deprecated {
+			continue
+		}
+		image := stub.Spec.MachineImageRef.Name
+		architecture, ok := architectures[image]
+		if !ok {
+			return osProfileMetadataIndex{}, fmt.Errorf("NodePoolRelease %q references MachineImage %q, which is not in %s", stub.Metadata.Name, image, dir)
+		}
+		index.Profiles[stub.Metadata.Name] = osProfileMetadata{
+			KubernetesVersion:         stub.Metadata.Annotations[annotationKubernetesVersion],
+			KubernetesVersionInjected: stub.Metadata.Annotations[annotationKubernetesVersionInjected] == "true",
+			Architecture:              architecture,
+		}
 	}
 	return index, nil
 }
 
-// resolveOSProfileMetadataPath finds fleet OS profile metadata (moved to
-// nke-site-deploy). Order: NKE_CONTROLLER_PROFILES_DIR (the deprecated
-// CWE_PROFILES_DIR still works), PROFILES_DIR, sibling nke-site-deploy
-// checkout, in-repo mirror.
-//
-// The mirror is last so a real checkout always wins. It is a separate tree from
-// test/fixtures/profiles, which holds synthetic entries that are not OS profiles
-// and would otherwise turn into matrix specs.
-func resolveOSProfileMetadataPath() (string, error) {
-	candidates := make([]string, 0, 4)
-	if dir := cmp.Or(os.Getenv("NKE_CONTROLLER_PROFILES_DIR"), os.Getenv("CWE_PROFILES_DIR")); dir != "" {
-		candidates = append(candidates, filepath.Join(dir, "osProfiles", "metadata.yaml"))
+// readReleaseStubs reads every manifest under dir. A file may hold several
+// YAML documents.
+func readReleaseStubs(dir string) ([]releaseStub, error) {
+	paths, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
+	if err != nil {
+		return nil, fmt.Errorf("listing %s: %w", dir, err)
 	}
-	if dir := os.Getenv("PROFILES_DIR"); dir != "" {
-		candidates = append(candidates, filepath.Join(dir, "osProfiles", "metadata.yaml"))
+	sort.Strings(paths)
+
+	var stubs []releaseStub
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("reading %s: %w", path, err)
+		}
+		for _, doc := range strings.Split("\n"+string(data), "\n---") {
+			if strings.TrimSpace(doc) == "" {
+				continue
+			}
+			var stub releaseStub
+			if err := yaml.Unmarshal([]byte(doc), &stub); err != nil {
+				return nil, fmt.Errorf("parsing %s: %w", path, err)
+			}
+			if stub.Kind != "" {
+				stubs = append(stubs, stub)
+			}
+		}
+	}
+	return stubs, nil
+}
+
+// The mirror is last so a real checkout always wins. It is a separate tree from
+// test/fixtures/releases, which holds synthetic releases that are not fleet OS
+// profiles and would otherwise turn into matrix specs.
+func resolveReleasesDir() (string, error) {
+	candidates := make([]string, 0, 3)
+	if dir := os.Getenv("NKE_CONTROLLER_RELEASES_DIR"); dir != "" {
+		candidates = append(candidates, dir)
 	}
 
 	_, sourceFile, _, ok := runtime.Caller(0)
@@ -250,18 +320,18 @@ func resolveOSProfileMetadataPath() (string, error) {
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(sourceFile), "..", ".."))
 	candidates = append(candidates,
-		filepath.Join(repoRoot, "..", "nke-site-deploy", "cwe-profiles", "profiles", "osProfiles", "metadata.yaml"),
-		filepath.Join(repoRoot, "test", "fixtures", "fleet-profiles", "osProfiles", "metadata.yaml"),
+		filepath.Join(repoRoot, "..", "nke-site-deploy", "cwe-profiles", "releases"),
+		filepath.Join(repoRoot, "test", "fixtures", "fleet-releases"),
 	)
 
 	var missing []string
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
+	for _, dir := range candidates {
+		if matches, err := filepath.Glob(filepath.Join(dir, "*.yaml")); err == nil && len(matches) > 0 {
+			return dir, nil
 		}
-		missing = append(missing, path)
+		missing = append(missing, dir)
 	}
-	return "", fmt.Errorf("%w (set NKE_CONTROLLER_PROFILES_DIR to nke-site-deploy/cwe-profiles/profiles); tried: %s", errOSProfileMetadataUnavailable, strings.Join(missing, ", "))
+	return "", fmt.Errorf("%w (set NKE_CONTROLLER_RELEASES_DIR to nke-site-deploy/cwe-profiles/releases); tried: %s", errOSProfileMetadataUnavailable, strings.Join(missing, ", "))
 }
 
 func TestNicoVMSOSProfileMatrix(t *testing.T) {

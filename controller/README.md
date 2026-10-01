@@ -79,7 +79,7 @@ Use the latest tagged version or a specific semver (e.g. `@v0.0.5`) as needed.
 ## Choose a Development Path
 
 - `CAPI + Tilt (recommended)`: bring up a local Kind management cluster with CAPD, then run `tilt up` for an end-to-end local stack.
-- `Manual local/remote worker run`: work on the CWE worker without the local CAPI management-cluster flow by using `make run-local` or `make run-remote`.
+- `Manual local/remote worker run`: work on the CWE worker without the local CAPI management-cluster flow by using `make run-local` or `make run-remote`. `make run-local` installs the release CRDs and the fixture releases into the cluster in `KUBECONFIG` first (`make releases-install`); `make run-remote` installs nothing, so the cluster it reads must already have the releases (a fleet cluster gets them from Argo CD).
 - `UI-only development`: port-forward a live CWE deployment and run the local UI dev server against it.
 
 For the controller-to-node-agent TLS/JWT transport configuration, see

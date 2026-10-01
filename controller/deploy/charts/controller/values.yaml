@@ -362,6 +362,11 @@ tolerations: []
 
 affinity: {}
 
+releaseCRDs:
+  # -- Install the MachineImage, ClusterRelease and NodePoolRelease CRDs with
+  # the chart.
+  install: true
+
 capi:
   rbac:
     # -- Create RBAC for CWE to watch and patch CAPI/NICo resources.

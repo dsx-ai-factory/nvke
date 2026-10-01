@@ -358,8 +358,15 @@ export CNPG_CLOUD_PASSWORD="${CNPG_CLOUD_PASSWORD:-example-password}"
 export CNPG_TEMPORAL_PASSWORD="${CNPG_TEMPORAL_PASSWORD:-example-password}"
 export TENANT_ACCESS_ENABLED=true
 export NKE_OIDC_AUTH_ENABLED=true
+# Config profiles and runbooks only. OS images come from the releases below.
 # CWE_PROFILES_DIR is the deprecated name for NKE_CONTROLLER_PROFILES_DIR.
 export NKE_CONTROLLER_PROFILES_DIR="${NKE_CONTROLLER_PROFILES_DIR:-${CWE_PROFILES_DIR:-${CONTROLLER_ROOT}/test/fixtures/profiles}}"
+RELEASES_SRC="${NKE_CONTROLLER_RELEASES_DIR:-${CONTROLLER_ROOT}/test/fixtures/releases}"
+[[ -d "${RELEASES_SRC}" ]] || fail "releases not found at ${RELEASES_SRC}"
+export NKE_CONTROLLER_RELEASES_DIR="${STATE_DIR}/releases"
+rm -rf "${NKE_CONTROLLER_RELEASES_DIR}"
+mkdir -p "${NKE_CONTROLLER_RELEASES_DIR}"
+cp -R "${RELEASES_SRC}/." "${NKE_CONTROLLER_RELEASES_DIR}/"
 # Inherited by Tilt's serve_cmd. -1 skips the console SSH listener; :2222 taken is fatal.
 export NICO_VMS_CONSOLE_SSH_PORT="${NICO_VMS_CONSOLE_SSH_PORT:--1}"
 export NICO_VMS_LIBVIRT_URI="${LIBVIRT_URI}"
@@ -392,11 +399,11 @@ esac
 # this script wipes.
 export NICO_SIM_FILES_DIR="${NICO_SIM_DIR}/var/files"
 # nico-sim boots guests of the host's architecture, so the specs use the
-# matching profile. Keep this name in step with nicoVMSOSProfile in
+# matching release. Keep this name in step with nicoVMSOSProfile in
 # test/e2e/tenant_test.go.
-OS_PROFILE="nke-nico-vms-24.04-${host_arch}-fde"
-AGENT_URL_PATH="$(grep -oE 'files/[a-z-]+/nke-agent' "${NKE_CONTROLLER_PROFILES_DIR}/osProfiles/${OS_PROFILE}/userData.tmpl" | head -1)"
-[[ -n "${AGENT_URL_PATH}" ]] || fail "${OS_PROFILE} no longer downloads nke-agent from /files/"
+NODEPOOL_RELEASE="nke-nico-vms-24.04-${host_arch}-fde"
+AGENT_URL_PATH="$(grep -oE 'files/[a-z-]+/nke-agent' "${NKE_CONTROLLER_RELEASES_DIR}/${NODEPOOL_RELEASE}-nodepoolrelease.yaml" | head -1)"
+[[ -n "${AGENT_URL_PATH}" ]] || fail "${NODEPOOL_RELEASE} no longer downloads nke-agent from /files/"
 log "building nke-agent from ${WORKSPACE_ROOT}/agent"
 make -C "${WORKSPACE_ROOT}/agent" "build-${host_arch}" >"${STATE_DIR}/agent-build.log" 2>&1 ||
   { tail -n 50 "${STATE_DIR}/agent-build.log" >&2; fail "building nke-agent failed"; }
@@ -495,28 +502,30 @@ if [[ -n "${NKE_E2E_OS_IMAGE_TAG:-}" ]]; then
     fail "${image_ref} carried ${#pulled[@]} qcow2 files, expected exactly 1"
   qcow="${pulled[0]}"
 
-  # Repoint every profile that names a real image. Counted, because a profile
-  # that stopped carrying an image-url would otherwise leave the CloudFront pin
-  # in place and the lane would quietly test the wrong thing.
+  # Repoint every MachineImage that names a real image. Counted, because an
+  # image that stopped carrying an image-url would otherwise leave the CloudFront
+  # pin in place and the lane would quietly test the wrong thing. The script is a
+  # YAML block scalar, so the line keeps its indentation.
   repointed=0
-  for script in "${NKE_CONTROLLER_PROFILES_DIR}"/osProfiles/*/ipxeScript; do
-    grep -q '^set image-url ' "${script}" || continue
+  for manifest in "${NKE_CONTROLLER_RELEASES_DIR}"/*-machineimage.yaml; do
+    grep -Eq '^ +set image-url ' "${manifest}" || continue
     # Not sed -i: it takes an argument on BSD and none on GNU, and this script
     # is run by hand on both.
-    awk -v img="${qcow}" '/^set image-url / { print "set image-url " img; next } { print }' \
-      "${script}" >"${script}.new" && mv "${script}.new" "${script}"
+    awk -v img="${qcow}" '
+      /^ +set image-url / { match($0, /^ +/); print substr($0, 1, RLENGTH) "set image-url " img; next }
+      { print }' "${manifest}" >"${manifest}.new" && mv "${manifest}.new" "${manifest}"
     repointed=$(( repointed + 1 ))
   done
   (( repointed > 0 )) ||
-    fail "no osProfile ipxeScript carries a 'set image-url' line to repoint"
-  # Every profile file, not just the ipxeScript. The bundle server sat in
+    fail "no MachineImage iPXE script carries a 'set image-url' line to repoint"
+  # Every releases manifest, not just the ipxeScript. The bundle server sat in
   # userData.tmpl and this check used to walk straight past it, so the lane
   # reported "no CloudFront left" while still shipping a CloudFront URL to
   # every node it created.
-  if grep -rl cloudfront.net "${NKE_CONTROLLER_PROFILES_DIR}" 2>/dev/null; then
-    fail "the profile file(s) listed above still name CloudFront after repointing"
+  if grep -rl cloudfront.net "${NKE_CONTROLLER_RELEASES_DIR}" 2>/dev/null; then
+    fail "the manifest(s) listed above still name CloudFront after repointing"
   fi
-  log "tenant nodes boot ${qcow} (${repointed} profile(s) repointed, no CloudFront left)"
+  log "tenant nodes boot ${qcow} (${repointed} image(s) repointed, no CloudFront left)"
 fi
 
 # A previous run's database, instances and logs would confuse this one.
@@ -698,7 +707,7 @@ test_timeout="$((ginkgo_minutes + 15))m"
 log "running E2E specs matching ${LABEL_FILTER} (ginkgo timeout ${GINKGO_TIMEOUT})"
 start_state_monitor
 set +e
-env NKE_CONTROLLER_PROFILES_DIR="${CONTROLLER_ROOT}/test/fixtures/fleet-profiles" \
+env NKE_CONTROLLER_RELEASES_DIR="${CONTROLLER_ROOT}/test/fixtures/fleet-releases" \
   NKE_CONTROLLER_EXPECTED_VERSION="${NKE_CONTROLLER_BUILD_VERSION}" \
   "${E2E_BIN}" \
   -test.v \

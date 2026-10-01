@@ -332,6 +332,29 @@ print(json.dumps({"Nico": {
   EXTRA+=(--config "${BOOTSTRAP_CONFIG}")
 fi
 
+# Applies the releases CWE resolves every OS image from. The controller chart
+# installs their CRDs, so this waits for the CRDs before applying.
+NKE_CONTROLLER_RELEASES_DIR="${NKE_CONTROLLER_RELEASES_DIR:-/workspace/cloud-workflow-engine/test/fixtures/releases}"
+[[ -d "${NKE_CONTROLLER_RELEASES_DIR}" ]] || { echo "releases not found at ${NKE_CONTROLLER_RELEASES_DIR}; set NKE_CONTROLLER_RELEASES_DIR" >&2; exit 1; }
+
+apply_releases() {
+  local crd
+  for crd in machineimages clusterreleases nodepoolreleases; do
+    local name="${crd}.internal.nke.nvidia.com" _
+    for _ in $(seq 1 450); do
+      kubectl get crd "${name}" >/dev/null 2>&1 && break
+      sleep 2
+    done
+    kubectl wait --for=condition=Established --timeout=120s "crd/${name}"
+  done
+  kubectl apply --server-side --field-manager=deploy-stack-releases -f "${NKE_CONTROLLER_RELEASES_DIR}"
+}
+
+log "applying the releases from ${NKE_CONTROLLER_RELEASES_DIR} once the CRDs exist"
+apply_releases &
+RELEASES_PID=$!
+trap 'rm -rf "${VALUES_DIR}"; kill "${RELEASES_PID}" 2>/dev/null || true' EXIT
+
 log "installing ${DEPLOY_TARGET} from ${DEPLOY_PATHS_DIR}"
 bash "${STACK_DIR}/deploy/nke-deploy.sh" install \
   --deploy-path "${DEPLOY_PATHS_DIR}/${DEPLOY_TARGET}" \
@@ -340,3 +363,6 @@ bash "${STACK_DIR}/deploy/nke-deploy.sh" install \
   --values-for "postgresql=${VALUES_DIR}/postgresql.yaml" \
   --values-for "temporal=${VALUES_DIR}/temporal.yaml" \
   ${EXTRA[@]+"${EXTRA[@]}"}
+
+# The install returned, so the CRDs existed. Surface a failure to apply.
+wait "${RELEASES_PID}"

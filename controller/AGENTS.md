@@ -210,11 +210,16 @@ Preferred day-to-day path is CAPI + Tilt (see `README.md` in this directory).
 ### Full Local Setup
 1. Start local Temporal: `temporal server start-dev`
 2. Start PostgreSQL (see above)
-3. Run CWE:
+3. Install the release CRDs and the fixture releases into the cluster in `KUBECONFIG`.
+ CWE resolves every OS image from them, so provisioning fails without them:
+ ```bash
+ make releases-install
+ ```
+4. Run CWE:
  ```bash
  TEMPORAL_HOST_PORT=localhost:7233 go run ./cmd/worker/main.go
  ```
-4. Access Swagger UI at http://localhost:8080/api/docs.
+5. Access Swagger UI at http://localhost:8080/api/docs.
 
 ### API Authentication
 

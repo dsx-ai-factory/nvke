@@ -348,7 +348,7 @@ def register(ctx):
           cd %s
           INSTANCE_BACKEND="${INSTANCE_BACKEND:-%s}" \
           INSTANCE_NAME="${INSTANCE_NAME:-}" \
-          OS_PROFILE="${OS_PROFILE:-nke-260611-24.04-amd64-fde}" \
+          NODEPOOL_RELEASE="${NODEPOOL_RELEASE:-nke-260611-24.04-amd64-fde}" \
           INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-}" \
           DISK_SELECTION_STRATEGY="${DISK_SELECTION_STRATEGY:-smallest}" \
           ./hack/capnico-create-instance.sh
@@ -359,7 +359,7 @@ def register(ctx):
         inputs=[
             choice_input("INSTANCE_BACKEND", label="Type", choices=_instance_backend_choices),
             text_input("INSTANCE_NAME", label="Instance name (optional)", default="", placeholder="Uses the selected type's default name"),
-            text_input("OS_PROFILE", label="OS profile (VM)", default="nke-260611-24.04-amd64-fde"),
+            text_input("NODEPOOL_RELEASE", label="NodePoolRelease (VM)", default="nke-260611-24.04-amd64-fde"),
             text_input("INSTANCE_TYPE_ID", label="Instance type ID (optional)", default="", placeholder="Uses the selected type's default"),
             text_input("DISK_SELECTION_STRATEGY", label="Disk strategy (VM)", default="smallest"),
         ],

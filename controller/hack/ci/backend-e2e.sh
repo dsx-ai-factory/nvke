@@ -408,7 +408,7 @@ ci_e2e_exec() {
   fi
   runner_exec env \
     "NKE_CONTROLLER_EXPECTED_VERSION=${NKE_CONTROLLER_BUILD_VERSION}" \
-    "NKE_CONTROLLER_PROFILES_DIR=${NKE_E2E_PROFILES_DIR}" \
+    "NKE_CONTROLLER_RELEASES_DIR=${NKE_E2E_RELEASES_DIR}" \
     "NKE_CONTROLLER_NAMESPACE=${CONTROLLER_NAME}" \
     "NKE_CONTROLLER_SERVICE=${CONTROLLER_NAME}" \
     "NKE_E2E_DSX_IDENTITY_EXCHANGE=${DSX_IDENTITY_EXCHANGE_ENABLED}" \
@@ -1092,18 +1092,19 @@ if ! management_vip="$(e2e_management_vip "${KIND_CLUSTER_NAME}")"; then
 fi
 # The provider list is the main thing that varies by backend. The default is
 # the CAPD set this script has always used; nico-e2e.yml passes the NICo one.
-# Where the suite reads the OS profile index it builds the nico-vms matrix
+# Where the suite reads the releases it builds the nico-vms matrix
 # from. This has to be a path on the inner runner. The suite is compiled on the
-# outer runner, so the fallback resolveOSProfileMetadataPath derives from
+# outer runner, so the fallback resolveReleasesDir derives from
 # runtime.Caller names a directory that does not exist where the binary runs,
 # and without this the matrix soft-skips and 21 specs never register.
 #
-# fleet-profiles, not profiles. The latter is the synthetic index the CWE
-# deployment serves below, and it omits the profiles the matrix documents as
-# exclusions, so building the matrix from it panics the suite.
+# fleet-releases, not releases. The latter is the set the CWE deployment
+# installs, and it omits the releases the matrix documents as exclusions, so
+# building the matrix from it panics the suite.
 #
-# A lane with a real nke-site-deploy checkout can point this at that instead.
-: "${NKE_E2E_PROFILES_DIR:=/workspace/cloud-workflow-engine/test/fixtures/fleet-profiles}"
+# A lane with a real nke-site-deploy checkout can point this at its releases
+# directory instead.
+: "${NKE_E2E_RELEASES_DIR:=/workspace/cloud-workflow-engine/test/fixtures/fleet-releases}"
 e2e_write_tilt_config "${TMP_DIR}/tilt_config.json" \
   "${NKE_E2E_PROVIDERS}" "${NKE_CONTROLLER_IMAGE}" "${management_vip}" "${BGP_CONTAINER_NAME}" \
   "${DSX_IDENTITY_EXCHANGE_IMAGE}"

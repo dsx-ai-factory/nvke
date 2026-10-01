@@ -86,6 +86,11 @@ already be true, all of them outside the deploy path:
    Temporal names. Helm cannot take over the old release's objects, and
    Postgres runs its `initdb` scripts only on an empty volume. Nothing
    migrates the old database: install on a fresh cluster.
+6. **The site's release CRDs and resources are installed.** CWE reads its OS
+   images, user init scripts and so on from `MachineImage`, `ClusterRelease`
+   and `NodePoolRelease` resources. The chart installs the CRDs. From a second
+   shell, once the CRDs exist, run
+   `kubectl apply --server-side -f <the site's releases directory>`.
 
 ## After this runs
 

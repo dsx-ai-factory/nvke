@@ -1063,6 +1063,8 @@ _cwe_chart_flags = [
     "--set", "apiAuth.enabled=%s" % ("true" if _cwe_auth_enabled else "false"),
     "--set", "apiAuth.permissive=%s" % ("true" if _cwe_permissive_mode else "false"),
     "--set", "capi.rbac.create=true",
+    # machine-engine-crds installs them, so Helm must not try to own them.
+    "--set", "releaseCRDs.install=false",
     "--set", "tenantAccess.enabled=%s" % ("true" if _cwe_tenant_access_enabled else "false"),
     "--set", "nkeOIDCAuth.enabled=%s" % ("true" if _cwe_oidc_enabled else "false"),
     "--set-string", "nkeOIDCAuth.issuerURL=%s" % NKE_OIDC_ISSUER_URL,
@@ -1099,7 +1101,7 @@ if CWE_IMAGE:
 
 _cwe_local_debug_active = os.path.exists(CONTROLLER_LOCAL_DEBUG_MARKER)
 _cwe_tilt_goarch = local_arch()
-_cwe_resource_deps = ["postgres", "temporal", "spire-nke-services-spiffe-id", "spire-tpm-pubhashes", "nke-system-namespace", "nke-auth-dev"] + _all_cwe_resource_deps
+_cwe_resource_deps = ["postgres", "temporal", "spire-nke-services-spiffe-id", "spire-tpm-pubhashes", "nke-system-namespace", "nke-auth-dev", "machine-engine-releases"] + _all_cwe_resource_deps
 if _cwe_oidc_enabled:
     _cwe_resource_deps += ["spire-oidc-provider-nodeport", "oidc-upstream-ca-ready"]
 
@@ -1236,6 +1238,47 @@ if not CWE_IMAGE and not _cwe_local_debug_active:
           "**/__debug_bin*",
         ],
     )
+
+# The chart's own CRD bundle, applied before the chart, which has its copy turned
+# off with releaseCRDs.install=false: a local resource that waits for the chart to
+# install them holds every unparallelizable build behind it, including the chart's.
+local_resource(
+    "machine-engine-crds",
+    cmd=["bash", "-c", """
+      set -euo pipefail
+      kubectl apply --server-side --field-manager=tilt-release-crds \
+        -f deploy/charts/controller/files/crds.yaml
+      for crd in machineimages clusterreleases nodepoolreleases; do
+        kubectl wait --for=condition=Established --timeout=120s "crd/${crd}.internal.nke.nvidia.com"
+      done
+    """],
+    labels=["3-cwe"],
+    deps=["deploy/charts/controller/files/crds.yaml"],
+    resource_deps=["check-management-cluster"],
+)
+
+# Applies the releases CWE resolves every OS image from.
+_nke_release_dir = os.getenv("NKE_CONTROLLER_RELEASES_DIR", _tilt_env.get("NKE_CONTROLLER_RELEASES_DIR", "")).strip()
+if _nke_release_dir == "":
+    _nke_release_dir = os.path.join(_cwe_profiles_context, "releases")
+elif not _nke_release_dir.startswith("/"):
+    _nke_release_dir = os.path.abspath(os.path.join(config.main_dir, _nke_release_dir))
+
+local_resource(
+    "machine-engine-releases",
+    cmd=["bash", "-c", """
+      set -euo pipefail
+      dir="%s"
+      [ -d "${dir}" ] || { echo "releases not found at ${dir}; set NKE_CONTROLLER_RELEASES_DIR to a directory of generated MachineImage, ClusterRelease and NodePoolRelease manifests" >&2; exit 1; }
+      # MachineImage specs are immutable. After editing a profile, delete the
+      # stale image (kubectl delete machineimage <name>) and apply again.
+      kubectl apply --server-side --field-manager=tilt-releases -f "${dir}"
+    """ % _nke_release_dir],
+    labels=["3-cwe"],
+    deps=[_nke_release_dir],
+    resource_deps=["machine-engine-crds"],
+    allow_parallel=True,
+)
 
 helm_resource(
     "cwe",
