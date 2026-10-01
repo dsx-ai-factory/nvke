@@ -182,6 +182,19 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{provisioningOnly: true, controlPlaneController: true, noVIPControllerScale: true, noVIPUpgrade: true},
 	}),
+	// A worker-only advertised domain leaves the controller with no eligible
+	// control-plane placement. Keep this as a separate cluster so the spread and
+	// rolling-update row above retains its two eligible domains.
+	Entry("CAPD control-plane controller without an eligible failure domain", Ordered, ContinueOnFailure,
+		Label("capd", "cp-controller", "no-eligible-failure-domain"), testSpec{
+			buildSpec: capdNoEligibleControlPlaneDomainSpec,
+			shape: clusterShape{
+				controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
+				workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			},
+			options:  nke.Options{Provision: 15 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+			validate: validations{provisioningOnly: true, controlPlaneController: true},
+		}),
 	// The same for nico-containers, so the cp-controller path is not CAPD-only.
 	// Three control-plane nodes because the rolling-update spec needs a
 	// multi-node control plane to keep etcd quorum while it rolls, and because
@@ -1155,6 +1168,32 @@ func capdSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpe
 		},
 		Workers: capdNodePoolSpecs(shape.workerPools, "worker", "w"),
 	})
+}
+
+// capdControlPlaneControllerSpec builds a CAPD topology whose control plane is
+// provisioned by the cluster-level control-plane controller: no control-plane
+// node pool, a cluster-level control plane config instead. Requires CWE deployed
+// with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true.
+func capdControlPlaneControllerSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpec {
+	spec := capdSpec(cfg, name, shape)
+	spec.ControlPlane.Pools = nil
+	spec.ControlPlane.Config = shape.controlPlaneConfig
+	// CAPD copies these simulated domains to CAPI Cluster status. The third
+	// domain proves that controlPlane: false is excluded from placement.
+	spec.CAPDFailureDomains = []nke.CAPDFailureDomain{
+		{Name: "fd-a", ControlPlane: true},
+		{Name: "fd-b", ControlPlane: true},
+		{Name: "fd-worker", ControlPlane: false},
+	}
+	return spec
+}
+
+// capdNoEligibleControlPlaneDomainSpec advertises a worker-only domain so the
+// control-plane controller must leave Machine failureDomain unset.
+func capdNoEligibleControlPlaneDomainSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpec {
+	spec := capdControlPlaneControllerSpec(cfg, name, shape)
+	spec.CAPDFailureDomains = []nke.CAPDFailureDomain{{Name: "fd-worker", ControlPlane: false}}
+	return spec
 }
 
 // nicoControlPlaneControllerSpec builds a NICo container topology whose control

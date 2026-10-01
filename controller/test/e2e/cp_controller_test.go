@@ -43,6 +43,19 @@ func validateControllerManagedControlPlane(test *tenantTest) {
 
 		By("Asserting the tenant cluster reports Ready for the controller-managed control-plane nodes")
 		assertControlPlaneNodesReadyInTenant(ctx, test, desired)
+		if len(test.spec.CAPDFailureDomains) > 0 {
+			eligible := false
+			for _, domain := range test.spec.CAPDFailureDomains {
+				eligible = eligible || domain.ControlPlane
+			}
+			if eligible {
+				By("Verifying the first control-plane Machine chose the first eligible failure domain")
+				assertCAPDControlPlaneFailureDomains(ctx, test, desired, map[string]int{"fd-a": 1})
+			} else {
+				By("Verifying no domain was requested when none is eligible for control-plane Machines")
+				assertCAPDControlPlaneFailureDomains(ctx, test, desired, map[string]int{})
+			}
+		}
 	}, Label("cp-controller", "readiness"), NodeTimeout(90*time.Minute))
 }
 
@@ -73,6 +86,10 @@ func validateControllerManagedControlPlaneUpdate(test *tenantTest) {
 
 		By("Asserting the tenant cluster reports Ready for the updated control-plane nodes")
 		assertControlPlaneNodesReadyInTenant(ctx, test, desired)
+		if len(test.spec.CAPDFailureDomains) > 0 {
+			By("Verifying scale-up balanced CAPI Machines across the eligible failure domains")
+			assertCAPDControlPlaneFailureDomains(ctx, test, desired, map[string]int{"fd-a": 2, "fd-b": 1})
+		}
 	}, Label("cp-controller", "update"), NodeTimeout(90*time.Minute))
 }
 
@@ -118,6 +135,10 @@ func validateControllerManagedControlPlaneRollingUpdate(test *tenantTest) {
 
 		By("Asserting the tenant cluster reports Ready for the rolled control-plane nodes")
 		assertControlPlaneNodesReadyInTenant(ctx, test, desired)
+		if len(test.spec.CAPDFailureDomains) > 0 {
+			By("Verifying replacement CAPI Machines retained balanced failure-domain placement")
+			assertCAPDControlPlaneFailureDomains(ctx, test, desired, nil)
+		}
 	}, Label("cp-controller", "rolling-update"), NodeTimeout(90*time.Minute))
 }
 
@@ -349,6 +370,28 @@ func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 		cpNodes := expectSucceed(test.nke.ListClusterNodesByControlPlane(ctx, test.cluster.ID, true))
 		Expect(cpNodes).To(HaveLen(controlPlaneControllerUpdateDesiredCount))
 		victim := cpNodes[0]
+		var victimDomain string
+		originalNames := make(map[string]struct{}, len(cpNodes))
+		if test.spec.Backend == nke.BackendCAPD {
+			By("Selecting the Machine in the less-used failure domain for deletion")
+			assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerUpdateDesiredCount, nil)
+			domainsByNode := make(map[string]string, len(cpNodes))
+			counts := make(map[string]int)
+			for _, node := range cpNodes {
+				originalNames[node.Name] = struct{}{}
+				domain := expectSucceed(capdControlPlaneMachineDomainAt(ctx, test, node.Name))
+				domainsByNode[node.Name] = domain
+				counts[domain]++
+			}
+			for _, node := range cpNodes {
+				if counts[domainsByNode[node.Name]] == 1 {
+					victim = node
+					victimDomain = domainsByNode[node.Name]
+					break
+				}
+			}
+			Expect(victimDomain).NotTo(BeEmpty(), "a balanced three-node control plane should have one Machine in a less-used domain")
+		}
 
 		By("Confirming the delete is refused while the node is healthy")
 		message := expectSucceed(test.nke.DeleteNodeExpectingRefusal(ctx, victim.ID))
@@ -415,5 +458,19 @@ func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 
 		By("Asserting the tenant cluster reports Ready for the recovered control plane")
 		assertControlPlaneNodesReadyInTenant(ctx, test, controlPlaneControllerUpdateDesiredCount)
+		if test.spec.Backend == nke.BackendCAPD {
+			By("Verifying the replacement refilled the deleted Machine's failure domain")
+			names := expectSucceed(test.nke.ControlPlaneNodeNames(ctx, test.cluster.ID))
+			var replacementNames []string
+			for _, name := range names {
+				if _, existed := originalNames[name]; !existed {
+					replacementNames = append(replacementNames, name)
+				}
+			}
+			Expect(replacementNames).To(HaveLen(1), "the deleted control-plane node should have exactly one replacement")
+			assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerUpdateDesiredCount, nil)
+			replacementDomain := expectSucceed(capdControlPlaneMachineDomainAt(ctx, test, replacementNames[0]))
+			Expect(replacementDomain).To(Equal(victimDomain), "the replacement should refill the deleted Machine's domain")
+		}
 	}, Label("cp-controller", "cp-delete"), NodeTimeout(60*time.Minute))
 }

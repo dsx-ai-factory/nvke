@@ -199,6 +199,22 @@ branches use these rows for bounded feedback. Runs on `main`, scheduled runs,
 and manual runs keep the comprehensive backend rows, including the extended
 lifecycle validations.
 
+The CAPD `cp-controller` row advertises two control-plane failure domains and
+one worker-only domain through `DockerCluster.spec.failureDomains`. Its create,
+1-to-3 scale, and rolling-update validations inspect the live CAPI Cluster and
+Machines: requested domains must match eligible domains, placement must remain
+balanced, and no control-plane Machine may use the worker-only domain. The
+unreachable-node delete validation also checks that the replacement refills the
+deleted Machine's domain. A second, provisioning-only `cp-controller` row
+advertises just a worker-only domain and checks that its control-plane Machine
+has no requested domain. The full CAPD backend E2E job runs both
+rows in its controller-managed leg. To run them against a flag-on local
+deployment, use:
+
+```bash
+make test-e2e ARGS='--label-filter="capd && cp-controller"'
+```
+
 ### Local CAPD e2e (`make test-e2e-capd-local`)
 
 `make test-e2e-capd-local` (Colima + kind + Tilt + CAPD) runs the CAPD suite
