@@ -371,14 +371,28 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 		}
 		logger.Info("wrote SPIRE bootstrap resources", "clusterStaticEntries", count)
 	}
+	if err != nil {
+		return err
+	}
+
 	// Every node is a control-plane node, so until the taint is gone nothing
 	// schedules. This is the last step: the kubeconfig, the key and the SPIRE
 	// resources are all on disk, so a failure here loses nothing and the error
-	// names the command that finishes the job by hand.
-	if err == nil {
-		err = makeControlPlaneSchedulable(ctx, inv, siteKubeconfigPath(inv.ClusterName, opts), opts, logger)
+	// names the command that finishes the job by hand. The bootstrap cluster
+	// has nothing left that recovery needs, so it is torn down either way.
+	siteClusterCreated = false
+	kubeconfigPath := siteKubeconfigPath(inv.ClusterName, opts)
+	if err := makeControlPlaneSchedulable(ctx, inv, kubeconfigPath, opts, logger); err != nil {
+		return err
 	}
-	return err
+
+	fmt.Fprintf(os.Stdout, "\nCluster %q is ready. Talk to it with:\n  kubectl --kubeconfig %s get nodes\n",
+		inv.ClusterName, kubeconfigPath)
+	if inv.Cluster.EtcdEncryptionEnabled() {
+		fmt.Fprintf(os.Stdout, "Its etcd encryption key is at %s. Move that file off this host "+
+			"and keep it with the cluster's other credentials.\n", etcdKeyPath(opts, inv.ClusterName))
+	}
+	return nil
 }
 
 // untaintTimeout bounds the untaint's API calls. The cluster is up and every
@@ -439,9 +453,10 @@ func dumpSpireBootstrapEntries(
 }
 
 // createSiteCluster posts the cluster to CWE, waits for it to come up, and
-// writes out its kubeconfig. The boolean reports whether CWE accepted the
-// create request, after which callers must preserve the management cluster on
-// failure so the in-progress site cluster remains recoverable.
+// writes out its kubeconfig and etcd encryption key. The boolean reports
+// whether CWE accepted the create request, after which callers must preserve
+// the management cluster on failure so the in-progress site cluster remains
+// recoverable.
 //
 // The CWE client is built here rather than being passed in because its address
 // is only settled once the bootstrap cluster exists: it is the host port the
@@ -503,20 +518,11 @@ func createSiteCluster(
 	// Every control-plane node holds the key now, and this is the last moment
 	// the copy CWE keeps is reachable: it lives in the bootstrap cluster, which
 	// goes when the command does.
-	keyPath := ""
 	if inv.Cluster.EtcdEncryptionEnabled() {
-		keyPath = etcdKeyPath(opts, inv.ClusterName)
 		if err := saveEtcdEncryptionKey(ctx, bootstrapCluster, created.ID, inv.ClusterName,
-			keyPath, kubeconfigPath, opts, logger); err != nil {
+			etcdKeyPath(opts, inv.ClusterName), kubeconfigPath, opts, logger); err != nil {
 			return true, err
 		}
-	}
-
-	fmt.Fprintf(os.Stdout, "\nCluster %q is ready. Talk to it with:\n  kubectl --kubeconfig %s get nodes\n",
-		created.Name, kubeconfigPath)
-	if keyPath != "" {
-		fmt.Fprintf(os.Stdout, "Its etcd encryption key is at %s. Move that file off this host "+
-			"and keep it with the cluster's other credentials.\n", keyPath)
 	}
 	return true, nil
 }

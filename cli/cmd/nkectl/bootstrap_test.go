@@ -1389,9 +1389,10 @@ func TestRunBootstrapSiteReportsAnUntaintFailure(t *testing.T) {
 	kubeconfigOut := filepath.Join(t.TempDir(), "nke-site.kubeconfig")
 	keyOut := filepath.Join(t.TempDir(), "key.json")
 	spireEntriesDumped := false
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
 		siteSpec:         writeSiteSpec(t, validSiteSpec),
-		bootstrapRunner:  &recordingRunner{next: fakeBootstrapRunner{}},
+		bootstrapRunner:  runner,
 		cweRunner:        fakeCWERunner{},
 		kubeconfigOut:    kubeconfigOut,
 		encryptionKeyOut: keyOut,
@@ -1410,6 +1411,9 @@ func TestRunBootstrapSiteReportsAnUntaintFailure(t *testing.T) {
 	}
 	if !spireEntriesDumped {
 		t.Error("the SPIRE export did not run; the untaint must come after it")
+	}
+	if !runner.sawArgs("delete", "cluster") {
+		t.Errorf("the bootstrap kind cluster was kept after the untaint failed, though nothing in it is needed; calls: %v", runner.calls)
 	}
 	for _, want := range []string{"nodes is forbidden", "kubectl taint nodes --all node-role.kubernetes.io/control-plane-", kubeconfigOut} {
 		if !strings.Contains(err.Error(), want) {

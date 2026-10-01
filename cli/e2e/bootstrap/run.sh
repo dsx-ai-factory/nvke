@@ -851,10 +851,15 @@ hello_world_served() {
 # check turns into a named failure.
 
 log "checking that no node still carries the control-plane taint"
+# Plain assignments, not command substitutions inside for/if: a kubectl
+# failure then aborts under set -e instead of reading as "no nodes" or
+# "not tainted".
+node_names=$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes -o jsonpath='{.items[*].metadata.name}')
+[ -n "${node_names}" ] || fail "the cluster lists no nodes"
 tainted_nodes=""
-for node_name in $(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes -o jsonpath='{.items[*].metadata.name}'); do
-  if kubectl --kubeconfig "${TENANT_KUBECONFIG}" get node "${node_name}" -o jsonpath='{.spec.taints[*].key}' \
-    | tr ' ' '\n' | grep -Fxq 'node-role.kubernetes.io/control-plane'; then
+for node_name in ${node_names}; do
+  taint_keys=$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get node "${node_name}" -o jsonpath='{.spec.taints[*].key}')
+  if tr ' ' '\n' <<<"${taint_keys}" | grep -Fxq 'node-role.kubernetes.io/control-plane'; then
     tainted_nodes="${tainted_nodes}${node_name} "
   fi
 done
