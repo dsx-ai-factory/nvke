@@ -23,6 +23,8 @@ import (
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/capi"
+	clientscapi "github.com/dsx-ai-factory/nke/controller/internal/clients/capi"
+	"github.com/dsx-ai-factory/nke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
@@ -89,30 +91,13 @@ func (a *Activities) CreateCAPIInfraMachineForNode(ctx context.Context, input Cr
 }
 
 func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context, createCtx *capiMachineCreateContext) error {
-	capiNodeSetProvider, err := createCtx.nodeSet.CAPIProvider()
-	if err != nil {
-		return fmt.Errorf("failed to read node set capi provider: %w", err)
-	}
-	templateObj, err := capi.ParseManifest(capiNodeSetProvider.InfraMachineTemplate)
-	if err != nil {
-		return fmt.Errorf("failed to parse infra.machineTemplate: %w", err)
-	}
-
-	templateRef := &corev1.ObjectReference{
-		APIVersion: templateObj.GetAPIVersion(),
-		Kind:       templateObj.GetKind(),
-		Name:       templateObj.GetName(),
-		Namespace:  createCtx.namespace,
-	}
-	infraMachine, err := capiexternal.GenerateTemplate(&capiexternal.GenerateTemplateInput{
-		Template:    templateObj,
-		TemplateRef: templateRef,
-		Namespace:   createCtx.namespace,
-		Name:        createCtx.node.Name,
-		ClusterName: createCtx.cluster.Name,
-	})
+	infraMachineObj, err := clientscapi.New().RenderInfraMachine(a.cfg.ProfilesDir, createCtx.namespace, createCtx.node, createCtx.nodeSet, createCtx.nodePool, createCtx.cluster)
 	if err != nil {
 		return fmt.Errorf("failed to render infra machine template: %w", err)
+	}
+	infraMachine, ok := infraMachineObj.(*unstructured.Unstructured)
+	if !ok {
+		return fmt.Errorf("expected unstructured infra machine, got %T", infraMachineObj)
 	}
 	if err := a.applyNicoMachineInstanceLabels(createCtx, infraMachine); err != nil {
 		return err
@@ -240,7 +225,7 @@ func (a *Activities) applyNicoMachineInstanceLabels(
 		return nil
 	}
 
-	labels := buildNicoInstanceLabels(
+	labels := nico.BuildInstanceLabels(
 		createCtx.node,
 		createCtx.cluster,
 		createCtx.nodePool.ID,

@@ -136,21 +136,3 @@ func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
 		})
 	}
 }
-
-func TestBuildNicoInstanceLabels(t *testing.T) {
-	nodeID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
-	clusterID := uuid.MustParse("11111111-2222-3333-4444-555555555555")
-	nodePoolID := uuid.MustParse("99999999-8888-7777-6666-555555555555")
-
-	labels := buildNicoInstanceLabels(
-		db.Node{ID: nodeID},
-		db.Cluster{ID: clusterID},
-		nodePoolID,
-	)
-
-	assert.Equal(t, map[string]string{
-		constants.LabelKeyNodeID:     nodeID.String(),
-		constants.LabelKeyClusterID:  clusterID.String(),
-		constants.LabelKeyNodePoolID: nodePoolID.String(),
-	}, labels)
-}
