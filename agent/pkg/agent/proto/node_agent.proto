@@ -105,33 +105,6 @@ service NodeAgent {
 
   rpc GetKubeconfig(KubeconfigRequest) returns (KubeconfigResponse) {}
 
-  // UpdateNKERBAC applies the NVKE RBAC resources carried in the request
-  // manifest to the local cluster. This RPC is intended only for managing
-  // NVKE-owned RBAC objects: only a fixed set of RBAC kinds is accepted, and
-  // every resource name must use the agent-owned "nvke:" or legacy "nke:" prefix.
-  // The request is rejected if any document falls outside that boundary.
-  //
-  // The request must be served by a control-plane node.
-  //
-  // Resources are applied sequentially in manifest order. Per-resource
-  // outcomes are reported in UpdateNKERBACResponse.results. If a resource
-  // fails to apply, the RPC stops, returns the partial results with that
-  // OUTCOME_FAILED entry last, and does not roll back earlier successes.
-  //
-  // Error codes:
-  //   FailedPrecondition — the node is not eligible to serve this RPC
-  //                        (e.g. not a control-plane node).
-  //   InvalidArgument    — the manifest failed validation (empty, malformed,
-  //                        or contains a resource outside the NVKE RBAC
-  //                        allowlist); no apply is attempted.
-  //   Internal           — the agent could not reach the local cluster to
-  //                        perform the apply.
-  rpc UpdateNKERBAC(UpdateNKERBACRequest) returns (UpdateNKERBACResponse) {}
-
-  // UpdateNVKERBAC applies RBAC resources. UpdateNKERBAC remains an alias for
-  // controllers from before the rename; both methods use the same wire messages.
-  rpc UpdateNVKERBAC(UpdateNKERBACRequest) returns (UpdateNKERBACResponse) {}
-
   rpc ExecuteScript(ExecuteScriptRequest) returns (ExecuteScriptResponse) {}
 
   rpc GetKubeadmJoinString(KubeadmJoinStringRequest) returns (KubeadmJoinStringResponse) {}
@@ -574,71 +547,6 @@ message KubeconfigRequest {}
 message KubeconfigResponse {
   string kubeconfig = 1;
   string error_message = 2;
-}
-
-message UpdateNKERBACRequest {
-  // Raw YAML (or JSON) bytes describing one or more NVKE RBAC resources.
-  // May be a single document or a multi-document YAML stream separated by "---";
-  // empty / comment-only documents are ignored. After empty documents are
-  // discarded, at least one document must remain.
-  //
-  // Every non-empty document must:
-  //   - use apiVersion "rbac.authorization.k8s.io/v1"
-  //   - use an agent-supported RBAC kind
-  //   - have metadata.name starting with "nke:"
-  //   - match the namespace shape required by that kind
-  //   - not duplicate another document in the same request
-  //
-  // The agent does not fully semantically validate the kubernetes resources.
-  bytes manifest = 1;
-}
-
-message UpdateNKERBACResponse {
-  // One entry per resource for which an apply was attempted, in the same order
-  // the resources appeared in the manifest (after empty documents are
-  // discarded). If the RPC stopped early because of a per-resource failure,
-  // the trailing entry will have outcome=OUTCOME_FAILED and no further entries
-  // follow.
-  repeated ResourceApplyResult results = 1;
-}
-
-// ResourceApplyResult is the per-resource outcome reported by UpdateNKERBAC for
-// each resource that reached the apply phase. Request-level validation
-// failures are returned as gRPC errors and do not produce a result entry.
-message ResourceApplyResult {
-  // Kubernetes kind of the resource (e.g. "ClusterRole").
-  string kind = 1;
-  // metadata.name of the resource (e.g. "nke:cwe", the ClusterRole name still
-  // used by the NVKE controller RBAC charts).
-  string name = 2;
-  // metadata.namespace for namespaced resources; empty for cluster-scoped
-  // resources.
-  string namespace = 5;
-
-  // Outcome of the server-side apply for a single resource. Determined by
-  // comparing the resource's pre-apply existence and metadata.generation
-  // against the post-apply object returned by the API server.
-  enum Outcome {
-    // No outcome was reported.
-    OUTCOME_UNSPECIFIED = 0;
-    // The resource did not exist before this RPC and was created by the apply.
-    OUTCOME_CREATED = 1;
-    // The resource existed before this RPC and the apply caused
-    // metadata.generation to advance.
-    OUTCOME_UPDATED = 2;
-    // The resource reached the apply phase but the GET or apply call failed;
-    // error_message carries the underlying error text. When this outcome is
-    // returned the RPC stops without attempting later resources and without
-    // rolling back earlier successful applies.
-    OUTCOME_FAILED = 3;
-    // The apply succeeded and metadata.generation did not change, meaning the
-    // live object already matched the requested manifest.
-    OUTCOME_UNCHANGED = 4;
-  }
-
-  Outcome outcome = 3;
-  // Human-readable error text; populated only when outcome=OUTCOME_FAILED.
-  string error_message = 4;
 }
 
 message ExecuteScriptRequest {

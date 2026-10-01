@@ -33,7 +33,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	yaml "gopkg.in/yaml.v2"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/dsx-ai-factory/nvke/agent/internal/k8s"
@@ -138,7 +137,6 @@ type NodeStatusPersister interface {
 // kubernetesClientRegistry returns Kubernetes clients, rebuilding them when needed.
 type kubernetesClientRegistry interface {
 	Client() (kubernetes.Interface, error)
-	DynamicClient() (dynamic.Interface, error)
 	LocalClient() (*kubernetes.Clientset, error)
 }
 
@@ -1521,42 +1519,6 @@ func (s *NodeAgentServer) GetKubeconfig(
 		Kubeconfig: string(bytes),
 	}
 	return response, nil
-}
-
-// UpdateNVKERBAC applies the same resources as the legacy UpdateNKERBAC RPC.
-func (s *NodeAgentServer) UpdateNVKERBAC(ctx context.Context, req *pb.UpdateNKERBACRequest) (*pb.UpdateNKERBACResponse, error) {
-	return s.UpdateNKERBAC(ctx, req)
-}
-
-func (s *NodeAgentServer) UpdateNKERBAC(
-	ctx context.Context,
-	req *pb.UpdateNKERBACRequest,
-) (*pb.UpdateNKERBACResponse, error) {
-	role := ""
-	if s.NodeStatus != nil {
-		role = s.NodeStatus.Role
-	}
-	if !s.isControlPlaneRole() {
-		slog.Info("unable to fulfill UpdateNKERBAC from non-controlplane node", "NodeRole", role)
-		return nil, status.Errorf(codes.FailedPrecondition, "UpdateNKERBAC: control-plane node required, current role %q", role)
-	}
-
-	resources, err := parseAndValidateNVKERBACManifest(req.GetManifest())
-	if err != nil {
-		slog.Error("failed to validate the NVKE RBAC manifest", "err", err)
-		return nil, status.Errorf(codes.InvalidArgument, "UpdateNKERBAC: invalid manifest: %v", err)
-	}
-
-	client, err := s.clientRegistry.DynamicClient()
-	if err != nil {
-		slog.Error("failed to initialize Kubernetes client for UpdateNKERBAC", "err", err)
-		if errors.As(err, &k8s.KubeconfigAccessError{}) {
-			return nil, status.Errorf(codes.FailedPrecondition, "UpdateNKERBAC: kubeconfig precondition failed: %v", err)
-		}
-		return nil, status.Errorf(codes.Internal, "UpdateNKERBAC: initializing Kubernetes client: %v", err)
-	}
-
-	return applyNVKERBACResources(ctx, client, resources), nil
 }
 
 // UpdateAndFetchKubeAdmJoinStrings updates certs and tokens and creates a new join string for both controlplane and worker
