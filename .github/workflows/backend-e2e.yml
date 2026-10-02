@@ -249,6 +249,9 @@ jobs:
           kind_version: ${{ steps.versions.outputs.kind_version }}
           kubectl_version: ${{ steps.versions.outputs.kubectl_version }}
 
+      - name: Load the Docker host Open vSwitch module
+        run: bash controller/hack/ci/prepare-ovn-kernel.sh
+
       - name: Install Debian packaging tools
         run: |
           sudo apt-get update -qq

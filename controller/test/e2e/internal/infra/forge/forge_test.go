@@ -43,6 +43,8 @@ type fakeForge struct {
 	createDelay time.Duration
 	// createStatus replaces 201 on create when non-zero.
 	createStatus int
+	// onPoll runs when readiness polling begins, after creation returned an ID.
+	onPoll func()
 }
 
 func (f *fakeForge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +75,9 @@ func (f *fakeForge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && r.URL.Path == base+"/instance/"+testInstance:
 		status := f.statuses[min(f.polls, len(f.statuses)-1)]
 		f.polls++
+		if f.onPoll != nil {
+			f.onPoll()
+		}
 		body := `{"id":"` + testInstance + `","status":"` + status + `"`
 		if status == "Ready" {
 			body += `,"interfaces":[{"ipAddresses":["10.0.0.7/24"]}]`
@@ -273,11 +278,15 @@ func TestProvisionNodeReleasesOnFailure(t *testing.T) {
 			ctx := context.Background()
 			if tc.cancel {
 				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(ctx, 20*time.Millisecond)
+				ctx, cancel = context.WithCancel(ctx)
 				defer cancel()
+				forge.onPoll = cancel
 			}
 			if _, _, err := p.ProvisionNode(ctx, testRequest()); err == nil {
 				t.Fatal("expected an error")
+			}
+			if tc.cancel && !errors.Is(ctx.Err(), context.Canceled) {
+				t.Fatalf("run context error = %v, want cancellation during readiness polling", ctx.Err())
 			}
 			if forge.deleted != 1 {
 				t.Errorf("deleted %d times, want the instance released", forge.deleted)
