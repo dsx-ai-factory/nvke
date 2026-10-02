@@ -4,10 +4,18 @@
 name: Management Engine Controller Test Policy
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'management-engine/**'
   workflow_call:
   workflow_dispatch:
 
 permissions: {}
+
+concurrency:
+  group: Management Engine Controller Test Policy-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   controller-test-policy:
