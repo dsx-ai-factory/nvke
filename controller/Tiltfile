@@ -1159,7 +1159,9 @@ _cwe_build_script = """
       fi
 
       mkdir -p bin
-      CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
+      # cwe-compile owns bin/controller. Compiling here too rewrote a file this
+      # build watches, so every build queued the next one.
+      [ -x bin/controller ] || CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
       tmp_dir="$(mktemp -d)"
       trap 'rm -rf "${tmp_dir}"' EXIT
       cp hack/Dockerfile.cwe.tilt "${tmp_dir}/Dockerfile"
@@ -1177,7 +1179,9 @@ if not _cwe_profiles_image_enabled:
       fi
 
       mkdir -p bin
-      CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
+      # cwe-compile owns bin/controller. Compiling here too rewrote a file this
+      # build watches, so every build queued the next one.
+      [ -x bin/controller ] || CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
       tmp_dir="$(mktemp -d)"
       trap 'rm -rf "${tmp_dir}"' EXIT
       cp hack/Dockerfile.cwe.tilt "${tmp_dir}/Dockerfile"
