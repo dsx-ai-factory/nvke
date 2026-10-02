@@ -53,7 +53,7 @@ func checkSettable(path string) error {
 // a quoted string does not decode into a bool, so the rendered file would not
 // load.
 func boolPaths() map[string]bool {
-	return map[string]bool{pathEtcdEncryption: true, pathSchedulableCP: true}
+	return map[string]bool{pathEtcdEncryption: true}
 }
 
 // setValue writes an operator-supplied string at a dotted path, as the field's
@@ -201,11 +201,6 @@ func applySpec(root *yaml.Node, spec *SiteSpec) error {
 	// off is worth writing down.
 	if !spec.Cluster.EtcdEncryptionEnabled() {
 		if err := setBool(root, pathEtcdEncryption, false); err != nil {
-			return err
-		}
-	}
-	if !spec.Cluster.SchedulableControlPlaneEnabled() {
-		if err := setBool(root, pathSchedulableCP, false); err != nil {
 			return err
 		}
 	}

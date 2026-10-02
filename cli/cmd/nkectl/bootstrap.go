@@ -146,8 +146,7 @@ name other images, such as ones pushed to a registry. cli/README.md lists every
 NKECTL_* variable.
 
 Every node becomes a control-plane node. Once the cluster is up, the
-control-plane NoSchedule taint is removed from each node so workloads can
-run; set cluster.schedulableControlPlane to false in the site spec to keep it.
+control-plane NoSchedule taint is removed from each node so workloads can run.
 
 See the bundled examples/sitespec.yaml and docs/sitespec.md for the
 site spec file format.`,
@@ -394,7 +393,7 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 const untaintTimeout = 2 * time.Minute
 
 // makeControlPlaneSchedulable removes the control-plane taint from every node
-// unless the site spec opts out.
+// when the site spec's topology calls for it.
 func makeControlPlaneSchedulable(
 	ctx context.Context,
 	inv *sitespec.SiteSpec,
@@ -402,8 +401,8 @@ func makeControlPlaneSchedulable(
 	opts *bootstrapSiteOptions,
 	logger *slog.Logger,
 ) error {
-	if !inv.Cluster.SchedulableControlPlaneEnabled() {
-		logger.Info("cluster.schedulableControlPlane is false; the control-plane taint stays on every node")
+	if !inv.Cluster.ControlPlaneSchedulable() {
+		logger.Info("the site spec declares worker nodes; the control-plane taint stays on every node")
 		return nil
 	}
 

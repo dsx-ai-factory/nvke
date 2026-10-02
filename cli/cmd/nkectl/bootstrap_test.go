@@ -1349,36 +1349,6 @@ func TestRunBootstrapSiteRemovesTheControlPlaneTaint(t *testing.T) {
 	}
 }
 
-// TestRunBootstrapSiteKeepsTheTaintWhenAsked: schedulableControlPlane: false
-// skips the untaint.
-func TestRunBootstrapSiteKeepsTheTaintWhenAsked(t *testing.T) {
-	setBootstrapEnv(t)
-	startFakeCWEAPI(t, true)
-
-	untaintCalled := false
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec: writeSiteSpec(t, strings.Replace(validSiteSpec,
-			"  k8sVersion:", "  schedulableControlPlane: false\n  k8sVersion:", 1)),
-		bootstrapRunner:  &recordingRunner{next: fakeBootstrapRunner{}},
-		cweRunner:        fakeCWERunner{},
-		kubeconfigOut:    filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
-		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
-		lookPath:         runtimeOnPath,
-		dialContext:      refuseDial,
-		dumpSpireEntries: func(context.Context, string, string) (int, error) { return 0, nil },
-		untaintControlPlane: func(context.Context, string, *slog.Logger) ([]string, error) {
-			untaintCalled = true
-			return nil, nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("runBootstrapSite: %v", err)
-	}
-	if untaintCalled {
-		t.Error("the control-plane taint was removed although schedulableControlPlane is false")
-	}
-}
-
 // TestRunBootstrapSiteReportsAnUntaintFailure: the untaint is the last step,
 // so everything else is on disk when it fails.
 func TestRunBootstrapSiteReportsAnUntaintFailure(t *testing.T) {

@@ -844,8 +844,8 @@ hello_world_served() {
 
 # ── Stage 4c: the control-plane taint is gone ───────────────────────────
 #
-# The site spec keeps the default, so nkectl must have removed the taint.
-# The workloads below carry no toleration for it.
+# The site spec declares no worker nodes, so nkectl must have removed the
+# taint. The workloads below carry no toleration for it.
 
 log "checking that no node still carries the control-plane taint"
 # Plain assignments, so a kubectl failure aborts under set -e.

@@ -53,9 +53,9 @@ already be true, all of them outside the deploy path:
 1. **The control plane is untainted.** A bootstrap cluster is all
    control-plane, and nothing schedules while the `NoSchedule` taint is on
    the nodes; `clusterctl init` times out on cert-manager with no hint why.
-   `nkectl bootstrap site` removes the taint by default. Check with
+   `nkectl bootstrap site` removes the taint. Check with
    `kubectl get nodes -o jsonpath='{.items[*].spec.taints}'` and remove it by
-   hand if the site spec kept it.
+   hand if the bootstrap reported that it could not.
 2. **`clusterctl init` has run**, bringing cert-manager, CAPI core and the
    kubeadm providers. cert-manager first because CAPI's manifests embed an
    Issuer and a Certificate.

@@ -681,66 +681,14 @@ func TestLoadRejectsEmptyEtcdEncryption(t *testing.T) {
 	}
 }
 
-func TestLoadDefaultsSchedulableControlPlaneOn(t *testing.T) {
+// TestControlPlaneSchedulable pins the rule: no worker nodes in the site spec
+// means a schedulable control plane. Update it when the spec can declare them.
+func TestControlPlaneSchedulable(t *testing.T) {
 	inv, err := Load(writeTemp(t, validYAML))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if inv.Cluster.SchedulableControlPlane == nil || !*inv.Cluster.SchedulableControlPlane {
-		t.Errorf("SchedulableControlPlane = %v, want &true after Load", inv.Cluster.SchedulableControlPlane)
-	}
-	if !inv.Cluster.SchedulableControlPlaneEnabled() {
-		t.Error("SchedulableControlPlaneEnabled() = false for an unset field, want true")
-	}
-}
-
-func TestLoadEnvDisablesSchedulableControlPlane(t *testing.T) {
-	t.Setenv("CLUSTER_SCHEDULABLE_CONTROL_PLANE", "false")
-
-	inv, err := Load(writeTemp(t, validYAML))
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if inv.Cluster.SchedulableControlPlaneEnabled() {
-		t.Error("CLUSTER_SCHEDULABLE_CONTROL_PLANE=false did not keep the control-plane taint")
-	}
-}
-
-func TestLoadFileDisablesSchedulableControlPlane(t *testing.T) {
-	spec := strings.Replace(validYAML, "cluster:\n", "cluster:\n  schedulableControlPlane: false\n", 1)
-	inv, err := Load(writeTemp(t, spec))
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if inv.Cluster.SchedulableControlPlaneEnabled() {
-		t.Error("schedulableControlPlane: false in the file did not keep the control-plane taint")
-	}
-}
-
-func TestSchedulableControlPlaneEnabled(t *testing.T) {
-	on, off := true, false
-	for _, tc := range []struct {
-		name  string
-		field *bool
-		want  bool
-	}{
-		{"unset", nil, true},
-		{"true", &on, true},
-		{"false", &off, false},
-	} {
-		if got := (Cluster{SchedulableControlPlane: tc.field}).SchedulableControlPlaneEnabled(); got != tc.want {
-			t.Errorf("%s: SchedulableControlPlaneEnabled() = %v, want %v", tc.name, got, tc.want)
-		}
-	}
-}
-
-// TestLoadRejectsEmptySchedulableControlPlane: "" must not decode as false.
-func TestLoadRejectsEmptySchedulableControlPlane(t *testing.T) {
-	for _, value := range []string{`""`, `''`} {
-		spec := strings.Replace(validYAML, "cluster:\n", "cluster:\n  schedulableControlPlane: "+value+"\n", 1)
-		_, err := Load(writeTemp(t, spec))
-		if err == nil || !strings.Contains(err.Error(), pathSchedulableCP) || !strings.Contains(err.Error(), "not a boolean") {
-			t.Errorf("schedulableControlPlane: %s: err = %v, want one naming %s as not a boolean", value, err, pathSchedulableCP)
-		}
+	if !inv.Cluster.ControlPlaneSchedulable() {
+		t.Error("ControlPlaneSchedulable() = false for a site spec with no worker nodes, want true")
 	}
 }

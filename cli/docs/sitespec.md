@@ -74,7 +74,6 @@ is a file `bootstrap site` accepts.
 | `cluster.serviceCidr` | string | yes | Valid CIDR. |
 | `cluster.nodeAgentPort` | string | no | Port number 1–65535. Defaults to `15005`. |
 | `cluster.etcdEncryption` | bool | no | Encrypt the Kubernetes API's etcd data at rest. Defaults to `true`. Decided at bootstrap only: a cluster built with it `false` cannot be encrypted afterwards. See below. |
-| `cluster.schedulableControlPlane` | bool | no | Remove the control-plane `NoSchedule` taint from every node once the cluster is up. Defaults to `true`. See below. |
 | `cluster.kubeletConfig.systemReservedMemory` | string | no | e.g. `16Gi`. |
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
@@ -118,7 +117,6 @@ A set variable takes precedence over the file value.
 | `CLUSTER_SYSTEM_RESERVED_MEMORY` | `cluster.kubeletConfig.systemReservedMemory` |
 | `CLUSTER_NODE_AGENT_PORT` | `cluster.nodeAgentPort` |
 | `CLUSTER_ETCD_ENCRYPTION` | `cluster.etcdEncryption` |
-| `CLUSTER_SCHEDULABLE_CONTROL_PLANE` | `cluster.schedulableControlPlane` |
 | `REGISTRY_BOOTSTRAP_REPO` | `registry.bootstrapRepo` |
 | `REGISTRY_BOOTSTRAP_CHART` | `registry.bootstrapChart` |
 | `REGISTRY_API_KEY` | `registry.apiKey` |
@@ -209,22 +207,20 @@ Every site spec node is a control-plane node, and kubeadm taints each one
 nothing schedules: a Helm `--wait` or `clusterctl init` on the new cluster hangs
 until it times out, with no message saying why.
 
-`cluster.schedulableControlPlane` defaults to `true`. Once every node has
-joined, `nkectl bootstrap site` removes that taint from each node, so the
-cluster it hands over can run workloads. Other taints are left alone, and a
-node that already lacks the taint is not touched.
+The site spec declares no worker nodes, so the control-plane nodes are the
+only place workloads can run. Once every node has joined, `nkectl bootstrap
+site` removes that taint from each node. Other taints are left alone, and a
+node that already lacks the taint is not touched. There is no field for this:
+the taint follows the topology, and the rule will become "only when the site
+spec declares no worker nodes" once it can declare them.
 
-Set it to `false` to keep the taint, for a site that adds dedicated worker
-nodes before it runs workloads. The command logs that the taint was kept.
-Remove it later with:
+If the removal fails, the cluster is still up and the kubeconfig is on disk.
+The error names the command that finishes the step by hand:
 
 ```bash
 kubectl taint nodes --all node-role.kubernetes.io/control-plane- \
   --kubeconfig <clusterName>.kubeconfig
 ```
-
-If the removal fails, the cluster is still up and the kubeconfig is on disk.
-The error names the command above so the step can be finished by hand.
 
 ## The control-plane VIP
 

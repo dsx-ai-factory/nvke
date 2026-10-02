@@ -42,10 +42,6 @@ const (
 	// spec leaves it unset.
 	DefaultEtcdEncryption = true
 
-	// DefaultSchedulableControlPlane is what cluster.schedulableControlPlane
-	// means when the site spec leaves it unset.
-	DefaultSchedulableControlPlane = true
-
 	// SiteSpec field paths — the single source of truth for the dotted paths
 	// shared by the environment bindings and the validator messages.
 	pathClusterName          = "clusterName"
@@ -59,7 +55,6 @@ const (
 	pathSystemReservedMemory = "cluster.kubeletConfig.systemReservedMemory"
 	pathNodeAgentPort        = "cluster.nodeAgentPort"
 	pathEtcdEncryption       = "cluster.etcdEncryption"
-	pathSchedulableCP        = "cluster.schedulableControlPlane"
 	pathBootstrapRepo        = "registry.bootstrapRepo"
 	pathBootstrapChart       = "registry.bootstrapChart"
 	pathAPIKey               = "registry.apiKey"
@@ -153,10 +148,6 @@ type Cluster struct {
 	// default is on, and an explicit false is permanent — a cluster built
 	// without encryption cannot be encrypted afterwards.
 	EtcdEncryption *bool `yaml:"etcdEncryption,omitempty"`
-	// SchedulableControlPlane removes the control-plane NoSchedule taint from
-	// every node once the cluster is up. A pointer so "not set" can be told
-	// from "set to false": the default is on.
-	SchedulableControlPlane *bool `yaml:"schedulableControlPlane,omitempty"`
 	// KubeletConfig holds optional kubelet resource reservations.
 	KubeletConfig KubeletConfig `yaml:"kubeletConfig"`
 }
@@ -167,10 +158,15 @@ func (c Cluster) EtcdEncryptionEnabled() bool {
 	return c.EtcdEncryption == nil || *c.EtcdEncryption
 }
 
-// SchedulableControlPlaneEnabled reports whether the control-plane taint is
-// removed after bootstrap. Unset means enabled; see SchedulableControlPlane.
-func (c Cluster) SchedulableControlPlaneEnabled() bool {
-	return c.SchedulableControlPlane == nil || *c.SchedulableControlPlane
+// ControlPlaneSchedulable reports whether the control-plane NoSchedule taint
+// is removed from every node after bootstrap. It is removed when the site spec
+// declares no worker nodes, because the control-plane nodes are then the only
+// place workloads can run.
+//
+// The site spec cannot declare worker nodes yet, so this is always true. When
+// it can, derive the result from that list; do not add a separate field.
+func (c Cluster) ControlPlaneSchedulable() bool {
+	return true
 }
 
 // Node is a single pre-provisioned host.
@@ -236,23 +232,22 @@ type Registry struct {
 // tier-0 / DS9 scripts can drive the site spec through the environment.
 func envBindings() map[string]string {
 	return map[string]string{
-		"CLUSTER_NAME":                      pathClusterName,
-		"CLUSTER_K8S_VERSION":               pathK8sVersion,
-		"CLUSTER_CNI_NAME":                  pathCniName,
-		"CLUSTER_CNI_VERSION":               pathCniVersion,
-		"CLUSTER_CONTROL_PLANE_VIP":         pathControlPlaneVIP,
-		"CLUSTER_POD_CIDR":                  pathPodCidr,
-		"CLUSTER_SERVICE_CIDR":              pathServiceCidr,
-		"CLUSTER_SYSTEM_RESERVED_MEMORY":    pathSystemReservedMemory,
-		"CLUSTER_NODE_AGENT_PORT":           pathNodeAgentPort,
-		"CLUSTER_ETCD_ENCRYPTION":           pathEtcdEncryption,
-		"CLUSTER_SCHEDULABLE_CONTROL_PLANE": pathSchedulableCP,
-		"REGISTRY_BOOTSTRAP_REPO":           pathBootstrapRepo,
-		"REGISTRY_BOOTSTRAP_CHART":          pathBootstrapChart,
-		"REGISTRY_API_KEY":                  pathAPIKey,
-		"NKECTL_SPIFFE_TRUST_DOMAIN":        pathSpireTrustDomain,
-		"SPIRE_CA_CERT_FILE":                pathSpireCACertFile,
-		"SPIRE_CA_KEY_FILE":                 pathSpireCAKeyFile,
+		"CLUSTER_NAME":                   pathClusterName,
+		"CLUSTER_K8S_VERSION":            pathK8sVersion,
+		"CLUSTER_CNI_NAME":               pathCniName,
+		"CLUSTER_CNI_VERSION":            pathCniVersion,
+		"CLUSTER_CONTROL_PLANE_VIP":      pathControlPlaneVIP,
+		"CLUSTER_POD_CIDR":               pathPodCidr,
+		"CLUSTER_SERVICE_CIDR":           pathServiceCidr,
+		"CLUSTER_SYSTEM_RESERVED_MEMORY": pathSystemReservedMemory,
+		"CLUSTER_NODE_AGENT_PORT":        pathNodeAgentPort,
+		"CLUSTER_ETCD_ENCRYPTION":        pathEtcdEncryption,
+		"REGISTRY_BOOTSTRAP_REPO":        pathBootstrapRepo,
+		"REGISTRY_BOOTSTRAP_CHART":       pathBootstrapChart,
+		"REGISTRY_API_KEY":               pathAPIKey,
+		"NKECTL_SPIFFE_TRUST_DOMAIN":     pathSpireTrustDomain,
+		"SPIRE_CA_CERT_FILE":             pathSpireCACertFile,
+		"SPIRE_CA_KEY_FILE":              pathSpireCAKeyFile,
 	}
 }
 
@@ -291,13 +286,12 @@ func Load(path string) (*SiteSpec, error) {
 		v.Set(pathNodes, nodes)
 	}
 
-	// The decoder reads "" as false for a bool, and "" is what an unset
-	// template variable produces. Refuse it before decoding loses it.
-	for _, boolPath := range []string{pathEtcdEncryption, pathSchedulableCP} {
-		if raw, ok := v.Get(boolPath).(string); ok && raw == "" {
-			return nil, fmt.Errorf("site spec file %s: %s: %q is not a boolean (true or false)",
-				path, boolPath, raw)
-		}
+	// The decoder reads "" as false for a bool. Here that would disable
+	// encryption silently and for the life of the cluster, and "" is what an
+	// unset template variable produces. Refuse it before decoding loses it.
+	if raw, ok := v.Get(pathEtcdEncryption).(string); ok && raw == "" {
+		return nil, fmt.Errorf("site spec file %s: %s: %q is not a boolean (true or false)",
+			path, pathEtcdEncryption, raw)
 	}
 
 	var inv SiteSpec
@@ -358,10 +352,6 @@ func (inv *SiteSpec) SetDefaults() {
 	if inv.Cluster.EtcdEncryption == nil {
 		enabled := DefaultEtcdEncryption
 		inv.Cluster.EtcdEncryption = &enabled
-	}
-	if inv.Cluster.SchedulableControlPlane == nil {
-		enabled := DefaultSchedulableControlPlane
-		inv.Cluster.SchedulableControlPlane = &enabled
 	}
 }
 

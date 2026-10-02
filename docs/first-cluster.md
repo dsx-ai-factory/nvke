@@ -349,7 +349,7 @@ start, and silently skips three of its controllers when they are absent — so
 installing it first means restarting it afterward, or losing them until you do.
 
 The control-plane nodes must be schedulable first or every `--wait` hangs.
-`nkectl bootstrap site` removes the taint by default; check with
+`nkectl bootstrap site` removes the taint; check with
 `kubectl get nodes -o jsonpath='{.items[*].spec.taints}'`, and if it is still
 there run `kubectl taint nodes --all node-role.kubernetes.io/control-plane-`.
 Full steps, both a Helm and a `clusterctl` route, and how to verify the result

@@ -37,13 +37,13 @@ kubectl rollout restart deployment -n <cwe-namespace> -l app.kubernetes.io/name=
 
 ## 1. Check the Control-Plane Taint Is Gone
 
-Every node on a site cluster is a control-plane node, and neither cert-manager, the Cluster API managers nor the CAPNICo manager tolerates the control-plane taint. `nkectl bootstrap site` removes it by default. Confirm that before anything that waits, or the waits in the next two steps hang until they time out with no useful message:
+Every node on a site cluster is a control-plane node, and neither cert-manager, the Cluster API managers nor the CAPNICo manager tolerates the control-plane taint. `nkectl bootstrap site` removes it. Confirm that before anything that waits, or the waits in the next two steps hang until they time out with no useful message:
 
 ```bash
 kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.taints}{"\n"}{end}'
 ```
 
-No node should list `node-role.kubernetes.io/control-plane`. If one does, because the site spec set `cluster.schedulableControlPlane: false` or the bootstrap reported that the removal failed, remove it by hand:
+No node should list `node-role.kubernetes.io/control-plane`. If one does, because the bootstrap reported that the removal failed, remove it by hand:
 
 ```bash
 kubectl taint nodes --all node-role.kubernetes.io/control-plane-
