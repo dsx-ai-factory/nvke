@@ -801,9 +801,9 @@ under `outcome="would_reject"` with the status it would have returned.
 ### The Anonymous Surface
 
 These need no token: `/healthz`, `/readyz`, `/api/version`, `/openapi.yaml`,
-`/docs`, and the Swagger UI under `/api/docs/`. Everything else does, including
-paths that route nowhere, so an unauthenticated caller cannot probe which ones
-exist. `internal/auth/routes.go` is the list.
+`/openapi-public.yaml`, `/docs`, and the Swagger UI under `/api/docs/`.
+Everything else does, including paths that route nowhere, so an unauthenticated
+caller cannot probe which ones exist. `internal/auth/routes.go` is the list.
 
 ## Debugging
 

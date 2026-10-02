@@ -51,8 +51,11 @@ func normalizePath(p string) string {
 // by method: a POST to "/openapi.yaml" is exempt and then 404s.
 func isAnonymousPath(p string) bool {
 	switch p {
-	// Read by the Swagger UI page and by client generators.
+	// /openapi.yaml is the full specification, read by client generators.
+	// /openapi-public.yaml is the copy Swagger UI loads, with the x-fern-ignore
+	// surface removed.
 	case "/openapi.yaml",
+		"/openapi-public.yaml",
 
 		// Tilt points both probes at it, and the UI reads version metadata
 		// from it with no token.

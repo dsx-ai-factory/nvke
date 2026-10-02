@@ -260,7 +260,7 @@ curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} http://localhost:8080/api/clu
 `NKE_AUTH_ENABLED=false tilt up` turns it off. `NKE_PERMISSIVE_MODE=true tilt up`
 evaluates and counts without rejecting anything.
 
-`/healthz`, `/readyz`, `/api/version`, `/openapi.yaml`, `/docs` and `/api/docs/`
+`/healthz`, `/readyz`, `/api/version`, `/openapi.yaml`, `/openapi-public.yaml`, `/docs` and `/api/docs/`
 never need a token. The Swagger UI therefore loads either way, but calls issued
 from it 401 under Tilt.
 
