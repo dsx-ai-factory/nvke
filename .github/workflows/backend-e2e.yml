@@ -176,10 +176,6 @@ jobs:
       # one runner/cluster and drives the per-leg label filter and flag itself.
       NKE_E2E_SINGLE_RUNNER_CONTROL_PLANE_MODES: ${{ inputs.single-runner-control-plane-modes }}
       KIND_CLUSTER_NAME: cwe-${{ inputs.backend }}-${{ github.run_id }}-${{ github.run_attempt }}
-      # Empty unless the caller asked for CAPNICo. The script stages the tree
-      # into the runner container only when this is set, so every other backend
-      # skips that work. This is the HOST path; the container path is a constant
-      # in the script, and is what Tilt is told.
       CAPNICO_SOURCE_SRC: ${{ inputs.needs-capnico-source && format('{0}/.capnico/cluster-api-provider-nico', github.workspace) || '' }}
     steps:
       - name: Checkout
