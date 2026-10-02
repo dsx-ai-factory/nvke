@@ -647,17 +647,17 @@ TARGETS_VALIDATED=true
   log "this entrypoint requires a Linux Docker host" >&2
   exit 1
 }
-: "${CAPI_CORE_VERSION:=v1.12.3}"
-: "${CAPD_PROVIDER_VERSION:=v1.12.3}"
+: "${CAPI_CORE_VERSION:=v1.13.6}"
+: "${CAPD_PROVIDER_VERSION:=v1.13.6}"
 : "${TILT_VERSION:=v0.37.5}"
 # Per-arch pins. host_arch was already validated above, so this is exhaustive.
 case "${host_arch}" in
   amd64)
-    : "${CLUSTERCTL_SHA256:=9b75287b15656a62ece65c8ad7491412cebfd30c78e085a9d61396a50df17349}"
+    : "${CLUSTERCTL_SHA256:=1e4019b8ef30fa13993716d28b9fec4072fee1e17ea2cc69cb7c8f232d9b8c2f}"
     : "${TILT_SHA256:=9efb56969c48ddea4adfb56a604b9ca5ed254924ddf140fc3e068a305cacf558}"
     ;;
   arm64)
-    : "${CLUSTERCTL_SHA256:=974bdf47fc58864df3d87766f4bdc72164171655c54b759e73596efc98f5e3e1}"
+    : "${CLUSTERCTL_SHA256:=c3fe61fd44fa63d2efcee2a93432619527909b210a84cda7ee86eea1425de8c2}"
     : "${TILT_SHA256:=1f9c62dcce0608aeb0c63533b14e260fc2e8c5797f81589b0914c398ba53d5b0}"
     ;;
 esac

@@ -211,9 +211,10 @@ replacement refills the deleted Machine's domain. A second, provisioning-only
 control-plane Machine has no requested domain. The full CAPD backend E2E job
 runs both rows in its controller-managed leg.
 
-The CAPD v1.12.3 provider used by this lane records placement on the Docker
-container label but leaves Machine status.failureDomain empty. If a newer CAPD
-provider reports that status field, the test requires it to match the container.
+The CI lane pins CAPI core and CAPD to v1.13.6. CAPD records placement on the
+Docker container label and publishes status.failureDomain, which CAPI propagates
+to the Machine. The test compares any published status with container placement
+and also supports older providers, such as v1.12.3, that leave the field empty.
 CAPD cannot exercise the status-over-spec preference when those values differ;
 the control-plane `TestReadFailureDomains` unit test covers that case. An E2E
 drift scenario needs a backend where observed placement can differ from the
