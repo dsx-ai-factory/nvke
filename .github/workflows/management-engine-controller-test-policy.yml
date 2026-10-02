@@ -49,6 +49,7 @@ jobs:
             [[ -n "${file}" ]] || continue
             if ! jq -e --arg file "${file}" '.ginkgoSpecs | has($file)' .github/workflows/management-engine/controller-test-policy.json >/dev/null; then
               echo "::error file=${file}::Test file is not in controller-test-policy.json. Add a YAML fixture instead."
+              echo "::error file=${file}::See management-engine/docs/writing-tests.md"
               failed=1
             fi
           done <<< "${test_files}"
