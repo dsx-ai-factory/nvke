@@ -12,7 +12,11 @@ source "${repo_root}/hack/backend-e2e-lib.sh"
 # worked when run from here. Do not make the caller know that.
 cd "${repo_root}"
 state_dir="${LOCAL_NKE_E2E_STATE_DIR:-${repo_root}/.local/backend-e2e}"
-tmp_dir="$(mktemp -d)"
+mkdir -p "${state_dir}"
+# Keep Docker bind-mounted build output under the repository. Colima does not
+# share macOS's private /var/folders tree, so a default mktemp directory makes
+# packages created by the Linux OVN builder invisible to the host.
+tmp_dir="$(mktemp -d "${state_dir}/tmp.XXXXXX")"
 kind_cluster_name="${KIND_CLUSTER_NAME:-cwe-capi}"
 dockerhub_mirror="${NKE_E2E_DOCKERHUB_MIRROR:-}"
 runner_name="cwe-capd-local-e2e-${$}"
@@ -164,8 +168,6 @@ log "SPIRE node attestation: ${CAPD_SPIRE_ATTESTATION_METHOD}"
 
 [[ -f "${NODE_AGENT_REPO_PATH}/Makefile" ]] || \
   fail "NODE_AGENT_REPO_PATH=${NODE_AGENT_REPO_PATH} does not look like an agent checkout"
-
-mkdir -p "${state_dir}"
 
 if curl --fail --silent --show-error --connect-timeout 1 --max-time 1 \
   http://localhost:10350/api/view >/dev/null 2>&1; then

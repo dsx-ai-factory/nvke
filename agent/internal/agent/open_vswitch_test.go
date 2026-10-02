@@ -146,6 +146,43 @@ func TestOpenVSwitchReconciliationTransformsNetplanAndVerifiesBridge(t *testing.
 	assert.Equal(t, map[string]any{"addresses": []any{"10.0.0.53"}}, bridge["nameservers"])
 }
 
+func TestOpenVSwitchNetplanMatchNamePatterns(t *testing.T) {
+	link := openVSwitchLink{Name: "enp1s0", Address: "00:11:22:33:44:55"}
+	tests := map[string]struct {
+		name string
+		want bool
+	}{
+		"exact name":       {name: "enp1s0", want: true},
+		"wildcard name":    {name: "e*", want: true},
+		"nonmatching name": {name: "eth*", want: false},
+		"invalid pattern":  {name: "[", want: false},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			stanza := map[string]any{"match": map[string]any{"name": test.name}}
+			assert.Equal(t, test.want, openVSwitchStanzaMatchesLink(stanza, link))
+		})
+	}
+}
+
+func TestPrepareOpenVSwitchNetdevDatapath(t *testing.T) {
+	t.Setenv(openVSwitchDatapathTypeEnv, openVSwitchNetdevDatapath)
+	command := "ovs-vsctl --may-exist add-br breth0 -- set bridge breth0 datapath_type=netdev -- set Open_vSwitch . external_ids:ovn-bridge-datapath-type=netdev"
+	runner := newOpenVSwitchTestRunner(t, map[string][]openVSwitchCommandResult{command: {{}}})
+	server := &NodeAgentServer{Runner: runner}
+
+	require.NoError(t, server.prepareOpenVSwitchDatapath("breth0"))
+	assert.Equal(t, []string{command}, runner.calls)
+}
+
+func TestPrepareOpenVSwitchRejectsUnsupportedDatapath(t *testing.T) {
+	t.Setenv(openVSwitchDatapathTypeEnv, "system")
+	server := &NodeAgentServer{}
+
+	err := server.prepareOpenVSwitchDatapath("breth0")
+	require.EqualError(t, err, `unsupported Open vSwitch datapath type "system"`)
+}
+
 func TestOpenVSwitchReconciliationResumesWrittenNetplanAfterInterruptedApply(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "etc/netplan"), 0o755))

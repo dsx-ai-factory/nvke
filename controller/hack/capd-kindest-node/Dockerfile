@@ -94,6 +94,7 @@ RUN set -eux; \
 # tolerates the resulting device-trigger warning inside containers.
 COPY scripts/prepare-container-network /usr/local/sbin/prepare-container-network
 COPY scripts/nke-container-network.service /etc/systemd/system/nke-container-network.service
+COPY scripts/ovs-vswitchd-userspace.conf /etc/systemd/system/ovs-vswitchd.service.d/userspace.conf
 RUN set -eux; \
     chmod 0755 /usr/local/sbin/prepare-container-network; \
     mkdir -p /etc/systemd/system/systemd-udevd.service.d; \
@@ -142,6 +143,7 @@ RUN SYSTEMD_OFFLINE=1 systemctl enable nke-container-cni-images.service
 # with SYSTEMD_OFFLINE=1 (see below). The build helper resolves the selected
 # bundle into the Docker context before this build starts.
 COPY agent.tgz /tmp/agent-src/
+COPY scripts/nke-agent-container-ovs.conf /tmp/nke-agent-container-ovs.conf
 RUN set -eux; \
     NODE_AGENT_DIR="agent_${NODE_AGENT_VERSION}_${NODE_AGENT_DIR_ARCH}"; \
     cd /tmp/agent-src; \
@@ -149,7 +151,10 @@ RUN set -eux; \
     cd "${NODE_AGENT_DIR}"; \
     ./agent-installer.sh || true; \
     test -f /etc/systemd/system/nke-agent.service; \
-    cd /tmp && rm -rf /tmp/agent-src
+    mkdir -p /etc/systemd/system/nke-agent.service.d; \
+    cp /tmp/nke-agent-container-ovs.conf \
+      /etc/systemd/system/nke-agent.service.d/container-ovs.conf; \
+    cd /tmp && rm -rf /tmp/agent-src /tmp/nke-agent-container-ovs.conf
 
 # Install the SPIRE agent bundle, including the TPM attestor plugin.
 COPY spire-agent.tgz /tmp/spire-agent-src/

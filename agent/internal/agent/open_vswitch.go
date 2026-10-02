@@ -33,6 +33,8 @@ const (
 	openVSwitchDefaultMTU        = 1500
 	openVSwitchDefaultSettleTime = 2 * time.Second
 	openVSwitchConvergenceDelay  = time.Second
+	openVSwitchDatapathTypeEnv   = "NKE_OVS_DATAPATH_TYPE"
+	openVSwitchNetdevDatapath    = "netdev"
 
 	operationTypeOpenVSwitchReconciliation = "open_vswitch_reconciliation"
 )

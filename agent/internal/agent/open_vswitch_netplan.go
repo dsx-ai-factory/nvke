@@ -178,6 +178,9 @@ func (s *NodeAgentServer) applyOpenVSwitchNetplanPlan(ctx context.Context, plan 
 	if err := atomicWriteFile(plan.configPath, plan.config, 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", plan.configPath, err)
 	}
+	if err := s.prepareOpenVSwitchDatapath(plan.bridgeName); err != nil {
+		return err
+	}
 	if _, err := s.runOpenVSwitchCommand("netplan", "generate"); err != nil {
 		return fmt.Errorf("validate netplan: %w", err)
 	}
@@ -185,6 +188,25 @@ func (s *NodeAgentServer) applyOpenVSwitchNetplanPlan(ctx context.Context, plan 
 		return fmt.Errorf("apply netplan: %w", err)
 	}
 	return sleepOrDone(ctx, s.openVSwitchSettleDelayOrDefault())
+}
+
+func (s *NodeAgentServer) prepareOpenVSwitchDatapath(bridgeName string) error {
+	datapathType := strings.TrimSpace(os.Getenv(openVSwitchDatapathTypeEnv))
+	if datapathType == "" {
+		return nil
+	}
+	if datapathType != openVSwitchNetdevDatapath {
+		return fmt.Errorf("unsupported Open vSwitch datapath type %q", datapathType)
+	}
+	if _, err := s.runOpenVSwitchCommand(
+		"ovs-vsctl",
+		"--may-exist", "add-br", bridgeName,
+		"--", "set", "bridge", bridgeName, "datapath_type="+datapathType,
+		"--", "set", "Open_vSwitch", ".", "external_ids:ovn-bridge-datapath-type="+datapathType,
+	); err != nil {
+		return fmt.Errorf("configure Open vSwitch %s datapath: %w", datapathType, err)
+	}
+	return nil
 }
 
 func cloneStringMap(source map[string]any) map[string]any {
@@ -197,8 +219,11 @@ func cloneStringMap(source map[string]any) map[string]any {
 
 func openVSwitchStanzaMatchesLink(stanza map[string]any, link openVSwitchLink) bool {
 	match, _ := stanza["match"].(map[string]any)
-	if name, _ := match["name"].(string); name == link.Name {
-		return true
+	if name, _ := match["name"].(string); name != "" {
+		matched, err := filepath.Match(name, link.Name)
+		if err == nil && matched {
+			return true
+		}
 	}
 	mac, _ := match["macaddress"].(string)
 	return link.Address != "" && strings.EqualFold(mac, link.Address)
