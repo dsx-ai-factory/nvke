@@ -160,12 +160,10 @@ func (c Cluster) EtcdEncryptionEnabled() bool {
 
 // ControlPlaneSchedulable reports whether the control-plane NoSchedule taint
 // is removed from every node after bootstrap. It is removed when the site spec
-// declares no worker nodes, because the control-plane nodes are then the only
-// place workloads can run.
-//
-// The site spec cannot declare worker nodes yet, so this is always true. When
-// it can, derive the result from that list; do not add a separate field.
+// declares no worker nodes.
 func (c Cluster) ControlPlaneSchedulable() bool {
+	// The site spec cannot declare worker nodes yet. Derive this from that
+	// list once it exists.
 	return true
 }
 

@@ -18,11 +18,15 @@ import (
 	"k8s.io/client-go/util/retry"
 )
 
-// ControlPlaneTaintKey is the taint kubeadm puts on every control-plane node.
+// ControlPlaneTaintKey is the key of the taint kubeadm puts on every
+// control-plane node.
 const ControlPlaneTaintKey = "node-role.kubernetes.io/control-plane"
 
 // ManualCommand is the kubectl equivalent of ControlPlane, for error messages.
-const ManualCommand = "kubectl taint nodes --all " + ControlPlaneTaintKey + "-"
+const ManualCommand = "kubectl taint nodes --all " + ControlPlaneTaintKey + ":NoSchedule-"
+
+// controlPlaneTaint is the taint kubeadm puts on every control-plane node.
+var controlPlaneTaint = corev1.Taint{Key: ControlPlaneTaintKey, Effect: corev1.TaintEffectNoSchedule}
 
 // requestTimeout bounds each API request.
 const requestTimeout = 30 * time.Second
@@ -41,9 +45,9 @@ func NewClient(kubeconfig string) (kubernetes.Interface, error) {
 	return client, nil
 }
 
-// ControlPlane removes every taint keyed ControlPlaneTaintKey from every node
-// and returns the names of the nodes it changed. Nodes without the taint are
-// left alone, so a second run changes nothing.
+// ControlPlane removes the control-plane NoSchedule taint from every node and
+// returns the names of the nodes it changed. Other taints, including the same
+// key with another effect, are left alone, so a second run changes nothing.
 func ControlPlane(ctx context.Context, client kubernetes.Interface, logger *slog.Logger) ([]string, error) {
 	nodes, err := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -84,9 +88,13 @@ func untaintNode(ctx context.Context, client kubernetes.Interface, name string) 
 	return nil
 }
 
+func isControlPlaneTaint(taint corev1.Taint) bool {
+	return taint.Key == controlPlaneTaint.Key && taint.Effect == controlPlaneTaint.Effect
+}
+
 func hasControlPlaneTaint(taints []corev1.Taint) bool {
 	for _, taint := range taints {
-		if taint.Key == ControlPlaneTaintKey {
+		if isControlPlaneTaint(taint) {
 			return true
 		}
 	}
@@ -96,7 +104,7 @@ func hasControlPlaneTaint(taints []corev1.Taint) bool {
 func withoutControlPlaneTaint(taints []corev1.Taint) []corev1.Taint {
 	kept := make([]corev1.Taint, 0, len(taints))
 	for _, taint := range taints {
-		if taint.Key != ControlPlaneTaintKey {
+		if !isControlPlaneTaint(taint) {
 			kept = append(kept, taint)
 		}
 	}

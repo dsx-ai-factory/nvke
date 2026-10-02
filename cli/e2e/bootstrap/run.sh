@@ -848,12 +848,13 @@ hello_world_served() {
 # taint. The workloads below carry no toleration for it.
 
 log "checking that no node still carries the control-plane taint"
-# Plain assignments, so a kubectl failure aborts under set -e.
-node_names=$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes -o jsonpath='{.items[*].metadata.name}')
+node_names=$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes -o jsonpath='{.items[*].metadata.name}') \
+  || fail "could not list nodes for the control-plane taint check"
 [ -n "${node_names}" ] || fail "the cluster lists no nodes"
 tainted_nodes=""
 for node_name in ${node_names}; do
-  taint_keys=$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get node "${node_name}" -o jsonpath='{.spec.taints[*].key}')
+  taint_keys=$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get node "${node_name}" -o jsonpath='{.spec.taints[*].key}') \
+    || fail "could not read the taints of node ${node_name}"
   if tr ' ' '\n' <<<"${taint_keys}" | grep -Fxq 'node-role.kubernetes.io/control-plane'; then
     tainted_nodes="${tainted_nodes}${node_name} "
   fi

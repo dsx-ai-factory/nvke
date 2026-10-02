@@ -1350,7 +1350,8 @@ func TestRunBootstrapSiteRemovesTheControlPlaneTaint(t *testing.T) {
 }
 
 // TestRunBootstrapSiteReportsAnUntaintFailure: the untaint is the last step,
-// so everything else is on disk when it fails.
+// so everything else is on disk and already reported when it fails, and the
+// bootstrap cluster is neither dumped nor kept.
 func TestRunBootstrapSiteReportsAnUntaintFailure(t *testing.T) {
 	setBootstrapEnv(t)
 	startFakeCWEAPI(t, true)
@@ -1359,10 +1360,12 @@ func TestRunBootstrapSiteReportsAnUntaintFailure(t *testing.T) {
 	keyOut := filepath.Join(t.TempDir(), "key.json")
 	spireEntriesDumped := false
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	cwe := &recordingCWERunner{next: fakeCWERunner{}}
+	var out bytes.Buffer
+	err := runBootstrapSite(&out, &bootstrapSiteOptions{
 		siteSpec:         writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:  runner,
-		cweRunner:        fakeCWERunner{},
+		cweRunner:        cwe,
 		kubeconfigOut:    kubeconfigOut,
 		encryptionKeyOut: keyOut,
 		lookPath:         runtimeOnPath,
@@ -1384,7 +1387,10 @@ func TestRunBootstrapSiteReportsAnUntaintFailure(t *testing.T) {
 	if !runner.sawArgs("delete", "cluster") {
 		t.Errorf("the bootstrap kind cluster was kept after the untaint failed, though nothing in it is needed; calls: %v", runner.calls)
 	}
-	for _, want := range []string{"nodes is forbidden", "kubectl taint nodes --all node-role.kubernetes.io/control-plane-", kubeconfigOut} {
+	if cwe.saw("all,events") {
+		t.Errorf("bootstrap cluster diagnostics were collected for a failure in the site cluster; calls: %v", cwe.calls)
+	}
+	for _, want := range []string{"nodes is forbidden", "kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-", kubeconfigOut} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
 		}
@@ -1392,6 +1398,33 @@ func TestRunBootstrapSiteReportsAnUntaintFailure(t *testing.T) {
 	for _, path := range []string{kubeconfigOut, keyOut} {
 		if _, statErr := os.Stat(path); statErr != nil {
 			t.Errorf("%s is missing after the untaint failure: %v", path, statErr)
+		}
+	}
+	if !strings.Contains(out.String(), keyOut) {
+		t.Errorf("the etcd key location was not reported before the untaint; output:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "is ready") {
+		t.Errorf("the cluster was reported ready although the untaint failed; output:\n%s", out.String())
+	}
+}
+
+// TestMakeControlPlaneSchedulableBuildsTheClientFromTheKubeconfig covers the
+// production path, with a kubeconfig that cannot be loaded.
+func TestMakeControlPlaneSchedulableBuildsTheClientFromTheKubeconfig(t *testing.T) {
+	inv, err := sitespec.Load(writeSiteSpec(t, validSiteSpec))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	missing := filepath.Join(t.TempDir(), "missing.kubeconfig")
+
+	err = makeControlPlaneSchedulable(context.Background(), inv, missing, &bootstrapSiteOptions{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if err == nil {
+		t.Fatal("makeControlPlaneSchedulable returned nil for a kubeconfig that does not exist")
+	}
+	for _, want := range []string{missing, "kubectl taint nodes --all"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
 		}
 	}
 }

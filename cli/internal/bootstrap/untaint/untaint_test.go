@@ -20,8 +20,8 @@ import (
 )
 
 var (
-	controlPlaneTaint = corev1.Taint{Key: ControlPlaneTaintKey, Effect: corev1.TaintEffectNoSchedule}
-	otherTaint        = corev1.Taint{Key: "nke.nvidia.com/maintenance", Value: "kube-vip", Effect: corev1.TaintEffectNoSchedule}
+	otherTaint       = corev1.Taint{Key: "nke.nvidia.com/maintenance", Value: "kube-vip", Effect: corev1.TaintEffectNoSchedule}
+	sameKeyNoExecute = corev1.Taint{Key: ControlPlaneTaintKey, Effect: corev1.TaintEffectNoExecute}
 )
 
 func quietLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -66,6 +66,14 @@ func TestControlPlane(t *testing.T) {
 			},
 			wantChanged: []string{"cp-01"},
 			wantTaints:  map[string][]corev1.Taint{"cp-01": {otherTaint}},
+		},
+		{
+			name: "keeps the same key with another effect",
+			nodes: []runtime.Object{
+				node("cp-01", sameKeyNoExecute, controlPlaneTaint),
+			},
+			wantChanged: []string{"cp-01"},
+			wantTaints:  map[string][]corev1.Taint{"cp-01": {sameKeyNoExecute}},
 		},
 		{
 			name: "leaves an already schedulable node alone",

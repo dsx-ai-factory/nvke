@@ -299,12 +299,17 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 		return fmt.Errorf("standing up bootstrap kind cluster: %w", err)
 	}
 	siteClusterCreated := false
+	// handedOver is set once the site cluster and every artifact the operator
+	// needs are on disk. A failure after that is about the site cluster, so
+	// the bootstrap cluster's diagnostics are not collected and it is torn
+	// down.
+	handedOver := false
 	defer func() {
 		// Collect diagnostics before anything is torn down: this cluster is
 		// removed on every exit path, so this is the only moment the evidence
 		// still exists. Only on failure — a successful bootstrap has nothing
 		// to explain.
-		if err != nil {
+		if err != nil && !handedOver {
 			dir := opts.diagnosticsDir
 			logger.Info("bootstrap failed; collecting cluster diagnostics", "dir", dir)
 			cwedeploy.New(opts.cweRunner, logger).
@@ -375,17 +380,18 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	// Everything recovery needs is on disk by now, so the bootstrap cluster is
 	// torn down even if the untaint fails.
 	siteClusterCreated = false
+	handedOver = true
 	kubeconfigPath := siteKubeconfigPath(inv.ClusterName, opts)
+	if inv.Cluster.EtcdEncryptionEnabled() {
+		fmt.Fprintf(out, "\nThe etcd encryption key of cluster %q is at %s. Move that file off this host "+
+			"and keep it with the cluster's other credentials.\n", inv.ClusterName, etcdKeyPath(opts, inv.ClusterName))
+	}
 	if err := makeControlPlaneSchedulable(ctx, inv, kubeconfigPath, opts, logger); err != nil {
 		return err
 	}
 
-	fmt.Fprintf(os.Stdout, "\nCluster %q is ready. Talk to it with:\n  kubectl --kubeconfig %s get nodes\n",
+	fmt.Fprintf(out, "\nCluster %q is ready. Talk to it with:\n  kubectl --kubeconfig %s get nodes\n",
 		inv.ClusterName, kubeconfigPath)
-	if inv.Cluster.EtcdEncryptionEnabled() {
-		fmt.Fprintf(os.Stdout, "Its etcd encryption key is at %s. Move that file off this host "+
-			"and keep it with the cluster's other credentials.\n", etcdKeyPath(opts, inv.ClusterName))
-	}
 	return nil
 }
 
