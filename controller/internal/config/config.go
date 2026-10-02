@@ -14,6 +14,7 @@ import (
 
 	"github.com/caarlos0/env/v11"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 const (
@@ -67,6 +68,14 @@ type TLSJWTConfig struct {
 	// SubjectTrustDomain is the exact SPIFFE trust domain accepted in the
 	// verified node-agent JWT subject.
 	SubjectTrustDomain string `env:"SUBJECT_TRUST_DOMAIN"`
+
+	// SubjectTenant is the tenant segment in the local SPIFFE ID exchanged by
+	// DSX Identity for node-agent JWT authentication.
+	SubjectTenant string `env:"SUBJECT_TENANT"`
+
+	// SubjectService is the service segment in the local SPIFFE ID exchanged by
+	// DSX Identity for node-agent JWT authentication.
+	SubjectService string `env:"SUBJECT_SERVICE"`
 
 	// DSXIdentityExchangeURL is injected into node-agent bootstrap arguments.
 	DSXIdentityExchangeURL string `env:"DSX_IDENTITY_EXCHANGE_URL"`
@@ -565,6 +574,20 @@ func (c *Config) Validate() error {
 		}
 		if strings.TrimSpace(c.NodeAgent.TLSJWT.SubjectTrustDomain) == "" {
 			return fmt.Errorf("NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN is required when NODE_AGENT_TLS_JWT_ENABLED=true")
+		}
+		c.NodeAgent.TLSJWT.SubjectTenant = strings.TrimSpace(c.NodeAgent.TLSJWT.SubjectTenant)
+		if c.NodeAgent.TLSJWT.SubjectTenant == "" {
+			return fmt.Errorf("NODE_AGENT_TLS_JWT_SUBJECT_TENANT is required when NODE_AGENT_TLS_JWT_ENABLED=true")
+		}
+		if len(validation.IsDNS1123Label(c.NodeAgent.TLSJWT.SubjectTenant)) != 0 {
+			return fmt.Errorf("NODE_AGENT_TLS_JWT_SUBJECT_TENANT must be a lowercase DNS label")
+		}
+		c.NodeAgent.TLSJWT.SubjectService = strings.TrimSpace(c.NodeAgent.TLSJWT.SubjectService)
+		if c.NodeAgent.TLSJWT.SubjectService == "" {
+			return fmt.Errorf("NODE_AGENT_TLS_JWT_SUBJECT_SERVICE is required when NODE_AGENT_TLS_JWT_ENABLED=true")
+		}
+		if len(validation.IsDNS1123Label(c.NodeAgent.TLSJWT.SubjectService)) != 0 {
+			return fmt.Errorf("NODE_AGENT_TLS_JWT_SUBJECT_SERVICE must be a lowercase DNS label")
 		}
 		if strings.TrimSpace(c.NodeAgent.TLSJWT.DSXIdentityExchangeURL) == "" {
 			return fmt.Errorf("NODE_AGENT_TLS_JWT_DSX_IDENTITY_EXCHANGE_URL is required when NODE_AGENT_TLS_JWT_ENABLED=true")

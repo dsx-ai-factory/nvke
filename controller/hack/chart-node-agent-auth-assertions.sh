@@ -57,6 +57,8 @@ tls_jwt_values=(
   --set nodeAgent.tlsJwt.jwksURI=https://identity.example.test/.well-known/jwks.json
   --set 'nodeAgent.tlsJwt.algorithms={RS256,ES256}'
   --set nodeAgent.tlsJwt.subjectTrustDomain=identity.example.test
+  --set nodeAgent.tlsJwt.subjectTenant=tenant-a
+  --set nodeAgent.tlsJwt.subjectService=node-agent
   --set nodeAgent.tlsJwt.dsxIdentityExchangeURL=https://identity.example.test/exchange
 )
 out="$(helm template cwe "${CHART}" "${tls_jwt_values[@]}")"
@@ -68,6 +70,8 @@ want_env_value "JWT issuer comes from controller config" NODE_AGENT_TLS_JWT_ISSU
 want_env_value "JWT key source comes from controller config" NODE_AGENT_TLS_JWT_JWKS_URI https://identity.example.test/.well-known/jwks.json "${out}"
 want_env_value "JWT algorithms come from controller config" NODE_AGENT_TLS_JWT_ALGORITHMS RS256,ES256 "${out}"
 want_env_value "JWT subject trust domain comes from controller config" NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN identity.example.test "${out}"
+want_env_value "JWT subject tenant comes from controller config" NODE_AGENT_TLS_JWT_SUBJECT_TENANT tenant-a "${out}"
+want_env_value "JWT subject service comes from controller config" NODE_AGENT_TLS_JWT_SUBJECT_SERVICE node-agent "${out}"
 want_env_value "identity exchange URL comes from controller config" NODE_AGENT_TLS_JWT_DSX_IDENTITY_EXCHANGE_URL https://identity.example.test/exchange "${out}"
 if whitespace_out="$(helm template cwe "${CHART}" "${tls_jwt_values[@]}" \
   --set-string nodeAgent.tlsJwt.dsxIdentityExchangeURL='   ' 2>&1)"; then

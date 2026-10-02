@@ -177,7 +177,11 @@ func (t *Transport) spiffeTransportCredentials(
 		return nil, nil, fmt.Errorf("trust domain is required for SPIFFE authentication")
 	}
 
-	expectedID, err := spiffeid.FromString(node.GetSpiffeID(t.trustDomain))
+	expectedID, err := spiffeid.FromString(node.GetSpiffeID(
+		t.trustDomain,
+		t.cfg.NodeAgent.TLSJWT.SubjectTenant,
+		t.cfg.NodeAgent.TLSJWT.SubjectService,
+	))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse node SPIFFE ID: %w", err)
 	}

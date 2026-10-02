@@ -31,27 +31,31 @@ func (v staticValidator) Validate(string) (validatedToken, error) {
 func TestUnit_ExchangeSubject(t *testing.T) {
 	t.Parallel()
 	type parameters struct {
-		input string
-		want  string
+		region string
+		input  string
+		want   string
 	}
 	tests := map[string]parameters{
 		"bare metal CWE": {
-			input: "spiffe://capd.nke.local/tenant/nke/service/cloud-workflow-engine/bm/cwe",
-			want:  "spiffe://nke.capd.cloud-workflow-engine.nvid.id/bm/cwe",
+			region: "capd",
+			input:  "spiffe://capd.nke.local/tenant/nke/service/cloud-workflow-engine/bm/cwe",
+			want:   "spiffe://nke.capd.cloud-workflow-engine.nvid.id/bm/cwe",
 		},
 		"DPU suffix is preserved": {
-			input: "spiffe://capd.nke.local/tenant/operator/service/dpu-agent/dpu/host-1/process/agent",
-			want:  "spiffe://operator.capd.dpu-agent.nvid.id/dpu/host-1/process/agent",
+			region: "capd",
+			input:  "spiffe://capd.nke.local/tenant/operator/service/dpu-agent/dpu/host-1/process/agent",
+			want:   "spiffe://operator.capd.dpu-agent.nvid.id/dpu/host-1/process/agent",
 		},
-		"node agent maps to the exact node UUID": {
-			input: "spiffe://capd.nke.local/host/45f59791-87df-4e85-9430-e565166ad020",
-			want:  "spiffe://nke.capd.node-agent.nvid.id/bm/45f59791-87df-4e85-9430-e565166ad020",
+		"az51 node agent maps to the exact node UUID": {
+			region: "az51-dev4",
+			input:  "spiffe://az51-dev4.nke.local/tenant/nca-0837451325059433/service/dsx/bm/45f59791-87df-4e85-9430-e565166ad020",
+			want:   "spiffe://nca-0837451325059433.az51-dev4.dsx.nvid.id/bm/45f59791-87df-4e85-9430-e565166ad020",
 		},
 	}
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			got, err := exchangeSubject("capd", "nvid.id", spiffeid.RequireFromString(params.input))
+			got, err := exchangeSubject(params.region, "nvid.id", spiffeid.RequireFromString(params.input))
 			require.NoError(t, err)
 			require.Equal(t, params.want, got.String())
 		})
@@ -66,9 +70,7 @@ func TestUnit_ExchangeSubjectRejectsUnsupportedSource(t *testing.T) {
 	}
 	tests := map[string]parameters{
 		"unrelated workload": {path: "/nke-service/cloud-workflow-engine", wantErr: "invalid local SPIFFE identity path"},
-		"non-UUID host":      {path: "/host/not-a-uuid", wantErr: "invalid canonical node ID"},
-		"uppercase host":     {path: "/host/45F59791-87DF-4E85-9430-E565166AD020", wantErr: "invalid canonical node ID"},
-		"host suffix":        {path: "/host/45f59791-87df-4e85-9430-e565166ad020/process/agent", wantErr: "invalid local SPIFFE identity path"},
+		"legacy node agent":  {path: "/host/45f59791-87df-4e85-9430-e565166ad020", wantErr: "invalid local SPIFFE identity path"},
 	}
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -133,7 +135,7 @@ func TestUnit_TokenExchangeSignsNodeAgentIdentity(t *testing.T) {
 	const nodeID = "45f59791-87df-4e85-9430-e565166ad020"
 	now := time.Unix(1_800_000_000, 0).UTC()
 	server := newTestServer(t, staticValidator{token: validatedToken{
-		ID:     spiffeid.RequireFromString("spiffe://capd.nke.local/host/" + nodeID),
+		ID:     spiffeid.RequireFromString("spiffe://capd.nke.local/tenant/nke/service/node-agent/bm/" + nodeID),
 		Expiry: now.Add(10 * time.Minute),
 		Claims: map[string]any{
 			"aud": "nke-controller",

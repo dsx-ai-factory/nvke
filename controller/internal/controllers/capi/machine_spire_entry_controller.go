@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/google/uuid"
 	spirev1alpha1 "github.com/spiffe/spire-controller-manager/api/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,11 +19,17 @@ import (
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
+
+type machineSpireEntryNodeReader interface {
+	GetNode(ctx context.Context, id uuid.UUID) (db.Node, error)
+}
 
 type MachineSpireEntryController struct {
 	cfg         config.Config
 	k8sClient   client.Client
+	nodes       machineSpireEntryNodeReader
 	logger      *slog.Logger
 	trustDomain string
 }
@@ -30,12 +37,14 @@ type MachineSpireEntryController struct {
 func NewMachineSpireEntryController(
 	cfg config.Config,
 	k8sClient client.Client,
+	nodes machineSpireEntryNodeReader,
 	logger *slog.Logger,
 	trustDomain string,
 ) *MachineSpireEntryController {
 	return &MachineSpireEntryController{
 		cfg:         cfg,
 		k8sClient:   k8sClient,
+		nodes:       nodes,
 		logger:      logger,
 		trustDomain: trustDomain,
 	}
@@ -78,10 +87,22 @@ func (c *MachineSpireEntryController) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, nil
 	}
 	parentID := spiffeIDFromPath(c.trustDomain, spireAgentIDPath)
+	nodeID, err := uuid.Parse(hostID)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("invalid host ID %q: %w", hostID, err)
+	}
+	node, err := c.nodes.GetNode(ctx, nodeID)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("get node %s: %w", nodeID, err)
+	}
 
 	logger.Info("Applying ClusterStaticEntry for machine", "hostID", hostID, "parentID", parentID)
 	cseName := machineSpireEntryName(hostID)
-	workloadSpiffeID := fmt.Sprintf("spiffe://%s/host/%s", c.trustDomain, hostID)
+	workloadSpiffeID := node.GetSpiffeID(
+		c.trustDomain,
+		c.cfg.NodeAgent.TLSJWT.SubjectTenant,
+		c.cfg.NodeAgent.TLSJWT.SubjectService,
+	)
 	if err := c.applyClusterStaticEntry(ctx, cseName, workloadSpiffeID, parentID); err != nil {
 		return ctrl.Result{}, err
 	}

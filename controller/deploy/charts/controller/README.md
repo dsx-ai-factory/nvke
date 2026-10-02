@@ -80,6 +80,8 @@ A Helm chart to deploy the NKE controller service
 | nodeAgent.tlsJwt.enabled | bool | `false` | Pin JWT node authentication to newly created nodes. Existing nodes retain their stored transport; keep issuer/JWKS settings available for JWT-enabled nodes. Requires either spiffe.enabled or nodeAgent.externalMTLS.enabled. |
 | nodeAgent.tlsJwt.issuer | string | `""` | Identity issuer expected in node-agent JWTs. |
 | nodeAgent.tlsJwt.jwksURI | string | `""` | HTTPS endpoint serving the issuer's JSON Web Key Set. |
+| nodeAgent.tlsJwt.subjectService | string | `""` | Service segment in the canonical local SPIFFE ID exchanged by DSX Identity. |
+| nodeAgent.tlsJwt.subjectTenant | string | `""` | Tenant segment in the canonical local SPIFFE ID exchanged by DSX Identity. |
 | nodeAgent.tlsJwt.subjectTrustDomain | string | `""` | Exact SPIFFE trust domain accepted in node-agent JWT subjects. |
 | nodeSelector | object | `{}` |  |
 | podAnnotations | object | `{}` |  |

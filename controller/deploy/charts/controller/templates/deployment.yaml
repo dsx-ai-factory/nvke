@@ -275,6 +275,10 @@ spec:
               value: {{ required "nodeAgent.tlsJwt.algorithms must contain at least one algorithm when TLS/JWT is enabled" (join "," .Values.nodeAgent.tlsJwt.algorithms) | quote }}
             - name: NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN
               value: {{ required "nodeAgent.tlsJwt.subjectTrustDomain is required when TLS/JWT is enabled" .Values.nodeAgent.tlsJwt.subjectTrustDomain | quote }}
+            - name: NODE_AGENT_TLS_JWT_SUBJECT_TENANT
+              value: {{ required "nodeAgent.tlsJwt.subjectTenant is required when TLS/JWT is enabled" (.Values.nodeAgent.tlsJwt.subjectTenant | trim) | quote }}
+            - name: NODE_AGENT_TLS_JWT_SUBJECT_SERVICE
+              value: {{ required "nodeAgent.tlsJwt.subjectService is required when TLS/JWT is enabled" (.Values.nodeAgent.tlsJwt.subjectService | trim) | quote }}
             - name: NODE_AGENT_TLS_JWT_DSX_IDENTITY_EXCHANGE_URL
               value: {{ required "nodeAgent.tlsJwt.dsxIdentityExchangeURL is required when TLS/JWT is enabled" (.Values.nodeAgent.tlsJwt.dsxIdentityExchangeURL | trim) | quote }}
             {{- end }}

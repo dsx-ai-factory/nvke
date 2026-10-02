@@ -129,6 +129,8 @@ func TestUnit_ParseNodeAgentTLSJWTSettings(t *testing.T) {
 	withEnv(t, "NODE_AGENT_TLS_JWT_JWKS_URI", ptr.To("https://identity.example.test/jwks"))
 	withEnv(t, "NODE_AGENT_TLS_JWT_ALGORITHMS", ptr.To("RS256,ES256"))
 	withEnv(t, "NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN", ptr.To("identity.example.test"))
+	withEnv(t, "NODE_AGENT_TLS_JWT_SUBJECT_TENANT", ptr.To("tenant-a"))
+	withEnv(t, "NODE_AGENT_TLS_JWT_SUBJECT_SERVICE", ptr.To("node-agent"))
 	withEnv(t, "NODE_AGENT_TLS_JWT_DSX_IDENTITY_EXCHANGE_URL", ptr.To("https://identity.example.test/v1/exchange"))
 	withEnv(t, "SPIFFE_ENABLED", ptr.To("true"))
 	withEnv(t, "SUPPORTED_INFRA_PROVIDERS", ptr.To(config.InfraProviderInfra))
@@ -142,6 +144,8 @@ func TestUnit_ParseNodeAgentTLSJWTSettings(t *testing.T) {
 	require.Equal(t, "https://identity.example.test/jwks", cfg.NodeAgent.TLSJWT.JWKSURI)
 	require.Equal(t, []string{"RS256", "ES256"}, cfg.NodeAgent.TLSJWT.Algorithms)
 	require.Equal(t, "identity.example.test", cfg.NodeAgent.TLSJWT.SubjectTrustDomain)
+	require.Equal(t, "tenant-a", cfg.NodeAgent.TLSJWT.SubjectTenant)
+	require.Equal(t, "node-agent", cfg.NodeAgent.TLSJWT.SubjectService)
 	require.Equal(t, "https://identity.example.test/v1/exchange", cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)
 }
 
@@ -227,6 +231,8 @@ func TestUnit_ConfigValidateNodeAgentTLSJWT(t *testing.T) {
 	enabled.NodeAgent.TLSJWT.JWKSURI = "https://identity.example.test/jwks"
 	enabled.NodeAgent.TLSJWT.Algorithms = []string{"RS256"}
 	enabled.NodeAgent.TLSJWT.SubjectTrustDomain = "identity.example.test"
+	enabled.NodeAgent.TLSJWT.SubjectTenant = "tenant-a"
+	enabled.NodeAgent.TLSJWT.SubjectService = "node-agent"
 	enabled.NodeAgent.TLSJWT.DSXIdentityExchangeURL = "https://identity.example.test/v1/exchange"
 	enabled.SupportedInfraProviders = []string{config.InfraProviderInfra}
 
@@ -238,6 +244,14 @@ func TestUnit_ConfigValidateNodeAgentTLSJWT(t *testing.T) {
 	missingAlgorithms.NodeAgent.TLSJWT.Algorithms = nil
 	missingSubjectTrustDomain := enabled
 	missingSubjectTrustDomain.NodeAgent.TLSJWT.SubjectTrustDomain = ""
+	missingSubjectTenant := enabled
+	missingSubjectTenant.NodeAgent.TLSJWT.SubjectTenant = ""
+	invalidSubjectTenant := enabled
+	invalidSubjectTenant.NodeAgent.TLSJWT.SubjectTenant = "tenant/a"
+	missingSubjectService := enabled
+	missingSubjectService.NodeAgent.TLSJWT.SubjectService = ""
+	invalidSubjectService := enabled
+	invalidSubjectService.NodeAgent.TLSJWT.SubjectService = "Node Agent"
 	missingExchangeURL := enabled
 	missingExchangeURL.NodeAgent.TLSJWT.DSXIdentityExchangeURL = ""
 	missingSpiffe := enabled
@@ -282,6 +296,22 @@ func TestUnit_ConfigValidateNodeAgentTLSJWT(t *testing.T) {
 		"enabled rejects a missing subject trust domain": {
 			config:  missingSubjectTrustDomain,
 			wantErr: "NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN is required when NODE_AGENT_TLS_JWT_ENABLED=true",
+		},
+		"enabled rejects a missing subject tenant": {
+			config:  missingSubjectTenant,
+			wantErr: "NODE_AGENT_TLS_JWT_SUBJECT_TENANT is required when NODE_AGENT_TLS_JWT_ENABLED=true",
+		},
+		"enabled rejects an invalid subject tenant": {
+			config:  invalidSubjectTenant,
+			wantErr: "NODE_AGENT_TLS_JWT_SUBJECT_TENANT must be a lowercase DNS label",
+		},
+		"enabled rejects a missing subject service": {
+			config:  missingSubjectService,
+			wantErr: "NODE_AGENT_TLS_JWT_SUBJECT_SERVICE is required when NODE_AGENT_TLS_JWT_ENABLED=true",
+		},
+		"enabled rejects an invalid subject service": {
+			config:  invalidSubjectService,
+			wantErr: "NODE_AGENT_TLS_JWT_SUBJECT_SERVICE must be a lowercase DNS label",
 		},
 		"enabled rejects a missing DSX Identity exchange URL": {
 			config:  missingExchangeURL,

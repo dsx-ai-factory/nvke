@@ -110,6 +110,31 @@ func TestUnit_NodeValidateSecurityProfile(t *testing.T) {
 	}
 }
 
+func TestUnit_NodeGetSpiffeID(t *testing.T) {
+	t.Parallel()
+	const nodeID = "45f59791-87df-4e85-9430-e565166ad020"
+
+	tests := map[string]struct {
+		node db.Node
+		want string
+	}{
+		"legacy SPIFFE identity": {
+			node: db.Node{ID: uuid.MustParse(nodeID)},
+			want: "spiffe://example.org/host/" + nodeID,
+		},
+		"canonical DSX exchange identity": {
+			node: db.Node{ID: uuid.MustParse(nodeID), NodeAgentTLSJWTEnabled: true},
+			want: "spiffe://example.org/tenant/nca-0837451325059433/service/dsx/bm/" + nodeID,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, test.want, test.node.GetSpiffeID("example.org", "nca-0837451325059433", "dsx"))
+		})
+	}
+}
+
 func TestNode_NicoProvider(t *testing.T) {
 	instanceTypeID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 

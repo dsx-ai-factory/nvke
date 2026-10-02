@@ -116,6 +116,10 @@ nodeAgent:
       - RS256
     # -- Exact SPIFFE trust domain accepted in node-agent JWT subjects.
     subjectTrustDomain: ""
+    # -- Tenant segment in the canonical local SPIFFE ID exchanged by DSX Identity.
+    subjectTenant: ""
+    # -- Service segment in the canonical local SPIFFE ID exchanged by DSX Identity.
+    subjectService: ""
     # -- DSX Identity token-exchange endpoint injected into node-agent bootstrap
     # arguments when TLS/JWT is enabled.
     dsxIdentityExchangeURL: ""

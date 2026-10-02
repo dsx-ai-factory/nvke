@@ -316,6 +316,7 @@ func main() {
 		machineSpireEntryController := capi.NewMachineSpireEntryController(
 			cfg,
 			k8sControllerManager.GetClient(),
+			dbInstance,
 			logger.With("logger", "machine-spire-entry-controller"),
 			trustDomain,
 		)

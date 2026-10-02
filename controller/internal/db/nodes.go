@@ -84,8 +84,11 @@ func (n Node) IsManagedByControlPlaneController() bool {
 	return n.ControlPlane && n.NodePoolID == uuid.Nil
 }
 
-// Example: spiffe://nke-site-forge-az24-dev7.nke.nvidia.com/host/<node-id>
-func (n *Node) GetSpiffeID(trustDomain string) string {
+// GetSpiffeID returns the local workload identity registered for the node agent.
+func (n *Node) GetSpiffeID(trustDomain, subjectTenant, subjectService string) string {
+	if n.NodeAgentTLSJWTEnabled {
+		return fmt.Sprintf("spiffe://%s/tenant/%s/service/%s/bm/%s", trustDomain, subjectTenant, subjectService, n.ID.String())
+	}
 	return fmt.Sprintf("spiffe://%s/host/%s", trustDomain, n.ID.String())
 }
 

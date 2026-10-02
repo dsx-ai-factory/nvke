@@ -19,6 +19,8 @@ nodeAgent:
     algorithms:
       - RS256
     subjectTrustDomain: nke.example-site.node-agent.nvid.id
+    subjectTenant: nke
+    subjectService: node-agent
     dsxIdentityExchangeURL: https://identity.example.com/v1/exchange
 ```
 
@@ -33,7 +35,8 @@ At least one of those secure base transports must be enabled. The controller
 validates the JWT sent by the agent before gRPC starts.
 
 The chart supplies the issuer, JWKS URI, algorithm allow-list, subject trust
-domain, and DSX Identity exchange URL directly as controller configuration.
+domain, local subject tenant and service, and DSX Identity exchange URL directly
+as controller configuration.
 It does not create or mount an
 additional Secret or ConfigMap for this feature. The controller always requires
 the JWT audience `nke-controller`.
@@ -59,3 +62,11 @@ and required `exp`. When `nbf` is present, it is validated using the same clock
 skew policy as API authentication. The verified `sub` must use the configured
 SPIFFE trust domain and exact path `/bm/<node UUID>` for the node being contacted.
 The controller allows gRPC traffic only after those checks succeed.
+
+For TLS/JWT-enabled nodes, NKE registers the local node-agent workload as
+`spiffe://<local-trust-domain>/tenant/<subjectTenant>/service/<subjectService>/bm/<node UUID>`.
+DSX Identity exchanges that canonical source identity into
+`spiffe://<subjectTenant>.<region>.<subjectService>.<partition>/bm/<node UUID>`.
+The configured `subjectTrustDomain` must equal that exchanged trust domain.
+SPIFFE-only nodes that do not use DSX Identity exchange retain the legacy
+`/host/<node UUID>` local identity.

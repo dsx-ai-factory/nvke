@@ -142,6 +142,8 @@ def register(ctx):
             "--set-string", "nodeAgent.tlsJwt.jwksURI=%s/.well-known/jwks.json" % identity_url,
             "--set-json", 'nodeAgent.tlsJwt.algorithms=["ES256"]',
             "--set-string", "nodeAgent.tlsJwt.subjectTrustDomain=nke.capd.node-agent.nvid.id",
+            "--set-string", "nodeAgent.tlsJwt.subjectTenant=nke",
+            "--set-string", "nodeAgent.tlsJwt.subjectService=node-agent",
             "--set-string", "nodeAgent.tlsJwt.dsxIdentityExchangeURL=%s/v1/exchange" % identity_url,
         ]
     if ctx.cfg.get("dsx_imds_external_mtls", False):
