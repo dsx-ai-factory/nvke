@@ -109,7 +109,7 @@ for the e2e lanes -- that script is the reference for these derivations.
 
 | value | e2e derivation | on a NICo site |
 |---|---|---|
-| trust domain | `${KIND_CLUSTER_NAME}.nke.local` | `<site-name>.nke.local` |
+| trust domain | `${KIND_CLUSTER_NAME}.nke.local` | the trust domain the site's nodes were bootstrapped with (`spire.trustDomain` in the site spec); never derived from a name |
 | management VIP | kind control-plane IP | the site controller's node IP |
 | SPIRE admin path | `/nke-service/cloud-workflow-engine` | the same; it is a constant |
 | TPM attestor **server** checksum | pinned per arch in `resolve_tpm_checksum()` | the same pin for the same arch |
