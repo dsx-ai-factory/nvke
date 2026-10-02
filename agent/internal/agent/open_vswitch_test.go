@@ -165,21 +165,34 @@ func TestOpenVSwitchNetplanMatchNamePatterns(t *testing.T) {
 	}
 }
 
-func TestPrepareOpenVSwitchNetdevDatapath(t *testing.T) {
+func TestOpenVSwitchNetdevDatapathKeepsManagementUplink(t *testing.T) {
 	t.Setenv(openVSwitchDatapathTypeEnv, openVSwitchNetdevDatapath)
-	command := "ovs-vsctl --may-exist add-br breth0 -- set bridge breth0 datapath_type=netdev -- set Open_vSwitch . external_ids:ovn-bridge-datapath-type=netdev"
-	runner := newOpenVSwitchTestRunner(t, map[string][]openVSwitchCommandResult{command: {{}}})
+	runner := newOpenVSwitchTestRunner(t, map[string][]openVSwitchCommandResult{
+		"dpkg-query --show --showformat=${db:Status-Abbrev} openvswitch-switch": {{output: []byte("ii ")}},
+		"systemctl enable --now openvswitch-switch":                             {{}},
+		"ip -j route show default": {{
+			output: []byte(`[{"dst":"default","gateway":"10.0.0.1","dev":"eth0"}]`),
+		}},
+		"ovs-vsctl set Open_vSwitch . external_ids:ovn-bridge-datapath-type=netdev": {{}},
+	})
 	server := &NodeAgentServer{Runner: runner}
 
-	require.NoError(t, server.prepareOpenVSwitchDatapath("breth0"))
-	assert.Equal(t, []string{command}, runner.calls)
+	result, plan, err := server.reconcileOpenVSwitchLocked(context.Background())
+	require.NoError(t, err)
+	assert.Nil(t, plan)
+	assert.Equal(t, pb.OpenVSwitchReconciliationResult_OUTCOME_CONFIGURED, result.GetOutcome())
+	assert.Empty(t, result.GetBridgeName())
+	assert.Equal(t, "eth0", result.GetUplinkInterface())
+	assert.Equal(t, pb.OpenVSwitchReconciliationResult_NETWORK_BACKEND_NETPLAN, result.GetNetworkBackend())
+	assert.NotContains(t, runner.calls, "netplan apply")
+	assert.NotContains(t, runner.calls, "ovs-vsctl --may-exist add-br breth0")
 }
 
 func TestPrepareOpenVSwitchRejectsUnsupportedDatapath(t *testing.T) {
 	t.Setenv(openVSwitchDatapathTypeEnv, "system")
 	server := &NodeAgentServer{}
 
-	err := server.prepareOpenVSwitchDatapath("breth0")
+	_, _, err := server.reconcileOpenVSwitchDatapathOverride(context.Background())
 	require.EqualError(t, err, `unsupported Open vSwitch datapath type "system"`)
 }
 
