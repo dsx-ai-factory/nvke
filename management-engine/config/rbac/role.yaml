@@ -15,3 +15,12 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - internal.nke.nvidia.com
+  resources:
+  - nkeclusters/status
+  - nodepools/status
+  verbs:
+  - get
+  - patch
+  - update

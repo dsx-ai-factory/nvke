@@ -35,18 +35,10 @@ manager:
   # Required: the election namespace in the datastore cluster, not the Pod namespace.
   env:
     - name: STATE_NAMESPACE
-      value: ""
+      value: management-state-system
 
-  extraVolumeMounts:
-    - name: management-api
-      mountPath: /etc/management-api
-      readOnly: true
-  extraVolumes:
-    - name: management-api
-      secret:
-        # Required existing Secret in the services cluster. Key: kubeconfig.
-        secretName: ""
-        defaultMode: 0444
+  extraVolumeMounts: []
+  extraVolumes: []
 
   ## Image pull secrets
   ##

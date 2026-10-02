@@ -49,8 +49,8 @@ manifests: controller-gen kustomize generate kubebuilder ## Generate CRDs, RBAC,
 	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=hack/boilerplate.yaml.txt paths=./apis/... output:crd:artifacts:config=config/crd/bases
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role,headerFile=hack/boilerplate.yaml.txt paths=./controllers/... output:rbac:artifacts:config=config/rbac
 	mkdir -p dist
-	"$(KUSTOMIZE)" build config/helm > dist/chart-input.yaml
-	"$(KUBEBUILDER)" edit --plugins=helm/v2-alpha --manifests=./dist/chart-input.yaml --output-dir=.
+	"$(KUSTOMIZE)" build config/default > dist/install.yaml
+	"$(KUBEBUILDER)" edit --plugins=helm/v2-alpha --manifests=./dist/install.yaml --output-dir=.
 	rm -f .github/workflows/test-chart.yml
 	@rmdir .github/workflows .github 2>/dev/null || true
 	$(GO) run github.com/google/addlicense@v1.1.1 -f ../hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" chart
@@ -70,12 +70,19 @@ vet: ## Run go vet against code.
 TEST_PROCS ?= 5
 
 .PHONY: test
-test: manifests generate fmt vet setup-envtest ginkgo ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" "$(GINKGO)" --race --procs=$(TEST_PROCS) --cover --coverprofile=cover.out --skip-package=e2e,hack ./...
+test: test-api test-controller ## Run API and controller tests.
+
+.PHONY: test-api
+test-api: manifests generate fmt vet ## Run API tests.
+	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=cover-api.out ./apis/...
+
+.PHONY: test-controller
+test-controller: manifests generate fmt vet setup-envtest ginkgo ## Run controller envtest fixtures.
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" "$(GINKGO)" --race --procs=$(TEST_PROCS) --cover --coverprofile=cover-controller.out ./controllers/...
 
 .PHONY: test-update
-test-update: manifests generate fmt vet setup-envtest ginkgo ## Run tests and update expected fixture goldens.
-	TESTUTIL_UPDATE_EXPECTED=true KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" "$(GINKGO)" --race --procs=$(TEST_PROCS) --cover --coverprofile=cover.out --skip-package=e2e,hack ./...
+test-update: export TESTUTIL_UPDATE_EXPECTED=true
+test-update: test-controller ## Run controller tests and update expected fixture goldens.
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter

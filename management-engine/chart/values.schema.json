@@ -29,9 +29,7 @@
           "manager": {
             "required": [
               "args",
-              "env",
-              "extraVolumes",
-              "extraVolumeMounts"
+              "env"
             ],
             "properties": {
               "args": {
@@ -66,55 +64,6 @@
                       "minLength": 1,
                       "maxLength": 63,
                       "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
-                    }
-                  }
-                }
-              },
-              "extraVolumes": {
-                "type": "array",
-                "contains": {
-                  "type": "object",
-                  "required": [
-                    "name",
-                    "secret"
-                  ],
-                  "properties": {
-                    "name": {
-                      "const": "management-api"
-                    },
-                    "secret": {
-                      "type": "object",
-                      "required": [
-                        "secretName"
-                      ],
-                      "properties": {
-                        "secretName": {
-                          "type": "string",
-                          "minLength": 1
-                        }
-                      }
-                    }
-                  }
-                }
-              },
-              "extraVolumeMounts": {
-                "type": "array",
-                "contains": {
-                  "type": "object",
-                  "required": [
-                    "name",
-                    "mountPath",
-                    "readOnly"
-                  ],
-                  "properties": {
-                    "name": {
-                      "const": "management-api"
-                    },
-                    "mountPath": {
-                      "const": "/etc/management-api"
-                    },
-                    "readOnly": {
-                      "const": true
                     }
                   }
                 }

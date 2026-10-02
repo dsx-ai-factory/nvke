@@ -22,6 +22,41 @@ items:
     release:
       channel:
         name: stable
+  status:
+    conditions:
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: '* InfrastructureReady: Condition not yet reported'
+      observedGeneration: 1
+      reason: AvailableUnknown
+      status: Unknown
+      type: Available
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 1
+      reason: NotDeleting
+      status: "False"
+      type: Deleting
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 1
+      reason: NotPaused
+      status: "False"
+      type: Paused
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: |-
+        * Available:
+          * InfrastructureReady: Condition not yet reported
+      observedGeneration: 1
+      reason: ReadyUnknown
+      status: Unknown
+      type: Ready
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: '* InfrastructureReady: Condition not yet reported'
+      observedGeneration: 1
+      reason: SyncUnknown
+      status: Unknown
+      type: Synced
+    observedGeneration: 1
 metadata: {}
 ---
 items:
@@ -44,4 +79,39 @@ items:
         rollingUpdate:
           maxSurge: 1
         type: RollingUpdate
+  status:
+    conditions:
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: '* InfrastructureReady: Condition not yet reported'
+      observedGeneration: 2
+      reason: AvailableUnknown
+      status: Unknown
+      type: Available
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
+      reason: NotDeleting
+      status: "False"
+      type: Deleting
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: ""
+      observedGeneration: 2
+      reason: NotPaused
+      status: "False"
+      type: Paused
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: |-
+        * Available:
+          * InfrastructureReady: Condition not yet reported
+      observedGeneration: 2
+      reason: ReadyUnknown
+      status: Unknown
+      type: Ready
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: '* InfrastructureReady: Condition not yet reported'
+      observedGeneration: 2
+      reason: SyncUnknown
+      status: Unknown
+      type: Synced
+    observedGeneration: 2
 metadata: {}

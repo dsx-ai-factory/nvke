@@ -146,9 +146,10 @@ spec:
         volumeMounts:
           {{- if .Values.manager.extraVolumeMounts }}
           {{- toYaml .Values.manager.extraVolumeMounts | nindent 10 }}
-          {{- else }}
-          []
           {{- end }}
+        - mountPath: /etc/management-api
+          name: management-api
+          readOnly: true
       securityContext:
         {{- if .Values.manager.podSecurityContext }}
         {{- toYaml .Values.manager.podSecurityContext | nindent 8 }}
@@ -162,7 +163,9 @@ spec:
       volumes:
         {{- if .Values.manager.extraVolumes }}
         {{- toYaml .Values.manager.extraVolumes | nindent 8 }}
-        {{- else }}
-        []
         {{- end }}
+      - name: management-api
+        secret:
+          defaultMode: 292
+          secretName: management-state-client
 {{- end }}

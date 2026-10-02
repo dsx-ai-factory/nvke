@@ -8,7 +8,7 @@ layout:
 - go.kubebuilder.io/v4
 plugins:
   helm.kubebuilder.io/v2-alpha:
-    manifests: ./dist/chart-input.yaml
+    manifests: ./dist/install.yaml
     output: .
 projectName: management-engine
 repo: github.com/dsx-ai-factory/nke/management-engine

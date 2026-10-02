@@ -6,8 +6,3 @@ manager:
   env:
     - name: STATE_NAMESPACE
       value: management-state-system
-  extraVolumes:
-    - name: management-api
-      secret:
-        secretName: management-state-client
-        defaultMode: 0444
