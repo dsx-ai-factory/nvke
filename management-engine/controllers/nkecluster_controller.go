@@ -84,7 +84,7 @@ func setNKEClusterConditions(cluster *internalv1.NKECluster) error {
 	conditions.Set(cluster, metav1.Condition{Type: clusterv1.DeletingCondition, Status: deleting, Reason: reason})
 
 	if err := conditions.SetSummaryCondition(cluster, cluster, internalv1.SyncedCondition,
-		conditions.ForConditionTypes{clusterv1.InfrastructureReadyCondition},
+		conditions.ForConditionTypes{internalv1.ControlPlaneReadyCondition},
 		conditions.CustomMergeStrategy{MergeStrategy: conditions.DefaultMergeStrategy(
 			conditions.ComputeReasonFunc(conditions.GetDefaultComputeMergeReasonFunc(
 				internalv1.NotSyncedReason, internalv1.SyncUnknownReason, internalv1.SyncedReason,
@@ -94,7 +94,7 @@ func setNKEClusterConditions(cluster *internalv1.NKECluster) error {
 		return fmt.Errorf("summarize NKECluster Synced condition: %w", err)
 	}
 	if err := conditions.SetSummaryCondition(cluster, cluster, clusterv1.AvailableCondition,
-		conditions.ForConditionTypes{clusterv1.InfrastructureReadyCondition},
+		conditions.ForConditionTypes{internalv1.ControlPlaneReadyCondition},
 		conditions.CustomMergeStrategy{MergeStrategy: conditions.DefaultMergeStrategy(
 			conditions.ComputeReasonFunc(conditions.GetDefaultComputeMergeReasonFunc(
 				clusterv1.NotAvailableReason, clusterv1.AvailableUnknownReason, clusterv1.AvailableReason,

@@ -25,7 +25,7 @@ items:
   status:
     conditions:
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: '* InfrastructureReady: Condition not yet reported'
+      message: '* ControlPlaneReady: Condition not yet reported'
       observedGeneration: 1
       reason: AvailableUnknown
       status: Unknown
@@ -45,13 +45,13 @@ items:
     - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: |-
         * Available:
-          * InfrastructureReady: Condition not yet reported
+          * ControlPlaneReady: Condition not yet reported
       observedGeneration: 1
       reason: ReadyUnknown
       status: Unknown
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: '* InfrastructureReady: Condition not yet reported'
+      message: '* ControlPlaneReady: Condition not yet reported'
       observedGeneration: 1
       reason: SyncUnknown
       status: Unknown
@@ -82,7 +82,7 @@ items:
   status:
     conditions:
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: '* InfrastructureReady: Condition not yet reported'
+      message: '* WorkersReady: Condition not yet reported'
       observedGeneration: 2
       reason: AvailableUnknown
       status: Unknown
@@ -102,13 +102,13 @@ items:
     - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: |-
         * Available:
-          * InfrastructureReady: Condition not yet reported
+          * WorkersReady: Condition not yet reported
       observedGeneration: 2
       reason: ReadyUnknown
       status: Unknown
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: '* InfrastructureReady: Condition not yet reported'
+      message: '* WorkersReady: Condition not yet reported'
       observedGeneration: 2
       reason: SyncUnknown
       status: Unknown

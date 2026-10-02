@@ -4,6 +4,11 @@
 package v1
 
 const (
+	ControlPlaneReadyCondition = "ControlPlaneReady"
+	WorkersReadyCondition      = "WorkersReady"
+)
+
+const (
 	SyncedCondition   = "Synced"
 	SyncedReason      = "Synced"
 	NotSyncedReason   = "NotSynced"

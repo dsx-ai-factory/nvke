@@ -84,7 +84,7 @@ func setNodePoolConditions(pool *internalv1.NodePool) error {
 	conditions.Set(pool, metav1.Condition{Type: clusterv1.DeletingCondition, Status: deleting, Reason: reason})
 
 	if err := conditions.SetSummaryCondition(pool, pool, internalv1.SyncedCondition,
-		conditions.ForConditionTypes{clusterv1.InfrastructureReadyCondition},
+		conditions.ForConditionTypes{internalv1.WorkersReadyCondition},
 		conditions.CustomMergeStrategy{MergeStrategy: conditions.DefaultMergeStrategy(
 			conditions.ComputeReasonFunc(conditions.GetDefaultComputeMergeReasonFunc(
 				internalv1.NotSyncedReason, internalv1.SyncUnknownReason, internalv1.SyncedReason,
@@ -94,7 +94,7 @@ func setNodePoolConditions(pool *internalv1.NodePool) error {
 		return fmt.Errorf("summarize NodePool Synced condition: %w", err)
 	}
 	if err := conditions.SetSummaryCondition(pool, pool, clusterv1.AvailableCondition,
-		conditions.ForConditionTypes{clusterv1.InfrastructureReadyCondition},
+		conditions.ForConditionTypes{internalv1.WorkersReadyCondition},
 		conditions.CustomMergeStrategy{MergeStrategy: conditions.DefaultMergeStrategy(
 			conditions.ComputeReasonFunc(conditions.GetDefaultComputeMergeReasonFunc(
 				clusterv1.NotAvailableReason, clusterv1.AvailableUnknownReason, clusterv1.AvailableReason,
