@@ -235,12 +235,12 @@ Ranges used by a nico-vms deployment and the tenant clusters it creates — keep
 | Control-plane VIP range | `172.31.0.0/24` | B | tenant API VIPs (off-link, via BGP) | `NICO_VMS_VIP_CIDR` (Tiltfile) |
 | Tenant pod CIDR | `192.168.0.0/16` | C | Calico pods in tenant clusters | defaulted in `internal/server/cluster_network.go` |
 | Tenant service CIDR | `10.96.0.0/12` | A | tenant cluster Services | kubeadm default |
-| kind mgmt network | `172.18.0.0/16` | B | Docker network hosting the nke-controller/Kind management cluster | Kind / Docker |
+| kind mgmt network | assigned by Docker from `172.16.0.0/12`; read it with `docker network inspect kind -f '{{(index .IPAM.Config 0).Subnet}}'` | B | Docker network hosting the nke-controller/Kind management cluster | Kind / Docker |
 
 > **Why `172.30`/`172.31`?** The bridge and VIP ranges are deliberately kept clear of every other consumer:
 > - tenant **pod CIDR** `192.168.0.0/16` (class C, Calico default) — a node or VIP inside it gets shadowed by Calico's per-node `/26` `blackhole` routes;
 > - tenant **service CIDR** `10.96.0.0/12` and the commonly used corporate/VPN `10.0.0.0/8` (class A) — a `10.x` bridge could shadow a real corporate route on the host;
-> - Docker's default pool `172.16.0.0/12` (class B), which fills bottom-up — today only `172.17` (docker0) and `172.18` (kind) are used, so `172.30`/`172.31` (top of the pool) are reached last. If Docker's `default-address-pools` are reconfigured to reach that high, revisit these.
+> - Docker's default pool `172.16.0.0/12` (class B). Docker assigns each user-defined network the next free `/16`, so the `kind` network's subnet depends on which networks already exist on the host (`172.18.0.0/16` when it is the first, `172.19.0.0/16` when another network holds `172.18`, and so on). Read the actual value with `docker network inspect kind -f '{{(index .IPAM.Config 0).Subnet}}'`, and use the inspected value for any address-based rule derived from this row. `172.30`/`172.31` sit at the top of the pool and are reached last. If Docker's `default-address-pools` are reconfigured to reach that high, revisit these.
 >
 > The bridge previously lived at `192.168.200.0/24`, *inside* the pod CIDR, which intermittently blackholed nodes whose IP landed in a Calico `/26` (`ip route get <nodeIP>` → `Invalid argument`; apiserver→kubelet dials fail `connect: invalid argument`). The bridge and VIP ranges were moved out of the pod CIDR to fix this, and pod/service CIDRs were made configurable as the complementary root-cause fix.
 
