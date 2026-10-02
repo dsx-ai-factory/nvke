@@ -1,0 +1,80 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+version: "2"
+run:
+  allow-parallel-runners: true
+linters:
+  default: none
+  enable:
+    - copyloopvar
+    - dupl
+    - errcheck
+    - ginkgolinter
+    - goconst
+    - gocyclo
+    - govet
+    - ineffassign
+    - lll
+    - modernize
+    - misspell
+    - nakedret
+    - prealloc
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - logcheck
+    - commentpolicy
+  settings:
+    custom:
+      commentpolicy:
+        type: "module"
+        description: Limits inline comment block size.
+      logcheck:
+        type: "module"
+        description: Checks Go logging calls for Kubernetes logging conventions.
+    revive:
+      rules:
+        - name: comment-spacings
+        - name: import-shadowing
+    modernize:
+      disable:
+        - omitzero
+  exclusions:
+    generated: lax
+    rules:
+      - linters:
+          - lll
+        path: apis/*
+      - linters:
+          - dupl
+          - lll
+        path: controllers/*
+      - linters:
+          - dupl
+          - lll
+        path: internal/*
+      # Test fixtures repeat short literals on purpose: a table-driven case
+      # reads better with "capnico" or a URL written where it applies than with
+      # a constant the reader has to look up. goconst counts occurrences
+      # without regard to that, so it fires on the fixtures rather than on the
+      # code.
+      - linters:
+          - goconst
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

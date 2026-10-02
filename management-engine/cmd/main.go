@@ -4,40 +4,31 @@
 package main
 
 import (
-	"context"
 	"crypto/tls"
-	"errors"
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
-	"sync/atomic"
-	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	kubescheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	nkev1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
-	"github.com/dsx-ai-factory/nke/management-engine/internal/controller"
+	internalv1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
+	"github.com/dsx-ai-factory/nke/management-engine/controllers"
 	// +kubebuilder:scaffold:imports
 )
 
-// leaderElectionID is the Lease name shared by management-engine replicas.
-const leaderElectionID = "management-engine.nke.nvidia.com"
-
 var version = "dev"
-
-var errFlagParse = errors.New("invalid flags")
 
 var (
 	scheme   = runtime.NewScheme()
@@ -45,162 +36,127 @@ var (
 )
 
 func init() {
-	utilruntime.Must(kubescheme.AddToScheme(scheme))
-	utilruntime.Must(nkev1.AddToScheme(scheme))
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(clusterv1.AddToScheme(scheme))
+	utilruntime.Must(internalv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
 func main() {
-	if err := run(os.Args[1:]); err != nil && !errors.Is(err, flag.ErrHelp) {
-		if !errors.Is(err, errFlagParse) {
-			setupLog.Error(err, "management engine stopped")
-		}
-		os.Exit(1)
-	}
-}
-
-func run(args []string) error {
-	flags := flag.NewFlagSet("management-engine", flag.ContinueOnError)
-	ctrl.RegisterFlags(flags)
-	opts := defaultManagerOptions()
+	var metricsAddr string
+	var probeAddr string
+	var leaderElect bool
+	var watchNamespace string
+	var leaderElectionNamespace string
 	var contextName string
 	var showVersion bool
+	var secureMetrics bool
 	var enableHTTP2 bool
-	flags.StringVar(&contextName, "context", "", "Management kubeconfig context")
-	flags.StringVar(&opts.Metrics.BindAddress, "metrics-bind-address", opts.Metrics.BindAddress, "Metrics address; :8443 for HTTPS, :8080 for HTTP, or 0 to disable")
-	flags.BoolVar(&opts.Metrics.SecureServing, "metrics-secure", true, "Serve metrics over HTTPS with authentication and authorization")
-	flags.StringVar(&opts.Metrics.CertDir, "metrics-cert-path", "", "Directory containing the metrics certificate")
-	flags.StringVar(&opts.Metrics.CertName, "metrics-cert-name", "tls.crt", "Metrics certificate filename")
-	flags.StringVar(&opts.Metrics.KeyName, "metrics-cert-key", "tls.key", "Metrics private key filename")
-	flags.BoolVar(&enableHTTP2, "enable-http2", false, "Enable HTTP/2 for metrics")
-	flags.StringVar(&opts.HealthProbeBindAddress, "health-probe-bind-address", opts.HealthProbeBindAddress, "Health/readiness HTTP address; 0 disables")
-	flags.BoolVar(&opts.LeaderElection, "leader-elect", opts.LeaderElection, "Enable leader election; disable only for a sole development process")
-	flags.StringVar(&opts.LeaderElectionNamespace, "leader-election-namespace", "", "Existing namespace in the target cluster for the election Lease")
-	flags.BoolVar(&showVersion, "version", false, "Print version and exit")
+	var metricsCertPath, metricsCertName, metricsCertKey string
+
+	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metric endpoint binds to; 0 disables it.")
+	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flag.BoolVar(&leaderElect, "leader-elect", false, "Enable leader election for the controller manager.")
+	flag.StringVar(
+		&watchNamespace,
+		"namespace",
+		"",
+		"Namespace that the controller watches. If unspecified, the controller watches all namespaces.",
+	)
+	flag.StringVar(
+		&leaderElectionNamespace,
+		"leader-election-namespace",
+		"",
+		"Existing namespace in the target cluster for the election Lease",
+	)
+	flag.StringVar(&contextName, "context", "", "Management kubeconfig context")
+	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
+	flag.BoolVar(&secureMetrics, "metrics-secure", true, "Serve metrics over HTTPS with authentication and authorization")
+	flag.StringVar(&metricsCertPath, "metrics-cert-path", "", "Directory containing the metrics certificate")
+	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "Metrics certificate filename")
+	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "Metrics private key filename")
+	flag.BoolVar(&enableHTTP2, "enable-http2", false, "Enable HTTP/2 for metrics")
+
 	zapOpts := zap.Options{}
-	zapOpts.BindFlags(flags)
-	if err := flags.Parse(args); err != nil {
-		return fmt.Errorf("%w: %w", errFlagParse, err)
-	}
+	zapOpts.BindFlags(flag.CommandLine)
+	flag.Parse()
+
 	if showVersion {
 		fmt.Println(version)
-		return nil
+		return
 	}
+
+	var watchNamespaces map[string]cache.Config
+	if watchNamespace != "" {
+		watchNamespaces = map[string]cache.Config{watchNamespace: {}}
+	}
+	metricsOptions := metricsserver.Options{
+		BindAddress:   metricsAddr,
+		SecureServing: secureMetrics,
+		CertDir:       metricsCertPath,
+		CertName:      metricsCertName,
+		KeyName:       metricsCertKey,
+	}
+	if secureMetrics {
+		metricsOptions.FilterProvider = filters.WithAuthenticationAndAuthorization
+	}
+	if !enableHTTP2 {
+		metricsOptions.TLSOpts = []func(*tls.Config){func(c *tls.Config) { c.NextProtos = []string{"http/1.1"} }}
+	}
+
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
-	if flags.NArg() != 0 {
-		return fmt.Errorf("unexpected positional arguments")
-	}
-	if enableHTTP2 {
-		opts.Metrics.TLSOpts = nil
-	}
+
 	cfg, err := config.GetConfigWithContext(contextName)
 	if err != nil {
-		return fmt.Errorf("load management kubeconfig: %w", err)
+		setupLog.Error(err, "load management kubeconfig")
+		os.Exit(1)
+	}
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+		Scheme:                  scheme,
+		Metrics:                 metricsOptions,
+		HealthProbeBindAddress:  probeAddr,
+		LeaderElection:          leaderElect,
+		LeaderElectionNamespace: leaderElectionNamespace,
+		LeaderElectionID:        "management-engine.nke.nvidia.com",
+		Cache:                   cache.Options{DefaultNamespaces: watchNamespaces},
+		Client: client.Options{
+			Cache: &client.CacheOptions{DisableFor: []client.Object{&corev1.Secret{}}},
+		},
+	})
+	if err != nil {
+		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
 	}
 	ctx := ctrl.SetupSignalHandler()
-	mgr, err := newManager(cfg, opts)
-	if err != nil {
-		return err
-	}
-	if err := (&controller.NodePoolReconciler{
+
+	if err := (&controllers.NKEClusterReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		return fmt.Errorf("register NodePool controller: %w", err)
+		setupLog.Error(err, "unable to create controller", "controller", "NKECluster")
+		os.Exit(1)
 	}
-	if err := (&controller.NKEClusterReconciler{
+	if err := (&controllers.NodePoolReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		return fmt.Errorf("register NKECluster controller: %w", err)
+		setupLog.Error(err, "unable to create controller", "controller", "NodePool")
+		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
-	setupLog.Info("starting management engine", "version", version,
-		"leaderElection", opts.LeaderElection, "leaderElectionNamespace", opts.LeaderElectionNamespace)
-	return mgr.Start(ctx)
-}
 
-// defaultManagerOptions enables leader election and health probes; metrics are opt-in.
-// Callers must set LeaderElectionNamespace when election is enabled.
-func defaultManagerOptions() ctrl.Options {
-	return ctrl.Options{
-		Metrics: metricsserver.Options{
-			BindAddress:   "0",
-			SecureServing: true,
-			TLSOpts:       []func(*tls.Config){func(c *tls.Config) { c.NextProtos = []string{"http/1.1"} }},
-		},
-		HealthProbeBindAddress: ":8081",
-		LeaderElection:         true,
-		LeaderElectionID:       leaderElectionID,
-		// Avoid releasing leadership early while application work may still be stopping.
-		LeaderElectionReleaseOnCancel: false,
-		Cache: cache.Options{
-			ReaderFailOnMissingInformer: true,
-			DefaultTransform:            cache.TransformStripManagedFields(),
-		},
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up health check")
+		os.Exit(1)
 	}
-}
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up ready check")
+		os.Exit(1)
+	}
 
-// newManager constructs a manager without controllers, watches, or API discovery prechecks.
-// The management API must use HTTPS with certificate verification.
-// Callers register controllers before Start, handle signals, and exit promptly when Start returns.
-func newManager(config *rest.Config, opts ctrl.Options) (ctrl.Manager, error) {
-	if config == nil {
-		return nil, fmt.Errorf("management API configuration is required")
+	setupLog.Info("starting manager", "version", version)
+	if err := mgr.Start(ctx); err != nil {
+		setupLog.Error(err, "problem running manager")
+		os.Exit(1)
 	}
-	if !rest.IsConfigTransportTLS(*config) {
-		return nil, fmt.Errorf("management API must use HTTPS")
-	}
-	if config.Insecure {
-		return nil, fmt.Errorf("management API TLS certificate verification must be enabled")
-	}
-	if opts.LeaderElection && opts.LeaderElectionNamespace == "" {
-		return nil, fmt.Errorf("leader-election namespace is required when election is enabled")
-	}
-	if opts.Metrics.SecureServing {
-		opts.Metrics.FilterProvider = filters.WithAuthenticationAndAuthorization
-	}
-	opts.Scheme = scheme
-	mgr, err := ctrl.NewManager(config, opts)
-	if err != nil {
-		return nil, fmt.Errorf("construct management controller manager: %w", err)
-	}
-	if err := mgr.AddHealthzCheck("ping", healthz.Ping); err != nil {
-		return nil, fmt.Errorf("register health check: %w", err)
-	}
-	state := &readiness{cache: mgr.GetCache()}
-	if err := mgr.Add(state); err != nil {
-		return nil, fmt.Errorf("register readiness lifecycle: %w", err)
-	}
-	if err := mgr.AddReadyzCheck("startup", state.check); err != nil {
-		return nil, fmt.Errorf("register readiness check: %w", err)
-	}
-	return mgr, nil
-}
-
-type readiness struct {
-	cache   cache.Cache
-	started atomic.Bool
-}
-
-func (r *readiness) NeedLeaderElection() bool { return false }
-
-func (r *readiness) Start(ctx context.Context) error {
-	r.started.Store(true)
-	<-ctx.Done()
-	r.started.Store(false)
-	return nil
-}
-
-func (r *readiness) check(req *http.Request) error {
-	if !r.started.Load() {
-		return fmt.Errorf("manager has not started or is shutting down")
-	}
-	ctx, cancel := context.WithTimeout(req.Context(), time.Second)
-	defer cancel()
-	if !r.cache.WaitForCacheSync(ctx) {
-		return fmt.Errorf("registered resource caches have not synchronized")
-	}
-	return nil
 }

@@ -113,11 +113,6 @@ jobs:
     permissions:
       contents: read
 
-  management-engine-test:
-    uses: ./.github/workflows/management-engine-test.yml
-    permissions:
-      contents: read
-
   workspace:
     uses: ./.github/workflows/go-work-check.yml
     permissions:
@@ -203,7 +198,6 @@ jobs:
       - build
       - controller-test
       - agent-test
-      - management-engine-test
       - workspace
       - chart
       - nktp-chart

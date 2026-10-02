@@ -1,0 +1,47 @@
+---
+items:
+- apiVersion: internal.nke.nvidia.com/v1
+  kind: NKECluster
+  metadata:
+    creationTimestamp: null
+    generation: 1
+    name: cluster-1
+    namespace: default
+  spec:
+    apiServerAccess:
+      publicAccessEnabled: false
+    clusterNetwork:
+      pods:
+        cidrBlocks:
+        - 10.244.0.0/16
+      serviceDomain: cluster.local
+      services:
+        cidrBlocks:
+        - 10.96.0.0/12
+    controlPlaneClass: standard
+    release:
+      channel:
+        name: stable
+metadata: {}
+---
+items:
+- apiVersion: internal.nke.nvidia.com/v1
+  kind: NodePool
+  metadata:
+    creationTimestamp: null
+    generation: 1
+    name: workers-1
+    namespace: default
+  spec:
+    clusterName: cluster-1
+    instanceType: gpu-small
+    release:
+      name: ubuntu
+      version: 2026.09.1
+    replicas: 2
+    rollout:
+      strategy:
+        rollingUpdate:
+          maxSurge: 1
+        type: RollingUpdate
+metadata: {}
