@@ -13,7 +13,7 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: cloud-workflow-engine
+  name: nke-controller
 ---
 apiVersion: v1
 kind: Namespace

@@ -34,8 +34,8 @@ const (
 // to skip them on deployments where OIDC is off.
 func OIDCEnabled(ctx context.Context, c client.Client) (bool, error) {
 	var deploy appsv1.Deployment
-	if err := c.Get(ctx, client.ObjectKey{Namespace: cwe.Namespace(), Name: cwe.DeploymentName}, &deploy); err != nil {
-		return false, fmt.Errorf("getting NKE deployment %s/%s: %w", cwe.Namespace(), cwe.DeploymentName, err)
+	if err := c.Get(ctx, client.ObjectKey{Namespace: cwe.Namespace(), Name: cwe.Deployment()}, &deploy); err != nil {
+		return false, fmt.Errorf("getting NKE deployment %s/%s: %w", cwe.Namespace(), cwe.Deployment(), err)
 	}
 	for _, container := range deploy.Spec.Template.Spec.Containers {
 		for _, env := range container.Env {
@@ -98,21 +98,21 @@ func SetPermissiveMode(ctx context.Context, c client.Client, value string) (stri
 // rollout that changed nothing.
 func setNKEContainerEnv(ctx context.Context, c client.Client, name, value string) (string, error) {
 	var deploy appsv1.Deployment
-	if err := c.Get(ctx, client.ObjectKey{Namespace: cwe.Namespace(), Name: cwe.DeploymentName}, &deploy); err != nil {
-		return "", fmt.Errorf("getting NKE deployment %s/%s: %w", cwe.Namespace(), cwe.DeploymentName, err)
+	if err := c.Get(ctx, client.ObjectKey{Namespace: cwe.Namespace(), Name: cwe.Deployment()}, &deploy); err != nil {
+		return "", fmt.Errorf("getting NKE deployment %s/%s: %w", cwe.Namespace(), cwe.Deployment(), err)
 	}
 
 	containers := deploy.Spec.Template.Spec.Containers
 	idx := -1
 	for i := range containers {
-		if containers[i].Name == cwe.DeploymentName {
+		if containers[i].Name == cwe.Deployment() {
 			idx = i
 			break
 		}
 	}
 	if idx < 0 {
 		return "", fmt.Errorf("NKE deployment %s/%s has no container named %q",
-			cwe.Namespace(), cwe.DeploymentName, cwe.DeploymentName)
+			cwe.Namespace(), cwe.Deployment(), cwe.Deployment())
 	}
 
 	var previous string
@@ -127,7 +127,7 @@ func setNKEContainerEnv(ctx context.Context, c client.Client, name, value string
 	if err := c.Update(ctx, &deploy); err != nil {
 		return "", fmt.Errorf("setting %s=%q on the NKE deployment: %w", name, value, err)
 	}
-	if err := waitForDeploymentRollout(ctx, c, cwe.Namespace(), cwe.DeploymentName); err != nil {
+	if err := waitForDeploymentRollout(ctx, c, cwe.Namespace(), cwe.Deployment()); err != nil {
 		return "", err
 	}
 

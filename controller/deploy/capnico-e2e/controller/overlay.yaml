@@ -70,8 +70,14 @@ env:
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-fullnameOverride: cloud-workflow-engine
-namespaceOverride: cloud-workflow-engine
+fullnameOverride: nke-controller
+namespaceOverride: nke-controller
+# The chart pins nameOverride (the pod name label) and serviceAccount.name
+# (which the SPIRE admin ID and the controller's SPIFFE ID name) instead of
+# deriving them from the fullname, so both are set alongside it.
+nameOverride: nke-controller
+serviceAccount:
+  name: nke-controller
 
 nkeSystemNamespace:
   create: false

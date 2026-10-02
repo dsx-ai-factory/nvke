@@ -114,7 +114,7 @@ for the e2e lanes -- that script is the reference for these derivations.
 |---|---|---|
 | trust domain | `${KIND_CLUSTER_NAME}.nke.local` | `<site-name>.nke.local` |
 | management VIP | kind control-plane IP | the site controller's node IP |
-| SPIRE admin path | `/nke-service/cloud-workflow-engine` | the same; it is a constant |
+| SPIRE admin path | `/nke-service/nke-controller` | the same; it is a constant |
 | TPM attestor **server** checksum | pinned per arch in `resolve_tpm_checksum()` | the same pin for the same arch |
 | OIDC domains / IP SANs | VIP plus the kind gateway | the VIP |
 | discovery URL | `https://<VIP>:30443/.well-known/openid-configuration` | the same shape |

@@ -125,7 +125,7 @@ cwe_tag="${CWE_IMAGE##*:}"
 # Values that genuinely vary per run. MANAGEMENT_VIP and KIND_CLUSTER_NAME come
 # from backend-e2e.sh, which computes them; the trust domain follows the cluster
 # name exactly as SPIRE_TRUST_DOMAIN does in the Tiltfile, so the identities
-# SPIRE issues match the adminID cloud-workflow-engine presents.
+# SPIRE issues match the adminID the controller presents.
 : "${MANAGEMENT_VIP:?MANAGEMENT_VIP is required}"
 : "${KIND_CLUSTER_NAME:?KIND_CLUSTER_NAME is required}"
 TRUST_DOMAIN="${KIND_CLUSTER_NAME}.nke.local"
@@ -179,10 +179,10 @@ print(json.dumps(env))
 }
 CWE_ENV_JSON="$(cwe_env_json)"
 
-# The SPIFFE identity cloud-workflow-engine presents. Unchanged by the chart
-# rename -- the chart is now `controller`, the identity is not -- and it has to
-# match the ClusterSPIFFEID in deploy/k8s/spire-nke-services-spiffe-id.yaml.
-SPIRE_CWE_ADMIN_PATH="/nke-service/cloud-workflow-engine"
+# The SPIFFE identity the controller presents: its ServiceAccount, nke-controller
+# in every deploy path, under the nke-service ClusterSPIFFEID in the deploy
+# path's spire values.
+SPIRE_CWE_ADMIN_PATH="/nke-service/nke-controller"
 
 # The kind bridge gateway, alongside the VIP. Tenants' kube-apiservers fetch the
 # OIDC discovery URL by IP, and the provider rejects any request whose Host

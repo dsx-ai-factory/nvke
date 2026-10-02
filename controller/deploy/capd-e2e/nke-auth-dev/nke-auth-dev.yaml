@@ -6,7 +6,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-    name: cloud-workflow-engine
+    name: nke-controller
 ---
 apiVersion: v1
 kind: Namespace
@@ -187,4 +187,4 @@ metadata:
         app.kubernetes.io/part-of: cloud-workflow-engine
         nke.nvidia.com/purpose: nke-auth-dev
     name: nke-auth-config
-    namespace: cloud-workflow-engine
+    namespace: nke-controller

@@ -6,7 +6,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-    name: cloud-workflow-engine-capd
+    name: nke-controller-capd
 rules:
     - apiGroups:
         - infrastructure.cluster.x-k8s.io
@@ -41,12 +41,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-    name: cloud-workflow-engine-capd
+    name: nke-controller-capd
 roleRef:
     apiGroup: rbac.authorization.k8s.io
     kind: ClusterRole
-    name: cloud-workflow-engine-capd
+    name: nke-controller-capd
 subjects:
     - kind: ServiceAccount
-      name: cloud-workflow-engine
-      namespace: cloud-workflow-engine
+      name: nke-controller
+      namespace: nke-controller

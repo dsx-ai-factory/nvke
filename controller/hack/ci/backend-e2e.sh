@@ -147,6 +147,17 @@ else
   SBOM_TARGET=capd-e2e
 fi
 
+# The controller's namespace, and the name of its Deployment, Service and
+# container. The deploy paths install it as nke-controller; Tilt keeps
+# cloud-workflow-engine. The e2e suite and the nkectl smoke are pointed at it.
+if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
+  CONTROLLER_NAME=nke-controller
+else
+  CONTROLLER_NAME=cloud-workflow-engine
+fi
+NKECTL_SMOKE_CWE_NAMESPACE="${CONTROLLER_NAME}"
+NKECTL_SMOKE_CWE_SERVICE="${CONTROLLER_NAME}"
+
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
     log "$1 is required" >&2
@@ -375,7 +386,7 @@ start_state_monitor() {
 start_cwe_log_follower() {
   (
     while true; do
-      runner_exec kubectl -n cloud-workflow-engine logs -f deployment/cloud-workflow-engine \
+      runner_exec kubectl -n "${CONTROLLER_NAME}" logs -f "deployment/${CONTROLLER_NAME}" \
         --all-containers --prefix --tail=-1 --pod-running-timeout=1m || true
       sleep 5
     done
@@ -416,6 +427,8 @@ ci_e2e_exec() {
   runner_exec env \
     "CWE_EXPECTED_VERSION=${CWE_BUILD_VERSION}" \
     "CWE_PROFILES_DIR=${NKE_E2E_PROFILES_DIR}" \
+    "CWE_NAMESPACE=${CONTROLLER_NAME}" \
+    "CWE_SERVICE=${CONTROLLER_NAME}" \
     "NKE_E2E_DSX_IDENTITY_EXCHANGE=${DSX_IDENTITY_EXCHANGE_ENABLED}" \
     "NKE_E2E_BUNDLE_SERVER_URL=${e2e_bundle_server_url}" \
     "E2E_BGP_CONTAINER_NAME=${BGP_CONTAINER_NAME}" \
@@ -456,11 +469,11 @@ wait_for_zero_tenant_clusters() {
 redeploy_cwe() {
   local value="$1"
   log "redeploying CWE with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
-  runner_exec kubectl -n cloud-workflow-engine set env deployment/cloud-workflow-engine \
+  runner_exec kubectl -n "${CONTROLLER_NAME}" set env "deployment/${CONTROLLER_NAME}" \
     "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
-  runner_exec kubectl -n cloud-workflow-engine rollout status deployment/cloud-workflow-engine --timeout=5m
+  runner_exec kubectl -n "${CONTROLLER_NAME}" rollout status "deployment/${CONTROLLER_NAME}" --timeout=5m
   local got
-  got="$(runner_exec kubectl -n cloud-workflow-engine get deployment/cloud-workflow-engine \
+  got="$(runner_exec kubectl -n "${CONTROLLER_NAME}" get "deployment/${CONTROLLER_NAME}" \
     -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER\")].value}")"
   if [[ "${got}" != "${value}" ]]; then
     log "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER must be ${value} after redeploy, got ${got:-<empty>}" >&2
@@ -559,7 +572,7 @@ collect_diagnostics() {
           >"${STATE_DIR}/capi-kubeadm-control-plane-controller.log" 2>&1
         runner_exec kubectl -n capd-reboot-system logs deployment/capd-reboot-controller --all-containers --tail=-1 \
           >"${STATE_DIR}/capd-reboot-controller.log" 2>&1
-        runner_exec kubectl -n cloud-workflow-engine logs deployment/cloud-workflow-engine --all-containers --tail=-1 \
+        runner_exec kubectl -n "${CONTROLLER_NAME}" logs "deployment/${CONTROLLER_NAME}" --all-containers --tail=-1 \
           >"${STATE_DIR}/cwe.log" 2>&1
         if [[ "${DSX_IDENTITY_EXCHANGE_ENABLED}" == "true" ]]; then
           runner_exec kubectl -n spire-server logs deployment/dsx-identity-exchange-mock --all-containers --tail=-1 \
@@ -1274,9 +1287,9 @@ for controller in \
   runner_exec kubectl exec "deployment/${deployment}" -n "${namespace}" -- \
     /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth --help >/dev/null 2>&1
 done
-runner_exec kubectl -n cloud-workflow-engine rollout status deployment/cloud-workflow-engine --timeout=5m
+runner_exec kubectl -n "${CONTROLLER_NAME}" rollout status "deployment/${CONTROLLER_NAME}" --timeout=5m
 for env_name in TENANT_ACCESS_ENABLED NKE_OIDC_AUTH_ENABLED; do
-  env_value="$(runner_exec kubectl -n cloud-workflow-engine get deployment/cloud-workflow-engine \
+  env_value="$(runner_exec kubectl -n "${CONTROLLER_NAME}" get "deployment/${CONTROLLER_NAME}" \
     -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"${env_name}\")].value}")"
   if [[ "${env_value}" != "true" ]]; then
     log "${env_name} must be true in the CAPD E2E deployment, got ${env_value:-<empty>}"
@@ -1287,7 +1300,7 @@ done
 # flag actually reached the CWE deployment. This catches a Tiltfile forwarding
 # regression before the cp-controller specs would mis-fail at cluster create.
 if [[ "${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER}" == "true" ]]; then
-  cp_flag_value="$(runner_exec kubectl -n cloud-workflow-engine get deployment/cloud-workflow-engine \
+  cp_flag_value="$(runner_exec kubectl -n "${CONTROLLER_NAME}" get "deployment/${CONTROLLER_NAME}" \
     -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER\")].value}")"
   if [[ "${cp_flag_value}" != "true" ]]; then
     log "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER must be true in the CWE deployment, got ${cp_flag_value:-<empty>}"
@@ -1295,7 +1308,7 @@ if [[ "${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER}" == "true" ]]; t
   fi
 fi
 runner_exec kubectl get --raw \
-  /api/v1/namespaces/cloud-workflow-engine/services/cloud-workflow-engine:8080/proxy/api/version \
+  "/api/v1/namespaces/${CONTROLLER_NAME}/services/${CONTROLLER_NAME}:8080/proxy/api/version" \
   >"${STATE_DIR}/cwe-version.json"
 
 NKE_E2E_FOCUS="${NKE_E2E_FOCUS:-}"
@@ -1347,7 +1360,7 @@ fi
 # caller passes its own; the NICo lane passes nico-containers.
 #
 # `health` rides along with `capd`. Those specs need a cluster running CWE in
-# namespace cloud-workflow-engine on port 8080, which this script has already
+# namespace ${CONTROLLER_NAME} on port 8080, which this script has already
 # built and waited on above. They are three HTTP probes through a service proxy,
 # so they cost seconds rather than minutes.
 NKE_E2E_LABEL_FILTER="${NKE_E2E_LABEL_FILTER:-capd || health}"

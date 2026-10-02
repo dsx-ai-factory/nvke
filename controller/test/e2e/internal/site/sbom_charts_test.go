@@ -270,7 +270,7 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 			"10.0.0.5",
 			"https://10.0.0.5:30443/keys",
 			mustChecksum(t, "arm64"),
-			"spiffe://e2e-site.nke.local/nke-service/cloud-workflow-engine",
+			"spiffe://e2e-site.nke.local/nke-service/nke-controller",
 		} {
 			if !strings.Contains(manifest, want) {
 				t.Errorf("SPIRE chart does not render %s", want)

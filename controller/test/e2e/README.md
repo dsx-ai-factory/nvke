@@ -119,7 +119,7 @@ not the authentication specs, which build their own token per case.
 | --- | --- | --- |
 | `KUBECONFIG` | Kubeconfig used to reach the management cluster (clientcmd default loading rules). | Unset (falls back to in-cluster configuration) |
 | `CWE_NAMESPACE` | Namespace containing CWE. | `cloud-workflow-engine` |
-| `CWE_SERVICE` | NKE Service whose backing pod is port-forwarded to. | `cloud-workflow-engine` |
+| `CWE_SERVICE` | NKE Service whose backing pod is port-forwarded to; also the name of its Deployment, container and ServiceAccount. | `cloud-workflow-engine` |
 | `CWE_SERVICE_PORT` | NKE Service port, by name or number; the pod-side port is resolved from its `targetPort`. | `8080` |
 | `CWE_EXPECTED_VERSION` | Required CWE version; when unset, the version spec is skipped. | Unset |
 | `CWE_HEALTH_TIMEOUT` | Per-spec context timeout. | `60s` |

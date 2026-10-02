@@ -56,7 +56,7 @@ var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", 
 		if mode == authnModeDisabled {
 			authnAbsentf(
 				"authentication is OFF on Deployment %s/%s: %s is not set, so the middleware is not in the request chain and no SVID could be rejected",
-				cwe.Namespace(), cwe.DeploymentName, authnConfigPathEnv,
+				cwe.Namespace(), cwe.Deployment(), authnConfigPathEnv,
 			)
 		}
 		if mode != authnModeEnforcing {
@@ -64,7 +64,7 @@ var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", 
 			// pass against an NKE that never heard of SPIRE.
 			Skip(fmt.Sprintf(
 				"authentication is %s on Deployment %s/%s: a SPIRE acceptance that is not allowed to reject proves nothing",
-				mode, cwe.Namespace(), cwe.DeploymentName,
+				mode, cwe.Namespace(), cwe.Deployment(),
 			))
 		}
 
@@ -233,13 +233,13 @@ func parseSpireAdmission(raw []byte) (spireAdmission, bool, error) {
 
 func cweContainerImage(ctx context.Context, clientset kubernetes.Interface) (string, error) {
 	deployment, err := clientset.AppsV1().Deployments(cwe.Namespace()).
-		Get(ctx, cwe.DeploymentName, metav1.GetOptions{})
+		Get(ctx, cwe.Deployment(), metav1.GetOptions{})
 	if err != nil {
-		return "", fmt.Errorf("getting Deployment %s/%s: %w", cwe.Namespace(), cwe.DeploymentName, err)
+		return "", fmt.Errorf("getting Deployment %s/%s: %w", cwe.Namespace(), cwe.Deployment(), err)
 	}
 	container := cweContainer(deployment)
 	if container == nil {
-		return "", fmt.Errorf("deployment %s/%s has no container named %s", cwe.Namespace(), cwe.DeploymentName, cwe.DeploymentName)
+		return "", fmt.Errorf("deployment %s/%s has no container named %s", cwe.Namespace(), cwe.Deployment(), cwe.Deployment())
 	}
 	return container.Image, nil
 }
@@ -419,14 +419,14 @@ func TestParseProbeReport(t *testing.T) {
 // TestCweContainerImage pins the lookup the probe pod's image comes from.
 func TestCweContainerImage(t *testing.T) {
 	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Namespace: cwe.Namespace(), Name: cwe.DeploymentName},
+		ObjectMeta: metav1.ObjectMeta{Namespace: cwe.Namespace(), Name: cwe.Deployment()},
 		Spec: appsv1.DeploymentSpec{
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						// A sidecar can come first; the lookup is by name.
 						{Name: "sidecar", Image: "docker.local/other:tilt"},
-						{Name: cwe.DeploymentName, Image: "docker.local/cwe:tilt"},
+						{Name: cwe.Deployment(), Image: "docker.local/cwe:tilt"},
 					},
 				},
 			},

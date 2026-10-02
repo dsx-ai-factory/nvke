@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# cloud-workflow-engine. Last, because it blocks on "no identity issued" until
+# The controller. Last, because it blocks on "no identity issued" until
 # SPIRE has issued its SVID, and it reads both Postgres and Temporal.
 #
 # path, not repository: the published chart carries a released image and this
@@ -14,7 +14,7 @@ chart:
   path: ../charts/controller
 release:
   name: controller
-  namespace: cloud-workflow-engine
+  namespace: nke-controller
 values:
   - values.yaml
   - overlay.yaml

@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/tenantauth"
 )
@@ -87,8 +88,8 @@ func validateBrownfieldOIDC(test *tenantTest) {
 
 		By("Verifying the cwe identity authenticates and can list nodes")
 		verifyIdentity(ctx, test,
-			tenantauth.Identity{Namespace: "cloud-workflow-engine", ServiceAccount: "cloud-workflow-engine"},
-			"spiffe://"+test.trustDomain+"/nke-service/cloud-workflow-engine")
+			tenantauth.Identity{Namespace: cwe.Namespace(), ServiceAccount: cwe.ServiceAccount()},
+			"spiffe://"+test.trustDomain+"/nke-service/"+cwe.ServiceAccount())
 	}, Label("lifecycle", "oidc", "oidc-enable"), NodeTimeout(10*time.Minute))
 }
 

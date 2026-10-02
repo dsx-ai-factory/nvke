@@ -140,7 +140,7 @@ func probeCWE(ctx context.Context, kubeconfig string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	forwarder, err := kube.NewServiceForwarder(restConfig, cwe.Namespace(), cwe.Service(), cwe.Port())
+	forwarder, err := kube.NewServiceForwarder(restConfig, controllerName, controllerName, cwe.Port())
 	if err != nil {
 		return "", err
 	}

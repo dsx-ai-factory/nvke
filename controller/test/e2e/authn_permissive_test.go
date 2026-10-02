@@ -56,7 +56,7 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 		if mode == authnModeDisabled {
 			authnAbsentf(
 				"authentication is OFF: %s is not set on Deployment %s/%s, so there is no middleware to put into permissive mode",
-				authnConfigPathEnv, cwe.Namespace(), cwe.DeploymentName,
+				authnConfigPathEnv, cwe.Namespace(), cwe.Deployment(),
 			)
 		}
 
@@ -67,7 +67,7 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 		defer rolloutCancel()
 		previous, err := nke.SetPermissiveMode(rolloutCtx, runtimeClient, "true")
 		Expect(err).NotTo(HaveOccurred(), "put Deployment %s/%s into permissive mode",
-			cwe.Namespace(), cwe.DeploymentName)
+			cwe.Namespace(), cwe.Deployment())
 
 		DeferCleanup(func(ctx SpecContext) {
 			restoreCtx, restoreCancel := context.WithTimeout(ctx, permissiveRolloutTimeout)

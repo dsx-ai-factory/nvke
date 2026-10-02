@@ -27,7 +27,10 @@ const (
 	defaultStorageClassManifest = "https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.31/deploy/local-path-storage.yaml"
 	defaultStorageClassName     = "local-path"
 
-	spireAdminPath = "/nke-service/cloud-workflow-engine"
+	// controllerName is the controller's namespace, Service and ServiceAccount
+	// in every deploy path, and so the last segment of its SPIFFE ID.
+	controllerName = "nke-controller"
+	spireAdminPath = "/nke-service/" + controllerName
 
 	// oidcPort is the OIDC discovery provider's NodePort.
 	oidcPort = 30443

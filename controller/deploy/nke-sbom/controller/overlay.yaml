@@ -90,8 +90,14 @@ env: []
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-fullnameOverride: cloud-workflow-engine
-namespaceOverride: cloud-workflow-engine
+fullnameOverride: nke-controller
+namespaceOverride: nke-controller
+# The chart pins nameOverride (the pod name label) and serviceAccount.name
+# (which the SPIRE admin ID and the controller's SPIFFE ID name) instead of
+# deriving them from the fullname, so both are set alongside it.
+nameOverride: nke-controller
+serviceAccount:
+  name: nke-controller
 
 nkeSystemNamespace:
   create: false
@@ -145,7 +151,7 @@ image:
 # naming it here would reference a Secret that does not exist in this namespace.
 #
 # A site that pulls the controller from a registry instead needs its own secret
-# in cloud-workflow-engine, supplied with --values-for.
+# in nke-controller, supplied with --values-for.
 imagePullSecrets: []
 
 podSecurityContext: null
@@ -165,10 +171,14 @@ metrics:
     enabled: true
     additionalNamespaces:
       - nktp
+# Named like the controller, as on a greenfield site; the chart defaults to the
+# legacy names.
 serviceMonitor:
   enabled: true
+  name: nke-controller-metrics
 tracing:
   enabled: true
+  serviceName: nke-controller
   endpoint: nktp-gateway-traces-collector.nktp.svc.cluster.local:4317
   insecure: true
 

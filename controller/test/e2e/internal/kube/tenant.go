@@ -40,6 +40,8 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/client-go/tools/remotecommand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
 )
 
 const (
@@ -62,7 +64,6 @@ const (
 	// is why the derived names were previously hardcoded.
 	defaultSpireRelease = "spire"
 
-	cweSPIFFEPath = "/nke-service/cloud-workflow-engine"
 	// adminSPIFFEPath is bound to cluster-admin in every tenant by the
 	// nke:capi-cluster-admin ClusterRoleBinding the nke-rbac ConfigMap carries.
 	// GetAdminClient mints this rather than widening nke:cwe for test setup.
@@ -270,7 +271,7 @@ func (f *TenantClientFactory) relayEndpoint(ctx context.Context, cfg *rest.Confi
 }
 
 func (f *TenantClientFactory) tenantRESTConfig(ctx context.Context, clusterName string) (*rest.Config, error) {
-	return f.tenantRESTConfigAs(ctx, clusterName, cweSPIFFEPath)
+	return f.tenantRESTConfigAs(ctx, clusterName, controllerSPIFFEPath())
 }
 
 // tenantRESTConfigAs builds a REST config for a tenant, authenticating as the
@@ -557,7 +558,7 @@ func (f *TenantClientFactory) exchangeJWT(ctx context.Context, endpoint, sourceT
 }
 
 func (f *TenantClientFactory) mintJWT(ctx context.Context, trustDomain, audience string) (string, error) {
-	return f.mintJWTAs(ctx, trustDomain, audience, cweSPIFFEPath)
+	return f.mintJWTAs(ctx, trustDomain, audience, controllerSPIFFEPath())
 }
 
 func (f *TenantClientFactory) mintJWTAs(ctx context.Context, trustDomain, audience, spiffePath string) (string, error) {
@@ -648,7 +649,7 @@ func trustDomainFromSPIREServerConfig(data []byte) (string, error) {
 
 	for _, adminID := range config.Server.AdminIDs {
 		parsed, err := url.Parse(strings.TrimSpace(adminID))
-		if err == nil && parsed.Scheme == "spiffe" && parsed.Host != "" && parsed.Path == cweSPIFFEPath {
+		if err == nil && parsed.Scheme == "spiffe" && parsed.Host != "" && parsed.Path == controllerSPIFFEPath() {
 			return parsed.Host, nil
 		}
 	}
@@ -909,3 +910,7 @@ func discardAndClose(body io.ReadCloser) error {
 	closeErr := body.Close()
 	return errors.Join(copyErr, closeErr)
 }
+
+// controllerSPIFFEPath is the SPIFFE ID path the controller presents and the
+// tenant nke:cwe bindings name: its ServiceAccount under /nke-service/.
+func controllerSPIFFEPath() string { return "/nke-service/" + cwe.ServiceAccount() }

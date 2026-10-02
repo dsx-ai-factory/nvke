@@ -113,7 +113,7 @@ func TestSBOMRender(t *testing.T) {
 	if got := dig(t, spire, "spire-server", "nodeAttestor", "tpmDirect", "checksum"); got != mustChecksum(t, "arm64") {
 		t.Errorf("TPM checksum = %v", got)
 	}
-	if got := mustJSON(t, dig(t, spire, "spire-server", "adminIDs")); got != `["spiffe://e2e-site.nke.local/nke-service/cloud-workflow-engine"]` {
+	if got := mustJSON(t, dig(t, spire, "spire-server", "adminIDs")); got != `["spiffe://e2e-site.nke.local/nke-service/nke-controller"]` {
 		t.Errorf("adminIDs = %s", got)
 	}
 	if got := mustJSON(t, dig(t, spire, "spiffe-oidc-discovery-provider", "config", "additionalDomains")); got !=

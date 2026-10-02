@@ -34,3 +34,12 @@ func Service() string { return cmp.Or(os.Getenv(EnvService), ServiceName) }
 
 // Port is the Service port the NKE API is published on, named or numeric.
 func Port() string { return cmp.Or(os.Getenv(EnvPort), ServicePort) }
+
+// Deployment is the NKE Deployment, which is also the name of its container.
+// The chart names the Deployment, its container and the Service alike, so
+// EnvService moves it too.
+func Deployment() string { return cmp.Or(os.Getenv(EnvService), DeploymentName) }
+
+// ServiceAccount is the ServiceAccount NKE runs as, and so the last segment of
+// its SPIFFE ID. Named like the Service; EnvService moves it too.
+func ServiceAccount() string { return cmp.Or(os.Getenv(EnvService), ServiceName) }

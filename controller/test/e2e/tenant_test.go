@@ -28,6 +28,7 @@ import (
 
 	"github.com/dsx-ai-factory/nke/controller/api"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/environment"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
@@ -874,7 +875,7 @@ func setupTenantTest(ctx context.Context, mgmt managementCluster, timeouts nke.O
 	if os.Getenv(dsxIdentityExchangeEnv) == "true" {
 		var exchangeCA corev1.ConfigMap
 		if getErr := k8sClient.Get(ctx, client.ObjectKey{
-			Namespace: "cloud-workflow-engine",
+			Namespace: cwe.Namespace(),
 			Name:      dsxExchangeCAConfigMap,
 		}, &exchangeCA); getErr != nil {
 			return tenantTest{}, fmt.Errorf("getting CAPD DSX identity exchange CA: %w", getErr)

@@ -586,7 +586,7 @@ func TestAdminAndCWEPathsMintDistinctIdentities(t *testing.T) {
 		t.Fatalf("tenantRESTConfig() error = %v", err)
 	}
 	command := mintedFor(t, cweConfig)
-	if want := "spiffe://test.nke.local" + cweSPIFFEPath; !slices.Contains(command, want) {
+	if want := "spiffe://test.nke.local" + controllerSPIFFEPath(); !slices.Contains(command, want) {
 		t.Fatalf("GetClient path did not mint %q, got %#v", want, command)
 	}
 	if slices.Contains(command, "spiffe://test.nke.local"+adminSPIFFEPath) {

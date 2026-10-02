@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/tenantauth"
 )
@@ -42,8 +43,8 @@ func validateOIDCPostCreate(test *tenantTest) {
 			return tenantauth.AssertKubeconfigAndTrustBundle(ctx, test.k8sClient, test.cluster.Name)
 		}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
-		cweIdentity := tenantauth.Identity{Namespace: "cloud-workflow-engine", ServiceAccount: "cloud-workflow-engine"}
-		cweUser := "spiffe://" + test.trustDomain + "/nke-service/cloud-workflow-engine"
+		cweIdentity := tenantauth.Identity{Namespace: cwe.Namespace(), ServiceAccount: cwe.ServiceAccount()}
+		cweUser := "spiffe://" + test.trustDomain + "/nke-service/" + cwe.ServiceAccount()
 		if os.Getenv(dsxIdentityExchangeEnv) == "true" {
 			By("Asserting the published kubeconfig selects the HTTPS token exchange")
 			exchangeEndpoint := expectSucceed(tenantauth.KubeconfigExecEnv(
