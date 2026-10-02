@@ -227,9 +227,9 @@ wait_ssh() {
 # For a boot that should NOT unlock: watches the serial console instead of
 # waiting out BOOT_TIMEOUT for SSH that never comes. cryptroot prints its
 # passphrase prompt even while clevis is still unlocking in the background,
-# so the prompt alone proves nothing; it must still be the latest thing on
-# the console LOCKED_GRACE seconds later, with the guest never having
-# reached systemd in the real root. Prints "locked", "unlocked", "died" (qemu
+# so the prompt alone proves nothing; LOCKED_GRACE seconds must pass after it
+# without the guest reaching systemd in the real root, answering SSH, or
+# panicking or dropping to the initramfs shell. Prints "locked", "unlocked", "died" (qemu
 # exited), "panic" (kernel panic on the console), "initramfs" (dropped to the
 # initramfs emergency shell), or "timeout" (prompt never seen and no SSH).
 # Only "locked" is a pass; the rest prove nothing.
@@ -237,9 +237,10 @@ wait_locked() {
   local log="${VM_RUNWORK}/qemu.log"
   local deadline=$((SECONDS + BOOT_TIMEOUT)) prompt_at=""
   while (( SECONDS <= deadline )); do
-    # systemd's banner in the real root. A bare "Welcome to" also matches
-    # GRUB's, before the disk is even opened.
-    if grep -aq 'Welcome to Ubuntu' "${log}" || ssh_guest true 2>/dev/null; then
+    # systemd's banner in the real root. It colors the OS name, so an escape
+    # sequence sits between "Welcome to " and "Ubuntu". A bare "Welcome to"
+    # also matches GRUB's, before the disk is even opened.
+    if grep -aq 'Welcome to .*Ubuntu' "${log}" || ssh_guest true 2>/dev/null; then
       echo "unlocked"
       return
     fi
@@ -280,7 +281,9 @@ stop_vm() {
     kill -0 "${VM_QPID}" 2>/dev/null || break
     sleep 1
   done
-  kill -9 "${VM_QPID}" 2>/dev/null || true
+  if kill -0 "${VM_QPID}" 2>/dev/null; then
+    kill -9 "${VM_QPID}" 2>/dev/null || true
+  fi
   wait "${VM_QPID}" 2>/dev/null || true
   # Fallback by disk path in case $VM_QPID somehow isn't qemu's own pid (e.g.
   # a future refactor backgrounds it indirectly again).
