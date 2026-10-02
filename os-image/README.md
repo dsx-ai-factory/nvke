@@ -439,19 +439,16 @@ build-and-go FDE image without a per-node secret-provisioning story.
 Verify a node closed that window with `luks-tpm-verify` before trusting
 TPM-only unlock in production.
 
-The workflow's amd64 leg runs on `linux-amd64-gpu-l4-latest-1`, chosen
-specifically for real `/dev/kvm` — a container-based pool tried earlier had
-none, forcing every bake onto `tcg` software emulation (confirmed directly: a
-full FDE bake took 1h39m under `tcg` vs a few minutes locally under real
-KVM). The job's "Enable KVM access" step fails immediately if that
-assumption turns out wrong, rather than silently falling back to the
-~10x-slower emulated path. The arm64 leg runs natively on
-`arc-arm64-kvm`, also with `/dev/kvm`; the workflow fails immediately if
-that device is absent or unusable. The Makefile still retains its portable
-same-architecture KVM probe and TCG fallback for local builds.
+The workflow builds each architecture natively on the `arc-amd64-kvm` and
+`arc-arm64-kvm` runners, chosen for real `/dev/kvm`: under `tcg` software
+emulation a full FDE bake took 1h39m on amd64, and arm64 never finished. The
+job's "Enable KVM access" step fails immediately if `/dev/kvm` is absent or
+unusable, rather than silently falling back to the ~10x-slower emulated path.
+The Makefile still retains its portable same-architecture KVM probe and TCG
+fallback for local builds.
 
 If the FDE/non-FDE build or boot-smoke steps fail in CI, download the
-`fde-install-console-logs` artifact from the run — it's the guest's own
+`install-console-logs-<arch>[-ubuntu24.04]-<variant>` artifact from the run — it's the guest's own
 serial console output (boot + autoinstall), uploaded regardless of outcome
 since there's no VNC/monitor access on the runner to inspect a stuck build
 interactively.

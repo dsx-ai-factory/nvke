@@ -3,7 +3,14 @@
 
 """Static publication-boundary checks for the OS-image workflow."""
 
+import json
+import os
 from pathlib import Path
+import re
+import shutil
+import subprocess
+import tempfile
+import textwrap
 import unittest
 
 
@@ -13,6 +20,7 @@ WORKFLOW = (
     / "workflows"
     / "os-image-artifact.yml"
 )
+CACHE_WORKFLOW = WORKFLOW.with_name("os-image-cache.yml")
 README = Path(__file__).resolve().parents[2] / "README.md"
 
 
@@ -28,30 +36,21 @@ class OSImageWorkflowTest(unittest.TestCase):
     def test_workflow_collects_make_finalized_bytes_without_reconversion(self):
         self.assertNotIn("qemu-img convert", self.workflow)
         collect = self.step(
-            "- name: Collect the finalized qcow2s",
-            "- name: Push the qcow2s to GHCR",
+            "- name: Collect the finalized qcow2",
+            "- name: Push the qcow2 to GHCR",
         )
-        lane_start = 'if [[ "${{ matrix.build_fde }}" == "true" ]]; then'
         self.assertIn("EXPECTED_SOURCE_COMMIT: ${{ github.sha }}", collect)
         self.assertIn("mkdir -p dist", collect)
-        self.assertIn(lane_start, collect)
-        fde_lane, non_fde_lane = collect.split(lane_start, 1)[1].split("fi", 1)
-        self.assertIn("collect-qcow2-fde", fde_lane)
-        self.assertIn('echo "fde=${fde_name}" >> "$GITHUB_OUTPUT"', fde_lane)
-        self.assertNotIn("collect-qcow2-non-fde", fde_lane)
-        self.assertIn("collect-qcow2-non-fde", non_fde_lane)
-        self.assertIn(
-            'echo "non_fde=${non_fde_name}" >> "$GITHUB_OUTPUT"',
-            non_fde_lane,
-        )
+        self.assertIn("collect-qcow2-${{ matrix.variant }}", collect)
+        self.assertIn('echo "disk=${disk}" >> "$GITHUB_OUTPUT"', collect)
         self.assertEqual(
             collect.count(
                 "make --no-print-directory --silent -C os-image/packer"
             ),
-            2,
+            1,
         )
-        self.assertEqual(collect.count("ARCH=${{ matrix.arch }}"), 2)
-        self.assertEqual(collect.count('QCOW2_DIST_DIR="$PWD/dist"'), 2)
+        self.assertEqual(collect.count("ARCH=${{ matrix.arch }}"), 1)
+        self.assertEqual(collect.count('QCOW2_DIST_DIR="$PWD/dist"'), 1)
         self.assertNotIn("cp --", collect)
         self.assertNotIn("cmp --silent", collect)
 
@@ -87,8 +86,8 @@ class OSImageWorkflowTest(unittest.TestCase):
                 "- name: Boot-smoke the non-FDE qcow2",
             ),
             (
-                "- name: Collect the finalized qcow2s",
-                "- name: Push the qcow2s to GHCR",
+                "- name: Collect the finalized qcow2",
+                "- name: Push the qcow2 to GHCR",
             ),
         ):
             self.assertIn(
@@ -97,8 +96,8 @@ class OSImageWorkflowTest(unittest.TestCase):
             )
 
         push = self.step(
-            "- name: Push the qcow2s to GHCR",
-            "- name: Show published manifests",
+            "- name: Push the qcow2 to GHCR",
+            "- name: Show published manifest",
         )
         self.assertIn('tags="${tags:+${tags},}${alias}${SUFFIX}-${ARCH}"', push)
 
@@ -106,18 +105,20 @@ class OSImageWorkflowTest(unittest.TestCase):
             "- name: Prepare release assets",
             "- name: Upload release assets",
         )
-        self.assertIn("assets/checksums-${ARCH}${SUFFIX}.txt", release_assets)
-        # Two legs share an arch now, so the two files the release job merges
-        # once are pinned to the default flavor's leg, not to amd64 alone.
         self.assertIn(
-            'if [[ "${ARCH}" == "amd64" && -z "${SUFFIX}" ]]; then',
+            "BUILD: ${{ matrix.arch }}${{ matrix.tag_suffix }}-${{ matrix.variant }}",
             release_assets,
         )
+        self.assertIn("assets/checksums-${BUILD}.txt", release_assets)
+        # Several builds share an arch, so the two files the release job merges
+        # once are pinned to the default flavor's non-FDE build, not to amd64
+        # alone.
+        self.assertIn('if [[ "${BUILD}" == "amd64-non-fde" ]]; then', release_assets)
 
         # upload-artifact rejects two jobs in one run sharing a name.
         for artifact in (
-            "fde-install-console-logs-${{ matrix.arch }}${{ matrix.tag_suffix }}",
-            "release-assets-${{ matrix.arch }}${{ matrix.tag_suffix }}",
+            "install-console-logs-${{ matrix.arch }}${{ matrix.tag_suffix }}-${{ matrix.variant }}",
+            "release-assets-${{ matrix.arch }}${{ matrix.tag_suffix }}-${{ matrix.variant }}",
         ):
             self.assertIn(artifact, self.workflow)
 
@@ -138,18 +139,81 @@ class OSImageWorkflowTest(unittest.TestCase):
             self.workflow,
         )
 
+    @unittest.skipUnless(shutil.which("jq"), "the matrix step needs jq")
+    def test_matrix_builds_each_arch_flavor_and_variant_once(self):
+        pick = self.step("      - name: Pick\n", "\n  validate-packer:")
+        script = textwrap.dedent(pick.split("run: |\n", 1)[1])
+        with tempfile.NamedTemporaryFile() as output:
+            subprocess.run(
+                ["bash", "-c", script],
+                env={**os.environ, "WANT": "", "GITHUB_OUTPUT": output.name},
+                check=True,
+                capture_output=True,
+            )
+            legs = json.loads(Path(output.name).read_text().split("=", 1)[1])
+        key = lambda leg: (leg["arch"], leg["ubuntu_release"], leg["variant"])
+        self.assertEqual(
+            sorted(legs, key=key),
+            sorted(
+                (
+                    {
+                        "arch": arch,
+                        "ubuntu_release": release,
+                        "tag_suffix": suffix,
+                        "variant": variant,
+                        "timeout_minutes": 90,
+                    }
+                    for arch in ("amd64", "arm64")
+                    for release, suffix in (("26.04.1", ""), ("24.04.5", "-ubuntu24.04"))
+                    for variant in ("fde", "non-fde")
+                ),
+                key=key,
+            ),
+        )
+
+    def test_each_variant_bakes_and_checks_only_its_own_image(self):
+        # A dropped or mistyped guard rebakes both variants in every job, or
+        # skips one, and nothing fails until a later step.
+        for start, end, variant in (
+            ("- name: Build the FDE node image", "\n      - name:", "fde"),
+            ("- name: Validate FDE TPM unlock (demo-fde.sh)", "\n      - name:", "fde"),
+            ("- name: Build the non-FDE node image", "\n      - name:", "non-fde"),
+            ("- name: Boot-smoke the non-FDE qcow2", "\n      - name:", "non-fde"),
+        ):
+            with self.subTest(step=start):
+                self.assertIn(
+                    f"if: matrix.variant == '{variant}'", self.step(start, end)
+                )
+
     def test_publication_and_release_payloads_remain_qcow2_only(self):
         publish = self.step(
-            "- name: Push the qcow2s to GHCR",
-            "- name: Show published manifests",
+            "- name: Push the qcow2 to GHCR",
+            "- name: Show published manifest",
         )
         release_assets = self.step(
             "- name: Prepare release assets",
             "- name: Upload release assets",
         )
-        self.assertIn('"${disk}:application/vnd.qemu.qcow2"', publish)
-        self.assertIn('disks=("${DISK_NON_FDE}")', release_assets)
-        self.assertIn('disks+=("${DISK_FDE}")', release_assets)
+        self.assertIn('"${DISK}:application/vnd.qemu.qcow2"', publish)
+        self.assertIn('sha256sum "${DISK}"', release_assets)
+
+    def test_cache_writer_covers_every_ubuntu_flavor_the_bake_reads(self):
+        # The bake reads what os-image-cache.yml writes. A flavor added to one
+        # and not the other is a permanent miss, which nothing reports.
+        cache = CACHE_WORKFLOW.read_text(encoding="utf-8")
+        baked = re.findall(r'ubuntu_release:"([^"]+)"', self.workflow)
+        cached = re.search(r"ubuntu_release: \[([^\]]+)\]", cache)
+        self.assertTrue(baked)
+        self.assertIsNotNone(cached)
+        self.assertEqual(
+            sorted(baked), sorted(r.strip() for r in cached.group(1).split(","))
+        )
+        for line in (
+            "BUILD_CACHE_REGION: us-east-1",
+            "BUILD_CACHE_ISO_PREFIX: nke/os-image/iso",
+        ):
+            self.assertIn(line, self.workflow)
+            self.assertIn(line, cache)
 
 
 if __name__ == "__main__":
