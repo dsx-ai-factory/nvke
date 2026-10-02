@@ -844,16 +844,11 @@ hello_world_served() {
 
 # ── Stage 4c: the control-plane taint is gone ───────────────────────────
 #
-# The site spec leaves cluster.schedulableControlPlane at its default, so
-# nkectl must have removed node-role.kubernetes.io/control-plane from every
-# node. The workloads below carry no toleration for it; a node still tainted
-# would show up as a scheduling timeout with no cause, which is what this
-# check turns into a named failure.
+# The site spec keeps the default, so nkectl must have removed the taint.
+# The workloads below carry no toleration for it.
 
 log "checking that no node still carries the control-plane taint"
-# Plain assignments, not command substitutions inside for/if: a kubectl
-# failure then aborts under set -e instead of reading as "no nodes" or
-# "not tainted".
+# Plain assignments, so a kubectl failure aborts under set -e.
 node_names=$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes -o jsonpath='{.items[*].metadata.name}')
 [ -n "${node_names}" ] || fail "the cluster lists no nodes"
 tainted_nodes=""

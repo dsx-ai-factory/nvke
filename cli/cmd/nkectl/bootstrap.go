@@ -102,10 +102,8 @@ type bootstrapSiteOptions struct {
 	// to avoid contacting a real cluster.
 	dumpSpireEntries func(context.Context, string, string) (int, error)
 
-	// untaintControlPlane overrides how the control-plane taint is removed
-	// from the finished cluster's nodes. Nil uses a Kubernetes client built
-	// from the cluster's kubeconfig; tests replace it to avoid contacting a
-	// real cluster.
+	// untaintControlPlane overrides the control-plane untaint. Nil uses a
+	// client built from the cluster's kubeconfig; tests replace it.
 	untaintControlPlane func(ctx context.Context, kubeconfigPath string, logger *slog.Logger) ([]string, error)
 
 	// lookPath resolves the container runtime binary. Nil uses exec.LookPath;
@@ -375,11 +373,8 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 		return err
 	}
 
-	// Every node is a control-plane node, so until the taint is gone nothing
-	// schedules. This is the last step: the kubeconfig, the key and the SPIRE
-	// resources are all on disk, so a failure here loses nothing and the error
-	// names the command that finishes the job by hand. The bootstrap cluster
-	// has nothing left that recovery needs, so it is torn down either way.
+	// Everything recovery needs is on disk by now, so the bootstrap cluster is
+	// torn down even if the untaint fails.
 	siteClusterCreated = false
 	kubeconfigPath := siteKubeconfigPath(inv.ClusterName, opts)
 	if err := makeControlPlaneSchedulable(ctx, inv, kubeconfigPath, opts, logger); err != nil {
@@ -395,14 +390,11 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	return nil
 }
 
-// untaintTimeout bounds the untaint's API calls. The cluster is up and every
-// node has joined by then, so a List and a handful of Updates are quick when
-// the API server answers at all.
+// untaintTimeout bounds the whole untaint: one List and a few Updates.
 const untaintTimeout = 2 * time.Minute
 
 // makeControlPlaneSchedulable removes the control-plane taint from every node
-// of the finished cluster when the site spec asks for it, which is the
-// default, and logs the outcome either way.
+// unless the site spec opts out.
 func makeControlPlaneSchedulable(
 	ctx context.Context,
 	inv *sitespec.SiteSpec,

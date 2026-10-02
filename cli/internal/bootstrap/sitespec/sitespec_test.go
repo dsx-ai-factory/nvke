@@ -734,8 +734,7 @@ func TestSchedulableControlPlaneEnabled(t *testing.T) {
 	}
 }
 
-// TestLoadRejectsEmptySchedulableControlPlane: the decoder would read "" as
-// false, which would leave every node unschedulable without anyone asking.
+// TestLoadRejectsEmptySchedulableControlPlane: "" must not decode as false.
 func TestLoadRejectsEmptySchedulableControlPlane(t *testing.T) {
 	for _, value := range []string{`""`, `''`} {
 		spec := strings.Replace(validYAML, "cluster:\n", "cluster:\n  schedulableControlPlane: "+value+"\n", 1)

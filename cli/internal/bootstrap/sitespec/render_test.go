@@ -416,7 +416,6 @@ func TestRenderEtcdEncryptionIsABool(t *testing.T) {
 }
 
 // TestRenderSchedulableControlPlaneIsABool: same contract as etcdEncryption.
-// Only an explicit false is written, and it is written as a YAML bool.
 func TestRenderSchedulableControlPlaneIsABool(t *testing.T) {
 	built, err := Build("my-tier0-site", threeNodes(), []string{"cluster.schedulableControlPlane=false"})
 	if err != nil {

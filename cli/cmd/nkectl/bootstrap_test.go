@@ -1220,8 +1220,8 @@ func TestRunBootstrapSiteRefusesAnExistingKeyFile(t *testing.T) {
 	}
 }
 
-// skipUntaint stands in for the control-plane untaint in tests that are not
-// about it, so no Kubernetes client is built from the fake kubeconfig.
+// skipUntaint keeps tests that are not about the untaint from building a
+// client out of the fake kubeconfig.
 func skipUntaint(context.Context, string, *slog.Logger) ([]string, error) { return nil, nil }
 
 // refuseDial stands in for a site spec host with nothing on the API port, so
@@ -1319,8 +1319,8 @@ func TestRunBootstrapSiteRefusesWhileAnEarlierBootstrapClusterRuns(t *testing.T)
 	}
 }
 
-// TestRunBootstrapSiteRemovesTheControlPlaneTaint: the default site spec makes
-// every node schedulable, against the kubeconfig the command just wrote.
+// TestRunBootstrapSiteRemovesTheControlPlaneTaint: the untaint runs by
+// default, against the kubeconfig the command just wrote.
 func TestRunBootstrapSiteRemovesTheControlPlaneTaint(t *testing.T) {
 	setBootstrapEnv(t)
 	startFakeCWEAPI(t, true)
@@ -1350,7 +1350,7 @@ func TestRunBootstrapSiteRemovesTheControlPlaneTaint(t *testing.T) {
 }
 
 // TestRunBootstrapSiteKeepsTheTaintWhenAsked: schedulableControlPlane: false
-// is the opt-out for a site that brings its own workers.
+// skips the untaint.
 func TestRunBootstrapSiteKeepsTheTaintWhenAsked(t *testing.T) {
 	setBootstrapEnv(t)
 	startFakeCWEAPI(t, true)
@@ -1380,8 +1380,7 @@ func TestRunBootstrapSiteKeepsTheTaintWhenAsked(t *testing.T) {
 }
 
 // TestRunBootstrapSiteReportsAnUntaintFailure: the untaint is the last step,
-// so the kubeconfig, the key and the SPIRE export are all on disk when it
-// fails, and the error says how to finish by hand.
+// so everything else is on disk when it fails.
 func TestRunBootstrapSiteReportsAnUntaintFailure(t *testing.T) {
 	setBootstrapEnv(t)
 	startFakeCWEAPI(t, true)

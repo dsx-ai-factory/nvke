@@ -21,12 +21,10 @@ import (
 // ControlPlaneTaintKey is the taint kubeadm puts on every control-plane node.
 const ControlPlaneTaintKey = "node-role.kubernetes.io/control-plane"
 
-// ManualCommand is the kubectl command that does what ControlPlane does, for
-// an operator to run by hand when the command could not.
+// ManualCommand is the kubectl equivalent of ControlPlane, for error messages.
 const ManualCommand = "kubectl taint nodes --all " + ControlPlaneTaintKey + "-"
 
-// requestTimeout bounds each API request, so an API server that accepts the
-// connection and never answers does not hang the caller.
+// requestTimeout bounds each API request.
 const requestTimeout = 30 * time.Second
 
 // NewClient builds a Kubernetes client from a kubeconfig file.
@@ -44,8 +42,8 @@ func NewClient(kubeconfig string) (kubernetes.Interface, error) {
 }
 
 // ControlPlane removes every taint keyed ControlPlaneTaintKey from every node
-// and returns the names of the nodes it changed, in list order. A node that
-// does not carry the taint is left alone, so a second run changes nothing.
+// and returns the names of the nodes it changed. Nodes without the taint are
+// left alone, so a second run changes nothing.
 func ControlPlane(ctx context.Context, client kubernetes.Interface, logger *slog.Logger) ([]string, error) {
 	nodes, err := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -68,8 +66,8 @@ func ControlPlane(ctx context.Context, client kubernetes.Interface, logger *slog
 	return changed, nil
 }
 
-// untaintNode re-reads the node on every attempt so a concurrent update by the
-// kubelet or a controller does not make the write fail for good.
+// untaintNode re-reads the node on each attempt, so a concurrent update by
+// the kubelet does not fail the write for good.
 func untaintNode(ctx context.Context, client kubernetes.Interface, name string) error {
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		node, err := client.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})

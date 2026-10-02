@@ -153,12 +153,9 @@ type Cluster struct {
 	// default is on, and an explicit false is permanent — a cluster built
 	// without encryption cannot be encrypted afterwards.
 	EtcdEncryption *bool `yaml:"etcdEncryption,omitempty"`
-	// SchedulableControlPlane removes the node-role.kubernetes.io/control-plane
-	// NoSchedule taint from every node once the cluster is up. Every site spec
-	// node is a control-plane node, so with the taint in place nothing
-	// schedules. A pointer so "not set" can be told from "set to false": the
-	// default is on. Set it to false to keep the taint, for a site that adds
-	// dedicated worker nodes before it runs workloads.
+	// SchedulableControlPlane removes the control-plane NoSchedule taint from
+	// every node once the cluster is up. A pointer so "not set" can be told
+	// from "set to false": the default is on.
 	SchedulableControlPlane *bool `yaml:"schedulableControlPlane,omitempty"`
 	// KubeletConfig holds optional kubelet resource reservations.
 	KubeletConfig KubeletConfig `yaml:"kubeletConfig"`
@@ -294,10 +291,8 @@ func Load(path string) (*SiteSpec, error) {
 		v.Set(pathNodes, nodes)
 	}
 
-	// The decoder reads "" as false for a bool. Here that would silently turn
-	// off encryption for the life of the cluster, or leave every node
-	// unschedulable, and "" is what an unset template variable produces.
-	// Refuse it before decoding loses it.
+	// The decoder reads "" as false for a bool, and "" is what an unset
+	// template variable produces. Refuse it before decoding loses it.
 	for _, boolPath := range []string{pathEtcdEncryption, pathSchedulableCP} {
 		if raw, ok := v.Get(boolPath).(string); ok && raw == "" {
 			return nil, fmt.Errorf("site spec file %s: %s: %q is not a boolean (true or false)",
