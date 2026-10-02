@@ -11,11 +11,17 @@ ROOT_FS_LABEL="${ROOT_FS_LABEL:?ROOT_FS_LABEL is required}"
 
 sudo install -d -m 0755 /usr/lib/nke /etc/nke /var/lib/nke /usr/local/bin
 sudo install -m 0755 "${SRC}/wait-spiffe-socket.sh" /usr/lib/nke/wait-spiffe-socket.sh
+# Conntrack limits. conntrack-tune.service generates its sysctl.d file at
+# every boot from that node's RAM; nothing here computes it, so the build VM's
+# RAM never reaches the image. Only the RAM-independent TIME_WAIT file is
+# baked in.
 sudo install -m 0755 "${SRC}/configure-conntrack.sh" /usr/lib/nke/configure-conntrack.sh
 sudo install -m 0644 "${SRC}/conntrack-tune.service" /etc/systemd/system/conntrack-tune.service
-# Load nf_conntrack at boot so its sysctls exist when conntrack-tune.service
-# runs; otherwise it loads on demand (a netfilter rule, or the openvswitch
-# module), in no fixed order relative to that unit. nke-kubeadm-distro's
+sudo install -m 0644 "${SRC}/10-nke-conntrack-timeouts.conf" /etc/sysctl.d/10-nke-conntrack-timeouts.conf
+# Load nf_conntrack at boot, before systemd-sysctl.service, so its keys exist
+# when conntrack-tune.service compares against them and when systemd-sysctl
+# applies both conntrack files. Otherwise it loads on demand (a netfilter
+# rule, or the openvswitch module), after the boot pass. nke-kubeadm-distro's
 # modules-load.d/k8s.conf lists it too, but only from cluster create on.
 echo 'nf_conntrack' | sudo tee /etc/modules-load.d/nf_conntrack.conf >/dev/null
 sudo systemctl enable conntrack-tune.service

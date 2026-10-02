@@ -94,3 +94,4 @@ install -m 0644 "${files_dir}/nke-agent-spire.conf" "${ARTIFACTS_DIR}/nke-agent-
 install -m 0755 "${files_dir}/wait-spiffe-socket.sh" "${ARTIFACTS_DIR}/wait-spiffe-socket.sh"
 install -m 0644 "${files_dir}/conntrack-tune.service" "${ARTIFACTS_DIR}/conntrack-tune.service"
 install -m 0755 "${files_dir}/configure-conntrack.sh" "${ARTIFACTS_DIR}/configure-conntrack.sh"
+install -m 0644 "${files_dir}/10-nke-conntrack-timeouts.conf" "${ARTIFACTS_DIR}/10-nke-conntrack-timeouts.conf"

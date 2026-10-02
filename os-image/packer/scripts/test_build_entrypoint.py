@@ -5,6 +5,7 @@
 import json
 import os
 import shutil
+import stat
 from pathlib import Path
 import subprocess
 import tempfile
@@ -218,7 +219,8 @@ class GuestUpdaterTest(unittest.TestCase):
                 files = repo / "os-image/files"
                 files.mkdir()
                 for name in ("nke-agent-spire.conf", "wait-spiffe-socket.sh",
-                             "conntrack-tune.service", "configure-conntrack.sh"):
+                             "conntrack-tune.service", "configure-conntrack.sh",
+                             "10-nke-conntrack-timeouts.conf"):
                     shutil.copy(PACKER_DIR.parent / "files" / name, files)
                 updater = repo / "agent/bin/linux_arm64/nke-agent-updater"
                 updater.parent.mkdir(parents=True)
@@ -252,8 +254,15 @@ class GuestUpdaterTest(unittest.TestCase):
                 self.assertEqual(len(calls), 5, calls)
                 self.assertIn(f"-C {repo}/agent deb-arm64", calls[0])
                 self.assertTrue((artifacts / "nke-agent-spire.conf").is_file())
-                self.assertTrue((artifacts / "conntrack-tune.service").is_file())
-                self.assertTrue((artifacts / "configure-conntrack.sh").is_file())
+                # provision.sh installs these from the artifacts directory, so
+                # each must arrive byte-for-byte, with the mode it is installed with.
+                for name, mode in (("conntrack-tune.service", 0o644),
+                                   ("configure-conntrack.sh", 0o755),
+                                   ("10-nke-conntrack-timeouts.conf", 0o644)):
+                    staged = artifacts / name
+                    self.assertTrue(staged.is_file(), name)
+                    self.assertEqual(stat.S_IMODE(staged.stat().st_mode), mode, name)
+                    self.assertEqual(staged.read_bytes(), (files / name).read_bytes(), name)
 
 
 if __name__ == "__main__":

@@ -489,17 +489,29 @@ whatever will dial the node (controller or `nke-os-image-check`).
 
 ## Conntrack limits
 
-`conntrack-tune.service` raises `nf_conntrack_max` to 600000 at boot (less on
-VMs with under 9375 MiB of RAM) and never lowers it. On Calico clusters
-kube-proxy re-sets the limit from the node's CPU count when it starts, which
-is lower than 600000 on nodes with 18 or fewer logical CPUs; see
-[SPEC.md](SPEC.md#conntrack-limits). The unit's status shows only what it
-wrote at boot, so read the live values on the node:
+At every boot, `conntrack-tune.service` writes
+`/run/sysctl.d/10-nke-conntrack.conf`, sizing `nf_conntrack_max` from the
+node's RAM: 600000 on nodes with 9375 MiB of RAM or more, less on smaller VMs.
+It only ever raises the kernel's values, and `systemd-sysctl` applies the file
+early in boot. `/etc/sysctl.d/10-nke-conntrack-timeouts.conf` sets TIME_WAIT
+to 60s. On Calico clusters kube-proxy re-sets the limit from the node's CPU
+count when it starts, which is lower than 600000 on nodes with 18 or fewer
+logical CPUs; see [SPEC.md](SPEC.md#conntrack-limits).
+
+To check a node:
 
 ```bash
+cat /run/sysctl.d/10-nke-conntrack.conf   # what boot generated, and from how much RAM
 sysctl net.netfilter.nf_conntrack_max net.netfilter.nf_conntrack_buckets net.netfilter.nf_conntrack_count
 journalctl -u conntrack-tune
 ```
+
+To override, add a file to `/etc/sysctl.d`: a same-named
+`10-nke-conntrack.conf` replaces the generated one, and any later-sorting
+file, such as `60-conntrack.conf` or `99-local.conf`, overrides individual
+keys, higher or lower. `boot-smoke.sh` and
+`demo-fde.sh` run `packer/scripts/check-conntrack.sh` against each built
+image.
 
 ## Checker
 

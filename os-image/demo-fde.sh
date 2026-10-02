@@ -8,7 +8,9 @@
 #
 # Scope: os-image/ Linux host disk encryption only. Kubernetes Secrets/etcd
 # encryption-at-rest is a separate controller/agent concern and is not
-# covered by this script.
+# covered by this script. The first boot also runs
+# packer/scripts/check-conntrack.sh, since the FDE image gets the same
+# conntrack tuning as the non-FDE one.
 #
 # Usage: ./demo-fde.sh [--help]
 #
@@ -332,6 +334,14 @@ else
     fi
   else
     report "host-volumes-luks2-tpm-sealed" "FAIL" "/root/.luks-tpm-firstboot-done missing — first-boot binding never completed"
+  fi
+
+  # provision.sh gives the FDE image the same conntrack tuning, so check it on
+  # this boot, with the same script boot-smoke.sh runs on the non-FDE image.
+  if CONNTRACK="$(ssh_guest bash -s <"${ROOT}/packer/scripts/check-conntrack.sh" 2>&1)"; then
+    report "conntrack-limits-sized-to-node" "PASS" "${CONNTRACK##*check-conntrack: }"
+  else
+    report "conntrack-limits-sized-to-node" "FAIL" "${CONNTRACK##*check-conntrack: }"
   fi
 fi
 stop_vm

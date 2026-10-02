@@ -2,7 +2,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Raises the nf_conntrack limits at boot, run by conntrack-tune.service. See
+# Generates /run/sysctl.d/10-nke-conntrack.conf at every boot, sized from this
+# node's RAM, for systemd-sysctl.service to apply. Run by
+# conntrack-tune.service, which is ordered before systemd-sysctl.service. See
 # os-image/SPEC.md.
 #
 # The kernel caps its default table at 262144 entries on any host with more
@@ -10,30 +12,45 @@
 # creates three or more entries per TCP connection, so services with many
 # short-lived connections exhaust that default quickly.
 #
-# Target: min(max(RAM_MiB * 64, 1024), 600000), which is 600000 on any node
-# with 9375 MiB of RAM or more; the RAM term only matters on small VMs. The
-# hash table (nf_conntrack_buckets) is sized 1:1 with the limit, the kernel's
-# own default ratio.
+# Target: min(max(MemTotal_KiB / 16, 1024), 600000). That is RAM_bytes / 16384,
+# or 64 entries per MiB, capped at 600000, which any node with 9375 MiB of RAM
+# or more reaches. The hash table (nf_conntrack_buckets) is sized 1:1 with the
+# limit, the kernel's own ratio.
 #
-# Both are only ever raised. On clusters that run kube-proxy (Calico),
-# kube-proxy re-sets nf_conntrack_max from the CPU count every time it starts;
-# re-running this script must not undo a larger value it wrote.
+# The file goes under /run, not /etc: /run is emptied at every boot and is
+# never part of the image, so the value always comes from the RAM of the node
+# that is booting, never from the VM that built the image. A key is written
+# only when the target is above what the kernel already has, so this never
+# lowers the kernel's value; when nothing needs raising, no file is written.
 #
-# TIME_WAIT drops from the kernel's 120s to 60s, so entries for
-# Connection: close traffic expire sooner. The UDP stream timeout drops from
-# 180s to 120s; kernels since 5.0 already default to 120s, so there it pins
-# the value. Timeouts are per network namespace: this sets the host's, which
-# is where OVS and kube-proxy track connections.
+# systemd-sysctl applies sysctl.d files in file-name order, and the last value
+# set for a key wins. The 10- prefix sorts this file before the ones operators
+# normally add, such as 60-conntrack.conf or 99-local.conf, so an operator's
+# value for the same key wins, higher or lower. A same-named file in
+# /etc/sysctl.d replaces this one outright.
+#
+# systemd-sysctl, and any later `sysctl --system`, re-applies this file. On a
+# Calico node with 19 or more CPUs, kube-proxy raises nf_conntrack_max above
+# 600000 when it starts; a later re-application lowers it back to 600000 until
+# kube-proxy next restarts.
+#
+# --print-target prints the target computed from this node's RAM and exits, so
+# checks do not need to restate the formula.
 
 set -euo pipefail
 
-readonly MAX_ENTRIES=600000
-readonly TIME_WAIT_SECONDS=60
-readonly UDP_STREAM_SECONDS=120
+# Overridable for tests; production always reads /proc and writes /run/sysctl.d.
+MEMINFO="${CONNTRACK_MEMINFO:-/proc/meminfo}"
+NETFILTER_DIR="${CONNTRACK_NETFILTER_DIR:-/proc/sys/net/netfilter}"
+SYSCTL_DIR="${CONNTRACK_SYSCTL_DIR:-/run/sysctl.d}"
 
-mem_kib="$(awk '/^MemTotal:/ { print $2; exit }' /proc/meminfo)"
+readonly MAX_ENTRIES=600000
+readonly MIN_ENTRIES=1024
+readonly DROPIN="${SYSCTL_DIR}/10-nke-conntrack.conf"
+
+mem_kib="$(awk '/^MemTotal:/ { print $2; exit }' "${MEMINFO}")"
 if [[ ! "${mem_kib}" =~ ^[0-9]+$ ]]; then
-  echo "conntrack-tune: cannot read MemTotal from /proc/meminfo" >&2
+  echo "conntrack-tune: cannot read MemTotal from ${MEMINFO}" >&2
   exit 1
 fi
 
@@ -41,22 +58,64 @@ fi
 target=$(( mem_kib / 16 ))
 if (( target > MAX_ENTRIES )); then
   target=${MAX_ENTRIES}
-elif (( target < 1024 )); then
-  target=1024
+elif (( target < MIN_ENTRIES )); then
+  target=${MIN_ENTRIES}
 fi
 
-# raise KEY VALUE sets KEY to VALUE unless it is already at least VALUE.
-raise() {
-  local key="$1" want="$2" have
-  have="$(sysctl -n "${key}")"
-  if (( have >= want )); then
-    echo "conntrack-tune: leaving ${key} at ${have} (target ${want})"
-    return
-  fi
-  sysctl -w "${key}=${want}"
-}
+if [[ "${1:-}" == "--print-target" ]]; then
+  echo "${target}"
+  exit 0
+fi
 
-raise net.netfilter.nf_conntrack_max "${target}"
-raise net.netfilter.nf_conntrack_buckets "${target}"
-sysctl -w net.netfilter.nf_conntrack_tcp_timeout_time_wait="${TIME_WAIT_SECONDS}"
-sysctl -w net.netfilter.nf_conntrack_udp_timeout_stream="${UDP_STREAM_SECONDS}"
+# /etc/modules-load.d/nf_conntrack.conf loads the module before this runs, so
+# a missing key means it failed to load: there is nothing to compare against.
+if [[ ! -r "${NETFILTER_DIR}/nf_conntrack_max" ]]; then
+  echo "conntrack-tune: ${NETFILTER_DIR}/nf_conntrack_max is missing; is nf_conntrack loaded?" >&2
+  exit 1
+fi
+have_max="$(cat "${NETFILTER_DIR}/nf_conntrack_max")"
+have_buckets="$(cat "${NETFILTER_DIR}/nf_conntrack_buckets")"
+if [[ ! "${have_max}" =~ ^[0-9]+$ || ! "${have_buckets}" =~ ^[0-9]+$ ]]; then
+  echo "conntrack-tune: unexpected kernel values: max=${have_max} buckets=${have_buckets}" >&2
+  exit 1
+fi
+
+# max and buckets are checked separately because they don't always start
+# equal. If nf_conntrack is loaded with a hashsize option (for example
+# "options nf_conntrack hashsize=131072" in /etc/modprobe.d), the kernel sets
+# buckets to 131072 and max to 8 times that, 1048576. max is then already
+# above the target and is left alone, while buckets is raised.
+body=""
+if (( target > have_max )); then
+  body+="net.netfilter.nf_conntrack_max = ${target}"$'\n'
+fi
+if (( target > have_buckets )); then
+  body+="net.netfilter.nf_conntrack_buckets = ${target}"$'\n'
+fi
+
+if [[ -z "${body}" ]]; then
+  echo "conntrack-tune: nothing to raise: target ${target}, kernel has max ${have_max} and buckets ${have_buckets}; no file written"
+  exit 0
+fi
+
+content="# Generated at boot by conntrack-tune.service (/usr/lib/nke/configure-conntrack.sh).
+# MemTotal ${mem_kib} kB -> target ${target}. The kernel had nf_conntrack_max ${have_max}
+# and nf_conntrack_buckets ${have_buckets}; only values above those are written.
+# Regenerated every boot, so do not edit it. To override, add a same-named file in
+# /etc/sysctl.d, or a later-sorting one such as 99-local.conf.
+${body}"
+
+# Write atomically: a temporary file in the same directory, then a rename.
+install -d -m 0755 "${SYSCTL_DIR}"
+tmp="$(mktemp "${SYSCTL_DIR}/.10-nke-conntrack.conf.XXXXXX")"
+trap 'rm -f "${tmp}"' EXIT
+printf '%s' "${content}" >"${tmp}"
+if cmp -s "${tmp}" "${DROPIN}"; then
+  echo "conntrack-tune: ${DROPIN} is unchanged"
+  exit 0
+fi
+chmod 0644 "${tmp}"
+mv -f "${tmp}" "${DROPIN}"
+trap - EXIT
+echo "conntrack-tune: wrote ${DROPIN} (MemTotal ${mem_kib} kB, target ${target}):"
+printf '%s' "${body}"

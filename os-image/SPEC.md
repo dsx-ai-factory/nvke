@@ -30,15 +30,46 @@ TODO:  Need to refine the requirements around spire-agent below
 | Unit ordering | `nke-spire-configure.service` before `spire-agent.service` before `nke-agent.service`. `nke-agent` waits for the workload API socket before exec. |
 | First-boot renderer | `/usr/lib/nke/spire-configure.sh`, driven by `nke-spire-configure.service`. Renders `/etc/spire-agent/agent.conf` from instance identity. Does nothing unless `/etc/nke/spire.env` exists. |
 | Plugin checksum | `/etc/spire-agent/spire-agent.env` holds `TPM_PLUGIN_CHECKSUM` and `DSX_IMDS_PLUGIN_CHECKSUM`, written by the .deb's postinst from the plugins it installed. `spire-agent.service` runs with `-expandEnv`, so an `agent.conf` that cloud-init wrote with the literal `${TPM_PLUGIN_CHECKSUM}` or `${DSX_IMDS_PLUGIN_CHECKSUM}` resolves against this image's own plugins. The two config paths are exclusive: a profile supplies `agent.conf` and no `/etc/nke/spire.env`, or it supplies `/etc/nke/spire.env` and the renderer writes `agent.conf`. |
-| Conntrack limits | `conntrack-tune.service` **enabled**, ordered before `network.target`; runs `/usr/lib/nke/configure-conntrack.sh` every boot. Raises `net.netfilter.nf_conntrack_max` and `nf_conntrack_buckets` to `min(max(RAM_MiB × 64, 1024), 600000)` and never lowers either, and sets `nf_conntrack_tcp_timeout_time_wait` to 60s and `nf_conntrack_udp_timeout_stream` to 120s. `/etc/modules-load.d/nf_conntrack.conf` loads `nf_conntrack` at boot. See [Conntrack limits](#conntrack-limits). |
+| Conntrack limits | `conntrack-tune.service` **enabled** (`WantedBy=sysinit.target`), ordered after `systemd-modules-load.service` and before `systemd-sysctl.service`. At every boot `/usr/lib/nke/configure-conntrack.sh` writes `/run/sysctl.d/10-nke-conntrack.conf`, raising `net.netfilter.nf_conntrack_max` and `nf_conntrack_buckets` to `min(max(RAM_MiB × 64, 1024), 600000)` wherever that is above the kernel's value, and `systemd-sysctl` applies it. `/etc/sysctl.d/10-nke-conntrack-timeouts.conf` sets `nf_conntrack_tcp_timeout_time_wait` to 60s. `/etc/modules-load.d/nf_conntrack.conf` loads `nf_conntrack` at boot. See [Conntrack limits](#conntrack-limits). |
 
 ### Conntrack limits
 
 The kernel caps its default conntrack table at 262144 entries on hosts with
 more than 4 GiB of RAM, and many short-lived connections through Services
 exhaust it. The image raises it to 600000 on any node with 9375 MiB of RAM or
-more. The image cannot know which CNI a node will run, so the value it sets is
-the same for both; what happens next depends on whether the cluster runs
+more, and to 64 entries per MiB on smaller VMs.
+
+How the values are applied:
+
+- `conntrack-tune.service` runs early in boot, after
+  `systemd-modules-load.service` has loaded `nf_conntrack` and before
+  `systemd-sysctl.service`. It computes the target from the booting node's
+  `MemTotal` and writes `/run/sysctl.d/10-nke-conntrack.conf` with only the
+  keys the target raises. When the kernel is already at or above the target,
+  it writes no file, so it never lowers the kernel's value.
+- `systemd-sysctl.service` applies that file along with every other
+  `sysctl.d` file, before `sysinit.target`, so containerd, kubelet and the CNI
+  all start with the limits in place.
+- The file lives in `/run`, which is emptied at every boot and is never part
+  of the image. The value therefore always comes from the RAM of the node that
+  is booting, never from the VM that built the image.
+- `/etc/sysctl.d/10-nke-conntrack-timeouts.conf` sets TIME_WAIT to 60s, the
+  TIME_WAIT Linux keeps for its own closed TCP sockets. The cost is that a FIN
+  retransmitted after 60s with no packets no longer matches its connection,
+  so it is not NATed; the file's comment explains when that happens. The UDP
+  stream timeout stays at the kernel's default of 120s.
+- `sysctl.d` files apply in file-name order, and the last value set for a key
+  wins. Both files use the `10-` prefix so that they sort before the files
+  operators normally add: a value in any later-sorting file, such as
+  `60-conntrack.conf` or `99-local.conf`, overrides them, higher or lower. A
+  same-named file in `/etc/sysctl.d` replaces the generated one outright.
+
+These files ship only in this image. Packer installs them as loose files, not
+from a package, so nodes built from another image, or imaged before this
+change, do not get them, and package updates cannot change them.
+
+The image cannot know which CNI a node will run, so the value it sets is the
+same for both; what happens next depends on whether the cluster runs
 kube-proxy:
 
 | CNI | kube-proxy | Effective `nf_conntrack_max` |
@@ -51,8 +82,13 @@ writes it every time it starts. Through Kubernetes 1.37 it writes that value
 even when it is lower than the current one, so on Calico nodes with 18 or
 fewer logical CPUs it replaces the image's 600000 with less (262144 on an
 8-CPU node), and nodes with 19 or more get more. The 600000 floor therefore
-holds only on OVN-Kubernetes clusters. kube-proxy leaves the two timeouts the
-image sets alone.
+holds only on OVN-Kubernetes clusters. kube-proxy leaves TIME_WAIT alone.
+
+Anything that re-applies `sysctl.d` after kube-proxy starts, such as the
+`sysctl --system` in `nke-kubeadm-distro`'s postinst on a Kubernetes version
+change, sets `nf_conntrack_max` back to the image's value until kube-proxy
+next restarts. On Calico nodes with 18 or fewer CPUs that is a raise; on
+nodes with 19 or more it is a reduction.
 
 ## Must not bake (instance identity)
 
@@ -147,7 +183,7 @@ server, not this image.
 | Agent env | `/etc/default/nke-agent` (`AGENT_ARGS`) |
 | SPIRE config | `/etc/spire-agent/agent.conf` (rendered, not a baked secret) |
 | SPIRE data | `/var/lib/spire-agent` |
-| Conntrack tuning | `/usr/lib/nke/configure-conntrack.sh` (logs to `journalctl -u conntrack-tune`) |
+| Conntrack tuning | `/usr/lib/nke/configure-conntrack.sh` writes `/run/sysctl.d/10-nke-conntrack.conf` (logs to `journalctl -u conntrack-tune`); TIME_WAIT in `/etc/sysctl.d/10-nke-conntrack-timeouts.conf` |
 
 ## Out of scope for this image
 

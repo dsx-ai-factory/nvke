@@ -4,9 +4,9 @@
 #
 # Smoke test: boot a qcow2 the non-FDE build produced and confirm it comes up
 # clean (cloud-init completes, SSH answers, nke-agent and spire-agent units
-# are installed and enabled, conntrack-tune.service raised the conntrack
-# limits). Does not exercise SPIRE/nke-agent against a real server -- just
-# proves the image boots on its own.
+# are installed and enabled, conntrack-tune.service sized the conntrack
+# limits; see check-conntrack.sh). Does not exercise SPIRE/nke-agent against a
+# real server -- just proves the image boots on its own.
 #
 # QCOW defaults to the single *.qcow2 under output-non-fde/ (its filename
 # encodes the Ubuntu version/arch, e.g. nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2
@@ -208,16 +208,12 @@ have_in_local_repo() {
 have_in_local_repo nke-kubeadm-distro
 have_in_local_repo nke-cni-calico-images
 
-# conntrack-tune.service only ever raises the limits, so they end at or above
-# its target. This VM is too small to reach the 600000 cap.
-systemctl is-active conntrack-tune.service
-want=$(( $(awk '/^MemTotal:/ { print $2; exit }' /proc/meminfo) / 16 ))
-if (( want > 600000 )); then want=600000; fi
-test "$(sysctl -n net.netfilter.nf_conntrack_max)" -ge "${want}"
-test "$(sysctl -n net.netfilter.nf_conntrack_buckets)" -ge "${want}"
-test "$(sysctl -n net.netfilter.nf_conntrack_tcp_timeout_time_wait)" -eq 60
-test "$(sysctl -n net.netfilter.nf_conntrack_udp_timeout_stream)" -eq 120
-
 EOF
+
+# Conntrack tuning, checked by a script shared with demo-fde.sh.
+timeout 60 ssh -i "${SSH_KEY}" -p "${SSH_PORT}" \
+    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -o ConnectTimeout=5 -o BatchMode=yes \
+    ubuntu@127.0.0.1 bash -s <"${ROOT}/scripts/check-conntrack.sh"
 
 echo "boot-smoke: image contract and root-filesystem growth are satisfied"
