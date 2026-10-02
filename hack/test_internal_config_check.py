@@ -33,11 +33,13 @@ class InternalConfigCheckTest(unittest.TestCase):
                 ["bash", str(script)], capture_output=True, text=True, check=False, env=ENV
             )
 
-    def test_pinned_checksum_is_not_an_org_id(self):
+    def test_hex_digest_is_not_an_org_id(self):
         checksum = f"de0f{ORG_ID}" + "ab" * 22
         for content in (
             f"TOOL_SHA256_AMD64 ?= {checksum}",
-            f"TOOL_SHA256 := {checksum}",
+            f"export TOOL_SHA256={checksum}",
+            f'sha256: "{checksum.upper()}"',
+            f'{{"digest": "sha256:{checksum}"}}',
         ):
             with self.subTest(content=content):
                 result = self.scan(content)
