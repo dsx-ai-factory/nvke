@@ -43,19 +43,13 @@ func validateControllerManagedControlPlane(test *tenantTest) {
 
 		By("Asserting the tenant cluster reports Ready for the controller-managed control-plane nodes")
 		assertControlPlaneNodesReadyInTenant(ctx, test, desired)
-		if test.spec.Backend == nke.BackendCAPD {
-			eligible := false
-			for _, domain := range test.spec.CAPDFailureDomains {
-				eligible = eligible || domain.ControlPlane
-			}
-			if eligible {
-				By("Verifying the first control-plane Machine chose fd-a on the lexicographic tie")
-				assertCAPDControlPlaneFailureDomains(ctx, test, desired, map[string]int{"fd-a": 1})
-			} else {
-				By("Verifying no domain was requested when none is eligible for control-plane Machines")
-				assertCAPDControlPlaneFailureDomains(ctx, test, desired, map[string]int{})
-			}
+		want := map[string]int{}
+		if controlPlaneEligibleDomains(test.spec) > 0 {
+			// fd-a wins the first placement on the selection's lexicographic tie-break.
+			want["fd-a"] = 1
 		}
+		By("Verifying the control-plane Machines requested the expected failure domains")
+		assertCAPDControlPlaneFailureDomains(ctx, test, desired, want)
 	}, Label("cp-controller", "readiness"), NodeTimeout(90*time.Minute))
 }
 
@@ -86,10 +80,8 @@ func validateControllerManagedControlPlaneUpdate(test *tenantTest) {
 
 		By("Asserting the tenant cluster reports Ready for the updated control-plane nodes")
 		assertControlPlaneNodesReadyInTenant(ctx, test, desired)
-		if test.spec.Backend == nke.BackendCAPD {
-			By("Verifying scale-up balanced CAPI Machines across the eligible failure domains")
-			assertCAPDControlPlaneFailureDomains(ctx, test, desired, map[string]int{"fd-a": 2, "fd-b": 1})
-		}
+		By("Verifying scale-up balanced CAPI Machines across the eligible failure domains")
+		assertCAPDControlPlaneFailureDomains(ctx, test, desired, map[string]int{"fd-a": 2, "fd-b": 1})
 	}, Label("cp-controller", "update"), NodeTimeout(90*time.Minute))
 }
 
@@ -135,10 +127,8 @@ func validateControllerManagedControlPlaneRollingUpdate(test *tenantTest) {
 
 		By("Asserting the tenant cluster reports Ready for the rolled control-plane nodes")
 		assertControlPlaneNodesReadyInTenant(ctx, test, desired)
-		if test.spec.Backend == nke.BackendCAPD {
-			By("Verifying replacement CAPI Machines retained balanced failure-domain placement")
-			assertCAPDControlPlaneFailureDomains(ctx, test, desired, nil)
-		}
+		By("Verifying replacement CAPI Machines retained balanced failure-domain placement")
+		assertCAPDControlPlaneFailureDomains(ctx, test, desired, nil)
 	}, Label("cp-controller", "rolling-update"), NodeTimeout(90*time.Minute))
 }
 
@@ -271,10 +261,8 @@ func validateControllerManagedControlPlaneSerializedDelete(test *tenantTest) {
 		By("Waiting for every grown control-plane node to report Joined, which is what the quorum floor counts")
 		Expect(test.nke.WaitForJoinedControlPlaneNodes(ctx, test.cluster.ID, controlPlaneControllerDeleteSurgeCount)).To(Succeed(),
 			"the quorum floor counts joined nodes, so the delete must not race the Joined write")
-		if test.spec.Backend == nke.BackendCAPD {
-			By("Verifying the four-node control plane is balanced before scale-down")
-			assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerDeleteSurgeCount, map[string]int{"fd-a": 2, "fd-b": 2})
-		}
+		By("Verifying the four-node control plane is balanced before scale-down")
+		assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerDeleteSurgeCount, map[string]int{"fd-a": 2, "fd-b": 2})
 
 		By("Lowering the desired count so the delete shrinks the control plane instead of replacing the node")
 		expectSucceed(test.nke.UpdateControlPlaneDesiredCount(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount))
@@ -345,10 +333,8 @@ func validateControllerManagedControlPlaneSerializedDelete(test *tenantTest) {
 
 		By("Asserting the tenant cluster reports Ready for the surviving control-plane nodes")
 		assertControlPlaneNodesReadyInTenant(ctx, test, controlPlaneControllerUpdateDesiredCount)
-		if test.spec.Backend == nke.BackendCAPD {
-			By("Verifying the three-node control plane remains balanced after scale-down")
-			assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerUpdateDesiredCount, nil)
-		}
+		By("Verifying the three-node control plane remains balanced after scale-down")
+		assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerUpdateDesiredCount, nil)
 	}, Label("cp-controller", "cp-delete"), NodeTimeout(45*time.Minute))
 }
 
@@ -383,13 +369,8 @@ func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 		if test.spec.Backend == nke.BackendCAPD {
 			By("Selecting the Machine in the less-used failure domain for deletion")
 			assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerUpdateDesiredCount, nil)
-			eligibleDomains := 0
-			for _, domain := range test.spec.CAPDFailureDomains {
-				if domain.ControlPlane {
-					eligibleDomains++
-				}
-			}
-			Expect(eligibleDomains).To(Equal(2), "the replacement-domain check requires exactly two eligible domains")
+			Expect(controlPlaneEligibleDomains(test.spec)).To(Equal(2),
+				"the replacement-domain check requires exactly two eligible domains")
 			domainsByNode := make(map[string]string, len(cpNodes))
 			counts := make(map[string]int)
 			for _, node := range cpNodes {

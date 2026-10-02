@@ -15,13 +15,34 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 )
+
+// controlPlaneEligibleDomains counts the advertised domains that can host
+// control-plane Machines.
+func controlPlaneEligibleDomains(spec nke.ClusterSpec) int {
+	eligible := 0
+	for _, domain := range spec.CAPDFailureDomains {
+		if domain.ControlPlane {
+			eligible++
+		}
+	}
+	return eligible
+}
 
 // assertCAPDControlPlaneFailureDomains checks the live CAPI placement contract
 // after the control plane settles. CAPD publishes eligible domains to Cluster
 // status and observed placement to Machine status; CWE requests Machine domains.
+//
+// Only CAPD advertises inspectable failure domains, so this is a no-op on every
+// other backend. initCluster refuses a CAPD control-plane-controller row that
+// advertises none, so a silent skip here cannot hide a missing assertion.
 func assertCAPDControlPlaneFailureDomains(ctx context.Context, test *tenantTest, desired int, want map[string]int) {
 	GinkgoHelper()
+	if test.spec.Backend != nke.BackendCAPD {
+		return
+	}
 	Eventually(func(ctx context.Context) error {
 		return capdControlPlaneFailureDomainsAt(ctx, test, desired, want)
 	}).WithContext(ctx).WithTimeout(2*time.Minute).WithPolling(5*time.Second).
@@ -42,13 +63,10 @@ func capdControlPlaneFailureDomainsAt(ctx context.Context, test *tenantTest, des
 		return fmt.Errorf("CAPI Cluster has not published failure domains")
 	}
 	wantPublished := make(map[string]bool, len(test.spec.CAPDFailureDomains))
-	eligible := 0
 	for _, domain := range test.spec.CAPDFailureDomains {
 		wantPublished[domain.Name] = domain.ControlPlane
-		if domain.ControlPlane {
-			eligible++
-		}
 	}
+	eligible := controlPlaneEligibleDomains(test.spec)
 	gotPublished := make(map[string]bool, len(published))
 	for _, item := range published {
 		domain, ok := item.(map[string]any)
