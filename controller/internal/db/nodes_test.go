@@ -124,13 +124,13 @@ func TestUnit_NodeGetSpiffeID(t *testing.T) {
 		},
 		"canonical DSX exchange identity": {
 			node: db.Node{ID: uuid.MustParse(nodeID), NodeAgentTLSJWTEnabled: true},
-			want: "spiffe://example.org/tenant/nca-0837451325059433/service/dsx/bm/" + nodeID,
+			want: "spiffe://example.org/tenant/tenant-a/service/dsx/bm/" + nodeID,
 		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, test.want, test.node.GetSpiffeID("example.org", "nca-0837451325059433", "dsx"))
+			require.Equal(t, test.want, test.node.GetSpiffeID("example.org", "tenant-a", "dsx"))
 		})
 	}
 }

@@ -48,8 +48,8 @@ func TestUnit_ExchangeSubject(t *testing.T) {
 		},
 		"az51 node agent maps to the exact node UUID": {
 			region: "az51-dev4",
-			input:  "spiffe://az51-dev4.nke.local/tenant/nca-0837451325059433/service/dsx/bm/45f59791-87df-4e85-9430-e565166ad020",
-			want:   "spiffe://nca-0837451325059433.az51-dev4.dsx.nvid.id/bm/45f59791-87df-4e85-9430-e565166ad020",
+			input:  "spiffe://az51-dev4.nke.local/tenant/tenant-a/service/dsx/bm/45f59791-87df-4e85-9430-e565166ad020",
+			want:   "spiffe://tenant-a.az51-dev4.dsx.nvid.id/bm/45f59791-87df-4e85-9430-e565166ad020",
 		},
 	}
 	for name, params := range tests {
