@@ -155,21 +155,16 @@ jobs:
       # The fixture is a pinned copy of the public provider's CRDs. Verify it
       # against the version go.mod pins on the base repo's own events.
       - name: Verify the CAPNICo CRD fixture is current
-        # amd64 only: the fixture is architecture-independent, so the second
-        # leg would just double the gh api calls and the chance of a flake.
         if: matrix.arch == 'amd64' && github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          ver="$(controller/hack/ci/capnico-ref.sh)"
-          echo "checking controller/test/fixtures/capnico-crds against cluster-api-provider-nico ${ver}"
+          source_dir="$(go mod download -json github.com/dsx-ai-factory/cluster-api-provider-nico | jq -er '.Dir')"
+          echo "checking controller/test/fixtures/capnico-crds against ${source_dir}"
           drift=0
           for f in nicoclusters nicoclustertemplates nicomachines nicomachinetemplates; do
             name="infrastructure.cluster.x-k8s.io_${f}.yaml"
-            gh api "repos/dsx-ai-factory/cluster-api-provider-nico/contents/config/crd/bases/${name}?ref=${ver}" --jq '.content' | base64 -d > "/tmp/${name}"
-            if ! diff -u "controller/test/fixtures/capnico-crds/${name}" "/tmp/${name}"; then
-              echo "::error::${name} differs from cluster-api-provider-nico ${ver}; refresh the fixture (see its README)"
+            if ! diff -u "controller/test/fixtures/capnico-crds/${name}" "${source_dir}/config/crd/bases/${name}"; then
+              echo "::error::${name} differs from ${source_dir}; refresh the fixture (see its README)"
               drift=1
             fi
           done

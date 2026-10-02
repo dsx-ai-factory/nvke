@@ -80,7 +80,7 @@ on:
         default: false
       needs-capnico-source:
         description: >-
-          Check out public dsx-ai-factory/cluster-api-provider-nico next to the monorepo.
+          Stage the pinned cluster-api-provider-nico Go module source for the suite.
         required: false
         type: boolean
         default: false
@@ -189,31 +189,6 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
-      # Inside the workspace, because actions/checkout refuses a path outside it
-      # ("Repository path ... is not under ..."). The directory name still has to
-      # be cluster-api-provider-nico: the script tars it by basename and expands
-      # it under /workspace in the runner container, where everything after this
-      # point executes.
-      # Source installation consumes CAPNICo's chart layout, so check out the
-      # same provider version whose API is compiled into CWE instead of the
-      # moving tip of the private repository.
-      - name: Read pinned CAPNICo version
-        if: inputs.needs-capnico-source
-        id: capnico_version
-        env:
-          GH_TOKEN: ${{ github.token }}
-        # A pseudo-version pin is not a git ref; the script turns it into one.
-        run: echo "ref=$(controller/hack/ci/capnico-ref.sh)" >> "${GITHUB_OUTPUT}"
-
-      - name: Checkout the CAPNICo provider
-        if: inputs.needs-capnico-source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: dsx-ai-factory/cluster-api-provider-nico
-          ref: ${{ steps.capnico_version.outputs.ref }}
-          path: .capnico/cluster-api-provider-nico
-          persist-credentials: false
-
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -222,6 +197,15 @@ jobs:
           cache-dependency-path: |
             go.work.sum
             **/go.sum
+
+      - name: Stage the pinned CAPNICo module
+        if: inputs.needs-capnico-source
+        run: |
+          set -euo pipefail
+          source_dir="$(go mod download -json github.com/dsx-ai-factory/cluster-api-provider-nico | jq -er '.Dir')"
+          mkdir -p "${CAPNICO_SOURCE_SRC}"
+          cp -R "${source_dir}/." "${CAPNICO_SOURCE_SRC}/"
+          chmod -R u+w "${CAPNICO_SOURCE_SRC}"
 
       # Version pins come from make/versions.mk, so `make show-versions` and CI
       # cannot disagree.

@@ -165,24 +165,6 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
-      # Source installation consumes CAPNICo's chart layout, so check out the
-      # same provider version whose API is compiled into CWE instead of the
-      # moving tip of the private repository.
-      - name: Read pinned CAPNICo version
-        id: capnico_version
-        env:
-          GH_TOKEN: ${{ github.token }}
-        # A pseudo-version pin is not a git ref; the script turns it into one.
-        run: echo "ref=$(controller/hack/ci/capnico-ref.sh)" >> "${GITHUB_OUTPUT}"
-
-      - name: Checkout the CAPNICo provider
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: dsx-ai-factory/cluster-api-provider-nico
-          ref: ${{ steps.capnico_version.outputs.ref }}
-          path: .capnico/cluster-api-provider-nico
-          persist-credentials: false
-
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -191,6 +173,14 @@ jobs:
           cache-dependency-path: |
             go.work.sum
             **/go.sum
+
+      - name: Stage the pinned CAPNICo module
+        run: |
+          set -euo pipefail
+          source_dir="$(go mod download -json github.com/dsx-ai-factory/cluster-api-provider-nico | jq -er '.Dir')"
+          mkdir -p "${CAPNICO_SOURCE_DIR}"
+          cp -R "${source_dir}/." "${CAPNICO_SOURCE_DIR}/"
+          chmod -R u+w "${CAPNICO_SOURCE_DIR}"
 
       - name: Read pinned tool versions
         id: versions
