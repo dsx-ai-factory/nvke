@@ -75,33 +75,6 @@ if [[ "$(sudo e2label "${root_device}")" != "${ROOT_FS_LABEL}" ]]; then
   exit 1
 fi
 
-# Keep multipathd off the node. Ubuntu Server's installer pulls in
-# multipath-tools and leaves multipathd enabled, and with no blacklist it
-# claims Longhorn's iSCSI-exported volumes -- they present as
-# IET,VIRTUAL-DISK, so multipathd wraps each one in a device-mapper map.
-# device-mapper then holds the block device open, mkfs' O_EXCL open returns
-# EBUSY, and every newly provisioned Longhorn PVC fails to format with
-# "is apparently in use by the system; will not make a filesystem here".
-# Observed in the field blocking a Longhorn engine upgrade and a CloudNativePG
-# replica rebuild.
-#
-# Bake it in rather than leaving it to a provisioning step: on nodes whose
-# cloud-init came up with no datasource, the equivalent post-provision step
-# never ran and multipathd stayed active from first boot, undetected for
-# months. An image that ships it off cannot regress that way.
-#
-# No NKE node boots from a multipath-backed disk -- the root filesystem is LVM
-# (optionally over LUKS) on a single local NVMe device, per
-# cidata/autoinstall-lvm.pkrtpl -- so nothing here depends on multipathd.
-#
-# Both units, and mask rather than disable: multipathd.socket socket-activates
-# the service, so disabling the service alone leaves it reachable (systemctl
-# says as much: "can still be activated by multipathd.socket"). Masking also
-# holds if multipath-tools is installed or reinstalled later, and works even
-# though the units may not exist on this image yet.
-sudo systemctl disable --now multipathd.socket multipathd.service >/dev/null 2>&1 || true
-sudo systemctl mask multipathd.socket multipathd.service
-
 # Golden image: next boot must look like a new instance, without the Packer
 # SSH key or a machine-id from this build VM.
 sudo cloud-init clean --logs --seed || true
@@ -110,9 +83,6 @@ if [[ -f /etc/machine-id ]]; then
 fi
 sudo rm -f /var/lib/dbus/machine-id
 sudo rm -f /home/ubuntu/.ssh/authorized_keys
-
-sudo install -d -m 0755 /etc/cloud/cloud.cfg.d
-sudo install -m 0644 "${SRC}/99-nke-network.cfg" /etc/cloud/cloud.cfg.d/99-nke-network.cfg
 
 # cidata/autoinstall-lvm.pkrtpl sets kernel.package to the NVIDIA-tuned
 # flavor specifically so, per its own comment, "there's no generic kernel to
