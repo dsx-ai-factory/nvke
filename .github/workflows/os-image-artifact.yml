@@ -337,8 +337,10 @@ jobs:
           echo "Publishing ${version} as: ${aliases[*]}"
           echo "Baking nke-agent ${agent_version} from source"
 
-      # validate-packer runs the tests; the release assets need the binary.
+      # validate-packer runs the tests. Only the build that carries the shared
+      # release assets (see "Prepare release assets") needs the binary.
       - name: Build nke-os-image-check
+        if: matrix.arch == 'amd64' && matrix.tag_suffix == '' && matrix.variant == 'non-fde'
         working-directory: os-image
         run: make build
 
@@ -441,7 +443,9 @@ jobs:
       # falls back to Ubuntu's mirror, and so do unset repository variables. The
       # role gate keeps an empty role-to-assume from falling back to whatever
       # ambient credentials the ARC pod has. The credentials go to the restore
-      # step only, not to the job environment the bake's scripts run in.
+      # step only, not to the job environment. id-token: write is still
+      # job-wide, so a later step could mint its own; the role is read-only on
+      # a cache of public ISOs, which is why that is acceptable.
       - name: Configure AWS credentials for the build cache
         id: cache_aws
         if: vars.NKE_GHA_CACHE_READ_ROLE_ARN != ''
