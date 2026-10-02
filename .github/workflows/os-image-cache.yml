@@ -74,6 +74,8 @@ jobs:
           UBUNTU_RELEASE: ${{ matrix.ubuntu_release }}
         run: |
           set -euo pipefail
+          # Fail now, not after a multi-GB download, if the variable is unset.
+          : "${BUCKET:?NKE_GHA_CACHE_BUCKET is not set}"
           resolve() {
             make --no-print-directory -C os-image/packer "print-$1" \
               ARCH="${ARCH}" UBUNTU_RELEASE="${UBUNTU_RELEASE}"
@@ -99,9 +101,14 @@ jobs:
             echo "::error::no checksum for ${name} in ${sums_url}"
             exit 1
           fi
-          # -C - resumes a reset transfer instead of restarting the 2.9 GB
-          # arm64 download, as prepare-installer-iso.sh does.
-          curl -fL --retry 5 --retry-all-errors --retry-delay 5 -C - -o "${name}" "${iso_url}"
+          # curl's own --retry truncates back to where the transfer started, so
+          # a reset part way through the 2.9 GB arm64 ISO would start over.
+          # Each attempt here resumes from what the last one wrote.
+          for attempt in 1 2 3 4 5 6; do
+            curl -fL -C - -o "${name}" "${iso_url}" && break
+            (( attempt < 6 )) || exit 1
+            sleep 5
+          done
           echo "${want}  ${name}" | sha256sum -c -
           aws s3 cp "${name}" "s3://${BUCKET}/${key}" --only-show-errors
           echo "::notice::cached ${iso_url} as ${key}"
