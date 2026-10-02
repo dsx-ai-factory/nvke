@@ -79,7 +79,8 @@ RUN set -eux; \
       python-is-python3 \
       python3-yaml \
       openvswitch-switch \
-      ifupdown \
+      netplan.io \
+      dbus \
       swtpm \
       swtpm-tools \
       tpm2-tools \
@@ -87,14 +88,18 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # Docker supplies the initial address, rather than a distro network manager.
-# Give the agent an ifupdown description of it, and restore its OVS bridge on
+# Give the agent a netplan description of it, and restore its OVS bridge on
 # container restarts before SPIRE or the agent need the network.
+# Netplan needs a live udev daemon even with KIND's read-only sysfs. Netplan
+# tolerates the resulting device-trigger warning inside containers.
 COPY scripts/prepare-container-network /usr/local/sbin/prepare-container-network
 COPY scripts/nke-container-network.service /etc/systemd/system/nke-container-network.service
 RUN set -eux; \
     chmod 0755 /usr/local/sbin/prepare-container-network; \
-    printf 'source /etc/network/interfaces.d/*\n' > /etc/network/interfaces; \
-    SYSTEMD_OFFLINE=1 systemctl disable networking.service; \
+    mkdir -p /etc/systemd/system/systemd-udevd.service.d; \
+    printf '[Unit]\nConditionPathIsReadWrite=\n' > /etc/systemd/system/systemd-udevd.service.d/netplan-container.conf; \
+    SYSTEMD_OFFLINE=1 systemctl enable systemd-networkd.service; \
+    SYSTEMD_OFFLINE=1 systemctl disable systemd-networkd-wait-online.service; \
     SYSTEMD_OFFLINE=1 systemctl enable nke-container-network.service
 
 # The DSX identity exchange fixture uses a local CA. The build helper supplies
