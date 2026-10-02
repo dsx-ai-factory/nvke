@@ -21,7 +21,7 @@ import (
 // defaultCRDDir is the generated CRD directory, relative to the controller
 // module, which is where the converter runs from.
 const (
-	defaultCRDDir = "../management-engine/apis/crds"
+	defaultCRDDir = "../management-engine/config/crd/bases"
 )
 
 func main() {
