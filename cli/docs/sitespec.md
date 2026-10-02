@@ -218,7 +218,7 @@ If the removal fails, the cluster is still up and the kubeconfig is on disk.
 The error names the command that finishes the step by hand:
 
 ```bash
-kubectl taint nodes --all node-role.kubernetes.io/control-plane- \
+kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- \
   --kubeconfig <clusterName>.kubeconfig
 ```
 

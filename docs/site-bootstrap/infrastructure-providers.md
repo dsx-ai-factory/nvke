@@ -46,7 +46,7 @@ kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.tai
 No node should list `node-role.kubernetes.io/control-plane`. If one does, because the bootstrap reported that the removal failed, remove it by hand:
 
 ```bash
-kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
 ```
 
 The site cluster also needs a default StorageClass before CWE's Postgres and SPIRE will schedule. That is part of installing the site controller, not this page.

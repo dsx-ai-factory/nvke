@@ -120,7 +120,7 @@ Authentication is enabled on the site controller. `nkectl` mints a bearer token 
 All nodes are control-plane nodes after `nkectl bootstrap site`, and the command removes the control-plane `NoSchedule` taint from every node once they have all joined. Nodes stay tainted only when that removal failed and the command said so. Remove the taint by hand before installing workloads:
 
 ```bash
-kubectl taint nodes --all node-role.kubernetes.io/control-plane- \
+kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- \
   --kubeconfig <sitename>.kubeconfig
 ```
 
