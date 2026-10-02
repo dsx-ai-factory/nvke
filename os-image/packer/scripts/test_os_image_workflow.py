@@ -151,13 +151,23 @@ class OSImageWorkflowTest(unittest.TestCase):
                 capture_output=True,
             )
             legs = json.loads(Path(output.name).read_text().split("=", 1)[1])
+        key = lambda leg: (leg["arch"], leg["ubuntu_release"], leg["variant"])
         self.assertEqual(
-            sorted((leg["arch"], leg["ubuntu_release"], leg["variant"]) for leg in legs),
+            sorted(legs, key=key),
             sorted(
-                (arch, release, variant)
-                for arch in ("amd64", "arm64")
-                for release in ("26.04.1", "24.04.5")
-                for variant in ("fde", "non-fde")
+                (
+                    {
+                        "arch": arch,
+                        "ubuntu_release": release,
+                        "tag_suffix": suffix,
+                        "variant": variant,
+                        "timeout_minutes": 90,
+                    }
+                    for arch in ("amd64", "arm64")
+                    for release, suffix in (("26.04.1", ""), ("24.04.5", "-ubuntu24.04"))
+                    for variant in ("fde", "non-fde")
+                ),
+                key=key,
             ),
         )
 
