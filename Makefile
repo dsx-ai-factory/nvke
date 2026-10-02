@@ -513,7 +513,7 @@ build: ## Build every workspace package, and the released commands into bin/.
 	@cp cli/bin/nkectl $(BIN_DIR)/ \
 		|| { echo "ERROR: cli/Makefile no longer produces bin/nkectl."; exit 1; }
 	@echo "- building management-engine"
-	@$(MAKE) --no-print-directory -C management-engine build BIN_DIR=$(BIN_DIR) VERSION=$(call cmd_version,management-engine) >/dev/null || exit 1
+	@$(MAKE) --no-print-directory -C management-engine build-bin BIN_DIR=$(BIN_DIR) VERSION=$(call cmd_version,management-engine) >/dev/null || exit 1
 	@echo "Built into $(BIN_DIR):"
 	@ls -1 $(BIN_DIR) | sed 's/^/    /'
 

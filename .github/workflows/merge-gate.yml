@@ -113,8 +113,8 @@ jobs:
     permissions:
       contents: read
 
-  management-engine-test:
-    uses: ./.github/workflows/management-engine-test.yml
+  management-engine-controller-test-policy:
+    uses: ./.github/workflows/management-engine-controller-test-policy.yml
     permissions:
       contents: read
 
@@ -212,7 +212,7 @@ jobs:
       - build
       - controller-test
       - agent-test
-      - management-engine-test
+      - management-engine-controller-test-policy
       - workspace
       - chart
       - nktp-chart

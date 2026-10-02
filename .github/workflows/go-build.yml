@@ -61,7 +61,9 @@ jobs:
     name: Build binaries
     runs-on: ubuntu-latest
     if: github.repository == 'dsx-ai-factory/nke'
-    timeout-minutes: 15
+    # 25, not 15: over 7 days on main the job averaged 13.1m and 3 of 38 runs
+    # were cut at 15m, which reports as cancelled rather than failed.
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:

@@ -16,18 +16,15 @@ import (
 // GroupName separates internal storage from the public API groups.
 const GroupName = "internal.nke.nvidia.com"
 
+var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1"}
+
 // GroupVersion is the initial served and storage version of the internal API.
-var GroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1"}
+var GroupVersion = SchemeGroupVersion
+
+var SchemeBuilder = runtime.NewSchemeBuilder(func(scheme *runtime.Scheme) error {
+	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
+	return nil
+})
 
 // AddToScheme registers every resource kind and its list type.
-func AddToScheme(scheme *runtime.Scheme) error {
-	scheme.AddKnownTypes(GroupVersion,
-		&NKECluster{}, &NKEClusterList{},
-		&NodePool{}, &NodePoolList{},
-		&MachineImage{}, &MachineImageList{},
-		&ClusterRelease{}, &ClusterReleaseList{},
-		&NodePoolRelease{}, &NodePoolReleaseList{},
-	)
-	metav1.AddToGroupVersion(scheme, GroupVersion)
-	return nil
-}
+var AddToScheme = SchemeBuilder.AddToScheme

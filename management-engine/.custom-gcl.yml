@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# This file configures golangci-lint with module plugins.
+# When you run 'make lint', it will automatically build a custom golangci-lint binary
+# with all the plugins listed below.
+#
+# See: https://golangci-lint.run/plugins/module-plugins/
+version: v2.13.2
+plugins:
+  - module: "github.com/dsx-ai-factory/cluster-api-provider-nico"
+    import: "github.com/dsx-ai-factory/cluster-api-provider-nico/tools/commentpolicy"
+    version: v0.1.0-rc.2.0.20260929174319-72784d3eaafc
+  # logcheck validates structured logging calls and parameters (e.g., balanced key-value pairs)
+  - module: "sigs.k8s.io/logtools"
+    import: "sigs.k8s.io/logtools/logcheck/gclplugin"
+    version: v0.10.1

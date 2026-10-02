@@ -14,7 +14,7 @@ import (
 )
 
 // crdDir is the generated CRD directory the chart installs, relative to this package.
-const crdDir = "../../../management-engine/apis/crds"
+const crdDir = "../../" + defaultCRDDir
 
 // fixtureProfiles is the in-repo profiles tree the local stack and e2e use, and
 // fixtureReleases is the committed set of manifests generated from it.

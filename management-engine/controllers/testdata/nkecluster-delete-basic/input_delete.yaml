@@ -1,0 +1,5 @@
+apiVersion: internal.nke.nvidia.com/v1
+kind: NKECluster
+metadata:
+  name: cluster-1
+  namespace: default

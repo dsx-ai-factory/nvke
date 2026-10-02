@@ -1,0 +1,5 @@
+apiVersion: internal.nke.nvidia.com/v1
+kind: NodePool
+metadata:
+  name: workers-1
+  namespace: default

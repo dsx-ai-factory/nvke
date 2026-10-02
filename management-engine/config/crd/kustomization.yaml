@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Included by config/state for installation on the datastore cluster.
+resources:
+- bases/internal.nke.nvidia.com_clusterreleases.yaml
+- bases/internal.nke.nvidia.com_machineimages.yaml
+- bases/internal.nke.nvidia.com_nkeclusters.yaml
+- bases/internal.nke.nvidia.com_nodepoolreleases.yaml
+- bases/internal.nke.nvidia.com_nodepools.yaml
+# +kubebuilder:scaffold:crdkustomizeresource
+
+patches:
+# +kubebuilder:scaffold:crdkustomizewebhookpatch

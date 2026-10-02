@@ -46,6 +46,7 @@ on:
     paths:
       - 'controller/**'
       - 'cli/**'
+      - 'management-engine/**'
       - 'go.work'
       - 'go.work.sum'
       - '.github/workflows/controller-test.yml'
@@ -101,6 +102,8 @@ jobs:
           # them go through `make test` and pick up -race from GO_TEST_FLAGS
           # below.
           - module: cli
+            run: make test
+          - module: management-engine
             run: make test
           # The e2e module mixes the live Ginkgo suite with ordinary root and
           # internal unit tests. Skip only TestE2E so every current and future

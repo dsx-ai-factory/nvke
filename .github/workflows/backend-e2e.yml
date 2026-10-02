@@ -200,14 +200,10 @@ jobs:
       - name: Read pinned CAPNICo version
         if: inputs.needs-capnico-source
         id: capnico_version
-        run: |
-          set -euo pipefail
-          capnico_ref="$(awk '$1 == "github.com/dsx-ai-factory/cluster-api-provider-nico" { print $2; exit }' controller/go.mod)"
-          if [[ -z "${capnico_ref}" ]]; then
-            echo "::error::controller/go.mod does not pin cluster-api-provider-nico"
-            exit 1
-          fi
-          echo "ref=${capnico_ref}" >> "${GITHUB_OUTPUT}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # A pseudo-version pin is not a git ref; the script turns it into one.
+        run: echo "ref=$(controller/hack/ci/capnico-ref.sh)" >> "${GITHUB_OUTPUT}"
 
       - name: Checkout the CAPNICo provider
         if: inputs.needs-capnico-source

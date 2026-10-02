@@ -11,6 +11,10 @@ controller/hack/capd-reboot-controller/capd-reboot-controller
 **/dist/
 **/release/
 
+# Coverage output and local cluster credentials.
+*.out
+*.kubeconfig
+
 # Go workspace dependencies may be vendored locally for offline remote tests,
 # but the generated tree is not committed.
 /vendor/

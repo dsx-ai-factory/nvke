@@ -1,0 +1,94 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Management Engine Controller Test Policy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'management-engine/**'
+  workflow_call:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: Management Engine Controller Test Policy-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  controller-test-policy:
+    name: Require envtest fixtures only
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+
+      - name: Install Ginkgo
+        run: make -C management-engine ginkgo
+
+      - name: Reject non envtest fixture tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed=0
+
+          test_files="$(find management-engine -path management-engine/apis -prune -o -name '*_test.go' ! -type d -print | sort)"
+          while IFS= read -r file; do
+            [[ -n "${file}" ]] || continue
+            if ! jq -e --arg file "${file}" '.ginkgoSpecs | has($file)' .github/workflows/management-engine/controller-test-policy.json >/dev/null; then
+              echo "::error file=${file}::Test file is not in controller-test-policy.json. Add a YAML fixture instead."
+              echo "::error file=${file}::See management-engine/docs/writing-tests.md"
+              failed=1
+            fi
+          done <<< "${test_files}"
+          if ((failed)); then
+            exit 1
+          fi
+
+          while IFS=$'\t' read -r file expected; do
+            actual="$(
+              ./management-engine/bin/ginkgo outline --format csv "${file}" |
+                awk -F, 'NR > 1 && $5 == "true" { count++ } END { print count + 0 }'
+            )"
+
+            if ((actual != expected)); then
+              echo "::error file=${file}::Found ${actual} Ginkgo specs; expected ${expected}. Add a YAML fixture under management-engine/controllers/testdata instead."
+              failed=1
+            fi
+          done < <(
+            jq -r '.ginkgoSpecs | to_entries[] | [.key, .value] | @tsv' .github/workflows/management-engine/controller-test-policy.json
+          )
+
+          expected_ordinary_tests="$(jq -r '.ordinaryGoTests[]' .github/workflows/management-engine/controller-test-policy.json)"
+          actual_ordinary_tests="$(
+            go test ./management-engine/controllers -run '^$' -list '^(Test|Benchmark|Fuzz)' |
+              awk '/^(Test|Benchmark|Fuzz)[[:alnum:]_]*$/ { print }' |
+              sort
+          )"
+          if [[ "${actual_ordinary_tests}" != "${expected_ordinary_tests}" ]]; then
+            echo "::error file=management-engine/controllers::The ordinary Go test allowlist changed. Add controller coverage as YAML fixtures under management-engine/controllers/testdata instead."
+            echo "Expected:"
+            printf '%s\n' "${expected_ordinary_tests:-<none>}"
+            echo "Found:"
+            printf '%s\n' "${actual_ordinary_tests:-<none>}"
+            failed=1
+          fi
+
+          if ((failed)); then
+            echo "See docs/writing-tests.md."
+            exit 1
+          fi
+
+          echo "Controller test policy passed."

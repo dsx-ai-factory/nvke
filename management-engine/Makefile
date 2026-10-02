@@ -9,59 +9,273 @@ MANAGER_ARGS ?=
 VERSION ?= $(shell git describe --always --dirty --match 'management-engine/v[0-9]*' 2>/dev/null || echo dev)
 RELEASE_LDFLAGS ?= -s -w -buildid=
 MANAGER_LDFLAGS := -X 'main.version=$(VERSION)' $(RELEASE_LDFLAGS)
-CAPI_CRD_DIR ?=
 GO_TEST_FLAGS ?=
-LOCALBIN ?= $(CURDIR)/bin
-CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
-CONTROLLER_TOOLS_VERSION := v0.20.1
-GOBIN ?= $(shell $(GO) env GOPATH)/bin
-GOLANGCI_LINT_GOWORK :=
-include ../make/golangci.mk
-
 .DEFAULT_GOAL := help
-.PHONY: help build run test test-integration lint fmt controller-gen generate manifests generate-check
 
-help: ## List management engine development targets.
-	@awk 'BEGIN { FS = ":.*## " } /^[a-z][a-z0-9-]*:.*## / { printf "  %-18s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+# Image URL to use all building/pushing image targets
+IMG ?= management-engine:dev
 
-build: ## Build the manager and API packages.
+# Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
+ifeq (,$(shell go env GOBIN))
+GOBIN=$(shell go env GOPATH)/bin
+else
+GOBIN=$(shell go env GOBIN)
+endif
+
+CONTAINER_TOOL ?= docker
+
+# Setting SHELL to bash allows bash commands to be executed by recipes.
+# Options are set to exit when a recipe line exits non-zero or a piped command fails.
+SHELL = /usr/bin/env bash -o pipefail
+.SHELLFLAGS = -ec
+
+.PHONY: all
+all: build
+
+##@ General
+
+.PHONY: help
+help: ## Display this help.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
+##@ Development
+
+.PHONY: license
+license: ## Add the repository's license header to source files.
+	$(GO) run github.com/google/addlicense@v1.1.1 -f ../hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" -ignore 'bin/**' -ignore 'dist/**' .
+
+.PHONY: manifests
+manifests: controller-gen kustomize generate kubebuilder ## Generate CRDs, RBAC, the installer bundle, and Helm chart.
+	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=hack/boilerplate.yaml.txt paths=./apis/... output:crd:artifacts:config=config/crd/bases
+	"$(CONTROLLER_GEN)" rbac:roleName=manager-role,headerFile=hack/boilerplate.yaml.txt paths=./controllers/... output:rbac:artifacts:config=config/rbac
+	mkdir -p dist
+	"$(KUSTOMIZE)" build config/default > dist/install.yaml
+	"$(KUBEBUILDER)" edit --plugins=helm/v2-alpha --manifests=./dist/install.yaml --output-dir=.
+	rm -f .github/workflows/test-chart.yml
+	@rmdir .github/workflows .github 2>/dev/null || true
+	$(GO) run github.com/google/addlicense@v1.1.1 -f ../hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" chart
+
+.PHONY: generate
+generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
+
+.PHONY: fmt
+fmt: ## Run go fmt against code.
+	go fmt ./...
+
+.PHONY: vet
+vet: ## Run go vet against code.
+	go vet ./...
+
+TEST_PROCS ?= 5
+
+.PHONY: test
+test: test-api test-controller ## Run API and controller tests.
+
+.PHONY: test-api
+test-api: manifests generate fmt vet ## Run API tests.
+	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=cover-api.out ./apis/...
+
+.PHONY: test-controller
+test-controller: manifests generate fmt vet setup-envtest ginkgo ## Run controller envtest fixtures.
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" "$(GINKGO)" --race --procs=$(TEST_PROCS) --cover --coverprofile=cover-controller.out ./controllers/...
+
+.PHONY: test-update
+test-update: export TESTUTIL_UPDATE_EXPECTED=true
+test-update: test-controller ## Run controller tests and update expected fixture goldens.
+
+.PHONY: lint
+lint: golangci-lint ## Run golangci-lint linter
+	"$(GOLANGCI_LINT)" run
+
+.PHONY: lint-fix
+lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
+	"$(GOLANGCI_LINT)" run --fix
+
+.PHONY: lint-config
+lint-config: golangci-lint ## Verify golangci-lint linter configuration
+	"$(GOLANGCI_LINT)" config verify
+
+##@ Build
+
+.PHONY: build build-bin
+build: manifests generate fmt vet build-bin ## Build manager binary.
+
+# The generate steps in `build` exceed the Go Build job timeout.
+build-bin: ## Compile the manager binary without regenerating.
 	$(GO) build ./...
-	CGO_ENABLED=0 $(GO) build -buildvcs=false -trimpath -ldflags "$(MANAGER_LDFLAGS)" -o $(BIN_DIR)/management-engine ./cmd/manager
+	CGO_ENABLED=0 $(GO) build -buildvcs=false -trimpath -ldflags "$(MANAGER_LDFLAGS)" -o $(BIN_DIR)/management-engine ./cmd
 
+.PHONY: run
 run: build ## Run against the management API selected by MANAGER_ARGS.
 	$(BIN_DIR)/management-engine $(MANAGER_ARGS)
 
-test: ## Run API and runtime unit tests.
-	$(GO) test $(GO_TEST_FLAGS) ./...
+.PHONY: docker-build
+docker-build: ## Build docker image with the manager.
+	$(CONTAINER_TOOL) build --build-arg VERSION=$(VERSION) -t ${IMG} .
 
-test-integration: ## Test against a disposable API server; fetch pinned test assets if absent.
-	@set -eu; capi_crd_dir="$(CAPI_CRD_DIR)"; \
-		if [ -z "$$capi_crd_dir" ]; then \
-			GOWORK=off $(GO) mod download sigs.k8s.io/cluster-api; \
-			capi_crd_dir="$$(GOWORK=off $(GO) list -m -f '{{.Dir}}' sigs.k8s.io/cluster-api)/config/crd/bases"; \
-		fi; \
-		CAPI_CRD_DIR="$$capi_crd_dir" $(GO) test $(GO_TEST_FLAGS) -tags=integration ./pkg/manager/... -count=1
+.PHONY: docker-push
+docker-push: ## Push docker image with the manager.
+	$(CONTAINER_TOOL) push ${IMG}
 
-lint: ## Run the repository-pinned Go linter.
-	@$(GOLANGCI_LINT_RUN) run --build-tags=integration --timeout 10m ./...
+.PHONY: build-installer
+build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
+	mkdir -p dist
+	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
+	"$(KUSTOMIZE)" build config/default > dist/install.yaml
 
-fmt: ## Format Go sources and tests.
-	find apis cmd pkg -name '*.go' ! -name 'zz_generated.*' -exec gofmt -w {} +
+##@ Deployment
+HOST_CONTEXT ?=
+STATE_CONTEXT ?=
 
-controller-gen: ## Install the pinned CRD and deepcopy generator.
-	@if [ "$$($(CONTROLLER_GEN) --version 2>/dev/null)" != "Version: $(CONTROLLER_TOOLS_VERSION)" ]; then \
-		mkdir -p "$(LOCALBIN)"; \
-		GOBIN="$(LOCALBIN)" $(GO) install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION); \
-	fi
+.PHONY: require-host-context require-state-context
+require-host-context:
+	@test -n "$(HOST_CONTEXT)" || { echo 'Set HOST_CONTEXT to the services cluster'; exit 1; }
+require-state-context:
+	@test -n "$(STATE_CONTEXT)" || { echo 'Set STATE_CONTEXT to the datastore cluster'; exit 1; }
 
-generate: controller-gen ## Generate deepcopy code and CRD manifests from Go types.
-	"$(CONTROLLER_GEN)" object:headerFile=apis/boilerplate.go.txt paths=./apis/v1
-	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=apis/boilerplate.yaml.txt paths=./apis/v1 output:crd:artifacts:config=apis/crds
+.PHONY: install install-state
+install: install-state ## Install the datastore resources using STATE_CONTEXT.
+install-state: require-state-context manifests kustomize ## Install CRDs and identity/RBAC on the datastore cluster.
+	"$(KUSTOMIZE)" build config/state | "$(KUBECTL)" --context "$(STATE_CONTEXT)" apply --server-side --field-manager=management-engine-state -f -
 
-manifests: generate ## Generate the installable internal CRDs.
+.PHONY: deploy
+deploy: require-host-context kustomize ## Deploy the runtime and its namespace to HOST_CONTEXT; startup requires its kubeconfig Secret.
+	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
+	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" --context "$(HOST_CONTEXT)" apply -f -
 
-generate-check: ## Verify generation without relying on Git tracking new files.
-	@set -eu; snapshot=$$(mktemp -d); trap 'rm -rf "$$snapshot"' EXIT; \
-		cp -R apis "$$snapshot/apis"; \
-		$(MAKE) generate; \
-		diff -ru "$$snapshot/apis" apis
+.PHONY: undeploy
+undeploy: require-host-context kustomize ## Remove runtime resources; preserve state and the host namespace.
+	"$(KUSTOMIZE)" build config/base | "$(KUBECTL)" --context "$(HOST_CONTEXT)" delete --ignore-not-found=true -f -
+
+##@ Dependencies
+
+## Location to install dependencies to
+LOCALBIN ?= $(shell pwd)/bin
+$(LOCALBIN):
+	mkdir -p "$(LOCALBIN)"
+
+## Tool Binaries
+KUBECTL ?= kubectl
+KUSTOMIZE ?= $(LOCALBIN)/kustomize
+KUBEBUILDER ?= $(LOCALBIN)/kubebuilder
+CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
+ENVTEST ?= $(LOCALBIN)/setup-envtest
+GINKGO ?= $(LOCALBIN)/ginkgo
+GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+
+## Tool Versions
+KUSTOMIZE_VERSION ?= v5.8.1
+KUBEBUILDER_VERSION ?= v4.15.0
+CONTROLLER_TOOLS_VERSION ?= v0.20.1
+GINKGO_VERSION ?= $(call gomodver,github.com/onsi/ginkgo/v2)
+ENVTEST_VERSION ?= $(shell v='$(call gomodver,sigs.k8s.io/controller-runtime)'; \
+  [ -n "$$v" ] || { echo "Set ENVTEST_VERSION manually (controller-runtime replace has no tag)" >&2; exit 1; }; \
+  printf '%s\n' "$$v" | sed -E 's/^v?([0-9]+)\.([0-9]+).*/release-\1.\2/')
+ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
+  [ -n "$$v" ] || { echo "Set ENVTEST_K8S_VERSION manually (k8s.io/api replace has no tag)" >&2; exit 1; }; \
+  printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
+GOLANGCI_LINT_VERSION ?= v2.13.2
+
+.PHONY: kustomize
+kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
+$(KUSTOMIZE): $(LOCALBIN)
+	$(call go-install-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v5,$(KUSTOMIZE_VERSION))
+
+.PHONY: controller-gen
+controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
+$(CONTROLLER_GEN): $(LOCALBIN)
+	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
+
+.PHONY: setup-envtest
+setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.
+	@echo "Setting up envtest binaries for Kubernetes version $(ENVTEST_K8S_VERSION)..."
+	@"$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path || { \
+		echo "Error: Failed to set up envtest binaries for version $(ENVTEST_K8S_VERSION)."; \
+		exit 1; \
+	}
+
+.PHONY: envtest
+envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
+$(ENVTEST): $(LOCALBIN)
+	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
+
+.PHONY: ginkgo
+ginkgo: $(GINKGO) ## Download the Ginkgo CLI locally if necessary.
+$(GINKGO): $(LOCALBIN)
+	$(call go-install-tool,$(GINKGO),github.com/onsi/ginkgo/v2/ginkgo,$(GINKGO_VERSION))
+
+.PHONY: kubebuilder
+kubebuilder: $(KUBEBUILDER) ## Download the pinned Kubebuilder CLI.
+$(KUBEBUILDER): $(LOCALBIN)
+	$(call go-install-tool,$(KUBEBUILDER),sigs.k8s.io/kubebuilder/v4,$(KUBEBUILDER_VERSION))
+
+.PHONY: golangci-lint
+golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
+$(GOLANGCI_LINT): $(LOCALBIN) .custom-gcl.yml
+	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+	@test -f .custom-gcl.yml && { \
+		echo "Building custom golangci-lint with plugins..." && \
+		$(GOLANGCI_LINT) custom --destination $(LOCALBIN) --name golangci-lint-custom && \
+		mv -f $(LOCALBIN)/golangci-lint-custom $(GOLANGCI_LINT); \
+	} || true
+
+# go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
+# $1 - target path with name of binary
+# $2 - package url which can be installed
+# $3 - specific version of package
+define go-install-tool
+@[ -f "$(1)-$(3)" ] && [ "$$(readlink -- "$(1)" 2>/dev/null)" = "$(1)-$(3)" ] || { \
+set -e; \
+package=$(2)@$(3) ;\
+echo "Downloading $${package}" ;\
+rm -f "$(1)" ;\
+GOBIN="$(LOCALBIN)" go install $${package} ;\
+mv "$(LOCALBIN)/$$(basename "$(1)")" "$(1)-$(3)" ;\
+} ;\
+ln -sf "$$(realpath "$(1)-$(3)")" "$(1)"
+endef
+
+define gomodver
+$(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' $(1) 2>/dev/null)
+endef
+
+.PHONY: chart
+chart: manifests ## Generate the Helm chart from the Kustomize source manifests.
+
+##@ Helm Deployment
+
+## Helm binary to use for deploying the chart
+HELM ?= helm
+## Namespace to deploy the Helm release
+HELM_NAMESPACE ?= management-engine-system
+## Name of the Helm release
+HELM_RELEASE ?= management-engine
+## Path to the Helm chart directory
+HELM_CHART_DIR ?= ./chart
+## Additional arguments to pass to helm commands
+HELM_EXTRA_ARGS ?=
+
+.PHONY: helm-deploy
+helm-deploy: require-host-context ## Deploy manager to the K8s cluster via Helm. Specify an image with IMG.
+	@repository="$(IMG)"; tag=latest; \
+	if [[ "$$repository" != *@* && "$${repository##*/}" == *:* ]]; then \
+		tag="$${repository##*:}"; repository="$${repository%:*}"; \
+	fi; \
+	$(HELM) --kube-context "$(HOST_CONTEXT)" upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
+		--namespace $(HELM_NAMESPACE) \
+		--create-namespace \
+		--set-string manager.image.repository="$$repository" \
+		--set-string manager.image.tag="$$tag" \
+		--wait \
+		--timeout 5m \
+		$(HELM_EXTRA_ARGS)
+
+.PHONY: helm-uninstall
+helm-uninstall: require-host-context ## Uninstall the Helm release from the K8s cluster.
+	$(HELM) --kube-context "$(HOST_CONTEXT)" uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
+
+.PHONY: chart-check
+chart-check: manifests ## Lint and render the Helm chart without a cluster.
+	$(HELM) lint chart -f config/samples/runtime-values.yaml
+	$(HELM) template management-engine chart --namespace management-engine-system -f config/samples/runtime-values.yaml > dist/chart-rendered.yaml

@@ -1,0 +1,7 @@
+The management-engine runtime is installed in {{ .Release.Namespace }}.
+
+CRDs, datastore identity/RBAC, and the election Lease belong to the separate
+state cluster. This chart does not install or remove those resources.
+
+Check the runtime with an explicit services-cluster context:
+  kubectl --context "$HOST_CONTEXT" -n {{ .Release.Namespace }} get pods

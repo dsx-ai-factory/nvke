@@ -170,14 +170,10 @@ jobs:
       # moving tip of the private repository.
       - name: Read pinned CAPNICo version
         id: capnico_version
-        run: |
-          set -euo pipefail
-          capnico_ref="$(awk '$1 == "github.com/dsx-ai-factory/cluster-api-provider-nico" { print $2; exit }' controller/go.mod)"
-          if [[ -z "${capnico_ref}" ]]; then
-            echo "::error::controller/go.mod does not pin cluster-api-provider-nico"
-            exit 1
-          fi
-          echo "ref=${capnico_ref}" >> "${GITHUB_OUTPUT}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # A pseudo-version pin is not a git ref; the script turns it into one.
+        run: echo "ref=$(controller/hack/ci/capnico-ref.sh)" >> "${GITHUB_OUTPUT}"
 
       - name: Checkout the CAPNICo provider
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

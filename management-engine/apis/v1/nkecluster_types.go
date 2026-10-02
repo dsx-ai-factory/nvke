@@ -3,7 +3,10 @@
 
 package v1
 
-import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+)
 
 // NKEClusterSpec describes tenant intent for a managed control plane.
 // +kubebuilder:validation:XValidation:rule="has(self.authentication) == has(oldSelf.authentication) && (!has(self.authentication) || self.authentication == oldSelf.authentication)",message="authentication is only configurable at cluster creation"
@@ -131,4 +134,19 @@ type NKEClusterList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []NKECluster `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(SchemeGroupVersion, &NKECluster{}, &NKEClusterList{})
+		return nil
+	})
+}
+
+func (c *NKECluster) GetConditions() []metav1.Condition {
+	return c.Status.Conditions
+}
+
+func (c *NKECluster) SetConditions(conditions []metav1.Condition) {
+	c.Status.Conditions = conditions
 }

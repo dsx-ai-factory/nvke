@@ -162,7 +162,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          ver="$(cd controller && go list -m -f '{{.Version}}' github.com/dsx-ai-factory/cluster-api-provider-nico)"
+          ver="$(controller/hack/ci/capnico-ref.sh)"
           echo "checking controller/test/fixtures/capnico-crds against cluster-api-provider-nico ${ver}"
           drift=0
           for f in nicoclusters nicoclustertemplates nicomachines nicomachinetemplates; do

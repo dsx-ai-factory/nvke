@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Example values for the services-cluster runtime. No credential material belongs here.
+manager:
+  env:
+    - name: STATE_NAMESPACE
+      value: management-state-system

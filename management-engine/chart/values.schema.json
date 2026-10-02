@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "manager": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "manager": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "manager": {
+            "required": [
+              "args",
+              "env"
+            ],
+            "properties": {
+              "args": {
+                "type": "array",
+                "allOf": [
+                  {
+                    "contains": {
+                      "const": "--kubeconfig=/etc/management-api/kubeconfig"
+                    }
+                  },
+                  {
+                    "contains": {
+                      "const": "--leader-election-namespace=$(STATE_NAMESPACE)"
+                    }
+                  }
+                ]
+              },
+              "env": {
+                "type": "array",
+                "contains": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "value"
+                  ],
+                  "properties": {
+                    "name": {
+                      "const": "STATE_NAMESPACE"
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 63,
+                      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

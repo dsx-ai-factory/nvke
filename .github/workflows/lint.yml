@@ -17,44 +17,13 @@ on:
 permissions: {}
 
 concurrency:
-  # The sha is part of the group on main, so every commit gets its own.
-  # Without it, back-to-back merges lose CI results: GitHub allows one
-  # running and one pending run per group, and cancels the pending one
-  # when a third arrives -- whatever cancel-in-progress says, because that
-  # setting only protects a run that has already started. Five merges in
-  # three minutes cancelled 18 runs across 7 workflows this way, leaving
-  # three consecutive commits on main with no test result at all.
-  #
-  # Pull-request branches keep sharing a group and still cancel, which is
-  # what you want there.
-  # A literal name, NOT ${{ github.workflow }}. Inside a called workflow that
-  # expression is the CALLER's name, so any workflow merge-gate.yml calls would
-  # share a group with its siblings and cancel them. 8 of 9 calls died that way,
-  # reported as failures with no jobs and no error message.
   group: Lint-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
-  # Do not cancel a run on main: back-to-back merges would otherwise
-  # discard this check's result for the intermediate commit, leaving a
-  # commit on main that nothing ever verified. Same guard as the other
-  # workflows here.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-# This workflow works one module at a time, as it did before the repository
-# gained a root go.work. GOWORK=off keeps it that way. It is also required:
-# actions/setup-go pins GOTOOLCHAIN=local, and the Go version installed from a
-# module's go.mod is older than the one go.work asks for, so leaving the
-# workspace on fails with "go.work requires go >= 1.26.0".
 env:
   GOWORK: "off"
 
 jobs:
-  # One matrix, not seven near-identical jobs. They differed in five values --
-  # the directory, GOWORK, the go-version file, the cache key and the timeout --
-  # and six of the seven already ran `make lint`. The seventh, controller/api,
-  # open-coded a golangci-lint install because it had no Makefile; it has one
-  # now, so every entry runs the same command.
-  #
-  # The matrix keeps the parallelism: GitHub still schedules one runner per
-  # entry, so the wall clock is unchanged.
   lint:
     name: golangci-lint (${{ matrix.name }})
     runs-on: ubuntu-latest
@@ -63,17 +32,11 @@ jobs:
     permissions:
       contents: read
     env:
-# Workspace mode for the five modules that lint against the root go.work --
-# controller, controller/api, controller/deploy/charts,
-      # capd-reboot-controller and management-engine; module mode for the rest,
-      # which resolve their own go.mod. Empty means "use the default",
-      # overriding the workflow-level off.
       GOWORK: ${{ matrix.gowork }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          # controller is the long pole at about nine minutes, hence 25.
           - name: controller
             dir: controller
             goversion: go.work
@@ -135,9 +98,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # **/go.sum for every entry. Two jobs previously keyed on their own go.sum
-      # alone, with no reason recorded, so they would restore a stale cache after
-      # a cross-module dependency bump.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:

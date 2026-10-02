@@ -68,5 +68,11 @@ docs/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris @jedimt
 # area/deps again: dependabot.yml beats /.github/.
 /.github/dependabot.yml @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
 
+# area/management-engine
+# Ensure the tests remain high quality
+/.github/workflows/management-engine/controller-test-policy.json @Jay-Madden @stephliu-nv
+/.github/workflows/management-engine-controller-test-policy.yml @Jay-Madden @stephliu-nv
+/management-engine/ @dsx-ai-factory/nke-team-management-engine @Jay-Madden @stephliu-nv
+
 # SECURITY.md, GOVERNANCE.md, MAINTAINERS.md, CODE_OF_CONDUCT.md and LICENSE are
 # area/docs, covered by `/*.md` and `/LICENSE` above.
