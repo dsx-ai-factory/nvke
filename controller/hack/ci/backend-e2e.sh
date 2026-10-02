@@ -22,8 +22,8 @@ DOCKERHUB_MIRROR="${NKE_E2E_DOCKERHUB_MIRROR:-}"
 # Names the backend in this script's own output. Both lanes share the script, so
 # without it a NICo run reports itself as CAPD.
 BACKEND="${NKE_E2E_BACKEND:-capd}"
-# OVN is installed from the chart staged in the node image after kubeadm init.
-export INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-true}"
+# Keep the existing in-init default; focused lanes can select InstallCNI.
+export INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}"
 RUNNER_NAME="capd-e2e-runner-${RUN_ID}"
 RUNNER_IMAGE="${NKE_E2E_RUNNER_IMAGE:-docker:29.1.3-cli@sha256:4fa0ee1f3a7e4354c4ea34558b6d4ee32859baf4973d4c8ccc8e7fe3dd730c04}"
 STATE_VOLUME="capd-e2e-state-${RUN_ID}"
@@ -505,10 +505,12 @@ collect_diagnostics() {
         [[ -n "${node_name}" ]] || continue
         docker logs "${node_name}" >"${STATE_DIR}/nodes/${node_name}-console.log" 2>&1
         docker exec "${node_name}" systemctl status \
-          nke-agent spire-agent swtpm-local containerd kubelet --no-pager \
+          nke-agent spire-agent swtpm-local containerd kubelet \
+          ovsdb-server ovs-vswitchd nke-container-network nke-container-cni-images --no-pager \
           >"${STATE_DIR}/nodes/${node_name}-systemd.txt" 2>&1
         docker exec "${node_name}" journalctl --no-pager \
           -u nke-agent -u spire-agent -u swtpm-local -u containerd -u kubelet \
+          -u ovsdb-server -u ovs-vswitchd -u nke-container-network -u nke-container-cni-images \
           >"${STATE_DIR}/nodes/${node_name}-journal.log" 2>&1
         docker exec "${node_name}" crictl ps -a \
           >"${STATE_DIR}/nodes/${node_name}-crictl-ps.txt" 2>&1
@@ -869,6 +871,8 @@ NODE_AGENT_VERSION="${NODE_AGENT_VERSION}" \
 NODE_AGENT_REPO_PATH="${WORKSPACE_ROOT}/agent" \
 SPIRE_AGENT_BUNDLE_PATH="${BUNDLE_DIR}/spire-agent.tgz" \
 CAPD_CNI_CHARTS_DEB_PATH="${OVN_CHARTS_DEB}" \
+CAPD_CNI_IMAGES_DEB_PATH="${BUNDLE_DIR}/nke-cni-ovn-images-1.4.0_1.4.0_${host_arch}.deb" \
+CAPD_HELM_DEB_PATH="${BUNDLE_DIR}/nke-e2e-helm.deb" \
 CAPD_SPIRE_ATTESTATION_METHOD="${CAPD_SPIRE_ATTESTATION_METHOD}" \
 BUNDLE_SERVER_URL="http://${BUNDLE_MIRROR_NAME}/" \
 INDEX_FILE_URL="http://${BUNDLE_MIRROR_NAME}/index.json" \

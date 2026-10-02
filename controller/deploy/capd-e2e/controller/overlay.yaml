@@ -36,9 +36,9 @@ nkeOIDCAuth:
     name: oidc-provider-upstream-ca
     key: ca.crt
 
-# The default container lane applies the staged OVN chart after kubeadm init.
+# The default container lane installs the legacy OVN bundle during init.
 cni:
-  installAfterInit: true
+  installAfterInit: false
 
 # Of the variables the Tiltfile forwards, backend-e2e.sh sets only this one.
 # A container node cannot reboot in-guest, so the reboot goes out of band

@@ -34,6 +34,10 @@ on:
       - controller/Tiltfile
       - controller/hack/cwe-capi-kind.yaml
       - controller/hack/ci/prepare-capd-bundles.sh
+      - controller/hack/ci/prepare-ovn-assets.sh
+      - controller/hack/ci/assets/ovn-install.sh
+      - os-image/packages/cni-ovn/**
+      - os-image/packages/cni-common/**
       - .github/workflows/local-entrypoint-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml
   # Also twice a day, so a break the paths above filtered out, or one a flake
@@ -76,14 +80,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Both architectures install the staged OVN chart after kubeadm init.
+        # Cover both CNI installation paths on amd64 and the in-init path on arm64.
         include:
+          - arch: amd64
+            runner: linux-amd64-cpu16
+            install_cni_after_init: false
           - arch: amd64
             runner: linux-amd64-cpu16
             install_cni_after_init: true
           - arch: arm64
             runner: arc-arm64-cpu16
-            install_cni_after_init: true
+            install_cni_after_init: false
     env:
       INSTALL_CNI_AFTER_INIT: ${{ matrix.install_cni_after_init }}
       # Pull-request mirrors run the same bounded lifecycle as the CAPD lane.
@@ -128,6 +135,11 @@ jobs:
       # containerd's CRI plugin creates an inotify watcher for the CNI conf dir.
       # Without headroom it fails to load, and kubeadm then reports the CRI v1
       # API as Unimplemented. backend-e2e.yml raises the same two limits.
+      - name: Install Debian packaging tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dpkg-dev
+
       - name: Configure runner inotify capacity
         run: |
           raise_minimum() {

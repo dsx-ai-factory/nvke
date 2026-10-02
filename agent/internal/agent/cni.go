@@ -352,7 +352,8 @@ func (s *NodeAgentServer) installOvnK8sCNIPlugin(req *pb.InstallCNIPluginRequest
 		return err
 	}
 	ovnBundle.InstallFile = "install.sh"
-	ovnBundle.InstallCmd = []string{"/bin/bash", "-c", "./install.sh"} //nolint:goconst // bash argv fragment; naming each CLI flag reads worse than the literal
+	// The downloaded script may live on a noexec /tmp mount.
+	ovnBundle.InstallCmd = []string{"/bin/bash", ovnBundle.InstallFile}
 
 	requestID := generateRequestID()
 	bundleStatus := &Bundle{

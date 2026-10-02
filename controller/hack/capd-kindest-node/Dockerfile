@@ -120,12 +120,22 @@ COPY scripts /tmp/capd-node-scripts
 RUN set -eux; \
     for deb in /tmp/capd-node-scripts/*.deb; do \
       [ -f "${deb}" ] || continue; \
+      if [ "$(basename "${deb}")" = cni-images.deb ]; then \
+        mkdir -p /usr/lib/nke/e2e; \
+        cp "${deb}" /usr/lib/nke/e2e/cni-images.deb; \
+        continue; \
+      fi; \
       package="$(dpkg-deb --field "${deb}" Package)"; \
       version="$(dpkg-deb --field "${deb}" Version)"; \
       dpkg -i "${deb}"; \
       test "$(dpkg-query --show --showformat='${Version}' "${package}")" = "${version}"; \
     done; \
     rm -rf /tmp/capd-node-scripts
+
+# Image postinst needs a running containerd. Install on first boot on every
+# node (including workers), using the canonical package import/checksum logic.
+COPY scripts/nke-container-cni-images.service /etc/systemd/system/nke-container-cni-images.service
+RUN SYSTEMD_OFFLINE=1 systemctl enable nke-container-cni-images.service
 
 # Docker build has no systemd as PID 1; agent-installer.sh still lays out units and binaries
 # but may exit non-zero when enabling services. Enable/disable is done in a final RUN

@@ -21,6 +21,8 @@ repo_root="$(cd "${script_dir}/../.." && pwd)"
 : "${DSX_IDENTITY_CA_BUNDLE_PATH:=}"
 : "${CAPD_CNI_MANIFESTS_DEB_PATH:=}"
 : "${CAPD_CNI_CHARTS_DEB_PATH:=}"
+: "${CAPD_CNI_IMAGES_DEB_PATH:=}"
+: "${CAPD_HELM_DEB_PATH:=}"
 : "${NKE_E2E_DOCKERHUB_MIRROR:=}"
 : "${NODE_AGENT_REPO_PATH:=${repo_root}/../agent}"
 # Empty by default: a bundle server is a deployment choice, and the CDN that used
@@ -245,6 +247,13 @@ if [[ -n "${CAPD_CNI_CHARTS_DEB_PATH}" ]]; then
   fi
   cp "${CAPD_CNI_CHARTS_DEB_PATH}" "${build_context}/scripts/cni-charts.deb"
 fi
+
+for entry in "${CAPD_CNI_IMAGES_DEB_PATH}:cni-images.deb" "${CAPD_HELM_DEB_PATH}:helm.deb"; do
+  deb_path="${entry%:*}"
+  [[ -n "${deb_path}" ]] || continue
+  [[ -f "${deb_path}" ]] || { echo "CNI/Helm package does not exist: ${deb_path}" >&2; exit 1; }
+  cp "${deb_path}" "${build_context}/scripts/${entry##*:}"
+done
 
 should_build_local_node_agent() {
   case "${CAPD_NODE_AGENT_LOCAL_BUILD}" in
