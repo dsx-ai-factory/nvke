@@ -324,6 +324,17 @@ func applyNewNodeSet(
 	nodePool db.NodePool, prevNodeSet db.NodeSet, newNodeSet *db.NodeSet,
 	logger *slog.Logger,
 ) (db.NodePool, db.NodeSet, error) {
+	if nodePool.ControlPlane && nodePool.CurrentNodeSetID != nil {
+		cluster, err := tx.GetCluster(ctx, nodePool.ClusterID)
+		if err != nil {
+			return nodePool, prevNodeSet, fmt.Errorf("failed to get cluster: %w", err)
+		}
+		if strings.TrimSpace(cluster.ControlPlaneVIP) == "" {
+			logger.Warn("Skipping control-plane NodeSet replacement because controlPlaneVIP is not configured")
+			return nodePool, prevNodeSet, nil
+		}
+	}
+
 	currentNodeSet, err := tx.CreateNodeSet(ctx, newNodeSet)
 	if err != nil {
 		return nodePool, db.NodeSet{}, fmt.Errorf("failed to create node set: %w", err)

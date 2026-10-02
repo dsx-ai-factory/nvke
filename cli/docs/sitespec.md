@@ -97,9 +97,24 @@ being silently ignored.
 - `podCidr` / `serviceCidr` are parsed as CIDRs; `podCidr` also accepts a
   comma-separated list and validates each entry.
 - `controlPlaneVIP`, when set, must parse as a routable unicast IPv4 address,
-  must not equal a node IP, and must not fall inside `podCidr` or `serviceCidr`.
+  and must not fall inside `podCidr` or `serviceCidr`. It may equal a declared
+  node IP.
 - `controlPlaneVIP` is required when `cluster.nodes` contains more than one
   node.
+
+CLI acceptance does not prove bootstrap or network reachability. The controller
+chooses the first control-plane node ready to join, which need not be the first
+node in the site spec or the node whose IP matches the VIP. It configures
+kube-vip before `kubeadm init` and uses the VIP as the control-plane endpoint.
+If the VIP belongs to another node, routing must reach the initializing API
+server rather than that node's not-yet-running API server.
+
+The agent and the legacy controller runbook try to remove the VIP as a `/32`
+from non-loopback interfaces before configuring kube-vip on loopback. When the
+VIP equals a node IP, that cleanup can remove the node address if it has a
+`/32` prefix. BGP source selection and API health checks still use the node IP.
+Verify address ownership, bootstrap reachability, and BGP routing on the target
+network.
 
 ## Environment variable overrides
 

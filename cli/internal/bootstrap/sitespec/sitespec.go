@@ -530,7 +530,7 @@ func (v *validator) checkCIDR(path, value string, allowList bool) {
 }
 
 // checkControlPlaneVIP requires a stable endpoint for multi-node control planes
-// and validates a configured IPv4 VIP against node IPs and cluster CIDRs.
+// and validates a configured IPv4 VIP against cluster CIDRs.
 func (v *validator) checkControlPlaneVIP(c Cluster) {
 	if c.ControlPlaneVIP == "" {
 		if len(c.Nodes) > 1 {
@@ -556,17 +556,6 @@ func (v *validator) checkControlPlaneVIP(c Cluster) {
 	if !vip.IsGlobalUnicast() {
 		v.addf("%s %q must be a routable unicast address", pathControlPlaneVIP, c.ControlPlaneVIP)
 		return
-	}
-
-	// Compare equivalent address forms. checkNode reports malformed node IPs.
-	for _, n := range c.Nodes {
-		nodeAddr, err := netip.ParseAddr(n.IP)
-		if err != nil {
-			continue
-		}
-		if vip == nodeAddr.Unmap() {
-			v.addf("%s %q must not equal a node IP (%s.ip)", pathControlPlaneVIP, c.ControlPlaneVIP, pathNodes)
-		}
 	}
 
 	for _, cidr := range strings.Split(c.PodCidr, ",") {

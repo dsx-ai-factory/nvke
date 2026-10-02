@@ -286,3 +286,27 @@ func TestClusterRequest_EtcdEncryption(t *testing.T) {
 		}
 	}
 }
+
+func TestClusterRequest_ForwardsVIPMatchingNodeIP(t *testing.T) {
+	for _, index := range []int{0, 1} {
+		inv := testSiteSpec()
+		vip := inv.Cluster.Nodes[index].IP
+		t.Run(inv.Cluster.Nodes[index].Name, func(t *testing.T) {
+			inv.Cluster.ControlPlaneVIP = vip
+			req, err := ClusterRequest(inv)
+			if err != nil {
+				t.Fatalf("ClusterRequest: %v", err)
+			}
+			if req.ControlPlaneVIP != vip {
+				t.Errorf("ControlPlaneVIP = %q, want %q", req.ControlPlaneVIP, vip)
+			}
+			body, err := json.Marshal(req)
+			if err != nil {
+				t.Fatalf("marshal request: %v", err)
+			}
+			if !strings.Contains(string(body), `"controlPlaneVIP":"`+vip+`"`) {
+				t.Errorf("request JSON does not carry VIP %q", vip)
+			}
+		})
+	}
+}

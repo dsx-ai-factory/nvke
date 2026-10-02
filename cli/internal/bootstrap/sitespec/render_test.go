@@ -429,3 +429,34 @@ func TestRenderEtcdEncryptionIsABool(t *testing.T) {
 		t.Errorf("Build with a non-boolean value: err = %v, want one naming the path and the value", err)
 	}
 }
+
+func TestBuildControlPlaneVIPMatchingNodeIP(t *testing.T) {
+	for _, index := range []int{0, 1} {
+		nodes := threeNodes()
+		vip := nodes[index].IP
+		t.Run(nodes[index].Name, func(t *testing.T) {
+			built, err := Build("site", nodes, []string{"cluster.controlPlaneVIP=" + vip})
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			if built.Cluster.ControlPlaneVIP != vip {
+				t.Fatalf("ControlPlaneVIP = %q, want %q", built.Cluster.ControlPlaneVIP, vip)
+			}
+			rendered, err := built.Render()
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			decoded, err := decodeBytes(rendered)
+			if err != nil {
+				t.Fatalf("decode generated site spec: %v", err)
+			}
+			if decoded.Cluster.ControlPlaneVIP != vip {
+				t.Errorf("generated ControlPlaneVIP = %q, want %q", decoded.Cluster.ControlPlaneVIP, vip)
+			}
+			decoded.SetDefaults()
+			if err := decoded.Validate(); err != nil {
+				t.Errorf("Validate generated site spec: %v", err)
+			}
+		})
+	}
+}

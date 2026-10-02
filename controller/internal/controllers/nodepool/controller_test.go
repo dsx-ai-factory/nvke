@@ -691,3 +691,107 @@ func TestUnit_NodePoolControllerControlPlaneSurgeRequiresVIP(t *testing.T) {
 		})
 	}
 }
+
+func TestUnit_NodePoolControllerReplacementRequiresVIP(t *testing.T) {
+	for _, provider := range []string{"nico", "capi"} {
+		for _, tc := range []struct {
+			name         string
+			controlPlane bool
+			vip          string
+			bootstrap    bool
+			unchanged    bool
+			wantCreate   bool
+			clusterError error
+		}{
+			{name: "control plane without VIP", controlPlane: true},
+			{name: "control plane with whitespace VIP", controlPlane: true, vip: " \t\n"},
+			{name: "control plane with VIP", controlPlane: true, vip: "172.31.0.10", wantCreate: true},
+			{name: "first control plane without VIP", controlPlane: true, bootstrap: true, wantCreate: true},
+			{name: "unchanged control plane without VIP", controlPlane: true, unchanged: true},
+			{name: "worker without VIP", wantCreate: true},
+			{name: "cluster lookup fails", controlPlane: true, clusterError: db.ErrNotFound},
+		} {
+			t.Run(provider+"/"+tc.name, func(t *testing.T) {
+				pool := db.NodePool{
+					ID: uuid.New(), ClusterID: uuid.New(), ControlPlane: tc.controlPlane,
+					DesiredCount: 1, MaxSurge: 1, KubernetesVersion: "1.31.0",
+				}
+				current := db.NodeSet{
+					ID: uuid.New(), NodePoolID: pool.ID, DesiredCount: 2, KubernetesVersion: "1.30.0",
+				}
+				if tc.unchanged {
+					current.KubernetesVersion = pool.KubernetesVersion
+				}
+				if provider == "nico" {
+					pool.SetNico(db.NicoNodePoolProvider{OSProfile: "test-os"})
+					current.SetNico(db.NicoNodePoolProvider{OSProfile: "test-os"})
+				} else {
+					pool.SetCapi(db.CAPINodePoolProvider{})
+					current.SetCapi(db.CAPINodePoolProvider{})
+				}
+				if !tc.bootstrap {
+					pool.CurrentNodeSetID = &current.ID
+				}
+
+				mockTx := &testutil.MockTx{}
+				mockDB := &testutil.MockDB{MockTx: mockTx}
+				mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+				mockTx.On("GetNodePoolForUpdate", mock.Anything, pool.ID).Return(pool, nil)
+				if !tc.bootstrap {
+					mockTx.On("GetNodeSet", mock.Anything, current.ID).Return(current, nil)
+				}
+				if tc.controlPlane && !tc.bootstrap && !tc.unchanged {
+					mockTx.On("GetCluster", mock.Anything, pool.ClusterID).Return(db.Cluster{
+						ID: pool.ClusterID, ControlPlaneVIP: tc.vip,
+					}, tc.clusterError).Once()
+				}
+
+				active := current
+				if tc.wantCreate {
+					active.ID = uuid.New()
+					active.KubernetesVersion = pool.KubernetesVersion
+					active.DesiredCount = 0
+					mockTx.On("CreateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
+						return ns.NodePoolID == pool.ID && ns.KubernetesVersion == pool.KubernetesVersion &&
+							(ns.Nico != nil) == (provider == "nico") && (ns.Capi != nil) == (provider == "capi")
+					})).Return(active, nil).Once()
+					updatedPool := pool
+					updatedPool.CurrentNodeSetID = &active.ID
+					mockTx.On("GetNodePool", mock.Anything, pool.ID).Return(pool, nil)
+					mockTx.On("UpdateNodePool", mock.Anything, mock.MatchedBy(func(np *db.NodePool) bool {
+						return np.CurrentNodeSetID != nil && *np.CurrentNodeSetID == active.ID
+					})).Return(updatedPool, nil).Once()
+					mockTx.On("CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+						Return(db.WorkflowOutbox{}, nil).Once()
+					mockTx.On("GetNodeSet", mock.Anything, active.ID).Return(active, nil)
+				}
+				if tc.clusterError == nil {
+					mockTx.On("ListNodeSets", mock.Anything, db.NodeSetFilters{NodePoolID: &pool.ID}).
+						Return([]db.NodeSet{active}, nil)
+					updated := active
+					updated.DesiredCount = pool.DesiredCount
+					mockTx.On("UpdateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
+						return ns.ID == active.ID && ns.DesiredCount == pool.DesiredCount &&
+							ns.KubernetesVersion == active.KubernetesVersion
+					})).Return(updated, nil).Once()
+				}
+
+				npc := nodepool.NewController(config.Config{}, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
+				_, err := npc.Reconcile(context.Background(), dbreconcile.NodePoolKey(pool.ID))
+				if tc.clusterError != nil {
+					require.ErrorIs(t, err, tc.clusterError)
+					mockTx.AssertNotCalled(t, "UpdateNodeSet", mock.Anything, mock.Anything)
+				} else {
+					require.NoError(t, err)
+				}
+				if !tc.wantCreate {
+					mockTx.AssertNotCalled(t, "CreateNodeSet", mock.Anything, mock.Anything)
+					mockTx.AssertNotCalled(t, "UpdateNodePool", mock.Anything, mock.Anything)
+					mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+				}
+				mockDB.AssertExpectations(t)
+				mockTx.AssertExpectations(t)
+			})
+		}
+	}
+}

@@ -197,16 +197,13 @@ func TestValidateInvalidInputs(t *testing.T) {
 		{"missing serviceCidr", func(i *SiteSpec) { i.Cluster.ServiceCidr = "" }, pathServiceCidr},
 		{"vip not an IP", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "nope" }, pathControlPlaneVIP},
 		{"vip is IPv6", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "fd00::1" }, pathControlPlaneVIP},
-		{"vip equals a node IP", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "10.0.0.1" }, pathControlPlaneVIP},
 		{"vip inside podCidr", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "10.100.0.5" }, pathControlPlaneVIP},
 		{"vip inside serviceCidr", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "10.200.0.5" }, pathControlPlaneVIP},
 		{"vip inside second podCidr", func(i *SiteSpec) {
 			i.Cluster.PodCidr = "10.100.0.0/16,10.40.0.0/16"
 			i.Cluster.ControlPlaneVIP = "10.40.0.5"
 		}, pathControlPlaneVIP},
-		// A 4-in-6 mapped address must be rejected the way CWE rejects it. Here
-		// the mapped form equals the node at 10.0.0.1, so a string compare would
-		// miss the collision. The address-based compare must still catch it.
+		// IPv4-mapped IPv6 addresses remain invalid even when they name a node IP.
 		{"vip mapped IPv4 equals a node IP", func(i *SiteSpec) {
 			i.Cluster.ControlPlaneVIP = "::ffff:10.0.0.1"
 		}, pathControlPlaneVIP},
@@ -250,6 +247,8 @@ func TestValidateControlPlaneVIP_Accepts(t *testing.T) {
 	for name, vip := range map[string]string{
 		"empty is valid":       "",
 		"valid IPv4 VIP":       "10.0.0.100",
+		"first node IP":        "10.0.0.1",
+		"another node IP":      "10.0.0.2",
 		"public address":       "198.51.100.10",
 		"shared address space": "100.64.0.10",
 	} {

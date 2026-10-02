@@ -52,9 +52,9 @@ cluster:
   # etcdEncryption: true
 
   # IPv4 API endpoint advertised by kube-vip. Required when nodes contains more
-  # than one entry. It needs BGP routing to the nodes and must not overlap node
-  # IPs, podCidr, or serviceCidr. A single-node cluster may leave it empty and
-  # use that node's IP as its fixed endpoint.
+  # than one entry. It needs BGP routing to the nodes and must not overlap
+  # podCidr or serviceCidr. It may equal a declared node IP. A single-node
+  # cluster may leave it empty and use that node's IP as its fixed endpoint.
   # controlPlaneVIP: "10.0.0.100"
 
   # Optional: gRPC port nke-agent listens on. Defaults to "15005".
