@@ -68,6 +68,17 @@ help: ## Display this help.
 lint: ## Lint source files. (run by the merge gate)
 	@$(GOLANGCI_LINT_RUN) run --timeout 20m --concurrency 4 --max-same-issues 0 --max-issues-per-linter 0 ./...
 
+##@ MachineImage and releases
+
+# OS profiles are being replaced by MachineImage, ClusterRelease and
+# NodePoolRelease custom resources, generated from an OS profile tree (Argo CD
+# applies the fleet's, see nke-site-deploy/cwe-profiles/releases). The generator
+# validates each manifest against the CRDs before it writes anything.
+
+.PHONY: fixture-releases
+fixture-releases: ## Regenerate test/fixtures/releases from test/fixtures/profiles.
+	go run ./hack/osprofiles-to-crs --profiles test/fixtures/profiles --output test/fixtures/releases --license Apache-2.0 --gitops=false
+
 .PHONY: license
 license: ## Ensure license headers at code.
 	go run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" -ignore '.local/**' -ignore 'hack/**' -ignore 'test/fixtures/profiles/**' -ignore 'test/fixtures/capnico-crds/**' -ignore '**/testUserData.yaml' -ignore 'internal/kubeadmconfig/testdata/**' -ignore 'internal/controllers/tenantaccess/testdata/**' -ignore 'nico-sim/ui/vendor/**' -ignore 'nico-sim/test/integration/testutil/testdata/**' -ignore 'nico-sim/.dev/**' -ignore 'deploy/charts/**' .
@@ -93,9 +104,15 @@ generate: ## Run every generator in this module and in api/.
 # module's package graph -- which may need public module downloads. The api
 # module has neither problem: it is self-contained, so this target is the half
 # that CI can run.
+# GOWORK=off, so the self-contained api module is resolved on its own, and
+# GOTOOLCHAIN pinned to the Go version api/go.mod declares, which is the version
+# generate-check.yml installs. The embedded copy of openapi.yaml in server.gen.go
+# is gzip-compressed and compress/flate output differs between Go releases, so a
+# newer toolchain (go.work asks for one) regenerates a different blob and the
+# gate rejects it.
 .PHONY: generate-api
 generate-api: ## Regenerate the OpenAPI client, server and models.
-	cd api && go generate ./...
+	cd api && GOWORK=off GOTOOLCHAIN=go$$(awk '/^go /{print $$2; exit}' go.mod) go generate ./...
 
 # Verify the committed oapi-codegen output is reproducible with the pinned
 # generator (api/oapi-codegen.mod) and in sync with api/openapi.yaml. Catches an

@@ -698,8 +698,9 @@ func TestMakefileImageTagsMatchTheManifest(t *testing.T) {
 }
 
 // TestHasRegistryHost pins the rule: the first path component names a registry
-// when it holds a dot or a colon, or is localhost. Docker Hub short names such
-// as myorg/image:tag do not count; write docker.io/myorg/image:tag.
+// when it holds a dot or a colon, is localhost, or has an upper-case letter
+// (the reference parser reads it as a domain). Docker Hub short names such as
+// myorg/image:tag do not count; write docker.io/myorg/image:tag.
 func TestHasRegistryHost(t *testing.T) {
 	for ref, want := range map[string]bool{
 		"nke-controller:latest":                   false,

@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Redocly CLI configuration for `make docs`. The decorator drops everything
+# marked `x-fern-ignore`, so the rendered page shows the same surface as the
+# Fern site. See README.md.
+apis:
+  nke:
+    root: openapi.yaml
+decorators:
+  remove-x-internal:
+    internalFlagProperty: x-fern-ignore

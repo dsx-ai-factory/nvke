@@ -59,7 +59,7 @@ How you install kubeadm depends on whether your nodes were built from an NKE OS 
 ```yaml
 runcmd:
   - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-kubeadm-distro-<k8s-version>
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-calico-images-<stream> nke-cni-calico-manifests-<stream>
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-<stream> nke-cni-ovn-charts-<stream>
 ```
 
 Replace `<k8s-version>` with the version matching `cluster.k8sVersion` in your site spec, and `<stream>` with the CNI stream for your Kubernetes version. If you skip this step, bootstrap runs its full 30-minute timeout and fails on `NodePreflight` / `check_cloud_init_status` — the error does not mention kubeadm.
@@ -201,7 +201,7 @@ nkectl generate sitespec my-tier0-site --nodes hosts.csv > sitespec.yaml
 
 The result needs no editing. Fill in `tpm_ek_thumbprint` per host to enable TPM
 attestation, and use `--set` for anything the CSV does not carry — for example
-`--set cluster.cniName=calico`. See [configuration.md](configuration.md) for
+`--set cluster.podCidr=10.244.0.0/16`. See [configuration.md](configuration.md) for
 every field.
 
 3. Run bootstrap:

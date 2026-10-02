@@ -34,7 +34,12 @@ func isSurgeAtClusterLevel(cluster db.Cluster, cpPools []db.NodePool) bool {
 }
 
 // reconcileNodesNeedingRollout tears down control plane nodes needing rollout during rolling upgrades.
-func (r *reconciler) reconcileNodesNeedingRollout(ctx context.Context, cluster db.Cluster, cp *controlPlane) error {
+func (r *reconciler) reconcileNodesNeedingRollout(
+	ctx context.Context,
+	cluster db.Cluster,
+	cp *controlPlane,
+	allocator domainAllocator,
+) error {
 	logger := r.logger.With(
 		"clusterID", cluster.ID,
 		"clusterName", cluster.Name,
@@ -96,14 +101,17 @@ func (r *reconciler) reconcileNodesNeedingRollout(ctx context.Context, cluster d
 			// provisioning) with no further upgrade-code changes.
 			target := cluster.ControlPlaneConfig.DesiredCount + cp.surgeBudget()
 			if deficit := target - len(surgeNodes); deficit > 0 {
-				if _, err := r.scaleUp(ctx, cluster, deficit, "surge nodes during upgrade"); err != nil {
+				created, err := r.scaleUp(ctx, cluster, deficit, "surge nodes during upgrade", allocator)
+				if err != nil {
 					return fmt.Errorf("failed to scale up control plane before recycling: %w", err)
+				}
+				if created < deficit {
+					return nil
 				}
 			}
 		} else if len(surgeNodes) == 0 {
-			// Node-pool path: unchanged from origin/main — add a single surge node
-			// only when none is present.
-			if _, err := r.scaleUp(ctx, cluster, 1, "surge node during upgrade"); err != nil {
+			// Legacy node-pool mode: add a single surge node only when none is present.
+			if _, err := r.scaleUp(ctx, cluster, 1, "surge node during upgrade", allocator); err != nil {
 				return fmt.Errorf("failed to scale up control plane before recycling: %w", err)
 			}
 		}

@@ -51,8 +51,8 @@ nkectl generate sitespec my-tier0-site --nodes hosts.csv > sitespec.yaml
 
 # Override fields the CSV does not carry
 nkectl generate sitespec my-tier0-site --nodes hosts.csv \
-  --set cluster.cniName=calico \
-  --set cluster.podCidr=10.100.0.0/16 > sitespec.yaml
+  --set cluster.controlPlaneVIP=10.10.50.10 \
+  --set cluster.podCidr=10.244.0.0/16 > sitespec.yaml
 ```
 
 The file format is described in [sitespec.md](sitespec.md); a complete example
@@ -78,6 +78,12 @@ later and the copy a disaster recovery needs. Move it off the host. On failure i
 diagnostics to `cluster-diagnostics/` first; `--keep-bootstrap-cluster` keeps
 the Kind cluster for debugging.
 
+The Kind cluster runs Postgres, Temporal, SPIRE, Cluster API and CWE.
+`nkectl get bootstrap-manifest` lists the charts and images the bootstrap
+fetches, with their versions. It leaves out the kind node image and what
+`clusterctl init` installs. The `NKECTL_*` variables in the
+[README](../README.md) point a chart or an image at another location.
+
 ### 3. Install an infrastructure provider
 
 Install Cluster API and CAPNICo onto the site cluster, before the site
@@ -88,7 +94,7 @@ for why the order matters. `nkectl` has no command for this step.
 
 The site cluster from step 2 is a plain Kubernetes cluster. The site controller
 (CWE) that manages tenant clusters is installed with the controller Helm chart
-in [`controller/deploy/charts/controller`](../../controller/deploy/charts/controller).
+in [`controller/deploy/charts/controller`](https://github.com/dsx-ai-factory/nke/tree/main/controller/deploy/charts/controller).
 `nkectl` has no command for this step yet.
 
 ### 5. Point the CLI at the site controller

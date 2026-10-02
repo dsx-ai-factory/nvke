@@ -76,3 +76,10 @@ S5CMD_VERSION      ?= 2.3.0
 S5CMD_SHA256_AMD64 ?= de0fdbfa3aceae55e069ba81a0fc17b2026567637603734a387b2fca06c299b4
 S5CMD_SHA256_ARM64 ?= 1439f0d00ecedcd2a2f1f2c6749bbb0152b2257bf5086f29646ec8ae38798e24
 GO_LICENSES_VERSION ?= v2.0.2-0.20260709180300-7e73597a45d1
+# Lints controller/api/openapi.yaml (`make -C controller/api lint-spec`).
+VACUUM_VERSION      ?= v0.30.6
+# Renders controller/api/openapi.yaml into one HTML page (`make -C controller/api docs`).
+REDOCLY_VERSION     ?= 2.57.0
+# Checks and publishes the documentation site (.github/workflows/api-docs.yml).
+# fern/fern.config.json pins the same number; move both together.
+FERN_VERSION        ?= 5.143.6

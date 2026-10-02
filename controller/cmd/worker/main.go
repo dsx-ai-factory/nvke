@@ -473,6 +473,7 @@ func main() {
 		logger.With("logger", "control-plane-controller"),
 		dbInstance,
 		temporalClient,
+		k8sControllerManager.GetClient(),
 	)
 	if err := controlPlaneController.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up control plane controller", "error", err)

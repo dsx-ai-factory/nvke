@@ -134,6 +134,12 @@ The site spec file is loaded and validated first. On any invalid or missing
 field the command fails immediately with a clear error, before any workflow is
 dispatched or any node is touched.
 
+The bootstrap side-loads two images this repository builds,
+nke-controller:latest and cluster-api-provider-provisioned:latest, which
+"make -C cli images" builds. NKECTL_CWE_IMAGE and NKECTL_CAPI_PROVISIONED_IMAGE
+name other images, such as ones pushed to a registry. cli/README.md lists every
+NKECTL_* variable.
+
 See the bundled examples/sitespec.yaml and docs/sitespec.md for the
 site spec file format.`,
 		Example: `  # Validate and bootstrap from a site spec file

@@ -120,21 +120,21 @@ func TestCreatePendingNode_RequiresControlPlaneConfigurationID(t *testing.T) {
 		},
 	}
 
-	_, err := r.createPendingNode(
-		context.Background(),
-		cluster,
-		nil,
-	)
+	_, err := r.createPendingNode(context.Background(), cluster, nil, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing control plane configuration ID")
 	mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
 }
 
-func TestCreatePendingNode_LeavesInstanceTypeUnset(t *testing.T) {
+// TestCreatePendingNodeSetsFailureDomainButLeavesInstanceTypeUnset pins that
+// placement is part of node creation while the scheduler remains the only
+// writer of the instance type.
+func TestCreatePendingNodeSetsFailureDomainButLeavesInstanceTypeUnset(t *testing.T) {
 	t.Parallel()
 
 	clusterID := uuid.New()
 	controlPlaneConfigID := uuid.New()
+	failureDomain := "fd-a"
 
 	mockTx := &testutil.MockTx{}
 	mockTx.On("CreateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
@@ -143,7 +143,8 @@ func TestCreatePendingNode_LeavesInstanceTypeUnset(t *testing.T) {
 			node.NodePoolID == uuid.Nil &&
 			node.NodeSetID == uuid.Nil &&
 			node.NicoInstanceTypeID() == uuid.Nil &&
-			node.ControlPlaneConfigurationID == controlPlaneConfigID
+			node.ControlPlaneConfigurationID == controlPlaneConfigID &&
+			node.FailureDomain == failureDomain
 	})).Return(db.Node{}, nil).Once()
 
 	r := &reconciler{db: mockTx, logger: slog.Default()}
@@ -155,7 +156,7 @@ func TestCreatePendingNode_LeavesInstanceTypeUnset(t *testing.T) {
 		},
 	}
 
-	_, err := r.createPendingNode(context.Background(), cluster, nil)
+	_, err := r.createPendingNode(context.Background(), cluster, nil, failureDomain)
 	require.NoError(t, err)
 	mockTx.AssertExpectations(t)
 }
@@ -201,7 +202,7 @@ func TestCreatePendingNode_ProviderPayload(t *testing.T) {
 				},
 			}
 
-			_, err := r.createPendingNode(context.Background(), cluster, nil)
+			_, err := r.createPendingNode(context.Background(), cluster, nil, "")
 			require.NoError(t, err)
 			mockTx.AssertExpectations(t)
 		})
@@ -251,7 +252,7 @@ func TestReconcileControlPlaneScaleUp_FeatureFlagDisabled(t *testing.T) {
 	}
 	cp := &controlPlane{}
 
-	err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp)
+	err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, domainAllocator{})
 	require.NoError(t, err)
 	mockTx.AssertNotCalled(t, "ListClusterNodeNames", mock.Anything, mock.Anything)
 	mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
@@ -273,7 +274,8 @@ func TestReconcileControlPlaneScaleUp_FeatureFlagEnabled(t *testing.T) {
 			// The control-plane controller no longer stamps an instance type;
 			// the control plane node scheduler selects it at schedule time.
 			node.NicoInstanceTypeID() == uuid.Nil &&
-			node.ControlPlaneConfigurationID == controlPlaneConfigID
+			node.ControlPlaneConfigurationID == controlPlaneConfigID &&
+			node.FailureDomain != ""
 	})).Return(db.Node{}, nil).Twice()
 
 	r := &reconciler{
@@ -301,9 +303,87 @@ func TestReconcileControlPlaneScaleUp_FeatureFlagEnabled(t *testing.T) {
 		},
 	}
 
-	err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp)
+	allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"})
+	err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, allocator)
 	require.NoError(t, err)
 	mockTx.AssertExpectations(t)
+}
+
+func TestScaleUpSharesFailureDomainAllocatorAcrossCreationSites(t *testing.T) {
+	t.Parallel()
+
+	cluster := db.Cluster{
+		ID: uuid.New(),
+		ControlPlaneConfig: db.ControlPlaneConfig{
+			ConfigurationID: uuid.New(),
+		},
+	}
+	mockTx := &testutil.MockTx{}
+	mockTx.On("ListClusterNodeNames", mock.Anything, cluster.ID).Return([]string{}, nil).Twice()
+	var placed []string
+	mockTx.On("CreateNode", mock.Anything, mock.AnythingOfType("*db.Node")).Run(func(args mock.Arguments) {
+		node := args.Get(1).(*db.Node)
+		placed = append(placed, node.FailureDomain)
+	}).Return(db.Node{}, nil).Times(3)
+
+	r := &reconciler{db: mockTx, logger: slog.Default()}
+	allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"})
+
+	created, err := r.scaleUp(context.Background(), cluster, 2, "control-plane scale-up", allocator)
+	require.NoError(t, err)
+	assert.Equal(t, 2, created)
+	created, err = r.scaleUp(context.Background(), cluster, 1, "surge node during upgrade", allocator)
+	require.NoError(t, err)
+	assert.Equal(t, 1, created)
+
+	assert.Equal(t, []string{"fd-a", "fd-b", "fd-a"}, placed)
+	mockTx.AssertExpectations(t)
+}
+
+func TestScaleUpUsesAllocatorDecision(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		allocator domainAllocator
+		want      string
+	}{
+		"legacy node-pool mode requests no specific domain": {
+			want: "",
+		},
+		"allocator without eligible domains requests no specific domain": {
+			allocator: newDomainAllocator(leastUsedFailureDomainSelection, nil),
+			want:      "",
+		},
+		"eligible domain is assigned": {
+			allocator: newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a"}),
+			want:      "fd-a",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cluster := db.Cluster{
+				ID: uuid.New(),
+				ControlPlaneConfig: db.ControlPlaneConfig{
+					ConfigurationID: uuid.New(),
+				},
+			}
+			mockTx := &testutil.MockTx{}
+			mockTx.On("ListClusterNodeNames", mock.Anything, cluster.ID).Return([]string{}, nil).Once()
+			var placement string
+			mockTx.On("CreateNode", mock.Anything, mock.AnythingOfType("*db.Node")).Run(func(args mock.Arguments) {
+				placement = args.Get(1).(*db.Node).FailureDomain
+			}).Return(db.Node{}, nil).Once()
+
+			r := &reconciler{db: mockTx, logger: slog.Default()}
+			created, err := r.scaleUp(context.Background(), cluster, 1, "control-plane scale-up", tc.allocator)
+			require.NoError(t, err)
+			assert.Equal(t, 1, created)
+			assert.Equal(t, tc.want, placement)
+			mockTx.AssertExpectations(t)
+		})
+	}
 }
 
 func TestReconcileControlPlaneScaleUp_Deficit(t *testing.T) {
@@ -363,7 +443,8 @@ func TestReconcileControlPlaneScaleUp_Deficit(t *testing.T) {
 			}
 			cp := &controlPlane{nodes: nodes}
 
-			err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp)
+			allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"})
+			err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, allocator)
 			require.NoError(t, err)
 			mockTx.AssertExpectations(t)
 			if tc.wantCreated == 0 {

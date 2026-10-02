@@ -24,11 +24,14 @@ type Node struct {
 	// - worker nodes remain nodepool-managed with non-null node_pool_id/node_set_id
 	// Today active flows still create control-plane nodes with non-null node_pool_id/node_set_id;
 	// null values are reserved for the future no-nodepool control-plane path.
-	NodePoolID                   uuid.UUID              `bun:"type:uuid,nullzero"` // Denormalized for api/join performance, also Node's will never change NodePools.
-	NodeSetID                    uuid.UUID              `bun:"type:uuid,nullzero"`
-	ClusterID                    uuid.UUID              `bun:"type:uuid,notnull"`
-	ControlPlane                 bool                   `bun:"type:boolean,notnull,default:false"`
-	Name                         string                 `bun:"type:text,notnull"`
+	NodePoolID   uuid.UUID `bun:"type:uuid,nullzero"` // Denormalized for api/join performance, also Node's will never change NodePools.
+	NodeSetID    uuid.UUID `bun:"type:uuid,nullzero"`
+	ClusterID    uuid.UUID `bun:"type:uuid,notnull"`
+	ControlPlane bool      `bun:"type:boolean,notnull,default:false"`
+	Name         string    `bun:"type:text,notnull"`
+	// FailureDomain is the requested placement for this node. An empty string
+	// requests no specific domain.
+	FailureDomain                string                 `bun:"type:text,notnull,default:''"`
 	IP                           string                 `bun:"type:text,notnull"`
 	SpiffeEnabled                bool                   `bun:"type:boolean,notnull,default:false"`
 	SpireAttestationMethod       SpireAttestationMethod `bun:"type:text,notnull"`

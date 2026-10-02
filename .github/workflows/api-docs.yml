@@ -1,0 +1,173 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Renders the REST API Reference and checks the documentation site.
+#
+# controller/api/openapi.yaml is the source of the REST API Reference. Fern
+# renders it in the "REST API Reference" tab of the documentation site, and
+# `make -C controller/api docs` renders the same file into one self-contained
+# HTML page with Redocly. Both drop the surface marked `x-fern-ignore`.
+#
+# Four steps:
+#   1. Build that HTML page and upload it as an artifact, so a reviewer can
+#      open the rendered reference for the pull request.
+#   2. Run `fern check`, so a broken link or an invalid docs.yml is caught
+#      before merge.
+#   3. On a pull request or a manual run, publish a Fern preview of the whole
+#      site, API Reference included, and put its URL in the job summary. The
+#      preview is deleted when the pull request closes.
+#   4. On main, publish the Fern site.
+#
+# FERN_TOKEN is an organization secret. GitHub withholds secrets from
+# `pull_request` runs of fork pull requests, so those get no preview; the job
+# says so. Same-repository branches and workflow_dispatch runs do.
+#
+# Advisory, not a merge-gate member: publishing needs a secret, which the
+# workflow design guide keeps out of the required gate. Path-filtered on both
+# events because an advisory check cannot leave a pull request waiting.
+#
+# Node is preinstalled on the GitHub-hosted runner. The two CLIs are pinned in
+# make/tool-versions.mk and fetched with npx.
+
+name: API docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'controller/api/openapi.yaml'
+      - 'controller/api/redocly.yaml'
+      - 'controller/api/Makefile'
+      - 'make/tool-versions.mk'
+      - 'docs/**'
+      - 'fern/**'
+      - 'cli/docs/**'
+      - 'controller/docs/**'
+      - '.github/workflows/api-docs.yml'
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - 'controller/api/openapi.yaml'
+      - 'controller/api/redocly.yaml'
+      - 'controller/api/Makefile'
+      - 'make/tool-versions.mk'
+      - 'docs/**'
+      - 'fern/**'
+      - 'cli/docs/**'
+      - 'controller/docs/**'
+      - '.github/workflows/api-docs.yml'
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  # The sha is part of the group on main, so every commit gets its own result.
+  group: API docs-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  render:
+    name: Render the REST API Reference
+    runs-on: ubuntu-latest
+    if: github.repository == 'dsx-ai-factory/nke' && github.event.action != 'closed'
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Render openapi.yaml with Redocly
+        run: make -C controller/api docs
+
+      - name: Upload the rendered reference
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: api-reference
+          path: controller/.local/api-reference.html
+          if-no-files-found: error
+          retention-days: 30
+
+  fern:
+    name: Check the documentation site
+    runs-on: ubuntu-latest
+    if: github.repository == 'dsx-ai-factory/nke' && github.event.action != 'closed'
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      FERN_TOKEN: ${{ secrets.FERN_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read the pinned Fern CLI version
+        id: pin
+        run: echo "version=$(make --no-print-directory print-FERN_VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Check the site definition
+        working-directory: fern
+        env:
+          FERN_VERSION: ${{ steps.pin.outputs.version }}
+        run: npx -y "fern-api@${FERN_VERSION}" check
+
+      - name: Publish a preview of the site
+        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && env.FERN_TOKEN != ''
+        working-directory: fern
+        env:
+          FERN_VERSION: ${{ steps.pin.outputs.version }}
+          PREVIEW_ID: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || format('branch-{0}', github.ref_name) }}
+        run: |
+          id=$(printf '%s' "$PREVIEW_ID" | tr -c 'A-Za-z0-9-' '-')
+          npx -y "fern-api@${FERN_VERSION}" generate --docs --preview --id "$id" 2>&1 | tee preview.log
+          url=$(grep -oE 'https://[^[:space:]]+' preview.log | tail -1)
+          [ -n "$url" ] || { echo "::error::fern printed no preview URL"; exit 1; }
+          echo "::notice title=Fern preview::$url"
+          printf '## Fern preview\n\n%s\n' "$url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Say why no preview was published
+        if: github.event_name == 'pull_request' && env.FERN_TOKEN == ''
+        run: echo "::notice::This run has no FERN_TOKEN (pull requests from forks receive no secrets), so no preview was published. Push the branch to this repository and dispatch the workflow to get one."
+
+      - name: Publish the site
+        if: github.event_name == 'push' && env.FERN_TOKEN != ''
+        working-directory: fern
+        env:
+          FERN_VERSION: ${{ steps.pin.outputs.version }}
+        run: npx -y "fern-api@${FERN_VERSION}" generate --docs
+
+      - name: Say why the site was not published
+        if: github.event_name == 'push' && env.FERN_TOKEN == ''
+        run: echo "::notice::FERN_TOKEN is not configured, so the site was checked but not published."
+
+  preview-cleanup:
+    name: Delete the site preview
+    runs-on: ubuntu-latest
+    if: github.repository == 'dsx-ai-factory/nke' && github.event_name == 'pull_request' && github.event.action == 'closed'
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      FERN_TOKEN: ${{ secrets.FERN_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read the pinned Fern CLI version
+        id: pin
+        run: echo "version=$(make --no-print-directory print-FERN_VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Delete the preview
+        if: env.FERN_TOKEN != ''
+        working-directory: fern
+        env:
+          FERN_VERSION: ${{ steps.pin.outputs.version }}
+          PREVIEW_ID: pr-${{ github.event.number }}
+        run: npx -y "fern-api@${FERN_VERSION}" docs preview delete "$PREVIEW_ID" || echo "::notice::No preview named $PREVIEW_ID to delete."

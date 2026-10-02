@@ -183,7 +183,7 @@ CWE consumes, and it becomes a SPIRE exec-auth kubeconfig when OIDC is on.
 ## Real Site
 
 Real hardware, a real NICo site, and a site controller that outlives your
-terminal. Steps 1 to 4 have been run end to end on leased bare metal, to a
+terminal. Steps 1 to 4 have been run end to end on leased bare metal with calico, to a
 `Ready` control-plane node; steps 5 to 7 have been run against mock NICo rather
 than a real site. Treat a surprise here as a bug in this page and say so.
 
@@ -195,14 +195,14 @@ IP and its **TPM EK thumbprint**: the site cluster attests nodes by TPM, and a
 node with no thumbprint cannot join.
 
 **kubeadm on each node, installed by your cloud-init.** An image built from
-[`os-image/`](../os-image/) only *stages* the packages in a local apt repo at
+[`os-image/`](https://github.com/dsx-ai-factory/nke/tree/main/os-image) only *stages* the packages in a local apt repo at
 `/usr/lib/nke/debs`; nothing installs them for a pre-provisioned node, because
 CWE writes no cloud-init for hosts it did not create. Install them yourself:
 
 ```yaml
 runcmd:
   - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-kubeadm-distro-<k8s-version>
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-calico-images-<stream> nke-cni-calico-manifests-<stream>
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-<stream> nke-cni-ovn-charts-<stream>
 ```
 
 Skip this and the bootstrap runs its full 30 minutes before failing on
@@ -266,13 +266,17 @@ cp-03,10.10.50.4,<sha256 of the node's TPM EK>
 
 ```bash
 nkectl generate sitespec my-site --nodes hosts.csv \
-  --set cluster.cniName=calico \
+  --set cluster.controlPlaneVIP=10.10.50.10 \
+  --set cluster.podCidr=10.244.0.0/16 \
   --set spire.trustDomain=site.example.com \
   --set spire.caCertFile=./spire-ca.crt \
   --set spire.caKeyFile=./spire-ca.key > sitespec.yaml
 
 nkectl bootstrap site -f sitespec.yaml --dry-run   # validate, touch nothing
 ```
+
+`cluster.controlPlaneVIP` is advertised over BGP, so the network must peer
+with the nodes. See [sitespec.md](../cli/docs/sitespec.md).
 
 Read what it rendered. Unset fields get defaults that are silent rather than
 absent — the Kubernetes version, `systemReservedMemory` at 16Gi, and a literal
@@ -307,18 +311,19 @@ REGISTRY_API_KEY=<key> nkectl bootstrap site -f sitespec.yaml
 The key can come from the environment, from `--registry-api-key`, or from
 `registry.apiKey` in the spec; the flag wins.
 
-Where Docker Hub is slow or blocked, point the seed cluster at a mirror with
-`NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR`. The Postgres and controller charts are
-carried in the `nkectl` binary and are never pulled. The Temporal and SPIRE
-charts are, and each has a knob — `NKECTL_CWE_TEMPORAL_CHART`,
-`NKECTL_CWE_SPIRE_CHART` and `NKECTL_CWE_SPIRE_CRDS_CHART`, an OCI reference or
-a local path — so every Helm chart the bootstrap pulls can come from a mirror
-or from disk.
-`clusterctl init` still fetches Cluster API and cert-manager from `github.com`.
-For the full set of third-party images
-the bootstrap pulls — Postgres, Temporal, and the SPIRE stack — and to mirror
-them into a local or private registry,
-see [`hack/mirror-bootstrap-images.sh`](../hack/mirror-bootstrap-images.sh).
+`nkectl get bootstrap-manifest` lists the charts and images the bootstrap
+fetches. It leaves out the kind node image and what `clusterctl init` installs.
+[`hack/mirror-bootstrap-images.sh`](../hack/mirror-bootstrap-images.sh) copies
+the listed images into a local or private registry. To change where they come
+from:
+
+- `NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR=<host>` pulls the Docker Hub images from a mirror.
+- `NKECTL_CWE_TEMPORAL_CHART`, `NKECTL_CWE_SPIRE_CHART` and
+  `NKECTL_CWE_SPIRE_CRDS_CHART` take an OCI reference or a local path.
+
+Images from `ghcr.io`, `registry.k8s.io` and `cgr.dev` come from those
+registries. Cluster API and cert-manager come from `github.com` through
+`clusterctl init`.
 
 It creates a throwaway kind cluster, installs Postgres, Temporal, SPIRE, CAPI and
 CWE into it, builds the site cluster on your hosts through `nke-agent`, and
@@ -358,7 +363,7 @@ sit `Pending` on `no persistent volumes available for this claim and no storage
 class is set`. Install a provisioner, or run them without persistence.
 
 Use the chart in
-[`controller/deploy/charts/controller`](../controller/deploy/charts/controller).
+[`controller/deploy/charts/controller`](https://github.com/dsx-ai-factory/nke/tree/main/controller/deploy/charts/controller).
 It installs **CWE alone**, against a database and a Temporal you provide, and
 defaults to a ClusterIP service with ingress off, so nothing reaches the API
 until you change that.

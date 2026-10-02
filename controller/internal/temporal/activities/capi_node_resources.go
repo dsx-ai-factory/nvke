@@ -156,8 +156,8 @@ func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context,
 	if spireJoinToken != "" {
 		machine.Annotations[constants.MachineAnnotationKeySpireAgentSpiffeIDPath] = spireAgentAlternateIDPath
 	}
-	if err := a.k8sClient.Patch(ctx, machine, client.Apply, client.FieldOwner(a.cfg.FieldManagerName), client.ForceOwnership); err != nil {
-		return fmt.Errorf("failed to apply machine %s: %w", machine.Name, err)
+	if err := a.applyCAPIMachine(ctx, machine); err != nil {
+		return err
 	}
 
 	return nil
@@ -221,8 +221,8 @@ func (a *Activities) createTemplateLessForgeCAPIMachineForNode(ctx context.Conte
 	if err != nil {
 		return err
 	}
-	if err := a.k8sClient.Patch(ctx, machine, client.Apply, client.FieldOwner(a.cfg.FieldManagerName), client.ForceOwnership); err != nil {
-		return fmt.Errorf("failed to apply machine %s: %w", machine.Name, err)
+	if err := a.applyCAPIMachine(ctx, machine); err != nil {
+		return err
 	}
 
 	return nil

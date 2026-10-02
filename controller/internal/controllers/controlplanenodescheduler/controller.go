@@ -114,9 +114,10 @@ func (s *ControlPlaneNodeScheduler) listManagedControlPlanePending(ctx context.C
 
 	managed := make([]db.Node, 0, len(pendingNodes))
 	for _, node := range pendingNodes {
-		if node.IsManagedByControlPlaneController() {
-			managed = append(managed, node)
+		if !node.IsManagedByControlPlaneController() {
+			continue
 		}
+		managed = append(managed, node)
 	}
 	return managed, nil
 }

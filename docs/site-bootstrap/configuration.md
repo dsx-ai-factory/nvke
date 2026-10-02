@@ -18,7 +18,7 @@ cluster:
       ip: "10.0.0.3"
 
   k8sVersion: "1.34.2"     # plain semver, no leading "v"
-  cniName: "ovn-kubernetes" # "calico" or "ovn-kubernetes"
+  cniName: "ovn-kubernetes" # "calico" is accepted for development
   podCidr: "192.168.0.0/16"
   serviceCidr: "10.96.0.0/12"
 
@@ -41,7 +41,7 @@ registry:
 | `cluster.nodes[].name` | string | yes, per entry | Lowercase RFC 1123 label. Must be unique across all nodes. |
 | `cluster.nodes[].ip` | string | yes, per entry | Valid IPv4 or IPv6 address. Must be unique across all nodes. |
 | `cluster.k8sVersion` | string | yes | Plain semver, e.g. `1.34.2` — no leading `v`. |
-| `cluster.cniName` | string | yes | `calico` or `ovn-kubernetes`. |
+| `cluster.cniName` | string | yes | `ovn-kubernetes`. `calico` is accepted for development. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the agent's built-in default. |
 | `cluster.controlPlaneVIP` | string | no | Optional kube-vip control-plane VIP. Must be a routable unicast IPv4 address, reachable by the nodes over BGP, outside `podCidr` and `serviceCidr`, and not a node IP. Empty uses the IP of the node that initializes the cluster. |
 | `cluster.podCidr` | string | yes | Valid CIDR. Comma-separated list allowed for dual-stack. |

@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# vacuum ignore list for openapi-lint.yaml (`make lint-spec` passes it with
+# --ignore-file). Each entry is a rule and the result paths it must not report.
+#
+# no-$ref-siblings: the `infra` properties of the request schemas carry
+# `x-fern-ignore: true` beside their `$ref` on purpose, so the Fern reference
+# omits them; see README.md. vacuum reports a `$ref` sibling at the path of the
+# referenced schema, so these are the five Infra* schemas those properties
+# point at. A description beside any other `$ref` is still an error.
+no-$ref-siblings:
+  - $.components.schemas['InfraClusterProvider']
+  - $.components.schemas['InfraControlPlaneProvider']
+  - $.components.schemas['InfraControlPlaneProviderUpdate']
+  - $.components.schemas['InfraNodePoolProvider']
+  - $.components.schemas['InfraNodePoolProviderUpdate']

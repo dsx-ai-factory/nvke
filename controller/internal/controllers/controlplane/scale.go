@@ -21,16 +21,16 @@ const (
 )
 
 // scaleUp creates pending control-plane nodes and returns the number created.
-// Instance-type selection (preference + Forge capacity) is not
-// done here: the control plane node scheduler picks the Forge
-// instance type per node at schedule time from the node's pinned
-// InstanceTypePreference snapshot. Pending nodes are therefore created with a
-// zero-value InstanceTypeID and a pinned ControlPlaneConfigurationID.
+// An allocator seeded with eligible domains spreads new nodes across them. A
+// zero-value allocator leaves the requested domain empty for legacy node-pool
+// surge nodes. Instance-type selection remains the control plane node
+// scheduler's responsibility.
 func (r *reconciler) scaleUp(
 	ctx context.Context,
 	cluster db.Cluster,
 	count int,
 	reason string,
+	allocator domainAllocator,
 ) (int, error) {
 	if count <= 0 {
 		return 0, nil
@@ -43,11 +43,8 @@ func (r *reconciler) scaleUp(
 
 	created := 0
 	for range count {
-		createdNode, err := r.createPendingNode(
-			ctx,
-			cluster,
-			existingNodeNames,
-		)
+		failureDomain := allocator.take()
+		createdNode, err := r.createPendingNode(ctx, cluster, existingNodeNames, failureDomain)
 		if err != nil {
 			return created, err
 		}
@@ -70,6 +67,7 @@ func (r *reconciler) createPendingNode(
 	ctx context.Context,
 	cluster db.Cluster,
 	existingNodeNames []string,
+	failureDomain string,
 ) (db.Node, error) {
 	if cluster.ControlPlaneConfig.ConfigurationID == uuid.Nil {
 		return db.Node{}, fmt.Errorf("missing control plane configuration ID for pending control-plane node")
@@ -80,6 +78,7 @@ func (r *reconciler) createPendingNode(
 		ControlPlane:                true,
 		ControlPlaneConfigurationID: cluster.ControlPlaneConfig.ConfigurationID,
 		Name:                        generateControlPlaneNodeName(existingNodeNames, cluster.Name, defaultControlPlaneNodePrefix),
+		FailureDomain:               failureDomain,
 		Conditions: db.NodeConditions{
 			Pending:                 db.NewCondition(true, "Pending control-plane node provisioning"),
 			Provisioning:            db.NewCondition(false, "Not yet provisioning"),
