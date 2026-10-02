@@ -202,20 +202,22 @@ lifecycle validations.
 The CAPD `cp-controller` row advertises two control-plane failure domains and
 one worker-only domain through `DockerCluster.spec.failureDomains`. Its create,
 1-to-3 scale, and rolling-update validations inspect the live CAPI Cluster and
-Machines: requested and observed domains must be eligible, placement must remain
-balanced, and no control-plane Machine may use the worker-only domain. The
-quorum-safe scale-down and unreachable-node delete validations check that
-placement stays balanced and the replacement refills the deleted Machine's
-domain. A second, provisioning-only `cp-controller` row
-advertises just a worker-only domain and checks that its control-plane Machine
-has no requested domain. The full CAPD backend E2E job runs both
-rows in its controller-managed leg.
+Machines and CAPD node containers: requested domains and container placement
+must be eligible and agree, placement must remain balanced, and no control-plane
+Machine may use the worker-only domain. The quorum-safe scale-down and
+unreachable-node delete validations check that placement stays balanced and the
+replacement refills the deleted Machine's domain. A second, provisioning-only
+`cp-controller` row advertises just a worker-only domain and checks that its
+control-plane Machine has no requested domain. The full CAPD backend E2E job
+runs both rows in its controller-managed leg.
 
-CAPD mirrors each requested domain into Machine status, so its observed-domain
-checks also verify that status propagation occurred. They cannot exercise the
-status-over-spec preference when those values differ; the control-plane
-`TestReadFailureDomains` unit test covers that case. An E2E drift scenario needs
-a backend where observed placement can differ from the request, such as CapNICo.
+The CAPD v1.12.3 provider used by this lane records placement on the Docker
+container label but leaves Machine status.failureDomain empty. If a newer CAPD
+provider reports that status field, the test requires it to match the container.
+CAPD cannot exercise the status-over-spec preference when those values differ;
+the control-plane `TestReadFailureDomains` unit test covers that case. An E2E
+drift scenario needs a backend where observed placement can differ from the
+request, such as CapNICo.
 
 To run these scenarios against a flag-on local deployment, use:
 
