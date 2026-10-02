@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+ARG BUILDER_IMAGE=golang:1.27.1
+FROM --platform=$BUILDPLATFORM ${BUILDER_IMAGE} AS builder
+
+WORKDIR /workspace
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+COPY internal/ ./internal/
+COPY cmd/dsx-imds-node-attestor-server/ ./cmd/dsx-imds-node-attestor-server/
+ARG TARGETOS
+ARG TARGETARCH
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -o /out/dsx-imds-node-attestor-server ./cmd/dsx-imds-node-attestor-server
+
+FROM scratch
+COPY --from=builder /out/dsx-imds-node-attestor-server \
+    /opt/spire/plugins/dsx-imds-node-attestor-server

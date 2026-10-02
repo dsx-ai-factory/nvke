@@ -82,7 +82,7 @@ jobs:
             runner: linux-amd64-cpu16
             install_cni_after_init: true
           - arch: arm64
-            runner: linux-arm64-cpu16
+            runner: arc-arm64-cpu16
             install_cni_after_init: true
     env:
       INSTALL_CNI_AFTER_INIT: ${{ matrix.install_cni_after_init }}
@@ -92,10 +92,13 @@ jobs:
       LOCAL_NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'false' || 'true' }}
       # Same override as backend-e2e.yml (capd-e2e, nico-e2e).
       NODE_REBOOT_SOFT_REBOOT_ENABLED: false
-      # These runners reach Docker Hub through an NVIDIA mirror. backend-e2e.yml
-      # sets the same value; helm needs the shim below to honour it for OCI
-      # charts, which is how the CI entrypoint does it too.
-      NKE_E2E_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
+      # A public pull-through mirror: dc.local.gha-runners.nvidia.com resolves
+      # only on the self-hosted fleet, and the arm64 leg now runs on ARC.
+      # Same host as backend-e2e.yml, os-image-artifact.yml and
+      # nkectl-bootstrap-e2e.yml, each of which had to make this change when
+      # it moved. helm needs the shim below to honour it for OCI charts,
+      # which is how the CI entrypoint does it too.
+      NKE_E2E_DOCKERHUB_MIRROR: mirror.gcr.io
       # The Tiltfile refuses to render without these. The CI entrypoint passes
       # the same placeholders; nothing here is a credential.
       DGXC_TENANT_USER: local-e2e

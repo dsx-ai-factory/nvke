@@ -113,13 +113,15 @@ jobs:
     permissions:
       contents: read
 
+  management-engine-test:
+    uses: ./.github/workflows/management-engine-test.yml
+    permissions:
+      contents: read
+
   workspace:
     uses: ./.github/workflows/go-work-check.yml
     permissions:
       contents: read
-    # The one secret it uses, not inherit. go-work-check.yml declares it.
-    secrets:
-      NKE_INTERNAL_RO_TOKEN: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
 
   chart:
     uses: ./.github/workflows/chart.yml
@@ -153,6 +155,15 @@ jobs:
 
   docs-check:
     uses: ./.github/workflows/docs-check.yml
+    permissions:
+      contents: read
+
+  # Identifiers of internal infrastructure in the tree. Not a credential
+  # scan -- the Secrets workflow is that, and finds nothing here, because an
+  # org or subnet id grants nothing. What it protects is the property that
+  # this repository can become public.
+  internal-config-check:
+    uses: ./.github/workflows/internal-config-check.yml
     permissions:
       contents: read
 
@@ -201,6 +212,7 @@ jobs:
       - build
       - controller-test
       - agent-test
+      - management-engine-test
       - workspace
       - chart
       - nktp-chart
@@ -209,6 +221,7 @@ jobs:
       - actionlint
       - shellcheck
       - docs-check
+      - internal-config-check
       - lint
       - gofail
       - notices

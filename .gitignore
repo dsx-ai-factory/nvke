@@ -11,6 +11,10 @@ controller/hack/capd-reboot-controller/capd-reboot-controller
 **/dist/
 **/release/
 
+# Go workspace dependencies may be vendored locally for offline remote tests,
+# but the generated tree is not committed.
+/vendor/
+
 # Reference-image Packer output and build-only SSH keys / pulled binaries.
 os-image/packer/output/
 os-image/packer/output-fde/
@@ -62,3 +66,18 @@ os-image/efi/output/
 *-etcd-encryption-key.json
 .*-etcd-encryption-key.json.*
 cli/e2e/bootstrap/.etcd-encryption-key.json
+
+# nkectl and the three image archives `make site-inputs` stages for the Forge
+# site-controller lane. The lane points SITE_INPUTS here, inside the checkout,
+# so the workspace rather than a $HOME cache owns them -- see the env block in
+# forge-site-controller-e2e.yml. Hundreds of megabytes of docker save output.
+.site-inputs/
+
+# What the Forge lane's `go test` leaves in the e2e directory. report.json and
+# the diagnostics tarball carry captured spec output, which on this lane is
+# remote command output, so an accidental commit is a disclosure rather than
+# noise.
+controller/test/e2e/site-e2e.log
+controller/test/e2e/site-e2e.junit.xml
+controller/test/e2e/report.json
+controller/test/e2e/site-diagnostics.tar.gz

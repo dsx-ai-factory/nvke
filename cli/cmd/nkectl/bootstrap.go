@@ -22,14 +22,15 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/bootstrapengine"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/cwedeploy"
+	// Aliased: this file has a local variable named engine.
+	bootstrapengine "github.com/dsx-ai-factory/nke/cli/internal/bootstrap/engine"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/etcdkey"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitecluster"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitespec"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/spireentrydump"
 	"github.com/dsx-ai-factory/nke/cli/internal/clients"
 	"github.com/dsx-ai-factory/nke/cli/internal/config"
-	"github.com/dsx-ai-factory/nke/cli/internal/cwedeploy"
-	"github.com/dsx-ai-factory/nke/cli/internal/etcdkey"
-	"github.com/dsx-ai-factory/nke/cli/internal/sitecluster"
-	"github.com/dsx-ai-factory/nke/cli/internal/sitespec"
-	"github.com/dsx-ai-factory/nke/cli/internal/spireentrydump"
 )
 
 const (
@@ -133,6 +134,12 @@ The site spec file is loaded and validated first. On any invalid or missing
 field the command fails immediately with a clear error, before any workflow is
 dispatched or any node is touched.
 
+The bootstrap side-loads two images this repository builds,
+nke-controller:latest and cluster-api-provider-provisioned:latest, which
+"make -C cli images" builds. NKECTL_CWE_IMAGE and NKECTL_CAPI_PROVISIONED_IMAGE
+name other images, such as ones pushed to a registry. cli/README.md lists every
+NKECTL_* variable.
+
 See the bundled examples/sitespec.yaml and docs/sitespec.md for the
 site spec file format.`,
 		Example: `  # Validate and bootstrap from a site spec file
@@ -221,6 +228,10 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	// credentials needed for recovery.
 	ctx := context.Background()
 	cfg := bootstrapengine.DefaultConfig()
+	// A create that fails never reaches the diagnostics defer below, so the
+	// engine collects for itself and honours the same two flags.
+	cfg.DiagnosticsDir = opts.diagnosticsDir
+	cfg.KeepFailedCluster = opts.keepBootstrapKind
 	cweCfg, err := cweDeployConfig(inv, cfg.ClusterName, opts.disableMTLS)
 	if err != nil {
 		return err
@@ -266,6 +277,11 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	// half-built site or a site spec pointed at a live cluster; provisioning
 	// over either ends badly.
 	if err := requireNoControlPlane(ctx, inv.Cluster.Nodes, opts.dialContext); err != nil {
+		return err
+	}
+	// The two images this repository builds are side-loaded, not pulled. A
+	// build that was never made fails here, before the cluster exists.
+	if err := requireLocalImages(ctx, engine, cweCfg.CWEImage, cweCfg.ProvisionedProviderImage); err != nil {
 		return err
 	}
 
@@ -681,17 +697,13 @@ func envOrDefault(key, fallback string) string {
 func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS bool) (cwedeploy.Config, error) {
 	cfg := cwedeploy.DefaultConfig()
 
+	// Both images default to the local build's tag from the bootstrap
+	// manifest, so an empty value means the manifest lacks the entry.
 	if cfg.CWEImage == "" {
-		return cfg, errors.New("NKECTL_CWE_IMAGE is not set; it must name the CWE image to deploy " +
-			"(e.g. nvcr.io/<org>/nke-controller:edge — see .github/workflows/image-nvcr.yml)")
+		return cfg, errors.New("NKECTL_CWE_IMAGE is not set and the bootstrap manifest carries no default CWE image")
 	}
 	if cfg.ProvisionedProviderImage == "" {
-		return cfg, errors.New("NKECTL_CAPI_PROVISIONED_IMAGE is not set; it must name the " +
-			"cluster-api-provider-provisioned image, which is the Cluster API infrastructure " +
-			"provider for hosts that already exist (e.g. " +
-			"nvcr.io/<org>/cluster-api-provider-provisioned:edge — see " +
-			".github/workflows/image-provisioned-nvcr.yml, or build it with " +
-			"`docker build -f cluster-api-provider-provisioned/Dockerfile .`)")
+		return cfg, errors.New("NKECTL_CAPI_PROVISIONED_IMAGE is not set and the bootstrap manifest carries no default provisioned-provider image")
 	}
 
 	// SPIRE is told the Kind cluster's own name. The identity trust domain comes
@@ -733,12 +745,12 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 // elapses. What to install is decided by cweDeployConfig; this only carries it
 // out.
 //
-// The CWE and provisioned-provider images are loaded into the kind cluster directly
-// (bootstrapengine's existing Engine.LoadImage, via `kind load docker-image`)
-// rather than pulled from inside the cluster: the cluster is ephemeral and has
-// no image pull secret configured, and this way authenticating to whatever
-// registry hosts them is the caller's problem, not nkectl's — `docker login`
-// once on the host, same as any other pull, before running this command.
+// The CWE and provisioned-provider images are loaded into the kind cluster
+// from the host's image store (Engine.LoadImage) rather than pulled from
+// inside it: the cluster is ephemeral and has no pull secret. A reference
+// with a registry host is pulled onto the host first when it is not cached;
+// authenticating to that registry is the caller's job. A reference without a
+// registry host must already be in the store (`make -C cli images`).
 //
 // SPIRE needs no such handling: its chart and images are public.
 
@@ -825,8 +837,9 @@ func requireContainerRuntime(lookPath func(string) (string, error)) error {
 }
 
 // ensureImageAvailable makes sure image is present in containerd's image
-// store before handing it to Engine.LoadImage, pulling it if it is not
-// already cached from a previous run. That store is the one kind loads from.
+// store before handing it to Engine.LoadImage. A reference with a registry
+// host is pulled when it is not cached. One without must already be there;
+// requireLocalImages checks that before the cluster is created.
 func ensureImageAvailable(
 	ctx context.Context,
 	engine *bootstrapengine.Engine,
@@ -834,7 +847,7 @@ func ensureImageAvailable(
 	image string,
 	logger *slog.Logger,
 ) error {
-	if _, err := engine.Runner.Run(ctx, nil, bootstrapengine.RuntimeCLI, "image", "inspect", image); err != nil {
+	if out, err := engine.Runner.Run(ctx, nil, bootstrapengine.RuntimeCLI, "image", "inspect", image); err != nil {
 		// An absent binary is not a cache miss, and pulling cannot fix it.
 		// requireContainerRuntime catches this before any of it runs; this is
 		// defence in depth for a runtime that leaves PATH mid-bootstrap, and
@@ -844,6 +857,9 @@ func ensureImageAvailable(
 				"the bootstrap cluster runs on nerdctl/containerd; Docker is not supported",
 				bootstrapengine.RuntimeCLI, err)
 		}
+		if !hasRegistryHost(image) {
+			return missingLocalImageError(image, err, out)
+		}
 		logger.Info("image not cached locally; pulling", "image", image, "runtime", bootstrapengine.RuntimeCLI)
 		if out, err := engine.Runner.Run(ctx, nil, bootstrapengine.RuntimeCLI, "pull", image); err != nil {
 			return fmt.Errorf("%s pull %s: %w\n%s\n"+
@@ -852,6 +868,43 @@ func ensureImageAvailable(
 		}
 	}
 	return engine.LoadImage(ctx, cluster.Name, image)
+}
+
+// hasRegistryHost reports whether an image reference names a registry: its
+// first path component holds a dot or a colon, is localhost, or has an upper
+// case letter (repository names are lower case, so the reference parser reads
+// it as a domain). A reference without one is a local build the runtime
+// cannot pull.
+func hasRegistryHost(image string) bool {
+	first, _, found := strings.Cut(image, "/")
+	if !found {
+		return false
+	}
+	return first == "localhost" || strings.ContainsAny(first, ".:") || strings.ToLower(first) != first
+}
+
+// requireLocalImages checks that every image without a registry host is in
+// the local image store. Such an image cannot be pulled later, so this runs
+// before the cluster is created.
+func requireLocalImages(ctx context.Context, engine *bootstrapengine.Engine, images ...string) error {
+	for _, image := range images {
+		if hasRegistryHost(image) {
+			continue
+		}
+		if out, err := engine.Runner.Run(ctx, nil, bootstrapengine.RuntimeCLI, "image", "inspect", image); err != nil {
+			return missingLocalImageError(image, err, out)
+		}
+	}
+	return nil
+}
+
+// missingLocalImageError names the build command and the two variables that
+// replace a local build, and keeps the inspect failure.
+func missingLocalImageError(image string, err error, out string) error {
+	return fmt.Errorf("image %s is not in the local image store (%w\n%s) and names no registry to pull it from; "+
+		"build it with `make -C cli images`, or set NKECTL_CWE_IMAGE / NKECTL_CAPI_PROVISIONED_IMAGE "+
+		"to an image the runtime can pull (for Docker Hub, write docker.io/<org>/<name>)",
+		image, err, strings.TrimSpace(out))
 }
 
 // dumpSiteSpec prints the loaded, defaulted site spec as YAML so the operator

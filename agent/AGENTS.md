@@ -193,7 +193,18 @@ docs/               # Design and security context docs
 
 ## Dependencies
 
-- **Go 1.26+** (see the root `go.work`)
+- **Go** — the floor is the `go` directive in the root `go.work`, not this
+  module's `go.mod`. `agent/go.mod` is lower, but every build resolves through
+  the workspace. Read the current value with
+  `awk '/^go /{print $2; exit}' ../go.work` rather than trusting a number here.
+
+  Under the default `GOTOOLCHAIN=auto` an older local Go downloads a conforming
+  toolchain and the build just works, so this is usually invisible. It bites
+  when that switch is blocked — `GOTOOLCHAIN=local`, an explicit older pin, or
+  no network to fetch one — and then every workspace-aware command, `go list`
+  included, fails with `go.work requires go >= <version>`. Editors and language
+  servers hit this first, because they call `go list` directly rather than
+  through `make`, which pins `GOTOOLCHAIN` to the `go.work` value for you.
 - **buf** (for proto generation; see `BUF_VERSION` in Makefile)
 - **protoc** plugins via buf remote plugins (`protoc-gen-go`, `protoc-gen-go-grpc`)
 

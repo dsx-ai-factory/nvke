@@ -28,6 +28,15 @@ SHELLCHECK_SHA256  ?= 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e
 GITLEAKS_VERSION   ?= 8.30.1
 GITLEAKS_SHA256_AMD64 ?= 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
 
+# tsh and tbot for the Forge site-controller lane, out of one tarball. This
+# pin is not free to move: it is matched to the Teleport cluster's server
+# version rather than merely kept within the supported skew, because an
+# unpinned client against a pinned cluster surfaces as an unexplained relay
+# error deep in a 40-minute run. Bump it when the cluster is upgraded.
+# teleport-v<version>-linux-amd64-bin.tar.gz.
+TELEPORT_VERSION   ?= 18.11.0
+TELEPORT_SHA256_AMD64 ?= 8d3dba03ea6b6e0d72c97e190da0595e8f0d70f5573c3a26b1908cf60caf6e3f
+
 KUBECONFORM_VERSION ?= v0.7.0
 # .github/actions/setup-kubeconform installs it for chart.yml and nktp-chart.yml,
 # both on ubuntu-latest, so amd64 is the only platform needed.
@@ -49,6 +58,10 @@ KUBECTL_SHA256_ARM64 ?= 9f9d9c44a7b5264515ac9da5991584e2395bd50662e651132337e7b4
 # clusterctl and the CAPI core/kubeadm providers ship as one release, so one
 # pin covers the binary and everything `clusterctl init` installs.
 CAPI_VERSION    ?= v1.12.3
+# The cert-manager `clusterctl init` installs at CAPI_VERSION. The NKTP chart's
+# Kind e2e installs it, and its kubeconform check validates against its CRDs.
+# Move it with CAPI_VERSION.
+CERT_MANAGER_VERSION ?= v1.19.3
 
 ORAS_VERSION        ?= 1.3.3
 ORAS_SHA256_AMD64   ?= 9ce999f8d2de03fc03968b29d743077a58783e545e5eaa53917ca177352d0e59
@@ -56,4 +69,17 @@ PACKER_VERSION      ?= 1.15.4
 # packer_<version>_linux_{amd64,arm64}.zip, from HashiCorp's SHA256SUMS.
 PACKER_SHA256_AMD64 ?= 15f97a6a99645c7d5308c609973b5280837b38e112beac413ccbce80da927cf1
 PACKER_SHA256_ARM64 ?= 23e6d2e596dd9e2527e0f7bea9aedd26059729375a0d17c462c2621f1b97b82d
+# The S3 client the OS-image bake reads its build cache with. The ARC runner
+# images carry no AWS CLI. s5cmd_<version>_Linux-{64bit,arm64}.tar.gz, from the
+# release's checksums.txt.
+S5CMD_VERSION      ?= 2.3.0
+S5CMD_SHA256_AMD64 ?= de0fdbfa3aceae55e069ba81a0fc17b2026567637603734a387b2fca06c299b4
+S5CMD_SHA256_ARM64 ?= 1439f0d00ecedcd2a2f1f2c6749bbb0152b2257bf5086f29646ec8ae38798e24
 GO_LICENSES_VERSION ?= v2.0.2-0.20260709180300-7e73597a45d1
+# Lints controller/api/openapi.yaml (`make -C controller/api lint-spec`).
+VACUUM_VERSION      ?= v0.30.6
+# Renders controller/api/openapi.yaml into one HTML page (`make -C controller/api docs`).
+REDOCLY_VERSION     ?= 2.57.0
+# Checks and publishes the documentation site (.github/workflows/api-docs.yml).
+# fern/fern.config.json pins the same number; move both together.
+FERN_VERSION        ?= 5.143.6

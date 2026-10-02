@@ -11,7 +11,7 @@ metadata:
     {{- /* The upstream pre-delete Job selects this label to delete the Collector before the Operator. */}}
     helm.sh/chart: {{ include "opentelemetry-kube-stack.chart" (index .Subcharts "opentelemetry-kube-stack") }}
 spec:
-  {{- $collector := dict "image" (.Values.gateway_metrics.otelcol.image | default .Values.otelcol_image) }}
+  {{- $collector := dict "image" (include "nktp.image" (dict "imageRegistry" .Values.global.imageRegistry "image" (.Values.gateway_metrics.otelcol.image | default .Values.otelcol_image))) }}
   {{- /* Kubernetes workload values override defaults. The resolved Collector image overrides any workload image. */}}
   {{- mustMergeOverwrite (dict "mode" "deployment" "managementState" "managed" "upgradeStrategy" "automatic" "replicas" 1) (omit .Values.gateway_metrics.kubernetes "config") $collector | toYaml | nindent 2 }}
   config:

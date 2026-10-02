@@ -17,6 +17,7 @@ import (
 	"github.com/onsi/ginkgo/v2"
 	"sigs.k8s.io/yaml"
 
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 )
 
@@ -122,10 +123,10 @@ func nicoVMSOSProfileTestSpec(profile nicoVMSOSProfileEntry, index int) testSpec
 		shape: clusterShape{
 			kubernetesVersion: kubernetesVersion,
 			cniPlugin:         CNIPluginCalico,
-			controlPlanePools: []nke.NodePoolSpec{{
-				DesiredNodeCount: 1,
-				InstanceTypeID:   nicoVMSInstanceTypeID,
-			}},
+			// The profile under test is the worker's. The control plane takes the
+			// nico-vms default instance, which leaves room for a flag-on CWE's
+			// kubelet reservation (see nicoVMSSpec).
+			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
 			workerPools: []nke.NodePoolSpec{{
 				Name:             fmt.Sprintf("worker-profile-%02d", index+1),
 				NodeNamePrefix:   fmt.Sprintf("wp%02d", index+1),
@@ -330,8 +331,9 @@ func TestNicoVMSOSProfileMatrix(t *testing.T) {
 	if productionSpec.shape.workerPools[0].InstanceTypeID != nicoVMSInstanceTypeID {
 		t.Errorf("production profile uses instance type %q, want %q", productionSpec.shape.workerPools[0].InstanceTypeID, nicoVMSInstanceTypeID)
 	}
-	if productionSpec.shape.controlPlanePools[0].InstanceTypeID != nicoVMSInstanceTypeID {
-		t.Errorf("control plane uses instance type %q, want %q", productionSpec.shape.controlPlanePools[0].InstanceTypeID, nicoVMSInstanceTypeID)
+	built := nicoVMSSpec(config.Config{}, "matrix", productionSpec.shape)
+	if got := builtControlPlaneInstanceType(built); got != nicoVMSLargeInstanceID {
+		t.Errorf("control plane uses instance type %q, want %q", got, nicoVMSLargeInstanceID)
 	}
 	if productionSpec.options.Provision != 2*time.Hour {
 		t.Errorf("provision timeout is %s, want 2h", productionSpec.options.Provision)

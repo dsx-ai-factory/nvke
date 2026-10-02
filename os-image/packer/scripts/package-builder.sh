@@ -10,13 +10,35 @@ native=0
 case "$(uname -s)/$(uname -m)/$arch" in
   Linux/x86_64/amd64|Linux/aarch64/arm64) native=1 ;;
 esac
+# A host build links the agent against the builder's glibc, and its .deb declares
+# a bare `Depends: libc6`, so a host newer than the target Ubuntu installs
+# cleanly and then fails to exec. Only newer is a problem. Unknown on either
+# side keeps the previous behaviour.
+series_num() { local v=${1%%.*} r=${1#*.}; printf '%d' $(( 10#$v * 100 + 10#${r%%.*} )); }
+target_series=${NKE_TARGET_UBUNTU_SERIES:-}
+host_series=${NKE_HOST_UBUNTU_SERIES:-}
+if [[ -z "$host_series" && -r /etc/os-release ]]; then
+  host_series=$(. /etc/os-release 2>/dev/null; [[ "${ID:-}" == ubuntu ]] && echo "${VERSION_ID:-}")
+fi
+host_too_new=0
+if [[ -n "$target_series" && -n "$host_series" ]] &&
+   (( $(series_num "$host_series") > $(series_num "$target_series") )); then
+  host_too_new=1
+fi
+
 mode=${NKE_PACKAGE_BUILDER:-auto}
 if [[ "$mode" == auto ]]; then
-  if [[ "$native" == 1 ]]; then mode=host; else mode=nix; fi
+  if [[ "$native" == 1 && "$host_too_new" == 0 ]]; then mode=host; else mode=nix; fi
 fi
 case "$mode" in
   host)
     [[ "$native" == 1 ]] || { echo 'host package builds require a matching Linux host' >&2; exit 1; }
+    [[ "$host_too_new" == 0 ]] || {
+      echo "this Ubuntu $host_series host cannot build packages for an Ubuntu $target_series image:" >&2
+      echo "  the agent would link against a glibc the image does not have and fail to exec." >&2
+      echo "  Use NKE_PACKAGE_BUILDER=nix, or build on Ubuntu $target_series or older." >&2
+      exit 1
+    }
     command -v go >/dev/null || { echo 'go is required for host package builds' >&2; exit 1; }
     ;;
   nix)
@@ -33,7 +55,7 @@ case "$mode" in
     ;;
   *) echo 'NKE_PACKAGE_BUILDER must be auto, host, or nix' >&2; exit 1 ;;
 esac
-echo "package builder: $mode ($arch)"
+echo "package builder: $mode ($arch${target_series:+, target ubuntu $target_series})"
 if [[ "${1:-}" == --check ]]; then
   if [[ "$mode" == nix ]]; then
     # Realize the guest runner now: without a matching Linux builder or a cache

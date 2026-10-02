@@ -59,8 +59,9 @@ func buildCAPIMachineForNode(node db.Node, nodeSet db.NodeSet, nodePool db.NodeP
 			Annotations: capiMachineAnnotations(node),
 		},
 		Spec: clusterv1.MachineSpec{
-			ClusterName: cluster.Name,
-			Version:     machineVersion,
+			ClusterName:   cluster.Name,
+			FailureDomain: node.FailureDomain,
+			Version:       machineVersion,
 			Bootstrap: clusterv1.Bootstrap{
 				DataSecretName: &bootstrapSecretName,
 			},

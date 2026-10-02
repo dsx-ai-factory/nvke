@@ -24,12 +24,17 @@
 #  1. the manager's args. Upstream defaults the reboot and repair annotations
 #     to nico.nvidia.com/*; CWE writes nke.nvidia.com/*. A mismatch is not an
 #     error anywhere -- every reboot and repair request is silently ignored.
-#  2. imagePullSecrets: ghcr-imagepull. The upstream asset carries none, and
-#     the image is not anonymously pullable (ghcr.io answers 403 to an
-#     anonymous token). The Secret is rendered by
-#     ../nke-base-config/30-ghcr-imagepull.yaml.tmpl, which the first item
-#     applies. That run patched the Deployment after applying instead; a
-#     manifest item has no patch step, so it is baked in here.
+#  2. imagePullSecrets: ghcr-imagepull. The upstream asset carries none. The
+#     Secret is rendered by ../nke-base-config/30-ghcr-imagepull.yaml.tmpl,
+#     which the first item applies. That run patched the Deployment after
+#     applying instead; a manifest item has no patch step, so it is baked in
+#     here.
+#
+#     The package is public as of 2026-09-24 -- an anonymous ghcr.io token
+#     fetches this manifest -- so the Secret is belt and braces rather than
+#     the requirement an earlier version of this comment described. Keep it:
+#     the package's visibility is not ours to depend on, and a private
+#     sibling image added later would need it.
 #
 # The third edit ci/capnico applies -- repointing the image at nvcr.io -- is
 # deliberately NOT made.

@@ -23,9 +23,9 @@ navbar-links:
   - type: github
     value: https://github.com/dsx-ai-factory/nke
 
-experimental:
-  mdx-components:
-    - ./components
+check:
+  rules:
+    broken-links: error
 
 products:
   - display-name: NVIDIA Kubernetes Engine

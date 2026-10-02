@@ -44,7 +44,7 @@ warn() {
 report="$(mktemp)"
 trap 'rm -f "${report}"' EXIT
 set +e
-(cd "${repo_root}/${module}" && GOPROXY=off "${scanner}" ./...) >"${report}" 2>&1
+(cd "${repo_root}/${module}" && "${scanner}" ./...) >"${report}" 2>&1
 rc=$?
 set -e
 cat "${report}"

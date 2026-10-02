@@ -156,7 +156,6 @@ jobs:
       NKE_E2E_NICO_VMS_CNI: ovn-kubernetes
       NKE_E2E_STATE_DIR: ${{ github.workspace }}/controller/.local/nico-vms-e2e/${{ github.run_id }}-${{ github.run_attempt }}
       NKE_BRINGUP_ARTIFACT_DIR: ${{ github.workspace }}/controller/.local/nico-vms-e2e/${{ github.run_id }}-${{ github.run_attempt }}/host
-      GOPROXY: "off"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -185,7 +184,6 @@ jobs:
         with:
           repository: dsx-ai-factory/cluster-api-provider-nico
           ref: ${{ steps.capnico_version.outputs.ref }}
-          token: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
           path: .capnico/cluster-api-provider-nico
           persist-credentials: false
 

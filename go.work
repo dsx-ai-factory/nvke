@@ -1,12 +1,8 @@
 // Go workspace for every module in the repository.
 //
-// `go work sync` and `go build` here need no NVIDIA credentials for module
-// downloads: all eleven modules build from public dependencies, except
-// github.com/dsx-ai-factory/cluster-api-provider-nico, which is still INTERNAL
-// visibility and is carried in the committed vendor/ tree until it goes
-// public. Re-running `go work vendor` (dependency bumps) needs access to that
-// repository; everything else an outside contributor can do gets the same
-// result as CI. See docs/go-workspace.md.
+// All eleven modules resolve from public dependencies. Go downloads modules
+// into its cache on first use; no committed vendor tree or NVIDIA credentials
+// are required. See docs/go-workspace.md.
 go 1.27.1
 
 use (

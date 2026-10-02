@@ -28,6 +28,9 @@ set -euo pipefail
 CLUSTER="${CLUSTER:-nktp-e2e}"
 NAMESPACE="${NAMESPACE:-nktp}"
 CHART="${CHART:-nktp/deploy/charts/nktp}"
+VALUES="${VALUES:-nktp/hack/e2e-values.yaml}"
+# Pinned in make/tool-versions.mk: the version clusterctl init installs on a site.
+CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-$(make --no-print-directory print-CERT_MANAGER_VERSION)}"
 KIND_CONFIG="${KIND_CONFIG:-controller/hack/cwe-capi-kind.yaml}"
 KEEP_CLUSTER="${KEEP_CLUSTER:-0}"
 REUSE_CLUSTER="${REUSE_CLUSTER:-0}"
@@ -84,19 +87,26 @@ log "Installing the chart"
 # this does not edit the caller's helm repo list.
 make --no-print-directory nktp-chart-deps
 
+# The chart's certificates come from cert-manager: the Operator's webhook
+# certificate, and the mTLS between each Collector and its Target Allocator.
+helm upgrade --install cert-manager oci://quay.io/jetstack/charts/cert-manager \
+  --version "$CERT_MANAGER_VERSION" \
+  --namespace cert-manager --create-namespace \
+  --set crds.enabled=true \
+  --wait --timeout 5m
+
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-# The node Collector reads /var/log/pods, /proc and /etc/passwd from the host, so
+# The node Collector reads /var/log/pods and /proc from the host, so
 # the namespace has to admit a privileged pod or its DaemonSet never starts.
 kubectl label namespace "$NAMESPACE" \
   pod-security.kubernetes.io/enforce=privileged --overwrite
 
-# --kubelet-insecure-tls is Kind-only: Kind's kubelet serving certificates are
-# self-signed, so metrics-server cannot verify them and never goes Ready. A real
-# site signs them through the controller's CSR approval and needs no such flag.
+# The chart's defaults are sized for a multi-node cluster. VALUES sizes it for
+# one Kind node and turns on metrics-server for Kind; see that file.
 helm install nktp "$CHART" \
   --namespace "$NAMESPACE" \
   --wait --timeout 15m \
-  --set-json 'metrics-server.args=["--kubelet-insecure-tls"]'
+  --values "$VALUES"
 
 log "Waiting for the Operator-built Collectors"
 # helm --wait covers the Helm-managed workloads. The Operator builds the
@@ -175,6 +185,14 @@ retry_until "scrape targets are up" \
 retry_until "no exporter send failures" \
   promql_empty 'sum by (service_name) ({__name__=~"otelcol_exporter_send_failed.*"}) > 0'
 
+# The API server and CoreDNS are scraped through the kube-stack monitors the
+# large-target pool selects. The scheduler, controller manager, etcd and
+# kube-proxy serve metrics on 127.0.0.1 on Kind, so their targets are down here.
+retry_until "API server metrics are scraped" \
+  promql_nonempty 'up{job="apiserver"} == 1'
+retry_until "CoreDNS metrics are scraped" \
+  promql_nonempty 'up{job="coredns"} == 1'
+
 # kube-state-metrics object state arrives through the large-target pool.
 retry_until "object-state metrics arrive" \
   promql_nonempty 'count(kube_pod_info) > 0 and count(kube_deployment_status_replicas_available) > 0'
@@ -182,6 +200,11 @@ retry_until "object-state metrics arrive" \
 # Pod logs reach Loki through the node Collector's filelog receiver.
 retry_until "pod logs reach Loki" \
   logql_nonempty 'sum by (k8s_namespace_name) (count_over_time({k8s_namespace_name=~"kube-system|nktp"}[15m]))'
+
+# The node's systemd journal reaches Loki through the node Collector's journald
+# receiver, which runs the node's own journalctl.
+retry_until "node journal logs reach Loki" \
+  logql_nonempty 'sum(count_over_time({service_name="journald"}[15m]))'
 
 # Kubernetes events reach Loki through the cluster-events Collector.
 retry_until "Kubernetes events reach Loki" \

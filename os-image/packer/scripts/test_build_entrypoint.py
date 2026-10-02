@@ -75,6 +75,20 @@ output.mkdir(parents=True, exist_ok=True)
                               f"efi_firmware_vars={self.env['OVMF_VARS_TEMPLATE']}"):
                     self.assertIn(value, args)
 
+    def test_serial_console_defaults_to_empty_and_passes_an_override_through(self):
+        # Empty means "use the architecture default", resolved in the template
+        # rather than in Make. A variant each, not the same one twice: the build
+        # target refuses a pre-existing output directory.
+        for variant, extra, expected in (
+            ("non-fde", [], "serial_console="),
+            ("fde", ["SERIAL_CONSOLE=ttyS1"], "serial_console=ttyS1"),
+        ):
+            with self.subTest(variant=variant, extra=extra):
+                result = self.make(f"os-image-{variant}", *extra, skip_build_setup=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                args = json.loads(Path(self.env["PACKER_ARGS"]).read_text())
+                self.assertIn(expected, args)
+
     def test_native_requirement_rejects_tcg_before_packer_build(self):
         result = self.make("os-image-non-fde", "REQUIRE_ACCELERATION=1", skip_build_setup=True)
         self.assertNotEqual(result.returncode, 0)
@@ -101,6 +115,31 @@ output.mkdir(parents=True, exist_ok=True)
                 result = self.make("check-deps")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("package builder: nix", result.stdout)
+
+    def test_host_newer_than_the_target_release_cannot_build_packages(self):
+        # The agent .deb declares a bare `Depends: libc6`, so an agent built on a
+        # newer Ubuntu installs into the image and then fails to exec.
+        self.script("go", "#!/bin/sh\nexit 0\n")
+        self.script("nix", "#!/bin/sh\nexit 0\n")
+        for host, mode, expected in (
+            ("26.04", "auto", "package builder: nix"),
+            ("24.04", "auto", "package builder: host"),
+            ("22.04", "auto", "package builder: host"),
+            ("24.04", "host", "package builder: host"),
+        ):
+            with self.subTest(host=host, mode=mode):
+                self.env["NKE_HOST_UBUNTU_SERIES"] = host
+                result = self.make(
+                    "check-deps", f"NKE_PACKAGE_BUILDER={mode}", "UBUNTU_RELEASE=24.04.5"
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn(expected, result.stdout)
+
+        self.env["NKE_HOST_UBUNTU_SERIES"] = "26.04"
+        result = self.make("check-deps", "NKE_PACKAGE_BUILDER=host", "UBUNTU_RELEASE=24.04.5")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot build packages for an Ubuntu 24.04 image", result.stderr)
+        del self.env["NKE_HOST_UBUNTU_SERIES"]
 
     def test_explicit_host_builder_rejects_mismatched_linux(self):
         self.script("uname", '#!/bin/sh\ncase "$1" in -m) echo x86_64;; -s) echo Linux;; esac\n')

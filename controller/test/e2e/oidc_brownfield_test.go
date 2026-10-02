@@ -53,9 +53,7 @@ func validateBrownfieldOIDC(test *tenantTest) {
 		skipIfNKEOIDCDisabled(ctx, test.k8sClient)
 
 		By("Waiting for every desired node to be ready")
-		Eventually(func(ctx context.Context) error {
-			return test.nke.AssertNodeConditions(ctx, test.cluster.ID, expectedNodeCounts(test.spec), nke.IsNodeReady)
-		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(1*time.Second).
+		Eventually(test.assertDesiredNodesReady).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(1*time.Second).
 			Should(Succeed(), "all desired nodes should be ready before enabling OIDC")
 
 		By("Enabling OIDC via the UpdateCluster API")

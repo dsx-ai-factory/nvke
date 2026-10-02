@@ -47,3 +47,21 @@ func TestNodeSetProviderSetters(t *testing.T) {
 	require.Equal(t, []string{"echo pre"}, nodeSet.Capi.PreKubeadmCommands)
 	require.Equal(t, db.SpireAttestationMethodJoinToken, nodeSet.Capi.SpireAttestationMethod)
 }
+
+func TestNodeSetResolveProviderType(t *testing.T) {
+	nico := db.NodeSet{ID: uuid.New()}
+	nico.SetNico(db.NicoNodePoolProvider{})
+	providerType, err := nico.ResolveProviderType()
+	require.NoError(t, err)
+	require.Equal(t, db.ProviderTypeNico, providerType)
+
+	capi := db.NodeSet{ID: uuid.New()}
+	capi.SetCapi(db.CAPINodePoolProvider{})
+	providerType, err = capi.ResolveProviderType()
+	require.NoError(t, err)
+	require.Equal(t, db.ProviderTypeCAPI, providerType)
+
+	empty := db.NodeSet{ID: uuid.New()}
+	_, err = empty.ResolveProviderType()
+	require.ErrorIs(t, err, db.ErrMissingProviderPayload)
+}

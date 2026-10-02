@@ -1,0 +1,72 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Checks that the tree names no internal infrastructure.
+#
+# This repository is the staging ground for a public one, so the bar is what
+# becomes readable when it ships -- and identifiers are the part that reads as
+# safe and is not. A Forge org, site, VPC or subnet id grants nothing and
+# rotates never, which is exactly why nobody treats one as sensitive. Together
+# they are a map of infrastructure a reader outside NVIDIA does not otherwise
+# have.
+#
+# NOT the Secrets workflow. gitleaks answers "was a credential ever committed",
+# over a range of history, and finds nothing here because none of this is a
+# credential. This asks whether the tree that ships describes infrastructure
+# only NVIDIA can see, which is a question about the tree rather than about
+# history.
+#
+# The script matches identifiers by digest so that it does not publish the
+# values it forbids. See hack/internal-config-check.sh for why, and for what it
+# deliberately does not flag -- a check that goes red for reasons nobody can
+# act on is ignored within a week.
+#
+# The script needs bash, shasum and a PCRE2-enabled ripgrep. Only the first two
+# are on the runner image, so ripgrep is installed below. The script refuses to
+# run without it rather than reporting a clean tree it never read.
+#
+# Deliberately NOT path-filtered, for the reason recorded in actionlint.yml: a
+# filtered check does not report on a pull request that misses the filter, and
+# a required check that never reports leaves that pull request waiting forever.
+# See .github/workflows/README.md.
+
+name: Internal Config Check
+
+# All pull requests, including forks and Dependabot, reach this through
+# merge-gate.yml. The standalone push trigger is post-merge coverage on main.
+on:
+  push:
+    branches: [main]
+  workflow_call:
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  # The sha is part of the group on main, so every commit gets its own. See the
+  # longer note in shellcheck.yml for why, and why this is a literal name rather
+  # than ${{ github.workflow }}.
+  group: Internal Config Check-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  internal-config-check:
+    name: internal-config-check
+    runs-on: ubuntu-latest
+    if: github.repository == 'dsx-ai-factory/nke'
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install ripgrep
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ripgrep
+
+      - name: Check the tree for internal identifiers
+        run: make --no-print-directory internal-config-check

@@ -305,7 +305,7 @@ func validateEtcdQuotaValue(nodeName, quota string) error {
 }
 
 func (a *Activities) getKubeadmJoinStrings(ctx context.Context, cpNode db.Node) (*nkeproto.KubeadmJoinStringResponse, error) {
-	endpoint := net.JoinHostPort(cpNode.IP, a.cfg.NodeAgentPort)
+	endpoint := net.JoinHostPort(cpNode.IP, a.cfg.NodeAgent.Port)
 	entry, _ := joinStringCache.LoadOrStore(endpoint, &cachedJoinStrings{})
 	cached, ok := entry.(*cachedJoinStrings)
 	if !ok {

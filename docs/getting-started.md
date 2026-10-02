@@ -28,12 +28,10 @@ cd nke
 
 ## controller (Cloud Workflow Engine)
 
-> **`controller/` builds outside the NVIDIA network**, as of #76, which replaced
-> the internal carbide SDK with the public
-> `github.com/NVIDIA/ncx-infra-controller-rest`. The one internal dependency
-> left, `cluster-api-provider-nico`, is carried in the committed `vendor/` tree,
-> so the commands in this section need no credentials. From the repository root,
-> `GOPROXY=off make build` compiles all eleven modules and proves it. See
+> **`controller/` builds without NVIDIA credentials.** The carbide SDK and
+> cluster-api-provider-nico dependencies are now public. A cold build needs
+> access to the public Go module proxy; from the repository root,
+> `make build` compiles all eleven modules. See
 > [AGENTS.md](../AGENTS.md).
 
 The repository uses [Flox](https://flox.dev/) to pin its toolchain, in one
@@ -86,7 +84,7 @@ make -C controller run-local              # Postgres, Temporal, then CWE
 Swagger is on <http://localhost:8080/api/docs/>. Infrastructure credentials are
 configured on the Cluster API provider rather than CWE.
 
-[first-cluster.md](first-cluster.md#path-a--the-api-alone) covers this path in
+[first-cluster.md](first-cluster.md#api-only) covers this path in
 full, and goes on to tenant clusters.
 
 ## agent (nke-agent)

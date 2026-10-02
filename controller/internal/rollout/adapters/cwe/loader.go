@@ -23,7 +23,7 @@ type Loader struct {
 	cfg config.Config
 }
 
-// NewLoader returns a Loader over the CWE database. cfg supplies NodeAgentPort,
+// NewLoader returns a Loader over the CWE database. cfg supplies NodeAgent.Port,
 // which each node's AgentEndpoint is built from.
 func NewLoader(database db.DB, cfg config.Config) *Loader {
 	return &Loader{db: database, cfg: cfg}
@@ -38,7 +38,7 @@ func (l *Loader) LoadCluster(ctx context.Context, clusterID uuid.UUID) (rollout.
 	if err != nil {
 		return nil, err
 	}
-	return NewCluster(cluster, nodes, cpNodes, l.cfg.NodeAgentPort), nil
+	return NewCluster(cluster, nodes, cpNodes, l.cfg.NodeAgent.Port), nil
 }
 
 // LoadClusterData returns clusterID's serializable inventory: the cluster row,

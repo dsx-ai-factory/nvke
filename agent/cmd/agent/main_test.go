@@ -110,6 +110,35 @@ func TestValidateAuthConfig(t *testing.T) {
 			cfg:     AgentConfig{},
 			wantErr: `got ""`,
 		},
+		{
+			name: "external mTLS alongside tls-jwt",
+			cfg: AgentConfig{
+				GRPCAuthMode:             authModeTLSJWT,
+				DSXIdentityExchangeURL:   "https://identity.example.test/v1/exchange",
+				ControllerClientCABundle: "/etc/nke/controller-ca.crt",
+			},
+		},
+		{
+			// The controller does not verify the certificate the agent serves
+			// in this mode, so the identity token is the only thing that
+			// authenticates the agent.
+			name: "external mTLS without tls-jwt",
+			cfg: AgentConfig{
+				GRPCAuthMode:             authModeSPIFFEMTLS,
+				ControllerClientCABundle: "/etc/nke/controller-ca.crt",
+			},
+			wantErr: "--controller-client-ca-bundle requires --grpc-auth-mode=tls-jwt",
+		},
+		{
+			name: "external mTLS cannot run on plaintext gRPC",
+			cfg: AgentConfig{
+				GRPCAuthMode:             authModeTLSJWT,
+				DisableMTLS:              true,
+				DSXIdentityExchangeURL:   "https://identity.example.test/v1/exchange",
+				ControllerClientCABundle: "/etc/nke/controller-ca.crt",
+			},
+			wantErr: "--controller-client-ca-bundle cannot be combined with --disable-mtls",
+		},
 	}
 
 	for _, tc := range tests {

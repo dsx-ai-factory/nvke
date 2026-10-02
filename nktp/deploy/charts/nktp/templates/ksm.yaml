@@ -42,7 +42,7 @@ spec:
       {{- end }}
       containers:
         - name: kube-state-metrics
-          image: {{ $ksm.image | quote }}
+          image: {{ include "nktp.image" (dict "imageRegistry" $root.Values.global.imageRegistry "image" $ksm.image) | quote }}
           args:
             {{- $group.args | toYaml | nindent 12 }}
             {{- if not $daemon }}

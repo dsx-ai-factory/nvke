@@ -55,6 +55,7 @@ func TestUnit_ControllerReconcileSkipsMissingCluster(t *testing.T) {
 		slog.Default(),
 		dbwrapper.New(mockDB, slog.Default()),
 		nil,
+		nil,
 	)
 
 	result, err := controller.Reconcile(context.Background(), dbreconcile.ClusterKey(clusterID))
@@ -372,13 +373,14 @@ func createNodeSet(ctx context.Context, t *testing.T, database db.DB, nodePoolID
 func newNode(nodePool db.NodePool, nodeSetID uuid.UUID, name string, opts ...nodeOpt) db.Node {
 	poolNico, _ := nodePool.NicoProvider()
 	n := db.Node{
-		ID:           uuid.New(),
-		NodePoolID:   nodePool.ID,
-		NodeSetID:    nodeSetID,
-		ClusterID:    nodePool.ClusterID,
-		ControlPlane: nodePool.ControlPlane,
-		Name:         name,
-		IP:           "10.0.0.1",
+		ID:                     uuid.New(),
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+		NodePoolID:             nodePool.ID,
+		NodeSetID:              nodeSetID,
+		ClusterID:              nodePool.ClusterID,
+		ControlPlane:           nodePool.ControlPlane,
+		Name:                   name,
+		IP:                     "10.0.0.1",
 		Conditions: db.NodeConditions{
 			KubernetesReady: db.Condition{Status: db.ConditionStatusTrue},
 			Provisioned:     db.Condition{Status: db.ConditionStatusTrue},
@@ -446,7 +448,7 @@ func (c *controller) Start(ctx context.Context) {
 
 // newCPController creates a controller wrapper for a controlplane.Controller.
 func newCPController(cfg config.Config, logger *slog.Logger, database db.DB, clusterID uuid.UUID) *controller {
-	cpController := controlplane.NewController(cfg, logger, dbwrapper.New(database, logger), nil)
+	cpController := controlplane.NewController(cfg, logger, dbwrapper.New(database, logger), nil, nil)
 	return newController(func(ctx context.Context) error {
 		_, err := cpController.Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
 		return err

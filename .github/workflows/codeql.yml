@@ -22,8 +22,8 @@
 # it. A single traced build covers the same code once.
 #
 # The workspace stays ON, where this file previously set GOWORK=off. That is
-# what makes the build hermetic: the committed vendor/ tree supplies every
-# dependency and nothing is downloaded. It is also why go-version is pinned
+# what makes the build reproducible: go.sum pins the public modules, which are
+# downloaded into the Go cache as needed. It is also why go-version is pinned
 # rather than read from a go.mod -- see the comment on that step.
 
 name: CodeQL
@@ -164,13 +164,7 @@ jobs:
         # so a module added to the workspace is analysed with no change to this
         # file.
         #
-        # GOPROXY=off asserts that the vendor tree is complete rather than
-        # hoping. Without it a missing vendored dependency would quietly reach
-        # the network, and CodeQL would analyse a build list that is not the one
-        # we ship.
         shell: bash
-        env:
-          GOPROXY: "off"
         run: |
           set -euo pipefail
           mods=$(sed -n '/^use (/,/^)/p' go.work \

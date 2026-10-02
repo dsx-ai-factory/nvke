@@ -17,15 +17,15 @@ notices-check` verifies it is up to date.
 
 | Package | License | Module | Source |
 |---------|---------|--------|--------|
-| `github.com/go-jose/go-jose/v4` | Apache-2.0 | `github.com/go-jose/go-jose/v4@v4.1.5` | Unknown |
-| `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | `github.com/go-jose/go-jose/v4@v4.1.5` | Unknown |
-| `github.com/spiffe/go-spiffe/v2` | Apache-2.0 | `github.com/spiffe/go-spiffe/v2@v2.8.1` | Unknown |
-| `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.59.0` | Unknown |
-| `golang.org/x/sys/unix` | BSD-3-Clause | `golang.org/x/sys@v0.48.0` | Unknown |
-| `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.42.0` | Unknown |
-| `google.golang.org/genproto/googleapis/rpc/status` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20260819154853-08b0e4226688` | Unknown |
-| `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.83.2` | Unknown |
-| `google.golang.org/protobuf` | BSD-3-Clause | `google.golang.org/protobuf@v1.36.12` | Unknown |
+| `github.com/go-jose/go-jose/v4` | Apache-2.0 | `github.com/go-jose/go-jose/v4@v4.1.5` | https://github.com/go-jose/go-jose/blob/v4.1.5/LICENSE |
+| `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | `github.com/go-jose/go-jose/v4@v4.1.5` | https://github.com/go-jose/go-jose/blob/v4.1.5/json/LICENSE |
+| `github.com/spiffe/go-spiffe/v2` | Apache-2.0 | `github.com/spiffe/go-spiffe/v2@v2.8.1` | https://github.com/spiffe/go-spiffe/blob/v2.8.1/LICENSE |
+| `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.59.0` | https://cs.opensource.google/go/x/net/+/v0.59.0:LICENSE |
+| `golang.org/x/sys/unix` | BSD-3-Clause | `golang.org/x/sys@v0.48.0` | https://cs.opensource.google/go/x/sys/+/v0.48.0:LICENSE |
+| `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.42.0` | https://cs.opensource.google/go/x/text/+/v0.42.0:LICENSE |
+| `google.golang.org/genproto/googleapis/rpc/status` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20260819154853-08b0e4226688` | https://github.com/googleapis/go-genproto/blob/08b0e4226688/googleapis/rpc/LICENSE |
+| `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.83.2` | https://github.com/grpc/grpc-go/blob/v1.83.2/LICENSE |
+| `google.golang.org/protobuf` | BSD-3-Clause | `google.golang.org/protobuf@v1.36.12` | https://github.com/protocolbuffers/protobuf-go/blob/v1.36.12/LICENSE |
 
 ## Go Module License Texts
 

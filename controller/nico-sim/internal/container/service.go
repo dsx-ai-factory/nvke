@@ -41,16 +41,17 @@ fi
 mount --bind ` + mockBootIDPath + ` /proc/sys/kernel/random/boot_id
 exec /usr/local/bin/entrypoint /sbin/init`
 
-	labelManaged      = "nvidia.com/nico-containers.managed"
-	labelInstanceID   = "nvidia.com/nico-containers.instance-id"
-	labelInstanceName = "nvidia.com/nico-containers.instance-name"
-	labelSiteID       = "nvidia.com/nico-containers.site-id"
-	labelVPCID        = "nvidia.com/nico-containers.vpc-id"
-	labelTenantID     = "nvidia.com/nico-containers.tenant-id"
-	labelInstanceType = "nvidia.com/nico-containers.instance-type-id"
-	labelSubnetID     = "nvidia.com/nico-containers.subnet-id"
-	labelVPCPrefixID  = "nvidia.com/nico-containers.vpc-prefix-id"
-	labelMachineID    = "nvidia.com/nico-containers.machine-id"
+	labelManaged                = "nvidia.com/nico-containers.managed"
+	labelInstanceID             = "nvidia.com/nico-containers.instance-id"
+	labelInstanceName           = "nvidia.com/nico-containers.instance-name"
+	labelSiteID                 = "nvidia.com/nico-containers.site-id"
+	labelVPCID                  = "nvidia.com/nico-containers.vpc-id"
+	labelTenantID               = "nvidia.com/nico-containers.tenant-id"
+	labelInstanceType           = "nvidia.com/nico-containers.instance-type-id"
+	labelSubnetID               = "nvidia.com/nico-containers.subnet-id"
+	labelVPCPrefixID            = "nvidia.com/nico-containers.vpc-prefix-id"
+	labelMachineID              = "nvidia.com/nico-containers.machine-id"
+	labelSpireAttestationMethod = "nvidia.com/nico-containers.spire-attestation-method"
 
 	labelIpxeScript           = "nvidia.com/nico-containers.ipxe-script"
 	labelSSHKeyGroupIDs       = "nvidia.com/nico-containers.ssh-key-group-ids"
@@ -60,16 +61,17 @@ exec /usr/local/bin/entrypoint /sbin/init`
 )
 
 type Config struct {
-	OrgID          string
-	TenantID       string
-	SiteID         string
-	VPCID          string
-	SubnetID       string
-	SSHKeyGroupID  string
-	InstanceTypeID string
-	NodeNetwork    string
-	NodeImage      string
-	DockerBinary   string
+	OrgID                  string
+	TenantID               string
+	SiteID                 string
+	VPCID                  string
+	SubnetID               string
+	SSHKeyGroupID          string
+	InstanceTypeID         string
+	NodeNetwork            string
+	NodeImage              string
+	SpireAttestationMethod string
+	DockerBinary           string
 }
 
 func (c Config) withDefaults() Config {
@@ -79,6 +81,10 @@ func (c Config) withDefaults() Config {
 	if strings.TrimSpace(c.NodeImage) == "" {
 		c.NodeImage = defaultNodeImage
 	}
+	c.SpireAttestationMethod = strings.TrimSpace(c.SpireAttestationMethod)
+	if c.SpireAttestationMethod == "" {
+		c.SpireAttestationMethod = "tpm"
+	}
 	if strings.TrimSpace(c.DockerBinary) == "" {
 		c.DockerBinary = defaultDocker
 	}
@@ -86,6 +92,9 @@ func (c Config) withDefaults() Config {
 }
 
 func (c Config) validate() error {
+	if c.SpireAttestationMethod != "tpm" && c.SpireAttestationMethod != "joinToken" && c.SpireAttestationMethod != "dsxImds" {
+		return fmt.Errorf("container backend unsupported SPIRE attestation method %q", c.SpireAttestationMethod)
+	}
 	for key, value := range map[string]string{
 		"org": c.OrgID, "tenant": c.TenantID, "site": c.SiteID, "vpc": c.VPCID,
 		"subnet": c.SubnetID, "ssh key group": c.SSHKeyGroupID,
@@ -219,6 +228,7 @@ func (s *Service) createInstance(ctx context.Context, instanceID string, req nic
 	labels[labelTenantID] = req.GetTenantId()
 	labels[labelInstanceType] = firstNonEmpty(req.GetInstanceTypeId(), s.cfg.InstanceTypeID)
 	labels[labelMachineID] = machineID
+	labels[labelSpireAttestationMethod] = s.cfg.SpireAttestationMethod
 	if req.HasIpxeScript() {
 		labels[labelIpxeScript] = encodeLabelValue(req.GetIpxeScript())
 	}

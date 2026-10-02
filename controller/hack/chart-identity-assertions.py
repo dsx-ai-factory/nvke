@@ -2,7 +2,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Assert that the chart still renders the deployed identities it always has.
+"""Assert that the chart still renders the deployed identities it always has,
+and that a greenfield (renamed) render stays internally self-consistent.
 
 The chart package is named `nke-controller`, but every name it renders stays
 `cloud-workflow-engine`, pinned by `nameOverride` in values.yaml. That split is
@@ -20,6 +21,15 @@ fail rather than rename.
 Not asserted: `helm.sh/chart` and the `# Source:` comments. Both encode the
 chart's own name by design, both changed when the package was renamed, and
 neither is a selector or a consumer-visible identity.
+
+A second, independent render then checks the opposite direction: a site that
+*does* rename (nameOverride/fullnameOverride/serviceAccount.name all set to a
+greenfield value, nothing else touched) must still be internally consistent --
+the ServiceMonitor's selector must still match the Service it is supposed to
+scrape, and the tenant RBAC ClusterRoleBinding's subject must still match the
+SPIFFE ID SPIRE actually issues that renamed ServiceAccount (see
+deploy/k8s/spire-nke-services-spiffe-id.yaml's spiffeIDTemplate), with no
+manual spiffe.cweSubject override required.
 """
 
 import argparse
@@ -52,6 +62,81 @@ EXPECTED_SELECTOR = {
     "app.kubernetes.io/name": "cloud-workflow-engine",
     "app.kubernetes.io/instance": "cloud-workflow-engine",
 }
+
+
+GREENFIELD_NAME = "nke-controller"
+GREENFIELD_TRUST_DOMAIN = "example.test"
+
+
+def check_greenfield(chart: str) -> list[str]:
+    """Render with a renamed service and assert it stays self-consistent."""
+    failures = []
+
+    rendered = subprocess.run(
+        [
+            "helm",
+            "template",
+            GREENFIELD_NAME,
+            chart,
+            "--set",
+            f"nameOverride={GREENFIELD_NAME}",
+            "--set",
+            f"fullnameOverride={GREENFIELD_NAME}",
+            "--set",
+            f"serviceAccount.name={GREENFIELD_NAME}",
+            "--set",
+            f"spiffe.trustDomain={GREENFIELD_TRUST_DOMAIN}",
+            "--set",
+            "nkeOIDCAuth.enabled=true",
+            "--set",
+            "tenantAccess.enabled=true",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    docs = [d for d in yaml.safe_load_all(rendered) if d]
+
+    services = [d for d in docs if d.get("kind") == "Service"]
+    monitors = [d for d in docs if d.get("kind") == "ServiceMonitor"]
+    if not services or not monitors:
+        failures.append(
+            f"greenfield render is missing a Service or ServiceMonitor: "
+            f"got {len(services)} Service(s), {len(monitors)} ServiceMonitor(s)"
+        )
+    else:
+        service_selector = services[0]["spec"]["selector"]
+        monitor_selector = monitors[0]["spec"]["selector"]["matchLabels"]
+        if monitor_selector != service_selector:
+            failures.append(
+                f"greenfield ServiceMonitor selector {monitor_selector} != Service selector {service_selector}; "
+                "the ServiceMonitor would scrape nothing"
+            )
+
+    config_maps = [
+        d for d in docs if d.get("kind") == "ConfigMap" and d.get("metadata", {}).get("name") == "nke-rbac"
+    ]
+    if not config_maps:
+        failures.append("greenfield render has no nke-rbac ConfigMap")
+        return failures
+
+    inner = list(yaml.safe_load_all(config_maps[0]["data"]["manifest.yaml"]))
+    bindings = [
+        d for d in inner if d and d.get("kind") == "ClusterRoleBinding" and d["metadata"]["name"] == "nke:cwe"
+    ]
+    want_subject = f"spiffe://{GREENFIELD_TRUST_DOMAIN}/nke-service/{GREENFIELD_NAME}"
+    if not bindings:
+        failures.append("greenfield render has no nke:cwe ClusterRoleBinding")
+    else:
+        got_subjects = {s["name"] for s in bindings[0].get("subjects") or []}
+        if want_subject not in got_subjects:
+            failures.append(
+                f"greenfield nke:cwe ClusterRoleBinding subjects {sorted(got_subjects)} "
+                f"do not include {want_subject!r}; renaming the service account should not "
+                "require a manual spiffe.cweSubject override"
+            )
+
+    return failures
 
 
 def main() -> int:
@@ -99,6 +184,15 @@ def main() -> int:
         return 1
 
     print(f"  chart identities: {len(EXPECTED_NAMES)} resources, container and selector unchanged")
+
+    greenfield_failures = check_greenfield(args.chart)
+    if greenfield_failures:
+        print("ERROR: a renamed (greenfield) render is not internally self-consistent.")
+        for f in greenfield_failures:
+            print(f"  - {f}")
+        return 1
+
+    print("  greenfield identities: ServiceMonitor/Service selectors match, cweSubject self-corrects")
     return 0
 
 

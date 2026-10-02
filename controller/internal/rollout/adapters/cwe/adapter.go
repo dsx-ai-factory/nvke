@@ -24,7 +24,7 @@ var (
 )
 
 // NodeAdapter wraps a db.Node. nodeAgentPort is the port the agent
-// listens on (config.Config.NodeAgentPort); it is combined with the node IP
+// listens on (config.Config.NodeAgent.Port); it is combined with the node IP
 // to form the gRPC endpoint, exactly as internal/agent/client.go does.
 type NodeAdapter struct {
 	node          db.Node

@@ -58,12 +58,10 @@ jobs:
           - arch: amd64
             runner: linux-amd64-cpu16
           - arch: arm64
-            runner: linux-arm64-cpu16
+            runner: arc-arm64-cpu16
     uses: ./.github/workflows/backend-e2e.yml
     permissions:
       contents: read
-    secrets:
-      NKE_INTERNAL_RO_TOKEN: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
     with:
       backend: capd-dsx-identity
       arch: ${{ matrix.arch }}

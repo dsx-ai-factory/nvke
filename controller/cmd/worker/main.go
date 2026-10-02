@@ -145,11 +145,14 @@ func main() {
 		logger.Error("Failed to get SPIFFE trust domain and bundle", "error", err)
 		os.Exit(1)
 	}
-	nodeAgentClient, err := agent.NewClient(ctx, cfg, trustDomain, logger)
+	// One transport for the whole worker: the node-agent client and the rollout
+	// subsystem must reach agents over the same authenticated connection.
+	nodeAgentTransport, err := agent.NewTransport(ctx, cfg, trustDomain, logger)
 	if err != nil {
-		logger.Error("Failed to create node-agent client", "error", err)
+		logger.Error("Failed to create node-agent transport", "error", err)
 		os.Exit(1)
 	}
+	nodeAgentClient := agent.NewClientWithTransport(nodeAgentTransport)
 
 	// Connect to the database, exit on fail.
 	dbLogger := logger.With("logger", "db")
@@ -336,12 +339,14 @@ func main() {
 		if !nicoCRDInstalled {
 			logger.Warn("NicoMachine CRD not installed; skipping the NICo controllers")
 		} else {
-			nicoTpmSpiffeController := capi.NewNicoTpmSpiffeController(
+			nicoSpiffeController := capi.NewNicoSpiffeController(
+				cfg,
+				dbInstance,
 				k8sControllerManager.GetClient(),
-				logger.With("logger", "nico-tpm-spiffe-controller"),
+				logger.With("logger", "nico-spiffe-controller"),
 			)
-			if err := nicoTpmSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
-				logger.Error("Failed to set up nico TPM SPIFFE controller", "error", err)
+			if err := nicoSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
+				logger.Error("Failed to set up nico SPIFFE controller", "error", err)
 				os.Exit(1)
 			}
 
@@ -468,6 +473,7 @@ func main() {
 		logger.With("logger", "control-plane-controller"),
 		dbInstance,
 		temporalClient,
+		k8sControllerManager.GetClient(),
 	)
 	if err := controlPlaneController.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up control plane controller", "error", err)
@@ -526,6 +532,7 @@ func main() {
 		dbInstance,
 		managementK8sClient,
 		nodeAgentClient,
+		nodeAgentTransport,
 		trustDomain,
 		tenantClientProvider,
 	)

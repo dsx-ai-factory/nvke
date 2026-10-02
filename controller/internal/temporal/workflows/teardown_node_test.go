@@ -835,13 +835,14 @@ func setupTestDB(t *testing.T, opts seedOpts) (db.DB, seedResult) {
 		nodeConditions.Joined = db.NewCondition(true, "Joined")
 	}
 	node := db.Node{
-		ID:         nodeID,
-		ClusterID:  clusterID,
-		NodePoolID: testNodePoolID,
-		NodeSetID:  testNodeSetID,
-		Name:       "test-node",
-		IP:         "10.0.0.1",
-		Conditions: nodeConditions,
+		ID:                     nodeID,
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+		ClusterID:              clusterID,
+		NodePoolID:             testNodePoolID,
+		NodeSetID:              testNodeSetID,
+		Name:                   "test-node",
+		IP:                     "10.0.0.1",
+		Conditions:             nodeConditions,
 	}
 	node.SetNico(db.NicoNodeProvider{ForgeMachineID: opts.forgeMachineID})
 	_, err = database.CreateNode(ctx, &node)
@@ -857,13 +858,14 @@ func setupTestDB(t *testing.T, opts seedOpts) (db.DB, seedResult) {
 			peerConditions.Deleting = db.NewCondition(true, "Node deletion in progress")
 		}
 		_, err = database.CreateNode(ctx, &db.Node{
-			ID:         uuid.New(),
-			ClusterID:  clusterID,
-			NodePoolID: nodePoolID,
-			NodeSetID:  nodeSetID,
-			Name:       "cp-node",
-			IP:         "10.0.0.2",
-			Conditions: peerConditions,
+			ID:                     uuid.New(),
+			SpireAttestationMethod: db.SpireAttestationMethodTPM,
+			ClusterID:              clusterID,
+			NodePoolID:             nodePoolID,
+			NodeSetID:              nodeSetID,
+			Name:                   "cp-node",
+			IP:                     "10.0.0.2",
+			Conditions:             peerConditions,
 		})
 		require.NoError(t, err)
 	}

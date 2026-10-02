@@ -59,6 +59,26 @@ spire-agent:
     # no server Service exists -- the agent then fails attestation with
     # "no children to pick from" and the DaemonSet never becomes Available.
     namespaceOverride: spire-server
+  workloadAttestors:
+    k8s:
+      # Already the chart default at 0.30.1, restated so an upstream change of
+      # heart cannot remove Kubernetes workload attestation without this file
+      # showing a conflict. Nothing below works if this is false: the k8s
+      # attestor stops rendering entirely and disableContainerSelectors has no
+      # plugin to apply to.
+      enabled: true
+      # Every site controller node is a control-plane node and the taint is
+      # removed before anything installs, so management workloads land on
+      # nodes that run Kata. A Kata workload runs inside a VM, where the agent
+      # cannot walk the caller's cgroup back to a container ID: the
+      # container-scoped selectors come back empty and the workload gets no
+      # SVID at all. Pod-scoped selectors still resolve, and the controller
+      # manager registers the ClusterSPIFFEIDs below on pod UID, so those
+      # identities are unaffected.
+      #
+      # The cost is granularity -- two containers in one pod become
+      # indistinguishable to SPIRE. Nothing here registers that finely.
+      disableContainerSelectors: true
 spire-server:
   namespaceOverride: spire-server
   # The bundle ConfigMap the agent mounts must land where the agent runs, or
@@ -102,7 +122,7 @@ spire-server:
     # image. The webhook still validates once it is up; it just no longer
     # blocks admission while it is starting.
     #
-    # cli/internal/cwedeploy/manifests/spire-values.yaml sets the same thing
+    # cli/internal/bootstrap/cwedeploy/manifests/spire-values.yaml sets the same thing
     # for the same reason.
     validatingWebhookConfiguration:
       failurePolicy: Ignore

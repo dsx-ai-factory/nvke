@@ -23,7 +23,6 @@ import (
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/capi"
-	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
@@ -63,7 +62,7 @@ type capiMachineCreateContext struct {
 func (a *Activities) CreateCAPIInfraMachineForNode(ctx context.Context, input CreateCAPIInfraMachineForNodeInput) error {
 	node, err := a.db.GetNode(ctx, input.NodeID)
 	if err != nil {
-		return fmt.Errorf("failed to get node: %w", err)
+		return nonRetryableIfNotFound("failed to get node", err)
 	}
 	nodeSet, nodePool, err := nodes.GetNodeContext(ctx, a.db, node)
 	if err != nil {
@@ -128,7 +127,7 @@ func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context,
 		return err
 	}
 
-	userData, err := a.renderCAPIBootstrapUserData(ctx, createCtx.nodeSet, spireJoinToken)
+	userData, err := a.renderCAPIBootstrapUserData(ctx, createCtx.node, createCtx.nodeSet, spireJoinToken)
 	if err != nil {
 		return fmt.Errorf("failed to render CAPI bootstrap user data: %w", err)
 	}
@@ -157,22 +156,22 @@ func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context,
 	if spireJoinToken != "" {
 		machine.Annotations[constants.MachineAnnotationKeySpireAgentSpiffeIDPath] = spireAgentAlternateIDPath
 	}
-	if err := a.k8sClient.Patch(ctx, machine, client.Apply, client.FieldOwner(a.cfg.FieldManagerName), client.ForceOwnership); err != nil {
-		return fmt.Errorf("failed to apply machine %s: %w", machine.Name, err)
+	if err := a.applyCAPIMachine(ctx, machine); err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func (a *Activities) createCAPISpireJoinToken(ctx context.Context, createCtx *capiMachineCreateContext) (string, string, error) {
-	if a.cfg.NodeAgentSpireAttestationMethod != config.SpireAttestationMethodJoinToken {
+	if createCtx.node.SpireAttestationMethod != db.SpireAttestationMethodJoinToken {
 		return "", "", nil
 	}
 	// A site stood up without SPIFFE has no SPIRE server to mint against, and no
 	// trust domain to build the alternate ID from. Asking anyway fails with
 	// "trust domain is missing", which is not retryable, so the node never gets
 	// a CAPI machine and the cluster sits in Provisioning for good.
-	if !a.cfg.SpiffeEnabled {
+	if !createCtx.node.SpiffeEnabled {
 		return "", "", nil
 	}
 
@@ -222,8 +221,8 @@ func (a *Activities) createTemplateLessForgeCAPIMachineForNode(ctx context.Conte
 	if err != nil {
 		return err
 	}
-	if err := a.k8sClient.Patch(ctx, machine, client.Apply, client.FieldOwner(a.cfg.FieldManagerName), client.ForceOwnership); err != nil {
-		return fmt.Errorf("failed to apply machine %s: %w", machine.Name, err)
+	if err := a.applyCAPIMachine(ctx, machine); err != nil {
+		return err
 	}
 
 	return nil
@@ -275,7 +274,7 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 
 	node, err := a.db.GetNode(ctx, input.NodeID)
 	if err != nil {
-		return fmt.Errorf("failed to get node: %w", err)
+		return nonRetryableIfNotFound("failed to get node", err)
 	}
 	machine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
@@ -622,7 +621,10 @@ func (a *Activities) ApplyCAPIMachineRebootAnnotation(ctx context.Context, input
 
 	logger.Info("Applying CAPI machine reboot annotation", "nodeID", input.NodeID, "rebootTime", formattedRebootTime)
 	if err := a.applyCAPIMachineRebootAnnotation(ctx, input.NodeID, &formattedRebootTime); err != nil {
-		return ApplyCAPIMachineRebootAnnotationResult{}, fmt.Errorf("failed to apply machine reboot annotation: %w", err)
+		// Propagated directly, not re-wrapped: applyCAPIMachineRebootAnnotation
+		// already adds context, and re-wrapping with fmt.Errorf would strip the
+		// non-retryable marking nonRetryableIfNotFound sets for a missing node.
+		return ApplyCAPIMachineRebootAnnotationResult{}, err
 	}
 
 	return ApplyCAPIMachineRebootAnnotationResult{RebootStartedTime: rebootTime}, nil
@@ -633,7 +635,8 @@ func (a *Activities) DeleteCAPIMachineRebootAnnotation(ctx context.Context, inpu
 
 	logger.Info("Deleting CAPI machine reboot annotation", "nodeID", input.NodeID)
 	if err := a.applyCAPIMachineRebootAnnotation(ctx, input.NodeID, nil); err != nil {
-		return fmt.Errorf("failed to delete machine reboot annotation: %w", err)
+		// Propagated directly for the same reason as ApplyCAPIMachineRebootAnnotation.
+		return err
 	}
 
 	return nil
@@ -642,7 +645,7 @@ func (a *Activities) DeleteCAPIMachineRebootAnnotation(ctx context.Context, inpu
 func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeID uuid.UUID, annotation *string) error {
 	node, err := a.db.GetNode(ctx, nodeID)
 	if err != nil {
-		return fmt.Errorf("failed to get node: %w", err)
+		return nonRetryableIfNotFound("failed to get node", err)
 	}
 	namespace := constants.NamespaceNKESystem
 	machineName := node.Name

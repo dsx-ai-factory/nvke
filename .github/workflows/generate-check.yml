@@ -80,10 +80,8 @@ jobs:
 
       # generate-check depends on generate-api, not on the full generate
       # target. The difference matters here: `go generate ./...` across the
-      # whole controller module has to load a package graph that reaches the
-      # internal cluster-api-provider-nico, which a GitHub-hosted runner cannot
-      # fetch and which GOWORK=off puts out of reach of the vendor/ tree. The
-      # api module is public and self-contained, and it holds every
+      # whole controller module has to load a much larger package graph. The
+      # api module is self-contained, and it holds every
       # //go:generate directive in the controller, so it is both the half that
       # can run here and the half this check is about.
       #

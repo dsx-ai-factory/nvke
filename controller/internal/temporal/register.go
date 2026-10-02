@@ -150,6 +150,7 @@ func NewWorker(
 	dbInstance db.DB,
 	k8sClient ctrlclient.Client,
 	nodeAgentClient agent.Client,
+	nodeAgentTransport *agent.Transport,
 	trustDomain string,
 	tenantClientProvider *kube.DBClusterTenantClientProvider,
 ) (worker.Worker, error) {
@@ -211,11 +212,11 @@ func NewWorker(
 	if err != nil {
 		return nil, fmt.Errorf("construct rollout node resolver: %w", err)
 	}
-	rolloutDialer, err := rolloutcwe.NewSPIFFEDialer(cfg, trustDomain, rolloutResolver)
+	rolloutDialer, err := rolloutcwe.NewSPIFFEDialer(nodeAgentTransport, rolloutResolver)
 	if err != nil {
 		return nil, fmt.Errorf("construct rollout agent dialer: %w", err)
 	}
-	rolloutMethodChecker, err := rolloutcwe.NewMethodSupportChecker(cfg, trustDomain, rolloutResolver)
+	rolloutMethodChecker, err := rolloutcwe.NewMethodSupportChecker(nodeAgentTransport, rolloutResolver)
 	if err != nil {
 		return nil, fmt.Errorf("construct rollout agent method-support checker: %w", err)
 	}
@@ -224,7 +225,7 @@ func NewWorker(
 	rolloutetcd.RegisterDefaults(rolloutRegistry, rolloutDialer, k8sClient, cfg.PodNamespace)
 	rolloutoidc.RegisterDefaults(rolloutRegistry, rolloutDialer, rolloutMethodChecker, k8sClient, cfg.NkeOIDCAuth)
 	rollouttemporal.NewActivities(rolloutLoader, rolloutRegistry).Register(w)
-	rollouttemporal.NewClusterLoaderActivity(rolloutLoader, cfg.NodeAgentPort).Register(w)
+	rollouttemporal.NewClusterLoaderActivity(rolloutLoader, cfg.NodeAgent.Port).Register(w)
 
 	return w, nil
 }

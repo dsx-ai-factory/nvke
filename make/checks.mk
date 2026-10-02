@@ -43,6 +43,14 @@ lint-shell: ## Lint every tracked shell script. (run by the merge gate)
 docs-check: ## Check the documented facts against the repository. (run by the merge gate)
 	@./hack/docs-check.sh
 
+# Identifiers of infrastructure only NVIDIA can see. Not credentials, which
+# is why they read as safe and are not: this repository is the staging ground
+# for a public one, and an org, site, VPC or subnet id is a map of a real
+# account. Matched by digest so this check does not publish what it forbids.
+internal-config-check: ## Check the tree names no internal infrastructure. (run by the merge gate)
+	@python3 -B ./hack/test_internal_config_check.py
+	@./hack/internal-config-check.sh
+
 # helm lint and helm template both pass on a manifest Kubernetes would reject, so
 # kubeconform parses what was rendered. A chart that renders nothing also passes
 # helm template silently, hence the count.
@@ -130,17 +138,16 @@ nktp-chart-lint: nktp-chart-deps ## Lint and render the NKTP chart, then validat
 	@$(call require_tool,kubeconform,$(KUBECONFORM_VERSION))
 	@$(call require_command,yq)
 	@helm lint --strict $(NKTP_CHART)
-	@NKTP_CHART="$(NKTP_CHART)" ./nktp/hack/chart-validate.sh
+	@NKTP_CHART="$(NKTP_CHART)" CERT_MANAGER_VERSION="$(CERT_MANAGER_VERSION)" ./nktp/hack/chart-validate.sh
 
 nktp-chart-check: nktp-chart-lint ## Run every NKTP chart check enforced by CI. (run by the merge gate)
 
-# Use the same tool, Go version, offline scan, waiver, and stale-waiver guard as
+# Use the same tool, Go version, waiver, and stale-waiver guard as
 # CI. The helper returns 3 for an unwaived finding and preserves tool failures.
 vulncheck: ## Report vulnerabilities reachable from each module. (run by the merge gate)
 	@$(call require_tool,govulncheck,$(GOVULNCHECK_VERSION))
 	@echo "- govulncheck under Go $(GOVULNCHECK_GO_VERSION), the version CI uses"
-	@# The scan runs with GOPROXY=off, and a toolchain switch fetches through the
-	@# proxy. Download the toolchain first, or a machine that does not already
+	@# Download the toolchain first, or a machine that does not already
 	@# have it fails inside the scan with an error naming neither GOPROXY nor
 	@# this pin. CI is unaffected: setup-go leaves the toolchain in place.
 	@GOTOOLCHAIN=go$(GOVULNCHECK_GO_VERSION) go version >/dev/null 2>&1 || { \
@@ -217,6 +224,7 @@ gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory lint-workflows
 	@$(MAKE) --no-print-directory lint-shell
 	@$(MAKE) --no-print-directory docs-check
+	@$(MAKE) --no-print-directory internal-config-check
 	@$(MAKE) --no-print-directory chart-check
 	@$(MAKE) --no-print-directory nktp-chart-check
 	@$(MAKE) --no-print-directory -C controller generate-check

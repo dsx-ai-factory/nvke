@@ -17,6 +17,8 @@ repo_root="$(cd "${script_dir}/../.." && pwd)"
 : "${CAPD_KINDEST_NODE_TAG:=v1.34.8}"
 : "${CAPD_NODE_AGENT_LOCAL_BUILD:=auto}"
 : "${CAPD_SPIRE_ATTESTATION_METHOD:=tpm}"
+: "${DSX_IMDS_AGENT_PLUGIN_PATH:=}"
+: "${DSX_IDENTITY_CA_BUNDLE_PATH:=}"
 : "${CAPD_CNI_MANIFESTS_DEB_PATH:=}"
 : "${CAPD_CNI_CHARTS_DEB_PATH:=}"
 : "${NKE_E2E_DOCKERHUB_MIRROR:=}"
@@ -181,6 +183,32 @@ trap 'rm -rf "${build_context}"' EXIT
 cp "${script_dir}/Dockerfile" "${build_context}/Dockerfile"
 cp -R "${script_dir}/scripts" "${build_context}/scripts"
 cp -R "${script_dir}/systemd" "${build_context}/systemd"
+
+# Docker COPY requires the source to exist for every attestation mode. The
+# empty placeholder is never installed. A supplied plugin is installed even in
+# TPM image mode so one local image can bootstrap both old and new nodes.
+: > "${build_context}/dsx-imds-node-attestor-agent"
+if [[ -n "${DSX_IMDS_AGENT_PLUGIN_PATH}" ]]; then
+  if [[ ! -x "${DSX_IMDS_AGENT_PLUGIN_PATH}" ]]; then
+    echo "DSX_IMDS_AGENT_PLUGIN_PATH must name an executable plugin" >&2
+    exit 1
+  fi
+  cp "${DSX_IMDS_AGENT_PLUGIN_PATH}" "${build_context}/dsx-imds-node-attestor-agent"
+elif [[ "${CAPD_SPIRE_ATTESTATION_METHOD}" == "dsxImds" ]]; then
+  echo "CAPD_SPIRE_ATTESTATION_METHOD=dsxImds requires an executable DSX_IMDS_AGENT_PLUGIN_PATH" >&2
+  exit 1
+fi
+
+# The local identity-exchange endpoint uses a cert-manager-issued certificate.
+# Trust its public CA in the node image so the agent verifies HTTPS normally.
+: > "${build_context}/dsx-identity-ca.crt"
+if [[ -n "${DSX_IDENTITY_CA_BUNDLE_PATH}" ]]; then
+  if [[ ! -s "${DSX_IDENTITY_CA_BUNDLE_PATH}" ]]; then
+    echo "DSX_IDENTITY_CA_BUNDLE_PATH must name a non-empty CA bundle" >&2
+    exit 1
+  fi
+  cp "${DSX_IDENTITY_CA_BUNDLE_PATH}" "${build_context}/dsx-identity-ca.crt"
+fi
 
 if [[ -n "${NKE_E2E_DOCKERHUB_MIRROR}" ]]; then
   if [[ ! "${NKE_E2E_DOCKERHUB_MIRROR}" =~ ^[a-zA-Z0-9.-]+(:[0-9]{1,5})?$ ]]; then

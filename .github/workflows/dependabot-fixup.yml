@@ -6,21 +6,17 @@
 # arriving broken.
 #
 # Dependabot maintains go.mod and go.sum and nothing else. This repository has
-# three more artefacts derived from those files, and Dependabot knows about none
+# two more artefacts derived from those files, and Dependabot knows about none
 # of them:
 #
 #   go.work.sum                  #82 and #83 both failed
 #                                `Check go.work and go.work.sum are current`
-#   vendor/                      #84 added a root vendor tree,
-#                                which puts the workspace in -mod=vendor, so a
-#                                go.mod change without it stops every build.
-#                                #90 is red on exactly this today.
 #   THIRD_PARTY_NOTICES.md       attribution goes stale and the
 #   (one per redistributed       failure surfaces on main after the merge
 #    binary: agent, controller,
 #    cli)
 #
-# `make work-sync` regenerates the first two plus every module's go.mod and
+# `make work-sync` regenerates go.work.sum plus every module's go.mod and
 # go.sum; `make notices` in each of the three module directories regenerates the
 # attribution files.
 #
@@ -51,21 +47,8 @@
 # handled rather than prevented: `synchronize` is in the trigger list, so the
 # force-push re-runs this workflow and the fixup is reapplied.
 #
-# THE ONE SECRET THIS JOB CARRIES
-#
-# NKE_INTERNAL_RO_TOKEN reads the internal module controller/go.mod depends on.
-# It is a fine-grained token scoped to Contents: read-only on that one
-# repository, so it cannot write anywhere, and it is exposed only to the
-# regeneration step -- see the comment on GIT_CONFIG_COUNT there.
-#
-# Note the ordering that makes this safe: GUARD 1 runs BEFORE the secret is in
-# scope, so by the time the token exists the branch has already been proven to
-# contain nothing but go.mod and go.sum changes. Keep it in that order.
-#
-# The token is a fine-grained PAT and therefore EXPIRES. When it does, every
-# Dependabot pull request starts failing on `make work-sync` with
-# `could not read Username for 'https://github.com'` again. That is the symptom
-# to recognise; the fix is to reissue the token, not to debug the bump.
+# All dependencies are public, so regeneration needs no read-only repository
+# token. Guard 1 still limits the branch before generators execute.
 
 name: Dependabot Fixup
 
@@ -170,39 +153,9 @@ jobs:
           # repair can happen, which is the whole point of this job.
           GOTOOLCHAIN: auto
 
-          # controller/go.mod requires github.com/dsx-ai-factory/cluster-api-provider-nico,
-          # which is an internal repository. Every other job in this repository is
-          # offline -- a committed vendor/ tree means they never resolve a module --
-          # so this is the only job that reaches the network for the module graph,
-          # and it is the only one that needs credentials. #108 is the failure this
-          # fixes:
-          #
-          #   git ls-remote ... exit status 128:
-          #   fatal: could not read Username for 'https://github.com'
-          #
-          # GOPRIVATE keeps the internal path off proxy.golang.org and
-          # sum.golang.org, which cannot serve it in any case; the rewrite below is
-          # what gets git past the prompt.
-          GOPRIVATE: github.com/dsx-ai-factory/*
-
-          # GIT_CONFIG_COUNT rather than `git config --global`. A global write
-          # would leave the token in ~/.gitconfig for every LATER step of this
-          # job, which is the same objection the header raises against leaving
-          # checkout credentials in .git/config. These variables are scoped to
-          # this step and touch no file on disk.
-          #
-          # The rewrite is scoped to github.com/dsx-ai-factory/ rather than github.com/ so
-          # the token is not attached to requests for public modules. It also
-          # cannot capture the push in the final step: that URL carries its own
-          # userinfo, so it does not have the `https://github.com/dsx-ai-factory/` prefix
-          # this matches on.
-          GIT_CONFIG_COUNT: 1
-          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.NKE_INTERNAL_RO_TOKEN }}@github.com/dsx-ai-factory/.insteadOf
-          GIT_CONFIG_VALUE_0: https://github.com/dsx-ai-factory/
         run: |
           set -euo pipefail
-          # Regenerates go.work, go.work.sum, every module's go.mod and go.sum,
-          # and vendor/. One command, because they are one consistent set.
+          # Regenerates go.work, go.work.sum and every module's go.mod and go.sum.
           make work-sync
           # Attribution is per module, and notices-check.yml verifies one file
           # per redistributed binary. Every module it VERIFIES has to be
@@ -227,14 +180,11 @@ jobs:
             echo "Nothing to regenerate; the bump was already complete."
             exit 0
           fi
-          # --others --exclude-standard alongside the diff: vendoring ADDS
-          # directories when a dependency gains one, and `git diff` says nothing
-          # about a path git is not tracking. #91 makes the same point.
+          # Include untracked files; git diff alone would not show them.
           changed="$( { git diff --name-only; git ls-files --others --exclude-standard; } | sort -u )"
           bad="$(printf '%s\n' "$changed" | grep -Ev \
             -e '(^|/)go\.(mod|sum)$' \
             -e '^go\.work(\.sum)?$' \
-            -e '^vendor/' \
             -e '^agent/THIRD_PARTY_NOTICES\.md$' \
             -e '^controller/THIRD_PARTY_NOTICES\.md$' \
             -e '^cli/THIRD_PARTY_NOTICES\.md$' \

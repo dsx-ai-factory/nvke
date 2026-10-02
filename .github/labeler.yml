@@ -64,12 +64,10 @@ area/docs:
           - "NOTICE"
       - all-globs-to-any-file:
           - "**/docs/**"
-          - "!vendor/**"
 
 area/deps:
   - changed-files:
       - any-glob-to-any-file:
-          - "vendor/**"
           - "go.work"
           - "go.work.sum"
           - "**/go.mod"

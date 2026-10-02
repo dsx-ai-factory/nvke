@@ -1,0 +1,246 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package environment
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
+
+const (
+	// ForgeProvider is the provider name environments/forge.yaml declares.
+	ForgeProvider = "forge"
+
+	// The capability keys a machine can answer. A run asks for more than
+	// these -- kube names a software version, not a property of any machine --
+	// so matching considers these and ignores the rest, which is what stops a
+	// Kubernetes version from excluding every instance type.
+	capabilityMachineType = "machineType"
+	capabilityArch        = "arch"
+	capabilityGPU         = "gpu"
+)
+
+// Forge is Forge's dialect of an infrastructure declaration. None of it is
+// generic: an org, a site and a VPC are Forge's own vocabulary.
+type Forge struct {
+	Org   ForgeOrg             `json:"org"`
+	Sites map[string]ForgeSite `json:"sites"`
+}
+
+// ForgeOrg identifies the Forge tenancy the run creates things in.
+type ForgeOrg struct {
+	ID string `json:"id"`
+}
+
+// ForgeSite is one location, carrying the network identifiers a cluster is
+// created against and the machines the site can offer.
+type ForgeSite struct {
+	// Key is the name this site is filed under, populated on lookup so callers
+	// can report which site answered without threading the name alongside.
+	Key string `json:"-"`
+
+	ID       string `json:"id"`
+	VpcID    string `json:"vpcID"`
+	SubnetID string `json:"subnetID"`
+
+	// SSHKeyGroupID is attached to the nodes Forge creates. It governs
+	// Serial-over-LAN console access rather than the OS account's
+	// authorized_keys, so attaching one grants no shell on a node -- that
+	// comes from the account baked into the image, or from an authorized_keys
+	// written by cloud-init. Nothing here logs into a tenant node, so this is
+	// carried for parity with what a Forge node normally gets rather than
+	// because a test uses it. SADD 3.5.3 invites the opposite reading by
+	// passing the same field to CreateInstance beside a wait-for-SSH step.
+	SSHKeyGroupID string `json:"sshKeyGroupID"`
+
+	// JumpHost is the node the site's machines are reached through; they are
+	// not Teleport-enrolled themselves. Optional here, because only a lane
+	// that provisions machines on the site needs it, and forge.New rejects an
+	// empty one. The Teleport proxy is not declared: tsh takes it from
+	// $TELEPORT_PROXY or the logged-in profile.
+	JumpHost string `json:"jumpHost"`
+	// TeleportLogin is the jump host login; empty is tsh's default.
+	TeleportLogin string `json:"teleportLogin"`
+	// JumpHostUser is the jump host login for the plain-SSH route, taken
+	// when JUMP_HOST_PASSWORD is set. Empty falls back to TeleportLogin, so a
+	// site that uses the same account for both names it once.
+	JumpHostUser string `json:"jumpHostUser"`
+	// JumpHostKeyFingerprint pins the jump host's host key on the plain-SSH
+	// route. Empty accepts whatever it presents and warns on every dial; see
+	// teleport.SSHJumpHost for how to read one.
+	JumpHostKeyFingerprint string `json:"jumpHostKeyFingerprint"`
+
+	// No control-plane VIP. CWE treats an empty one as "do not configure
+	// kube-vip", which is what create-forge-nico-cluster.sh relies on: it
+	// sends no VIP at all. The simulator backends need one because their BGP
+	// speakers advertise it, and a real site does not work that way.
+
+	InstanceTypes []ForgeInstanceType `json:"instanceTypes"`
+}
+
+// ForgeInstanceType is a machine shape the site offers, and what it provides.
+// Matching is against Provides rather than against the name, so a request is
+// answered by what a machine is rather than by what it is called.
+type ForgeInstanceType struct {
+	Name     string            `json:"name"`
+	ID       string            `json:"id"`
+	Provides map[string]string `json:"provides"`
+}
+
+// Arch is the architecture this type provides, or empty if it declares none.
+// A method rather than a caller reaching into Provides, so the capability key
+// stays in the package that defines it.
+func (t ForgeInstanceType) Arch() string { return t.Provides[capabilityArch] }
+
+func isInfrastructureCapability(key string) bool {
+	switch key {
+	case capabilityMachineType, capabilityArch, capabilityGPU:
+		return true
+	default:
+		return false
+	}
+}
+
+// Forge decodes the environment as a Forge declaration, failing when it is
+// provided by something else.
+func (e *Environment) Forge() (*Forge, error) {
+	var f Forge
+	if err := e.decodeInfrastructure(ForgeProvider, &f); err != nil {
+		return nil, err
+	}
+	if f.Org.ID == "" {
+		return nil, fmt.Errorf("environment %q declares no org id", e.Name)
+	}
+	if len(f.Sites) == 0 {
+		return nil, fmt.Errorf("environment %q declares no sites", e.Name)
+	}
+	return &f, nil
+}
+
+// Site returns the named site. An empty name resolves to the only site when
+// there is exactly one, which is the common case and saves every caller naming
+// it; with several declared, the caller has to choose.
+func (f *Forge) Site(name string) (ForgeSite, error) {
+	if name == "" {
+		if len(f.Sites) != 1 {
+			return ForgeSite{}, fmt.Errorf("no site named and %d are declared (%s)", len(f.Sites), strings.Join(f.siteNames(), ", "))
+		}
+		for key := range f.Sites {
+			name = key
+		}
+	}
+
+	site, ok := f.Sites[name]
+	if !ok {
+		return ForgeSite{}, fmt.Errorf("no site %q; declared sites are %s", name, strings.Join(f.siteNames(), ", "))
+	}
+	site.Key = name
+	if err := site.validate(); err != nil {
+		return ForgeSite{}, err
+	}
+	return site, nil
+}
+
+// validate rejects a site missing anything a cluster cannot be created
+// without. Checked on lookup so the run stops at the environment file, naming
+// the field, rather than at an API rejection naming a field the caller never
+// set.
+func (s ForgeSite) validate() error {
+	missing := make([]string, 0, 6)
+	for _, field := range []struct{ name, value string }{
+		{"id", s.ID},
+		{"vpcID", s.VpcID},
+		{"subnetID", s.SubnetID},
+		{"sshKeyGroupID", s.SSHKeyGroupID},
+	} {
+		if strings.TrimSpace(field.value) == "" {
+			missing = append(missing, field.name)
+		}
+	}
+	if len(s.InstanceTypes) == 0 {
+		missing = append(missing, "instanceTypes")
+	}
+	// A type with no id reaches CreateInstance as instanceTypeId "", and the
+	// error names Forge's field rather than the variable that was never set --
+	// the same late failure the site identifiers above are checked to avoid.
+	// The name is what a lane selects a type by, so a type without one is
+	// unreachable rather than wrong, and either way it is worth saying now.
+	for i, instanceType := range s.InstanceTypes {
+		where := fmt.Sprintf("instanceTypes[%d]", i)
+		if name := strings.TrimSpace(instanceType.Name); name != "" {
+			where = "instanceTypes[" + name + "]"
+		} else {
+			missing = append(missing, where+".name")
+		}
+		if strings.TrimSpace(instanceType.ID) == "" {
+			missing = append(missing, where+".id")
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("site %q is missing %s", s.Key, strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+func (f *Forge) siteNames() []string {
+	names := make([]string, 0, len(f.Sites))
+	for name := range f.Sites {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// MatchInstanceType returns the first declared type providing everything the
+// run asks for. First wins, so the file declares types cheapest first.
+//
+// There is no fallback. A request nothing satisfies fails, because the site
+// genuinely cannot host that configuration and a near-miss machine would
+// qualify something other than what was asked for.
+func (s ForgeSite) MatchInstanceType(capabilities map[string]string) (ForgeInstanceType, error) {
+	for _, candidate := range s.InstanceTypes {
+		if candidate.provides(capabilities) {
+			return candidate, nil
+		}
+	}
+
+	offered := make([]string, 0, len(s.InstanceTypes))
+	for _, candidate := range s.InstanceTypes {
+		offered = append(offered, candidate.Name)
+	}
+	return ForgeInstanceType{}, fmt.Errorf(
+		"site %q offers no instance type providing %s; it offers %s",
+		s.Key, formatCapabilities(capabilities), strings.Join(offered, ", "),
+	)
+}
+
+func (t ForgeInstanceType) provides(capabilities map[string]string) bool {
+	for key, want := range capabilities {
+		if !isInfrastructureCapability(key) {
+			continue
+		}
+		if t.Provides[key] != want {
+			return false
+		}
+	}
+	return true
+}
+
+// formatCapabilities renders a capability set for an error message, sorted so
+// the same failure reads the same way twice.
+func formatCapabilities(capabilities map[string]string) string {
+	pairs := make([]string, 0, len(capabilities))
+	for key, value := range capabilities {
+		if !isInfrastructureCapability(key) {
+			continue
+		}
+		pairs = append(pairs, key+"="+value)
+	}
+	if len(pairs) == 0 {
+		return "{}"
+	}
+	sort.Strings(pairs)
+	return "{" + strings.Join(pairs, ", ") + "}"
+}

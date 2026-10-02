@@ -23,6 +23,15 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: nktp
+  labels:
+    # The node Collector runs as root with SYS_PTRACE and DAC_READ_SEARCH and
+    # mounts /var/log/pods, /proc and /etc/passwd from the host.
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: postgres
 ---
 apiVersion: v1

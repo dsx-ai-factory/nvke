@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -25,9 +26,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/bootstrapengine"
-	"github.com/dsx-ai-factory/nke/cli/internal/cwedeploy"
-	"github.com/dsx-ai-factory/nke/cli/internal/sitespec"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/cwedeploy"
+	bootstrapengine "github.com/dsx-ai-factory/nke/cli/internal/bootstrap/engine"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/manifest"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitespec"
 	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 
@@ -441,7 +443,7 @@ func runtimeOnPath(name string) (string, error) { return "/usr/local/bin/" + nam
 func setBootstrapEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("NKECTL_CWE_IMAGE", "nvcr.io/org/controller:edge")
-	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "cluster-api-provider-provisioned:local")
+	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "cluster-api-provider-provisioned:latest")
 }
 
 func TestCWEDeployConfigUsesSiteSpecTrustDomain(t *testing.T) {
@@ -579,18 +581,76 @@ func TestBootstrapSiteRejectsBootstrapProviderFlag(t *testing.T) {
 	}
 }
 
-// TestRunBootstrapSiteMissingCWEImage confirms the command fails with a
-// clear, actionable error when NKECTL_CWE_IMAGE is not set, rather than
-// reaching helm with an empty image reference.
-//
-// It must also fail before the Kind cluster is built. What to deploy is
-// settled up front, so a setting the operator never provided costs them a
-// message rather than a cluster that is stood up only to be torn down.
-func TestRunBootstrapSiteMissingCWEImage(t *testing.T) {
-	setBootstrapEnv(t)
+// TestRunBootstrapSiteDefaultsImagesToTheLocalBuild confirms the bootstrap
+// side-loads the local build's tags when neither image variable is set.
+func TestRunBootstrapSiteDefaultsImagesToTheLocalBuild(t *testing.T) {
 	t.Setenv("NKECTL_CWE_IMAGE", "")
+	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "")
+	startFakeCWEAPI(t, true)
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:         writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:  runner,
+		cweRunner:        fakeCWERunner{},
+		kubeconfigOut:    filepath.Join(t.TempDir(), "site.kubeconfig"),
+		lookPath:         runtimeOnPath,
+		dialContext:      refuseDial,
+		dumpSpireEntries: func(context.Context, string, string) (int, error) { return 1, nil },
+		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+	})
+	if err != nil {
+		t.Fatalf("bootstrap with default images: %v", err)
+	}
+	for _, image := range []string{"nke-controller:latest", "cluster-api-provider-provisioned:latest"} {
+		if !runner.sawArgs("image", "inspect", image) {
+			t.Errorf("default image %s was not used; calls: %v", image, runner.calls)
+		}
+	}
+}
+
+// TestEnsureImageAvailableRefusesToPullAHostlessRef: a local build that is
+// not in the image store fails with the build command and the two variables.
+// Nothing is pulled, and the inspect failure stays in the message.
+func TestEnsureImageAvailableRefusesToPullAHostlessRef(t *testing.T) {
+	var pulled bool
+	engine := bootstrapengine.New(runnerFunc(
+		func(_ context.Context, _ map[string]string, _ string, args ...string) (string, error) {
+			if len(args) > 0 && args[0] == "pull" {
+				pulled = true
+			}
+			return "no such image: nke-controller:latest", errors.New("exit status 1")
+		},
+	), nil)
+
+	err := ensureImageAvailable(context.Background(), engine,
+		&bootstrapengine.Cluster{Name: "c"}, "nke-controller:latest", slog.New(slog.DiscardHandler))
+	if err == nil {
+		t.Fatal("expected an error for a local build that is not in the store")
+	}
+	for _, want := range []string{"make -C cli images", "NKECTL_CWE_IMAGE", "docker.io/<org>/<name>", "no such image"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+	if pulled {
+		t.Error("a reference without a registry was pulled")
+	}
+}
+
+// TestRunBootstrapSiteRefusesMissingLocalImageBeforeCreate: with the default
+// images and no local build, the command fails before any cluster is built.
+func TestRunBootstrapSiteRefusesMissingLocalImageBeforeCreate(t *testing.T) {
+	t.Setenv("NKECTL_CWE_IMAGE", "")
+	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "")
+
+	inner := runnerFunc(func(ctx context.Context, env map[string]string, name string, args ...string) (string, error) {
+		if len(args) >= 3 && args[0] == "image" && args[1] == "inspect" && !hasRegistryHost(args[2]) {
+			return "no such image: " + args[2], errors.New("exit status 1")
+		}
+		return fakeBootstrapRunner{}.Run(ctx, env, name, args...)
+	})
+	runner := &recordingRunner{next: inner}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
 		siteSpec:         writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:  runner,
@@ -600,14 +660,61 @@ func TestRunBootstrapSiteMissingCWEImage(t *testing.T) {
 		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
 	})
 	if err == nil {
-		t.Fatal("expected an error for a missing NKECTL_CWE_IMAGE")
+		t.Fatal("expected an error when the default local image is not in the store")
 	}
-	if !strings.Contains(err.Error(), "NKECTL_CWE_IMAGE") {
-		t.Errorf("error does not name the missing setting: %v", err)
+	for _, want := range []string{"nke-controller:latest", "make -C cli images", "NKECTL_CWE_IMAGE"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
 	}
-
 	if runner.sawArgs("create", "cluster") {
-		t.Errorf("a missing NKECTL_CWE_IMAGE should be caught before the cluster is built; calls: %v", runner.calls)
+		t.Errorf("a missing local image should be caught before the cluster is built; calls: %v", runner.calls)
+	}
+}
+
+// TestMakefileImageTagsMatchTheManifest: the tags `make -C cli images` builds
+// are the defaults `bootstrap site` looks for. Both come from the manifest;
+// the Makefile copies them by hand, so this pins the copy.
+func TestMakefileImageTagsMatchTheManifest(t *testing.T) {
+	mk, err := os.ReadFile(filepath.Join("..", "..", "Makefile"))
+	if err != nil {
+		t.Fatalf("reading cli/Makefile: %v", err)
+	}
+	m := manifest.Load()
+	for _, tc := range []struct{ variable, component, image string }{
+		{"CWE_IMAGE", manifest.ComponentController, manifest.ImageController},
+		{"CAPI_PROVISIONED_IMAGE", manifest.ComponentProvisioned, manifest.ImageManager},
+	} {
+		re := regexp.MustCompile(`(?m)^` + tc.variable + `\s*\?=\s*(\S+)\s*$`)
+		match := re.FindSubmatch(mk)
+		if match == nil {
+			t.Fatalf("cli/Makefile does not set %s", tc.variable)
+		}
+		want := m.Components[tc.component].Images[tc.image].Ref
+		if got := string(match[1]); got != want {
+			t.Errorf("cli/Makefile %s = %q, manifest says %q", tc.variable, got, want)
+		}
+	}
+}
+
+// TestHasRegistryHost pins the rule: the first path component names a registry
+// when it holds a dot or a colon, is localhost, or has an upper-case letter
+// (the reference parser reads it as a domain). Docker Hub short names such as
+// myorg/image:tag do not count; write docker.io/myorg/image:tag.
+func TestHasRegistryHost(t *testing.T) {
+	for ref, want := range map[string]bool{
+		"nke-controller:latest":                   false,
+		"cluster-api-provider-provisioned:latest": false,
+		"nvcr.io/org/nke-controller:edge":         true,
+		"localhost:5000/nke-controller:dev":       true,
+		"localhost/nke-controller:dev":            true,
+		"ghcr.io/spiffe/spire-server@sha256:abcd": true,
+		"library/postgres:18.6":                   false,
+		"MyRegistry/nke-controller:1":             true,
+	} {
+		if got := hasRegistryHost(ref); got != want {
+			t.Errorf("hasRegistryHost(%q) = %v, want %v", ref, got, want)
+		}
 	}
 }
 

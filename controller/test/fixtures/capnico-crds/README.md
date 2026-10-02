@@ -3,7 +3,7 @@
 The four `NicoCluster`, `NicoClusterTemplate`, `NicoMachine` and
 `NicoMachineTemplate` CustomResourceDefinitions, copied verbatim from
 `dsx-ai-factory/cluster-api-provider-nico` at the version this repository pins in
-`controller/go.mod` (currently **`v0.0.44-rc.2`**).
+`controller/go.mod` (currently **`v0.0.46-rc.4`**).
 
 ## Why they live here
 

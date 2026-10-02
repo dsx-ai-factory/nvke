@@ -40,6 +40,10 @@ What the node needs, all present on the reference instance type:
 - egress to `registry-1.docker.io` (the Bitnami OCI chart),
   `spiffe.github.io` and `go.temporal.io` (the spire-crds and temporal
   repositories), and GitHub if the spire chart is materialised there
+- for the nktp item, egress to `open-telemetry.github.io`,
+  `prometheus-community.github.io` and `kubernetes-sigs.github.io`, where the
+  chart's dependencies come from, and to `docker.io`, `ghcr.io`, `quay.io` and
+  `registry.k8s.io`, where its images come from
 
 ## Before this runs
 
@@ -114,6 +118,8 @@ for the e2e lanes -- that script is the reference for these derivations.
 | Postgres / Temporal password | generated per run | site secret, on BOTH Temporal datastores |
 | controller image | built per run | a released tag |
 | profiles image | built per run | the site's fleet profile content |
+| telemetry backend | not installed | the bundled development backend, until the site passes its own with `--values-for nktp=` |
+| telemetry `k8s.cluster.name` | not installed | `ClusterName` in the BootstrapConfig passed with `--config`; required |
 
 The TPM checksum is easy to confuse: the value in `spire/values.yaml`
 (`spire-server.nodeAttestor.tpmDirect.checksum`) is the **server** plugin, and
@@ -144,3 +150,40 @@ The site controller's own node is a separate matter and stays plaintext: it is
 provisioned outside CWE, and when it bootstraps the only SPIRE alive is the one
 in the throwaway kind cluster, which is deleted. Nothing dials that node
 afterwards.
+
+## Telemetry
+
+The `nktp` item installs the NKTP chart from this checkout
+(`nktp/deploy/charts/nktp`), with the values in `nktp/values.yaml`. It comes
+straight after `capnico` because it installs the monitoring CRDs, and three
+later items create monitors that need them:
+
+| item | what it adds | where |
+|---|---|---|
+| `temporal` | a ServiceMonitor per server role | `temporal/overlay.yaml` |
+| `spire` | PodMonitors for the server and the agent | `spire/overlay.yaml` |
+| `controller` | its ServiceMonitor, a metrics NetworkPolicy that admits `nktp`, and traces to the NKTP traces gateway | `controller/overlay.yaml` |
+
+The chart's own control-plane monitors cover the API server, etcd and CoreDNS;
+`nktp/values.yaml` turns off the scheduler, controller manager and kube-proxy
+ones, which NKE clusters cannot serve. This path creates no monitors for other
+components: each component ships its own, and one that does not is not scraped.
+
+Everything NKTP exports carries `k8s.cluster.name`, the site's name. Nothing
+in the cluster knows it -- NKE's kubeadm configuration names every cluster
+`kubernetes` -- so `nke-base-config` renders it from BootstrapConfig's
+`ClusterName` into the `nktp-cluster` ConfigMap, and the watchdog and the three
+gateways, which are what export to the backend, read it from there. A config
+without `ClusterName` stops the install at that template.
+
+Everything exports to the chart's bundled development backend by default. It
+keeps data in memory and has no authentication, so it is for evaluation. A site
+with a real backend passes it with `--values-for nktp=<file>`; the chart
+README's "The backend" section lists the keys that file sets.
+
+Not scraped yet: the Postgres item runs no metrics exporter; CAPI core and the
+kubeadm providers serve metrics only to a caller with a bearer token, which the
+node Target Allocator does not send; the scheduler and controller manager
+listen on 127.0.0.1 only; and cert-manager, NodeLocal DNSCache,
+OVN-Kubernetes and CAPNICo are installed without a monitor. Their pods' state still arrives through
+kube-state-metrics.

@@ -48,6 +48,12 @@ func logFormat(event *bun.QueryEvent) []slog.Attr {
 	return attrs
 }
 
+// newTracingHook labels spans with the database actually connected to, so
+// sites that set a different appDb.dbName are not reported as cloud-workflow.
+func newTracingHook(connector *pgdriver.Connector, opts ...bunotel.Option) *bunotel.QueryHook {
+	return bunotel.NewQueryHook(append([]bunotel.Option{bunotel.WithDBName(connector.Config().Database)}, opts...)...)
+}
+
 // NewBunDB creates bun database object based on configuration.
 func NewBunDB(cfg config.Config, logger *slog.Logger) (*bun.DB, error) {
 	var db *bun.DB
@@ -56,7 +62,8 @@ func NewBunDB(cfg config.Config, logger *slog.Logger) (*bun.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve DB connection string: %w", err)
 	}
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
+	connector := pgdriver.NewConnector(pgdriver.WithDSN(dsn))
+	sqldb := sql.OpenDB(connector)
 
 	// https://bun.uptrace.dev/guide/running-bun-in-production.html#running-bun-in-production
 	// Note: The bun docs show 4 * GOMAXPROCS(0) as the default max open connections, however this causes
@@ -82,9 +89,7 @@ func NewBunDB(cfg config.Config, logger *slog.Logger) (*bun.DB, error) {
 	))
 
 	if cfg.Tracing.Enabled {
-		db.AddQueryHook(bunotel.NewQueryHook(
-			bunotel.WithDBName("cloud-workflow"),
-		))
+		db.AddQueryHook(newTracingHook(connector))
 	}
 
 	if err := db.PingContext(context.Background()); err != nil {

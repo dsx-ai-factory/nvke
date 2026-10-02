@@ -73,6 +73,7 @@ RUN chmod 0755 /usr/local/bin/cloud-init
 RUN set -eux; \
     apt-get update; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      ca-certificates \
       openssl \
       python3 \
       python-is-python3 \
@@ -95,6 +96,17 @@ RUN set -eux; \
     printf 'source /etc/network/interfaces.d/*\n' > /etc/network/interfaces; \
     SYSTEMD_OFFLINE=1 systemctl disable networking.service; \
     SYSTEMD_OFFLINE=1 systemctl enable nke-container-network.service
+
+# The DSX identity exchange fixture uses a local CA. The build helper supplies
+# its public certificate when that provider is enabled; other builds keep the
+# empty placeholder and their existing system trust roots.
+COPY dsx-identity-ca.crt /tmp/dsx-identity-ca.crt
+RUN set -eux; \
+    if [ -s /tmp/dsx-identity-ca.crt ]; then \
+      install -m 0644 /tmp/dsx-identity-ca.crt /usr/local/share/ca-certificates/dsx-identity-exchange.crt; \
+      update-ca-certificates; \
+    fi; \
+    rm -f /tmp/dsx-identity-ca.crt
 
 # Local CAPD E2E may supply a CNI manifests deb through build-image.sh. The
 # scripts directory is always present, so this remains a no-op for callers that
@@ -134,6 +146,19 @@ RUN set -eux; \
     test -x /usr/local/bin/spire-agent || test -x /opt/spire/bin/spire-agent; \
     cd /tmp && rm -rf /tmp/spire-agent-src /tmp/spire-agent-bundle
 
+# DSX IMDS is opt-in for local CAPD images. Install it whenever supplied so a
+# TPM-capable image can also bootstrap new dsxImds nodes. Its checksum comes
+# from the exact installed binary, like the TPM plugin's checksum.
+COPY dsx-imds-node-attestor-agent /tmp/dsx-imds-node-attestor-agent
+RUN set -eux; \
+    if [ -s /tmp/dsx-imds-node-attestor-agent ]; then \
+      install -m 0755 /tmp/dsx-imds-node-attestor-agent \
+        /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent; \
+      checksum="$(sha256sum /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent | cut -d' ' -f1)"; \
+      printf 'DSX_IMDS_PLUGIN_CHECKSUM=%s\n' "${checksum}" >> /etc/spire-agent/spire-agent.env; \
+    fi; \
+    rm -f /tmp/dsx-imds-node-attestor-agent
+
 # The bundle installer assumes a non-root agent user, but these disposable
 # nodes receive their runtime config as root-owned cloud-init files. Run the
 # agent as root. TPM-backed nodes also depend on the local vTPM; join-token
@@ -154,7 +179,7 @@ RUN set -eux; \
           'SupplementaryGroups=' \
           > /etc/systemd/system/spire-agent.service.d/override.conf \
         ;; \
-      joinToken) \
+      joinToken | dsxImds) \
         printf '%s\n' \
           '[Service]' \
           'User=root' \

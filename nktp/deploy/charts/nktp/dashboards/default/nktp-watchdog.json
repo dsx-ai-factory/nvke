@@ -1,0 +1,108 @@
+{
+  "uid": "nktp-watchdog",
+  "title": "NKTP Watchdog",
+  "description": "NKTP's monitoring Collector. Other NKTP Collectors send it their internal metrics, logs, and traces. It forwards that diagnostic telemetry to the configured backend (bundled LGTM by default) and scrapes OpenTelemetry Operator metrics. These panels show Watchdog traffic, failures, queue use, process resources, Operator scrape reachability, and Target Allocator reports.",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Received /s",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0 } },
+      "targets": [
+        { "expr": "sum(rate(otelcol_receiver_accepted_metric_points_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "metric points", "refId": "A" },
+        { "expr": "sum(rate(otelcol_receiver_accepted_log_records_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "log records", "refId": "B" },
+        { "expr": "sum(rate(otelcol_receiver_accepted_spans_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "spans", "refId": "C" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Exported /s",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0 } },
+      "targets": [
+        { "expr": "sum(rate(otelcol_exporter_sent_metric_points_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "metric points", "refId": "A" },
+        { "expr": "sum(rate(otelcol_exporter_sent_log_records_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "log records", "refId": "B" },
+        { "expr": "sum(rate(otelcol_exporter_sent_spans_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "spans", "refId": "C" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Export failures /s",
+      "gridPos": { "x": 0, "y": 7, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0 } },
+      "targets": [
+        { "expr": "sum(rate(otelcol_exporter_send_failed_metric_points_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "metric points", "refId": "A" },
+        { "expr": "sum(rate(otelcol_exporter_send_failed_log_records_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "log records", "refId": "B" },
+        { "expr": "sum(rate(otelcol_exporter_send_failed_spans_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "spans", "refId": "C" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Exporter queue use",
+      "gridPos": { "x": 12, "y": 7, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } },
+      "targets": [
+        { "expr": "100 * sum by (exporter, data_type) (otelcol_exporter_queue_size{job=\"nktp-watchdog\"}) / sum by (exporter, data_type) (otelcol_exporter_queue_capacity{job=\"nktp-watchdog\"})", "legendFormat": "{{exporter}} {{data_type}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "CPU cores",
+      "gridPos": { "x": 0, "y": 14, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0 } },
+      "targets": [
+        { "expr": "sum(rate(otelcol_process_cpu_seconds_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "CPU cores", "refId": "A" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Memory (RSS)",
+      "gridPos": { "x": 12, "y": 14, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 } },
+      "targets": [
+        { "expr": "sum(otelcol_process_memory_rss_bytes{job=\"nktp-watchdog\"})", "legendFormat": "RSS", "refId": "A" }
+      ]
+    },
+    {
+      "id": 7, "type": "stat", "title": "Operator scrape targets up",
+      "description": "Number of discovered nktp-operator endpoints whose latest scrape succeeded (up = 1). Other Watchdog inputs are excluded. A positive count can hide failed endpoints; no value means Operator scrape telemetry is absent, not that all targets are healthy.",
+      "gridPos": { "x": 0, "y": 21, "w": 6, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(up{job=\"nktp-operator\"})", "legendFormat": "Operator", "instant": true, "refId": "A" }]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Allocator collectors",
+      "description": "Sum of discovered and allocatable Watchdog collectors reported by Target Allocator replicas. With multiple allocator replicas, the same collectors may be counted more than once.",
+      "gridPos": { "x": 6, "y": 21, "w": 9, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0 } },
+      "targets": [
+        { "expr": "sum(opentelemetry_allocator_collectors_discovered{job=\"nktp-watchdog-targetallocator\"})", "legendFormat": "discovered", "refId": "A" },
+        { "expr": "sum(opentelemetry_allocator_collectors_allocatable{job=\"nktp-watchdog-targetallocator\"})", "legendFormat": "allocatable", "refId": "B" }
+      ]
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Targets per collector",
+      "description": "Targets assigned to each Watchdog Collector as reported by the Target Allocator. Each allocator replica can report the same assignment; this is not a count of successful scrapes.",
+      "gridPos": { "x": 15, "y": 21, "w": 9, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0 } },
+      "targets": [{ "expr": "opentelemetry_allocator_targets_per_collector{job=\"nktp-watchdog-targetallocator\"}", "legendFormat": "{{collector_name}}", "refId": "A" }]
+    }
+  ]
+}

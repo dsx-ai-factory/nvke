@@ -71,11 +71,12 @@ func TestGetNodeContext_NoNodePoolControlPlane(t *testing.T) {
 
 	instanceTypeID := uuid.New()
 	node := db.Node{
-		ID:           uuid.New(),
-		ClusterID:    cluster.ID,
-		ControlPlane: true,
-		Name:         "cp-1",
-		IP:           "10.0.0.1",
+		ID:                     uuid.New(),
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+		ClusterID:              cluster.ID,
+		ControlPlane:           true,
+		Name:                   "cp-1",
+		IP:                     "10.0.0.1",
 	}
 	node.SetNico(db.NicoNodeProvider{InstanceTypeID: instanceTypeID})
 	_, err = database.CreateNode(ctx, &node)

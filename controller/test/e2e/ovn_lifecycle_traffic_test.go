@@ -39,6 +39,7 @@ func validateOVNLifecycleTraffic(ctx context.Context, test *tenantTest, phase st
 
 	tenantClient := expectSucceed(test.tenantClients.GetAdminClient(ctx, test.cluster.Name))
 	expectedPools := expectSucceed(currentOVNLifecycleNodeCounts(ctx, test))
+	expectedNodes := totalExpectedNodes(expectedPools) + expectSucceed(currentControllerControlPlaneCount(ctx, test))
 	var readyNodeNames []string
 	Eventually(func(ctx context.Context) error {
 		var err error
@@ -50,7 +51,7 @@ func validateOVNLifecycleTraffic(ctx context.Context, test *tenantTest, phase st
 	for _, nodeName := range requiredNodeNames {
 		Expect(readyNodeNames).To(ContainElement(nodeName), "%s traffic validation must include changed node %s", phase, nodeName)
 	}
-	Expect(readyNodeNames).To(HaveLen(totalExpectedNodes(expectedPools)), "OVN %s traffic validation should cover every current desired node", phase)
+	Expect(readyNodeNames).To(HaveLen(expectedNodes), "OVN %s traffic validation should cover every current desired node", phase)
 	Expect(len(readyNodeNames)).To(BeNumerically(">=", 2), "OVN %s traffic validation requires at least two nodes", phase)
 
 	var nodes corev1.NodeList
@@ -98,6 +99,20 @@ func currentOVNLifecycleNodeCounts(ctx context.Context, test *tenantTest) (map[s
 		counts[pool.Name] = pool.DesiredNodeCount
 	}
 	return counts, nil
+}
+
+// currentControllerControlPlaneCount returns the current desired count of a
+// controller-managed control plane, or zero when the control plane is a node
+// pool (currentOVNLifecycleNodeCounts counts those nodes).
+func currentControllerControlPlaneCount(ctx context.Context, test *tenantTest) (int, error) {
+	if test.spec.ControlPlane.Config == nil {
+		return 0, nil
+	}
+	controlPlane, err := test.nke.GetClusterControlPlane(ctx, test.cluster.ID)
+	if err != nil {
+		return 0, err
+	}
+	return controlPlane.Config.DesiredCount, nil
 }
 
 type ovnLifecycleTrafficNode struct {

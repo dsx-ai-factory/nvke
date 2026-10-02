@@ -4,8 +4,10 @@
 package activities
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/google/uuid"
@@ -15,15 +17,42 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
 )
+
+func TestKubeLocalDNSManifestSetsHostNetworkFalse(t *testing.T) {
+	decoder := utilyaml.NewYAMLOrJSONDecoder(bytes.NewReader(kubeLocalDNSManifest), 4096)
+	var daemonSet *unstructured.Unstructured
+	for {
+		obj := &unstructured.Unstructured{}
+		err := decoder.Decode(obj)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+		if obj.GetKind() == "DaemonSet" && obj.GetName() == "node-local-dns" {
+			daemonSet = obj
+		}
+	}
+	require.NotNil(t, daemonSet)
+
+	// Presence matters: a missing key is the zero value after decode, which
+	// is also false, and that is exactly what leaves hostNetwork: true on
+	// clusters that already have the field.
+	hostNetwork, found, err := unstructured.NestedBool(daemonSet.Object, "spec", "template", "spec", "hostNetwork")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.False(t, hostNetwork)
+}
 
 func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T) {
 	cluster := db.Cluster{ID: uuid.New(), Name: "cluster-a"}

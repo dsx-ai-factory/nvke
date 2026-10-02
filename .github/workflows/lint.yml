@@ -4,7 +4,7 @@
 name: Lint
 
 # Nothing here needs an NVIDIA runner: the whole workspace resolves from the
-# committed vendor/ tree, so merge-gate.yml calls this on the real pull_request
+# public module graph, so merge-gate.yml calls this on the real pull_request
 # event, including fork and Dependabot pull requests. The standalone push
 # trigger is post-merge coverage on main; naming the mirrored PR branches here
 # too would run the same lint jobs a second time.
@@ -63,8 +63,8 @@ jobs:
     permissions:
       contents: read
     env:
-      # Workspace mode for the five modules that lint against the root vendor/
-      # tree -- controller, controller/api, controller/deploy/charts,
+# Workspace mode for the five modules that lint against the root go.work --
+# controller, controller/api, controller/deploy/charts,
       # capd-reboot-controller and management-engine; module mode for the rest,
       # which resolve their own go.mod. Empty means "use the default",
       # overriding the workflow-level off.

@@ -8,7 +8,9 @@ If you already have nodes provisioned and running, you can manually prepare them
 
 ## Self-Bootstrap Models: Managed vs Unmanaged
 
-What you get after bootstrap depends on whether your environment includes a [NVIDIA Infra Controller (NICo)](https://github.com/NVIDIA/infra-controller) infrastructure provider for NKE, integrated via [`cluster-api-provider-nico`](https://github.com/dsx-ai-factory/cluster-api-provider-nico).
+What you get after bootstrap depends on whether your environment includes a [NVIDIA Infra Controller (NICo)](https://github.com/dsx-ai-factory/infra-controller) site, integrated with NKE via [`cluster-api-provider-nico`](https://github.com/dsx-ai-factory/cluster-api-provider-nico).
+
+> **Note:** During bootstrap, NKE uses `cluster-api-provider-provisioned` as a temporary CAPI provider to bootstrap the site controller cluster from pre-provisioned hosts. For production day-2 operations (tenant cluster creation, node add/remove, rolling upgrades), NICo is the supported infrastructure provider, integrated through CAPNICo. The self-managed path is the supported production deployment model. The unmanaged path produces a working Kubernetes cluster but no NKE day-2 operations are possible — it is not a supported NKE deployment.
 
 | | Self-bootstrapped, **self-managed** | Self-bootstrapped, **unmanaged** |
 |---|---|---|
@@ -40,8 +42,7 @@ After bootstrap completes:
 - Each node has an available NVMe device for local storage (non-root, unpartitioned, not in use)
 - NGC API key (required for pulling NKE container images)
 - On the **init node**: `kind` binary and `nerdctl` with containerd installed — `nkectl` uses these to create the ephemeral bootstrap Kind cluster. Docker is not supported. kind states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the version CI exercises
-- `NKECTL_CWE_IMAGE` — full image reference for the CWE controller (e.g. `nvcr.io/<org>/controller:edge`)
-- `NKECTL_CAPI_PROVISIONED_IMAGE` — full image reference for the provisioned Cluster API infrastructure provider (e.g. `nvcr.io/<org>/cluster-api-provider-provisioned:edge`)
+- The two images `nkectl` side-loads: `make -C cli images` builds them on the init node. To use images from a registry instead, set `NKECTL_CWE_IMAGE` (e.g. `nvcr.io/<org>/nke-controller:edge`) and `NKECTL_CAPI_PROVISIONED_IMAGE` (e.g. `nvcr.io/<org>/cluster-api-provider-provisioned:edge`)
 
 If you are targeting a self-managed cluster, prepare your environment SBOM and [deploy repository](deploy-repository.md) ahead of time.
 
@@ -58,7 +59,7 @@ How you install kubeadm depends on whether your nodes were built from an NKE OS 
 ```yaml
 runcmd:
   - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-kubeadm-distro-<k8s-version>
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-calico-images-<stream> nke-cni-calico-manifests-<stream>
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-<stream> nke-cni-ovn-charts-<stream>
 ```
 
 Replace `<k8s-version>` with the version matching `cluster.k8sVersion` in your site spec, and `<stream>` with the CNI stream for your Kubernetes version. If you skip this step, bootstrap runs its full 30-minute timeout and fails on `NodePreflight` / `check_cloud_init_status` — the error does not mention kubeadm.
@@ -200,7 +201,7 @@ nkectl generate sitespec my-tier0-site --nodes hosts.csv > sitespec.yaml
 
 The result needs no editing. Fill in `tpm_ek_thumbprint` per host to enable TPM
 attestation, and use `--set` for anything the CSV does not carry — for example
-`--set cluster.cniName=calico`. See [configuration.md](configuration.md) for
+`--set cluster.podCidr=10.244.0.0/16`. See [configuration.md](configuration.md) for
 every field.
 
 3. Run bootstrap:
@@ -211,7 +212,7 @@ nkectl bootstrap site -f sitespec.yaml --dry-run
 
 # Run bootstrap
 REGISTRY_API_KEY="<your-registry-api-key>" \
-NKECTL_CWE_IMAGE="nvcr.io/<org>/controller:edge" \
+NKECTL_CWE_IMAGE="nvcr.io/<org>/nke-controller:edge" \
 NKECTL_CAPI_PROVISIONED_IMAGE="nvcr.io/<org>/cluster-api-provider-provisioned:edge" \
   nkectl bootstrap site -f sitespec.yaml
 ```
@@ -238,12 +239,13 @@ All nodes should show `Ready` status.
 
 **Self-managed sites:**
 
-1. Install your environment SBOM so NKE can drive day-2 operations through NICo.
-2. Wait until the SBOM is fully deployed and healthy.
-3. Complete NKE and NICo ingestion with the NKE team. Keep the etcd encryption key file until this step succeeds: ingestion applies it to the controller, which needs it to join control-plane nodes and rotate the key. **TODO:** Publish ingestion runbook here once it exists.
-4. Operate the site through NKE day-2 workflows.
+1. Ensure your NICo site is set up and healthy before proceeding. See the [NICo documentation](https://docs.nvidia.com/infra-controller/documentation/home) for site setup and networking requirements.
+2. Install your environment SBOM so NKE can drive day-2 operations through NICo.
+3. Wait until the SBOM is fully deployed and healthy.
+4. Complete NKE and NICo host ingestion with the NKE team. Keep the etcd encryption key file until this step succeeds: ingestion applies it to the controller, which needs it to join control-plane nodes and rotate the key. **TODO:** Publish NKE-specific ingestion runbook here once it exists.
+5. Operate the site through NKE day-2 workflows.
 
-**Unmanaged sites:** Deploy workloads with whatever tooling fits your environment. No NKE site-controller installation is required.
+**Unmanaged sites:** Deploy workloads with whatever tooling fits your environment. No NKE site-controller installation is required. Note that without NICo, no NKE day-2 operations (tenant cluster creation, node add/remove, upgrades) are available.
 
 ## Important Notes
 

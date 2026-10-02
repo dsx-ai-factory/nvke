@@ -67,11 +67,11 @@ func TestAuthEnvFields(t *testing.T) {
 // would stop every deployment that has not enabled authentication.
 func TestValidateIgnoresAuthFields(t *testing.T) {
 	base := config.Config{
-		MetricsListenAddress:            "127.0.0.1:9090",
-		DBConnectionString:              "postgres://cwe:strong@localhost:5432/cwe?sslmode=disable",
-		SpireServerAPIAddress:           "spire-server.spire-server.svc.cluster.local:8081",
-		SpireJoinTokenTTL:               time.Hour,
-		NodeAgentSpireAttestationMethod: config.SpireAttestationMethodTPM,
+		MetricsListenAddress:  "127.0.0.1:9090",
+		DBConnectionString:    "postgres://cwe:strong@localhost:5432/cwe?sslmode=disable",
+		SpireServerAPIAddress: "spire-server.spire-server.svc.cluster.local:8081",
+		SpireJoinTokenTTL:     time.Hour,
+		NodeAgent:             config.NodeAgentConfig{SpireAttestationMethod: config.SpireAttestationMethodTPM},
 	}
 
 	// Unset is the disabled state every existing deployment upgrades into. This

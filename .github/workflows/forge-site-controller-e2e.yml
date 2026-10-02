@@ -1,0 +1,854 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Builds an NKE site controller on real Forge hardware and runs a tenant
+# against it: `site_controller_test.go`, label `site-controller`.
+#
+# Unlike every other e2e lane in this repository, nothing under test runs on
+# the runner. The runner builds the inputs, then drives a bare-metal Forge
+# instance through the site's jump host: stage nkectl, stage the checkout,
+# import the images, `nkectl bootstrap site`, install the deploy path, create
+# a tenant, tear it all down.
+#
+# It runs on the ARC fleet because that is the sanctioned fleet for this
+# repository's hardware lanes, not because it has to. Measured by
+# `forge-connectivity-probe.yml` on 2026-09-23: the Forge API answers, and so
+# does the Teleport proxy, which is Teleport Cloud and therefore public. A
+# GitHub-hosted runner would reach both.
+#
+# TELEPORT IS THE ONLY ROUTE TO THE JUMP HOST. tbot joins with this
+# repository's GitHub OIDC identity, so there is no stored credential, and
+# `tsh` relays bytes to the node's sshd. The jump host itself does nothing
+# else: the SSH session beyond it is negotiated on the runner.
+#
+# There was a second route, a plain-SSH login with an account password. The
+# same probe found no route at all from the ARC fleet to the site's jump host
+# on port 22, so it could never have worked here, and it is gone from this
+# file. `teleport.SSHJumpHost` stays in the harness, with its
+# tests, for a future site whose jump host is not Teleport-enrolled; giving
+# the suite a JUMP_HOST_PASSWORD is still what selects it.
+#
+# NEVER AUTOMATIC. A run takes a bare-metal machine for up to an hour, so it
+# starts only when a person asks: a workflow_dispatch, or the `forge-e2e`
+# label on a pull request from this repository. Three reasons it is not on a
+# schedule and not on every push:
+#
+#   Capacity.  The site's cpu.himem.t1 pool was fully allocated by a single
+#   site controller, which forced that run's tenant onto the GPU pool. See
+#   the site-controller plan's "Capacity is a hard constraint".
+#
+#   Secrets.  A fork pull request cannot reach FORGE_API_KEY, and the
+#   Teleport join token deliberately does not cover forks either. The label
+#   gate below requires the head repository to be this one, so a fork PR
+#   carrying the label still does not run.
+#
+#   Cost of a leak.  Teardown is the suite's, from a defer. If the job is
+#   cancelled or hits `timeout-minutes`, the runner dies before teardown and
+#   a bare-metal instance stays allocated with nothing left to delete it.
+#   `cancel-in-progress: false` and the go-test timeout below both exist for
+#   that reason, and a cancelled run still needs someone to check Forge.
+#
+# NO NODE PASSWORD. The image's baked `dgxc-admin` account is how a person
+# reaches these nodes, and how the manual procedure does it. The harness does
+# not: `forge.go` generates an ed25519 key per run, cloud-init writes the
+# public half to `authorized_keys`, and the dialer authenticates with the
+# private half, which never leaves the runner.
+name: Forge site controller e2e
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: How far to go. provision stops at a booted node, bootstrap adds vanilla Kubernetes, full adds the deploy path and a tenant.
+        type: choice
+        required: true
+        default: provision
+        options:
+          - provision
+          - bootstrap
+          - full
+      controller-version:
+        description: Published CWE tag to qualify, e.g. v0.1.1-rc.8. Leave empty to build the CWE from this checkout, which is the only pairing that currently works -- see the resolve step.
+        type: string
+        required: false
+      os-image-bootloader:
+        description: HTTPS URL of the qcow-imager EFI. Must be plain HTTPS -- iPXE cannot pull an OCI artifact.
+        type: string
+        required: true
+      os-image:
+        description: HTTPS URL of the NKE qcow2.
+        type: string
+        required: true
+      keep-site:
+        description: Keep the node after the run, for debugging. Remember to delete it by hand.
+        type: boolean
+        required: false
+        default: false
+      image-registry:
+        description: Where the published controller and capi-provisioned images are pulled from. nvcr needs the NGC_API_KEY secret and the SITE_E2E_NGC_ORG variable.
+        type: choice
+        required: false
+        default: ghcr
+        options:
+          - ghcr
+          - nvcr
+  # The only way to run this lane against a change before that change is on
+  # main, and for now the only way to run it at all: workflow_dispatch reads
+  # its definition from the default branch, so this file is not dispatchable
+  # until it merges. A pull_request run also carries refs/pull/<n>/merge,
+  # which is one of the two refs the Teleport join token accepts.
+  #
+  # `labeled` and nothing else. Adding `forge-e2e` is the request to run;
+  # `synchronize` is deliberately absent so that pushing to a labelled PR
+  # does not quietly take another machine. To run again, remove the label and
+  # add it back, or use the re-run button.
+  #
+  # A pull_request event has no `inputs`, so the dispatch inputs fall back to
+  # SITE_E2E_* repository variables. See the job env below.
+  pull_request:
+    types: [labeled]
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  # One at a time across the whole repository, and never cancelled. Two
+  # concurrent runs would exhaust the site, and cancelling one mid-flight leaks
+  # its instance. Not keyed on ref: the constraint is the hardware, which is
+  # shared by every branch.
+  group: Forge site controller e2e
+  cancel-in-progress: false
+
+jobs:
+  site:
+    name: site controller (${{ inputs.stage || vars.SITE_E2E_STAGE || vars.FORGE_E2E_STAGE || 'provision' }})
+    # The ARC fleet on the RelEng EKS cluster: 16 vCPU / 64 GiB with dind, on
+    # a runner image built to stand in for ubuntu-latest. In the corpnet VPC,
+    # which is what makes the jump host reachable at all. Capped at two
+    # runners for the whole class, another reason this lane is manual.
+    runs-on: arc-amd64-cpu16
+    # A dispatch is already a deliberate act. A pull_request run has to be
+    # asked for by adding the `forge-e2e` label -- the label on this event,
+    # not any label the PR carries, so adding an unrelated label to a PR that
+    # already has `forge-e2e` does not take a machine -- and has to come from a branch in
+    # this repository -- a fork PR reaches neither the secrets nor the join
+    # token, so it would burn a runner to fail.
+    if: >-
+      github.repository == 'dsx-ai-factory/nke' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.label.name == 'forge-e2e'))
+    # Measured phases from the recorded SBOM run: ~17 min to create the instance,
+    # ~10 to stage assets, ~5 to bootstrap, ~8 to install the management
+    # plane, ~20 per tenant. Call it 60 for `full`, doubled for a cold run and
+    # for bootstrap's 30-45 minute worst case -- the missing-kubeadm failure
+    # runs its full 30 minutes before failing on NodePreflight.
+    #
+    # The go-test timeout below is 15 minutes shorter on purpose. Ginkgo
+    # unwinds and tears the node down when it fires; `timeout-minutes` kills
+    # the runner and leaks the instance. The gap is teardown's budget, and it
+    # is sized against the cleanup nodes' NodeTimeouts -- see the note on the
+    # three nested timeouts at the run step. This bound is only ever reached
+    # by a run that has already gone wrong; a healthy `full` is about an hour.
+    timeout-minutes: 235
+    permissions:
+      contents: read
+      # Both GHCR pulls: the runner's, and the node's through the
+      # imagePullSecret the deploy path renders. No PAT, matching every other
+      # workflow here -- github.actor with GITHUB_TOKEN. The token dies with
+      # the job, which is shorter than any credential we could store.
+      packages: read
+      # The Teleport join, and only that. The join token's allow rules are
+      # what actually bound it -- see the daemon step.
+      id-token: write
+    env:
+      # Every knob, resolved once. A workflow_dispatch fills `inputs`; a
+      # pull_request run has none, so it takes the SITE_E2E_* repository
+      # variables instead. The guard step checks the result rather than
+      # letting an empty image URL surface twenty minutes into a run.
+      #
+      # Each of these also accepts the FORGE_E2E_* name it used to have.
+      # Nothing about a stage or an OS image is Forge's -- only the access
+      # path to the hardware is, which is why FORGE_JUMP_HOST and the
+      # Teleport and Forge resource variables below keep their prefix. The
+      # old names stay in the chain so the rename needs no flag day: a run
+      # works on either, the resolved-inputs summary says which one answered
+      # and names the replacement, and the fallback goes once no run reports
+      # a deprecated name.
+      SITE_STAGE: ${{ inputs.stage || vars.SITE_E2E_STAGE || vars.FORGE_E2E_STAGE || 'provision' }}
+      # Empty asks for a build from this checkout; the resolve step fills it
+      # in. Every use of it downstream -- the image site-inputs stages, the
+      # NKECTL_CWE_IMAGE the bootstrap runs, and the tag the SBOM deploys --
+      # reads this one value, which is what keeps them the same image.
+      SITE_CONTROLLER_VERSION: ${{ inputs.controller-version || vars.SITE_E2E_CONTROLLER_VERSION || vars.FORGE_E2E_CONTROLLER_VERSION }}
+      OS_IMAGE_BOOTLOADER: ${{ inputs.os-image-bootloader || vars.SITE_E2E_OS_IMAGE_BOOTLOADER || vars.FORGE_E2E_OS_IMAGE_BOOTLOADER }}
+      OS_IMAGE: ${{ inputs.os-image || vars.SITE_E2E_OS_IMAGE || vars.FORGE_E2E_OS_IMAGE }}
+      # A label cannot carry a boolean, so a PR run never keeps its node.
+      KEEP_SITE: ${{ inputs.keep-site || false }}
+      # ghcr or nvcr. Only the runner pulls from it: every image it names is
+      # staged onto the node as an archive. The node's own pull is CAPNICo,
+      # which is published to GHCR alone, so the GHCR login below stays either
+      # way.
+      SITE_IMAGE_REGISTRY: ${{ inputs.image-registry || vars.SITE_E2E_IMAGE_REGISTRY || vars.FORGE_E2E_IMAGE_REGISTRY || 'ghcr' }}
+      # The only published capi-provisioned tag. One value for the archive
+      # site-inputs pulls and the reference the suite bootstraps with. Named
+      # for the component, as -e2e.versions and the config field are; the
+      # make variable it feeds keeps the SITE_ prefix its siblings share, so
+      # the two names meet at the site-inputs step below.
+      CAPI_PROVISIONED_VERSION: v0.1.0-rc.1
+      # The NGC org the NVCR images are published under. A repository
+      # variable, not the nvcr environment's NKE_NGC_ORG: that environment
+      # gates the publish jobs, and this job has no business entering it.
+      SITE_E2E_NGC_ORG: ${{ vars.SITE_E2E_NGC_ORG || vars.FORGE_E2E_NGC_ORG }}
+      # Where `make site-inputs` writes nkectl and the three image archives.
+      # Deliberately not the Makefile default, which is a $HOME cache: that
+      # survives between jobs on a self-hosted runner, and a stale archive
+      # sitting in it would be staged in place of the one this run built.
+      # Under the workspace it goes with the checkout. The config below
+      # interpolates this, so the paths keep the shape
+      # e2e-config-example.yaml documents even though the prefix differs.
+      SITE_INPUTS: ${{ github.workspace }}/.site-inputs
+      # The proxy for the auth step. It also exports TELEPORT_PROXY and
+      # TELEPORT_IDENTITY_FILE for tsh, which is how the dialer is configured
+      # -- config.go leaves teleportIdentityFile empty and tsh reads the
+      # environment, which is what a bot has instead of a login session.
+      FORGE_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
+      # Not checked in: the jump host names internal topology. A secret, not
+      # because a hostname is a credential -- the credential is the Teleport
+      # identity -- but because GitHub prints job-level env in every step's
+      # log header, and only a secret is masked there. A variable masked by a
+      # step is still in the clear in every header before that step.
+      FORGE_JUMP_HOST: ${{ secrets.FORGE_JUMP_HOST }}
+      # The tbot join token. Names a Teleport resource rather than granting
+      # anything on its own -- joining also requires this repository's OIDC
+      # identity, which is what the token is bound to. A secret for the same
+      # reason as the jump host.
+      FORGE_TELEPORT_JOIN_TOKEN: ${{ secrets.FORGE_TELEPORT_JOIN_TOKEN }}
+      # The jump host login, read by environments/forge.yaml beside
+      # FORGE_JUMP_HOST. root because that is the only login the bot's role
+      # grants, and the probe confirmed the certificate carries it. No
+      # jumpHostUser or jumpHostKeyFingerprint: Teleport takes the login from
+      # the identity and the host key from the cluster CA.
+      FORGE_TELEPORT_LOGIN: root
+      # The identifiers environments/forge.yaml references. Not checked in for
+      # the same reason as the jump host and not secrets for the same reason
+      # either: an org or subnet id names infrastructure rather than granting
+      # anything, and the credential is the Forge API key. The loader fails on
+      # an unset one, so a missing variable stops the run at the environment
+      # file instead of asking Forge to build in org "".
+      FORGE_ORG_ID: ${{ vars.FORGE_ORG_ID }}
+      FORGE_SITE_ID: ${{ vars.FORGE_SITE_ID }}
+      FORGE_VPC_ID: ${{ vars.FORGE_VPC_ID }}
+      FORGE_SUBNET_ID: ${{ vars.FORGE_SUBNET_ID }}
+      FORGE_SSH_KEY_GROUP_ID: ${{ vars.FORGE_SSH_KEY_GROUP_ID }}
+      FORGE_INSTANCE_TYPE_CPU_ID: ${{ vars.FORGE_INSTANCE_TYPE_CPU_ID }}
+      FORGE_INSTANCE_TYPE_GPU_ID: ${{ vars.FORGE_INSTANCE_TYPE_GPU_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Three `docker save` archives of multi-hundred-megabyte images, written
+      # to the workspace and read back by dind. Reported rather than freed:
+      # the ubuntu-latest trick of deleting /usr/share/dotnet and friends has
+      # nothing to delete in a runner container, and the space that matters
+      # is the pod's, not the node's. This is here so a run that fails on
+      # space says so in its first thirty seconds.
+      - name: Report disk space
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          df -h "${GITHUB_WORKSPACE}" /tmp
+          docker system df || true
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      # tsh is the relay: `teleport.Dialer` shells out to it to open a byte
+      # stream to the node's sshd through the jump host. Pinned, and checked,
+      # because an unpinned client against a pinned cluster is a failure mode
+      # that surfaces as an unexplained relay error deep in a 40-minute run.
+      # Matched to the cluster's server version rather than merely within the
+      # supported skew. The version and its digest live in
+      # make/tool-versions.mk, which is where every other pinned tool's do.
+      # tbot as well as tsh: the harness relays with tsh, and the step below
+      # runs tbot as the daemon that keeps the identity fresh. Both come out
+      # of the same tarball, so one pin covers the join and the relay.
+      - name: Install tsh and tbot
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          version="$(make --no-print-directory print-TELEPORT_VERSION)"
+          # A committed digest, not the CDN's own .sha256 -- same host, so the
+          # same compromise boundary. make/tool-versions.mk owns both, next to
+          # each other, so a bump cannot move one without the other.
+          expected="$(make --no-print-directory print-TELEPORT_SHA256_AMD64)"
+          tar="teleport-v${version}-linux-amd64-bin.tar.gz"
+          tmp="$(mktemp -d)"
+
+          curl -fsSL --connect-timeout 20 --max-time 300 \
+            -o "${tmp}/${tar}" "https://cdn.teleport.dev/${tar}"
+          if [ -z "${expected}" ]; then
+            echo "::error::no checksum entry for ${tar}"
+            exit 1
+          fi
+          actual="$(sha256sum "${tmp}/${tar}" | awk '{print $1}')"
+          if [ "${actual}" != "${expected}" ]; then
+            echo "::error::checksum mismatch for ${tar}"
+            exit 1
+          fi
+
+          tar -C "${tmp}" -xzf "${tmp}/${tar}" teleport/tsh teleport/tbot
+          # /usr/local/bin is not writable by the runner user on the
+          # self-hosted runners, so it goes somewhere that always is -- the
+          # same place secrets.yml puts gitleaks. GITHUB_PATH reaches the
+          # steps after this one, so the version check below uses the path.
+          mkdir -p "${HOME}/.local/bin"
+          install -m 0755 "${tmp}/teleport/tsh" "${tmp}/teleport/tbot" "${HOME}/.local/bin/"
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+          "${HOME}/.local/bin/tsh" version
+
+      # nkectl is built from this checkout and is a client of the CWE it
+      # bootstraps, so the two have to be one commit. No published tag gives
+      # that: GHCR carries release tags only and its newest, v0.1.1-rc.8, is
+      # 43 commits before #850, which removed infra.spireAttestationMethod
+      # from the cluster API. Run 35999250795 spent forty minutes reaching
+      #   400 Bad Request: infra.spireAttestationMethod is required
+      # on exactly that pairing.
+      #
+      # So the default is to build, tagged with the commit under test -- on a
+      # pull_request that is the merge commit, which is the thing being
+      # qualified. Not `git describe`: the checkout is shallow and carries no
+      # tags, so it would report v0.0.0 and silently stop being unique.
+      #
+      # Naming a version instead pulls that published tag, for qualifying a
+      # release once one is cut past #850. The deploy path follows the
+      # controller -- it carries the controller's own chart -- so that
+      # version's controller/<version> release tag is fetched for the suite
+      # to export it from. The checkout is shallow and tagless, and without
+      # credentials, hence the one-off header.
+      - name: Resolve the controller version
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          if [ -n "${SITE_CONTROLLER_VERSION}" ]; then
+            echo "SITE_CONTROLLER_BUILD=0" >> "${GITHUB_ENV}"
+            echo "qualifying the published ${SITE_CONTROLLER_VERSION}"
+            echo "::warning::pulling a published CWE, ${SITE_CONTROLLER_VERSION}; if it predates #850 the bootstrap fails at \"creating the site cluster\""
+            tag="controller/${SITE_CONTROLLER_VERSION}"
+            auth="$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 -w0)"
+            echo "::add-mask::${auth}"
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}" \
+              fetch --no-tags --depth=1 origin "refs/tags/${tag}:refs/tags/${tag}" || {
+              echo "::error::no ${tag} release tag; the deploy path is exported from the controller's own commit"
+              exit 1
+            }
+            exit 0
+          fi
+          version="$(git rev-parse --short=12 HEAD)"
+          {
+            echo "SITE_CONTROLLER_BUILD=1"
+            echo "SITE_CONTROLLER_VERSION=${version}"
+          } >> "${GITHUB_ENV}"
+          echo "building the CWE from ${version}"
+
+      # Two checks that each cost a second and each save a run: the ref the
+      # join token will see, and the three values a pull_request event does
+      # not supply. Both fail here rather than after a machine exists.
+      - name: Check the run is viable
+        shell: bash
+        env:
+          REF: ${{ github.ref }}
+          NGC_TOKEN: ${{ secrets.NGC_API_KEY }}
+        run: |
+          set -Eeuo pipefail
+
+          # The join token allows refs/heads/main and refs/pull/*/merge and
+          # nothing else, so a dispatch from any other branch mints nothing.
+          # Checked here because the join failure names neither the ref nor
+          # the rule, and the dispatch UI offers every branch.
+          case "${REF}" in
+            refs/heads/main | refs/pull/*/merge) ;;
+            *)
+              echo "::error::running from ${REF}; the Teleport join token allows only" \
+                   "refs/heads/main and refs/pull/*/merge. Dispatch from main, or label a pull request."
+              exit 1
+              ;;
+          esac
+
+          # Empty on a pull_request run whose SITE_E2E_* variable is unset.
+          # SITE_CONTROLLER_VERSION is not here: the step above resolves it.
+          missing=()
+          for name in SITE_STAGE OS_IMAGE_BOOTLOADER OS_IMAGE; do
+            [ -n "${!name}" ] || missing+=("${name}")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::no value for ${missing[*]}. A dispatch takes these from its inputs;" \
+                 "a labelled pull request takes them from the SITE_E2E_* repository variables" \
+                 "(or the FORGE_E2E_* names they replace)."
+            exit 1
+          fi
+
+          # The image path, resolved here so every later step reads one value.
+          # Same image names on both; only the prefix differs.
+          case "${SITE_IMAGE_REGISTRY}" in
+            ghcr) images="ghcr.io/dsx-ai-factory/nke" ;;
+            nvcr)
+              if [ -z "${SITE_E2E_NGC_ORG}" ] || [ -z "${NGC_TOKEN}" ]; then
+                echo "::error::image-registry nvcr needs the SITE_E2E_NGC_ORG repository variable and the NGC_API_KEY secret"
+                exit 1
+              fi
+              images="nvcr.io/${SITE_E2E_NGC_ORG}"
+              ;;
+            *)
+              echo "::error::image-registry ${SITE_IMAGE_REGISTRY} is not ghcr or nvcr"
+              exit 1
+              ;;
+          esac
+          echo "SITE_IMAGES=${images}" >> "${GITHUB_ENV}"
+          echo "stage=${SITE_STAGE} controller=${SITE_CONTROLLER_VERSION} images=${images}"
+
+      # No stored identity: tbot joins with the repository's OIDC token
+      # against a join token named by FORGE_TELEPORT_JOIN_TOKEN, whose bot
+      # holds a role granting root on the jump hosts labelled for it -- one
+      # of which is the one this lane uses.
+      #
+      # A DAEMON, NOT teleport-actions/auth. That action mints exactly one
+      # certificate and stamps it disallow-reissue, and the cluster caps
+      # every certificate at the shortest max_session_ttl across the bot's
+      # roles -- 2h, set by rg-nke-ssh-sudo, a role that matches no node and
+      # is carried only for parity with the GitLab bot. Asking for 4h
+      # measurably returns 1h59m. A `full` run's 150-minute budget outlives
+      # that, and the relay would start failing partway through.
+      #
+      # tbot in daemon mode renews instead, rewriting the same identity file
+      # every 20 minutes, so the absolute TTL stops mattering. The dialer
+      # starts a fresh `tsh` per dial and reads TELEPORT_IDENTITY_FILE, so it
+      # picks the new file up with no coordination; sessions already open are
+      # unaffected, since the cluster sets no disconnect_expired_cert.
+      #
+      # Every element of this config was verified against the cluster's 18.11
+      # server by forge-connectivity-probe.yml before the lane was changed.
+      - name: Start the Teleport identity daemon
+        shell: bash
+        env:
+          TBOT_DIR: ${{ runner.temp }}/tbot
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "${TBOT_DIR}"
+          cat > "${RUNNER_TEMP}/tbot.yaml" <<EOF
+          version: v2
+          proxy_server: ${FORGE_TELEPORT_PROXY}
+          onboarding:
+            join_method: github
+            token: ${FORGE_TELEPORT_JOIN_TOKEN}
+          # Nothing to persist: the bot re-joins with the runner's OIDC token,
+          # so there is no state worth keeping and none left on disk.
+          storage:
+            type: memory
+          # 1h is what the cluster grants whatever is asked for. The interval
+          # is the part that matters: the file on disk is never within 40
+          # minutes of expiring, however long the run lasts.
+          credential_lifetime:
+            ttl: 1h
+            renewal_interval: 20m
+          services:
+            - type: identity
+              destination:
+                type: directory
+                path: ${TBOT_DIR}
+          EOF
+
+          tbot start -c "${RUNNER_TEMP}/tbot.yaml" >"${RUNNER_TEMP}/tbot.log" 2>&1 &
+          echo $! > "${RUNNER_TEMP}/tbot.pid"
+
+          for _ in $(seq 1 30); do
+            [ -s "${TBOT_DIR}/identity" ] && break
+            sleep 2
+          done
+          if [ ! -s "${TBOT_DIR}/identity" ]; then
+            echo "::error::tbot wrote no identity in 60s; the run cannot reach the jump host"
+            sed 's/^/  /' "${RUNNER_TEMP}/tbot.log"
+            exit 1
+          fi
+
+          # What teleport-actions/auth used to export, and what both tsh and
+          # the dialer read. config.go deliberately leaves the identity path
+          # empty so that it comes from here.
+          {
+            echo "TELEPORT_PROXY=${FORGE_TELEPORT_PROXY}"
+            echo "TELEPORT_IDENTITY_FILE=${TBOT_DIR}/identity"
+          } >> "${GITHUB_ENV}"
+          tsh --proxy "${FORGE_TELEPORT_PROXY}" --identity "${TBOT_DIR}/identity" status
+
+      # With image-registry ghcr, site-inputs pulls the controller and
+      # capi-provisioned images from here, both private. Either way the same
+      # credential is handed to the suite below, which is what the *node*
+      # pulls CAPNICo with, through the ghcr-imagepull Secret the deploy path
+      # renders.
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # An NGC key with pull access on the SITE_E2E_NGC_ORG org's registry.
+      # Separate from FORGE_API_KEY because NGC cannot scope one key to both
+      # the Forge tenant and the registry. The runner is the only thing that
+      # pulls with it: nothing on the node pulls from NVCR.
+      - name: Log in to NVCR
+        if: env.SITE_IMAGE_REGISTRY == 'nvcr'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: nvcr.io
+          # `$oauthtoken` is NGC's literal username, not a variable reference.
+          username: $oauthtoken
+          password: ${{ secrets.NGC_API_KEY }}
+
+      # nkectl for the node's architecture, the three image archives, and the
+      # deploy path out of the checkout. The node has no access to this
+      # repository, so everything it runs has to be built here and staged.
+      # SITE_CONTROLLER_BUILD comes from the resolve step and decides whether
+      # the CWE archive is built here or pulled.
+      - name: Build the site inputs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          make -C controller/test/e2e site-inputs \
+            SITE_CONTROLLER_VERSION="${SITE_CONTROLLER_VERSION}" \
+            SITE_CONTROLLER_BUILD="${SITE_CONTROLLER_BUILD}" \
+            SITE_IMAGE_REGISTRY="${SITE_IMAGES}" \
+            SITE_PROVISIONED_VERSION="${CAPI_PROVISIONED_VERSION}" \
+            SITE_INPUTS="${SITE_INPUTS}"
+
+      # Where each staged image came from, and nothing else. Versions are
+      # -e2e.versions keys, the jump host is environments/forge.yaml's, and
+      # every secret is read from the environment by the suite itself -- see
+      # the const block at the top of site_controller_test.go.
+      - name: Write the e2e config
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "${FORGE_JUMP_HOST}" || {
+            echo "::error::the FORGE_JUMP_HOST repository secret is unset; the suite has no way to reach the node"
+            exit 1
+          }
+          # The repositories are the ones site-inputs pulled or tagged, so the
+          # references the suite hands the bootstrap and the deploy path are
+          # the ones the archives carry.
+          cat > controller/test/e2e/e2e-config.yaml <<EOF
+          # Generated by .github/workflows/forge-site-controller-e2e.yml.
+          site:
+            images:
+              controller:
+                repository: ${SITE_IMAGES}/nke-controller
+                archive: ${SITE_INPUTS}/controller.tar
+              capi-provisioned:
+                repository: ${SITE_IMAGES}/cluster-api-provider-provisioned
+                archive: ${SITE_INPUTS}/capi-provisioned.tar
+              profiles:
+                repository: nke-e2e-profiles
+                tag: local
+                archive: ${SITE_INPUTS}/profiles.tar
+          EOF
+          echo "--- e2e-config.yaml ---"
+          cat controller/test/e2e/e2e-config.yaml
+
+      # The job log already carries these values, but scattered across every
+      # step's env block and only for as long as GitHub keeps the log. A run
+      # that qualified something has to be able to say what it qualified
+      # after the log is gone, so this collects them once, in one file,
+      # uploaded beside site-e2e.log.
+      #
+      # Provenance, not just the value. The same `full` can arrive from a
+      # dispatch input, a repository variable, or the default below, and
+      # which one it was is usually what an operator is trying to confirm.
+      - name: Record the resolved inputs
+        shell: bash
+        env:
+          WORKFLOW: .github/workflows/forge-site-controller-e2e.yml
+          OUT: ${{ runner.temp }}/run-inputs.txt
+          IN_STAGE: ${{ inputs.stage }}
+          IN_CONTROLLER_VERSION: ${{ inputs.controller-version }}
+          IN_OS_IMAGE_BOOTLOADER: ${{ inputs.os-image-bootloader }}
+          IN_OS_IMAGE: ${{ inputs.os-image }}
+          IN_KEEP_SITE: ${{ inputs.keep-site }}
+          IN_IMAGE_REGISTRY: ${{ inputs.image-registry }}
+          VAR_IMAGE_REGISTRY: ${{ vars.SITE_E2E_IMAGE_REGISTRY }}
+          VAR_NGC_ORG: ${{ vars.SITE_E2E_NGC_ORG }}
+          VAR_STAGE: ${{ vars.SITE_E2E_STAGE }}
+          VAR_CONTROLLER_VERSION: ${{ vars.SITE_E2E_CONTROLLER_VERSION }}
+          VAR_OS_IMAGE_BOOTLOADER: ${{ vars.SITE_E2E_OS_IMAGE_BOOTLOADER }}
+          VAR_OS_IMAGE: ${{ vars.SITE_E2E_OS_IMAGE }}
+          # The names each of the six replaced, read separately so the
+          # summary can say a deprecated one answered instead of hiding it
+          # behind the value it supplied.
+          WAS_IMAGE_REGISTRY: ${{ vars.FORGE_E2E_IMAGE_REGISTRY }}
+          WAS_NGC_ORG: ${{ vars.FORGE_E2E_NGC_ORG }}
+          WAS_STAGE: ${{ vars.FORGE_E2E_STAGE }}
+          WAS_CONTROLLER_VERSION: ${{ vars.FORGE_E2E_CONTROLLER_VERSION }}
+          WAS_OS_IMAGE_BOOTLOADER: ${{ vars.FORGE_E2E_OS_IMAGE_BOOTLOADER }}
+          WAS_OS_IMAGE: ${{ vars.FORGE_E2E_OS_IMAGE }}
+          VAR_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
+        run: |
+          set -Eeuo pipefail
+
+          # label | resolved | dispatch input | repository variable | variable name |
+          #   deprecated variable | deprecated variable name
+          #
+          # The last two are set only for the six renamed away from FORGE_,
+          # and empty everywhere else. They exist so a run on an old name
+          # says so rather than reporting the new one it did not read.
+          rows=(
+            "stage|SITE_STAGE|IN_STAGE|VAR_STAGE|SITE_E2E_STAGE|WAS_STAGE|FORGE_E2E_STAGE"
+            "controller version|SITE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|SITE_E2E_CONTROLLER_VERSION|WAS_CONTROLLER_VERSION|FORGE_E2E_CONTROLLER_VERSION"
+            "OS image bootloader|OS_IMAGE_BOOTLOADER|IN_OS_IMAGE_BOOTLOADER|VAR_OS_IMAGE_BOOTLOADER|SITE_E2E_OS_IMAGE_BOOTLOADER|WAS_OS_IMAGE_BOOTLOADER|FORGE_E2E_OS_IMAGE_BOOTLOADER"
+            "OS image|OS_IMAGE|IN_OS_IMAGE|VAR_OS_IMAGE|SITE_E2E_OS_IMAGE|WAS_OS_IMAGE|FORGE_E2E_OS_IMAGE"
+            "keep the node|KEEP_SITE|IN_KEEP_SITE||||"
+            "image registry|SITE_IMAGE_REGISTRY|IN_IMAGE_REGISTRY|VAR_IMAGE_REGISTRY|SITE_E2E_IMAGE_REGISTRY|WAS_IMAGE_REGISTRY|FORGE_E2E_IMAGE_REGISTRY"
+            "NGC org|SITE_E2E_NGC_ORG||VAR_NGC_ORG|SITE_E2E_NGC_ORG|WAS_NGC_ORG|FORGE_E2E_NGC_ORG"
+            "Teleport proxy|FORGE_TELEPORT_PROXY||VAR_TELEPORT_PROXY|FORGE_TELEPORT_PROXY||"
+            "jump host|FORGE_JUMP_HOST|||||"
+            "Teleport join token|FORGE_TELEPORT_JOIN_TOKEN|||||"
+            "Forge org|FORGE_ORG_ID||FORGE_ORG_ID|FORGE_ORG_ID||"
+            "Forge site|FORGE_SITE_ID||FORGE_SITE_ID|FORGE_SITE_ID||"
+            "Forge VPC|FORGE_VPC_ID||FORGE_VPC_ID|FORGE_VPC_ID||"
+            "Forge subnet|FORGE_SUBNET_ID||FORGE_SUBNET_ID|FORGE_SUBNET_ID||"
+            "Forge SSH key group|FORGE_SSH_KEY_GROUP_ID||FORGE_SSH_KEY_GROUP_ID|FORGE_SSH_KEY_GROUP_ID||"
+            "CPU instance type|FORGE_INSTANCE_TYPE_CPU_ID||FORGE_INSTANCE_TYPE_CPU_ID|FORGE_INSTANCE_TYPE_CPU_ID||"
+            "GPU instance type|FORGE_INSTANCE_TYPE_GPU_ID||FORGE_INSTANCE_TYPE_GPU_ID|FORGE_INSTANCE_TYPE_GPU_ID||"
+          )
+
+          # A row nobody remembers to add is the whole failure mode: the
+          # summary then reports what its last editor recalled rather than
+          # what the run resolved. Derive the expected set from the workflow
+          # itself so a new input or variable fails here instead of going
+          # unrecorded.
+          #
+          # The pattern has to name every prefix in use. It matched only
+          # FORGE_ when that was the only one, which means a variable
+          # renamed out of that prefix would have dropped out of this check
+          # silently -- no failure, just less coverage, which is the one
+          # thing this step exists to prevent. Both prefixes are listed, and
+          # a third would have to be added here too.
+          missing=()
+          while read -r name; do
+            printf '%s\n' "${rows[@]}" | cut -d'|' -f5,7 | tr '|' '\n' | grep -qx "${name}" || missing+=("vars.${name}")
+          done < <(grep -oE 'vars\.(FORGE|SITE_E2E)_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
+          while read -r name; do
+            printf '%s\n' "${rows[@]}" | cut -d'|' -f3 |
+              grep -qx "IN_$(printf '%s' "${name}" | tr 'a-z-' 'A-Z_')" || missing+=("inputs.${name}")
+          # The leading [^a-z-] keeps this off its own artifact name: a bare
+          # `inputs\.` also matches the `run-inputs.txt` two lines above.
+          done < <(grep -oE '[^a-z-]inputs\.[a-z0-9-]+' "${WORKFLOW}" | sed 's/.*inputs\.//' | sort -u)
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::the resolved-inputs table does not cover ${missing[*]}; add a row"
+            exit 1
+          fi
+
+          {
+            echo "=== Resolved inputs — ${GITHUB_WORKFLOW} ==="
+            printf '  %-22s = %s\n' "repository"  "${GITHUB_REPOSITORY}"
+            printf '  %-22s = %s\n' "event"       "${GITHUB_EVENT_NAME}"
+            printf '  %-22s = %s\n' "ref"         "${GITHUB_REF}"
+            printf '  %-22s = %s\n' "checkout"    "$(git rev-parse HEAD)"
+            printf '  %-22s = %s\n' "run"         "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            for row in "${rows[@]}"; do
+              IFS='|' read -r label resolved input var varname wasvar wasvarname <<<"${row}"
+              value="${!resolved:-}"
+              [ -n "${value}" ] || value="<unset>"
+              # The rows whose values are withheld. This file is an artifact
+              # and outlives the run; what an operator needs from it is that
+              # the jump host and join token resolved and where they came
+              # from, both of which survive. Whether each was set is the part
+              # that is diagnostic.
+              case "${resolved}" in
+                FORGE_JUMP_HOST|FORGE_TELEPORT_JOIN_TOKEN) withhold=1 ;;
+                *) withhold=0 ;;
+              esac
+              if [ "${withhold}" = 1 ] && [ "${value}" != "<unset>" ]; then
+                value="<set, withheld>"
+              fi
+              if [ -n "${input}" ] && [ -n "${!input:-}" ]; then
+                source="dispatch input"
+              elif [ -n "${var}" ] && [ -n "${!var:-}" ]; then
+                source="repository variable ${varname}"
+              elif [ -n "${wasvar}" ] && [ -n "${!wasvar:-}" ]; then
+                # Named rather than folded into the line above, because this
+                # is the only signal that the rename is unfinished. The
+                # fallback in the env block goes when no run prints this.
+                source="repository variable ${wasvarname} (deprecated, rename to ${varname})"
+              else
+                source="workflow default"
+              fi
+              if [ "${withhold}" = 1 ]; then
+                source="repository secret ${resolved}"
+              fi
+              # The resolve step fills this one in from the checkout when no
+              # published tag was asked for, so neither arm above named it.
+              if [ "${resolved}" = "SITE_CONTROLLER_VERSION" ] && [ "${SITE_CONTROLLER_BUILD}" = "1" ]; then
+                source="built from this checkout"
+              fi
+              printf '  %-22s = %s\n' "${label}" "${value}"
+              printf '  %-22s   [%s]\n' "" "${source}"
+            done
+            echo
+            echo "--- e2e-config.yaml (what the suite reads) ---"
+            cat controller/test/e2e/e2e-config.yaml
+          } | tee "${OUT}"
+
+      # Three nested timeouts, shortest first, because only the shortest one
+      # tears the node down:
+      #
+      #   -ginkgo.timeout 150m  fails the suite and runs its cleanup, which
+      #                         is what releases the Forge instance.
+      #   -timeout        220m  go's own backstop. It panics rather than
+      #                         unwinding, so deferred teardown does NOT run
+      #                         and the instance leaks -- reaching this means
+      #                         Ginkgo itself is wedged.
+      #   timeout-minutes 235   the runner is killed. Same leak, no log.
+      #
+      # The 70 minutes between the first two is cleanup's, and it is sized
+      # against cleanup rather than picked. A cleanup node entered after the
+      # suite is already interrupted is granted its whole NodeTimeout again,
+      # so the worst case is every one of them end to end: the tenant
+      # AfterAll's 15 minutes and the site AfterAll's 45, which is 60, plus
+      # ten for the unwind itself. Shorten this gap below that sum and the
+      # backstop starts firing during a teardown that was going to succeed --
+      # which is the one failure that leaks the instance.
+      #
+      # There is no fourth clock. The bot certificate expires in an hour, but
+      # tbot rewrites it every twenty minutes for as long as the job runs --
+      # see the daemon step. Before that it was a real limit on `full`.
+      #
+      # environments/forge.yaml declares one site, so the suite resolves it
+      # without being told which.
+      - name: Run the site controller lane
+        shell: bash
+        working-directory: controller/test/e2e
+        env:
+          FORGE_API_KEY: ${{ secrets.FORGE_API_KEY }}
+          # The suite names the variables, not the credential: locally these
+          # are a person's PAT, here they are the job's own token. It lives
+          # only as long as the job, so nothing outlives the run it pulled
+          # for.
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # JUMP_HOST_PASSWORD is deliberately absent: its presence is what
+          # switches the suite off the Teleport relay and onto plain SSH.
+        run: |
+          set -Eeuo pipefail
+          keep=()
+          if [ "${KEEP_SITE}" = "true" ]; then
+            keep=(-e2e.keep-site)
+            echo "::warning::-e2e.keep-site is set; the Forge instance survives this run and must be deleted by hand"
+          fi
+          # -v so a green run keeps its output. Without it `go test` buffers a
+          # passing package's stdout and throws it away, which is what run
+          # 36033032946 did: the first successful bootstrap on hardware, and
+          # the artifact came back 1.7 KB with no Ginkgo log in it. The upload
+          # step below calls a green run the reference for diagnosing the next
+          # red one, and that only holds if it is kept.
+          # Four flags every other e2e lane already passes, via
+          # backend-e2e-lib.sh:
+          #
+          #   fail-on-empty  a filter matching nothing is otherwise a pass.
+          #                  This lane spends half an hour of bare metal
+          #                  before its first assertion, so "green having
+          #                  tested nothing" is the one result it must not
+          #                  be able to report -- rename the site-controller
+          #                  label and that is exactly what you would get.
+          #   no-color       the log is an artifact people read, and Ginkgo's
+          #                  escapes survive the tee into it.
+          #   junit-report   machine-readable beside the human-readable log.
+          #                  A qualification run should be able to say which
+          #                  specs it ran to something that is not a person.
+          #   json-report    what `qualify summarise` reads; JUnit has no
+          #                  equivalent of PreRunStats, and without those a
+          #                  leg's skip count is the size of the suite rather
+          #                  than the size of the run. Written but not
+          #                  uploaded: a Ginkgo report carries captured spec
+          #                  output, which on this lane is remote command
+          #                  output, so it stays on the runner for a
+          #                  summarise step to reduce to an outcome.
+          go test -v -timeout 220m . -args \
+            -ginkgo.label-filter=site-controller \
+            -ginkgo.timeout=150m \
+            -ginkgo.v \
+            -ginkgo.fail-on-empty \
+            -ginkgo.no-color \
+            -ginkgo.junit-report=site-e2e.junit.xml \
+            -ginkgo.json-report=report.json \
+            -e2e.config=e2e-config.yaml \
+            -e2e.environment=forge \
+            -e2e.site-stage="${SITE_STAGE}" \
+            -e2e.versions="controller=${SITE_CONTROLLER_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},os-image-bootloader=${OS_IMAGE_BOOTLOADER},os-image=${OS_IMAGE}" \
+            "${keep[@]}" 2>&1 | tee site-e2e.log
+
+      # The suite names the jump host in its own errors ("not reachable
+      # through ..."), and those land in the log and the JUnit report. GitHub
+      # masks a secret in the job log, not in an uploaded artifact.
+      - name: Withhold the jump host from the run log
+        if: always()
+        shell: bash
+        working-directory: controller/test/e2e
+        run: |
+          set -Eeuo pipefail
+          [ -n "${FORGE_JUMP_HOST}" ] || exit 0
+          host="$(printf '%s' "${FORGE_JUMP_HOST}" | sed 's/[][\.*^$/]/\\&/g')"
+          for f in site-e2e.log site-e2e.junit.xml; do
+            [ -f "${f}" ] || continue
+            sed -i "s/${host}/<jump host>/g" "${f}"
+          done
+
+      # The Ginkgo log carries every phase boundary, remote command and
+      # failure. An hour-long run is worth more than a scroll-back in the job
+      # view, and a green one is the reference for diagnosing the next red
+      # one.
+      #
+      # site-diagnostics.tar.gz is what nkectl collected on the node when a
+      # bootstrap failed. It only exists on a failure, and only the suite can
+      # save it: the node is released minutes later and takes it with it.
+      - name: Upload the run log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: forge-site-${{ env.SITE_STAGE }}-${{ github.run_id }}
+          path: |
+            controller/test/e2e/site-e2e.log
+            controller/test/e2e/site-e2e.junit.xml
+            controller/test/e2e/site-diagnostics.tar.gz
+            ${{ runner.temp }}/run-inputs.txt
+            ${{ runner.temp }}/tbot.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      # Before removing the identity, because a dead daemon would write it
+      # straight back. A relay failure late in a long run is a tbot question
+      # first, which is why its log is an artifact above.
+      - name: Stop the Teleport identity daemon
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [ -f "${RUNNER_TEMP}/tbot.pid" ] || exit 0
+          kill "$(cat "${RUNNER_TEMP}/tbot.pid")" 2>/dev/null || true
+
+      # The runner is ephemeral, so this is belt and braces -- but a live
+      # identity sitting where a later step could read it is not worth the
+      # saving.
+      - name: Remove the Teleport identity
+        if: always()
+        shell: bash
+        run: rm -rf -- "${RUNNER_TEMP}/tbot"

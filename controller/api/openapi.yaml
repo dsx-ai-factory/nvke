@@ -3,11 +3,99 @@
 
 openapi: 3.0.3
 info:
-  title: CWE API
-  version: "0.0.1"
-  description: NKE Cloud Workflow Engine API
+  title: NVIDIA Kubernetes Engine (NKE) API
+  version: "0.1.0-alpha"
+  description: |
+    The NKE REST API manages Kubernetes clusters, control planes, node pools and
+    nodes on NVIDIA Infra Controller (NICo) infrastructure. It is used by
+    Operators who run NKE on their own infrastructure, by their automation, and
+    by the `nkectl` CLI.
+
+    **Release:** Alpha (public preview). Examples are illustrative: IDs,
+    timestamps and names are placeholders.
+
+    ## Conventions
+
+    **Base URL and content type.** All operations are served under `/api`.
+    Request and response bodies are `application/json`.
+
+    **Authentication.** Every operation requires an HTTP bearer token (JWT) in
+    the `Authorization` header. The Operator configures which token issuers the
+    management plane trusts and which identities are admitted. Tokens must be
+    signed with an asymmetric algorithm by a configured issuer, carry `exp` and
+    `sub`, and match a configured audience. Admission rules are defined per
+    issuer and match either Kubernetes service accounts or SPIFFE IDs.
+
+    | Status | Returned when |
+    |---|---|
+    | 401 | No token, unknown issuer, invalid signature, expired token, or wrong audience. The response includes a `WWW-Authenticate: Bearer` header. |
+    | 403 | The token is valid but its subject matches no admission rule. |
+
+    `nkectl` obtains a short-lived token automatically when run against a
+    management cluster.
+
+    **Errors.** Error responses use a single body shape:
+    `{ "message": "A cluster already exists with the name \"tenant-a-prod\"" }`
+
+    | Status | Meaning |
+    |---|---|
+    | 400 | The request failed validation. This includes malformed path or query parameters (for example, a non-UUID ID), duplicate names, and the rule violations listed under each operation. |
+    | 401 / 403 | Authentication or admission failure, see above. |
+    | 404 | The resource does not exist. No body is returned. |
+    | 409 | The request conflicts with an operation already in progress, or with the parent resource's state. |
+    | 500 | Unexpected server error. The body carries a message. |
+
+    **Asynchronous operations.** Create operations return 201 with the persisted
+    object immediately; provisioning continues in the background. Delete
+    operations return 202 and set the resource's `deleting` condition. Track
+    progress by polling the resource and reading its conditions. There is no
+    separate operation resource or callback.
+
+    **Update (PATCH) semantics.** PATCH operations use a field-level merge. They
+    do not follow RFC 7386 JSON Merge Patch.
+
+    | Value sent | Effect |
+    |---|---|
+    | Field omitted | Unchanged. |
+    | `null` | Rejected with 400. No field is nullable, and `null` does not clear a value. |
+    | `""` (empty string) | Stored as empty for `description` and `systemReservedMemory`. For `kubeReservedMemory`, restores the default. Rejected for `nico.osProfile`. |
+    | `[]` (empty array) | Clears the list. UUID arrays are de-duplicated. |
+    | `nico` sub-object | Merged field by field, not replaced. |
+
+    Unknown fields in a PATCH body are rejected with 400.
+
+    **Lists.** List operations return all matching results in a single response.
+    Pagination and ordering are not supported in this release. Filters are exact
+    match. Unrecognized query parameters are ignored.
+
+    ## Unauthenticated endpoints
+
+    The following are served without a token and are outside the `/api`
+    resource model.
+
+    | Path | Purpose |
+    |---|---|
+    | `GET /openapi.yaml` | The OpenAPI 3.0 specification for this API. |
+    | `GET /api/docs/` | Interactive API documentation (Swagger UI). |
+    | `GET /healthz` | Liveness. Returns `{"status":"ok"}`. |
+    | `GET /readyz` | Readiness, including dependency checks. Returns 503 when a dependency is unavailable. |
+
+    ## Identity
+
+    Every resource has a server-assigned UUID `id`, which is used in paths.
+    Cluster names are unique per management plane; node pool names are unique
+    within a cluster. Cluster kubeconfigs are retrieved with `nkectl`, not
+    through this API.
 servers:
+  # The embedded Swagger UI and the request validator use the relative URL:
+  # the API is served under /api on whichever host runs the controller.
   - url: /api
+    x-fern-ignore: true
+  # Fern and Redoc need an absolute URL to render request examples. Replace
+  # the host with your management plane's.
+  - url: https://nke.acme.example/api
+    description: Your management plane
+    x-fern-server-name: Management plane
 
 # Declared once rather than per operation, so a new operation requires a token by
 # default. The endpoints that need no token are not in this file at all;
@@ -15,18 +103,104 @@ servers:
 security:
   - bearerAuth: []
 
+tags:
+  - name: Clusters
+    description: |
+      A Kubernetes cluster. Holds the Kubernetes version, network, CNI, etcd
+      encryption, control-plane configuration and conditions.
+
+      **Infrastructure provider.** Clusters in this release run on NVIDIA Infra
+      Controller (NICo) bare-metal infrastructure. Each cluster, control plane
+      and node pool carries a `nico` object with the NICo identifiers it uses:
+      organization, site and VPC at the cluster level; instance type,
+      networking, SSH key groups and OS profile at the control-plane and node
+      pool level. A cluster's provider is fixed at creation.
+
+      **Kubernetes versions.** Versions are semantic-version cores (X.Y.Z) with
+      no leading `v`. Control-plane upgrades move forward one minor version at a
+      time; downgrades and major-version changes are rejected. Worker node pools
+      may trail the control plane by at most 3 minor versions. A new node pool
+      starts at the cluster's Kubernetes version. `controlPlaneKubernetesVersion`
+      and a pool's `kubernetesVersion` are desired versions; the control plane's
+      current running version is reported in `ControlPlaneStatus.kubernetesVersion`.
+
+      **Networking.** The supported CNI plugin is ovn-kubernetes (default version
+      1.4.0). Pod and service CIDRs are IPv4, private, and immutable after
+      creation; the defaults are 192.168.0.0/16 for pods and 10.96.0.0/12 for
+      services. NKE allocates a /24 from the pod CIDR to each node, so the pod
+      CIDR must have room for every desired node plus surge, or one spare block
+      when surge is 0. This is checked when clusters and node pools are created
+      or scaled. Set `controlPlaneVIP` to use a virtual IP (kube-vip) as the API
+      server endpoint; when omitted, the first control-plane node's IP is the
+      endpoint. The VIP must not fall inside the pod or service CIDR.
+  - name: Control plane
+    description: |
+      NKE manages each cluster's control plane through a dedicated control-plane
+      controller. You declare the control plane once, in `controlPlaneConfig`,
+      and NKE provisions, upgrades and replaces control-plane nodes to match it.
+      Node pools always contain worker nodes.
+
+      - **Size.** `controlPlaneConfig.desiredCount` sets the number of
+        control-plane nodes. It is required when you create a cluster.
+      - **Rollouts.** When the control-plane configuration changes (OS profile
+        or Kubernetes version), NKE compares each control-plane node with the
+        desired configuration and replaces drifted nodes. `maxSurge` (0 or 1)
+        controls whether a replacement node is added before the old one is
+        removed. Progress is reported in `ControlPlaneStatus.rollout` and, per
+        node, in `Node.controlPlaneRollout`.
+      - **Recycling gate.** When `enableCPNodeRecycling` is false, drifted nodes
+        are detected and reported as pending but are not replaced until an
+        operator acts.
+      - **Deletes.** Control-plane node deletes are serialized. A delete request
+        is recorded first (`deleteRequested`) and NKE starts teardowns one at a
+        time. A delete is rejected if it would leave fewer than 3 healthy, joined
+        control-plane nodes.
+
+      The control plane is read at `GET /clusters/{clusterID}/control-plane` and
+      changed through `PATCH /clusters/{clusterID}`. Its configuration history is
+      an ordered list of snapshots of control-plane configuration changes.
+
+      **OS profiles (`osProfile`).** The OS and first-boot configuration for
+      every node come from an OS profile the Operator supplies to the management
+      plane, together with a config profile for the node's role. Control-plane
+      and node pool requests select them by name in `nico.osProfile` and
+      `nico.configProfile`. Changing `osProfile` on a node pool or on the control
+      plane triggers a rollout of the affected nodes to the new profile.
+  - name: Node pools
+    description: |
+      A group of worker nodes sharing an instance type, OS profile and
+      Kubernetes version. Node pool names are unique within a cluster. The
+      configuration history of a node pool is an ordered list of snapshots of
+      its configuration changes.
+  - name: Node sets
+    description: |
+      A read-only, immutable snapshot of a node pool's configuration at a point
+      in time. `NodePool.currentNodeSetID` identifies the active one.
+  - name: Nodes
+    description: |
+      A single machine in a cluster, in a node pool or in the control plane,
+      with lifecycle and health conditions. A node's history lists the
+      provisioning, reboot and teardown operations run for it, with per-step
+      timing.
+  - name: Catalog
+    description: Supported CNI plugins.
+
 paths:
   /cniPlugins:
     get:
-      summary: List CNI Plugins
+      tags: [Catalog]
+      summary: List CNI plugins
       operationId: listCNIPlugins
+      description: Returns the CNI plugins a cluster can be created with.
       responses:
         "200":
-          description: A list of CNI plugins
+          description: Supported CNI plugins
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ListCNIPluginsResponse"
+              example:
+                cniPlugins: [ovn-kubernetes]
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -34,8 +208,10 @@ paths:
 
   /clusters:
     get:
-      summary: List Clusters
+      tags: [Clusters]
+      summary: List clusters
       operationId: listClusters
+      description: Returns all clusters, or the cluster whose name matches `name`.
       parameters:
         - name: name
           in: query
@@ -55,23 +231,70 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
     post:
-      summary: Create Cluster
+      tags: [Clusters]
+      summary: Create a cluster
       operationId: createCluster
+      description: |
+        Creates a cluster and starts provisioning. The cluster is returned before
+        provisioning completes.
+
+        Returns 400 for, among others: a duplicate cluster name; missing
+        `nico.orgID`, `siteID` or `vpcID`; an unsupported `cniPlugin`; a
+        missing `controlPlaneConfig.nico.osProfile` or `configProfile`; a
+        control-plane `maxSurge` greater than 1; a pod CIDR too small for the
+        requested nodes plus surge; a `controlPlaneVIP` inside the pod or
+        service CIDR.
       requestBody:
         required: true
+        description: The cluster to create.
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/CreateClusterRequest"
+            example:
+              name: tenant-a-prod
+              controlPlaneKubernetesVersion: 1.33.4
+              cniPlugin: ovn-kubernetes
+              etcdEncrypted: true
+              network:
+                podCIDR: 192.168.0.0/16
+                serviceCIDR: 10.96.0.0/12
+              nico:
+                orgID: dipfedrcvjiw
+                siteID: 4f6a8c2e-1b3d-4e5f-a7b9-c1d3e5f7a9b1
+                vpcID: 6a8c0e4f-3d5b-4f7a-b9c1-e3f5a7b9c1d3
+              controlPlaneConfig:
+                desiredCount: 3
+                maxSurge: 1
+                systemReservedMemory: 16Gi
+                nico:
+                  instanceTypePreference: [1c3e5a7f-9b1d-4f3e-a5c7-e9b1d3f5a7c9]
+                  vpcPrefixIDs: [2d4f6b8a-0c2e-4a4f-b6d8-f0c2e4a6b8d0]
+                  sshKeyGroupIDs: [3e5a7c9b-1d3f-4b5a-c7e9-a1d3f5b7c9e1]
+                  osProfile: example-ubuntu-24.04-amd64
+                  configProfile: example-control-plane
+              nodePools:
+                - name: gpu-workers
+                  nodeNamePrefix: w
+                  desiredNodeCount: 2
+                  systemReservedMemory: 16Gi
+                  nodeLabels: [nvidia.com/gpu.present=true]
+                  recycleBudget: 1
+                  nico:
+                    instanceTypeID: 0d2f4a6c-8e0b-4d2f-9a4c-6e8b0d2f4a6c
+                    vpcPrefixIDs: [2d4f6b8a-0c2e-4a4f-b6d8-f0c2e4a6b8d0]
+                    sshKeyGroupIDs: [3e5a7c9b-1d3f-4b5a-c7e9-a1d3f5b7c9e1]
+                    osProfile: example-ubuntu-24.04-amd64
+                    configProfile: example-worker
       responses:
         "201":
-          description: Cluster created
+          description: Cluster created; provisioning has started
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Cluster"
         "400":
-          description: Bad Request
+          description: The request failed validation
           content:
             application/json:
               schema:
@@ -86,70 +309,115 @@ paths:
       - name: clusterID
         in: path
         required: true
+        description: Cluster ID.
         schema:
           type: string
           format: uuid
     get:
-      summary: Get a Cluster
+      tags: [Clusters]
+      summary: Get a cluster
       operationId: getCluster
+      description: |
+        Returns one cluster. Once provisioning finishes, `conditions.provisioning`
+        is False and `conditions.provisioned` is True.
       responses:
         "200":
-          description: Returns the requested cluster
+          description: The requested cluster
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Cluster"
         "404":
-          description: Cluster not found
+          description: Cluster not found. No body is returned.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
     patch:
-      summary: Update a Cluster
+      tags: [Clusters]
+      summary: Update a cluster
       operationId: updateCluster
+      description: |
+        All fields are optional. See the API description for merge rules.
+
+        Returns 400 for, among others: a Kubernetes downgrade, major-version
+        change, or a jump of more than one minor version; an upgrade that would
+        leave a worker pool more than 3 minor versions behind;
+        `enableEtcdEncryption: false` or `enableOidc: false`; combining OIDC or
+        etcd enablement with a version upgrade; etcd or OIDC enablement on a
+        cluster that is not provisioned or is deleting; any `network` value;
+        a control-plane `maxSurge` greater than 1.
+
+        Returns 409 when another mutually exclusive cluster operation is in
+        progress (`etcd_encryption`, `k8s_upgrade`, `cp_nodes_recycling`,
+        `oidc_enable`), or the control plane is upgrading or recycling nodes.
       requestBody:
         required: true
+        description: The fields to change. All are optional.
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/UpdateClusterRequest"
+            examples:
+              controlPlaneUpgrade:
+                summary: Control-plane upgrade
+                value:
+                  controlPlaneKubernetesVersion: 1.34.2
+                  enableCPNodeRecycling: true
+              enableOidc:
+                summary: Enable OIDC authentication (one-way)
+                value:
+                  enableOidc: true
+              controlPlaneChange:
+                summary: Resize the control plane and move it to a new OS profile
+                value:
+                  controlPlaneConfig:
+                    desiredCount: 5
+                    nico:
+                      osProfile: example-ubuntu-24.04-amd64-r2
       responses:
         "200":
-          description: Cluster updated
+          description: Update accepted
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Cluster"
         "400":
-          description: Bad Request
+          description: The request failed validation
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericError"
         "404":
-          description: Cluster not found
+          description: Cluster not found. No body is returned.
         "409":
           description: |
-            Another mutually-exclusive cluster operation is already in progress.
-            The response body includes the operation type (etcd_encryption,
-            k8s_upgrade, cp_nodes_recycling, oidc_enable) currently running.
+            Another mutually exclusive cluster operation is in progress. The
+            message names the operation (etcd_encryption, k8s_upgrade,
+            cp_nodes_recycling, oidc_enable).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericError"
+              example:
+                message: 'cluster update rejected: k8s_upgrade in progress since 2026-09-24T09:00:00Z'
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
     delete:
-      summary: Delete a Cluster
+      tags: [Clusters]
+      summary: Delete a cluster
       operationId: deleteCluster
+      description: |
+        Starts deletion and sets `conditions.deleting` to `True`. A cluster can
+        be deleted in any state, including while it is provisioning or
+        upgrading.
       responses:
         "202":
-          description: Cluster deletion initiated
+          description: Deletion started
         "404":
-          description: Cluster not found
+          description: Cluster not found. No body is returned.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -160,53 +428,56 @@ paths:
       - name: clusterID
         in: path
         required: true
+        description: Cluster ID.
         schema:
           type: string
           format: uuid
     get:
-      summary: Get a Cluster's Control Plane
+      tags: [Control plane]
+      summary: Get a cluster's control plane
       description: |
-        Read-only view of the cluster control plane: the persisted control-plane
-        configuration plus an aggregate runtime status (node counts, current
-        Kubernetes version, and the control-plane upgrade/recycling conditions).
+        Read-only view of the control plane: the persisted configuration plus
+        aggregate runtime status (node counts, current Kubernetes version,
+        rollout progress, and upgrade and recycling conditions). Change the
+        control plane through `PATCH /clusters/{clusterID}`.
       operationId: getClusterControlPlane
       responses:
         "200":
-          description: Returns the cluster's control-plane configuration and status
+          description: Control-plane configuration and status
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ClusterControlPlane"
         "404":
-          description: Cluster not found
+          description: Cluster not found. No body is returned.
 
   /clusters/{clusterID}/control-plane/configHistory:
     parameters:
       - name: clusterID
         in: path
         required: true
+        description: Cluster ID.
         schema:
           type: string
           format: uuid
     get:
-      summary: Get a Cluster's Control Plane Config History
+      tags: [Control plane]
+      summary: Get control-plane config history
       operationId: getClusterControlPlaneConfigHistory
-      description: >-
-        Returns the control-plane configuration change history for a cluster,
-        derived from its control-plane configuration snapshots. Each entry
-        represents a config change and shows which rollout-relevant fields changed
-        relative to the previous snapshot. Resolves the pinnedConfigurationID
-        carried on each control-plane node and the cluster's desired
-        configurationID.
+      description: |
+        Returns the control-plane configuration change history, oldest first.
+        Each entry shows which rollout-relevant fields changed relative to the
+        previous snapshot. Use it to resolve the `pinnedConfigurationID` on each
+        control-plane node and the cluster's desired `configurationId`.
       responses:
         "200":
-          description: Returns the cluster's control-plane config history
+          description: The control-plane config history
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ControlPlaneConfigHistory"
         "404":
-          description: Cluster not found
+          description: Cluster not found. No body is returned.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -214,8 +485,10 @@ paths:
 
   /nodePools:
     get:
-      summary: List Node Pools
+      tags: [Node pools]
+      summary: List node pools
       operationId: listNodePools
+      description: Returns all node pools, filtered by the query parameters.
       parameters:
         - name: clusterID
           in: query
@@ -223,19 +496,19 @@ paths:
           schema:
             type: string
             format: uuid
-          description: Filter node pools by cluster ID
+          description: Filter by cluster ID
         - name: clusterName
           in: query
           required: false
           schema:
             type: string
-          description: Filter node pools by cluster name (exact match)
+          description: Filter by cluster name (exact match)
         - name: name
           in: query
           required: false
           schema:
             type: string
-          description: Filter node pools by name (exact match)
+          description: Filter by node pool name (exact match)
       responses:
         "200":
           description: A list of node pools
@@ -248,33 +521,63 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
     post:
-      summary: Create Node Pool
+      tags: [Node pools]
+      summary: Create a node pool
       operationId: createNodePool
+      description: |
+        Creates a worker node pool and starts provisioning. The pool takes the
+        cluster's Kubernetes version.
+
+        Returns 400 for, among others: parent cluster not found; a duplicate
+        pool name in the cluster; missing `nico.instanceTypeID`,
+        `nico.osProfile` or `nico.configProfile`; not exactly one of
+        `subnetIDs` and `vpcPrefixIDs`; a pod CIDR too small for the requested
+        nodes.
       requestBody:
         required: true
+        description: The node pool to create.
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/CreateNodePoolRequest"
+            example:
+              clusterID: 9b1d4e2a-3c5f-4a7b-8e9d-0f1a2b3c4d5e
+              name: gpu-workers-b300
+              nodeNamePrefix: wb
+              desiredNodeCount: 4
+              systemReservedMemory: 32Gi
+              kubeReservedMemory: 4Gi
+              nodeLabels: [nvidia.com/gpu.product=B300]
+              description: Reserved for team-b training jobs
+              recycleBudget: 1
+              nico:
+                instanceTypeID: 9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b
+                vpcPrefixIDs: [2d4f6b8a-0c2e-4a4f-b6d8-f0c2e4a6b8d0]
+                sshKeyGroupIDs: [3e5a7c9b-1d3f-4b5a-c7e9-a1d3f5b7c9e1]
+                osProfile: example-ubuntu-24.04-amd64
+                configProfile: example-worker
+                diskSelectionStrategy: largest
       responses:
         "201":
-          description: Node Pool created
+          description: Node pool created; provisioning has started
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/NodePool"
         "400":
-          description: Bad Request
+          description: The request failed validation
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericError"
         "409":
-          description: Cannot create node pool when parent cluster is deleting
+          description: The parent cluster is being deleted
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericError"
+              example:
+                message: Cannot create node pool when parent cluster is deleting
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -285,72 +588,102 @@ paths:
       - name: nodePoolID
         in: path
         required: true
+        description: Node pool ID.
         schema:
           type: string
           format: uuid
     get:
-      summary: Get a Node Pool
+      tags: [Node pools]
+      summary: Get a node pool
       operationId: getNodePool
+      description: Returns one node pool.
       responses:
         "200":
-          description: Returns the requested node pool
+          description: The requested node pool
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/NodePool"
         "404":
-          description: Node Pool not found
+          description: Node pool not found. No body is returned.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
     patch:
-      summary: Update Node Pool
+      tags: [Node pools]
+      summary: Update a node pool
       operationId: updateNodePool
+      description: |
+        All fields are optional. Changes to the Kubernetes version, OS profile
+        or other node configuration create a new NodeSet and roll the pool's
+        nodes to it.
+
+        Returns 400 for, among others: sending a field that is fixed at
+        creation (for example `instanceTypeID`); `nico.osProfile: ""`.
       requestBody:
         required: true
+        description: The fields to change. All are optional.
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/UpdateNodePoolRequest"
+            examples:
+              scale:
+                summary: Scale
+                value:
+                  desiredNodeCount: 6
+              upgrade:
+                summary: Kubernetes upgrade with surge
+                value:
+                  kubernetesVersion: 1.34.2
+                  maxSurge: 2
+                  recycleBudget: 2
+              newRelease:
+                summary: Move to a new OS profile and restore the default kube-reserved memory
+                value:
+                  nico:
+                    osProfile: example-ubuntu-24.04-amd64-r2
+                  kubeReservedMemory: ''
       responses:
         "200":
-          description: Node Pool updated
+          description: Update accepted
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/NodePool"
         "400":
-          description: Bad Request
+          description: The request failed validation
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericError"
         "404":
-          description: Node Pool not found
+          description: Node pool not found. No body is returned.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
     delete:
-      summary: Delete a Node Pool
+      tags: [Node pools]
+      summary: Delete a node pool
+      # Legacy control-plane node pools: deleting the last one is rejected; the
+      # cluster is deleted with DELETE /clusters/{clusterID} instead.
       description: |
-        Delete a node pool from a still-running cluster.
-
-        Live deletion must leave at least one joined control-plane node.
-        Deleting the last control-plane node pool is rejected; use DELETE /clusters/{id} instead.
+        Deletes a node pool from a running cluster. Also returns 202, with no
+        further effect, if the pool or its cluster is already being deleted.
       operationId: deleteNodePool
       responses:
         "202":
-          description: Node Pool deletion initiated
+          description: Deletion started
         "400":
-          description: Bad Request
+          description: The request failed validation
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericError"
         "404":
-          description: Node Pool not found
+          description: Node pool not found. No body is returned.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -361,22 +694,27 @@ paths:
       - name: nodePoolID
         in: path
         required: true
+        description: Node pool ID.
         schema:
           type: string
           format: uuid
     get:
-      summary: Get Node Pool Config History
+      tags: [Node pools]
+      summary: Get node pool config history
       operationId: getNodePoolConfigHistory
-      description: Returns the config change history for a node pool, derived from its NodeSet snapshots. Each entry represents a config change and shows which fields changed relative to the previous snapshot.
+      description: |
+        Returns the node pool's configuration change history, derived from its
+        NodeSet snapshots, oldest first. Each entry shows which fields changed
+        relative to the previous snapshot.
       responses:
         "200":
-          description: Returns the node pool config history
+          description: The node pool config history
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/NodePoolConfigHistory"
         "404":
-          description: Node Pool not found
+          description: Node pool not found. No body is returned.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -384,8 +722,10 @@ paths:
 
   /nodeSets:
     get:
-      summary: List Node Sets
+      tags: [Node sets]
+      summary: List node sets
       operationId: listNodeSets
+      description: Returns all node sets, or those of one node pool.
       parameters:
         - name: nodePoolID
           in: query
@@ -393,7 +733,7 @@ paths:
           schema:
             type: string
             format: uuid
-          description: Filter node sets by node pool ID
+          description: Filter by node pool ID
       responses:
         "200":
           description: A list of node sets
@@ -411,21 +751,24 @@ paths:
       - name: nodeSetID
         in: path
         required: true
+        description: Node set ID.
         schema:
           type: string
           format: uuid
     get:
-      summary: Get a Node Set
+      tags: [Node sets]
+      summary: Get a node set
       operationId: getNodeSet
+      description: Returns one node set.
       responses:
         "200":
-          description: Returns the requested node set
+          description: The requested node set
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/NodeSet"
         "404":
-          description: Node Set not found
+          description: Node set not found. No body is returned.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -433,8 +776,10 @@ paths:
 
   /nodes:
     get:
-      summary: List Nodes
+      tags: [Nodes]
+      summary: List nodes
       operationId: listNodes
+      description: Returns all nodes, filtered by the query parameters. All filters are exact match.
       parameters:
         - name: clusterID
           in: query
@@ -442,32 +787,32 @@ paths:
           schema:
             type: string
             format: uuid
-          description: Filter nodes by cluster ID
+          description: Filter by cluster ID
         - name: nodePoolID
           in: query
           required: false
           schema:
             type: string
             format: uuid
-          description: Filter nodes by node pool ID
+          description: Filter by node pool ID
         - name: clusterName
           in: query
           required: false
           schema:
             type: string
-          description: Filter nodes by cluster name
+          description: Filter by cluster name (exact match)
         - name: name
           in: query
           required: false
           schema:
             type: string
-          description: Filter nodes by node name
+          description: Filter by node name (exact match)
         - name: controlPlane
           in: query
           required: false
           schema:
             type: boolean
-          description: Filter nodes by control-plane membership (true returns only control-plane nodes, false only workers)
+          description: '`true` returns only control-plane nodes; `false` only workers'
       responses:
         "200":
           description: A list of nodes
@@ -485,51 +830,75 @@ paths:
       - name: nodeID
         in: path
         required: true
+        description: Node ID.
         schema:
           type: string
           format: uuid
     get:
-      summary: Get a Single Node
+      tags: [Nodes]
+      summary: Get a node
       operationId: getNode
+      description: |
+        Returns one node. Control-plane nodes do not belong to a node pool, so
+        their `nodePoolID` and `nodeSetID` are the nil UUID. `nico` is omitted
+        when none of its fields are set.
       responses:
         "200":
-          description: Returns the requested node
+          description: The requested node
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Node"
         "404":
-          description: Node not found
+          description: Node not found. No body is returned.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
     delete:
-      summary: Delete a Single Node
+      tags: [Nodes]
+      summary: Delete a node
       description: |
-        Delete a single node from a still-running cluster.
-        The MachineHealthIssue payload may be optionally provided, which will cause the node to be flagged for repair to the Forge team.
+        Deletes a single node from a running cluster. Include a
+        `machineHealthIssue` to flag the underlying machine for repair.
 
-        Live deletion must leave at least one joined control-plane node.
-        Deleting the last joined control-plane node is rejected; use DELETE /clusters/{id} instead.
+        For control-plane nodes, a delete sets `deleteRequested`; NKE then
+        starts teardowns one node at a time. `forceUnreachable` is applied
+        automatically when the node is unhealthy.
+
+        Also returns 202, with no further effect, if the node, pool or cluster
+        is already being deleted or a delete is already requested.
+
+        Returns 400 for, among others: deleting a control-plane node that would
+        leave fewer than 3 healthy, joined control-plane nodes; an invalid
+        `machineHealthIssue`.
       operationId: deleteNode
       requestBody:
         required: false
+        description: Optional. Flags the machine for repair, or tolerates an unreachable node.
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/DeleteNodeRequest"
+            example:
+              machineHealthIssue:
+                category: Hardware
+                summary: Node only has 7 GPUs
+                details: The node reboot completed at 12:51Z and it started reporting XID 79 at 14:09Z
+              forceUnreachable: true
       responses:
         "202":
-          description: Node deletion initiated
+          description: Deletion started or, for control-plane nodes, recorded
         "400":
-          description: Bad Request
+          description: The request failed validation
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenericError"
+              example:
+                message: 'cannot delete control-plane node "tenant-a-prod-cp-0002": only 2 joined control-plane node(s) would remain, below the minimum of 3 needed for etcd to survive another failure. Raise the control-plane desired count first so a replacement joins before this node is removed, or delete the cluster instead'
         "404":
-          description: Node not found
+          description: Node not found. No body is returned.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -540,22 +909,26 @@ paths:
       - name: nodeID
         in: path
         required: true
+        description: Node ID.
         schema:
           type: string
           format: uuid
     get:
-      summary: Get Node Workflow History
+      tags: [Nodes]
+      summary: Get node operation history
       operationId: getNodeHistory
-      description: Returns Temporal workflow execution history for a node, including per-activity timing for provisioning, rebooting, and teardown operations.
+      description: |
+        Returns the provisioning, reboot and teardown operations NKE has run for
+        a node, with per-step timing. Up to 50 runs are returned per operation.
       responses:
         "200":
-          description: Returns the node workflow history
+          description: Node operation history
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/NodeHistory"
         "404":
-          description: Node not found
+          description: Node not found. No body is returned.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -563,8 +936,11 @@ paths:
 
   /osProfiles:
     get:
-      summary: List OS Profiles
+      x-fern-ignore: true
+      tags: [Catalog]
+      summary: List OS profiles
       operationId: listOSProfiles
+      description: Lists the OS profiles available to the management plane.
       responses:
         "200":
           description: A list of OS profiles
@@ -579,8 +955,11 @@ paths:
 
   /configProfiles:
     get:
-      summary: List Config Profiles
+      x-fern-ignore: true
+      tags: [Catalog]
+      summary: List config profiles
       operationId: listConfigProfiles
+      description: Lists the config profiles available to the management plane.
       responses:
         "200":
           description: A list of config profiles
@@ -617,6 +996,9 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: |
+        A JWT from an issuer the Operator has configured, carried as `Authorization:
+        Bearer <token>`.
 
   schemas:
     #--------------------------------
@@ -640,8 +1022,8 @@ components:
               - not:
                   required: [infra]
       description: |
-        Exactly one provider payload is required: supply either `nico` or `infra`.
-        A request carrying both, or neither, is rejected with 400.
+        A cluster and, optionally, its initial node pools. The provider payload is
+        fixed at creation.
       properties:
         name:
           type: string
@@ -649,7 +1031,7 @@ components:
           minLength: 1
           maxLength: 55
           example: "my-cluster"
-          description: The name of the cluster. Must be a lowercase DNS label, because CWE derives the names of the cluster's CAPI resources and its node names from it.
+          description: Cluster name. Lowercase DNS label, unique per management plane. Node names are derived from it.
           x-order: 1
         # controlPlaneKubernetesVersion: validated by pattern (semver version core only, no leading "v").
         # Pattern is the version-core part of the regex from https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
@@ -657,128 +1039,108 @@ components:
         controlPlaneKubernetesVersion:
           type: string
           pattern: '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$'
-          example: "1.29.7"
-          description: |
-            The version of Kubernetes to use for the cluster.
-            Must be a valid semver version core (X.Y.Z only, e.g. 1.29.7).
-            Must not include a leading "v".
-            The pattern is the version-core part of the regex from https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
+          example: "1.33.4"
+          description: Kubernetes version for the cluster, as X.Y.Z with no leading "v".
           x-order: 5
         cniPlugin:
           type: string
-          example: "calico"
-          description: The CNI plugin to use for the cluster
+          example: "ovn-kubernetes"
+          description: CNI plugin. See GET /cniPlugins.
           x-order: 6
         cniVersion:
           type: string
           pattern: '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$'
-          example: "3.30.1"
-          description: |
-            The CNI package/chart stream to use for the selected CNI plugin.
-            Optional for backwards compatibility; when omitted, the server defaults by cniPlugin.
-            Must be a valid semver version core (X.Y.Z only) and must not include a leading "v".
+          example: "1.4.0"
+          description: CNI version, as X.Y.Z. Defaults to 1.4.0.
           x-order: 7
         etcdEncrypted:
           type: boolean
-          example: false
-          description: Enable or disable etcd encryption for the cluster
+          example: true
+          description: Encrypt etcd at rest. Can be turned on later with `enableEtcdEncryption`; cannot be turned off.
           x-order: 8
         controlPlaneVIP:
           type: string
           format: ipv4
           description: |
-            Optional kube-vip control-plane VIP desired state. When provided,
-            CWE stores this address on the cluster and configures kube-vip
-            during provisioning. When omitted, CWE stores no control-plane VIP,
-            skips kube-vip configuration, and kubeadm uses the first control-plane
-            node IP as the API server endpoint. Callers are responsible for
-            choosing a non-conflicting VIP. Omit this field to skip kube-vip;
-            an explicit empty string is rejected.
+            Virtual IP for the API server (kube-vip). Omit to skip. When omitted, the first
+            control-plane node's IP is the API server endpoint. Must not fall inside the pod
+            or service CIDR. An explicit empty string is rejected.
           x-go-type-skip-optional-pointer: true
           x-order: 9
         teleportEnabled:
+          x-fern-ignore: true
           type: boolean
           description: Enable Teleport SSH enrollment for nodes in this cluster. When omitted, the server-side default for the site is applied.
           x-order: 10
         network:
           $ref: "#/components/schemas/ClusterNetworkCreateConfig"
-          description: Immutable pod and service network configuration. When omitted, the server-side defaults are materialized on the cluster.
-          x-order: 11
         nodePools:
           type: array
           items:
             $ref: "#/components/schemas/NodePoolCreateConfig"
-          description: The initial set of node pools to create for the cluster
+          description: Initial worker node pools.
           example:
-            - namePrefix: "cp"
+            - name: "gpu-workers"
+              nodeNamePrefix: "w"
+              desiredNodeCount: 2
               nico:
                 subnetIDs:
                   - "123e4567-e89b-12d3-a456-426614174000"
                 instanceTypeID: "123e4567-e89b-12d3-a456-426614174001"
-              desiredNodeCount: 1
-              controlPlane: true
           x-order: 12
         controlPlaneConfig:
           $ref: "#/components/schemas/CreateClusterControlPlaneConfig"
-          description: |
-            Cluster-level control plane configuration.
-          x-order: 13
         nico:
           $ref: "#/components/schemas/NicoClusterProvider"
-          description: Provider Nico identity fields.
-          x-go-type-skip-optional-pointer: true
         infra:
+          x-fern-ignore: true
           $ref: "#/components/schemas/InfraClusterProvider"
-          description: Ifra provider fields.
-          x-go-type-skip-optional-pointer: true
     ControlPlaneConfig:
       type: object
       additionalProperties: false
-      description: |
-        Cluster-level control plane configuration.
+      description: The control-plane configuration in effect.
       properties:
         configurationId:
           type: string
           format: uuid
           readOnly: true
-          description: The ID of the current control plane configuration snapshot revision.
+          description: ID of the current configuration snapshot.
           x-go-type-skip-optional-pointer: true
         desiredCount:
           type: integer
           minimum: 1
-          description: The desired number of cluster-level control plane nodes.
+          description: Number of control-plane nodes.
           x-go-type-skip-optional-pointer: true
         maxSurge:
           type: integer
           minimum: 0
-          description: |
-            Cluster-level surge capacity for control plane nodes during upgrades.
+          description: Extra control-plane nodes allowed during a rollout (0 or 1).
         provisioningMonitorDisabled:
           type: boolean
-          description: |
-            When true, the timeout-based provisioning monitor is paused for cluster-level
-            control plane nodes.
+          description: When true, nodes stuck in provisioning past the timeout are not replaced automatically.
         systemReservedMemory:
           type: string
-          description: The amount of memory to reserve for system processes on control plane nodes (e.g., "16Gi").
+          description: Memory reserved for system daemons. Nodes reserve 16Gi when omitted.
           x-go-type-skip-optional-pointer: true
         nodeLabels:
           type: array
           items:
             type: string
-          description: A list of labels applied to control plane nodes.
+          description: Labels applied to control-plane nodes, as key=value.
           x-go-type-skip-optional-pointer: true
         teleportEnabled:
+          x-fern-ignore: true
           type: boolean
           description: Whether Teleport SSH enrollment is enabled for control plane nodes.
         nico:
-          $ref: "#/components/schemas/NicoControlPlaneProvider"
-          description: Provider Nico control plane fields.
-          x-go-type-skip-optional-pointer: true
+          allOf:
+            - $ref: "#/components/schemas/NicoControlPlaneProvider"
+          description: NICo settings for control-plane nodes.
         infra:
-          $ref: "#/components/schemas/InfraControlPlaneProvider"
+          x-fern-ignore: true
+          allOf:
+            - $ref: "#/components/schemas/InfraControlPlaneProvider"
           description: Infra provider control plane fields.
-          x-go-type-skip-optional-pointer: true
 
     ClusterControlPlane:
       type: object
@@ -791,13 +1153,13 @@ components:
         - status
       properties:
         config:
-          $ref: "#/components/schemas/ControlPlaneConfig"
-          description: The cluster-level control plane configuration.
-          x-order: 1
+          allOf:
+            - $ref: "#/components/schemas/ControlPlaneConfig"
+          description: The persisted control-plane configuration.
         status:
-          $ref: "#/components/schemas/ControlPlaneStatus"
-          description: Aggregate runtime status of the control plane.
-          x-order: 2
+          allOf:
+            - $ref: "#/components/schemas/ControlPlaneStatus"
+          description: Aggregate runtime status.
 
     ControlPlaneStatus:
       type: object
@@ -814,46 +1176,39 @@ components:
       properties:
         nodeCount:
           type: integer
-          description: Total number of control-plane nodes for the cluster.
+          description: Total control-plane nodes, including surge nodes.
           x-go-type-skip-optional-pointer: true
           x-order: 1
         readyNodeCount:
           type: integer
-          description: Number of control-plane nodes currently reporting Kubernetes-ready.
+          description: Control-plane nodes reporting Kubernetes Ready.
           x-go-type-skip-optional-pointer: true
           x-order: 2
         kubernetesVersion:
           type: string
-          description: The current control-plane Kubernetes version.
+          description: Current running control-plane Kubernetes version.
           x-go-type-skip-optional-pointer: true
           x-order: 3
         controlPlaneUpgrading:
-          $ref: "#/components/schemas/Condition"
-          description: The condition indicating whether the control plane is currently being upgraded.
-          x-order: 4
+          allOf:
+            - $ref: "#/components/schemas/Condition"
+          description: The control plane is being upgraded.
         cpNodesRecycling:
-          $ref: "#/components/schemas/Condition"
-          description: The condition indicating whether the control-plane nodes are currently being recycled.
-          x-order: 5
+          allOf:
+            - $ref: "#/components/schemas/Condition"
+          description: Control-plane nodes are being replaced.
         rollout:
-          $ref: "#/components/schemas/ControlPlaneRolloutSummary"
-          description: >-
-            Rollout rollup for the control plane. Present only when the control
-            plane is managed by the control-plane controller; absent for
-            node-pool-managed control planes.
-          x-order: 6
+          allOf:
+            - $ref: "#/components/schemas/ControlPlaneRolloutSummary"
+          description: Rollout progress.
         deletingNodeCount:
           type: integer
-          description: |
-            Number of control-plane nodes whose teardown is in flight. Control-plane
-            deletes are serialized, so this is at most 1.
+          description: Control-plane nodes being torn down. Deletes are serialized, so this is at most 1.
           x-go-type-skip-optional-pointer: true
           x-order: 7
         deleteRequestedNodeCount:
           type: integer
-          description: |
-            Number of control-plane nodes with an accepted delete whose teardown has
-            not started yet, because it is queued behind the in-flight one.
+          description: Control-plane nodes with an accepted delete that has not started.
           x-go-type-skip-optional-pointer: true
           x-order: 8
 
@@ -874,86 +1229,85 @@ components:
                   required: [infra]
       description: |
         Writable cluster-level control plane configuration supplied at cluster creation.
-        Exactly one provider payload is required: supply either `nico` or `infra`.
-        A request carrying both, or neither, is rejected with 400.
+        Required when you create a cluster.
+        `nico` carries the NICo settings for the control-plane nodes; it is required
+        for a NICo cluster.
       properties:
         desiredCount:
           type: integer
           minimum: 1
-          description: The desired number of cluster-level control plane nodes. Must be at least 1.
+          description: Number of control-plane nodes.
           x-go-type-skip-optional-pointer: true
         maxSurge:
           type: integer
           minimum: 0
-          description: Cluster-level surge capacity for control plane nodes during upgrades (max 1).
+          description: Extra control-plane nodes allowed during a rollout (0 or 1).
         provisioningMonitorDisabled:
           type: boolean
           default: false
-          description: When true, the timeout-based provisioning monitor is paused for control plane nodes.
+          description: When true, nodes stuck in provisioning past the timeout are not replaced automatically.
         systemReservedMemory:
           type: string
           default: "16Gi"
-          description: The amount of memory to reserve for system processes on control plane nodes (e.g., "16Gi").
+          description: Memory reserved for system daemons. Nodes reserve 16Gi when omitted.
           x-go-type-skip-optional-pointer: true
         nodeLabels:
           type: array
           items:
             type: string
-          description: A list of labels to apply to control plane nodes.
+          description: Labels applied to control-plane nodes, as key=value.
           x-go-type-skip-optional-pointer: true
         teleportEnabled:
+          x-fern-ignore: true
           type: boolean
           description: Whether Teleport SSH enrollment is enabled for control plane nodes. When omitted, the server-side default for the site is applied.
         nico:
           $ref: "#/components/schemas/NicoControlPlaneProviderCreate"
-          description: Provider Nico control plane fields.
-          x-go-type-skip-optional-pointer: true
         infra:
+          x-fern-ignore: true
           $ref: "#/components/schemas/InfraControlPlaneProvider"
-          description: Infra provider control plane fields.
-          x-go-type-skip-optional-pointer: true
     UpdateClusterControlPlaneConfig:
       type: object
       additionalProperties: false
       not:
         required: [nico, infra]
       description: |
-        `nico` and `infra` are mutually exclusive: supply at most one of them (both
-        may be omitted). A request carrying both is rejected with 400, as is a
-        provider payload that does not match the cluster.
+        Changes to `osProfile` or the Kubernetes version start a control-plane
+        rollout. All fields are optional. A provider payload that does not match the
+        cluster's provider is rejected with 400.
       properties:
         desiredCount:
           type: integer
           minimum: 1
-          description: |
-            The desired number of cluster-level control plane nodes. Must be at least 1.
+          description: Number of control-plane nodes.
         maxSurge:
           type: integer
           minimum: 0
-          description: Set cluster-level max surge.
+          description: Extra control-plane nodes allowed during a rollout (0 or 1).
         provisioningMonitorDisabled:
           type: boolean
-          description: Pause or resume the provisioning monitor for cluster-level control plane nodes.
+          description: When true, nodes stuck in provisioning past the timeout are not replaced automatically.
         systemReservedMemory:
           type: string
-          description: Set the reserved system memory for control plane nodes (e.g., "16Gi").
+          description: Memory reserved for system daemons.
         nodeLabels:
           type: array
           items:
             type: string
-          description: Replace the labels applied to control plane nodes.
+          description: Replaces the existing labels.
         teleportEnabled:
+          x-fern-ignore: true
           type: boolean
           description: Enable or disable Teleport SSH enrollment for control plane nodes.
         nico:
           $ref: "#/components/schemas/NicoControlPlaneProviderUpdate"
-          description: The mutable subset of the Nico control plane fields.
-          x-go-type-skip-optional-pointer: true
         infra:
+          x-fern-ignore: true
           $ref: "#/components/schemas/InfraControlPlaneProviderUpdate"
-          description: The mutable infra provider control plane fields.
-          x-go-type-skip-optional-pointer: true
     Cluster:
+      description: |
+        A Kubernetes cluster. Holds the Kubernetes version, network, CNI, etcd
+        encryption, control-plane configuration and conditions.
       type: object
       required:
         - id
@@ -969,134 +1323,137 @@ components:
         id:
           type: string
           format: uuid
-          description: The ID of the cluster
+          description: Cluster ID.
           x-order: 1
         name:
           type: string
-          description: The name of the cluster
+          description: Cluster name.
           x-order: 2
         controlPlaneKubernetesVersion:
           type: string
-          description: The version of Kubernetes used by the cluster
+          description: Desired control-plane Kubernetes version. The running version is in ControlPlaneStatus.
           x-order: 6
         cniPlugin:
           type: string
-          description: The CNI plugin used by the cluster
+          description: CNI plugin.
           x-order: 7
         cniVersion:
           type: string
-          description: The CNI package/chart stream used by the cluster
+          description: CNI version.
           x-order: 8
         etcdEncrypted:
           type: boolean
-          example: false
-          description: Enable or disable etcd encryption for the cluster
+          example: true
+          description: Whether etcd is encrypted at rest.
           x-order: 9
         controlPlaneVIP:
           type: string
           format: ipv4
-          description: The VIP configured for access to the control plane
+          description: API server VIP, if configured.
           x-order: 10
         enableCPNodeRecycling:
           type: boolean
           default: false
-          description: Enable or disable control plane node recycling during version upgrades. When enabled, the cluster can upgrade control plane nodes by creating new nodes with the target version and removing old nodes. When disabled, old nodes are not recycled.
+          description: |
+            When true, control-plane upgrades and configuration changes replace nodes
+            automatically. When false, nodes needing replacement are reported as pending and
+            wait for an operator.
           x-order: 11
         teleportEnabled:
+          x-fern-ignore: true
           type: boolean
           default: false
           description: Whether Teleport SSH enrollment is enabled for nodes in this cluster.
           x-order: 12
         controlPlaneConfig:
-          $ref: "#/components/schemas/ControlPlaneConfig"
-          description: Cluster-level control plane configuration.
-          x-order: 13
+          allOf:
+            - $ref: "#/components/schemas/ControlPlaneConfig"
+          description: Current control-plane configuration.
         network:
-          $ref: "#/components/schemas/ClusterNetwork"
-          description: Immutable pod and service network configuration applied to the cluster.
-          x-order: 14
+          allOf:
+            - $ref: "#/components/schemas/ClusterNetwork"
+          description: Pod and service network.
         createdAt:
           type: string
           format: date-time
-          description: When the cluster was created
+          description: Creation time.
           x-order: 15
         conditions:
-          $ref: "#/components/schemas/ClusterConditions"
-          description: Conditions representing various aspects of the Cluster's state
+          allOf:
+            - $ref: "#/components/schemas/ClusterConditions"
+          description: Lifecycle conditions.
         nico:
-          $ref: "#/components/schemas/NicoClusterProvider"
-          description: Provider Nico identity fields.
-          x-go-type-skip-optional-pointer: true
+          allOf:
+            - $ref: "#/components/schemas/NicoClusterProvider"
+          description: NICo identifiers.
         infra:
-          $ref: "#/components/schemas/InfraClusterProvider"
+          x-fern-ignore: true
+          allOf:
+            - $ref: "#/components/schemas/InfraClusterProvider"
           description: Infra provider fields.
-          x-go-type-skip-optional-pointer: true
     UpdateClusterRequest:
+      description: Changes to a cluster. All fields are optional; unknown fields are rejected.
       type: object
       additionalProperties: false
       properties:
         enableCPNodeRecycling:
           type: boolean
-          description: Enable or disable control plane node recycling during version upgrades.
+          description: Turn automatic control-plane node replacement on or off.
         # Same pattern and rationale as CreateClusterRequest.controlPlaneKubernetesVersion (semver.org version core; no leading "v").
         controlPlaneKubernetesVersion:
           type: string
           pattern: '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$'
           description: |
-            Target Kubernetes version for control plane upgrade (must be greater than current version).
-            Must be a valid semver version core (X.Y.Z only, e.g. 1.29.7).
-            Must not include a leading "v".
-            The pattern is the version-core part of the regex from https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
+            Target control-plane version, as X.Y.Z with no leading "v". Must be newer than
+            the current version by at most one minor version and keep every worker pool
+            within 3 minor versions.
         teleportEnabled:
+          x-fern-ignore: true
           type: boolean
           description: Enable or disable Teleport SSH enrollment for nodes in this cluster.
         enableEtcdEncryption:
           type: boolean
           description: |
-            Set to true to start one-way etcd encryption enablement on a provisioned cluster.
-            false is rejected because disabling etcd encryption is not supported.
-            If the cluster is already encrypted, true is treated as an idempotent no-op.
-            While the operation is running, subsequent UpdateCluster mutations return 409.
+            `true` starts one-way etcd encryption on a provisioned cluster. `false` is
+            rejected. `true` on an already-encrypted cluster does nothing. Other updates
+            return 409 while it runs.
         enableOidc:
           type: boolean
           description: |
-            Set to true to start one-way OIDC authentication enablement on a provisioned cluster.
-            false is rejected because disabling OIDC authentication is not supported.
-            If OIDC is already enabled, true is treated as an idempotent no-op.
-            Cannot be combined with a control-plane Kubernetes upgrade or etcd encryption
-            enablement in the same request. While the operation is running, subsequent
-            UpdateCluster mutations return 409.
+            `true` starts one-way OIDC authentication enablement. `false` is rejected.
+            Cannot be combined with a control-plane upgrade or etcd enablement. Other
+            updates return 409 while it runs.
         controlPlaneConfig:
           $ref: "#/components/schemas/UpdateClusterControlPlaneConfig"
         network:
           allOf:
             - $ref: "#/components/schemas/ClusterNetworkCreateConfig"
           readOnly: true
-          description: Immutable cluster network configuration. Any value supplied on update is rejected.
+          description: |
+            The cluster network cannot be changed after creation; any network value in an
+            update is rejected.
 
     ClusterNetworkCreateConfig:
       type: object
       additionalProperties: false
-      description: Non-default pod or service CIDRs are supported only with the ovn-kubernetes CNI plugin.
+      description: Pod and service network. Immutable after creation. Defaults apply when omitted.
       properties:
         podCIDR:
           type: string
-          example: "10.240.0.0/16,10.241.0.0/16"
+          example: "192.168.0.0/16"
           description: |
-            Comma-separated IPv4 pod network CIDRs. Each CIDR must be a private range with a prefix
-            length between /12 and /23 and must not overlap another pod CIDR or the serviceCIDR.
-            NKE allocates a /24 block to each node. The ranges together must provide enough blocks for all
-            desired nodes plus configured surge capacity, or at least one spare block when surge is
-            zero. The same capacity rule applies when node pools are created or scaled.
-            Defaults to 192.168.0.0/16; a non-default value requires the ovn-kubernetes CNI plugin.
+            Comma-separated IPv4 pod CIDRs. Each must be private, with a prefix length from
+            /12 to /23, and must not overlap the others or the service CIDR. Must have room
+            for a /24 per desired node plus surge. Default 192.168.0.0/16.
           x-go-type-skip-optional-pointer: true
         serviceCIDR:
           type: string
-          example: "10.233.0.0/18"
-          description: IPv4 service network CIDR. Must be a private range with a prefix length between /12 and /24. Defaults to 10.96.0.0/12; a non-default value requires the ovn-kubernetes CNI plugin.
+          example: "10.96.0.0/12"
+          description: IPv4 service CIDR, private, /12 to /24. Default 10.96.0.0/12.
           x-go-type-skip-optional-pointer: true
 
     ClusterNetwork:
+      description: Pod and service network in effect. Both fields are always present.
       type: object
       additionalProperties: false
       required:
@@ -1105,12 +1462,13 @@ components:
       properties:
         podCIDR:
           type: string
-          description: Canonical comma-separated IPv4 pod network CIDRs applied to the cluster.
+          description: Comma-separated IPv4 pod CIDRs in effect.
         serviceCIDR:
           type: string
-          description: Canonical IPv4 service network CIDR applied to the cluster.
+          description: IPv4 service CIDR in effect.
 
     ListCNIPluginsResponse:
+      description: Supported CNI plugins.
       type: object
       required:
         - cniPlugins
@@ -1119,9 +1477,10 @@ components:
           type: array
           items:
             type: string
-          description: A list of CNI plugins
+          description: Supported CNI plugins.
 
     ListClustersResponse:
+      description: A list of clusters.
       type: object
       required:
         - clusters
@@ -1130,12 +1489,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Cluster"
-          description: The list of clusters
+          description: Clusters.
 
     #--------------------------------
     # Node Pool
     #--------------------------------
     CloudInitFile:
+      x-fern-ignore: true
+      description: A file written by cloud-init on CAPI-backed nodes.
       type: object
       required:
         - path
@@ -1163,6 +1524,8 @@ components:
           description: File contents written by cloud-init.
 
     CreateNodePoolRequest:
+      description: |
+        A node pool to create: the parent cluster plus a NodePoolCreateConfig.
       allOf:
         - type: object
           required:
@@ -1171,7 +1534,7 @@ components:
             clusterID:
               type: string
               format: uuid
-              description: The ID of the cluster that will own the node pool
+              description: Parent cluster.
               x-order: 0
         - $ref: "#/components/schemas/NodePoolCreateConfig"
 
@@ -1179,7 +1542,7 @@ components:
       type: string
       minLength: 1
       description: |
-        Prefix for generated node names: <cluster name>-<nodeNamePrefix>-<suffix>.
+        Prefix for generated node names: `<cluster name>-<nodeNamePrefix>-<suffix>`.
         CWE assigns suffix as a 4-digit decimal number (0000–9999).
         Generated names must fit within 63 characters (Kubernetes Node name limit).
         Maximum prefix length depends on cluster name length.
@@ -1187,9 +1550,8 @@ components:
     NodePoolCreateConfig:
       type: object
       description: |
-        A node pool follows its cluster's provider, so exactly one provider payload is
-        required: supply either `nico` or `infra`. A request carrying both, or neither,
-        is rejected with 400.
+        A node pool and its provider settings. The provider follows the cluster's
+        and is fixed at creation.
       required:
         - name
         - desiredNodeCount
@@ -1209,24 +1571,24 @@ components:
           pattern: '^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$'
           minLength: 1
           maxLength: 253
-          description: The name of the node pool (must conform to Kubernetes resource naming standards)
-          example: "worker"
+          description: Unique within the cluster. Immutable.
+          example: "gpu-workers"
           x-order: 1
         nodeNamePrefix:
           $ref: "#/components/schemas/NodeNamePrefix"
-          x-order: 2
         systemReservedMemory:
           type: string
-          description: The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
+          description: Memory reserved for system daemons. Nodes reserve 16Gi when omitted.
           default: "16Gi"
           x-go-type-skip-optional-pointer: true
           x-order: 10
         kubeReservedMemory:
           type: string
-          description: The amount of memory to reserve for Kubernetes processes (e.g., "2Gi", "250Mi"). When unset, the kubelet configuration patch uses its default (2Gi).
+          description: Memory reserved for Kubernetes components. Default 2Gi.
           x-go-type-skip-optional-pointer: true
           x-order: 11
         controlPlane:
+          x-fern-ignore: true
           type: boolean
           default: false
           description: Whether the nodes in this pool should be added as Kubernetes control plane nodes
@@ -1236,95 +1598,93 @@ components:
           type: array
           items:
             type: string
-          description: A list of labels for the nodes in the pool
+          description: Labels applied to the pool's nodes, as key=value. Set at creation.
           x-order: 13
         desiredNodeCount:
           type: integer
           minimum: 0
-          description: The desired number of nodes in the pool
+          description: Number of nodes.
           x-order: 14
         description:
           type: string
-          description: An optional description for the node pool.
+          description: Free-text description.
           x-order: 15
         autoProvisionDisabled:
           type: boolean
           default: false
-          description: Whether the node pool is disabled for auto-provisioning.
+          description: Disables automatic provisioning for the pool.
           x-order: 16
         autoModeDisabled:
           type: boolean
           default: false
-          description: Whether the node pool is disabled for auto-mode (automatic node recycling).
+          description: Disables auto-mode (automatic node recycling).
           x-order: 17
         provisioningMonitorDisabled:
           type: boolean
           default: false
-          description: Whether the timeout-based provisioning monitor is paused for this node pool. When true, nodes stuck in provisioning past the configured timeout will not be recycled by the system; an operator must investigate manually.
+          description: When true, nodes stuck in provisioning past the timeout are not recycled automatically.
           x-order: 18
         recycleBudget:
           type: integer
           minimum: 0
           default: 0
-          description: The maximum number of nodes that can be recycled at once.
+          description: Maximum number of nodes recycled at once.
           x-order: 19
         teleportEnabled:
+          x-fern-ignore: true
           type: boolean
           description: Whether Teleport SSH enrollment is enabled for nodes in this pool. When omitted, the server-side default for the site is applied based on pool role.
           x-order: 20
         nico:
           $ref: "#/components/schemas/NicoNodePoolProvider"
-          description: Provider Nico node pool fields.
-          x-go-type-skip-optional-pointer: true
         infra:
+          x-fern-ignore: true
           $ref: "#/components/schemas/InfraNodePoolProvider"
-          description: Infra provider node pool fields.
-          x-go-type-skip-optional-pointer: true
     UpdateNodePoolRequest:
       type: object
       additionalProperties: false
       not:
         required: [nico, infra]
       description: |
-        `nico` and `infra` are mutually exclusive: supply at most one of them (both
-        may be omitted). A request carrying both is rejected with 400, as is a
-        provider payload that does not match the node pool's cluster.
+        All fields are optional. A provider payload that does not match the node pool's
+        cluster is rejected with 400.
       # No required fields since all fields are optional
       properties:
         autoProvisionDisabled:
           type: boolean
-          description: Whether the node pool is disabled for auto-provisioning.
+          description: Disables automatic provisioning for the pool.
         autoModeDisabled:
           type: boolean
-          description: Whether the node pool is disabled for auto-mode (automatic node recycling).
+          description: Disables auto-mode (automatic node recycling).
         provisioningMonitorDisabled:
           type: boolean
-          description: Whether the timeout-based provisioning monitor is paused for this node pool.
+          description: When true, nodes stuck in provisioning past the timeout are not recycled automatically.
         systemReservedMemory:
           type: string
-          description: The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
+          description: Memory reserved for system daemons. Nodes reserve 16Gi when omitted.
         kubeReservedMemory:
           type: string
-          description: The amount of memory to reserve for Kubernetes processes (e.g., "2Gi", "250Mi"). Set an empty value to restore the kubelet configuration patch default (2Gi).
+          description: Memory reserved for Kubernetes components. An empty string restores the 2Gi default.
         description:
           type: string
-          description: An optional description for the node pool.
+          description: Free-text description.
         desiredNodeCount:
           type: integer
           minimum: 0
-          description: The desired number of nodes in the pool
+          description: Number of nodes.
         recycleBudget:
           type: integer
           minimum: 0
-          description: The maximum number of nodes that can be recycled at once.
+          description: Maximum number of nodes recycled at once.
         maxSurge:
           type: integer
           minimum: 0
           description: |
-            Controls surge node provisioning during upgrades.
-            - 0: Sequential upgrade (teardown then provision)
+            Nodes allowed above desiredNodeCount during a rollout. 0 means sequential: each
+            node is torn down before its replacement is provisioned.
           default: 0
         teleportEnabled:
+          x-fern-ignore: true
           type: boolean
           description: Enable or disable Teleport SSH enrollment for nodes in this pool.
         # Same pattern and rationale as UpdateClusterRequest.controlPlaneKubernetesVersion (semver.org version core; no leading "v").
@@ -1332,19 +1692,15 @@ components:
           type: string
           pattern: '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$'
           description: |
-            Target Kubernetes version for worker node upgrade (must be greater than current version).
-            Must be a valid semver version core (X.Y.Z only, e.g. 1.29.7).
-            Must not include a leading "v".
-            The pattern is the version-core part of the regex from https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
+            Desired Kubernetes version for the pool's nodes, as X.Y.Z with no leading "v".
+            Must be newer than the current version.
         nico:
           $ref: "#/components/schemas/NicoNodePoolProviderUpdate"
-          description: The mutable subset of the Nico node pool fields.
-          x-go-type-skip-optional-pointer: true
         infra:
+          x-fern-ignore: true
           $ref: "#/components/schemas/InfraNodePoolProviderUpdate"
-          description: The mutable Infra provider node pool fields.
-          x-go-type-skip-optional-pointer: true
     NodePool:
+      description: A group of worker nodes sharing an instance type, OS profile and Kubernetes version.
       type: object
       required:
         - id
@@ -1365,34 +1721,36 @@ components:
         id:
           type: string
           format: uuid
-          description: The ID of the node pool
+          description: Node pool ID.
           x-order: 1
         clusterID:
           type: string
           format: uuid
-          description: The ID of the cluster that owns the node pool
+          description: Parent cluster.
           x-order: 2
         name:
           type: string
-          description: The name of the node pool
+          description: Node pool name. Unique within the cluster. Immutable.
           x-order: 3
         nodeNamePrefix:
-          $ref: "#/components/schemas/NodeNamePrefix"
-          x-order: 4
+          allOf:
+            - $ref: "#/components/schemas/NodeNamePrefix"
+          description: Node names are `<cluster>-<prefix>-<NNNN>` (four-digit suffix), at most 63 characters in total.
         kubernetesVersion:
           type: string
-          description: The desired version of Kubernetes for nodes in the pool
+          description: Desired Kubernetes version for the pool's nodes. Inherits the cluster's version on create.
           x-order: 12
         systemReservedMemory:
           type: string
-          description: The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
+          description: Memory reserved for system daemons. Nodes reserve 16Gi when omitted.
           default: "16Gi"
           x-order: 13
         kubeReservedMemory:
           type: string
-          description: The amount of memory to reserve for Kubernetes processes (e.g., "2Gi", "250Mi"). Empty when the kubelet configuration patch uses its default (2Gi).
+          description: Memory reserved for Kubernetes components. Empty when the 2Gi default applies.
           x-order: 14
         controlPlane:
+          x-fern-ignore: true
           type: boolean
           description: Whether the nodes in this pool are control plane nodes
           x-order: 15
@@ -1400,67 +1758,71 @@ components:
           type: array
           items:
             type: string
-          description: A list of labels for the nodes in the pool
+          description: Labels applied to the pool's nodes, as key=value. Set at creation.
           x-order: 16
         conditions:
-          $ref: "#/components/schemas/NodePoolConditions"
-          description: Conditions representing various aspects of the node pool's state
-          x-order: 17
+          allOf:
+            - $ref: "#/components/schemas/NodePoolConditions"
+          description: |
+            Lifecycle conditions: provisioning, provisioned, deleting.
         description:
           type: string
-          description: An optional description for the node pool.
+          description: Free-text description.
           x-order: 18
         desiredNodeCount:
           type: integer
           minimum: 0
-          description: The desired number of nodes in the pool
+          description: Number of nodes.
           x-order: 19
         autoProvisionDisabled:
           type: boolean
-          description: Whether the node pool is disabled for auto-provisioning.
+          description: Disables automatic provisioning for the pool.
           x-order: 20
         currentNodeSetID:
           type: string
           format: uuid
-          description: The ID of the current node set for the node pool
+          description: The active NodeSet.
           nullable: true
           x-order: 21
         autoModeDisabled:
           type: boolean
-          description: Whether the node pool is disabled for auto-mode (automatic node recycling).
+          description: Disables auto-mode (automatic node recycling).
           x-order: 22
         provisioningMonitorDisabled:
           type: boolean
           default: false
-          description: Whether the timeout-based provisioning monitor is paused for this node pool. When true, nodes stuck in provisioning past the configured timeout will not be recycled by the system; an operator must investigate manually.
+          description: When true, nodes stuck in provisioning past the timeout are not recycled automatically.
           x-order: 23
         recycleBudget:
           type: integer
           minimum: 0
-          description: The maximum number of nodes that can be recycled at once.
+          description: Maximum number of nodes recycled at once.
           x-order: 24
         maxSurge:
           type: integer
           minimum: 0
           description: |
-            Controls surge node provisioning during upgrades.
-            - 0: Sequential upgrade (teardown then provision)
+            Nodes allowed above desiredNodeCount during a rollout. 0 means sequential: each
+            node is torn down before its replacement is provisioned.
           default: 0
           x-order: 25
         teleportEnabled:
+          x-fern-ignore: true
           type: boolean
           default: false
           description: Whether Teleport SSH enrollment is enabled for nodes in this pool.
           x-order: 26
         nico:
-          $ref: "#/components/schemas/NicoNodePoolProvider"
-          description: Provider Nico node pool fields.
-          x-go-type-skip-optional-pointer: true
+          allOf:
+            - $ref: "#/components/schemas/NicoNodePoolProvider"
+          description: NICo settings for the pool.
         infra:
-          $ref: "#/components/schemas/InfraNodePoolProvider"
+          x-fern-ignore: true
+          allOf:
+            - $ref: "#/components/schemas/InfraNodePoolProvider"
           description: Infra provider node pool fields.
-          x-go-type-skip-optional-pointer: true
     ListNodePoolsResponse:
+      description: A list of node pools.
       type: object
       required:
         - nodePools
@@ -1469,12 +1831,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/NodePool"
-          description: The list of node pools
+          description: Node pools.
 
     #--------------------------------
     # Node Set
     #--------------------------------
     ListNodeSetsResponse:
+      description: A list of node sets.
       type: object
       required:
         - nodeSets
@@ -1483,9 +1846,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/NodeSet"
-          description: The list of node sets
+          description: Node sets.
 
     NodePoolConfigHistory:
+      description: Ordered snapshots of node pool configuration changes.
       type: object
       required:
         - changes
@@ -1494,9 +1858,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/NodePoolConfigChange"
-          description: Config snapshots ordered from oldest to newest. Each entry after the first shows which fields changed relative to the previous snapshot.
+          description: Oldest first.
 
     NodePoolConfigChange:
+      description: One node pool configuration snapshot and what changed in it.
       type: object
       required:
         - nodeSetID
@@ -1507,21 +1872,22 @@ components:
         nodeSetID:
           type: string
           format: uuid
-          description: The ID of the NodeSet snapshot representing this config.
+          description: The NodeSet snapshot that holds this configuration.
         createdAt:
           type: string
           format: date-time
-          description: When this config snapshot was created (i.e. when the config change took effect).
+          description: When the change took effect.
         isCurrent:
           type: boolean
-          description: Whether this NodeSet is the current active config for the node pool.
+          description: Whether this is the pool's current configuration.
         changedFields:
           type: array
           items:
             $ref: "#/components/schemas/NodePoolConfigField"
-          description: Fields that changed relative to the previous snapshot. Empty for the initial snapshot.
+          description: Fields that changed relative to the previous snapshot. Empty for the first entry.
 
     NodePoolConfigField:
+      description: One field that changed between two snapshots. Values are JSON-encoded.
       type: object
       required:
         - field
@@ -1529,15 +1895,16 @@ components:
       properties:
         field:
           type: string
-          description: The name of the config field that changed.
+          description: The field that changed.
         from:
           type: string
-          description: The previous value, JSON-encoded. Omitted for the initial snapshot.
+          description: JSON-encoded previous value. Omitted for the first entry.
         to:
           type: string
-          description: The new value, JSON-encoded.
+          description: JSON-encoded new value.
 
     ControlPlaneConfigHistory:
+      description: Ordered snapshots of control-plane configuration changes.
       type: object
       additionalProperties: false
       required:
@@ -1547,13 +1914,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ControlPlaneConfigChange"
-          description: >-
-            Control-plane configuration snapshots ordered from oldest to newest.
-            Each entry after the first shows which rollout-relevant fields changed
-            relative to the previous snapshot. A node's pinnedConfigurationID and
-            the cluster's desired configurationID both refer to entries here.
+          description: |
+            Oldest first. A node's pinnedConfigurationID and the cluster's desired
+            configurationId both refer to entries here.
 
     ControlPlaneConfigChange:
+      description: One control-plane configuration snapshot and what changed in it.
       type: object
       additionalProperties: false
       required:
@@ -1565,17 +1931,17 @@ components:
         configurationID:
           type: string
           format: uuid
-          description: The ID of the control-plane configuration snapshot representing this config.
+          description: The configuration snapshot.
         createdAt:
           type: string
           format: date-time
-          description: When this config snapshot was created (i.e. when the config change took effect).
+          description: When the change took effect.
         isCurrent:
           type: boolean
-          description: Whether this snapshot is the cluster's current desired control-plane configuration.
+          description: Whether this is the cluster's current desired configuration.
         changeReason:
           type: string
-          description: A human-readable reason the snapshot was created, when recorded.
+          description: Why the snapshot was created, when recorded.
           x-go-type-skip-optional-pointer: true
         createdBy:
           type: string
@@ -1585,9 +1951,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ControlPlaneConfigField"
-          description: Fields that changed relative to the previous snapshot. Empty for the initial snapshot.
+          description: Fields that changed relative to the previous snapshot. Empty for the first entry.
 
     ControlPlaneConfigField:
+      description: One field that changed between two snapshots. Values are JSON-encoded.
       type: object
       additionalProperties: false
       required:
@@ -1596,15 +1963,16 @@ components:
       properties:
         field:
           type: string
-          description: The name of the config field that changed.
+          description: The field that changed.
         from:
           type: string
-          description: The previous value, JSON-encoded. Omitted for the initial snapshot.
+          description: JSON-encoded previous value. Omitted for the first entry.
         to:
           type: string
-          description: The new value, JSON-encoded.
+          description: JSON-encoded new value.
 
     NodeSet:
+      description: Read-only, immutable snapshot of a node pool's configuration at a point in time.
       type: object
       required:
         - id
@@ -1616,48 +1984,51 @@ components:
         id:
           type: string
           format: uuid
-          description: The ID of the node set
+          description: NodeSet ID.
           readOnly: true
         nodePoolID:
           type: string
           format: uuid
-          description: The ID of the node pool that owns the node set
+          description: Owning node pool.
           readOnly: true
         desiredCount:
           type: integer
           minimum: 0
-          description: The desired number of nodes in the node set
+          description: Number of nodes in the snapshot.
           readOnly: true
           x-order: 1
         kubernetesVersion:
           type: string
-          description: The version of Kubernetes for nodes in the node set
+          description: Kubernetes version in the snapshot.
           readOnly: true
         systemReservedMemory:
           type: string
-          description: The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
+          description: Memory reserved for system daemons. Nodes reserve 16Gi when omitted.
           readOnly: true
         kubeReservedMemory:
           type: string
-          description: The amount of memory to reserve for Kubernetes processes (e.g., "2Gi", "250Mi"). Empty when the kubelet configuration patch uses its default (2Gi).
+          description: Memory reserved for Kubernetes components. Empty when the 2Gi default applies.
           readOnly: true
         teleportEnabled:
+          x-fern-ignore: true
           type: boolean
           default: false
           description: Whether Teleport SSH enrollment is enabled for nodes in this node set.
           readOnly: true
         nico:
-          $ref: "#/components/schemas/NicoNodeSetProvider"
-          description: Provider Nico node set fields.
-          x-go-type-skip-optional-pointer: true
+          allOf:
+            - $ref: "#/components/schemas/NicoNodeSetProvider"
+          description: NICo settings in the snapshot.
         infra:
-          $ref: "#/components/schemas/InfraNodeSetProvider"
+          x-fern-ignore: true
+          allOf:
+            - $ref: "#/components/schemas/InfraNodeSetProvider"
           description: Infra provider node set fields.
-          x-go-type-skip-optional-pointer: true
     #--------------------------------
     # Node
     #--------------------------------
     Node:
+      description: A single machine in a cluster, with lifecycle and health conditions.
       type: object
       required:
         - id
@@ -1670,55 +2041,49 @@ components:
         id:
           type: string
           format: uuid
-          description: The ID of the node
+          description: Node ID.
           x-order: 1
         nodePoolID:
           type: string
           format: uuid
-          description: The ID of the node pool that owns the node
+          description: Owning node pool. The nil UUID for control-plane nodes.
           x-order: 2
         nodeSetID:
           type: string
           format: uuid
-          description: The ID of the node set that owns the node
+          description: Owning NodeSet. The nil UUID for control-plane nodes.
           x-order: 3
         name:
           type: string
-          description: The name of the node
+          description: Node name.
+          example: tenant-a-prod-w-0001
           x-order: 4
         ip:
           type: string
           format: ipv4
-          description: The IP address of the node
+          description: Node IP address.
           x-go-type-skip-optional-pointer: true
           x-order: 7
         nico:
-          $ref: "#/components/schemas/NicoNodeProvider"
-          description: Provider Nico runtime fields for the node.
-          x-go-type-skip-optional-pointer: true
+          allOf:
+            - $ref: "#/components/schemas/NicoNodeProvider"
+          description: NICo instanceID, machineID and instanceTypeID. Omitted when none are set.
         controlPlane:
           type: boolean
-          description: True if this is a control-plane node (managed by a control-plane node pool or the control-plane controller)
+          description: Whether the node is a control-plane node.
           x-order: 9
         conditions:
-          $ref: "#/components/schemas/NodeConditions"
-          description: Conditions representing various aspects of the node's state
-          x-order: 10
+          allOf:
+            - $ref: "#/components/schemas/NodeConditions"
+          description: Lifecycle and health conditions.
         controlPlaneRollout:
-          $ref: "#/components/schemas/ControlPlaneRolloutStatus"
-          description: >-
-            Rollout status for a control-plane-controller-managed node: whether its
-            pinned control-plane configuration has drifted from the cluster's desired
-            configuration and therefore needs the node to be recycled. Present only
-            for control-plane-controller-managed nodes (control-plane nodes with no
-            owning node pool); absent for node-pool-managed control-plane nodes and
-            for worker nodes.
-          x-go-type-skip-optional-pointer: true
-          x-order: 11
+          allOf:
+            - $ref: "#/components/schemas/ControlPlaneRolloutStatus"
+          description: Control-plane nodes only.
 
     ControlPlaneRolloutChange:
       type: object
-      description: A single rollout-relevant field whose pinned value differs from desired.
+      description: One rollout-relevant field whose pinned value differs from the desired value, as plain strings.
       required:
         - field
         - from
@@ -1739,38 +2104,26 @@ components:
 
     ControlPlaneRolloutStatus:
       type: object
-      description: >-
-        Read-only, derived rollout state for a control-plane-controller-managed node.
-        pending is computed exactly as the control-plane controller computes it: the
-        node needs rollout when its pinned snapshot differs from the cluster's desired
-        snapshot in the OS profile, config profile, or Kubernetes version. The
-        pinned and desired snapshots themselves are resolvable in full (change
-        reason, author, timestamp) from pinnedConfigurationID and
-        desiredConfigurationID via GET /clusters/{clusterID}/control-plane/configHistory.
+      description: |
+        Control-plane nodes only. Drift is computed on the OS profile (osProfile) and
+        the Kubernetes version. Resolve pinnedConfigurationID and desiredConfigurationID
+        with GET /clusters/{clusterID}/control-plane/configHistory.
       required:
         - pending
         - actionable
       properties:
         pending:
           type: boolean
-          description: >-
-            True when the node's pinned configuration differs from the cluster's
-            desired configuration in a field that requires recycling the node.
+          description: The node differs from the desired configuration.
           x-order: 1
         actionable:
           type: boolean
-          description: >-
-            True when the drift is pending and the control-plane controller will
-            currently act on it (the cluster has control-plane node recycling
-            enabled). False means either there is no drift, or the drift is
-            detected but gated — recycling is disabled, so an operator must act.
+          description: The node can be replaced now.
           x-order: 2
         changes:
           type: array
-          description: >-
-            The rollout-relevant fields whose pinned value differs from desired,
-            each as field/from/to. Empty when the node is up to date. Lets clients
-            render the drift generically without enumerating fields.
+          description: |
+            Each with field, from, to as plain strings. Drift is computed on the OS profile (osProfile) and the Kubernetes version.
           items:
             $ref: "#/components/schemas/ControlPlaneRolloutChange"
           x-go-type-skip-optional-pointer: true
@@ -1778,29 +2131,22 @@ components:
         pinnedConfigurationID:
           type: string
           format: uuid
-          description: >-
-            The ID of the control-plane configuration snapshot the node is pinned
-            to. Use GET /clusters/{clusterID}/control-plane/configHistory to resolve
-            the full snapshot (change reason, author, timestamp).
+          description: Configuration the node was built from.
           x-go-type-skip-optional-pointer: true
           x-order: 4
         desiredConfigurationID:
           type: string
           format: uuid
-          description: The ID of the cluster's current desired control-plane configuration snapshot.
+          description: Configuration the node should move to.
           x-go-type-skip-optional-pointer: true
           x-order: 5
 
     ControlPlaneRolloutSummary:
       type: object
       additionalProperties: false
-      description: >-
-        Cluster-level rollout rollup for a control-plane-controller-managed control
-        plane: how many managed control-plane nodes are up to date, still pending,
-        and currently rolling out, whether a rollout is in progress, and whether
-        pending drift will be reconciled automatically. The three node counts are
-        mutually exclusive and sum to managedNodeCount. Present only for clusters
-        whose control plane is managed by the control-plane controller.
+      description: |
+        Rollout progress of the control plane. The three node counts are mutually
+        exclusive and sum to managedNodeCount.
       required:
         - managedNodeCount
         - upToDateNodeCount
@@ -1811,45 +2157,37 @@ components:
       properties:
         managedNodeCount:
           type: integer
-          description: Number of control-plane nodes managed by the control-plane controller.
+          description: Control-plane nodes under management.
           x-go-type-skip-optional-pointer: true
           x-order: 1
         upToDateNodeCount:
           type: integer
-          description: >-
-            Number of managed control-plane nodes that have converged to the
-            cluster's desired configuration and are Ready (pinned configuration
-            matches desired and kubernetesReady is True).
+          description: Nodes on the desired configuration.
           x-go-type-skip-optional-pointer: true
           x-order: 2
         pendingNodeCount:
           type: integer
-          description: Number of managed control-plane nodes whose pinned configuration has drifted and need recycling.
+          description: Nodes waiting to be replaced.
           x-go-type-skip-optional-pointer: true
           x-order: 3
         inProgressNodeCount:
           type: integer
-          description: >-
-            Number of managed control-plane nodes that already carry the desired
-            configuration but are not yet Ready (a recycle in flight). These are
-            neither pending nor up to date until they become Ready.
+          description: Nodes being replaced. The three counts sum to managedNodeCount.
           x-go-type-skip-optional-pointer: true
           x-order: 4
         inProgress:
           type: boolean
-          description: True when a control-plane node recycle is currently underway.
+          description: A rollout is running.
           x-go-type-skip-optional-pointer: true
           x-order: 5
         recyclingEnabled:
           type: boolean
-          description: >-
-            True when control-plane node recycling is enabled for the cluster, so
-            the control-plane controller reconciles pending drift automatically.
-            When false, pending nodes are detected but gated and require an operator.
+          description: When false, pending nodes are detected but wait for an operator.
           x-go-type-skip-optional-pointer: true
           x-order: 6
 
     ListNodesResponse:
+      description: A list of nodes.
       type: object
       required:
         - nodes
@@ -1858,8 +2196,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Node"
+          description: Nodes.
 
     NodeHistory:
+      description: The provisioning, reboot and teardown operations run for a node.
       type: object
       required:
         - workflows
@@ -1868,8 +2208,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/NodeHistoryWorkflow"
+          description: Operations run for the node.
 
     NodeHistoryWorkflow:
+      description: One operation run for the node.
       type: object
       required:
         - workflowID
@@ -1882,29 +2224,37 @@ components:
       properties:
         workflowID:
           type: string
+          description: Operation ID.
         runID:
           type: string
+          description: Run ID.
         workflowType:
           type: string
+          description: Operation name. Names are illustrative.
+          example: ProvisionNode
         status:
           type: string
-          description: "Workflow execution status: Running, Completed, Failed, Canceled, Terminated, TimedOut"
+          description: One of Running, Completed, Failed, Canceled, Terminated, TimedOut, ContinuedAsNew, Paused or Unknown.
         startTime:
           type: string
           format: date-time
+          description: Start time.
         closeTime:
           type: string
           format: date-time
+          description: End time. Absent while running.
         durationMs:
           type: integer
           format: int64
-          description: Duration in milliseconds, or elapsed time if still running
+          description: Duration in milliseconds, or elapsed time if still running.
         activities:
           type: array
           items:
             $ref: "#/components/schemas/NodeHistoryActivity"
+          description: Steps of the operation, with per-step timing.
 
     NodeHistoryActivity:
+      description: One step within an operation.
       type: object
       required:
         - name
@@ -1914,43 +2264,44 @@ components:
       properties:
         name:
           type: string
+          description: Step name. Names are illustrative.
+          example: CreateInstance
         scheduledTime:
           type: string
           format: date-time
+          description: When the step was scheduled.
         closeTime:
           type: string
           format: date-time
+          description: End time. Absent while running.
         durationMs:
           type: integer
           format: int64
-          description: Duration in milliseconds, or elapsed time if still running
+          description: Duration in milliseconds, or elapsed time if still running.
         status:
           type: string
-          description: "Activity status: Running, Completed, Failed"
+          description: One of Running, Completed, Failed or Canceled.
         failureMessage:
           type: string
-          description: The error message describing why the activity failed
+          description: Why the step failed, when it did.
 
     DeleteNodeRequest:
+      description: Optional body of a node delete.
       type: object
       properties:
         machineHealthIssue:
           $ref: "#/components/schemas/MachineHealthIssue"
-          description: |
-            Optional health issue information to report to Forge when deleting the node.
-            If provided, the node will be flagged for repair to the Forge team.
         forceUnreachable:
           type: boolean
           default: false
           x-go-type-skip-optional-pointer: true
           description: |
-            Treat the node as unreachable. Best-effort graceful steps (drain, graceful
-            shutdown) are still attempted, but their failures are logged and tolerated
-            instead of failing the teardown. Use when a node's kubelet/node-agent is
-            unresponsive and a normal delete would hang. This does not tolerate
-            control-plane etcd member-removal failures.
+            Treat the node as unreachable: graceful drain and shutdown are attempted, and
+            failures are tolerated. Failures removing a control-plane node's etcd member are
+            not tolerated.
 
     MachineHealthIssue:
+      description: Flags the underlying machine for repair.
       type: object
       required:
         - category
@@ -1958,23 +2309,25 @@ components:
       properties:
         category:
           type: string
-          description: "Category of the health issue. Must be a valid Forge category enum value (e.g., 'Hardware', 'Network', 'Performance', 'Other', etc.)"
+          description: |
+            Issue category: one of Hardware, Network, Performance or Other.
           example: "Hardware"
           x-order: 1
         summary:
           type: string
-          description: Short summary describing the issue
+          description: Short summary, 2 to 256 characters.
           example: "Node only has 7 GPUs"
           minLength: 1
           x-order: 2
         details:
           type: string
-          description: Optional detailed information about the issue helpful for diagnosis
+          description: Additional detail, 2 to 256 characters.
           example: "The node reboot completed at 12:51Z and it started reporting XID 79 at 14:09Z"
           x-go-type-skip-optional-pointer: true
           x-order: 3
 
     Condition:
+      description: A status, when it last changed, and a message.
       type: object
       required:
         - status
@@ -1987,16 +2340,16 @@ components:
             - "True"
             - "False"
             - "Unknown"
-          description: The status of the condition
+          description: Condition status.
           x-order: 1
         lastTransitionTime:
           type: string
           format: date-time
-          description: The last time the condition transitioned
+          description: When the status last changed.
           x-order: 2
         message:
           type: string
-          description: A message explaining the condition
+          description: Human-readable detail. May be empty.
           x-order: 3
 
     ClusterConditions:
@@ -2005,48 +2358,43 @@ components:
         - provisioning
         - provisioned
         - deleting
-        - upgrading
-      description: Conditions representing various aspects of the Cluster's state
+      description: Lifecycle conditions of a cluster. Each is a Condition.
       properties:
         provisioning:
-          description: The condition indicating whether the cluster is currently provisioning.
-          x-order: 1
-          $ref: "#/components/schemas/Condition"
+          description: The cluster is provisioning.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         provisioned:
-          description: The condition indicating whether the cluster is provisioned.
-          x-order: 2
-          $ref: "#/components/schemas/Condition"
+          description: The cluster is provisioned.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         deleting:
-          description: The condition indicating whether the cluster is currently being deleted.
-          x-order: 3
-          $ref: "#/components/schemas/Condition"
+          description: The cluster is being deleted.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         cpNodesRecycling:
-          description: The condition indicating whether the cluster control plane nodes are currently being recycled.
-          x-order: 4
-          $ref: "#/components/schemas/Condition"
+          description: Control-plane nodes are being replaced.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         controlPlaneUpgrading:
-          description: The condition indicating whether the control plane is currently being upgraded.
-          x-order: 5
-          $ref: "#/components/schemas/Condition"
+          description: The control plane is being upgraded.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         updateInProgress:
-          description: |
-            The mutually-exclusive cluster mutation currently in flight
-            (etcd_encryption, k8s_upgrade, cp_nodes_recycling, or oidc_enable).
-            Absent when no such operation is running. Replaces the per-operation
-            boolean flags for new operation types.
-          x-order: 6
-          $ref: "#/components/schemas/UpdateInProgress"
+          description: The mutually exclusive cluster operation in progress, if any. Absent when none.
+          allOf:
+            - $ref: "#/components/schemas/UpdateInProgress"
         updateFailed:
-          description: The condition indicating that the most recent cluster update failed.
-          x-order: 7
-          $ref: "#/components/schemas/Condition"
+          description: The most recent cluster update failed.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
 
     UpdateInProgress:
       type: object
       required:
         - type
         - startedAt
-      description: A mutually-exclusive cluster mutation in flight.
+      description: The mutually exclusive cluster operation in progress. Absent when none.
       properties:
         type:
           type: string
@@ -2055,16 +2403,16 @@ components:
             - k8s_upgrade
             - cp_nodes_recycling
             - oidc_enable
-          description: The kind of long-running cluster mutation in flight.
+          description: Operation in progress.
           x-order: 1
         message:
           type: string
-          description: Optional human-readable context for the in-flight operation.
+          description: Detail.
           x-order: 2
         startedAt:
           type: string
           format: date-time
-          description: Timestamp at which the operation was started.
+          description: Start time.
           x-order: 3
     NodePoolConditions:
       type: object
@@ -2072,20 +2420,20 @@ components:
         - provisioning
         - provisioned
         - deleting
-      description: Conditions representing various aspects of the node pool's state
+      description: Lifecycle conditions of a node pool. Each is a Condition.
       properties:
         provisioning:
-          description: The condition indicating whether the node pool is currently provisioning.
-          $ref: "#/components/schemas/Condition"
-          x-order: 1
+          description: The node pool is provisioning.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         provisioned:
-          description: The condition indicating whether the node pool is provisioned.
-          $ref: "#/components/schemas/Condition"
-          x-order: 2
+          description: The node pool is provisioned.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         deleting:
-          description: The condition indicating whether the node pool is currently being deleted.
-          $ref: "#/components/schemas/Condition"
-          x-order: 3
+          description: The node pool is being deleted.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
 
     NodeConditions:
       type: object
@@ -2104,95 +2452,95 @@ components:
         - rebooting
         - markedForRecycling
         - markedForRepair
-      description: Conditions representing various aspects of the node's state
+      description: |
+        Each is a Condition. A node normally moves through pending, provisioningClaimed,
+        provisioning, readyToJoin, joined and provisioned; deletion moves through
+        deleteRequested (control-plane nodes) and deleting.
       properties:
         pending:
-          description: The condition indicating whether the node is pending.
-          $ref: "#/components/schemas/Condition"
-          x-order: 1
+          description: The node is waiting to be provisioned.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         provisioningClaimed:
-          description: The condition indicating whether a provisioning workflow has claimed the node.
-          $ref: "#/components/schemas/Condition"
-          x-order: 2
+          description: A provisioning operation has claimed the node.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         provisioning:
-          description: The condition indicating whether the node is currently provisioning.
-          $ref: "#/components/schemas/Condition"
-          x-order: 3
+          description: The node is provisioning.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         readyToJoin:
-          description: The condition indicating whether the node is ready to join the cluster.
-          $ref: "#/components/schemas/Condition"
-          x-order: 4
+          description: The node is ready to join the cluster.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         joined:
-          description: The condition indicating whether the node has joined the cluster.
-          $ref: "#/components/schemas/Condition"
-          x-order: 5
+          description: The node has joined the cluster.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         provisioned:
-          description: The condition indicating whether the node is provisioned.
-          $ref: "#/components/schemas/Condition"
-          x-order: 6
+          description: The node is provisioned.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         deleting:
-          description: The condition indicating whether the node is currently being deleted.
-          $ref: "#/components/schemas/Condition"
-          x-order: 7
+          description: The node is being deleted.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         kubernetesReady:
-          description: The condition indicating whether the Kubelet is reporting Ready status.
-          $ref: "#/components/schemas/Condition"
-          x-order: 8
+          description: The kubelet reports Ready.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         kubernetesUnschedulable:
-          description: The condition indicating whether the node is schedulable by Kubernetes.
-          $ref: "#/components/schemas/Condition"
-          x-order: 9
+          description: Reflects the Kubernetes node's unschedulable (cordoned) state.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         nodeAgentReady:
-          description: The condition indicating whether the Node Agent is healthy on the node.
-          $ref: "#/components/schemas/Condition"
-          x-order: 10
+          description: The NKE node agent is healthy.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         rebooting:
-          description: The condition indicating whether the node is currently rebooting.
-          $ref: "#/components/schemas/Condition"
-          x-order: 11
+          description: The node is rebooting.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         markedForRecycling:
-          description: The condition indicating whether the node is marked for recycling.
-          $ref: "#/components/schemas/Condition"
-          x-order: 12
+          description: The node is marked for replacement.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         markedForRepair:
-          description: The condition indicating whether the node is marked for repair.
-          $ref: "#/components/schemas/Condition"
-          x-order: 13
+          description: The node is marked for repair.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         teleportRegistered:
+          x-fern-ignore: true
           description: The condition indicating whether the node is registered with Teleport for SSH. True when confirmed registered; includes lastTransitionTime and message.
-          $ref: "#/components/schemas/Condition"
-          x-order: 14
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         controlPlaneRolloutRequired:
-          description: >-
-            For control-plane-controller-managed nodes, whether the node's pinned
-            control-plane configuration has drifted from the cluster's desired
-            configuration and the node needs to be rolled (True) or is up to date
-            (False). Carries lastTransitionTime, so consumers can tell how long a
-            node has needed a roll. Absent for nodes not managed by the
-            control-plane controller.
-          $ref: "#/components/schemas/Condition"
-          x-order: 15
+          description: Control-plane nodes only. True when the node differs from the desired configuration.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
         deleteRequested:
           description: |
-            The condition indicating that a delete has been accepted for this node
-            but its teardown has not started yet. Control-plane deletes are recorded
-            here first and started by the control-plane controller one at a time;
-            `deleting` then reports the teardown itself. At most one of the two is
-            true at a time.
-          $ref: "#/components/schemas/Condition"
-          x-order: 16
+            A delete has been accepted but teardown has not started. Control-plane deletes
+            are recorded here first and started one at a time; `deleting` then reports the
+            teardown. At most one of deleting and deleteRequested is True.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
 
     GenericError:
+      description: Error response body.
       type: object
       required:
         - message
       properties:
         message:
           type: string
-          description: The error message
+          description: What went wrong.
+          example: A cluster already exists with the name "tenant-a-prod"
           x-order: 1
 
     OSProfile:
+      x-fern-ignore: true
+      description: An OS profile available to the management plane.
       type: object
       required:
         - name
@@ -2203,6 +2551,8 @@ components:
           x-order: 1
 
     ConfigProfile:
+      x-fern-ignore: true
+      description: A config profile available to the management plane.
       type: object
       required:
         - name
@@ -2215,25 +2565,26 @@ components:
     NicoClusterProvider:
       type: object
       additionalProperties: false
-      description: Nico identity fields for a cluster. Mutually exclusive with `infra`.
+      description: NICo identifiers for the cluster. Fixed at creation.
       properties:
         orgID:
           type: string
           example: dipfedrcvjiw
-          description: The ID of the NGC organization that owns the cluster
+          description: Organization that owns the cluster.
           x-go-type-skip-optional-pointer: true
         siteID:
           type: string
           format: uuid
-          description: The registered Forge site ID for the cluster
+          description: NICo site ID.
           x-go-type-skip-optional-pointer: true
         vpcID:
           type: string
           format: uuid
-          description: The VPC ID where the Nico cluster is created
+          description: NICo VPC ID.
           x-go-type-skip-optional-pointer: true
 
     InfraClusterProvider:
+      x-fern-ignore: true
       type: object
       additionalProperties: false
       description: |
@@ -2250,49 +2601,52 @@ components:
     NicoNodePoolProvider:
       type: object
       additionalProperties: false
-      description: Nico fields for a node pool. Mutually exclusive with `infra`.
+      description: |
+        NICo settings for a node pool. instanceTypeID, osProfile and configProfile are
+        required, and exactly one of subnetIDs and vpcPrefixIDs.
       properties:
         subnetIDs:
           type: array
           items:
             type: string
             format: uuid
-          description: Subnet IDs for Nico instances when native networking is disabled
+          description: Subnets, for sites without native networking.
           x-go-type-skip-optional-pointer: true
         vpcPrefixIDs:
           type: array
           items:
             type: string
             format: uuid
-          description: VPC prefix IDs for Nico instances when native networking is enabled
+          description: VPC prefixes, for sites with native networking.
           x-go-type-skip-optional-pointer: true
         instanceTypeID:
           type: string
           format: uuid
-          description: Nico instance type ID
+          description: NICo instance type. Fixed at creation.
           x-go-type-skip-optional-pointer: true
         infinibandPartitionID:
           type: string
           format: uuid
-          description: Infiniband partition ID for Nico instances
+          description: InfiniBand partition. Fixed at creation.
         nvLinkLogicalPartitionID:
           type: string
           format: uuid
-          description: NVLink logical partition ID for Nico instances
+          description: NVLink logical partition. Fixed at creation.
         sshKeyGroupIDs:
           type: array
           items:
             type: string
             format: uuid
-          description: SSH key group IDs for Nico instances
+          description: SSH key groups for node access. Fixed at creation.
         osProfile:
           type: string
-          description: OS profile name for Nico nodes
+          description: Name of an OS profile the Operator has supplied to the management plane.
+          example: example-ubuntu-24.04-amd64
           x-go-name: OSProfile
           x-go-type-skip-optional-pointer: true
         configProfile:
           type: string
-          description: Config profile name for nodes
+          description: Config profile name for the pool's nodes. Required when creating a pool.
           x-go-type-skip-optional-pointer: true
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategyCreate"
@@ -2301,77 +2655,72 @@ components:
       type: object
       additionalProperties: false
       description: |
-        The mutable subset of the Nico node pool fields. `instanceTypeID`,
-        `infinibandPartitionID`, `nvLinkLogicalPartitionID` and `sshKeyGroupIDs`
-        are fixed when the pool is created and are therefore absent here: sending
-        one is rejected with 400. A body echoed from GET must have them stripped.
+        Fields fixed at creation (instanceTypeID, partitions, sshKeyGroupIDs) cannot be
+        sent: a request carrying one is rejected with 400. A body echoed from GET must
+        have them stripped.
       properties:
         subnetIDs:
           type: array
           items:
             type: string
             format: uuid
-          description: |
-            Subnet IDs to set (replaces existing). Omit = no change. Empty array = replace with empty (clear all).
-            Allowed only when the site does not have native networking.
+          description: Replaces the list; [] clears it. Subnets, for sites without native networking.
           x-go-type-skip-optional-pointer: true
         vpcPrefixIDs:
           type: array
           items:
             type: string
             format: uuid
-          description: |
-            VPC prefix IDs to set (replaces existing). Omit = no change. Empty array = replace with empty (clear all).
-            Allowed only when the site has native networking.
+          description: Replaces the list; [] clears it. VPC prefixes, for sites with native networking.
           x-go-type-skip-optional-pointer: true
         osProfile:
           type: string
           description: |
-            OS profile name for Nico nodes. Omit = no change. An empty
-            string is a request to clear it, which is rejected: a Nico node pool
-            always has an OS profile.
+            Name of an OS profile. Changing it rolls the pool's nodes to the new profile. An
+            empty string is rejected: a pool always has an OS profile.
           x-go-name: OSProfile
         configProfile:
           type: string
           description: |
-            Config profile name for nodes. Omit = no change. An empty string is a
-            request to clear it, which is rejected: a Nico node pool always has a
-            config profile.
+            Config profile name for the pool's nodes. An empty string is rejected: a pool
+            always has a config profile.
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategy"
 
     NicoNodeSetProvider:
       type: object
       additionalProperties: false
-      description: Nico fields for a node set (read-only snapshot).
+      description: NICo settings in a node set (read-only snapshot).
       properties:
         subnetIDs:
           type: array
           items:
             type: string
             format: uuid
-          description: Subnet IDs for Nico instances when native networking is disabled
+          description: Subnets, for sites without native networking.
           x-go-type-skip-optional-pointer: true
         vpcPrefixIDs:
           type: array
           items:
             type: string
             format: uuid
-          description: VPC prefix IDs for Nico instances when native networking is enabled
+          description: VPC prefixes, for sites with native networking.
           x-go-type-skip-optional-pointer: true
         osProfile:
           type: string
-          description: OS profile name for Nico nodes
+          description: Name of an OS profile the Operator has supplied to the management plane.
+          example: example-ubuntu-24.04-amd64
           x-go-name: OSProfile
           x-go-type-skip-optional-pointer: true
         configProfile:
           type: string
-          description: Config profile name for nodes
+          description: Config profile name for the pool's nodes. Required when creating a pool.
           x-go-type-skip-optional-pointer: true
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategyCreate"
 
     InfraNodePoolProvider:
+      x-fern-ignore: true
       type: object
       additionalProperties: false
       description: Infra provider fields for a node pool. Mutually exclusive with `nico`.
@@ -2395,11 +2744,13 @@ components:
           x-go-type-skip-optional-pointer: true
 
     InfraNodePoolProviderUpdate:
+      x-fern-ignore: true
       type: object
       additionalProperties: false
       description: |
         The mutable infra provider node pool fields. Every field carries three states: omitted
         leaves the stored value alone, a value replaces it, and an empty value clears it.
+        Mutually exclusive with `nico`: a request carrying both is rejected with 400.
       properties:
         machineTemplate:
           type: object
@@ -2420,6 +2771,7 @@ components:
           x-go-type-skip-optional-pointer: true
 
     InfraNodeSetProvider:
+      x-fern-ignore: true
       type: object
       additionalProperties: false
       description: Infra provider fields for a node set (read-only snapshot).
@@ -2446,145 +2798,145 @@ components:
       type: object
       additionalProperties: false
       description: |
-        The stored Nico cluster-level control plane fields, as reported on read.
-        Requests use `NicoControlPlaneProviderCreate` and `NicoControlPlaneProviderUpdate`,
-        which omit the fields that direction cannot set. Mutually exclusive with `infra`.
+        NICo settings for the control-plane nodes, as reported on read. Requests use
+        NicoControlPlaneProviderCreate and NicoControlPlaneProviderUpdate, which omit
+        the fields that direction cannot set.
       properties:
         instanceTypePreference:
           type: array
           items:
             type: string
             format: uuid
-          description: Ordered Nico instance type IDs; index 0 is highest priority
+          description: Ordered list of acceptable NICo instance types; index 0 is the highest priority.
           x-go-type-skip-optional-pointer: true
         subnetIDs:
           type: array
           items:
             type: string
             format: uuid
-          description: Subnet IDs for control plane nodes when native networking is disabled
+          description: Subnets, for sites without native networking.
           x-go-type-skip-optional-pointer: true
         vpcPrefixIDs:
           type: array
           items:
             type: string
             format: uuid
-          description: VPC prefix IDs for control plane nodes when native networking is enabled
+          description: VPC prefixes, for sites with native networking.
           x-go-type-skip-optional-pointer: true
         osProfile:
           type: string
-          description: OS profile name for Nico control plane nodes
+          description: Name of an OS profile the Operator has supplied to the management plane.
+          example: example-ubuntu-24.04-amd64
           x-go-name: OSProfile
           x-go-type-skip-optional-pointer: true
         diskSelectionStrategy:
           readOnly: true
-          description: |
-            Effective disk selection strategy for control plane nodes (always smallest).
-            Not configurable through the API.
+          description: Always smallest for control-plane nodes. Not configurable through the API.
           allOf:
             - $ref: "#/components/schemas/DiskSelectionStrategyCreate"
         configProfile:
           type: string
-          description: Config profile name for control plane nodes
+          description: Config profile name for the control-plane nodes.
           x-go-type-skip-optional-pointer: true
         sshKeyGroupIDs:
           type: array
           items:
             type: string
             format: uuid
-          description: SSH key group IDs for control plane nodes
+          description: SSH key groups for node access. Can be updated.
           x-go-type-skip-optional-pointer: true
 
     NicoControlPlaneProviderCreate:
       type: object
       additionalProperties: false
       description: |
-        The settable subset of the Nico control plane fields.
+        NICo settings for control-plane nodes at creation. osProfile and configProfile
+        are required, and exactly one of subnetIDs and vpcPrefixIDs.
       properties:
         instanceTypePreference:
           type: array
           items:
             type: string
             format: uuid
-          description: Ordered Nico instance type IDs; index 0 is highest priority
+          description: Ordered list of acceptable NICo instance types; index 0 is the highest priority.
           x-go-type-skip-optional-pointer: true
         subnetIDs:
           type: array
           items:
             type: string
             format: uuid
-          description: Subnet IDs for control plane nodes when native networking is disabled
+          description: Subnets, for sites without native networking.
           x-go-type-skip-optional-pointer: true
         vpcPrefixIDs:
           type: array
           items:
             type: string
             format: uuid
-          description: VPC prefix IDs for control plane nodes when native networking is enabled
+          description: VPC prefixes, for sites with native networking.
           x-go-type-skip-optional-pointer: true
         osProfile:
           type: string
-          description: OS profile name for Nico control plane nodes
+          description: Name of an OS profile the Operator has supplied to the management plane.
+          example: example-ubuntu-24.04-amd64
           x-go-name: OSProfile
           x-go-type-skip-optional-pointer: true
         configProfile:
           type: string
-          description: Config profile name for control plane nodes
+          description: Config profile name for the control-plane nodes. Required.
           x-go-type-skip-optional-pointer: true
         sshKeyGroupIDs:
           type: array
           items:
             type: string
             format: uuid
-          description: SSH key group IDs for control plane nodes
+          description: SSH key groups for node access. Can be updated.
           x-go-type-skip-optional-pointer: true
 
     NicoControlPlaneProviderUpdate:
       type: object
       additionalProperties: false
       description: |
-        The mutable subset of the Nico control plane fields.
-        Every field carries three states: omitted leaves the stored value alone, a value
-        replaces it, and an empty value clears it. Clearing a field the control plane
-        requires is rejected.
+        Each field has three states: omitted leaves the stored value, a value replaces
+        it, and an empty value clears it. Clearing a required field is rejected.
       properties:
         instanceTypePreference:
           type: array
           items:
             type: string
             format: uuid
-          description: Ordered Nico instance type IDs; index 0 is highest priority
+          description: Ordered list of acceptable NICo instance types; index 0 is the highest priority.
           x-go-type-skip-optional-pointer: true
         subnetIDs:
           type: array
           items:
             type: string
             format: uuid
-          description: Subnet IDs for control plane nodes when native networking is disabled
+          description: Subnets, for sites without native networking.
           x-go-type-skip-optional-pointer: true
         vpcPrefixIDs:
           type: array
           items:
             type: string
             format: uuid
-          description: VPC prefix IDs for control plane nodes when native networking is enabled
+          description: VPC prefixes, for sites with native networking.
           x-go-type-skip-optional-pointer: true
         osProfile:
           type: string
-          description: OS profile name for Nico control plane nodes
+          description: Name of an OS profile. Changing it starts a control-plane rollout.
           x-go-name: OSProfile
         configProfile:
           type: string
-          description: Config profile name for control plane nodes
+          description: Config profile name for the control-plane nodes.
         sshKeyGroupIDs:
           type: array
           items:
             type: string
             format: uuid
-          description: SSH key group IDs for control plane nodes
+          description: SSH key groups for node access. Can be updated.
           x-go-type-skip-optional-pointer: true
 
     InfraControlPlaneProvider:
+      x-fern-ignore: true
       type: object
       additionalProperties: false
       description: Infra provider fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
@@ -2608,11 +2960,13 @@ components:
           x-go-type-skip-optional-pointer: true
 
     InfraControlPlaneProviderUpdate:
+      x-fern-ignore: true
       type: object
       additionalProperties: false
       description: |
         The mutable infra provider control plane fields. Every field carries three states: omitted
         leaves the stored value alone, a value replaces it, and an empty value clears it.
+        Mutually exclusive with `nico`: a request carrying both is rejected with 400.
       properties:
         machineTemplate:
           type: object
@@ -2635,20 +2989,20 @@ components:
     NicoNodeProvider:
       type: object
       additionalProperties: false
-      description: Nico runtime fields for a provisioned node.
+      description: NICo identifiers of the machine behind a node. Omitted when none of its fields are set.
       properties:
         instanceID:
           type: string
-          description: Nico instance ID created for the node
+          description: NICo instance ID.
           x-go-type-skip-optional-pointer: true
         machineID:
           type: string
-          description: Nico machine ID for the node
+          description: NICo machine ID.
           x-go-type-skip-optional-pointer: true
         instanceTypeID:
           type: string
           format: uuid
-          description: Nico instance type ID used to provision the node
+          description: NICo instance type the node was provisioned with.
           x-go-type-skip-optional-pointer: true
 
     DiskSelectionStrategy:
@@ -2656,17 +3010,19 @@ components:
       enum:
         - "smallest"
         - "largest"
-      description: The strategy to use for selecting the OS install disk on nodes.
+      description: Which disk the OS is installed on. Default smallest.
 
     DiskSelectionStrategyCreate:
       type: string
       enum:
         - "smallest"
         - "largest"
-      description: The strategy to use for selecting the OS install disk on nodes.
+      description: Which disk the OS is installed on. Default smallest.
       x-go-type-skip-optional-pointer: true
 
     ListOSProfilesResponse:
+      x-fern-ignore: true
+      description: A list of OS profiles.
       type: object
       required:
         - osProfiles
@@ -2678,6 +3034,8 @@ components:
           description: The list of OS profiles
 
     ListConfigProfilesResponse:
+      x-fern-ignore: true
+      description: A list of config profiles.
       type: object
       required:
         - configProfiles

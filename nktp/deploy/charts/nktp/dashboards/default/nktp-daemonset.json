@@ -1,0 +1,405 @@
+{
+  "uid": "nktp-daemonset",
+  "title": "NKTP DaemonSet",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "DaemonSet received /s",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (k8s_node_name) (rate(otelcol_receiver_accepted_metric_points_total{job=\"nktp-daemonset\"}[5m]))",
+          "legendFormat": "{{k8s_node_name}} metric points",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (k8s_node_name) (rate(otelcol_receiver_accepted_log_records_total{job=\"nktp-daemonset\"}[5m]))",
+          "legendFormat": "{{k8s_node_name}} log records",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "DaemonSet exported /s",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (k8s_node_name) (rate(otelcol_exporter_sent_metric_points_total{job=\"nktp-daemonset\"}[5m]))",
+          "legendFormat": "{{k8s_node_name}} metric points",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (k8s_node_name) (rate(otelcol_exporter_sent_log_records_total{job=\"nktp-daemonset\"}[5m]))",
+          "legendFormat": "{{k8s_node_name}} log records",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "DaemonSet export failures /s",
+      "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (k8s_node_name) (rate(otelcol_exporter_send_failed_metric_points_total{job=\"nktp-daemonset\"}[5m]))",
+          "legendFormat": "{{k8s_node_name}} metric points",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (k8s_node_name) (rate(otelcol_exporter_send_failed_log_records_total{job=\"nktp-daemonset\"}[5m]))",
+          "legendFormat": "{{k8s_node_name}} log records",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "DaemonSet refused /s",
+      "gridPos": {
+        "x": 12,
+        "y": 7,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (k8s_node_name) (rate(otelcol_receiver_refused_metric_points_total{job=\"nktp-daemonset\"}[5m]))",
+          "legendFormat": "{{k8s_node_name}} metric points",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (k8s_node_name) (rate(otelcol_receiver_refused_log_records_total{job=\"nktp-daemonset\"}[5m]))",
+          "legendFormat": "{{k8s_node_name}} log records",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "DaemonSet exporter queue use",
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "percent"
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * max by (k8s_node_name, exporter, data_type) (otelcol_exporter_queue_size{job=\"nktp-daemonset\"} / otelcol_exporter_queue_capacity{job=\"nktp-daemonset\"})",
+          "legendFormat": "{{k8s_node_name}} {{exporter}} {{data_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "DaemonSet reporting collectors",
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "count(count by (instance) (otelcol_process_memory_rss_bytes{job=\"nktp-daemonset\"}))",
+          "legendFormat": "reporting collectors",
+          "refId": "A"
+        }
+      ],
+      "description": "Collectors with recent self metrics. This is not the desired DaemonSet pod count."
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "DaemonSet CPU cores",
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "cores"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (k8s_node_name) (rate(otelcol_process_cpu_seconds_total{job=\"nktp-daemonset\"}[5m]))",
+          "legendFormat": "{{k8s_node_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "DaemonSet memory (RSS)",
+      "gridPos": {
+        "x": 12,
+        "y": 21,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (k8s_node_name) (otelcol_process_memory_rss_bytes{job=\"nktp-daemonset\"})",
+          "legendFormat": "{{k8s_node_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Target Allocator collectors",
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "opentelemetry_allocator_collectors_discovered{job=\"nktp-targetallocator\"}",
+          "legendFormat": "{{instance}} discovered",
+          "refId": "A"
+        },
+        {
+          "expr": "opentelemetry_allocator_collectors_allocatable{job=\"nktp-targetallocator\"}",
+          "legendFormat": "{{instance}} allocatable",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Target Allocator targets",
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "opentelemetry_allocator_targets{job=\"nktp-targetallocator\"}",
+          "legendFormat": "{{instance}} discovered",
+          "refId": "A"
+        },
+        {
+          "expr": "opentelemetry_allocator_targets_remaining{job=\"nktp-targetallocator\"}",
+          "legendFormat": "{{instance}} after filtering",
+          "refId": "B"
+        },
+        {
+          "expr": "opentelemetry_allocator_targets_unassigned{job=\"nktp-targetallocator\"}",
+          "legendFormat": "{{instance}} unassigned",
+          "refId": "C"
+        }
+      ],
+      "description": "Counts per Target Allocator replica. Replicas can report the same target set, so these counts are not summed."
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Targets per collector",
+      "gridPos": {
+        "x": 12,
+        "y": 35,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "opentelemetry_allocator_targets_per_collector{job=\"nktp-targetallocator\"}",
+          "legendFormat": "{{instance}} / {{collector_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Target Allocator CPU cores",
+      "gridPos": {
+        "x": 0,
+        "y": 42,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "cores"
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"nktp-targetallocator\"}[5m])",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Target Allocator memory (RSS)",
+      "gridPos": {
+        "x": 12,
+        "y": 42,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "expr": "process_resident_memory_bytes{job=\"nktp-targetallocator\"}",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

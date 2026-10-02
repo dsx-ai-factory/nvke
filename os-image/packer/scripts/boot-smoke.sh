@@ -143,6 +143,19 @@ test "${root_bytes}" -ge "${minimum_root_bytes}"
 systemctl is-enabled nke-agent.service
 systemctl is-enabled spire-agent.service
 systemctl is-enabled nke-spire-configure.service
+# multipathd must stay masked, both units: it races Longhorn for newly
+# attached volumes and leaves them unformattable (see provision.sh for the
+# mechanism). is-enabled exits non-zero for a masked unit, so compare its
+# output rather than relying on its status.
+test "$(systemctl is-enabled multipathd.service)" = masked
+test "$(systemctl is-enabled multipathd.socket)" = masked
+# errexit does not apply to a negated command, so branch explicitly rather
+# than writing `! systemctl is-active` -- that would let the rest of the
+# assertions run, and pass, with multipathd active.
+if systemctl is-active --quiet multipathd.service; then
+  echo "boot-smoke: multipathd.service is active; it will claim Longhorn volumes" >&2
+  exit 1
+fi
 test -x /usr/local/bin/nke-agent
 test -x /usr/local/bin/nke-agent-updater
 # The mode bits say nothing about whether the binary runs: -version exits 0
@@ -157,6 +170,7 @@ done
 systemctl cat nke-agent.service | grep -Fx 'ExecStartPre=/usr/lib/nke/wait-spiffe-socket.sh'
 test -x /usr/local/bin/spire-agent
 test -x /usr/local/lib/spire-agent/tpm_attestor_agent
+test -x /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent
 test -x /usr/local/bin/get_tpm_pubhash
 test -x /usr/lib/nke/spire-configure.sh
 test -x /usr/lib/nke/wait-spiffe-socket.sh
@@ -169,10 +183,13 @@ test "$(dpkg-query -S /usr/local/bin/spire-agent | cut -d: -f1)" = spire-agent
 test ! -e /etc/systemd/system/spire-agent.service
 id -u spire >/dev/null
 # A profile's agent.conf carries plugin_checksum = "${TPM_PLUGIN_CHECKSUM}"
-# verbatim. Without both halves of this, SPIRE compares the plugin against that
-# literal string, refuses to load it, and the node never attests.
+# or "${DSX_IMDS_PLUGIN_CHECKSUM}" verbatim. Without both halves of this, SPIRE
+# compares the plugin against that literal string, refuses to load it, and the
+# node never attests.
 test "$(. /etc/spire-agent/spire-agent.env; echo "${TPM_PLUGIN_CHECKSUM}")" \
     = "$(sha256sum /usr/local/lib/spire-agent/tpm_attestor_agent | cut -d' ' -f1)"
+test "$(. /etc/spire-agent/spire-agent.env; echo "${DSX_IMDS_PLUGIN_CHECKSUM}")" \
+    = "$(sha256sum /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent | cut -d' ' -f1)"
 grep -Fq -- -expandEnv /lib/systemd/system/spire-agent.service
 # Persistent upload scratch must not remain in the golden image.
 test ! -e /var/tmp/nke-image

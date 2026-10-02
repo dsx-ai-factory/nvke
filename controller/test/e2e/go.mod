@@ -3,6 +3,7 @@ module github.com/dsx-ai-factory/nke/controller/test/e2e
 go 1.26.5
 
 require (
+	github.com/NVIDIA/ncx-infra-controller-rest v1.3.0
 	github.com/dsx-ai-factory/nke/controller/api v0.0.0-00010101000000-000000000000
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
@@ -10,6 +11,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.33.0
 	github.com/onsi/gomega v1.43.1
 	github.com/stretchr/testify v1.12.1
+	golang.org/x/crypto v0.57.0
 	golang.org/x/sync v0.23.0
 	k8s.io/api v0.37.0
 	k8s.io/apimachinery v0.37.0

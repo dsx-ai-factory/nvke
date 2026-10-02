@@ -1484,13 +1484,62 @@ exec "${REAL_MV:?}" "$@"
             self.assertNotEqual(dirty.returncode, 0)
             self.assertIn("source checkout is dirty", dirty.stderr)
 
-    def test_collection_copies_exact_bytes_and_prints_one_basename(self):
+    def test_ubuntu_release_selects_the_installer_iso_for_both_flavors(self):
+        # Literal, not derived: 26.04's URLs are what consumers already pin, so
+        # a change to the derivation must not move them quietly.
         cases = (
-            ("fde", "amd64"),
-            ("non-fde", "arm64"),
+            ("26.04.1", "amd64",
+             "https://releases.ubuntu.com/26.04/ubuntu-26.04.1-live-server-amd64.iso",
+             "file:https://releases.ubuntu.com/26.04/SHA256SUMS"),
+            ("26.04.1", "arm64",
+             "https://cdimage.ubuntu.com/releases/26.04/release/ubuntu-26.04.1-live-server-arm64.iso",
+             "file:https://cdimage.ubuntu.com/releases/26.04/release/SHA256SUMS"),
+            ("24.04.5", "amd64",
+             "https://releases.ubuntu.com/24.04/ubuntu-24.04.5-live-server-amd64.iso",
+             "file:https://releases.ubuntu.com/24.04/SHA256SUMS"),
+            ("24.04.5", "arm64",
+             "https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.5-live-server-arm64.iso",
+             "file:https://cdimage.ubuntu.com/releases/24.04/release/SHA256SUMS"),
         )
-        for variant, arch in cases:
-            with self.subTest(variant=variant, arch=arch), tempfile.TemporaryDirectory() as tmp:
+        for release, arch, iso_url, iso_checksum in cases:
+            with self.subTest(release=release, arch=arch):
+                variables = (f"UBUNTU_RELEASE={release}", f"ARCH={arch}")
+                for name, expected in (
+                    ("ISO_URL", iso_url),
+                    ("ISO_CHECKSUM", iso_checksum),
+                    ("UBUNTU_VERSION", release),
+                ):
+                    result = self.run_make(
+                        f"print-{name}", cwd=PACKER_DIR, variables=variables
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.strip(), expected)
+
+    def test_explicit_iso_url_still_names_the_image_over_ubuntu_release(self):
+        # ISO_URL stays authoritative, so an override cannot produce an image
+        # labelled as a release it is not.
+        result = self.run_make(
+            "print-UBUNTU_VERSION",
+            cwd=PACKER_DIR,
+            variables=(
+                "UBUNTU_RELEASE=26.04.1",
+                "ARCH=amd64",
+                "ISO_URL=https://example.invalid/ubuntu-24.04.9-live-server-amd64.iso",
+            ),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "24.04.9")
+
+    def test_collection_copies_exact_bytes_and_prints_one_basename(self):
+        # Collection re-derives the expected filename from ISO_URL, so a 24.04
+        # leg must pass the same UBUNTU_RELEASE or collection refuses.
+        cases = (
+            ("fde", "amd64", "26.04.1"),
+            ("non-fde", "arm64", "26.04.1"),
+            ("non-fde", "amd64", "24.04.5"),
+        )
+        for variant, arch, release in cases:
+            with self.subTest(variant=variant, arch=arch, release=release), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 source = root / "source"
                 workspace = root / "workspace"
@@ -1498,7 +1547,7 @@ exec "${REAL_MV:?}" "$@"
                 commit = self.create_source_repo(source)
                 output = workspace / f"output-{variant}"
                 output.mkdir()
-                name = f"nke-node-{variant}-ubuntu-26.04.1-{arch}.qcow2"
+                name = f"nke-node-{variant}-ubuntu-{release}-{arch}.qcow2"
                 payload = f"{variant}-{arch}-bytes".encode()
                 (output / name).write_bytes(payload)
                 dist = workspace / "dist"
@@ -1511,6 +1560,7 @@ exec "${REAL_MV:?}" "$@"
                         f"EXPECTED_SOURCE_COMMIT={commit}",
                         f"QCOW2_DIST_DIR={dist}",
                         f"ARCH={arch}",
+                        f"UBUNTU_RELEASE={release}",
                     ),
                 )
 
@@ -1679,16 +1729,26 @@ image_transport_ref docker.io/calico/node:v3.30.1
         )
         if modern_bash is None:
             self.skipTest("Bash 4 or newer is required for CNI bundle tests")
+        # `make lock` resolves the tag through the mirror, with retry and
+        # fallback. A build never resolves a tag to decide what to fetch: it
+        # probes the mirror once for the locked digest, and reads the tag only
+        # for the moved-tag notice.
         cases = (
-            ("digest miss", "1", "0", 3, 0),
-            ("transfer miss", "0", "1", 1, 3),
+            ("lock: digest miss", "--write-lock", "1", "0", "0", 3, 0, 0, True),
+            ("lock: transfer miss", "--write-lock", "0", "1", "0", 1, 3, 0, True),
+            ("build: mirror serves digest", "", "0", "0", "0", 1, 1, 1, False),
+            ("build: mirror lacks digest", "", "0", "0", "1", 1, 0, 1, True),
         )
         for (
             name,
+            lock_flag,
             digest_fails,
             pull_fails,
+            manifest_fails,
             mirror_digests,
             mirror_pulls,
+            mirror_manifests,
+            canonical_pull,
         ) in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
@@ -1713,6 +1773,13 @@ case "$operation" in
       exit 1
     fi
     printf '%s\\n' "${LOCKED_DIGEST:?}"
+    ;;
+  manifest)
+    ref="${@: -1}"
+    if [[ "$ref" == mirror.gcr.io/* && "${MIRROR_MANIFEST_FAIL:-0}" == 1 ]]; then
+      exit 1
+    fi
+    printf '{}\\n'
     ;;
   pull)
     output="${@: -1}"
@@ -1756,7 +1823,7 @@ if [[ "$(uname -s)" == Darwin ]]; then
 fi
 CNI=cni-test
 CNI_DOCKERHUB_MIRROR=mirror.gcr.io
-parse_bundle_args --version v1 --dist "$2/dist" --lock-dir "$2/locks" --crane "$3" --arch amd64
+parse_bundle_args --version v1 --dist "$2/dist" --lock-dir "$2/locks" --crane "$3" --arch amd64 ${4:+"$4"}
 stage_images
 """
 
@@ -1769,6 +1836,7 @@ stage_images
                         str(bundle_lib),
                         str(root),
                         str(crane),
+                        lock_flag,
                     ],
                     env={
                         **os.environ,
@@ -1776,6 +1844,7 @@ stage_images
                         "LOCKED_DIGEST": digest,
                         "MIRROR_DIGEST_FAIL": digest_fails,
                         "MIRROR_PULL_FAIL": pull_fails,
+                        "MIRROR_MANIFEST_FAIL": manifest_fails,
                     },
                     check=False,
                     capture_output=True,
@@ -1798,11 +1867,32 @@ stage_images
                     ),
                     mirror_pulls,
                 )
-                self.assertTrue(
+                self.assertEqual(
+                    sum(
+                        line.startswith("manifest ") and "mirror.gcr.io/" in line
+                        for line in call_lines
+                    ),
+                    mirror_manifests,
+                )
+                if not lock_flag:
+                    # A build pins from the lock: no tag is resolved to decide
+                    # what to fetch, and every pull names a digest.
+                    self.assertTrue(
+                        all(
+                            f"@{digest}" in line
+                            for line in call_lines
+                            if line.startswith("pull ")
+                        )
+                    )
+                # The canonical reference carries the transfer whenever the
+                # mirror did not; when the mirror served it, nothing should
+                # have reached docker.io.
+                self.assertEqual(
                     any(
                         line.startswith("pull ") and "docker.io/" in line
                         for line in call_lines
-                    )
+                    ),
+                    canonical_pull,
                 )
                 with tarfile.open(root / "dist/v1/images.tgz", "r:gz") as archive:
                     manifest_member = next(

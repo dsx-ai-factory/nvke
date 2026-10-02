@@ -150,6 +150,22 @@ func TestClusterProviderGettersAndSetters(t *testing.T) {
 	require.Error(t, err, "a capi cluster has no nico payload")
 }
 
+func TestClusterResolveProviderType(t *testing.T) {
+	nico := db.Cluster{ProviderType: db.ProviderTypeNico}
+	providerType, err := nico.ResolveProviderType()
+	require.NoError(t, err)
+	require.Equal(t, db.ProviderTypeNico, providerType)
+
+	capi := db.Cluster{ProviderType: db.ProviderTypeCAPI}
+	providerType, err = capi.ResolveProviderType()
+	require.NoError(t, err)
+	require.Equal(t, db.ProviderTypeCAPI, providerType)
+
+	unset := db.Cluster{}
+	_, err = unset.ResolveProviderType()
+	require.Error(t, err)
+}
+
 func newValidCluster(opts ...func(*db.Cluster)) db.Cluster {
 	now := time.Now()
 	cluster := db.Cluster{

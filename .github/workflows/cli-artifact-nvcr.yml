@@ -219,3 +219,18 @@ jobs:
         run: |
           set -euo pipefail
           oras manifest fetch --pretty "${REPO}:sha-${GITHUB_SHA}-linux-amd64"
+
+      # Four references for the same reason as cli-artifact.yml: no index, so
+      # the platform tags are the whole of what was published. The component
+      # carries the destination because both matrix legs publish the same
+      # binaries to different orgs, and two legs uploading
+      # release-digest-nkectl-nvcr would collide.
+      - name: Record the published digests
+        uses: ./.github/actions/record-digest
+        with:
+          references: |
+            ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}-linux-amd64
+            ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}-linux-arm64
+            ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}-darwin-amd64
+            ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}-darwin-arm64
+          component: nkectl-nvcr-${{ matrix.destination }}

@@ -35,3 +35,24 @@ subjects:
   - kind: ServiceAccount
     name: {{ $values.kubernetes.targetAllocator.serviceAccount | default $name }}
     namespace: {{ $.Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nktp-large-target-metrics-scrape-{{ $.Release.Namespace }}
+rules:
+  - nonResourceURLs: [/metrics]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nktp-large-target-metrics-scrape-{{ $.Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nktp-large-target-metrics-scrape-{{ $.Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $values.kubernetes.serviceAccount | default "nktp-large-target-metrics-collector" }}
+    namespace: {{ $.Release.Namespace }}

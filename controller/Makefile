@@ -32,9 +32,7 @@ endif
 
 # golangci-lint pin and bootstrap, shared with every other module.
 #
-# Empty, not "off", because this module lints against the root vendor/ tree, so
-# the workspace stays on. .golangci.yml says the same with
-# modules-download-mode: vendor, and lint.yml:92 does the same for this job.
+# Keep the workspace on so lint resolves the same module graph as builds.
 GOLANGCI_LINT_GOWORK :=
 include ../make/tool-versions.mk
 include ../make/golangci.mk
@@ -70,6 +68,17 @@ help: ## Display this help.
 lint: ## Lint source files. (run by the merge gate)
 	@$(GOLANGCI_LINT_RUN) run --timeout 20m --concurrency 4 --max-same-issues 0 --max-issues-per-linter 0 ./...
 
+##@ MachineImage and releases
+
+# OS profiles are being replaced by MachineImage, ClusterRelease and
+# NodePoolRelease custom resources, generated from an OS profile tree (Argo CD
+# applies the fleet's, see nke-site-deploy/cwe-profiles/releases). The generator
+# validates each manifest against the CRDs before it writes anything.
+
+.PHONY: fixture-releases
+fixture-releases: ## Regenerate test/fixtures/releases from test/fixtures/profiles.
+	go run ./hack/osprofiles-to-crs --profiles test/fixtures/profiles --output test/fixtures/releases --license Apache-2.0 --gitops=false
+
 .PHONY: license
 license: ## Ensure license headers at code.
 	go run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" -ignore '.local/**' -ignore 'hack/**' -ignore 'test/fixtures/profiles/**' -ignore 'test/fixtures/capnico-crds/**' -ignore '**/testUserData.yaml' -ignore 'internal/kubeadmconfig/testdata/**' -ignore 'internal/controllers/tenantaccess/testdata/**' -ignore 'nico-sim/ui/vendor/**' -ignore 'nico-sim/test/integration/testutil/testdata/**' -ignore 'nico-sim/.dev/**' -ignore 'deploy/charts/**' .
@@ -92,13 +101,18 @@ generate: ## Run every generator in this module and in api/.
 # Split out from `generate` so it can run without the rest of the module.
 # Every //go:generate directive in the controller currently lives in
 # api/generate.go, but `go generate ./...` above still has to load this
-# module's package graph -- which reaches cluster-api-provider-nico and
-# therefore needs either the network or the workspace vendor/ tree. The api
+# module's package graph -- which may need public module downloads. The api
 # module has neither problem: it is self-contained, so this target is the half
 # that CI can run.
+# GOWORK=off, so the self-contained api module is resolved on its own, and
+# GOTOOLCHAIN pinned to the Go version api/go.mod declares, which is the version
+# generate-check.yml installs. The embedded copy of openapi.yaml in server.gen.go
+# is gzip-compressed and compress/flate output differs between Go releases, so a
+# newer toolchain (go.work asks for one) regenerates a different blob and the
+# gate rejects it.
 .PHONY: generate-api
 generate-api: ## Regenerate the OpenAPI client, server and models.
-	cd api && go generate ./...
+	cd api && GOWORK=off GOTOOLCHAIN=go$$(awk '/^go /{print $$2; exit}' go.mod) go generate ./...
 
 # Verify the committed oapi-codegen output is reproducible with the pinned
 # generator (api/oapi-codegen.mod) and in sync with api/openapi.yaml. Catches an
@@ -128,8 +142,7 @@ print-%:
 	@echo '$($*)'
 
 .PHONY: build
-# -buildvcs=false because the version comes from the -X ldflag below. See the note
-# on work-check-offline in the root Makefile.
+# -buildvcs=false because the version comes from the -X ldflag below.
 build: ## Build controller into bin/.
 	CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags "-X github.com/dsx-ai-factory/nke/controller/internal/version.Version=${BUILD_VERSION} $(RELEASE_LDFLAGS)" -o ./bin/$(WORKER_BIN_NAME) ./cmd/worker/
 
@@ -279,9 +292,8 @@ e2e-gofail: ## Execute gofail e2e tests against a local Temporal dev server.
 .PHONY: docker-build-local
 docker-build-local: ## Build the controller image for amd64 and load it into the local daemon
 	@# The build context is the repository root: the controller is a member of
-	@# the root Go workspace, and the image build needs go.work, the committed
-	@# vendor/ tree, and the sibling modules. Every dependency comes from
-	@# vendor/, so the build needs no git credentials.
+	@# the root Go workspace, and the image build needs go.work and sibling
+	@# modules. Go downloads public dependencies into the builder cache.
 	@# amd64 only because --load does not support multi-platform images.
 	@# Use docker-build-multiarch to build both architectures.
 	DOCKER_BUILDKIT=1 docker build -f Dockerfile --platform linux/amd64 \

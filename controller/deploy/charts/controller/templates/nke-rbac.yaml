@@ -73,7 +73,17 @@ metadata:
 {{- if and .Values.spiffe.jwtExchangeEndpoint (not .Values.spiffe.capdManagerSubject) }}
 {{- fail "spiffe.capdManagerSubject must be set when spiffe.jwtExchangeEndpoint is set: the exchange may rewrite capd-manager's sub claim, so the default subject would not authorize CAPD against tenant clusters" }}
 {{- end }}
-{{- $cweSubject := .Values.spiffe.cweSubject | default (printf "spiffe://%s/nke-service/cloud-workflow-engine" $td) }}
+{{- /*
+  Derived from the effective service account name, not a hardcoded literal:
+  this is exactly what the ClusterSPIFFEID template issues
+  (spiffe://{{.TrustDomain}}/nke-service/{{.PodSpec.ServiceAccountName}}, see
+  deploy/k8s/spire-nke-services-spiffe-id.yaml), so the default always
+  matches the real SPIFFE ID SPIRE hands this controller's pod -- a renamed
+  serviceAccount.name (or a nameOverride/fullnameOverride change that moves
+  the effective SA name) never has to be reconciled by hand against this
+  value, and jwtExchangeEndpoint remains the only case that does.
+*/}}
+{{- $cweSubject := .Values.spiffe.cweSubject | default (printf "spiffe://%s/nke-service/%s" $td (include "controller.serviceAccountName" .)) }}
 {{- $capiManagerSubject := .Values.spiffe.capiManagerSubject | default (printf "spiffe://%s/nke-service/capi-manager" $td) }}
 {{- $capiKubeadmControlPlaneManagerSubject := .Values.spiffe.capiKubeadmControlPlaneManagerSubject | default (printf "spiffe://%s/nke-service/capi-kubeadm-control-plane-manager" $td) }}
 {{- $capdManagerSubject := .Values.spiffe.capdManagerSubject | default (printf "spiffe://%s/nke-service/capd-manager" $td) }}

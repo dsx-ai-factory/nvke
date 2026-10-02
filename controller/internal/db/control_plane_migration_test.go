@@ -114,8 +114,8 @@ func importedControlPlanePool(clusterID uuid.UUID, desired int) db.NodePool {
 	pool.SetNico(db.NicoNodePoolProvider{
 		OSProfile:             "nke-sc-os",
 		ConfigProfile:         "nke-sc-cp",
-		InstanceTypeID:        uuid.MustParse("d1a6401c-6b19-4261-92c3-79555cb56462"),
-		SubnetIDs:             []uuid.UUID{uuid.MustParse("53c42b79-3dbf-40e8-9363-75228d7b6e1b")},
+		InstanceTypeID:        uuid.MustParse("00000000-0000-4000-8000-000000000008"),
+		SubnetIDs:             []uuid.UUID{uuid.MustParse("00000000-0000-4000-8000-000000000003")},
 		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
 	})
 	return pool

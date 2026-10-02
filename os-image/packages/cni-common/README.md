@@ -17,8 +17,17 @@ stages its artifacts with `fetch` and `verify_artifact`, then calls
 `packaging/`; and `lock/<arch>/<version>.lock`.
 
 The lock has one `artifact <name> <sha256> <url>` line per fetched file and one
-`image <ref> <digest>` line per image. Builds enforce it; `make lock` rewrites
-the digests from upstream, with the image list seeded by hand.
+`image <ref> <digest>` line per image. `make lock` rewrites the digests from
+upstream, with the image list seeded by hand.
+
+A build fetches images at the digest the lock names and never resolves the tag,
+so what upstream has retagged since does not reach it. Fetched files are still
+verified by sha256 after download, because a URL has no digest to fetch by. A
+build does read the tag, through the configured mirror, to report one that has
+moved away from its locked digest — on stderr and without failing, as a prompt
+to review a `make lock` refresh rather than a broken build. Only `make lock`
+lets a tag decide what is fetched, so only a reviewed commit changes what gets
+built.
 
 One lock per architecture, because a digest resolves per platform. `make lock`
 takes the image list from the amd64 lock for every other architecture, so the
@@ -32,6 +41,6 @@ the distro package ships its own containerd and conflicts with Ubuntu's.
 Set `CNI_DOCKERHUB_MIRROR` to a registry host when Docker Hub reads must use a
 pull-through mirror. The mirror changes only Crane's transport reference. The
 committed lock and the image names imported on the node remain `docker.io/...`.
-Digest resolution and image transfer try the configured mirror first, then
-fall back to the canonical `docker.io` reference if the mirror misses or is
-unavailable. Every successful route must still match the committed digest.
+A build uses the mirror when it serves the locked digest, and the canonical
+`docker.io` reference otherwise; `make lock` resolves the tag through the mirror
+first and falls back the same way. Either route transfers the same digest.

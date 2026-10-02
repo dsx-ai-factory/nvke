@@ -18,7 +18,7 @@
 #
 # Transport:
 #   --ssh              Force SSH transport
-#   --tsh              Force Teleport transport (auto-includes vendor, sets -mod=vendor)
+#   --tsh              Force Teleport transport
 #   (default: auto-detects — uses Teleport if `tsh` is available and logged in)
 #
 # Test selection:
@@ -40,7 +40,6 @@
 #
 # Sync:
 #   --skip-sync        Skip rsync step (useful when code is already up to date)
-#   --vendor           Force vendor/ inclusion in sync (auto-enabled with --tsh)
 #
 # Examples:
 #   # Run all libvirt tests on SSH machine
@@ -71,7 +70,6 @@ PRESERVE_LOGS=false
 KEEP_VMS=false
 CLEANUP_VMS=false
 SKIP_SYNC=false
-INCLUDE_VENDOR=false
 BATCH=false
 BATCH_COUNT=5
 IMAGE_URL=""
@@ -83,7 +81,7 @@ WORKERS=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --ssh)           TRANSPORT="ssh"; shift ;;
-    --tsh)           TRANSPORT="tsh ssh"; INCLUDE_VENDOR=true; shift ;;
+    --tsh)           TRANSPORT="tsh ssh"; shift ;;
     --run)           RUN_FILTER="$2"; shift 2 ;;
     --timeout)       TIMEOUT="$2"; shift 2 ;;
     --production)    PRODUCTION=true; shift ;;
@@ -91,7 +89,6 @@ while [[ $# -gt 0 ]]; do
     --keep-vms)      KEEP_VMS=true; shift ;;
     --cleanup-vms)   CLEANUP_VMS=true; shift ;;
     --skip-sync)     SKIP_SYNC=true; shift ;;
-    --vendor)        INCLUDE_VENDOR=true; shift ;;
     --batch)         BATCH=true; shift ;;
     --batch-count)   BATCH_COUNT="$2"; shift 2 ;;
     --image-url)     IMAGE_URL="$2"; shift 2 ;;
@@ -125,7 +122,6 @@ fi
 if [[ -z "$TRANSPORT" ]]; then
   if command -v tsh >/dev/null 2>&1 && tsh status >/dev/null 2>&1; then
     TRANSPORT="tsh ssh"
-    INCLUDE_VENDOR=true
   else
     TRANSPORT="ssh"
   fi
@@ -177,11 +173,8 @@ if [[ "$SKIP_SYNC" == false ]]; then
     --exclude='logs'
   )
 
-  # Teleport machines can't reach our Go module proxy, so they need vendored
-  # dependencies. SSH machines can download modules, so we exclude vendor/.
-  if [[ "$INCLUDE_VENDOR" == false ]]; then
-    RSYNC_EXCLUDES+=(--exclude='vendor')
-  fi
+  # Do not sync a locally generated dependency bundle to the remote host.
+  RSYNC_EXCLUDES+=(--exclude='vendor')
 
   # shellcheck disable=SC2086
   rsync -avz -e "$TRANSPORT" \
@@ -205,11 +198,6 @@ REMOTE_CMD="export PATH=\$PATH:/usr/local/go/bin:\$HOME/go/bin"
 # DHCP env vars required for iPXE/DHCP-enabled tests
 REMOTE_CMD+=" && export NICO_VMS_DHCP_HOSTS_DIR=/var/lib/nico-vms/dhcp-hosts"
 REMOTE_CMD+=" && export NICO_VMS_DHCP_LEASE_FILE=/var/run/nico-vms-dnsmasq.leases"
-
-# Teleport machines need vendored module mode
-if [[ "$INCLUDE_VENDOR" == true ]]; then
-  REMOTE_CMD+=" && export GONOSUMCHECK='*' GOFLAGS=-mod=vendor"
-fi
 
 if [[ "$PRODUCTION" == true ]]; then
   REMOTE_CMD+=" && export NICO_VMS_TEST_PRODUCTION_IMAGE=true"
@@ -251,8 +239,9 @@ if [[ -n "$WORKERS" ]]; then
   REMOTE_CMD+=" && export NICO_VMS_RECONCILE_WORKERS=${WORKERS}"
 fi
 
-# Build the go test invocation
-TEST_CMD="go test -tags=integration -count=1 -timeout ${TIMEOUT} -v ./test/integration/libvirt"
+# Force module mode even if an earlier run left vendor/ on the remote host.
+# The remote host must be able to download public Go modules on a cold cache.
+TEST_CMD="go test -mod=mod -tags=integration -count=1 -timeout ${TIMEOUT} -v ./test/integration/libvirt"
 
 if [[ "$BATCH" == true ]]; then
   TEST_CMD+=" -run TestBatchProductionCloudInit"

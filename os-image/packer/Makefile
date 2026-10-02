@@ -57,6 +57,13 @@ export NKE_PACKAGE_BUILDER ?= auto
 # stable identifier instead of depending on a partition or device path.
 ROOT_FS_LABEL ?= cloudimg-rootfs
 
+# Serial console the INSTALLED system uses. Empty keeps the architecture default
+# (ttyS0 on amd64, ttyAMA0 on arm64), which is what Forge and tenant nodes
+# expect; CSC control-plane hardware puts SOL on the second UART, so it wants
+# SERIAL_CONSOLE=ttyS1. The installer's own console stays on the first UART
+# either way, because the build VM captures its log there.
+SERIAL_CONSOLE ?=
+
 # amd64 or arm64. Drives the ISO default, source package preparation, and the
 # explicit Packer architecture variable that selects QEMU, firmware, console,
 # and NVIDIA kernel behavior.
@@ -76,12 +83,24 @@ ARCH ?= amd64
 #
 # Use 26.04.1 to avoid the GA installer's intermittent overlayfs crash
 # during curtin extraction. Reproduction details: PR #737.
+#
+# UBUNTU_RELEASE picks the point release, and with it the image flavor. 24.04 is
+# published alongside 26.04 because the DSX CSC DPU stack installs Ubuntu 24.04
+# host packages onto the node and no ubuntu2604 DOCA host package exists.
+# Nothing else is per-release: linux-nvidia(-64k) and the split linux-firmware-*
+# packages are in noble-updates too, and the FDE variant's initramfs-tools
+# install is a no-op on 24.04.
+#
+# The archive directory is this value's major.minor. An explicit ISO_URL still
+# wins and still names the output: UBUNTU_VERSION is read back out of the URL.
+UBUNTU_RELEASE ?= 26.04.1
+override UBUNTU_SERIES := $(word 1,$(subst ., ,$(UBUNTU_RELEASE))).$(word 2,$(subst ., ,$(UBUNTU_RELEASE)))
 ifeq ($(ARCH),arm64)
-  ISO_URL      ?= https://cdimage.ubuntu.com/releases/26.04/release/ubuntu-26.04.1-live-server-arm64.iso
-  ISO_CHECKSUM ?= file:https://cdimage.ubuntu.com/releases/26.04/release/SHA256SUMS
+  ISO_URL      ?= https://cdimage.ubuntu.com/releases/$(UBUNTU_SERIES)/release/ubuntu-$(UBUNTU_RELEASE)-live-server-arm64.iso
+  ISO_CHECKSUM ?= file:https://cdimage.ubuntu.com/releases/$(UBUNTU_SERIES)/release/SHA256SUMS
 else
-  ISO_URL      ?= https://releases.ubuntu.com/26.04/ubuntu-26.04.1-live-server-$(ARCH).iso
-  ISO_CHECKSUM ?= file:https://releases.ubuntu.com/26.04/SHA256SUMS
+  ISO_URL      ?= https://releases.ubuntu.com/$(UBUNTU_SERIES)/ubuntu-$(UBUNTU_RELEASE)-live-server-$(ARCH).iso
+  ISO_CHECKSUM ?= file:https://releases.ubuntu.com/$(UBUNTU_SERIES)/SHA256SUMS
 endif
 override UBUNTU_VERSION := $(patsubst ubuntu-%-live-server-$(ARCH).iso,%,$(notdir $(ISO_URL)))
 
@@ -332,6 +351,7 @@ prepare-artifacts: preflight
 	trap 'exit 1' 1 2 15; \
 	ARTIFACTS_DIR="$$stage" \
 	ARCH="$(ARCH)" \
+	NKE_TARGET_UBUNTU_SERIES="$(UBUNTU_SERIES)" \
 	"$(PACKER_ROOT)/scripts/fetch-artifacts.sh"; \
 	if [ -L "$$artifacts" ] || { [ -e "$$artifacts" ] && [ ! -d "$$artifacts" ]; }; then \
 		echo "refusing unsafe artifact staging path: $$artifacts" >&2; \
@@ -382,7 +402,7 @@ check-deps:
 		echo "ssh-keygen is required to prepare the Packer SSH key pair" >&2; \
 		exit 1; \
 	}
-	@ARCH=$(ARCH) bash ./scripts/package-builder.sh --check
+	@ARCH=$(ARCH) NKE_TARGET_UBUNTU_SERIES=$(UBUNTU_SERIES) bash ./scripts/package-builder.sh --check
 	@command -v $(PYTHON) >/dev/null 2>&1 || { \
 		echo "Python 3.10 or newer is required to validate the compressed QCOW2" >&2; \
 		exit 1; \
@@ -407,6 +427,13 @@ check-deps:
 .PHONY: test
 test: ## Check artifact staging, QCOW2 collection, and workflow wiring.
 	$(PYTHON) -B -m unittest discover -s scripts -p 'test_*.py'
+
+# Read one derived value, the same way make/versions.mk does for the repository
+# root. The values that depend on UBUNTU_RELEASE and ARCH are computed here and
+# nowhere else, so this is how a caller or a test sees what a given pair
+# resolves to without starting a build.
+print-%:
+	@echo "$($*)"
 
 # Copy the one completed image without changing its bytes. Collection is a
 # separate target so local builds and CI use the same source-owned boundary.
@@ -513,6 +540,7 @@ _os-image-fde: prepare-image-build
 		-var "ssh_timeout=$(SSH_TIMEOUT)" \
 		-var "boot_wait=$(BOOT_WAIT)" \
 		-var "root_fs_label=$(ROOT_FS_LABEL)" \
+		-var "serial_console=$(SERIAL_CONSOLE)" \
 		"$(PACKER_PROJECT)"
 	mkdir "$(CURDIR)/output-fde"
 	mv "$(PACKER_OUTPUT_DIRECTORY_FDE)/fde/nke-node.qcow2" \
@@ -551,6 +579,7 @@ _os-image-non-fde: prepare-image-build
 		-var "ssh_timeout=$(SSH_TIMEOUT)" \
 		-var "boot_wait=$(BOOT_WAIT)" \
 		-var "root_fs_label=$(ROOT_FS_LABEL)" \
+		-var "serial_console=$(SERIAL_CONSOLE)" \
 		"$(PACKER_PROJECT)"
 	mkdir "$(CURDIR)/output-non-fde"
 	mv "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)/non-fde/nke-node.qcow2" \

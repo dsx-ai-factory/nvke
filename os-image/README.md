@@ -1,9 +1,13 @@
 # Reference node OS image
 
-Ubuntu 26.04 image that ships `nke-agent` and `spire-agent` so a site
+Ubuntu image that ships `nke-agent` and `spire-agent` so a site
 controller can reach the node over SPIFFE mTLS, built on Ubuntu's
 NVIDIA-tuned kernel flavor (`linux-nvidia`/`linux-nvidia-64k`), not the
 generic default. The contract is [SPEC.md](SPEC.md).
+
+26.04 LTS is the default. 24.04 LTS is built and published alongside it, for
+consumers whose other software pins that release — see `UBUNTU_RELEASE` under
+[Build the OS image](#build-the-os-image).
 
 | Path | What |
 |---|---|
@@ -52,7 +56,47 @@ make -C os-image boot-smoke REQUIRE_ACCELERATION=1
 
 Use `ARCH=arm64` for an arm64 image on a matching Linux KVM host (`image-native`
 always needs one, regardless of which host builds the packages), or `VARIANT=fde`
-for the encrypted image. Image baking uses the existing package Make targets.
+for the encrypted image. `UBUNTU_RELEASE` selects the Ubuntu point release, and
+with it the image flavor — it defaults to `26.04.1`, and `UBUNTU_RELEASE=24.04.5`
+builds the 24.04 LTS flavor instead:
+
+```bash
+make -C os-image/packer os-image-non-fde ARCH=amd64 UBUNTU_RELEASE=24.04.5
+```
+
+The point release lands in the output filename, so the two flavors never
+collide on disk (`nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2`). Pass the same
+`UBUNTU_RELEASE` to `collect-qcow2-*`, which re-derives that expected name.
+A package builder newer than the target release cannot build the image: the
+`nke-agent` .deb declares a bare `Depends: libc6`, so an agent compiled against a
+newer glibc installs cleanly and then fails to exec. The builder enforces this —
+`auto` selects the Nix VM when the host's Ubuntu is newer than the target, and
+an explicit `NKE_PACKAGE_BUILDER=host` is rejected before packaging. An older
+host is fine, since older glibc runs on newer Ubuntu. `boot-smoke` also runs
+`nke-agent -version` inside the guest as a backstop.
+
+`SERIAL_CONSOLE` selects the UART the **installed** system sends kernel output
+to. Empty (the default) keeps the architecture default — `ttyS0` on amd64,
+`ttyAMA0` on arm64 — so Forge and tenant nodes are unaffected. CSC
+control-plane hardware uses the second UART:
+
+```bash
+make -C os-image/packer os-image-non-fde SERIAL_CONSOLE=ttyS1
+```
+
+The image writes `console=tty0 console=<value>,115200` to
+`/etc/default/grub.d/99-console.cfg`. The **last** `console=` owns
+`/dev/console`, so the serial one is the owner and the getty follows it.
+
+Only the installed system moves; the installer keeps the first UART, where the
+build VM captures its log. A locally built `ttyS1` image therefore shows nothing
+in `run-vm`/`boot-smoke`'s serial view — QEMU gives the guest one UART — but
+those tools check over SSH and still pass.
+
+Packer validates against `^tty[A-Za-z0-9]+$`. That is a boundary, not a typo
+check: the value reaches a shell command in the autoinstall late-commands.
+
+Image baking uses the existing package Make targets.
 `NKE_PACKAGE_BUILDER=auto|host|nix` picks the package builder: `auto` builds on
 a matching Linux host and otherwise uses the
 [NixOS package-builder VM](nix/README.md), which returns the packages to the
@@ -106,7 +150,7 @@ and both systemd units. Startup is deferred during the bake with
 and socket wait across package upgrades.
 The baked agent is whatever your checkout says — no prebuilt artifact is
 pulled. To bake a released agent, check out its `agent/vX.Y.Z` tag first.
-The SPIRE agent and TPM tools come from
+The SPIRE agent, TPM tools, and DSX IMDS node attestor come from
 the `spire-agent` .deb built at bake time out of
 [`packages/spire-agent/`](packages/spire-agent/), pinned by version and
 SHA-256 in its lock; the build installs that package into the image rather than
@@ -395,19 +439,16 @@ build-and-go FDE image without a per-node secret-provisioning story.
 Verify a node closed that window with `luks-tpm-verify` before trusting
 TPM-only unlock in production.
 
-The workflow's amd64 leg runs on `linux-amd64-gpu-l4-latest-1`, chosen
-specifically for real `/dev/kvm` — a container-based pool tried earlier had
-none, forcing every bake onto `tcg` software emulation (confirmed directly: a
-full FDE bake took 1h39m under `tcg` vs a few minutes locally under real
-KVM). The job's "Enable KVM access" step fails immediately if that
-assumption turns out wrong, rather than silently falling back to the
-~10x-slower emulated path. The arm64 leg runs natively on
-`arc-arm64-kvm`, also with `/dev/kvm`; the workflow fails immediately if
-that device is absent or unusable. The Makefile still retains its portable
-same-architecture KVM probe and TCG fallback for local builds.
+The workflow builds each architecture natively on the `arc-amd64-kvm` and
+`arc-arm64-kvm` runners, chosen for real `/dev/kvm`: under `tcg` software
+emulation a full FDE bake took 1h39m on amd64, and arm64 never finished. The
+job's "Enable KVM access" step fails immediately if `/dev/kvm` is absent or
+unusable, rather than silently falling back to the ~10x-slower emulated path.
+The Makefile still retains its portable same-architecture KVM probe and TCG
+fallback for local builds.
 
 If the FDE/non-FDE build or boot-smoke steps fail in CI, download the
-`fde-install-console-logs` artifact from the run — it's the guest's own
+`install-console-logs-<arch>[-ubuntu24.04]-<variant>` artifact from the run — it's the guest's own
 serial console output (boot + autoinstall), uploaded regardless of outcome
 since there's no VNC/monitor access on the runner to inspect a stuck build
 interactively.

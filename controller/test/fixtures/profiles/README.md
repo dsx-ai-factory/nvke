@@ -4,6 +4,13 @@ The profiles tree the CWE E2E lanes deploy (`CWE_PROFILES_DIR`), built into the
 `cwe-profiles` image by the `Dockerfile` one directory up. The fleet profiles
 live in `nke-site-deploy/cwe-profiles`; this tree is a fixture for tests.
 
+Moving OS profiles into `MachineImage`, `ClusterRelease` and `NodePoolRelease`
+custom resources is in progress. It has not happened yet: CWE still reads the OS
+profiles from this tree. `../releases/` holds the resources generated from it
+with `make fixture-releases`, ready for when CWE starts reading them; a Go test
+fails when the two drift. Until then, treat this tree as the source of truth and
+`../releases/` as generated output that nothing consumes yet.
+
 Two kinds of entry live here, and the difference matters:
 
 | Profile | URLs | Boots |

@@ -28,49 +28,67 @@ import (
 
 const drainProbeLabel = "e2e.nvidia.com/drain-probe"
 
+// validateNodePoolScale scales each node pool up by one node and back down: the
+// worker pool, then the control-plane pool when the control plane is one. A
+// controller-managed control plane has no pool; the cp-controller entries scale
+// it instead.
 func validateNodePoolScale(test *tenantTest) {
-	It("scales a control-plane and worker node up and down", func(ctx context.Context) {
-		controlPlanePool, workerPool := expectScalePools(ctx, test)
-		originalControlPlaneCount := controlPlanePool.DesiredNodeCount
-		originalWorkerCount := workerPool.DesiredNodeCount
-		originalControlPlaneNodes := expectNodeIDs(ctx, test, controlPlanePool.ID)
-		originalWorkerNodes := expectNodeIDs(ctx, test, workerPool.ID)
+	It("scales the node pools up and down", func(ctx context.Context) {
+		pools := []api.NodePool{expectWorkerPool(ctx, test)}
+		if test.spec.ControlPlane.Config == nil {
+			pools = append(pools, expectControlPlanePool(ctx, test))
+		}
+		originalNodes := make([]map[openapi_types.UUID]struct{}, len(pools))
+		for i, pool := range pools {
+			originalNodes[i] = expectNodeIDs(ctx, test, pool.ID)
+		}
 
-		By("Incrementing the desired count of the control-plane and worker pools by 1")
-		expectSucceed(test.nke.UpdateNodePoolDesiredCount(ctx, controlPlanePool.ID, originalControlPlaneCount+1))
-		expectSucceed(test.nke.UpdateNodePoolDesiredCount(ctx, workerPool.ID, originalWorkerCount+1))
+		By("Incrementing the desired count of each node pool by 1")
+		for _, pool := range pools {
+			expectSucceed(test.nke.UpdateNodePoolDesiredCount(ctx, pool.ID, pool.DesiredNodeCount+1))
+		}
 
-		By("Waiting for the control-plane and worker pools to reach the new desired count")
-		waitForPoolCountsInParallel(ctx, test,
-			poolScale{pool: controlPlanePool, desired: originalControlPlaneCount + 1},
-			poolScale{pool: workerPool, desired: originalWorkerCount + 1},
-		)
-		controlPlaneNode := expectNewNode(ctx, test, controlPlanePool.ID, originalControlPlaneNodes)
-		workerNode := expectNewNode(ctx, test, workerPool.ID, originalWorkerNodes)
-		validateOVNLifecycleTraffic(ctx, test, "scale-up", controlPlaneNode.Name, workerNode.Name)
+		By("Waiting for each node pool to reach the new desired count")
+		waitForPoolCountsInParallel(ctx, test, poolScales(pools, 1)...)
+		newNodes := make([]api.Node, len(pools))
+		newNodeNames := make([]string, len(pools))
+		for i, pool := range pools {
+			newNodes[i] = expectNewNode(ctx, test, pool.ID, originalNodes[i])
+			newNodeNames[i] = newNodes[i].Name
+		}
+		validateOVNLifecycleTraffic(ctx, test, "scale-up", newNodeNames...)
 
-		By("Decrementing the desired count of the control-plane and worker pools by 1")
-		expectSucceed(test.nke.UpdateNodePoolDesiredCount(ctx, controlPlanePool.ID, originalControlPlaneCount))
-		expectSucceed(test.nke.UpdateNodePoolDesiredCount(ctx, workerPool.ID, originalWorkerCount))
+		By("Restoring the original desired count of each node pool")
+		for _, pool := range pools {
+			expectSucceed(test.nke.UpdateNodePoolDesiredCount(ctx, pool.ID, pool.DesiredNodeCount))
+		}
 
 		// Scaling the desired count down by itself does not delete any nodes.
+		workerNode := newNodes[0]
 		if test.spec.Backend == nke.BackendCAPD {
 			validateWorkerDrainAndDeletion(ctx, test, workerNode)
 		} else {
 			By("Deleting the scaled-up worker node")
 			Expect(test.nke.DeleteNode(ctx, workerNode.ID)).To(Succeed(), "should delete the scaled-up worker node")
 		}
+		for _, controlPlaneNode := range newNodes[1:] {
+			By("Deleting the scaled-up control-plane node")
+			Expect(test.nke.DeleteNode(ctx, controlPlaneNode.ID)).To(Succeed(), "should delete the scaled-up control-plane node")
+		}
 
-		By("Deleting the scaled-up control-plane node")
-		Expect(test.nke.DeleteNode(ctx, controlPlaneNode.ID)).To(Succeed(), "should delete the scaled-up control-plane node")
-
-		By("Waiting for the control-plane and worker pools to reach the new desired count")
-		waitForPoolCountsInParallel(ctx, test,
-			poolScale{pool: controlPlanePool, desired: originalControlPlaneCount},
-			poolScale{pool: workerPool, desired: originalWorkerCount},
-		)
+		By("Waiting for each node pool to return to its original desired count")
+		waitForPoolCountsInParallel(ctx, test, poolScales(pools, 0)...)
 		validateOVNLifecycleTraffic(ctx, test, "scale-down")
 	}, Label("lifecycle", "scale"), NodeTimeout(2*time.Hour))
+}
+
+// poolScales returns, for each pool, a target of its desired count plus delta.
+func poolScales(pools []api.NodePool, delta int) []poolScale {
+	scales := make([]poolScale, 0, len(pools))
+	for _, pool := range pools {
+		scales = append(scales, poolScale{pool: pool, desired: pool.DesiredNodeCount + delta})
+	}
+	return scales
 }
 
 func validateWorkerDrainAndDeletion(ctx context.Context, test *tenantTest, worker api.Node) {
@@ -276,26 +294,21 @@ type poolScale struct {
 	desired int
 }
 
-func expectScalePools(ctx context.Context, test *tenantTest) (api.NodePool, api.NodePool) {
+// expectWorkerPool returns the cluster's worker node pool, failing the spec when
+// there is none. It works in either control-plane shape.
+func expectWorkerPool(ctx context.Context, test *tenantTest) api.NodePool {
 	GinkgoHelper()
 
-	pools, err := test.nke.ListNodePools(ctx, test.cluster.ID)
-	Expect(err).NotTo(HaveOccurred(), "should list node pools")
+	pools := expectSucceed(test.nke.ListNodePools(ctx, test.cluster.ID))
 
-	var controlPlanePool *api.NodePool
 	var workerPool *api.NodePool
 	for i := range pools {
-		if pools[i].ControlPlane {
-			controlPlanePool = &pools[i]
-			continue
+		if !pools[i].ControlPlane {
+			workerPool = &pools[i]
 		}
-		workerPool = &pools[i]
 	}
-
-	Expect(controlPlanePool).NotTo(BeNil(), "cluster should have a control-plane pool")
 	Expect(workerPool).NotTo(BeNil(), "cluster should have a worker pool")
-
-	return *controlPlanePool, *workerPool
+	return *workerPool
 }
 
 func expectNodeIDs(ctx context.Context, test *tenantTest, nodePoolID openapi_types.UUID) map[openapi_types.UUID]struct{} {

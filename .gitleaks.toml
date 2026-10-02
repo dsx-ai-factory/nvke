@@ -28,3 +28,51 @@ which is scanned on its own; only this one generated file is exempt, not
 paths = [
   '''^controller/api/server\.gen\.go$''',
 ]
+
+[[allowlists]]
+description = """environments/forge.yaml carried the RelEng Forge account's
+identifiers until they moved to repository variables. generic-api-key matches
+the SSH key group id on entropy -- it is a UUID, not a key, and a key group
+governs Serial-over-LAN console access rather than granting anything. The
+values are gone from the tree; the commits behind this branch are where they
+were. The repository squash-merges and deletes the branch, so none of that
+reaches main's history.
+
+Scoped by shape rather than by commit. Naming the two commits was tighter, but
+it could not survive a rebase: the workflow scans origin/main..HEAD, a rebase
+gives every commit on the branch a new sha, and the allowlist would then point
+at commits that do not exist -- turning the scan red for a reason unrelated to
+anything it found. Listing the values instead is not open to us either,
+because writing them here publishes the identifiers
+hack/internal-config-check.sh exists to keep out of the tree.
+
+So: a UUID, in that one file, and nothing else. That a UUID is not a
+credential is the argument above; a secret of any other shape in that file is
+still caught, as is anything at all in any other file. The tree is held to the
+stronger rule by internal-config-check, which fails the merge gate if a known
+identifier comes back."""
+condition = "AND"
+paths = [
+  '''^controller/test/e2e/environments/forge\.yaml$''',
+]
+regexes = [
+  '''[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}''',
+]
+
+[[allowlists]]
+description = """The redaction test needs strings that look exactly like the
+secrets redaction is supposed to remove, because what it asserts is that they
+are absent from the archive afterwards. A fixture that did not look like a
+credential would not exercise the thing under test. Both are plainly
+synthetic: the token is the nvapi- prefix followed by a counting sequence, and
+the password is the MD5 of "12345". Scoped to these two literals in this one
+file rather than to the file as a whole, so a real credential added beside
+them is still caught."""
+condition = "AND"
+paths = [
+  '''^controller/test/e2e/internal/site/redact_test\.go$''',
+]
+regexes = [
+  '''nvapi-0123456789abcdefghij''',
+  '''8f14e45fceea167a5a36dedd4bea2543''',
+]

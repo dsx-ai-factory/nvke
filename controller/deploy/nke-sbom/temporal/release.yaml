@@ -15,3 +15,4 @@ release:
   namespace: temporal
 values:
   - values.yaml
+  - overlay.yaml

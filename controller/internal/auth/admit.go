@@ -43,6 +43,7 @@ func (a *Admit) Admits(p *Principal) bool {
 type admitRules struct {
 	serviceAccounts []ServiceAccountRule
 	spiffe          *spiffeRules
+	groups          []string
 }
 
 type spiffeRules struct {
@@ -53,7 +54,7 @@ type spiffeRules struct {
 // resolve builds the rule set admission matches against. Only the trust domain
 // can fail, and SPIFFERule.validate has already refused a config where it does.
 func (a *Admit) resolve() (*admitRules, error) {
-	rules := &admitRules{serviceAccounts: a.ServiceAccounts}
+	rules := &admitRules{serviceAccounts: a.ServiceAccounts, groups: a.Groups}
 	if a.SPIFFE == nil {
 		return rules, nil
 	}
@@ -71,7 +72,26 @@ func (r *admitRules) admits(p *Principal) bool {
 	if r.admitsServiceAccount(p) {
 		return true
 	}
+	if r.admitsGroups(p) {
+		return true
+	}
 	return r.spiffe.admits(p.Subject)
+}
+
+func (r *admitRules) admitsGroups(p *Principal) bool {
+	items, _ := p.Claims["groups"].([]any)
+	for _, item := range items {
+		g, ok := item.(string)
+		if !ok || g == "" {
+			continue
+		}
+		for _, want := range r.groups {
+			if g == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // admitsServiceAccount matches the nested "kubernetes.io" claim rather than

@@ -1,0 +1,9 @@
+#!ipxe
+# Sanitized test fixture for the gofail e2e "test" profile — no production image hosts.
+set boot-loader https://example.test/nke/boot/qcow-imager.efi
+set image-url https://example.test/nke/images/test.qcow2
+set disk-strategy {{ .DiskSelectionStrategy }}
+set console-config console=tty0 console=ttyS1,115200
+set cloud-init-ds ds=nocloud-net;s=${cloudinit-url}
+chain ${boot-loader} ${console-config} image_url=${image-url} disk_strategy=${disk-strategy} ${cloud-init-ds}
+boot

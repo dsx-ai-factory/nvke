@@ -21,8 +21,7 @@ REPO_ROOT ?= $(shell git rev-parse --show-toplevel)
 # this file is for working inside os-image/ alone, and it is what the Lint
 # workflow invokes.
 #
-# Every dependency here is public, so these targets need neither the workspace
-# nor the committed vendor/ tree, and CI runs them with GOWORK=off.
+# Every dependency here is public, so these targets can run with GOWORK=off.
 
 GO ?= go
 BINARY := bin/nke-os-image-check

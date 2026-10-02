@@ -5,6 +5,7 @@ package activities
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -739,7 +740,7 @@ func testTemplateLessForgeCAPICfg(t *testing.T) config.Config {
 		ProfilesDir:                        profilesDir,
 		DgxcTenantUser:                     "nvidia",
 		DgxcTenantPassword:                 "password",
-		NodeAgentPort:                      "15005",
+		NodeAgent:                          config.NodeAgentConfig{Port: "15005"},
 		SpireServerAddress:                 "spire-server",
 		SpireServerPort:                    "9091",
 		NKESiteControllerName:              "site-a",
@@ -869,6 +870,163 @@ func TestDeleteCAPIMachineForNode_WaitFalseReturnsWhileObjectsFinalize(t *testin
 	mockDB.AssertExpectations(t)
 }
 
+func TestDeleteCAPIMachineForNode_ClassifiesNodeLookupErrors(t *testing.T) {
+	transientErr := errors.New("database connection reset")
+	tests := []struct {
+		name             string
+		nodeErr          error
+		wantNonRetryable bool
+	}{
+		{name: "missing node", nodeErr: db.ErrNotFound, wantNonRetryable: true},
+		{name: "transient database failure", nodeErr: transientErr, wantNonRetryable: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodeID := uuid.New()
+			mockDB := &testutil.MockDB{}
+			mockDB.On("GetNode", mock.Anything, nodeID).Return(db.Node{}, tt.nodeErr)
+
+			a := &Activities{db: mockDB}
+			testSuite := &testsuite.WorkflowTestSuite{}
+			env := testSuite.NewTestActivityEnvironment()
+			env.RegisterActivity(a.DeleteCAPIMachineForNode)
+
+			_, err := env.ExecuteActivity(a.DeleteCAPIMachineForNode, DeleteCAPIMachineForNodeInput{NodeID: nodeID})
+			require.Error(t, err)
+			var applicationErr *temporal.ApplicationError
+			require.ErrorAs(t, err, &applicationErr)
+			require.Equal(t, tt.wantNonRetryable, applicationErr.NonRetryable())
+			mockDB.AssertExpectations(t)
+		})
+	}
+}
+
+func TestCreateCAPIInfraMachineForNode_ClassifiesNodeLookupErrors(t *testing.T) {
+	transientErr := errors.New("database connection reset")
+	tests := []struct {
+		name             string
+		nodeErr          error
+		wantNonRetryable bool
+	}{
+		{name: "missing node", nodeErr: db.ErrNotFound, wantNonRetryable: true},
+		{name: "transient database failure", nodeErr: transientErr, wantNonRetryable: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodeID := uuid.New()
+			mockDB := &testutil.MockDB{}
+			mockDB.On("GetNode", mock.Anything, nodeID).Return(db.Node{}, tt.nodeErr)
+
+			a := &Activities{db: mockDB}
+			testSuite := &testsuite.WorkflowTestSuite{}
+			env := testSuite.NewTestActivityEnvironment()
+			env.RegisterActivity(a.CreateCAPIInfraMachineForNode)
+
+			_, err := env.ExecuteActivity(a.CreateCAPIInfraMachineForNode, CreateCAPIInfraMachineForNodeInput{NodeID: nodeID})
+			require.Error(t, err)
+			var applicationErr *temporal.ApplicationError
+			require.ErrorAs(t, err, &applicationErr)
+			require.Equal(t, tt.wantNonRetryable, applicationErr.NonRetryable())
+			mockDB.AssertExpectations(t)
+		})
+	}
+}
+
+func TestApplyCAPIMachineRebootAnnotation(t *testing.T) {
+	ctx := context.Background()
+	nodeID := uuid.MustParse("75000000-0000-0000-0000-000000000001")
+	node := db.Node{ID: nodeID, Name: "worker-0"}
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, clusterv1.AddToScheme(scheme))
+	k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	mockDB := &testutil.MockDB{}
+	mockDB.On("GetNode", mock.Anything, nodeID).Return(node, nil)
+
+	a := &Activities{db: mockDB, k8sClient: k8sClient, cfg: config.Config{FieldManagerRebootMachineName: "cloud-workflow-engine-reboot-machine"}}
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestActivityEnvironment()
+	env.RegisterActivity(a.ApplyCAPIMachineRebootAnnotation)
+
+	value, err := env.ExecuteActivity(a.ApplyCAPIMachineRebootAnnotation, ApplyCAPIMachineRebootAnnotationInput{NodeID: nodeID})
+	require.NoError(t, err)
+	var result ApplyCAPIMachineRebootAnnotationResult
+	require.NoError(t, value.Get(&result))
+	require.False(t, result.RebootStartedTime.IsZero())
+
+	storedMachine := &clusterv1.Machine{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{
+		Namespace: constants.NamespaceNKESystem,
+		Name:      "worker-0",
+	}, storedMachine))
+	require.Contains(t, storedMachine.Annotations, constants.MachineAnnotationKeyReboot)
+	mockDB.AssertExpectations(t)
+}
+
+func TestApplyCAPIMachineRebootAnnotation_ClassifiesNodeLookupErrors(t *testing.T) {
+	transientErr := errors.New("database connection reset")
+	tests := []struct {
+		name             string
+		nodeErr          error
+		wantNonRetryable bool
+	}{
+		{name: "missing node", nodeErr: db.ErrNotFound, wantNonRetryable: true},
+		{name: "transient database failure", nodeErr: transientErr, wantNonRetryable: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodeID := uuid.New()
+			mockDB := &testutil.MockDB{}
+			mockDB.On("GetNode", mock.Anything, nodeID).Return(db.Node{}, tt.nodeErr)
+
+			a := &Activities{db: mockDB}
+			testSuite := &testsuite.WorkflowTestSuite{}
+			env := testSuite.NewTestActivityEnvironment()
+			env.RegisterActivity(a.ApplyCAPIMachineRebootAnnotation)
+
+			_, err := env.ExecuteActivity(a.ApplyCAPIMachineRebootAnnotation, ApplyCAPIMachineRebootAnnotationInput{NodeID: nodeID})
+			require.Error(t, err)
+			var applicationErr *temporal.ApplicationError
+			require.ErrorAs(t, err, &applicationErr)
+			require.Equal(t, tt.wantNonRetryable, applicationErr.NonRetryable())
+			mockDB.AssertExpectations(t)
+		})
+	}
+}
+
+func TestDeleteCAPIMachineRebootAnnotation(t *testing.T) {
+	ctx := context.Background()
+	nodeID := uuid.MustParse("75000000-0000-0000-0000-000000000002")
+	node := db.Node{ID: nodeID, Name: "worker-1"}
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, clusterv1.AddToScheme(scheme))
+	k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	mockDB := &testutil.MockDB{}
+	mockDB.On("GetNode", mock.Anything, nodeID).Return(node, nil)
+
+	a := &Activities{db: mockDB, k8sClient: k8sClient, cfg: config.Config{FieldManagerRebootMachineName: "cloud-workflow-engine-reboot-machine"}}
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestActivityEnvironment()
+	env.RegisterActivity(a.DeleteCAPIMachineRebootAnnotation)
+
+	_, err := env.ExecuteActivity(a.DeleteCAPIMachineRebootAnnotation, DeleteCAPIMachineRebootAnnotationInput{NodeID: nodeID})
+	require.NoError(t, err)
+
+	storedMachine := &clusterv1.Machine{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{
+		Namespace: constants.NamespaceNKESystem,
+		Name:      "worker-1",
+	}, storedMachine))
+	require.NotContains(t, storedMachine.Annotations, constants.MachineAnnotationKeyReboot)
+	mockDB.AssertExpectations(t)
+}
+
 func getTestNicoMachine(t *testing.T, k8sClient client.Client) *nicov1.NicoMachine {
 	t.Helper()
 
@@ -911,8 +1069,8 @@ func TestCreateCAPISpireJoinTokenSkippedWhenSpiffeDisabled(t *testing.T) {
 	}
 
 	a := &Activities{cfg: config.Config{
-		SpiffeEnabled:                   false,
-		NodeAgentSpireAttestationMethod: config.SpireAttestationMethodJoinToken,
+		SpiffeEnabled: false,
+		NodeAgent:     config.NodeAgentConfig{SpireAttestationMethod: config.SpireAttestationMethodJoinToken},
 	}}
 	token, path, err := a.createCAPISpireJoinToken(context.Background(), createCtx)
 	require.NoError(t, err, "must not reach SPIRE when SPIFFE is off")

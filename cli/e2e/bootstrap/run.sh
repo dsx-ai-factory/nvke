@@ -107,7 +107,7 @@ export NKECTL_CWE_IMAGE
 # below from this checkout. Without it the CAPI objects CWE writes have no
 # controller and the cluster never leaves provisioning. nkectl finds the
 # kustomize base by walking up to go.work, so only the image is named here.
-export NKECTL_CAPI_PROVISIONED_IMAGE="${NKECTL_CAPI_PROVISIONED_IMAGE:-cluster-api-provider-provisioned:local}"
+export NKECTL_CAPI_PROVISIONED_IMAGE="${NKECTL_CAPI_PROVISIONED_IMAGE:-cluster-api-provider-provisioned:latest}"
 
 # Where a failed bootstrap writes its cluster dump. Set explicitly because
 # nkectl's default is relative to the working directory, which would put the
@@ -506,7 +506,7 @@ if [ -n "${CONTROL_PLANE_VIP}" ]; then
 fi
 
 # No chart is named here. What gets installed is pinned in
-# cli/internal/cwedeploy, which is the thing under test: the SPIFFE project's
+# cli/internal/bootstrap/cwedeploy, which is the thing under test: the SPIFFE project's
 # public hardened charts, needing no registry credential of their own.
 # The command never overwrites a key file and refuses to start over one, so a
 # leftover from an interrupted run has to go first.

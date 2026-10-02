@@ -39,10 +39,13 @@ Both come unauthenticated from the public
 [github.com/ovn-kubernetes/ovn-kubernetes](https://github.com/ovn-kubernetes/ovn-kubernetes)
 project: the chart is `helm/ovn-kubernetes/` in the `v<stream>` source tarball
 (there is no chart repository), the image is
-`ghcr.io/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu:release-<X.Y>`. That tag
-moves with every merge to the branch, so the lock pins the resolved digest and
-only `make lock` re-reads it — a re-run adopts whatever has merged there since,
-unlike Calico's immutable `vX.Y.Z` refs, so diff the digest change on review.
+`ghcr.io/ovn-kubernetes/ovn-kubernetes/ovn-kube-ubuntu:release-<X.Y>`. Upstream
+publishes no immutable image tag — there is no `release-X.Y.Z` and no `vX.Y.Z`,
+only the branch tags — and `release-<X.Y>` moves with every merge to the branch.
+So the lock pins the resolved digest and builds fetch that digest, unlike
+Calico's immutable `vX.Y.Z` refs where tag and digest stay in step. Only `make
+lock` lets the tag decide what is fetched, and a re-run adopts whatever has
+merged there since: diff the digest change on review.
 
 ## Building
 

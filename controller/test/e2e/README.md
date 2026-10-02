@@ -393,3 +393,113 @@ on the tenant-access controller having published the SPIRE exec-auth kubeconfig 
 trust bundle (`nke-system/<cluster>-kubeconfig` and the trust-bundle Secret); the
 verifier pod fetches the `k8s-spiffe-workload-jwt-exec-auth` plugin itself, so no
 plugin needs to be present in the test image.
+
+## Site controller lane
+
+`site_controller_test.go` (label `site-controller`) builds its own site controller
+on a Forge node and runs the `nico-forge` tenant against it, instead of using the
+management cluster in the kube context. `-e2e.site-stage` picks how far it goes;
+without it the lane is skipped:
+
+- `provision`: provision the node over the site's jump host and check its egress.
+- `bootstrap`: also run `nkectl bootstrap site` and wait for the API server.
+- `full`: also deploy the SBOM stack, wait for CWE, then create and delete a tenant.
+
+Both lanes create the same `nico-forge` tenant and both entries carry that
+label, so pick between them with `site-controller`, which only the lane that
+builds a site carries. Measured against this tree with `-ginkgo.dry-run` and
+`-e2e.site-stage=full`:
+
+| label filter | specs | which |
+|---|---|---|
+| `nico-forge && !site-controller` | 4 | the tenant, against the site controller in the kube context |
+| `site-controller` | 7 | the lane that builds a site, tenant included |
+| `nico-forge` | 8 | both |
+
+`-e2e.site-stage`, not the label, is what decides whether a machine is
+provisioned: the site lane's tenant entries are built only when it is set, so
+a bare `nico-forge` without it selects 4 specs and reaches no hardware.
+
+The node is torn down afterwards (tenants are deleted first). `-e2e.keep-site`, or
+`lifecycle.preserveOnFailure` with a failed spec, keeps it.
+
+Prerequisites: a way to reach the jump host (below), the jump host in
+`FORGE_JUMP_HOST` (read by `environments/forge.yaml`), `FORGE_API_KEY`, and for
+`full` `GHCR_USERNAME` and `GHCR_TOKEN`, which the node pulls CAPNICo with.
+Neither the proxy nor the jump host is checked in; secrets are read only from
+the environment. Build the inputs, then run; with the `site-inputs` defaults
+no `site:` block is needed at all:
+
+```bash
+gmake site-inputs SITE_CONTROLLER_VERSION=$(git rev-parse --short=12 HEAD)
+go test -timeout 5h . -args \
+  -ginkgo.label-filter=site-controller -ginkgo.v \
+  -e2e.config=e2e-config.yaml -e2e.environment=forge -e2e.site-stage=full \
+  -e2e.versions=controller=<the same value>,os-image-bootloader=<url>,os-image=<url>
+```
+
+`SITE_CONTROLLER_VERSION` and `-e2e.versions=controller=` have to be the same
+string, because they name one image: the archive `site-inputs` writes, and the
+reference the suite hands the bootstrap and the deploy path, which the node
+resolves out of its own containerd rather than a registry. The suite builds
+that reference from `site.images.controller.repository` and the version, so a
+repository here has to match the one `site-inputs` pulled or tagged.
+
+The published images come from GHCR by default. To pull them from NVCR
+instead, log in with an NGC key and point `site-inputs` and the config at the
+NGC org; the image names are the same:
+
+```bash
+echo "$NGC_KEY" | docker login nvcr.io -u '$oauthtoken' --password-stdin
+gmake site-inputs SITE_IMAGE_REGISTRY=nvcr.io/<org> SITE_CONTROLLER_VERSION=...
+# and in e2e-config.yaml, site.images.{controller,capi-provisioned}.repository
+# under nvcr.io/<org>
+```
+
+The node still pulls CAPNICo from GHCR either way: its release asset names a
+GHCR image, and nothing else on the node pulls at all.
+
+`site-inputs` builds that image from the checkout. nkectl is built here too and
+is a client of the CWE it bootstraps, so the two have to be one commit; the
+newest CWE on GHCR predates #850 and rejects this checkout's nkectl at
+"creating the site cluster". `SITE_CONTROLLER_BUILD=0` pulls
+`SITE_CONTROLLER_VERSION` as a published tag instead, for qualifying a release
+once one is cut past #850.
+
+The deploy path is exported from the controller's own commit, tracked files
+only, so nothing in the working tree reaches the node. It carries the
+controller's chart and overlay, so it follows `-e2e.versions=controller=`: that
+commit when the controller was built from one, else its `controller/<version>`
+release tag, which has to be fetched in a shallow clone. Set
+`site.deployPathRef` only when developing the deploy path itself.
+
+### Reaching the jump host
+
+Teleport is the intended route. Locally that is a `tsh login` to the cluster
+the jump host is enrolled in. In CI it is a bot identity in `TELEPORT_PROXY`
+and `TELEPORT_IDENTITY_FILE`, which
+`.github/workflows/forge-site-controller-e2e.yml` obtains by joining with the
+repository's GitHub OIDC token — nothing is stored. The bot's login is `root`,
+so the workflow sets `FORGE_TELEPORT_LOGIN=root`, which the site's
+`teleportLogin` in `environments/forge.yaml` reads. Unset is tsh's default.
+
+For a site whose jump host is *not* enrolled, set `JUMP_HOST_PASSWORD` and the
+harness logs into it over plain SSH and asks its sshd to forward, instead of
+shelling out to `tsh`. The jump host needs `AllowTcpForwarding` on; the error
+names it if not. Set the site's `jumpHostUser` (defaults to its
+`teleportLogin`) and `jumpHostKeyFingerprint` in its environment file; the
+fingerprint comes from:
+
+```bash
+ssh-keyscan -t ed25519 <jump host> | ssh-keygen -lf -
+```
+
+Without the fingerprint the run still works and warns on every dial that it
+accepted the key unchecked -- which means it offered the password to whatever
+answered on port 22. The password is the jump host's alone: the node beyond it
+is reached with the ed25519 key the run generates, never with a password.
+
+This route is for a future site, and the CI lane no longer offers it. There is
+no network path from the ARC fleet to the site's jump host on port 22 at all —
+only the Teleport proxy reaches it — so `forge-site-controller-e2e.yml` always
+goes through `tsh`.

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/client"
 	"k8s.io/utils/ptr"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -30,6 +31,7 @@ type Controller struct {
 	db                *dbwrapper.DB
 	logger            *slog.Logger
 	cweTemporalClient client.Client
+	k8sClient         ctrlclient.Client
 }
 
 // NewController creates a new control plane Controller.
@@ -38,12 +40,14 @@ func NewController(
 	logger *slog.Logger,
 	dbInstance *dbwrapper.DB,
 	cweTemporalClient client.Client,
+	k8sClient ctrlclient.Client,
 ) *Controller {
 	return &Controller{
 		cfg:               cfg,
 		db:                dbInstance,
 		logger:            logger.With("controller", "control-plane"),
 		cweTemporalClient: cweTemporalClient,
+		k8sClient:         k8sClient,
 	}
 }
 
@@ -75,7 +79,6 @@ func nodeClusterKeys(_ context.Context, node db.Node) ([]dbreconcile.Key, error)
 
 // Reconcile reconciles one cluster's control plane from a ClusterID root key.
 func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconcile.Result, error) {
-	result := reconcile.Result{}
 	err := c.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		// Re-read under a row lock: the cluster may have been enqueued from a stale
 		// event, so the reconciler could otherwise act on a stale snapshot and race
@@ -93,8 +96,8 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 			return nil
 		}
 
-		reconciler := newReconciler(c.cfg, c.logger, tx, c.cweTemporalClient)
+		reconciler := newReconciler(c.cfg, c.logger, tx, c.cweTemporalClient, c.k8sClient)
 		return reconciler.reconcile(ctx, lockedCluster)
 	})
-	return result, err
+	return reconcile.Result{}, err
 }

@@ -1,0 +1,333 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What a site controller changes about nktp, over the chart's defaults.
+#
+# Everything a site controller needs differently lives here instead:
+# sizing for the smaller clusters a site controller runs on, the Operator
+# permission NKE's API server requires, and the process scraper's extra
+# access.
+#
+# The exporters stay pointed at the bundled development backend, which keeps
+# data in memory and has no authentication. A site with its own backend passes
+# --values-for nktp=<file>; the chart README's "The backend" section lists the
+# keys that file sets.
+#
+# Helm merges maps key by key but replaces lists whole. Every list below is
+# therefore complete: env, volumes, volumeMounts and capabilities restate the
+# chart's entries alongside ours. Recheck them whenever the chart changes.
+
+# Nothing else on a site controller serves metrics.k8s.io, and the Collector
+# autoscalers read it.
+metrics-server:
+  enabled: true
+
+opentelemetry-kube-stack:
+  # NKE binds the scheduler and the controller manager to 127.0.0.1
+  # (defaultControlPlaneBindAddress in controller/internal/kubeadmconfig), so
+  # their monitors would target an address nothing listens on. An OVN cluster
+  # runs no kube-proxy (kubeadm_init.go skips it). The API server, etcd and
+  # CoreDNS monitors work as the chart ships them.
+  kubeScheduler:
+    enabled: false
+  kubeControllerManager:
+    enabled: false
+  kubeProxy:
+    enabled: false
+  opentelemetry-operator:
+    # The Operator creates a NetworkPolicy owned by its own Deployment, with
+    # blockOwnerDeletion set. NKE's API server runs the
+    # OwnerReferencesPermissionEnforcement admission plugin, which allows that
+    # only with update on the owner's finalizers. The OpenTelemetry Operator
+    # Helm chart does not grant it, so the create fails and the Operator exits.
+    # The Operator's own RBAC has had the permission since
+    # opentelemetry-operator#4230.
+    # Rendered by the Operator chart, so its helpers name the Deployment, the
+    # namespace and the ServiceAccount.
+    extraObjects:
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: Role
+        metadata:
+          name: '{{ include "opentelemetry-operator.fullname" . }}-deployment-finalizers'
+          namespace: '{{ include "opentelemetry-operator.namespace" . }}'
+        rules:
+          - apiGroups: [apps]
+            resources: [deployments/finalizers]
+            resourceNames: ['{{ include "opentelemetry-operator.fullname" . }}']
+            verbs: [update]
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        metadata:
+          name: '{{ include "opentelemetry-operator.fullname" . }}-deployment-finalizers'
+          namespace: '{{ include "opentelemetry-operator.namespace" . }}'
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: Role
+          name: '{{ include "opentelemetry-operator.fullname" . }}-deployment-finalizers'
+        subjects:
+          - kind: ServiceAccount
+            name: '{{ include "opentelemetry-operator.serviceAccountName" . }}'
+            namespace: '{{ include "opentelemetry-operator.namespace" . }}'
+
+# ---------------------------------------------------------------------------
+# Sizing. One replica of everything, autoscaling up from one, and requests the
+# smaller clusters a site controller runs on can hold, as the first site
+# controller ran with.
+
+# The four Collectors that export to the backend -- the watchdog and the three
+# gateways -- label everything they send with the site's name. Every other
+# Collector exports through them. The name comes from the nktp-cluster
+# ConfigMap, which nke-base-config renders from BootstrapConfig's ClusterName;
+# the anchors below are defined once and reused by each gateway.
+watchdog:
+  kubernetes:
+    replicas: 1
+    autoscaler:
+      minReplicas: 1
+    targetAllocator:
+      resources:
+        requests: {cpu: 100m, memory: 256Mi}
+        limits: {cpu: "1", memory: 1Gi}
+    env:
+      - {name: GOMEMLIMIT, value: 448MiB}
+      - {name: GOGC, value: "50"}
+      - &cluster-name-env
+        name: K8S_CLUSTER_NAME
+        valueFrom:
+          configMapKeyRef: {name: nktp-cluster, key: name}
+  otelcol:
+    config:
+      processors:
+        resource/cluster: &cluster-name-processor
+          attributes:
+            - {key: k8s.cluster.name, value: "${env:K8S_CLUSTER_NAME}", action: upsert}
+      service:
+        pipelines:
+          metrics:
+            processors: [memory_limiter, resource/cluster]
+          logs:
+            processors: [memory_limiter, resource/cluster]
+          traces:
+            processors: [memory_limiter, resource/cluster]
+        # The watchdog's own telemetry skips its pipelines.
+        telemetry:
+          resource:
+            k8s.cluster.name: "${env:K8S_CLUSTER_NAME}"
+
+gateway_logs:
+  kubernetes:
+    replicas: 1
+    autoscaler:
+      minReplicas: 1
+    resources:
+      requests: {cpu: 200m, memory: 512Mi}
+      limits: {cpu: "1", memory: 1Gi}
+    env:
+      - {name: GOMEMLIMIT, value: 896MiB}
+      - {name: GOGC, value: "50"}
+      - *cluster-name-env
+  otelcol:
+    config:
+      processors:
+        resource/cluster: *cluster-name-processor
+      service:
+        pipelines:
+          logs:
+            processors: [memory_limiter, resource/cluster]
+
+gateway_metrics:
+  kubernetes:
+    replicas: 1
+    autoscaler:
+      minReplicas: 1
+    resources:
+      requests: {cpu: 200m, memory: 512Mi}
+      limits: {cpu: "1", memory: 1Gi}
+    env:
+      - {name: GOMEMLIMIT, value: 896MiB}
+      - {name: GOGC, value: "50"}
+      - *cluster-name-env
+  otelcol:
+    config:
+      processors:
+        resource/cluster: *cluster-name-processor
+      service:
+        pipelines:
+          metrics:
+            processors: [memory_limiter, resource/cluster]
+
+gateway_traces:
+  kubernetes:
+    replicas: 1
+    autoscaler:
+      minReplicas: 1
+    resources:
+      requests: {cpu: 200m, memory: 512Mi}
+      limits: {cpu: "1", memory: 1Gi}
+    env:
+      - {name: GOMEMLIMIT, value: 896MiB}
+      - {name: GOGC, value: "50"}
+      - *cluster-name-env
+  otelcol:
+    config:
+      processors:
+        resource/cluster: *cluster-name-processor
+      service:
+        pipelines:
+          traces:
+            processors: [memory_limiter, resource/cluster]
+
+cluster_events:
+  kubernetes:
+    # A second replica only stands by; it adds no watch throughput.
+    replicas: 1
+    resources:
+      requests: {cpu: 200m, memory: 512Mi}
+      limits: {cpu: "1", memory: 1Gi}
+
+large_target_metrics:
+  kubernetes:
+    replicas: 1
+    autoscaler:
+      minReplicas: 1
+    # Heap and limits for a small cluster's kube-state-metrics. Raise them with
+    # the object count.
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: "1", memory: 1Gi}
+    env:
+      - {name: GOMEMLIMIT, value: 512MiB}
+      - {name: GOGC, value: "50"}
+    targetAllocator:
+      resources:
+        requests: {cpu: 100m, memory: 256Mi}
+        limits: {cpu: "1", memory: 1Gi}
+  otelcol:
+    config:
+      exporters:
+        otlp_http:
+          sending_queue:
+            queue_size: 67108864 # 64MiB serialized.
+      receivers:
+        prometheus:
+          config:
+            global:
+              body_size_limit: 64MiB
+
+# One Deployment for every central object type rather than one per group.
+kube-state-metrics:
+  kubernetes:
+    resources:
+      requests: {cpu: 25m, memory: 64Mi}
+  deployments:
+    workloads: {enabled: false}
+    networking: {enabled: false}
+    storage: {enabled: false}
+    configuration: {enabled: false}
+    cluster: {enabled: false}
+    objects:
+      enabled: true
+      shards: 1
+      track_unscheduled_pods: false
+      kubernetes: {}
+      resource_types:
+        - deployments
+        - statefulsets
+        - daemonsets
+        - replicasets
+        - replicationcontrollers
+        - jobs
+        - cronjobs
+        - horizontalpodautoscalers
+        - poddisruptionbudgets
+        - services
+        - endpointslices
+        - ingresses
+        - networkpolicies
+        - persistentvolumes
+        - persistentvolumeclaims
+        - volumeattachments
+        - configmaps
+        - nodes
+        - namespaces
+        - storageclasses
+        - resourcequotas
+        - limitranges
+        - leases
+        - certificatesigningrequests
+        - mutatingwebhookconfigurations
+        - validatingadmissionpolicies
+        - validatingadmissionpolicybindings
+        - validatingwebhookconfigurations
+
+# ---------------------------------------------------------------------------
+# The node Collector.
+
+daemonset:
+  kubernetes:
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    env:
+      - {name: GOMEMLIMIT, value: 448MiB}
+      - {name: GOGC, value: "50"}
+      - name: NODE_NAME
+        valueFrom:
+          fieldRef: {fieldPath: spec.nodeName}
+      - name: POD_NAMESPACE
+        valueFrom:
+          fieldRef: {fieldPath: metadata.namespace}
+    targetAllocator:
+      resources:
+        requests: {cpu: 100m, memory: 256Mi}
+        limits: {cpu: "1", memory: 1Gi}
+    # SYS_PTRACE, DAC_READ_SEARCH and the node's passwd file let the process
+    # scraper resolve executable paths, I/O counters and host users. SYS_CHROOT
+    # is the chart's own, for running the node's journalctl.
+    securityContext:
+      runAsUser: 0
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: [ALL]
+        add: [SYS_CHROOT, SYS_PTRACE, DAC_READ_SEARCH]
+    volumeMounts:
+      - {name: pod-logs, mountPath: /var/log/pods, readOnly: true}
+      - {name: host-proc, mountPath: /hostfs/proc, readOnly: true}
+      - {name: journalctl, mountPath: /hostfs/usr/bin/journalctl, readOnly: true}
+      - {name: host-lib, mountPath: /hostfs/lib, readOnly: true}
+      - {name: host-lib64, mountPath: /hostfs/lib64, readOnly: true}
+      - {name: host-lib64, mountPath: /hostfs/usr/lib64, readOnly: true}
+      - {name: host-usr-lib, mountPath: /hostfs/usr/lib, readOnly: true}
+      - {name: host-machine-id, mountPath: /hostfs/etc/machine-id, readOnly: true}
+      - {name: host-logs, mountPath: /hostfs/var/log, readOnly: true}
+      - {name: host-passwd, mountPath: /etc/passwd, readOnly: true}
+    volumes:
+      - {name: pod-logs, hostPath: {path: /var/log/pods, type: Directory}}
+      - {name: host-proc, hostPath: {path: /proc, type: Directory}}
+      - {name: journalctl, hostPath: {path: /usr/bin/journalctl, type: File}}
+      - {name: host-lib, hostPath: {path: /lib, type: Directory}}
+      - {name: host-lib64, hostPath: {path: /lib64, type: DirectoryOrCreate}}
+      - {name: host-usr-lib, hostPath: {path: /usr/lib, type: Directory}}
+      - {name: host-machine-id, hostPath: {path: /etc/machine-id, type: File}}
+      - {name: host-logs, hostPath: {path: /var/log, type: Directory}}
+      - {name: host-passwd, hostPath: {path: /etc/passwd, type: File}}
+  otelcol:
+    config:
+      receivers:
+        # NKE's kubeadm configuration writes the API server's audit log here
+        # (defaultAuditLogPath in controller/internal/kubeadmconfig), not at
+        # the chart's /var/log/kubernetes/audit/audit.log.
+        filelog/kube-api-audit:
+          include: [/hostfs/var/log/kubernetes_audit/audit.log]
+        hostmetrics:
+          scrapers:
+            process:
+              # Container-internal uids are not in the node's passwd, so that
+              # lookup is muted; those processes carry no owner.
+              mute_process_user_error: true
+              resource_attributes:
+                # Names the pod and container a process belongs to, which its
+                # uid cannot.
+                process.cgroup:
+                  enabled: true

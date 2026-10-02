@@ -38,7 +38,7 @@ sync:
     ignore:
       paths:
         # Prefer root-anchored ignores. Unanchored "logs/" also matches
-        # vendor/k8s.io/component-base/logs/ and breaks `go build -mod=vendor`.
+        # nested source directories with the same name.
         - "/bin/"
         - "/var/"
         - "/.dev/"

@@ -115,6 +115,19 @@ func TestResources_ClusterScaffoldManifest(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, found)
 		assert.Equal(t, siteID.String(), gotSiteID)
+		gotFailureDomainLabelKey, found, err := unstructured.NestedString(obj.Object, "spec", "failureDomainLabelKey")
+		require.NoError(t, err)
+		require.True(t, found)
+		assert.Equal(t, "failure_domain", gotFailureDomainLabelKey)
+	})
+
+	t.Run("missing provider payload errors", func(t *testing.T) {
+		_, err := capi.ClusterScaffoldManifest(db.Cluster{
+			ID:           uuid.New(),
+			ProviderType: db.ProviderTypeNico,
+		})
+		require.Error(t, err)
+		require.ErrorIs(t, err, db.ErrMissingProviderPayload)
 	})
 
 	t.Run("unsupported provider errors", func(t *testing.T) {

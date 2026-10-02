@@ -29,6 +29,18 @@ crds="${dir}/crds.yaml"
 helm template nktp "${chart}" --include-crds \
   | yq 'select(.kind == "CustomResourceDefinition")' > "${crds}"
 
+# The chart renders cert-manager Issuers and Certificates for the Operator's
+# webhook, but cert-manager is a prerequisite rather than a dependency, so its
+# CRDs come from the version a site runs. CERT_MANAGER_VERSION is pinned in
+# make/tool-versions.mk; `make nktp-chart-lint` passes it.
+: "${CERT_MANAGER_VERSION:?set CERT_MANAGER_VERSION, or run make nktp-chart-lint}"
+{
+  echo "---"
+  helm template cert-manager oci://quay.io/jetstack/charts/cert-manager \
+    --version "${CERT_MANAGER_VERSION}" --set crds.enabled=true \
+    | yq 'select(.kind == "CustomResourceDefinition")'
+} >> "${crds}"
+
 strict='(.. | select(tag == "!!map" and has("properties") and (has("additionalProperties") | not) and ((.["x-kubernetes-preserve-unknown-fields"] // false) | not))) |= . + {"additionalProperties": false}'
 
 schemas=0
@@ -48,7 +60,7 @@ if [[ "${schemas}" -eq 0 ]]; then
   echo "ERROR: no CRD schemas were generated from the chart." >&2
   exit 1
 fi
-echo "  generated ${schemas} schemas from the chart's CRDs"
+echo "  generated ${schemas} schemas from the chart's and cert-manager's CRDs"
 
 kubeconform -strict -summary \
   -schema-location default \
