@@ -123,7 +123,7 @@ spec:
                   Variant distinguishes images built from the same operating system for a
                   different purpose, such as "fde" for full disk encryption.
                 maxLength: 63
-                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                pattern: ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
                 type: string
             required:
             - architecture

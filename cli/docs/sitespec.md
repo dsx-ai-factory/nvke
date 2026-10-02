@@ -43,8 +43,8 @@ this document uses. Run it with an unknown path to list what it accepts:
 
 ```bash
 nkectl generate sitespec my-tier0-site --nodes hosts.csv \
-  --set cluster.cniName=calico \
-  --set cluster.podCidr=10.100.0.0/16 > sitespec.yaml
+  --set cluster.controlPlaneVIP=10.10.50.10 \
+  --set cluster.podCidr=10.244.0.0/16 > sitespec.yaml
 ```
 
 Two fields are deliberately not settable. `cluster.nodes` comes from `--nodes`.
@@ -67,7 +67,7 @@ is a file `bootstrap site` accepts.
 | `cluster.nodes[].ip` | string | yes, per entry | Valid IPv4 or IPv6 address. Unique across all nodes. |
 | `cluster.nodes[].tpmEkThumbprint` | string | no | SHA-256 of the node's TPM endorsement key: 64 lowercase hex digits. See below. |
 | `cluster.k8sVersion` | string | yes | Plain semantic version, e.g. `1.32.0` (no leading `v`). |
-| `cluster.cniName` | string | yes | One of `calico`, `ovn-kubernetes`. |
+| `cluster.cniName` | string | yes | `ovn-kubernetes`. `calico` is accepted for development. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the node-agent default. |
 | `cluster.controlPlaneVIP` | string | no | Optional IPv4 control-plane VIP. Empty uses the IP of the node that initializes the cluster. See below. |
 | `cluster.podCidr` | string | yes | Valid CIDR. A comma-separated list of CIDRs is allowed. |

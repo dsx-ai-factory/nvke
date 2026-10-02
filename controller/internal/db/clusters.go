@@ -98,6 +98,21 @@ func (c *Cluster) CAPIProvider() (CAPIClusterProvider, error) {
 	}, nil
 }
 
+// ResolveProviderType validates and returns the cluster's provider type. It
+// does not require the matching payload to be present — use NicoProvider or
+// CAPIProvider for that. NodePool and NodeSet have no persisted ProviderType
+// field and expose the same method name, inferring it from which provider
+// payload is set, so callers can resolve a provider type the same way
+// regardless of which of the three types they're holding.
+func (c *Cluster) ResolveProviderType() (ProviderType, error) {
+	switch c.ProviderType {
+	case ProviderTypeNico, ProviderTypeCAPI:
+		return c.ProviderType, nil
+	default:
+		return "", fmt.Errorf("cluster %s has unsupported provider type %q", c.ID, c.ProviderType)
+	}
+}
+
 // NicoSiteID returns the site the cluster belongs to, or the zero UUID when its
 // provider has no notion of a site, which is every CAPI cluster. Callers that
 // only need a site to label or scope by should use this rather than

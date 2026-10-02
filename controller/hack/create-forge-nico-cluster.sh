@@ -16,20 +16,26 @@ CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}"
 WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}"
 
 DEFAULT_SITE_ID="${DEFAULT_SITE_ID:-00000000-0000-0000-0000-000000000000}"
-NICO_SITE_ID="${NICO_SITE_ID:-e85ae455-2962-4742-b885-4b9ae22769c8}"
-NICO_VPC_ID="${NICO_VPC_ID:-b64210af-8f8e-4e37-ad0a-8cf7c6babf28}"
-NICO_SUBNET_ID="${NICO_SUBNET_ID:-53c42b79-3dbf-40e8-9363-75228d7b6e1b}"
-NICO_SSH_KEY_GROUP_ID="${NICO_SSH_KEY_GROUP_ID:-5057cbb3-51ba-4568-b9ad-531cdd626d97}"
 
-# Reference:
-# ngc --format_type=json forge instance-type list --site e85ae455-2962-4742-b885-4b9ae22769c8 --org novxwn552ssc | jq
+# The site to build in has no default. It used to: four identifiers of a real
+# Forge site arrived with the original cloud-workflow-engine import and never
+# changed, and nothing records a cluster having been created there -- so they
+# were a published map of infrastructure that no longer answered for anything.
 #
-# gpu.l40x8.ovx.t1.ibx2 - 81873aa9-dbc4-4e7b-95b4-024625c79dad
-# gpu.l40x8.ovx.t1 - 7c168e39-8e3b-480f-a3c1-f9b90517bfc9
-# stor.1920gb.32x.t1 - a955d89b-8680-4285-8bbf-8338b3874463
-# cpu.t1 - d1a6401c-6b19-4261-92c3-79555cb56462
-# gpu.l40x8.ovx.t1.ib - 3b7bc0c3-9fd4-49b9-8c08-357d84cdb456
-NICO_INSTANCE_TYPE_ID="${NICO_INSTANCE_TYPE_ID:-81873aa9-dbc4-4e7b-95b4-024625c79dad}"
+# Required instead, because a site either exists or it does not and guessing
+# one only moves the failure to an API rejection naming a field the caller
+# never set. Every missing name is reported at once.
+#
+# List what a site offers with:
+#   ngc --format_type=json forge instance-type list --site "${NICO_SITE_ID}" --org "${NICO_ORG_ID}" | jq
+missing=()
+for name in NICO_SITE_ID NICO_VPC_ID NICO_SUBNET_ID NICO_SSH_KEY_GROUP_ID NICO_INSTANCE_TYPE_ID; do
+  [[ -n "${!name:-}" ]] || missing+=("${name}")
+done
+if [[ ${#missing[@]} -gt 0 ]]; then
+  printf 'create-forge-nico-cluster: set %s\n' "${missing[*]}" >&2
+  exit 1
+fi
 
 # /api/* is authenticated. hack/nke-token.sh prints nothing when NKE is not, so
 # this works either way.

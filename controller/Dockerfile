@@ -2,16 +2,20 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Base images for the image this repository ships. Fully qualified and
-# digest-pinned in an ARG, which is the form Dependabot can parse -- a FROM
-# whose registry is a variable is not, which is why these followed a floating
-# tag until now.
+# digest-pinned in an ARG.
+#
+# Dependabot does NOT update these two. Its docker ecosystem reads an image
+# named on a FROM and does not resolve an ARG default, so these digests are
+# bumped by hand. (The SPIFFE base below is a direct FROM and is still covered.)
+# See the header of hack/base-image-check.sh for the evidence and the trade-off
+# in closing it.
 #
 # Internal builds override these rather than BASE_REGISTRY, for example
 #   docker build --build-arg GOLANG_IMAGE=dockerhub.nvidia.com/golang:1.27.1@sha256:... .
 # A digest is content-addressed, so a mirror serving the same content answers
 # to the same digest.
 ARG GOLANG_IMAGE=docker.io/golang:1.27.1@sha256:3680233e3204827fbdc66088528ae6d4b3d034f51d03a99d454f6de034888244
-ARG ALPINE_IMAGE=docker.io/alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+ARG ALPINE_IMAGE=docker.io/alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 FROM ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:0.3.0@sha256:6402624276b66ef7a733e126488397c9cf33c6706ee1f52a9c7ffad2a540aa7c AS spiffe-jwt-exec-auth
 

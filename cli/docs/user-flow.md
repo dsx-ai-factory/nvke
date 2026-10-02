@@ -22,7 +22,7 @@ below is on `main`; the steps the CLI does not cover are marked.
 | `nkectl patch cluster <name>` | PATCHes a mutable cluster property (Kubernetes version, etcd encryption, remote access, control plane config). `--patch` takes an inline YAML document, `--patch-file` a file (or stdin via `-`). | Available |
 | `nkectl create nodepool -f spec.yaml` | Adds a node pool to an existing cluster from a `CreateNodePoolRequest` YAML. `-f -` reads stdin. | Available |
 | `nkectl get nodepools [name ...]` | Lists node pools. Names narrow to those pools, `--cluster <name>` to one cluster. `-o json\|yaml` changes the format. | Available |
-| `nkectl delete nodepool <name> --cluster <name>` | Removes a node pool from a cluster. Deleting the last joined control-plane pool is rejected; delete the cluster instead. | Available |
+| `nkectl delete nodepool <name> --cluster <name>` | Removes a node pool from a cluster. A cluster has a control-plane pool only on a site controller with the control-plane controller off; deleting its last joined one is rejected, so delete the cluster instead. | Available |
 | `nkectl patch nodepool <name> --cluster <name>` | PATCHes a node pool. `--patch` takes an inline YAML document, `--patch-file` a file (or stdin via `-`). `desiredNodeCount` is the only field supported so far. | Available |
 | `nkectl version` | Prints version, commit and build date. `-o short\|yaml\|json`. | Available |
 
@@ -51,8 +51,8 @@ nkectl generate sitespec my-tier0-site --nodes hosts.csv > sitespec.yaml
 
 # Override fields the CSV does not carry
 nkectl generate sitespec my-tier0-site --nodes hosts.csv \
-  --set cluster.cniName=calico \
-  --set cluster.podCidr=10.100.0.0/16 > sitespec.yaml
+  --set cluster.controlPlaneVIP=10.10.50.10 \
+  --set cluster.podCidr=10.244.0.0/16 > sitespec.yaml
 ```
 
 The file format is described in [sitespec.md](sitespec.md); a complete example
@@ -78,6 +78,12 @@ later and the copy a disaster recovery needs. Move it off the host. On failure i
 diagnostics to `cluster-diagnostics/` first; `--keep-bootstrap-cluster` keeps
 the Kind cluster for debugging.
 
+The Kind cluster runs Postgres, Temporal, SPIRE, Cluster API and CWE.
+`nkectl get bootstrap-manifest` lists the charts and images the bootstrap
+fetches, with their versions. It leaves out the kind node image and what
+`clusterctl init` installs. The `NKECTL_*` variables in the
+[README](../README.md) point a chart or an image at another location.
+
 ### 3. Install an infrastructure provider
 
 Install Cluster API and CAPNICo onto the site cluster, before the site
@@ -88,7 +94,7 @@ for why the order matters. `nkectl` has no command for this step.
 
 The site cluster from step 2 is a plain Kubernetes cluster. The site controller
 (CWE) that manages tenant clusters is installed with the controller Helm chart
-in [`controller/deploy/charts/controller`](../../controller/deploy/charts/controller).
+in [`controller/deploy/charts/controller`](https://github.com/dsx-ai-factory/nke/tree/main/controller/deploy/charts/controller).
 `nkectl` has no command for this step yet.
 
 ### 5. Point the CLI at the site controller
@@ -193,9 +199,10 @@ the site controller. A file holding several documents is rejected; create one
 pool per invocation.
 
 `name`, `nodeNamePrefix`, `desiredNodeCount` and `clusterID` are required;
-`nkectl get clusters <name>` reports the cluster's ID. A pool carries either a
-`nico` or an `infra` payload, never both, and that is where the node type is
-chosen.
+`nkectl get clusters <name>` reports the cluster's ID. A pool carries the
+same `nico` or `infra` payload as its cluster, and that is where the node type
+is chosen. `nkectl create nodepool` adds workers; the control plane is managed
+through the cluster's `controlPlaneConfig`.
 
 [examples/nico-mock-nodepool.yaml](../examples/nico-mock-nodepool.yaml) is a
 starting point. Provisioning is asynchronous, the same as cluster creation.
@@ -230,8 +237,9 @@ nkectl delete nodepool <nodepool-name> --cluster <cluster-name>
 Node pool names are unique within a cluster, so `--cluster` is what decides
 which pool is resolved. Deletion is asynchronous and the nodes are drained
 before removal; run `nkectl get nodepools --cluster <cluster-name>` to check
-on it. Deleting the last joined control-plane node pool of a cluster is
-rejected with CWE's own message — delete the cluster instead.
+on it. On a site controller with the control-plane controller off, deleting a
+cluster's last joined control-plane node pool is rejected with CWE's own
+message — delete the cluster instead.
 
 ### 14. Delete the tenant cluster
 

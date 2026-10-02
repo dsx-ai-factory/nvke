@@ -15,8 +15,7 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
-
+	"github.com/dsx-ai-factory/nke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
@@ -91,36 +90,15 @@ func SetPausedAnnotation(obj metav1.Object, paused bool) {
 	obj.SetAnnotations(annotations)
 }
 
+// ClusterScaffoldManifest builds the infrastructure-provider manifest (CAPI
+// InfraCluster or NicoCluster) for the cluster, via the provider client
+// factory in internal/clients.
 func ClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error) {
-	switch cluster.ProviderType {
-	case db.ProviderTypeCAPI:
-		provider, err := cluster.CAPIProvider()
-		if err != nil {
-			return nil, err
-		}
-		return provider.InfraCluster, nil
-	case db.ProviderTypeNico:
-		provider, err := cluster.NicoProvider()
-		if err != nil {
-			return nil, err
-		}
-		nicoCluster := nicov1.NicoCluster{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: nicov1.GroupVersion.String(),
-				Kind:       "NicoCluster",
-			},
-			Spec: nicov1.NicoClusterSpec{
-				SiteID: provider.SiteID.String(),
-			},
-		}
-		manifest, err := json.Marshal(nicoCluster)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build NicoCluster manifest for cluster %s: %w", cluster.ID, err)
-		}
-		return manifest, nil
-	default:
-		return nil, fmt.Errorf("unsupported provider type %q for cluster %s", cluster.ProviderType, cluster.ID)
+	scaffold, err := clients.GetClusterScaffold(cluster)
+	if err != nil {
+		return nil, err
 	}
+	return scaffold.GetClusterScaffoldManifest(cluster)
 }
 
 func ParseManifest(raw []byte) (*unstructured.Unstructured, error) {

@@ -1,0 +1,66 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Lint rules for openapi.yaml. `make lint-spec` (part of `make lint`, so the
+# merge gate runs it) applies them with vacuum, a Spectral-compatible linter
+# pinned in make/tool-versions.mk.
+#
+# Everything here is an error: the file must be valid for the generator, the
+# request validator, Swagger UI and Fern, and every operation, parameter,
+# schema and property must carry a description, so the REST API Reference
+# cannot lose coverage once it is complete.
+extends: [[spectral:oas, recommended]]
+rules:
+  # Errors: the file must be valid for oapi-codegen, the request validator,
+  # Swagger UI and Fern alike. The server loads the spec without checking
+  # examples, so this is the only place a bad example is caught.
+  oas3-valid-schema-example: error
+  oas3-unused-component: error
+  operation-operationId: error
+  operation-operationId-unique: error
+
+  # Prose coverage.
+  #
+  # A description beside a bare `$ref` is read by Fern and ignored by Redoc,
+  # Swagger UI and oapi-codegen, so it is an error here. Put the text on the
+  # referenced schema, or, in a response schema only, wrap the `$ref` in
+  # `allOf`. Request schemas keep bare `$ref`s: kin-openapi reports a failure
+  # inside an `allOf` as a raw schema error with a schema dump instead of the
+  # one-line request-body error, which changes the 400 body clients see.
+  # `x-fern-ignore` beside a `$ref` is deliberate, Fern reads it there; the
+  # five places that do it are listed in openapi-lint-ignore.yaml.
+  no-$ref-siblings: error
+  operation-tags: error
+  component-description: error
+  oas3-parameter-description: error
+  operation-description-present:
+    description: Every operation has a description. The summary is a title, not an explanation.
+    message: operation has no description
+    severity: error
+    given: "$.paths[*][get,put,post,patch,delete]"
+    then:
+      field: description
+      function: truthy
+  property-description-present:
+    description: Every schema property has a description.
+    message: property has no description
+    severity: error
+    given: "$.components.schemas[*].properties[*]"
+    then:
+      field: description
+      function: truthy
+
+  # Off: rules this API breaks on purpose.
+  # Paths and properties are camelCase (`/nodePools`, `podCIDR`). The wire
+  # format is fixed.
+  paths-kebab-case: off
+  camel-case-properties: off
+  # DELETE /nodes/{nodeID} takes an optional body (`machineHealthIssue`).
+  no-request-body: off
+  # `not:` subschemas carry no type on purpose, and create/response/update
+  # twins repeat their descriptions on purpose.
+  oas-missing-type: off
+  description-duplication: off
+  # Examples arrive with the docs port. Until then this rule, which wants one
+  # on every media type, would drown the report.
+  oas3-missing-example: off

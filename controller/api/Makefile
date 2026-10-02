@@ -20,9 +20,12 @@ endif
 GOLANGCI_LINT_GOWORK :=
 include ../../make/golangci.mk
 
+# VACUUM_VERSION, pinned with the other repository-wide tool versions.
+include ../../make/tool-versions.mk
+
 GO_TEST_FLAGS ?=
 
-.PHONY: help lint test
+.PHONY: help lint lint-spec test docs
 
 ##@ Help
 
@@ -34,8 +37,29 @@ help: ## Show the available targets.
 
 ##@ Build and test
 
-lint: ## Run golangci-lint over this module. (run by the merge gate)
+lint: lint-spec ## Run golangci-lint and the OpenAPI lint over this module. (run by the merge gate)
 	@$(GOLANGCI_LINT_RUN) run --timeout 10m
+
+# vacuum is a Go program, so `go run` pins it the way generate.go pins gofumpt,
+# and nothing has to be installed. The rules, and why each is on or off, are in
+# openapi-lint.yaml.
+API_DOCS_OUT ?= ../.local/api-reference.html
+
+##@ Documentation
+
+# Two steps, because `build-docs` applies no decorators: `bundle` drops the
+# surface marked `x-fern-ignore` (see redocly.yaml) and resolves references,
+# then `build-docs` renders the bundle into one self-contained page. Needs
+# Node; npx fetches the pinned CLI.
+docs: ## Render openapi.yaml into one HTML page with Redocly, minus the x-fern-ignore surface. (needs Node)
+	@mkdir -p $(dir $(API_DOCS_OUT))
+	npx -y @redocly/cli@$(REDOCLY_VERSION) bundle nke --config redocly.yaml -o $(API_DOCS_OUT).bundle.yaml
+	npx -y @redocly/cli@$(REDOCLY_VERSION) build-docs $(API_DOCS_OUT).bundle.yaml -o $(API_DOCS_OUT)
+	@rm -f $(API_DOCS_OUT).bundle.yaml
+	@echo "Rendered $(API_DOCS_OUT)"
+
+lint-spec: ## Lint openapi.yaml against openapi-lint.yaml.
+	$(GO) run github.com/daveshanley/vacuum@$(VACUUM_VERSION) lint --ruleset openapi-lint.yaml --ignore-file openapi-lint-ignore.yaml --details --no-banner --no-style --no-clip --min-score 0 openapi.yaml
 
 test: ## Run this module's tests.
 	$(GO) test $(GO_TEST_FLAGS) ./...

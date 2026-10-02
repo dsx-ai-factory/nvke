@@ -38,14 +38,20 @@ show-versions: ## Print every pinned tool version.
 		"ACTIONLINT_VERSION"     "$(ACTIONLINT_VERSION)" \
 		"SHELLCHECK_VERSION"     "$(SHELLCHECK_VERSION)" \
 		"GITLEAKS_VERSION"       "$(GITLEAKS_VERSION)" \
+		"TELEPORT_VERSION"       "$(TELEPORT_VERSION)" \
 		"KUBECONFORM_VERSION"    "$(KUBECONFORM_VERSION)" \
 		"HELM_VERSION"           "$(HELM_VERSION)" \
 		"KIND_VERSION"           "$(KIND_VERSION)" \
 		"KUBECTL_VERSION"        "$(KUBECTL_VERSION)" \
 		"CAPI_VERSION"           "$(CAPI_VERSION)" \
+		"CERT_MANAGER_VERSION"   "$(CERT_MANAGER_VERSION)" \
 		"ORAS_VERSION"           "$(ORAS_VERSION)" \
 		"PACKER_VERSION"         "$(PACKER_VERSION)" \
-		"GO_LICENSES_VERSION"    "$(GO_LICENSES_VERSION)"
+		"S5CMD_VERSION"          "$(S5CMD_VERSION)" \
+		"GO_LICENSES_VERSION"    "$(GO_LICENSES_VERSION)" \
+		"VACUUM_VERSION"         "$(VACUUM_VERSION)" \
+		"REDOCLY_VERSION"        "$(REDOCLY_VERSION)" \
+		"FERN_VERSION"           "$(FERN_VERSION)"
 	@echo
 	@echo "Pinned in .flox/env/manifest.toml, and printed here from the live"
 	@echo "environment rather than from a second copy of the number:"

@@ -9,6 +9,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"sigs.k8s.io/yaml"
 )
@@ -27,6 +28,100 @@ type Config struct {
 		PreserveOnFailure bool   `json:"preserveOnFailure"`
 		ReuseCluster      string `json:"reuseCluster"` // non-empty -> skip create, verify this cluster
 	} `json:"lifecycle"`
+	// Site configures the lane that builds its own site controller. It holds
+	// identifiers and paths only: the Forge API key and the registry token
+	// are read from the environment and never written to a file.
+	Site Site `json:"site"`
+	// Runner is what the machine running the suite supplies.
+	Runner Runner `json:"runner"`
+}
+
+// Runner is the machine the suite runs from, as distinct from the site it
+// reaches. Nothing here describes what is under test; it is what this
+// particular runner has, which is where a CI bot and a laptop differ.
+type Runner struct {
+	// TeleportIdentityFile is a tsh identity file, as a CI bot has instead
+	// of a login session. Empty leaves it to tsh: $TELEPORT_IDENTITY_FILE,
+	// else the runner's tsh profile.
+	TeleportIdentityFile string `json:"teleportIdentityFile"`
+}
+
+// Site is where a site controller's artifacts come from. Only that: the run's
+// identity and the bootstrap's shape are test code, component versions are
+// -e2e.versions keys, and the jump host is the site's, declared in
+// environments/<name>.yaml.
+type Site struct {
+	// DeployPathRef is the commit the deploy path is exported from. Empty
+	// follows the controller version: the commit itself when the controller
+	// was built from one, else its controller/<version> release tag. The
+	// deploy path carries the controller's own chart, so the two have to
+	// agree; override only when developing the deploy path itself.
+	DeployPathRef string `json:"deployPathRef"`
+
+	// Nkectl is a linux nkectl for the node. Empty is what
+	// `gmake -C cli build-cross` writes for the node's architecture.
+	Nkectl string `json:"nkectl"`
+
+	// Images are the site's images and the archives staged into the node's
+	// containerd, which is the cluster's, so they resolve with IfNotPresent
+	// and need no pull credential.
+	Images SiteImages `json:"images"`
+}
+
+// SiteImages names each image the site stages. Every field is required by
+// the time a bootstrap runs, and each one's reference and archive are stated
+// together so nothing can list an archive without the reference it carries.
+type SiteImages struct {
+	// Controller's tag is the controller version under qualification, so it
+	// takes none here.
+	Controller SiteImage `json:"controller"`
+	// CAPIProvisioned's tag is the capi-provisioned -e2e.versions key.
+	CAPIProvisioned SiteImage `json:"capi-provisioned"`
+	// Profiles is built from controller/test/fixtures and published nowhere,
+	// so it has no version key and its tag is here.
+	Profiles SiteImage `json:"profiles"`
+}
+
+// SiteImage is an image by repository, and the docker save archive of it.
+type SiteImage struct {
+	Repository string `json:"repository"`
+	Tag        string `json:"tag"`
+	// Archive is a runner path; a relative one resolves against the clone
+	// the suite runs from.
+	Archive string `json:"archive"`
+}
+
+const (
+	// DefaultSiteInputs is where `gmake site-inputs` writes the archives
+	// unless told otherwise, and so where the archives default to.
+	DefaultSiteInputs = "~/.cache/nke-e2e/site"
+)
+
+func (i SiteImages) validate() error {
+	var problems []string
+	for _, image := range []struct {
+		name  string
+		image SiteImage
+		tag   bool // whether the tag comes from this file
+	}{
+		{"controller", i.Controller, false},
+		{"capi-provisioned", i.CAPIProvisioned, false},
+		{"profiles", i.Profiles, true},
+	} {
+		if image.image.Repository == "" || image.image.Archive == "" {
+			problems = append(problems, image.name+" needs a repository and an archive")
+		}
+		switch {
+		case image.tag && image.image.Tag == "":
+			problems = append(problems, image.name+" needs a tag")
+		case !image.tag && image.image.Tag != "":
+			problems = append(problems, fmt.Sprintf("%s takes its tag from -e2e.versions=%s=, not from a tag here", image.name, image.name))
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("site.images: %s", strings.Join(problems, "; "))
+	}
+	return nil
 }
 
 // Load reads the config file at path and applies defaults. A missing file is
@@ -36,7 +131,15 @@ func Load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	switch {
 	case err == nil:
-		if uerr := yaml.Unmarshal(data, &cfg); uerr != nil {
+		// Strict, as the environment file is parsed: an unknown key is
+		// otherwise dropped in silence and the run proceeds on the default,
+		// which surfaces half an hour into bare metal as behavior nobody
+		// asked for, over a file that reads correctly.
+		//
+		// Not case-sensitive, though. This decodes through encoding/json,
+		// whose field matching is not, so jumphost still binds to jumpHost.
+		// That is a match rather than a miss, so nothing is lost.
+		if uerr := yaml.UnmarshalStrict(data, &cfg); uerr != nil {
 			return Config{}, fmt.Errorf("parsing config %s: %w", path, uerr)
 		}
 	case os.IsNotExist(err):
@@ -46,11 +149,25 @@ func Load(path string) (Config, error) {
 	}
 
 	cfg.applyDefaults()
+	if err := cfg.Site.Images.validate(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
 	return cfg, nil
 }
 
 func (c *Config) applyDefaults() {
 	setDefault(&c.Cluster.CAPDNodeImage, "cwe-capd-kindest-node:local")
+
+	// The same repositories and archive names `gmake site-inputs` defaults
+	// to, so a local run after it needs no site block at all.
+	images := &c.Site.Images
+	setDefault(&images.Controller.Repository, "ghcr.io/dsx-ai-factory/nke/nke-controller")
+	setDefault(&images.Controller.Archive, DefaultSiteInputs+"/controller.tar")
+	setDefault(&images.CAPIProvisioned.Repository, "ghcr.io/dsx-ai-factory/nke/cluster-api-provider-provisioned")
+	setDefault(&images.CAPIProvisioned.Archive, DefaultSiteInputs+"/capi-provisioned.tar")
+	setDefault(&images.Profiles.Repository, "nke-e2e-profiles")
+	setDefault(&images.Profiles.Tag, "local")
+	setDefault(&images.Profiles.Archive, DefaultSiteInputs+"/profiles.tar")
 }
 
 func setDefault(field *string, def string) {

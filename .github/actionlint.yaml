@@ -13,10 +13,11 @@ self-hosted-runner:
     - linux-arm64-cpu16
     - linux-amd64-gpu-l4-latest-1
     # Scale sets on the RelEng EKS cluster (dgxc-eks-use1-rel-prd1).
-    # Both amd64 sizes share one node pool; the two KVM sizes share the
-    # bare-metal pool, which is the only one with /dev/kvm.
+    # Both amd64 CPU sizes share one node pool. Only the *-kvm classes run on
+    # bare metal with /dev/kvm.
     - arc-amd64-cpu8
     - arc-amd64-cpu16
+    - arc-amd64-kvm
     - arc-arm64-cpu16
     - arc-arm64-kvm
     - arc-arm64-kvm-8c16g

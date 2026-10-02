@@ -55,7 +55,6 @@ named in `Chart.yaml`, and kubeconform downloads its schemas.
 
   Keep both trim markers. Do not add headers to `templates/` with addlicense: it
   writes `#` lines, and Helm copies those into every rendered manifest.
-- When syncing the chart from its upstream project, take only `Chart.yaml`,
-  `Chart.lock`, `values.yaml`, `templates/` and `dashboards/`, then re-apply the
-  header rule to any new YAML file. The README, checks and agent guidance here
-  are written for this repository; do not replace them with upstream copies.
+- The README, the checks under `hack/` and this guidance are written for this
+  repository. When templates, values or dashboards change, update the README's
+  functional sections to match rather than replacing it.

@@ -64,8 +64,8 @@ carries a value nobody typed.`,
 
   # Override fields the CSV does not carry
   nkectl generate sitespec my-tier0-site --nodes hosts.csv \
-    --set cluster.cniName=calico \
-    --set cluster.podCidr=10.100.0.0/16 > sitespec.yaml`,
+    --set cluster.controlPlaneVIP=10.10.50.10 \
+    --set cluster.podCidr=10.244.0.0/16 > sitespec.yaml`,
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {

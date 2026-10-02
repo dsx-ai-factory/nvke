@@ -39,6 +39,8 @@ navigation:
             path: site-bootstrap/configuration.md
           - page: Deploy Repository
             path: site-bootstrap/deploy-repository.md
+          - page: Infrastructure Providers
+            path: site-bootstrap/infrastructure-providers.md
           - page: Pre-Provisioned Nodes
             path: site-bootstrap/pre-provisioned-nodes.md
           - page: Custom Base OS
@@ -48,6 +50,10 @@ navigation:
         contents:
           - page: Node Lifecycle
             path: tenant-clusters/node-lifecycle.md
+          - page: Kubernetes API Access
+            path: tenant-clusters/kubernetes-api-access.md
+          - page: OIDC Authentication
+            path: tenant-clusters/oidc-authentication.md
 
       - section: Operations
         contents:
@@ -57,6 +63,19 @@ navigation:
             path: operations/observability.md
           - page: Troubleshooting and FAQ
             path: operations/faq.md
+
+      - section: Site Telemetry (NKTP)
+        contents:
+          - page: Getting Started
+            path: nktp/site-telemetry/getting-started.md
+          - page: Configuration
+            path: nktp/site-telemetry/configuration.md
+          - page: Monitoring Your Service
+            path: nktp/site-telemetry/monitoring-a-service.md
+          - page: Verification
+            path: nktp/site-telemetry/verification.md
+          - page: Troubleshooting
+            path: nktp/site-telemetry/troubleshooting.md
 
       - section: Reference
         contents:
@@ -70,3 +89,21 @@ navigation:
   - tab: api
     layout:
       - api: REST API Reference
+        # Render each tag's description from controller/api/openapi.yaml as the
+        # section intro, so the concept text ships with the reference.
+        tag-description-pages: true
+        # The tab already carries the title, so do not nest a second
+        # "REST API Reference" level (and path segment) under it.
+        flattened: true
+        # The tab already contributes "rest-api-reference" to the path; without
+        # this the URL repeats it.
+        skip-slug: true
+        # Sections in reading order rather than in order of first appearance
+        # in openapi.yaml, which would put Catalog first.
+        layout:
+          - clusters
+          - controlPlane
+          - nodePools
+          - nodeSets
+          - nodes
+          - catalog

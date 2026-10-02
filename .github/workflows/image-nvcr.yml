@@ -224,8 +224,14 @@ jobs:
             tags+=("edge")
           fi
 
-          echo "image=nvcr.io/${NKE_NGC_ORG}/nke-controller" >> "${GITHUB_OUTPUT}"
-          echo "push_tags=${tags[*]}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "image=nvcr.io/${NKE_NGC_ORG}/nke-controller"
+            echo "push_tags=${tags[*]}"
+            # The tag the release layer records, as distinct from sha- and
+            # edge: those two move, and a candidate cannot be assembled from
+            # a reference that means something different tomorrow.
+            echo "version=${version}"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Download each leg's digest
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -263,6 +269,17 @@ jobs:
         run: |
           set -euo pipefail
           docker buildx imagetools inspect "${IMAGE}@${INDEX_DIGEST}"
+
+      # index_digest above is a job output, which dies with the run. The
+      # per-arch digests are uploaded but expire in a day, sized for
+      # debugging. The release layer assembles a candidate long after this
+      # runs, so the index -- the thing a consumer resolves from the tag --
+      # needs a record that outlives the workflow that made it.
+      - name: Record the published digest
+        uses: ./.github/actions/record-digest
+        with:
+          references: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+          component: nke-controller
 
   # NVCR needs an NGC account to pull from, so the controller image is not
   # reachable by anyone outside NVIDIA. A release tag copies it to GHCR, which

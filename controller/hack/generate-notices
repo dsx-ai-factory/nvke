@@ -175,6 +175,95 @@ go list -deps -buildvcs=false \
       END { for (i = 1; i <= n; i++) { p = order[i]; printf "%s\t%s\t%s\n", p, lics[p], link[p] } }' \
     > "${INDEX_FILE}"
 
+# Settle the major-version directory from the committed file, not the network.
+#
+# For a module in a repository subdirectory with a major version suffix --
+# go.etcd.io/etcd/client/v3, tagged client/v3.7.1 -- the directory may be
+# client/v3 or client, and etcd has both kinds: api/v3 lives in api/. The tag
+# cannot say which. go-licenses decides with a HEAD request for <dir>/vN/go.mod
+# on github.com and, in its own words, "on any failure, assume that the right
+# directory is the one without the version" (pkgsite's
+# source.adjustVersionedModuleDirectory). GitHub-hosted runners are throttled
+# often enough that the URL flips between runs, and notices-check cannot tell
+# a flip from a change, since it compares the file against a regeneration of
+# itself.
+#
+# So when the committed file already has a URL for the package that differs
+# from the regenerated one only by that /vN segment, the committed URL stands:
+# a human verified it once, and the probe has no information the file lacks.
+# Anything else -- a new package, a new version, a different licence file --
+# still shows up as a diff, and a new package keeps whatever go-licenses chose,
+# to be verified when it is first committed. The root-module repair below runs
+# after this step on purpose: a committed URL may carry the spurious /vN segment
+# from before that repair existed, and the rule, not the file, decides for roots.
+if [[ -f "${OUTPUT}" ]]; then
+    awk -F'\t' 'BEGIN { OFS = "\t" }
+        # First file: the committed index rows, "| `pkg` | licence | `module` | url |".
+        FNR == NR {
+            if ($0 ~ /^\| `[^`]+` \| .* \| `[^`]*` \| [^ |]+ \|$/) {
+                pkg = $0; sub(/^\| `/, "", pkg); sub(/`.*$/, "", pkg)
+                url = $0; sub(/ \|$/, "", url); sub(/^.* \| /, "", url)
+                committed[pkg] = url
+            }
+            next
+        }
+        # Second file: the regenerated pkg/licence/url index.
+        {
+            if (($1 in committed) && committed[$1] != $3) {
+                a = $3; b = committed[$1]
+                # Drop the first /vN/ segment from each; equal means they differ
+                # only in that segment. The tag "client/v3.7.1" does not match:
+                # a dot follows its digits, not a slash.
+                a2 = a; sub(/\/v[0-9]+\//, "/", a2)
+                b2 = b; sub(/\/v[0-9]+\//, "/", b2)
+                if (a2 == b || b2 == a) { $3 = b }
+            }
+            print
+        }' "${OUTPUT}" "${INDEX_FILE}" > "${INDEX_FILE}.settled"
+    SETTLED_N=$(diff <(cut -f3 "${INDEX_FILE}") <(cut -f3 "${INDEX_FILE}.settled") | grep -c '^>' || true)
+    if [[ "${SETTLED_N}" -gt 0 ]]; then
+        echo "Kept ${SETTLED_N} committed major-version licence URL(s) over go-licenses' network-dependent choice." >&2
+    fi
+    mv "${INDEX_FILE}.settled" "${INDEX_FILE}"
+fi
+
+# Repair the licence URL of a major-version module at the repository root.
+#
+# For a module whose path ends in /vN, go-licenses may treat that suffix as a
+# directory inside the repository and write it into the URL:
+#
+#   https://github.com/blang/semver/blob/v4.0.0/v4/LICENSE      404
+#   https://github.com/blang/semver/blob/v4.0.0/LICENSE         200
+#
+# The tag decides, without guessing. Go requires a module in a subdirectory to
+# be tagged <subdir>/vX.Y.Z, so a plain vX.Y.Z tag means the module sits at the
+# repository root, and a root module cannot have a directory prefix on its
+# licence path. When the tag carries no slash and the next segment is exactly
+# this module's major-version suffix, that segment is spurious. A module that
+# really lives in a vN/ subdirectory is tagged vN/vX.Y.Z and does not match;
+# neither do pseudo-versions or commit refs. Same rule as agent/hack/generate-notices.sh.
+awk -F'\t' 'BEGIN { OFS = "\t" }
+    {
+        url = $3
+        # https://<host>/<owner>/<repo>/blob/<ref>/<path>
+        if (match(url, /\/blob\/[^\/]+\//)) {
+            ref  = substr(url, RSTART + 6, RLENGTH - 7)
+            rest = substr(url, RSTART + RLENGTH)
+            if (ref ~ /^v[0-9]+\.[0-9]+\.[0-9]+/ && rest ~ /^v[0-9]+\//) {
+                major = substr(rest, 1, index(rest, "/") - 1)
+                if ($1 ~ ("/" major "$") || $1 ~ ("/" major "/")) {
+                    $3 = substr(url, 1, RSTART + RLENGTH - 1) substr(rest, length(major) + 2)
+                }
+            }
+        }
+        print
+    }' "${INDEX_FILE}" > "${INDEX_FILE}.repaired"
+REPAIRS=$(diff <(cut -f3 "${INDEX_FILE}") <(cut -f3 "${INDEX_FILE}.repaired") | grep -c '^>' || true)
+if [[ "${REPAIRS}" -gt 0 ]]; then
+    echo "Repaired ${REPAIRS} major-version licence URL(s) of root modules." >&2
+fi
+mv "${INDEX_FILE}.repaired" "${INDEX_FILE}"
+
 # Attach module@version to each row by longest matching module prefix.
 awk -F'\t' '
     NR == FNR { split($0, a, " "); mp[a[1]] = a[2]; next }

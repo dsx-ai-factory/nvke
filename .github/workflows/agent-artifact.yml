@@ -247,3 +247,13 @@ jobs:
         run: |
           set -euo pipefail
           oras manifest fetch --pretty "${REPO}:sha-${GITHUB_SHA}"
+
+      # The per-arch digests this job parses out of oras are step outputs,
+      # alive only long enough to build the index. The index itself -- the
+      # thing a consumer resolves from the version tag -- had no digest
+      # recorded anywhere until now.
+      - name: Record the published digest
+        uses: ./.github/actions/record-digest
+        with:
+          references: ${{ env.REPO }}:sha-${{ github.sha }}
+          component: nke-agent

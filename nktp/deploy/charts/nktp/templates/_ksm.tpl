@@ -83,6 +83,9 @@ volumeattachments: {group: "storage.k8s.io", scope: cluster}
       {{- end -}}
       {{- $namespaces = uniq $normalizedNamespaces -}}
       {{- $args := list (printf "--resources=%s" (join "," $types)) -}}
+      {{- with $ksm.metricLabelsAllowlist -}}
+        {{- $args = append $args (printf "--metric-labels-allowlist=%s" (join "," .)) -}}
+      {{- end -}}
       {{- if $config.daemonset -}}{{- $args = append $args "--node=$(NODE_NAME)" -}}{{- end -}}
       {{- if $config.track_unscheduled_pods -}}{{- $args = append $args "--track-unscheduled-pods" -}}{{- end -}}
       {{- if $namespaces -}}{{- $args = append $args (printf "--namespaces=%s" (join "," $namespaces)) -}}{{- end -}}

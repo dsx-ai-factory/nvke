@@ -249,6 +249,35 @@ func TestUnit_Collector_ClusterNodePoolNodeSetInfo(t *testing.T) {
 		assert.Len(t, nodePoolF.GetMetric(), 3, "one per node pool")
 		assert.Len(t, nodeSetF.GetMetric(), 3, "one per node set")
 	})
+
+	t.Run("loads all pools and node sets with one bulk query each", func(t *testing.T) {
+		cluster1 := db.Cluster{ID: uuid.New(), Name: "c1", ProviderType: db.ProviderTypeCAPI}
+		cluster2 := db.Cluster{ID: uuid.New(), Name: "c2", ProviderType: db.ProviderTypeCAPI}
+		pool1 := db.NodePool{ID: uuid.New(), ClusterID: cluster1.ID, Name: "p1"}
+		pool2 := db.NodePool{ID: uuid.New(), ClusterID: cluster2.ID, Name: "p2"}
+		nodeSet1 := db.NodeSet{ID: uuid.New(), NodePoolID: pool1.ID}
+		nodeSet2 := db.NodeSet{ID: uuid.New(), NodePoolID: pool2.ID}
+
+		mdb := &testutil.MockDB{}
+		mdb.On("ListClusters", mock.Anything, db.ClusterFilters{}).Return([]db.Cluster{cluster1, cluster2}, nil).Once()
+		mdb.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{pool1, pool2}, nil).Once()
+		mdb.On("ListNodeSets", mock.Anything, db.NodeSetFilters{}).Return([]db.NodeSet{nodeSet1, nodeSet2}, nil).Once()
+		mdb.On("ListNodeConditions", mock.Anything).Return([]db.NodeConditionStatus{}, nil).Once()
+		mdb.On("ListNodePoolMetrics", mock.Anything).Return([]db.NodePoolMetrics{}, nil).Once()
+		mdb.On("ListNodeInfo", mock.Anything).Return([]db.NodeInfo{}, nil).Once()
+		mdb.On("ListNodeLifecycleElapsed", mock.Anything).Return([]db.NodeLifecycleElapsed{}, nil).Once()
+
+		collector := dbmetrics.NewCollector(testLogger(), mdb)
+		reg := prometheus.NewPedanticRegistry()
+		require.NoError(t, reg.Register(collector))
+
+		families, err := reg.Gather()
+		require.NoError(t, err)
+		require.Len(t, findMetricFamily(families, "nke_controller_cluster_info").GetMetric(), 2)
+		require.Len(t, findMetricFamily(families, "nke_controller_nodepool_info").GetMetric(), 2)
+		require.Len(t, findMetricFamily(families, "nke_controller_nodeset_info").GetMetric(), 2)
+		mdb.AssertExpectations(t)
+	})
 }
 
 // newMockCollector builds a Collector backed by a MockDB that returns the given rows

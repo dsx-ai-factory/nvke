@@ -9,7 +9,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"go.temporal.io/sdk/client"
+	temporalclient "go.temporal.io/sdk/client"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
@@ -21,20 +22,23 @@ type reconciler struct {
 	cfg               config.Config
 	logger            *slog.Logger
 	db                db.Tx
-	cweTemporalClient client.Client
+	cweTemporalClient temporalclient.Client
+	k8sClient         ctrlclient.Client
 }
 
 func newReconciler(
 	cfg config.Config,
 	logger *slog.Logger,
 	db db.Tx,
-	cweTemporalClient client.Client,
+	cweTemporalClient temporalclient.Client,
+	k8sClient ctrlclient.Client,
 ) *reconciler {
 	return &reconciler{
 		cfg:               cfg,
 		logger:            logger,
 		db:                db,
 		cweTemporalClient: cweTemporalClient,
+		k8sClient:         k8sClient,
 	}
 }
 
@@ -59,9 +63,21 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		return fmt.Errorf("reconciling control plane rollout-required conditions: %w", err)
 	}
 
+	failureDomains, err := r.readFailureDomains(ctx, cluster)
+	if err != nil {
+		return fmt.Errorf("discovering control-plane failure domains: %w", err)
+	}
+	// Only controller-managed control planes seed the allocator with eligible
+	// domains. Legacy node-pool mode uses the zero value, so its surge nodes
+	// request no specific domain.
+	allocator := domainAllocator{}
+	if controlPlane.useController {
+		allocator = newControlPlaneDomainAllocator(controlPlane.nodes, failureDomains)
+	}
+
 	// Host creation only. A pending or in-flight delete must not stall it: the
 	// replacement host is exactly what lets the control plane shrink safely.
-	if err := r.reconcileControlPlaneScaleUp(ctx, cluster, controlPlane); err != nil {
+	if err := r.reconcileControlPlaneScaleUp(ctx, cluster, controlPlane, allocator); err != nil {
 		return fmt.Errorf("reconciling control plane scale-up: %w", err)
 	}
 
@@ -78,7 +94,7 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	// FIXME: https://github.com/dsx-ai-factory/nke/issues/784 - reconcileNodesNeedingRollout
 	// still tears a node down directly instead of recording intent and letting the
 	// promotion below start it, so rollout teardowns bypass the serialized path.
-	if err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane); err != nil {
+	if err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane, allocator); err != nil {
 		return fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
 	}
 
@@ -146,6 +162,7 @@ func (r *reconciler) reconcileControlPlaneScaleUp(
 	ctx context.Context,
 	cluster db.Cluster,
 	controlPlane *controlPlane,
+	allocator domainAllocator,
 ) error {
 	if !r.cfg.UseControlPlaneControllerForControlPlane() {
 		return nil
@@ -160,9 +177,12 @@ func (r *reconciler) reconcileControlPlaneScaleUp(
 	// selection and Forge capacity checks are the control plane node scheduler's job: it picks
 	// each node's Forge instance type from the pinned InstanceTypePreference at
 	// schedule time and persists it back onto the node row.
-	created, err := r.scaleUp(ctx, cluster, deficit, "control-plane scale-up")
+	created, err := r.scaleUp(ctx, cluster, deficit, "control-plane scale-up", allocator)
 	if err != nil {
 		return fmt.Errorf("scaling up control-plane nodes: %w", err)
+	}
+	if created == 0 {
+		return nil
 	}
 
 	r.logger.Info(

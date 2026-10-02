@@ -687,8 +687,7 @@ issuers:
       caBundlePath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
       bearerTokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token
     algorithms: [RS256, ES256]     # asymmetric only; "none" and HMAC are refused
-    # serviceAccounts or spiffe, never both: either one matching admits, so a
-    # pair admits more than the narrower rule alone would.
+    # One of serviceAccounts, spiffe, or groups.
     admit:
       serviceAccounts:
         # Omitting `name` admits every service account in the namespace, present
@@ -709,6 +708,16 @@ issuers:
       spiffe:
         trustDomain: example.org     # bare host: no spiffe:// scheme, no path
         pathPrefixes: [/nke-e2e/]    # segment-wise; /nke-e2e/ never matches /nke-e2e-evil/
+
+  - name: keycloak
+    issuer: "https://keycloak.example.internal/realms/nke"
+    jwks:
+      uri: "https://keycloak.example.internal/realms/nke/protocol/openid-connect/certs"
+    algorithms: [RS256]
+    admit:
+      groups:
+        # Any-of against the token's "groups" claim (a JSON string array).
+        - nke-operators
 ```
 
 ### RBAC Prerequisite

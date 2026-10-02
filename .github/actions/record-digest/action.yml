@@ -1,0 +1,143 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Records the digest a publisher just published, as a durable artifact the
+# release layer can assemble a candidate from.
+#
+# WHY IT RESOLVES RATHER THAN PARSES. Every publisher here speaks a different
+# client -- buildx, oras, helm -- and each prints its digest in a different
+# shape, when it prints one at all. Nine of the fifteen publish workflows
+# capture no registry digest today, so "emit what you already computed" is not
+# available for most of them. Asking the registry is one mechanism that covers
+# images, OCI artifacts and Helm charts alike, because at this layer they are
+# all just manifests behind a reference.
+#
+# It is also the stronger claim. A parsed digest is what the client said it
+# pushed; a resolved one is what the registry will actually serve the next
+# consumer to ask. Those differ exactly when something is wrong -- a failed
+# push whose exit code was swallowed, a tag overwritten between steps -- which
+# is when the release layer most needs to not believe the optimistic answer.
+#
+# Requires a docker login to the registry already in the environment, which
+# every caller has by the time it has pushed. crane reads the same config.
+name: Record a published digest
+description: Resolve what a registry serves for a reference, and keep it as an artifact
+
+inputs:
+  references:
+    description: >-
+      The full registry references that were just published, including tags,
+      one per line. Resolved as-is.
+
+      Usually one -- an image or a chart is a single manifest, and a
+      multi-arch component is its index. The CLI publishers are the reason
+      this is a list: they tag by OS and architecture and build no index, so
+      four references are one component with no single thing to point at.
+    required: true
+  component:
+    description: >-
+      Names this component in the candidate, and names the uploaded file.
+      Unique within a release, which for a workflow with a destination matrix
+      means including the destination: nke-controller-chart-nke and
+      nke-controller-chart-dsx publish the same chart to two registries and
+      would otherwise collide on the artifact name.
+    required: true
+  retention_days:
+    description: >-
+      How long the record outlives its run. Ninety days by default, because a
+      candidate is assembled well after the publishers that fed it, and the
+      one-day retention the image workflows use for their per-arch digests is
+      sized for a debugging aid rather than for evidence.
+    required: false
+    default: "90"
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-crane
+
+    - id: resolve
+      shell: bash
+      env:
+        REFERENCES: ${{ inputs.references }}
+        COMPONENT: ${{ inputs.component }}
+      run: |
+        set -euo pipefail
+
+        # Checked up front, not discovered mid-loop. Seven of the nine
+        # callers are on ubuntu-latest where jq is standard, but two run on
+        # the self-hosted linux-amd64-cpu8 class, and these are publish
+        # workflows: the run that finds out is a release.
+        command -v jq >/dev/null || {
+          echo "::error::jq is not on this runner, so the digest record cannot be written"
+          exit 1
+        }
+
+        dir="${RUNNER_TEMP}/release-digests"
+        mkdir -p "${dir}"
+        record="${dir}/${COMPONENT}.json"
+
+        # jq builds the record rather than a heredoc: a reference reaches this
+        # action through a workflow expression, and a stray quote in one would
+        # turn a heredoc into malformed JSON that nothing notices until
+        # assemble parses it weeks later.
+        artifacts="[]"
+        count=0
+        while IFS= read -r reference; do
+          reference="$(echo "${reference}" | tr -d '[:space:]')"
+          [ -n "${reference}" ] || continue
+
+          # Fails the publisher when the reference does not resolve. That is
+          # deliberate: a publish whose result cannot be addressed by digest
+          # has not produced something the release layer can qualify, and
+          # finding that out here is far cheaper than at promotion.
+          if ! digest="$(crane digest "${reference}" 2>&1)"; then
+            echo "::error::${reference} did not resolve after publishing: ${digest}"
+            exit 1
+          fi
+          case "${digest}" in
+            sha256:*) ;;
+            *) echo "::error::crane digest returned ${digest} for ${reference}, which is not a digest"; exit 1 ;;
+          esac
+
+          # The reference is kept whole beside the digest. A digest alone says
+          # what the bytes are but not where they were published, and the same
+          # bytes reach several registries on the promotion paths.
+          artifacts="$(jq -c --arg r "${reference}" --arg d "${digest}" \
+            '. + [{reference: $r, digest: $d}]' <<< "${artifacts}")"
+          count=$((count + 1))
+          echo "${reference} -> ${digest}"
+        done <<< "${REFERENCES}"
+
+        if [ "${count}" -eq 0 ]; then
+          echo "::error::no references were given for ${COMPONENT}"
+          exit 1
+        fi
+
+        jq -n \
+          --arg component "${COMPONENT}" \
+          --arg revision "${GITHUB_SHA}" \
+          --arg ref "${GITHUB_REF_NAME}" \
+          --arg run "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+          --argjson artifacts "${artifacts}" \
+          '{component: $component, revision: $revision, ref: $ref, run: $run, artifacts: $artifacts}' \
+          > "${record}"
+
+        echo "record_dir=${dir}" >> "${GITHUB_OUTPUT}"
+
+        {
+          echo "### Digests recorded for \`${COMPONENT}\`"
+          echo
+          echo '```'
+          jq -r '.artifacts[] | "\(.reference)  \(.digest)"' "${record}"
+          echo '```'
+        } >> "${GITHUB_STEP_SUMMARY}"
+
+    # release-digest-* is the prefix `assemble` globs for. Renaming it is a
+    # change to the release layer's input contract, not a cosmetic one.
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: release-digest-${{ inputs.component }}
+        path: ${{ steps.resolve.outputs.record_dir }}/${{ inputs.component }}.json
+        retention-days: ${{ inputs.retention_days }}
+        if-no-files-found: error

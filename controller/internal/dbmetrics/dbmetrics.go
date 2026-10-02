@@ -373,6 +373,7 @@ func (c *Collector) collectClusterNodePoolAndNodeSetInfo(ctx context.Context, ch
 		return
 	}
 
+	clusterContexts := make(map[uuid.UUID]clusterInfoContext, len(clusters))
 	for _, cluster := range clusters {
 		clusterCtx := clusterInfoContext{
 			Name: cluster.Name,
@@ -389,27 +390,47 @@ func (c *Collector) collectClusterNodePoolAndNodeSetInfo(ctx context.Context, ch
 		}
 
 		c.emitClusterInfo(ch, &clusterCtx, cluster)
+		clusterContexts[cluster.ID] = clusterCtx
+	}
 
-		nodePools, err := c.db.ListNodePools(ctx, db.NodePoolFilters{ClusterID: &cluster.ID})
-		if err != nil {
-			c.logger.Error("failed to list node pools for info metrics", "error", err, "cluster", cluster.Name)
+	if len(clusterContexts) == 0 {
+		return
+	}
+
+	nodePools, err := c.db.ListNodePools(ctx, db.NodePoolFilters{})
+	if err != nil {
+		c.logger.Error("failed to list node pools for info metrics", "error", err)
+		return
+	}
+
+	nodeSetContexts := make(map[uuid.UUID]nodeSetParentContext, len(nodePools))
+	for _, nodePool := range nodePools {
+		clusterCtx, ok := clusterContexts[nodePool.ClusterID]
+		if !ok {
 			continue
 		}
 
-		for _, nodePool := range nodePools {
-			c.emitNodePoolInfo(ch, &clusterCtx, nodePool)
+		c.emitNodePoolInfo(ch, &clusterCtx, nodePool)
+		nodeSetContexts[nodePool.ID] = nodeSetParentContext{ClusterName: clusterCtx.Name, NodePoolName: nodePool.Name}
+	}
 
-			nodeSetCtx := nodeSetParentContext{ClusterName: cluster.Name, NodePoolName: nodePool.Name}
-			nodeSets, err := c.db.ListNodeSets(ctx, db.NodeSetFilters{NodePoolID: &nodePool.ID})
-			if err != nil {
-				c.logger.Error("failed to list node sets for info metrics", "error", err, "node_pool", nodePool.Name)
-				continue
-			}
+	if len(nodeSetContexts) == 0 {
+		return
+	}
 
-			for _, nodeSet := range nodeSets {
-				c.emitNodeSetInfo(ch, &nodeSetCtx, nodeSet)
-			}
+	nodeSets, err := c.db.ListNodeSets(ctx, db.NodeSetFilters{})
+	if err != nil {
+		c.logger.Error("failed to list node sets for info metrics", "error", err)
+		return
+	}
+
+	for _, nodeSet := range nodeSets {
+		nodeSetCtx, ok := nodeSetContexts[nodeSet.NodePoolID]
+		if !ok {
+			continue
 		}
+
+		c.emitNodeSetInfo(ch, &nodeSetCtx, nodeSet)
 	}
 }
 

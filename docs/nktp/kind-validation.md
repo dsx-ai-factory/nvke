@@ -35,8 +35,9 @@ export KUBECONFIG=$PWD/nktp-validation.kubeconfig
 
 ## Installing the chart
 
-Build the chart's dependencies, create the release namespace with the Pod
-Security level the node Collector needs, and install with the Kind values in
+Build the chart's dependencies, install cert-manager, which issues the chart's
+certificates, create the release namespace with the Pod Security level the node
+Collector needs, and install with the Kind values in
 `nktp/hack/e2e-values.yaml`.
 
 ```console
@@ -44,6 +45,10 @@ helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
 helm dependency build nktp/deploy/charts/nktp
+
+helm install cert-manager oci://quay.io/jetstack/charts/cert-manager \
+  --version v1.19.3 --namespace cert-manager --create-namespace \
+  --set crds.enabled=true --wait
 
 kubectl create namespace nktp
 kubectl label namespace nktp pod-security.kubernetes.io/enforce=privileged

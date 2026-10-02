@@ -28,6 +28,7 @@ import (
 
 	"github.com/dsx-ai-factory/nke/controller/api"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/environment"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nkectl"
@@ -54,6 +55,7 @@ type clusterLifecycle interface {
 type tenantTest struct {
 	log           logr.Logger
 	cfg           config.Config
+	mgmt          managementCluster
 	k8sClient     client.Client
 	tenantClients *kube.TenantClientFactory
 	nke           *nke.Client
@@ -73,206 +75,7 @@ type tenantTest struct {
 }
 
 var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
-	func(spec testSpec) {
-		var (
-			test    tenantTest
-			failed  bool
-			deleted bool
-		)
-
-		// Record any spec failure so the cluster delete can honor preserveOnFailure.
-		AfterEach(func() { failed = failed || CurrentSpecReport().Failed() })
-
-		It("creates the cluster", func(ctx context.Context) {
-			// A CWE accepts only one control-plane shape, so skip an entry that
-			// needs the other one rather than fail its create.
-			if (spec.validate.controlPlaneController || spec.validate.controlPlaneControllerUpdate ||
-				spec.validate.controlPlaneControllerRollingUpdate || spec.validate.controlPlaneControllerDelete) &&
-				!controlPlaneControllerEnabled() {
-				Skip("requires CWE deployed with " + controlPlaneControllerEnv + " on")
-			}
-			if spec.validate.cpRotation && controlPlaneControllerEnabled() {
-				Skip("rotates a control-plane node pool; requires CWE deployed with " + controlPlaneControllerEnv + "=false")
-			}
-			test = expectSucceed(setupTenantTest(ctx, spec.options))
-			if spec.createVia == clientNkectl {
-				// Torn down in AfterAll. A DeferCleanup registered here would run
-				// when this spec ends, taking the port-forward away from every
-				// spec that follows.
-				test.useNkectl(ctx, spec.options)
-			}
-			if spec.validate.brownfieldOIDC {
-				// A cluster on an OIDC-enabled site is always born OIDC-on, but
-				// brownfield enablement needs an OIDC-off cluster to act on. Turn the
-				// CWE create default off (the OIDC config env stays, so the enable
-				// workflow still runs once it is flipped back on) so this cluster is
-				// created OIDC-off; validateBrownfieldOIDC flips it on and enables.
-				// Restored in AfterAll.
-				By("Creating the brownfield cluster with the CWE OIDC create-default turned off")
-				Expect(nke.SetOIDCEnabled(ctx, test.k8sClient, false)).To(Succeed())
-			}
-			test.initCluster(ctx, spec)
-		}, Label("lifecycle"), NodeTimeout(2*time.Hour))
-
-		Describe("after cluster creation", func() {
-			BeforeEach(func() {
-				if test.cluster == nil {
-					Skip("Cluster creation failed")
-				}
-			})
-
-			if !spec.validate.provisioningOnly {
-				validateOIDCPostCreate(&test)
-			}
-			validateNodeReadinessPostCreate(&test)
-			if spec.validate.openVSwitch {
-				validateOpenVSwitchPostCreate(&test)
-			}
-			if spec.validate.ovnNetworking {
-				validateOVNNetworkPolicyPostCreate(&test)
-			}
-			if spec.validate.postReadyChecks {
-				validatePostReadyClusterState(&test)
-				validatePostReadyNodeOperations(&test)
-			}
-			if spec.validate.kubeVipRouteWithdrawal {
-				validatePostReadyKubeVipRouteWithdrawal(&test)
-			}
-			if spec.validate.certificateRenewal {
-				validatePostReadyCertificateRenewal(&test)
-			}
-			if spec.validate.csrApproval {
-				validateKubeletServingCSRApproval(&test)
-			}
-			if spec.validate.etcdEncryption {
-				validateEtcdEncryption(&test)
-			}
-			if spec.validate.brownfieldEtcdEncryption {
-				validateBrownfieldEtcdEncryption(&test)
-			}
-			if spec.validate.brownfieldOIDC {
-				validateBrownfieldOIDC(&test)
-			}
-			if spec.validate.scale {
-				validateNodePoolScale(&test)
-			}
-			if spec.validate.reboot {
-				validateLabelReboot(&test)
-			}
-			if spec.validate.upgrade {
-				validateK8sUpgrade(&test)
-			}
-			if !spec.validate.provisioningOnly {
-				validatePodCIDRPostCreate(&test)
-			}
-			if spec.validate.clusterConfig {
-				validateClusterConfig(&test)
-			}
-			if spec.validate.nodeReplacement {
-				validateNodeReplacement(&test)
-			}
-			if spec.validate.manualScaleDown {
-				validateManualScaleDownStability(&test)
-			}
-			if spec.validate.cpRotation {
-				validateSingleNodeControlPlaneRotation(&test)
-			}
-			if spec.validate.controlPlaneController {
-				validateControllerManagedControlPlane(&test)
-			}
-			if spec.validate.controlPlaneControllerUpdate {
-				validateControllerManagedControlPlaneUpdate(&test)
-			}
-			if spec.validate.controlPlaneControllerRollingUpdate {
-				validateControllerManagedControlPlaneRollingUpdate(&test)
-			}
-			if spec.validate.controlPlaneControllerDelete {
-				validateControllerManagedControlPlaneDeleteRefused(&test)
-				validateControllerManagedControlPlaneSerializedDelete(&test)
-				validateControllerManagedControlPlaneUnreachableDelete(&test)
-			}
-			if spec.validate.nodePoolLifecycle {
-				validateAdditionalNodePool(&test)
-			}
-			if spec.validate.nodePoolCascade {
-				validateNodePoolCascadePostCreate(&test)
-			}
-			if spec.createVia == clientNkectl {
-				validateNkectlPostCreate(&test)
-				validateNkectlNodePoolLifecycle(&test)
-			}
-		})
-
-		It("deletes the cluster", func(ctx context.Context) {
-			if test.cluster == nil {
-				Skip("Cluster creation failed")
-			}
-			if test.cfg.Lifecycle.ReuseCluster != "" || test.cfg.Lifecycle.SkipDelete {
-				Skip("Lifecycle config keeps the cluster")
-			}
-			if test.cfg.Lifecycle.PreserveOnFailure && failed {
-				Skip("Preserving the cluster after a failure")
-			}
-
-			test.deleteClusterAndWait(ctx)
-			deleted = true
-		}, Label("lifecycle"), NodeTimeout(1*time.Hour))
-
-		Describe("after cluster deletion", func() {
-			BeforeEach(func() {
-				if !deleted {
-					Skip("Cluster was not deleted; skipping post-deletion validations")
-				}
-			})
-
-			validateTenantAccessSecretGCPostDelete(&test)
-			if !spec.validate.provisioningOnly {
-				validateOIDCPostDelete(&test)
-			}
-			if spec.validate.nodePoolCascade {
-				validateNodePoolCascadePostDelete(&test)
-			}
-			if spec.validate.etcdEncryption {
-				validateEtcdEncryptionPostDelete(&test)
-			}
-		})
-
-		AfterAll(func(ctx context.Context) {
-			// Named once so the delete below and the nkectl sweep cannot disagree
-			// about when the cluster should outlive the run.
-			keepCluster := test.cfg.Lifecycle.ReuseCluster != "" ||
-				test.cfg.Lifecycle.SkipDelete ||
-				(test.cfg.Lifecycle.PreserveOnFailure && failed)
-
-			// Deferred: everything below reports through Gomega, which fails by
-			// panicking, and a delete that does not complete would otherwise leave
-			// the forward and its credential directory behind and skip the sweep.
-			// Ordered so the sweep, which needs the forward, runs first.
-			defer test.closeNkectl()
-			defer func() {
-				if !keepCluster {
-					// Catches what the switch below cannot see: a cluster nkectl
-					// created that never reached test.cluster.
-					test.cleanupNkectlCreated(ctx)
-				}
-			}()
-
-			if spec.validate.brownfieldOIDC && test.k8sClient != nil {
-				// Restore the CWE OIDC create-default the create spec turned off, so
-				// it does not leak to other table entries (the suite runs serially).
-				Expect(nke.SetOIDCEnabled(ctx, test.k8sClient, true)).To(Succeed())
-			}
-			// Use AfterAll so the cluster is removed even if a spec before the
-			// delete spec fails (or the delete spec is skipped). It is a no-op
-			// once the delete spec has run.
-			switch {
-			case deleted, test.cluster == nil:
-			case keepCluster:
-			default:
-				test.deleteClusterAndWait(ctx)
-			}
-		}, NodeTimeout(1*time.Hour))
-	},
+	tenantSubtree(configuredManagement),
 	// The pull-request smoke lane uses a separate, minimal topology instead of
 	// filtering the full CAPD row below. The full row needs three control-plane
 	// nodes for its scale, rotation, and certificate checks; the core lane only
@@ -583,7 +386,292 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		options:  nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{cpRotation: true},
 	}),
+	// The only entry that runs on hardware, and so the only one needing
+	// -e2e.environment. Opt-in via the "nico-forge" label, and that label
+	// alone: everything above runs against a simulator on the runner, while
+	// this one creates real instances in a real Forge site and costs real
+	// money. A scenario label such as "happy-path" would pull it into
+	// test-e2e-happy-path, which a developer runs expecting a simulator.
+	//
+	// Node counts are the smallest that still prove a control plane and a
+	// worker, and the pools name no instance type: the environment file's
+	// declarations answer -e2e.capabilities instead, so the machine is chosen
+	// by what the run needs rather than pinned in the table.
+	//
+	// provisioningOnly to start with. Create, node readiness and delete are
+	// what a first run on Forge has to get through before any deeper
+	// assertion is worth attempting.
+	Entry("nico-forge", Ordered, ContinueOnFailure, Label("nico-forge"), nicoForgeTenant()),
 )...)
+
+// nicoForgeTenant is the Forge tenant both the nico-forge lane and the site
+// lane create, so a site the suite built is held to the same tenant as a site
+// that already existed.
+//
+// A function rather than a package variable because two trees use it. Entry
+// copies the struct, but the copy is shallow: a shared value would hand both
+// lanes the same pool slices and the same capabilities map, and a builder
+// that ever wrote a default into one would change the other lane with nothing
+// in either file to show why.
+func nicoForgeTenant() testSpec {
+	return testSpec{
+		buildSpec: nicoForgeSpec,
+		shape: clusterShape{
+			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+		},
+		// Generous next to the simulator lanes: these timeouts cover a bare
+		// machine booting an OS image over the network and installing
+		// packages, none of which a container does.
+		//
+		// Delete is 45 minutes because Forge takes 20 to 40 to actually
+		// release a machine, and the cluster is not gone until both of its
+		// machines are. Run 36051890151 failed the delete at 1800.306s
+		// against the 30 minutes this used to be, while the instances were
+		// still reporting Terminating.
+		options:  nke.Options{Provision: 90 * time.Minute, Delete: 45 * time.Minute, Poll: 30 * time.Second},
+		validate: validations{provisioningOnly: true},
+	}
+}
+
+// tenantSubtree is one backend's tenant lifecycle against the management
+// cluster resolve names. resolve runs when the create spec does, not when the
+// tree is built, so a lane that builds its management cluster in a BeforeAll
+// can hand over a kubeconfig that did not exist at tree construction.
+func tenantSubtree(resolve managementResolver) func(spec testSpec) {
+	return func(spec testSpec) {
+		var (
+			test    tenantTest
+			failed  bool
+			deleted bool
+			// Set once the delete spec has asked CWE to delete and waited out
+			// its budget, whether or not the cluster went. deleted alone cannot
+			// carry that: it means the wait succeeded, so a timed-out wait left
+			// it false and the AfterAll below spent a second full budget on the
+			// same cluster.
+			deleteWaited bool
+		)
+
+		// Record any spec failure so the cluster delete can honor preserveOnFailure.
+		AfterEach(func() { failed = failed || CurrentSpecReport().Failed() })
+
+		It("creates the cluster", func(ctx context.Context) {
+			// A CWE accepts only one control-plane shape, so skip an entry that
+			// needs the other one rather than fail its create.
+			if (spec.validate.controlPlaneController || spec.validate.controlPlaneControllerUpdate ||
+				spec.validate.controlPlaneControllerRollingUpdate || spec.validate.controlPlaneControllerDelete) &&
+				!controlPlaneControllerEnabled() {
+				Skip("requires CWE deployed with " + controlPlaneControllerEnv + " on")
+			}
+			if spec.validate.cpRotation && controlPlaneControllerEnabled() {
+				Skip("rotates a control-plane node pool; requires CWE deployed with " + controlPlaneControllerEnv + "=false")
+			}
+			test = expectSucceed(setupTenantTest(ctx, expectSucceed(resolve()), spec.options))
+			if spec.createVia == clientNkectl {
+				// Torn down in AfterAll. A DeferCleanup registered here would run
+				// when this spec ends, taking the port-forward away from every
+				// spec that follows.
+				test.useNkectl(ctx, spec.options)
+			}
+			if spec.validate.brownfieldOIDC {
+				// A cluster on an OIDC-enabled site is always born OIDC-on, but
+				// brownfield enablement needs an OIDC-off cluster to act on. Turn the
+				// CWE create default off (the OIDC config env stays, so the enable
+				// workflow still runs once it is flipped back on) so this cluster is
+				// created OIDC-off; validateBrownfieldOIDC flips it on and enables.
+				// Restored in AfterAll.
+				By("Creating the brownfield cluster with the CWE OIDC create-default turned off")
+				Expect(nke.SetOIDCEnabled(ctx, test.k8sClient, false)).To(Succeed())
+			}
+			test.initCluster(ctx, spec)
+		}, Label("lifecycle"), NodeTimeout(2*time.Hour))
+
+		Describe("after cluster creation", func() {
+			BeforeEach(func() {
+				if test.cluster == nil {
+					Skip("Cluster creation failed")
+				}
+			})
+
+			if !spec.validate.provisioningOnly {
+				validateOIDCPostCreate(&test)
+			}
+			validateNodeReadinessPostCreate(&test)
+			if spec.validate.openVSwitch {
+				validateOpenVSwitchPostCreate(&test)
+			}
+			if spec.validate.ovnNetworking {
+				validateOVNNetworkPolicyPostCreate(&test)
+			}
+			if spec.validate.postReadyChecks {
+				validatePostReadyClusterState(&test)
+				validatePostReadyNodeOperations(&test)
+			}
+			if spec.validate.kubeVipRouteWithdrawal {
+				validatePostReadyKubeVipRouteWithdrawal(&test)
+			}
+			if spec.validate.certificateRenewal {
+				validatePostReadyCertificateRenewal(&test)
+			}
+			if spec.validate.csrApproval {
+				validateKubeletServingCSRApproval(&test)
+			}
+			if spec.validate.etcdEncryption {
+				validateEtcdEncryption(&test)
+			}
+			if spec.validate.brownfieldEtcdEncryption {
+				validateBrownfieldEtcdEncryption(&test)
+			}
+			if spec.validate.brownfieldOIDC {
+				validateBrownfieldOIDC(&test)
+			}
+			if spec.validate.scale {
+				validateNodePoolScale(&test)
+			}
+			if spec.validate.reboot {
+				validateLabelReboot(&test)
+			}
+			if spec.validate.upgrade {
+				validateK8sUpgrade(&test)
+			}
+			if !spec.validate.provisioningOnly {
+				validatePodCIDRPostCreate(&test)
+			}
+			if spec.validate.clusterConfig {
+				validateClusterConfig(&test)
+			}
+			if spec.validate.nodeReplacement {
+				validateNodeReplacement(&test)
+			}
+			if spec.validate.manualScaleDown {
+				validateManualScaleDownStability(&test)
+			}
+			if spec.validate.cpRotation {
+				validateSingleNodeControlPlaneRotation(&test)
+			}
+			if spec.validate.controlPlaneController {
+				validateControllerManagedControlPlane(&test)
+			}
+			if spec.validate.controlPlaneControllerUpdate {
+				validateControllerManagedControlPlaneUpdate(&test)
+			}
+			if spec.validate.controlPlaneControllerRollingUpdate {
+				validateControllerManagedControlPlaneRollingUpdate(&test)
+			}
+			if spec.validate.controlPlaneControllerDelete {
+				validateControllerManagedControlPlaneDeleteRefused(&test)
+				validateControllerManagedControlPlaneSerializedDelete(&test)
+				validateControllerManagedControlPlaneUnreachableDelete(&test)
+			}
+			if spec.validate.nodePoolLifecycle {
+				validateAdditionalNodePool(&test)
+			}
+			if spec.validate.nodePoolCascade {
+				validateNodePoolCascadePostCreate(&test)
+			}
+			if spec.createVia == clientNkectl {
+				validateNkectlPostCreate(&test)
+				validateNkectlNodePoolLifecycle(&test)
+			}
+		})
+
+		It("deletes the cluster", func(ctx context.Context) {
+			if test.cluster == nil {
+				Skip("Cluster creation failed")
+			}
+			if test.cfg.Lifecycle.ReuseCluster != "" || test.cfg.Lifecycle.SkipDelete {
+				Skip("Lifecycle config keeps the cluster")
+			}
+			if test.cfg.Lifecycle.PreserveOnFailure && failed {
+				Skip("Preserving the cluster after a failure")
+			}
+
+			deleteWaited = true
+			test.deleteClusterAndWait(ctx)
+			deleted = true
+		}, Label("lifecycle"), NodeTimeout(1*time.Hour))
+
+		Describe("after cluster deletion", func() {
+			BeforeEach(func() {
+				if !deleted {
+					Skip("Cluster was not deleted; skipping post-deletion validations")
+				}
+			})
+
+			validateTenantAccessSecretGCPostDelete(&test)
+			if !spec.validate.provisioningOnly {
+				validateOIDCPostDelete(&test)
+			}
+			if spec.validate.nodePoolCascade {
+				validateNodePoolCascadePostDelete(&test)
+			}
+			if spec.validate.etcdEncryption {
+				validateEtcdEncryptionPostDelete(&test)
+			}
+		})
+
+		AfterAll(func(ctx context.Context) {
+			// Named once so the delete below and the nkectl sweep cannot disagree
+			// about when the cluster should outlive the run.
+			keepCluster := test.cfg.Lifecycle.ReuseCluster != "" ||
+				test.cfg.Lifecycle.SkipDelete ||
+				(test.cfg.Lifecycle.PreserveOnFailure && failed)
+
+			// Deferred: everything below reports through Gomega, which fails by
+			// panicking, and a delete that does not complete would otherwise leave
+			// the forward and its credential directory behind and skip the sweep.
+			// Ordered so the sweep, which needs the forward, runs first.
+			defer test.closeNkectl()
+			defer func() {
+				if !keepCluster {
+					// Catches what the switch below cannot see: a cluster nkectl
+					// created that never reached test.cluster.
+					test.cleanupNkectlCreated(ctx)
+				}
+			}()
+
+			if spec.validate.brownfieldOIDC && test.k8sClient != nil {
+				// Restore the CWE OIDC create-default the create spec turned off, so
+				// it does not leak to other table entries (the suite runs serially).
+				Expect(nke.SetOIDCEnabled(ctx, test.k8sClient, true)).To(Succeed())
+			}
+			// Use AfterAll so the cluster is removed even if a spec before the
+			// delete spec fails (or the delete spec is skipped). It is a no-op
+			// once the delete spec has run.
+			switch {
+			case deleted, test.cluster == nil:
+			case keepCluster:
+			case deleteWaited:
+				// The delete spec already asked CWE to delete this cluster and
+				// waited the full budget without it going. Asking again changes
+				// nothing, and waiting again spends the suite's remaining time
+				// on a cluster that is not moving -- time the site teardown
+				// needs, because releasing the site is what stops its Forge
+				// instance leaking. Run 36147423536 waited three times on one
+				// stuck tenant, 112 minutes of a 150-minute suite, and the
+				// suite timeout then killed the teardown before it released the
+				// site.
+				GinkgoLogr.Info("tenant delete already timed out; leaving it to the site sweep rather than waiting again",
+					"cluster", test.cluster.ID)
+			default:
+				test.deleteClusterAndWait(ctx)
+			}
+			// Sized to what this node can actually contain rather than to the
+			// suite: WaitForClusterDeleted is bounded by the entry's
+			// nke.Options.Delete, which is 5 or 10 minutes everywhere above,
+			// so fifteen leaves half again over the largest of them.
+			//
+			// It was an hour, and that is the number that matters on the
+			// interrupt path. A cleanup node entered after the suite is
+			// already interrupted gets its whole NodeTimeout over again, so an
+			// hour here plus the site's forty-five minutes is a teardown that
+			// cannot fit between -ginkgo.timeout and the go-test backstop --
+			// and that backstop panics without unwinding, which leaks the
+			// site's instance. See the three nested timeouts in
+			// forge-site-controller-e2e.yml.
+		}, NodeTimeout(15*time.Minute))
+	}
+}
 
 func withNicoVMSOSProfileEntries(args ...any) []any {
 	for _, entry := range mustNicoVMSOSProfileTableEntries() {
@@ -716,16 +804,46 @@ type validations struct {
 	controlPlaneControllerDelete bool
 }
 
+// managementCluster is the cluster CWE runs on, which a tenant test reaches
+// CWE and the tenant clusters through.
+type managementCluster struct {
+	Kubeconfig string
+	Context    string
+
+	// TrustDomain is the SPIRE trust domain. Empty derives it from a kind
+	// context name, which is all a simulator lane has to go on.
+	TrustDomain string
+
+	// Relay reaches a tenant's API server when the test process cannot route
+	// to the address the tenant publishes. Only the Forge site lane sets it:
+	// every other lane shares a network with its clusters, and nil leaves
+	// them talking to the published address directly.
+	Relay kube.EndpointRelay
+}
+
+// managementResolver names the management cluster when a tenant lane starts.
+type managementResolver func() (managementCluster, error)
+
+// configuredManagement is the management cluster the e2e config file names:
+// every lane but the one that builds its own.
+func configuredManagement() (managementCluster, error) {
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return managementCluster{}, fmt.Errorf("loading e2e config: %w", err)
+	}
+	return managementCluster{Kubeconfig: cfg.Kube.Kubeconfig, Context: cfg.Kube.Context}, nil
+}
+
 // setupTenantTest builds the per-backend wiring (clients, trust domain, logger)
 // and preflights NKE reachability over the port-forward. It does not create a
 // cluster.
-func setupTenantTest(ctx context.Context, timeouts nke.Options) (tenantTest, error) {
+func setupTenantTest(ctx context.Context, mgmt managementCluster, timeouts nke.Options) (tenantTest, error) {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return tenantTest{}, fmt.Errorf("loading e2e config: %w", err)
 	}
 
-	restConfig, err := kube.RESTConfig(cfg.Kube.Kubeconfig, cfg.Kube.Context)
+	restConfig, err := kube.RESTConfig(mgmt.Kubeconfig, mgmt.Context)
 	if err != nil {
 		return tenantTest{}, fmt.Errorf("reading kubeconfig: %w", err)
 	}
@@ -740,12 +858,19 @@ func setupTenantTest(ctx context.Context, timeouts nke.Options) (tenantTest, err
 		return tenantTest{}, fmt.Errorf("building CWE API client: %w", err)
 	}
 
-	trustDomain, err := kube.TrustDomain(cfg.Kube.Kubeconfig, cfg.Kube.Context)
-	if err != nil {
-		GinkgoLogr.Info("SPIRE trust domain could not be derived from kubeconfig context; OIDC validations will skip", "error", err)
+	trustDomain := mgmt.TrustDomain
+	if trustDomain == "" {
+		var tdErr error
+		trustDomain, tdErr = kube.TrustDomain(mgmt.Kubeconfig, mgmt.Context)
+		if tdErr != nil {
+			GinkgoLogr.Info("SPIRE trust domain could not be derived from kubeconfig context; OIDC validations will skip", "error", tdErr)
+		}
 	}
 
 	var tenantClientOptions []kube.TenantClientFactoryOption
+	if mgmt.Relay != nil {
+		tenantClientOptions = append(tenantClientOptions, kube.WithEndpointRelay(mgmt.Relay))
+	}
 	if os.Getenv(dsxIdentityExchangeEnv) == "true" {
 		var exchangeCA corev1.ConfigMap
 		if getErr := k8sClient.Get(ctx, client.ObjectKey{
@@ -775,6 +900,7 @@ func setupTenantTest(ctx context.Context, timeouts nke.Options) (tenantTest, err
 	return tenantTest{
 		log:           GinkgoLogr,
 		cfg:           cfg,
+		mgmt:          mgmt,
 		k8sClient:     k8sClient,
 		tenantClients: tenantClients,
 		nke:           cweClient,
@@ -797,8 +923,10 @@ func (t *tenantTest) initCluster(ctx context.Context, b testSpec) {
 		return
 	}
 
-	if t.spec.ControlPlane.ControlPlaneVIP == "" {
-		vip, err := t.availableControlPlaneVIP(ctx, preferredControlPlaneVIP(t.spec.Backend))
+	// A backend with no preferred VIP wants none: CWE reads an empty one as
+	// "do not configure kube-vip", which is how a real site runs.
+	if preferred := preferredControlPlaneVIP(t.spec.Backend); preferred != "" && t.spec.ControlPlane.ControlPlaneVIP == "" {
+		vip, err := t.availableControlPlaneVIP(ctx, preferred)
 		Expect(err).NotTo(HaveOccurred(), "should select an unused control-plane VIP")
 		t.spec.ControlPlane.ControlPlaneVIP = vip
 	}
@@ -868,6 +996,12 @@ func preferredControlPlaneVIP(backend nke.Backend) string {
 		return nicoControlPlaneVIP
 	case nke.BackendNicoVMS:
 		return nicoVMSControlPlaneVIP
+	case nke.BackendNicoForge:
+		// None. A real site owns its address space, so there is no private
+		// range to pick an unused address out of, and CWE reads an empty VIP
+		// as "do not configure kube-vip". initCluster skips the search when
+		// the preference is empty.
+		return ""
 	default:
 		panic(fmt.Sprintf("no preferred control-plane VIP for backend %q", backend))
 	}
@@ -912,12 +1046,19 @@ func (t *tenantTest) availableControlPlaneVIP(ctx context.Context, preferred str
 const controlPlaneControllerEnv = "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER"
 
 // controlPlaneControllerEnabled reports whether the CWE under test provisions
-// control planes through the control-plane controller. Like CWE, it treats an
-// unset or unparsable value as on, so the suite must see the value CWE was
-// deployed with.
+// control planes through the control-plane controller, read from
+// controlPlaneControllerEnv. An unset or empty value means true, CWE's default.
+// It panics if the value is not a boolean.
 func controlPlaneControllerEnabled() bool {
-	enabled, err := strconv.ParseBool(os.Getenv(controlPlaneControllerEnv))
-	return err != nil || enabled
+	value := os.Getenv(controlPlaneControllerEnv)
+	if value == "" {
+		return true
+	}
+	enabled, err := strconv.ParseBool(value)
+	if err != nil {
+		panic(fmt.Sprintf("%s=%q is not a boolean: %v", controlPlaneControllerEnv, value, err))
+	}
+	return enabled
 }
 
 // applyControlPlaneMode sends spec's control-plane pool as the equivalent
@@ -1007,6 +1148,31 @@ func TestUnit_CAPDSpec(t *testing.T) {
 			if spec.ControlPlane.ControlPlaneVIP != wantVIP {
 				t.Fatalf("ControlPlaneVIP = %q, want %q", spec.ControlPlane.ControlPlaneVIP, wantVIP)
 			}
+		})
+	}
+}
+
+func TestUnit_ControlPlaneControllerEnabled(t *testing.T) {
+	tests := []struct {
+		value     string
+		want      bool
+		wantPanic bool
+	}{
+		{value: "", want: true},
+		{value: "true", want: true},
+		{value: "1", want: true},
+		{value: "false", want: false},
+		{value: "0", want: false},
+		{value: "no", wantPanic: true},
+	}
+	for _, tt := range tests {
+		t.Run("value "+strconv.Quote(tt.value), func(t *testing.T) {
+			t.Setenv(controlPlaneControllerEnv, tt.value)
+			if tt.wantPanic {
+				require.Panics(t, func() { controlPlaneControllerEnabled() })
+				return
+			}
+			require.Equal(t, tt.want, controlPlaneControllerEnabled())
 		})
 	}
 }
@@ -1197,6 +1363,108 @@ func nicoSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec 
 		},
 		Workers: nicoNodePoolSpecs(shape.workerPools, "worker", "w"),
 	})
+}
+
+// Dependency versions that have carried a tenant on Forge. Defaults rather than
+// required inputs: they are not what a nico-forge run qualifies, and a resolved
+// combination from the qualify tool will supply them once the run verb exists.
+//
+// Kubernetes and the CNI are what the recorded Forge exercises ran. The SPIRE
+// pin is weaker evidence — those runs installed spire-agent unpinned, so this
+// is the version the repo's own Forge scaffolding names rather than one
+// observed on the hardware.
+const (
+	forgeDefaultKubernetesVersion = "1.36.3"
+	forgeDefaultCNIVersion        = "1.4.0"
+	forgeDefaultSpireVersion      = "1.14.1+tpm1.9.0"
+)
+
+// nicoForgeSpec builds a CAPNico topology on real Forge. The manifests are the
+// ones nicoSpec already builds, since CAPNico reconciles both, so what this
+// adds is identifiers of infrastructure that exists and the two payloads a
+// machine that really boots needs.
+//
+// It fails the spec rather than returning an error, like every other builder
+// in this table. Each thing it can fail on is an input the run was supposed to
+// supply, so naming which one is the useful part.
+func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec {
+	GinkgoHelper()
+
+	forge, err := forgeEnvironment()
+	Expect(err).NotTo(HaveOccurred(), "should load the environment named by -e2e.environment")
+	site, err := forge.Site("")
+	Expect(err).NotTo(HaveOccurred(), "should resolve a site in the environment")
+	capabilities, err := runCapabilities()
+	Expect(err).NotTo(HaveOccurred(), "should parse -e2e.capabilities")
+	instanceType, err := site.MatchInstanceType(capabilities)
+	Expect(err).NotTo(HaveOccurred(), "should find an instance type providing the requested capabilities")
+
+	kubernetesVersion := cmp.Or(optionalVersion("kube"), shape.kubernetesVersion, forgeDefaultKubernetesVersion)
+
+	// The OS image is the component under qualification, so it is required and
+	// has no default: a run that did not name one has not said what it is
+	// qualifying. The imager is versioned separately and cannot be derived.
+	bootLoaderURL, err := requireVersion("os-image-bootloader")
+	Expect(err).NotTo(HaveOccurred(), "should be told which qcow imager to boot")
+	imageURL, err := requireVersion("os-image")
+	Expect(err).NotTo(HaveOccurred(), "should be told which OS image to qualify")
+
+	payloads, err := nke.BuildForgeNodePayloads(nke.NodeInputs{
+		BootLoaderURL:     bootLoaderURL,
+		ImageURL:          imageURL,
+		KubernetesVersion: kubernetesVersion,
+		CNIVersion:        cmp.Or(optionalVersion("nke-cni-ovn"), forgeDefaultCNIVersion),
+		SpireVersion:      cmp.Or(optionalVersion("spire-agent"), forgeDefaultSpireVersion),
+	})
+	Expect(err).NotTo(HaveOccurred(), "should render the Forge node payloads")
+
+	return nke.ClusterSpec{
+		Name:              name,
+		Backend:           nke.BackendNicoForge,
+		KubernetesVersion: kubernetesVersion,
+		// OVN, matching the nke-cni-ovn-images package the pre-kubeadm
+		// commands install. Calico here would install one CNI and run another.
+		CNIPlugin:    cmp.Or(shape.cniPlugin, CNIPluginOVN),
+		OrgID:        forge.Org.ID,
+		SiteID:       site.ID,
+		VpcID:        site.VpcID,
+		NodePayloads: &payloads,
+		ControlPlane: nke.ControlPlane{
+			Pools:         forgeNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", site, instanceType),
+			EtcdEncrypted: shape.etcdEncrypted,
+			// Empty unless an entry asks for one, which CWE reads as "do not
+			// configure kube-vip". The Forge tenants were created without one,
+			// and so is every Forge create in this repository. The simulator
+			// backends advertise theirs through a BGP speaker the runner
+			// hosts, and a real site has no equivalent to borrow from.
+			ControlPlaneVIP: shape.controlPlaneVIP,
+		},
+		Workers: forgeNodePoolSpecs(shape.workerPools, "worker", "w", site, instanceType),
+	}
+}
+
+// forgeNodePoolSpecs fills each pool from the environment. A pool naming its
+// own instance type keeps it, which is how a table entry asks for a shape the
+// capability match would not have chosen.
+func forgeNodePoolSpecs(
+	pools []nke.NodePoolSpec,
+	defaultName, defaultNodeNamePrefix string,
+	site environment.ForgeSite,
+	instanceType environment.ForgeInstanceType,
+) []nke.NodePoolSpec {
+	out := make([]nke.NodePoolSpec, 0, len(pools))
+	for _, pool := range pools {
+		out = append(out, nke.NodePoolSpec{
+			Name:                 cmp.Or(pool.Name, defaultName),
+			NodeNamePrefix:       cmp.Or(pool.NodeNamePrefix, defaultNodeNamePrefix),
+			DesiredNodeCount:     pool.DesiredNodeCount,
+			SystemReservedMemory: cmp.Or(pool.SystemReservedMemory, "16Gi"),
+			InstanceTypeID:       cmp.Or(pool.InstanceTypeID, instanceType.ID),
+			SubnetIDs:            defaultStrings(pool.SubnetIDs, site.SubnetID),
+			SSHKeyGroupIDs:       defaultStrings(pool.SSHKeyGroupIDs, site.SSHKeyGroupID),
+		})
+	}
+	return out
 }
 
 func nicoNodePoolSpecs(pools []nke.NodePoolSpec, defaultName, defaultNodeNamePrefix string) []nke.NodePoolSpec {

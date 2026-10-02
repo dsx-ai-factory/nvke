@@ -21,7 +21,7 @@ notices-check` verifies it is up to date.
 | `github.com/apapsch/go-jsonmerge/v2` | MIT | `github.com/apapsch/go-jsonmerge/v2@v2.0.0` | https://github.com/apapsch/go-jsonmerge/blob/v2.0.0/LICENSE |
 | `github.com/beevik/etree` | BSD-2-Clause | `github.com/beevik/etree@v1.6.0` | https://github.com/beevik/etree/blob/v1.6.0/LICENSE |
 | `github.com/beorn7/perks/quantile` | MIT | `github.com/beorn7/perks@v1.0.1` | https://github.com/beorn7/perks/blob/v1.0.1/LICENSE |
-| `github.com/blang/semver/v4` | MIT | `github.com/blang/semver/v4@v4.0.0` | https://github.com/blang/semver/blob/v4.0.0/v4/LICENSE |
+| `github.com/blang/semver/v4` | MIT | `github.com/blang/semver/v4@v4.0.0` | https://github.com/blang/semver/blob/v4.0.0/LICENSE |
 | `github.com/caarlos0/env/v11` | MIT | `github.com/caarlos0/env/v11@v11.4.1` | https://github.com/caarlos0/env/blob/v11.4.1/LICENSE.md |
 | `github.com/cenkalti/backoff/v5` | MIT | `github.com/cenkalti/backoff/v5@v5.0.3` | https://github.com/cenkalti/backoff/blob/v5.0.3/LICENSE |
 | `github.com/cespare/xxhash/v2` | MIT | `github.com/cespare/xxhash/v2@v2.3.0` | https://github.com/cespare/xxhash/blob/v2.3.0/LICENSE.txt |
@@ -29,7 +29,7 @@ notices-check` verifies it is up to date.
 | `github.com/coreos/go-semver/semver` | Apache-2.0 | `github.com/coreos/go-semver@v0.3.1` | https://github.com/coreos/go-semver/blob/v0.3.1/LICENSE |
 | `github.com/davecgh/go-spew/spew` | ISC | `github.com/davecgh/go-spew@v1.1.2-0.20180830191138-d8f796af33cc` | https://github.com/davecgh/go-spew/blob/d8f796af33cc/LICENSE |
 | `github.com/emicklei/go-restful/v3` | MIT | `github.com/emicklei/go-restful/v3@v3.13.0` | https://github.com/emicklei/go-restful/blob/v3.13.0/LICENSE |
-| `github.com/evanphx/json-patch/v5` | BSD-3-Clause | `github.com/evanphx/json-patch/v5@v5.9.11` | https://github.com/evanphx/json-patch/blob/v5.9.11/v5/LICENSE |
+| `github.com/evanphx/json-patch/v5` | BSD-3-Clause | `github.com/evanphx/json-patch/v5@v5.9.11` | https://github.com/evanphx/json-patch/blob/v5.9.11/LICENSE |
 | `github.com/facebookgo/clock` | MIT | `github.com/facebookgo/clock@v0.0.0-20150410010913-600d898af40a` | https://github.com/facebookgo/clock/blob/600d898af40a/LICENSE |
 | `github.com/felixge/httpsnoop` | MIT | `github.com/felixge/httpsnoop@v1.1.0` | https://github.com/felixge/httpsnoop/blob/v1.1.0/LICENSE.txt |
 | `github.com/fsnotify/fsnotify` | BSD-3-Clause | `github.com/fsnotify/fsnotify@v1.9.0` | https://github.com/fsnotify/fsnotify/blob/v1.9.0/LICENSE |
@@ -145,7 +145,7 @@ notices-check` verifies it is up to date.
 | `golang.org/x/term` | BSD-3-Clause | `golang.org/x/term@v0.46.0` | https://cs.opensource.google/go/x/term/+/v0.46.0:LICENSE |
 | `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.42.0` | https://cs.opensource.google/go/x/text/+/v0.42.0:LICENSE |
 | `golang.org/x/time/rate` | BSD-3-Clause | `golang.org/x/time@v0.15.0` | https://cs.opensource.google/go/x/time/+/v0.15.0:LICENSE |
-| `gomodules.xyz/jsonpatch/v2` | Apache-2.0 | `gomodules.xyz/jsonpatch/v2@v2.5.0` | https://github.com/gomodules/jsonpatch/blob/v2.5.0/v2/LICENSE |
+| `gomodules.xyz/jsonpatch/v2` | Apache-2.0 | `gomodules.xyz/jsonpatch/v2@v2.5.0` | https://github.com/gomodules/jsonpatch/blob/v2.5.0/LICENSE |
 | `google.golang.org/genproto/googleapis/api` | Apache-2.0 | `google.golang.org/genproto/googleapis/api@v0.0.0-20260819154853-08b0e4226688` | https://github.com/googleapis/go-genproto/blob/08b0e4226688/googleapis/api/LICENSE |
 | `google.golang.org/genproto/googleapis/rpc` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20260819154853-08b0e4226688` | https://github.com/googleapis/go-genproto/blob/08b0e4226688/googleapis/rpc/LICENSE |
 | `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.83.2` | https://github.com/grpc/grpc-go/blob/v1.83.2/LICENSE |

@@ -52,3 +52,42 @@ subjects:
   - kind: ServiceAccount
     name: {{ .Values.daemonset.kubernetes.serviceAccount | default "nktp-daemonset-collector" }}
     namespace: {{ .Release.Namespace }}
+{{- $rbac := .Values.daemonset.rbac | default dict }}
+{{- if and (hasKey $rbac "create") (not (kindIs "bool" $rbac.create)) }}
+  {{- fail "daemonset.rbac.create must be a boolean" }}
+{{- end }}
+{{- if $rbac.create }}
+{{- $prometheusCR := $allocator.prometheusCR | default dict }}
+{{- range $namespace := uniq ($prometheusCR.secretNamespaces | default list) }}
+{{- if not $namespace }}
+  {{- fail "daemonset.kubernetes.targetAllocator.prometheusCR.secretNamespaces must not contain empty namespace names" }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nktp-daemonset-monitor-{{ $.Release.Namespace }}
+  namespace: {{ $namespace | quote }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nktp-daemonset-monitor-{{ $.Release.Namespace }}
+  namespace: {{ $namespace | quote }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nktp-daemonset-monitor-{{ $.Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $allocator.serviceAccount | default "nktp-daemonset-targetallocator" }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}

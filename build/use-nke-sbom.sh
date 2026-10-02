@@ -164,6 +164,28 @@ values_for() {
   done
 }
 
+# build_chart_dependencies downloads the archives a path chart's Chart.lock pins
+# into its charts/ directory, which a checkout does not carry. helm dependency
+# build refuses to run until every repository in Chart.yaml has been added, so
+# they are added to a throwaway Helm config, leaving the caller's repository
+# list alone -- the same steps as `make nktp-chart-deps`. OCI dependencies need
+# no repository entry. A chart without a Chart.lock has nothing to build.
+build_chart_dependencies() {
+  local chart="$1" helm_home url n=0
+  [[ -f "${chart}/Chart.lock" ]] || return 0
+  helm_home="$(mktemp -d)"
+  local helm_env=(env HELM_REPOSITORY_CONFIG="${helm_home}/repositories.yaml"
+    HELM_REPOSITORY_CACHE="${helm_home}/cache")
+  log "building chart dependencies of ${chart}"
+  while IFS= read -r url; do
+    [[ "${url}" == oci://* ]] && continue
+    n=$((n + 1))
+    run "${helm_env[@]}" helm repo add "dependency-${n}" "${url}"
+  done < <(awk '$1 == "repository:" { print $2 }' "${chart}/Chart.yaml" | sort -u)
+  run "${helm_env[@]}" helm dependency build "${chart}" --skip-refresh
+  rm -rf "${helm_home}"
+}
+
 # install_single installs one chart as one release. No enable flags and no phase
 # loop: a release contains only its own chart, so there is nothing to turn off.
 install_helm_item() {
@@ -182,6 +204,7 @@ install_helm_item() {
     ref=("${override}")
   elif [[ -n "${path}" ]]; then
     ref=("${DEPLOY_PATH}/${path}")
+    build_chart_dependencies "${ref[0]}"
   elif [[ "${repository}" == oci://* ]]; then
     ref=("${repository%/}/${chart_name}" --version "${version}")
   elif [[ -n "${repository}" ]]; then

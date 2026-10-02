@@ -9,6 +9,11 @@
 # record for whoever mirrors these artifacts. The bootstrap does not verify
 # them.
 #
+# Two kinds of image entries: images the bootstrap pulls, with a digest; and
+# the two images you build, with the default tag `make -C cli images` gives
+# them and no digest. NKECTL_CWE_IMAGE and NKECTL_CAPI_PROVISIONED_IMAGE
+# replace those two.
+#
 # Not listed:
 # - The controller chart, the Postgres chart and the provisioned provider's
 #   manifest. They ship inside nkectl.
@@ -90,18 +95,20 @@ components:
         ref: ghcr.io/spiffe/spire-tpm-plugin-tpm-attestor-server:v1.9.0
         digest: sha256:9d3c69f9a9a59b274e7d6d9f8e75d89691d7d9204f2063d7917685a17b8828dc
 
-  # Built by you from controller/Dockerfile. NKECTL_CWE_IMAGE names the
-  # image the bootstrap runs; the ref below is a placeholder. The controller
-  # chart ships inside nkectl, so there is no chart entry.
+  # Built by you from controller/Dockerfile. The ref below is the default:
+  # the tag `make -C cli images` builds, side-loaded from the local image
+  # store. NKECTL_CWE_IMAGE overrides it. The controller chart ships inside
+  # nkectl, so there is no chart entry.
   controller:
     images:
       controller:
-        ref: cwe-controller:local
+        ref: nke-controller:latest
 
-  # Built by you from cluster-api-provider-provisioned/Dockerfile.
-  # NKECTL_CAPI_PROVISIONED_IMAGE names the image the bootstrap runs; the ref
-  # below is the local build's tag. Its manifest ships inside nkectl.
+  # Built by you from cluster-api-provider-provisioned/Dockerfile. The ref
+  # below is the default: the tag `make -C cli images` builds, side-loaded.
+  # NKECTL_CAPI_PROVISIONED_IMAGE overrides it. Its manifest ships inside
+  # nkectl.
   cluster-api-provider-provisioned:
     images:
       manager:
-        ref: cluster-api-provider-provisioned:local
+        ref: cluster-api-provider-provisioned:latest

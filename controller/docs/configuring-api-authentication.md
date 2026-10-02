@@ -287,7 +287,7 @@ issuers:
 `pathPrefixes` is required and cannot be `/`. A trust domain on its own would
 admit every workload in it, which is rarely what you want.
 
-An issuer uses either `serviceAccounts` or `spiffe`, never both.
+An issuer uses one of `serviceAccounts`, `spiffe`, or `groups`.
 
 ### 4. Tell callers what to ask for
 
@@ -346,7 +346,7 @@ a warning.
 | `issuers[].jwks.caBundlePath` | no | CA file inside the container, usually one you listed under `apiAuth.configMap.extraFiles`. Omit for a publicly trusted certificate. |
 | `issuers[].jwks.bearerTokenPath` | no | Token file, if the keys endpoint needs one. Re-read on every fetch. |
 | `issuers[].algorithms` | yes | `RS256` and `ES256` cover most issuers. Asymmetric only. |
-| `issuers[].admit` | yes | `serviceAccounts` or `spiffe`, not both. |
+| `issuers[].admit` | yes | One of `serviceAccounts`, `spiffe`, or `groups`. |
 
 The file is read once at startup. The chart restarts NKE when the config
 changes; if yours does not, restart it yourself:

@@ -168,7 +168,7 @@ func testConfig(t *testing.T) Config {
 	t.Helper()
 	return Config{
 		CWEImage:                 "nvcr.io/org/controller:edge",
-		ProvisionedProviderImage: "cluster-api-provider-provisioned:local",
+		ProvisionedProviderImage: "cluster-api-provider-provisioned:latest",
 		PostgresPassword:         "test-password",
 	}
 }
@@ -949,6 +949,28 @@ func TestDeploy_PullsTemporalAndSPIREChartsFromTheConfiguredRef(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestDefaultConfig_ImagesDefaultToTheManifest: with neither variable set the
+// two built images are the manifest's refs; a set variable wins.
+func TestDefaultConfig_ImagesDefaultToTheManifest(t *testing.T) {
+	t.Setenv("NKECTL_CWE_IMAGE", "")
+	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "")
+	cfg := DefaultConfig()
+	m := manifest.Load()
+	if want := m.Components[manifest.ComponentController].Images[manifest.ImageController].Ref; cfg.CWEImage != want || want == "" {
+		t.Errorf("CWEImage = %q, want the manifest's %q", cfg.CWEImage, want)
+	}
+	if want := m.Components[manifest.ComponentProvisioned].Images[manifest.ImageManager].Ref; cfg.ProvisionedProviderImage != want || want == "" {
+		t.Errorf("ProvisionedProviderImage = %q, want the manifest's %q", cfg.ProvisionedProviderImage, want)
+	}
+
+	t.Setenv("NKECTL_CWE_IMAGE", "nvcr.io/org/nke-controller:edge")
+	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "nvcr.io/org/provisioned:edge")
+	cfg = DefaultConfig()
+	if cfg.CWEImage != "nvcr.io/org/nke-controller:edge" || cfg.ProvisionedProviderImage != "nvcr.io/org/provisioned:edge" {
+		t.Errorf("environment did not win: %+v", cfg)
 	}
 }
 

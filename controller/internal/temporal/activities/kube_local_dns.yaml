@@ -178,6 +178,11 @@ spec:
             # volumes world-writable regardless of the container's UID.
             - mountPath: /config
               name: rendered-config
+      # Explicit false, not omitted. Clusters provisioned before this field
+      # was removed still have hostNetwork: true, owned by that original
+      # client-side apply. Server-side apply only prunes fields it owns, so
+      # a manifest that never mentions hostNetwork leaves true in place.
+      hostNetwork: false
       dnsPolicy: Default
       priorityClassName: system-node-critical
       restartPolicy: Always

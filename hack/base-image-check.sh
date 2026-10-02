@@ -12,10 +12,31 @@
 # Dockerfile in the tree is either checked or listed in EXEMPT with a reason,
 # and a new one that is neither fails here rather than shipping unpinned.
 #
-# Dependabot keeps the pinned digests current: the `docker` ecosystem in
-# .github/dependabot.yml covers "/**/*", and a `FROM image:tag@sha256:...` is
-# the form it parses. A `FROM ${VAR}` is not, which is why the two published
-# images carry their base in an `ARG ..._IMAGE=` default instead.
+# Dependabot keeps only SOME of these current, which is worth knowing before
+# relying on it. The `docker` ecosystem in .github/dependabot.yml covers
+# "/**/*", but it reads an image named on a `FROM` and stops there: it does not
+# resolve an `ARG ..._IMAGE=` default, and a `FROM ${VAR}` is invisible to it
+# either way. So of the bases this script enforces:
+#
+#   controller/Dockerfile   SPIFFE jwt-exec-auth  direct FROM  Dependabot bumps it
+#                           golang, alpine        via ARG      bumped by hand
+#   cluster-api-provider-provisioned/Dockerfile
+#                           golang, alpine        via ARG      bumped by hand
+#
+# cluster-api-provider-provisioned has no directly-named base at all -- all
+# three of its FROM lines go through an ARG or a previous stage.
+#
+# #888 moved both files off `FROM ${BASE_REGISTRY}/...` and onto the ARG form
+# on the understanding that an ARG default was the parseable one. It is not.
+# The evidence is in this repository: #888 landed 2026-09-20, and the next
+# weekly Dependabot run on 2026-09-21 bumped alpine 3.24.1 -> 3.24.2 in three
+# Kubernetes manifests (#956) and a golang digest on a direct FROM (#916),
+# while leaving the ARG-named bases in these two files alone.
+#
+# Closing that gap means naming the image on the FROM so Dependabot can see it,
+# which gives up the `--build-arg GOLANG_IMAGE=...` override #888 added for
+# internal mirrors. That is a maintainer decision, not one this script makes.
+# Until it is taken, the ARG-named digests are a manual bump.
 
 set -euo pipefail
 
@@ -85,7 +106,8 @@ for f in "${dockerfiles[@]}"; do
 
 		resolved="${ref}"
 		# `FROM ${GOLANG_IMAGE}` -- resolve through the ARG default in the same
-		# file, which is where Dependabot reads it too.
+		# file. This script resolves it; Dependabot does not, which is the gap
+		# described in the header.
 		if [[ "${resolved}" =~ ^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$ ]]; then
 			var="${BASH_REMATCH[1]}"
 			resolved="$(sed -nE "s/^ARG[[:space:]]+${var}=(.+)$/\1/p" "${f}" | tail -1)"

@@ -25,7 +25,15 @@ install_released_chart() {
   : "${NGC_API_KEY:?NGC_API_KEY is required when CAPNICO_SOURCE_DIR is unset}"
   : "${CAPNICO_CHART_VERSION:=0.1.0-rc.2}"
   : "${CAPNICO_HELM_REPO:=ngc-components-dev}"
-  : "${CAPNICO_HELM_REPO_URL:=https://helm.ngc.nvidia.com/0837451325059433/components-dev}"
+  # The org in the chart repository URL is an NGC account identifier, so it is
+  # supplied rather than checked in -- see hack/internal-config-check.sh. Give
+  # the org and the URL is derived; give the whole URL and the org is not read
+  # at all. Either way this is the released-chart path, which already requires
+  # NGC_API_KEY above, so it is one more value and not a new kind of setup.
+  if [[ -z "${CAPNICO_HELM_REPO_URL:-}" ]]; then
+    : "${CAPNICO_HELM_ORG:?CAPNICO_HELM_ORG is required: set it to the NGC org hosting the dev charts, or set CAPNICO_HELM_REPO_URL to the full repository URL}"
+    CAPNICO_HELM_REPO_URL="https://helm.ngc.nvidia.com/${CAPNICO_HELM_ORG}/components-dev"
+  fi
 
   kubectl -n "${CAPNICO_NAMESPACE}" create secret docker-registry nvcr-creds \
     --docker-server=nvcr.io \

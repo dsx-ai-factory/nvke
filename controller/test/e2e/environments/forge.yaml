@@ -1,0 +1,88 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Real Forge infrastructure the nico-forge backend runs against, selected with
+# `-e2e.environment forge`.
+#
+# No identifiers. Every ${...} below is read from the process environment at
+# load time and an unset one fails the run, unless it is written ${NAME:-} for
+# a value only some lanes use; CI supplies them from repository
+# variables, the same route the Teleport proxy and the jump host already take.
+# What stays here is the part that is engineering rather than account: which
+# sites exist, which machine shapes they offer, and what those shapes provide.
+# What leaves is the identity of the organization they sit in, because this
+# repository is the staging ground for a public one and an org, site, VPC or
+# subnet id names infrastructure that is not.
+#
+# Credentials were never here: the Forge API key and the Teleport join are
+# workflow secrets.
+#
+# This file changes when the hardware does. A run needing a different Kubernetes
+# or a different OS image touches nothing here: neither is an infrastructure
+# input.
+
+provider: forge
+
+# Opaque to the loader. Every key below is Forge's vocabulary, decoded by the
+# forge provider alone, so a second provider describes its infrastructure in its
+# own terms without a shared schema to satisfy.
+infrastructure:
+  org:
+    id: "${FORGE_ORG_ID}"
+
+  sites:
+    # One site, named for the role it plays rather than for the site it is, so
+    # the file says what a reader needs and the variables say which. Site("")
+    # resolves to the only declared site, so nothing has to name this.
+    default:
+      id: "${FORGE_SITE_ID}"
+      vpcID: "${FORGE_VPC_ID}"
+
+      # This site's fabric attaches an interface by subnet. A fabric that
+      # attaches by VPC prefix instead cannot be expressed here yet, so
+      # declaring one needs a prefix alternative to this field. Note also that
+      # a VPC name is unique per site rather than per org, so two sites can
+      # each have one of the same name and they are different VPCs -- which is
+      # the reason this is an id and not a name.
+      subnetID: "${FORGE_SUBNET_ID}"
+
+      # Attached to the nodes Forge creates. A key group governs
+      # Serial-over-LAN console access, not authorized_keys, so this grants no
+      # shell on a node.
+      sshKeyGroupID: "${FORGE_SSH_KEY_GROUP_ID}"
+
+      # How the site lane reaches the machines it provisions: they sit behind
+      # this jump host and are not Teleport-enrolled themselves. Defaulted
+      # empty rather than required, because a tenant lane against an existing
+      # site controller never dials it; the site lane fails on an empty one
+      # before a machine exists. The CI bot's only login is root.
+      jumpHost: "${FORGE_JUMP_HOST:-}"
+      teleportLogin: "${FORGE_TELEPORT_LOGIN:-}"
+
+      # Only the two types below have actually carried a tenant here. The site
+      # offers more, but a Forge instance-type list caps at twenty rows and
+      # ignores every filter, so enumerating the rest means reading them by id.
+      # Declared cheapest first: where several types satisfy a request the
+      # first listed wins.
+      #
+      # `provides` is matched against the capabilities a run asks for, so
+      # requesting {machineType: cpu} cannot be answered by a GPU machine. Both
+      # types here are amd64, which is why the site boots an x86_64 image.
+      #
+      # Note for qualification: nothing here provides a GB200, so a stream
+      # asking for {gpu: gb200} has no machine to run on and will fail rather
+      # than fall back to an L40. Satisfying one means declaring a site that
+      # offers it, which needs the VPC-prefix support noted above.
+      #
+      # The CPU type has a single NVMe with root on it and no spare
+      # unpartitioned device, so the documented local-storage prerequisite is
+      # unmet. It does not block bootstrap -- both recorded provisioning
+      # exercises built their site controller on this type -- but it means a
+      # storage provisioner goes on before anything asks for a volume.
+      instanceTypes:
+        - name: cpu.himem.t1
+          id: "${FORGE_INSTANCE_TYPE_CPU_ID}"
+          provides: {machineType: cpu, arch: amd64}
+        - name: gpu.l40sx8
+          id: "${FORGE_INSTANCE_TYPE_GPU_ID}"
+          provides: {machineType: gpu, arch: amd64, gpu: l40}

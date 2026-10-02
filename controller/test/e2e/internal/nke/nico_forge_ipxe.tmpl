@@ -1,0 +1,28 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+
+The iPXE script a Forge instance boots. Rendered by BuildForgeNodePayloads and
+sent as NicoMachineTemplate.spec.template.spec.ipxeScript.
+
+Both URLs are inputs rather than constants: which OS image boots is the whole
+point of qualifying one, so pinning a build here would mean every run qualified
+the same image regardless of what it was asked to qualify.
+
+Everything below the URLs is the boot configuration this hardware needs and
+does not vary per run. It is kept verbatim from
+controller/hack/create-forge-nico-cluster.sh, the one path known to have
+booted a node on this site.
+*/ -}}
+#!ipxe
+set boot-loader {{ .BootLoaderURL }}
+set image-url {{ .ImageURL }}
+set disk-strategy smallest
+
+set console-config console=tty0 console=ttyS1,115200
+set kernel-params pci=realloc=off reboot=pci loglevel=1 iommu=pt intel_iommu=on
+set luks-key luks.key=changeit
+set cloud-init-ds ds=nocloud-net;s=${cloudinit-url}
+
+chain ${boot-loader} ${console-config} ${kernel-params} ${luks-key} image_url=${image-url} disk_strategy=${disk-strategy} ${cloud-init-ds} update_grub_template=yes update_grub_cfg=yes
+boot

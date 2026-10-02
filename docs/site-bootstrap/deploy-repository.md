@@ -125,13 +125,14 @@ spec:
     namespace: cloud-workflow-engine
     server: https://kubernetes.default.svc
   source:
-    repoURL: https://helm.ngc.nvidia.com/j7sbcjl3qgta
-    chart: cloud-workflow-engine
+    repoURL: nvcr.io/<org>
+    chart: nke-controller-chart
     targetRevision: "0.1.0"
     helm:
       values: |
-        app:
-          image: nvcr.io/j7sbcjl3qgta/cloud-workflow-engine:v0.1.0
+        image:
+          repository: nvcr.io/<org>/nke-controller
+          tag: v0.1.0
   syncPolicy:
     automated: {}
     syncOptions:
@@ -213,7 +214,7 @@ Template files use Go [`text/template`](https://pkg.go.dev/text/template) syntax
 |------------|------|-------------|
 | `.Cluster.Nodes` | list | Control-plane nodes (iterate with `range`) |
 | `.Cluster.K8sVersion` | string | Kubernetes version |
-| `.Cluster.CNIName` | string | CNI name (`calico`, `ovn-kubernetes`) |
+| `.Cluster.CNIName` | string | CNI name (`ovn-kubernetes`; `calico` for development) |
 | `.Cluster.PodCIDR` | string | Pod CIDR |
 
 Each node in `.Cluster.Nodes`:

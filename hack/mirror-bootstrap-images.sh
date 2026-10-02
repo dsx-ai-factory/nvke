@@ -2,48 +2,43 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Mirror the third-party container images the `nkectl bootstrap site` Helm
-# releases pull -- Postgres, Temporal, and the SPIRE stack -- into a local or
-# private registry, so a bootstrap can pull them offline. Point the bootstrap at
-# the mirror by setting registry.imageRegistry (REGISTRY_IMAGE_REGISTRY) to the
-# same registry; each image keeps its upstream path under it, which is what that
-# override rewrites references to.
+# Mirror the images `nkectl bootstrap site` runs into a registry. The list is
+# `nkectl get bootstrap-manifest`. Each image keeps its upstream path under
+# TARGET_REGISTRY, the layout NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR expects; that
+# variable takes a TLS host[:port] with no path. Images from other registries
+# are mirrored too, for a registry that will serve them later. Images with no
+# registry host (the two this repository builds) are skipped: the bootstrap
+# side-loads them.
 #
-# Usage:
-#   hack/mirror-bootstrap-images.sh [TARGET_REGISTRY]
-#
-#   TARGET_REGISTRY  registry host, with an optional path prefix, to mirror into.
-#                    Defaults to localhost:5000. Examples: localhost:5000,
-#                    10.0.0.1:5000, nvcr.io/myorg.
+# Usage: hack/mirror-bootstrap-images.sh [TARGET_REGISTRY]
+#   TARGET_REGISTRY  host, with an optional path prefix. Default localhost:5000.
 #
 # Env:
-#   INSECURE=1       copy over plain HTTP / skip TLS verification. Defaults on
-#                    for localhost / 127.0.0.1 targets, off otherwise.
-#   CRANE=<path>     crane binary to use. Defaults to `crane` on PATH.
+#   NKECTL=<path>    nkectl to read the manifest from; default `nkectl` on PATH,
+#                    then `go run` from this checkout.
+#   MANIFEST=<file>  read the manifest from a file instead.
+#   DRY_RUN=1        print the copies without running crane (also true, yes).
+#   INSECURE=1       plain HTTP / no TLS verification; default on for loopback.
+#   CRANE=<path>     crane binary; default `crane` on PATH.
 #
-# Requires `crane` (github.com/google/go-containerregistry/cmd/crane):
-#   go install github.com/google/go-containerregistry/cmd/crane@latest
-#
-# crane is used rather than `docker pull` + `tag` + `push` on purpose: it copies
-# the manifest bytes as-is and preserves digests. The SPIRE chart pins
-# chainguard/bash by digest, and a Docker round-trip re-serializes the manifest
-# and changes that digest, so the pod's digest-pinned pull then fails with
-# "not found".
-#
-# Image versions track the chart versions the bootstrap manifest pins
-# (`nkectl get bootstrap-manifest`) and the tags those charts resolve. After a chart bump, refresh this list from
-# `helm template <chart> --version <pin> | grep 'image:'`.
+# Requires crane (go install github.com/google/go-containerregistry/cmd/crane@latest).
+# crane preserves digests; a Docker pull/tag/push round-trip changes them, and
+# the SPIRE chart pins one image by digest.
 
 set -Eeuo pipefail
 
 TARGET="${1:-localhost:5000}"
 CRANE="${CRANE:-crane}"
+case "${DRY_RUN:-0}" in 1|true|yes) DRY_RUN=1 ;; *) DRY_RUN=0 ;; esac
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-command -v "$CRANE" >/dev/null 2>&1 || {
-  echo "error: crane not found on PATH (set CRANE=/path/to/crane, or" >&2
-  echo "       go install github.com/google/go-containerregistry/cmd/crane@latest)" >&2
-  exit 1
-}
+if [ "${DRY_RUN}" != "1" ]; then
+  command -v "$CRANE" >/dev/null 2>&1 || {
+    echo "error: crane not found on PATH (set CRANE=/path/to/crane, or" >&2
+    echo "       go install github.com/google/go-containerregistry/cmd/crane@latest)" >&2
+    exit 1
+  }
+fi
 
 # Default to insecure for loopback targets, where a throwaway registry is
 # usually plain HTTP; a real mirror over HTTPS leaves INSECURE unset.
@@ -56,39 +51,67 @@ fi
 crane_flags=()
 [ "${INSECURE}" = "1" ] && crane_flags+=(--insecure)
 
-# upstream_reference | path under TARGET (repository[:tag]); each keeps its
-# upstream org path so registry.imageRegistry resolves it as TARGET/<path>.
-MAPPINGS=(
-  # Postgres (Bitnami chart 18.5.15)
-  "registry-1.docker.io/bitnami/postgresql:latest|bitnami/postgresql:latest"
+# read_manifest prints the bootstrap manifest.
+read_manifest() {
+  if [ -n "${MANIFEST:-}" ]; then
+    cat "${MANIFEST}"
+  elif [ -n "${NKECTL:-}" ]; then
+    "${NKECTL}" get bootstrap-manifest
+  elif command -v nkectl >/dev/null 2>&1; then
+    nkectl get bootstrap-manifest
+  else
+    (cd "${REPO_ROOT}/cli" && go run ./cmd/nkectl get bootstrap-manifest)
+  fi
+}
 
-  # Temporal (chart 0.74.0)
-  "docker.io/temporalio/server:1.30.3|temporalio/server:1.30.3"
-  "docker.io/temporalio/admin-tools:1.30.3|temporalio/admin-tools:1.30.3"
-  "docker.io/temporalio/ui:2.48.1|temporalio/ui:2.48.1"
+# Print "ref digest" per image. An image with no digest prints "ref -".
+# Charts carry no `ref:` line in the embedded manifest.
+list_images() {
+  awk '
+    function flush() { if (ref != "") { print ref, (digest == "" ? "-" : digest); ref = ""; digest = "" } }
+    /^[[:space:]]*ref:[[:space:]]*/    { flush(); ref = $2; next }
+    /^[[:space:]]*digest:[[:space:]]*/ { digest = $2; next }
+    END { flush() }
+  '
+}
 
-  # SPIRE (hardened chart 0.30.1)
-  "ghcr.io/spiffe/spire-server:1.15.3|spiffe/spire-server:1.15.3"
-  "ghcr.io/spiffe/spire-agent:1.15.3|spiffe/spire-agent:1.15.3"
-  "ghcr.io/spiffe/spire-controller-manager:0.7.0|spiffe/spire-controller-manager:0.7.0"
-  "ghcr.io/spiffe/spiffe-csi-driver:0.2.7|spiffe/spiffe-csi-driver:0.2.7"
-  "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.15.0|sig-storage/csi-node-driver-registrar:v2.15.0"
-  "docker.io/busybox:1.37.0-uclibc|busybox:1.37.0-uclibc"
-  # Digest-pinned by the chart -- crane preserves the digest.
-  "cgr.dev/chainguard/bash@sha256:90041f375e30f41aa7e0390075d8a69dc61900771d52fa98d63ee5d03d866a58|chainguard/bash:latest"
-  # Only pulled when TPM node attestation is enabled (the site spec lists a
-  # tpmEkThumbprint); harmless to mirror unconditionally.
-  "ghcr.io/spiffe/spire-tpm-plugin-tpm-attestor-server:v1.9.0|spiffe/spire-tpm-plugin-tpm-attestor-server:v1.9.0"
-)
+# has_host reports whether an image reference names a registry host: the
+# first path component contains a dot or a colon, is localhost, or has an
+# upper-case letter (repository names are lower case). Same rule as nkectl.
+has_host() {
+  case "$1" in
+    */*) first="${1%%/*}"; case "$first" in *.*|*:*|localhost|*[A-Z]*) return 0 ;; esac ;;
+  esac
+  return 1
+}
 
-echo "Mirroring ${#MAPPINGS[@]} bootstrap images to ${TARGET} (insecure=${INSECURE})"
+manifest="$(read_manifest)" || { echo "error: reading the bootstrap manifest failed" >&2; exit 1; }
+entries=()
+while IFS= read -r line; do entries+=("$line"); done < <(list_images <<<"$manifest")
+[ "${#entries[@]}" -gt 0 ] || { echo "error: the manifest lists no images" >&2; exit 1; }
+
+echo "Mirroring bootstrap images to ${TARGET} (insecure=${INSECURE}, dry_run=${DRY_RUN})"
+copied=0
 failed=0
-for entry in "${MAPPINGS[@]}"; do
-  src="${entry%%|*}"
-  dst="${TARGET}/${entry##*|}"
+for entry in "${entries[@]}"; do
+  ref="${entry% *}"
+  digest="${entry##* }"
+  if ! has_host "$ref"; then
+    echo "--- ${ref}: no registry host; the bootstrap side-loads it. Skipped."
+    continue
+  fi
+  src="$ref"
+  [ "$digest" != "-" ] && src="${ref}@${digest}"
+  dst="${TARGET}/${ref#*/}"
   echo ">>> ${src}"
   echo "    -> ${dst}"
-  if ! "$CRANE" copy "${crane_flags[@]}" "${src}" "${dst}"; then
+  if [ "${DRY_RUN}" = "1" ]; then
+    copied=$((copied + 1))
+    continue
+  fi
+  if "$CRANE" copy ${crane_flags[@]+"${crane_flags[@]}"} "${src}" "${dst}"; then
+    copied=$((copied + 1))
+  else
     echo "    FAILED" >&2
     failed=1
   fi
@@ -98,4 +121,8 @@ if [ "${failed}" -ne 0 ]; then
   echo "one or more images failed to mirror" >&2
   exit 1
 fi
-echo "done: ${#MAPPINGS[@]} images mirrored to ${TARGET}"
+if [ "${DRY_RUN}" = "1" ]; then
+  echo "done: ${copied} copies planned to ${TARGET}"
+else
+  echo "done: ${copied} images mirrored to ${TARGET}"
+fi

@@ -100,14 +100,23 @@ jobs:
       contents: read
     env:
       CWE_IMAGE: cwe-controller:nkectl-bootstrap-e2e
-      # Same mirror backend-e2e and local-entrypoint-e2e use. The node image
-      # tries it first and falls through, so an unreachable mirror costs a
-      # dial rather than the run.
-      NKE_E2E_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
+      # A public pull-through mirror, not dc.local.gha-runners.nvidia.com:
+      # that name resolves only on the self-hosted fleet. Same host and same
+      # reasoning as backend-e2e.yml and os-image-artifact.yml, both of which
+      # had to make this change when they moved to ARC -- and both of which
+      # died on the PostgreSQL chart first, exactly as this lane did.
+      #
+      # There is no falling back to Docker Hub to soften an unreachable
+      # mirror: configureDockerHubMirror writes the mirror as containerd's
+      # `server` as well as its host, on purpose, so a mirror that does not
+      # answer fails the pull instead of quietly going to the registry the
+      # mirror exists to stay off. That makes the name having to resolve on
+      # both fleets a requirement rather than a preference.
+      NKE_E2E_DOCKERHUB_MIRROR: mirror.gcr.io
       # The same mirror for the ephemeral bootstrap Kind cluster, which pulls
       # the temporal, postgres, SPIRE and Cluster API images itself. Concurrent
       # runs hit Docker Hub's anonymous rate limit without it.
-      NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
+      NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR: mirror.gcr.io
       # Deliberately differs from nkectl's derived bootstrap-cluster default.
       # run.sh writes it into the site inventory and uses it for every fixture
       # host's pre-provisioned SPIRE agent configuration.

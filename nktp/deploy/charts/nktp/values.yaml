@@ -36,8 +36,18 @@ watchdog:
     replicas: 2
     targetAllocator:
       enabled: true # Assign each explicit scrape target to one watchdog replica.
+      mtls:
+        enabled: true # Let cert-manager secure Collector requests to the allocator.
+        useCertManager: true
       replicas: 1
       allocationStrategy: consistent-hashing
+      resources:
+        requests:
+          cpu: 250m
+          memory: 1Gi
+        limits:
+          cpu: "1"
+          memory: 2Gi
       env:
         - name: OTEL_SERVICE_NAME
           value: nktp-watchdog-targetallocator
@@ -561,6 +571,12 @@ gateway_traces:
 
 # Node-level collector. Collects local telemetry and forwards received OTLP signals.
 daemonset:
+  rbac:
+    # Create Roles and RoleBindings granting the target allocator read access to
+    # Secrets and ConfigMaps in namespaces listed in
+    # kubernetes.targetAllocator.prometheusCR.secretNamespaces.
+    # No Roles or RoleBindings are created when the list is omitted or empty.
+    create: true
   kubelet:
     cadvisor:
       enabled: true # Also scrape /metrics/cadvisor from each local kubelet.
@@ -620,8 +636,18 @@ daemonset:
       - operator: Exists
     targetAllocator:
       enabled: true
+      mtls:
+        enabled: true # Let cert-manager secure Collector requests to the allocator.
+        useCertManager: true
       replicas: 1
       allocationStrategy: per-node # Targets without a matching collector node stay unassigned.
+      resources:
+        requests:
+          cpu: 250m
+          memory: 2Gi
+        limits:
+          cpu: "2"
+          memory: 4Gi
       env:
         - name: OTEL_SERVICE_NAME
           value: nktp-targetallocator
@@ -646,6 +672,8 @@ daemonset:
       prometheusCR:
         enabled: true
         denyFSAccessThroughSMs: true # Reject monitor endpoints that reference files in the Collector container.
+        # Explicit namespaces for chart-managed RBAC and Secret watching.
+        # secretNamespaces: [metrics-monitors]
         # Exclude monitoring CRs labeled nktp.nvidia.io/large-target: "true" and common kubelet ServiceMonitors
         serviceMonitorSelector:
           matchExpressions:
@@ -1051,6 +1079,9 @@ large_target_metrics:
     replicas: 2
     targetAllocator:
       enabled: true
+      mtls:
+        enabled: true # Let cert-manager secure Collector requests to the allocator.
+        useCertManager: true
       replicas: 1
       allocationStrategy: consistent-hashing
       env:
@@ -1073,11 +1104,11 @@ large_target_metrics:
                     temporalityPreference: cumulative
       resources:
         requests:
-          cpu: 100m
-          memory: 256Mi # Discovery cache size depends on Kubernetes objects and target count.
+          cpu: 250m
+          memory: 1Gi # Discovery cache size depends on Kubernetes objects and target count.
         limits:
           cpu: "1"
-          memory: 1Gi
+          memory: 2Gi
       podSecurityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -1092,7 +1123,8 @@ large_target_metrics:
           enableMetrics: false # Metrics are pushed over OTLP without a ServiceMonitor.
       prometheusCR:
         enabled: true
-        denyFSAccessThroughSMs: true # Reject monitor endpoints that reference files in the Collector container.
+        # The bundled Kubernetes component ServiceMonitors reference the Collector's service-account files.
+        denyFSAccessThroughSMs: false
         serviceMonitorSelector:
           matchExpressions:
             - key: nktp.nvidia.io/large-target
@@ -1370,6 +1402,8 @@ kube-state-metrics:
     repository: kube-state-metrics/kube-state-metrics
     tag: v2.20.0
   namespaces: [] # All namespaces. Each workload can override this list.
+  # Kubernetes labels exposed by KSM, using entries such as pods=[app.kubernetes.io/name].
+  metricLabelsAllowlist: []
   # Shared Kubernetes defaults. Each workload can override these fields.
   kubernetes:
     resources:
@@ -1448,6 +1482,42 @@ opentelemetry-kube-stack:
   crds:
     installOtel: true
     installPrometheus: true
+  # Declare Kubernetes control-plane and DNS metrics endpoints. These monitors
+  # require a Target Allocator with denyFSAccessThroughSMs disabled; see README.
+  kubernetesServiceMonitors:
+    enabled: true
+  kubeApiServer:
+    enabled: true
+    serviceMonitor:
+      additionalLabels:
+        nktp.nvidia.io/large-target: "true"
+  kubeControllerManager:
+    enabled: true
+    serviceMonitor:
+      additionalLabels:
+        nktp.nvidia.io/large-target: "true"
+  kubeScheduler:
+    enabled: true
+    serviceMonitor:
+      additionalLabels:
+        nktp.nvidia.io/large-target: "true"
+  kubeEtcd:
+    enabled: true
+    serviceMonitor:
+      additionalLabels:
+        nktp.nvidia.io/large-target: "true"
+  coreDns:
+    enabled: true
+    serviceMonitor:
+      additionalLabels:
+        nktp.nvidia.io/large-target: "true"
+  kubeProxy:
+    enabled: true
+    serviceMonitor:
+      additionalLabels:
+        nktp.nvidia.io/large-target: "true"
+  kubeDns:
+    enabled: false # CoreDNS is the supported cluster DNS metrics source.
   collectors:
     daemon:
       enabled: false
@@ -1460,10 +1530,8 @@ opentelemetry-kube-stack:
         enabled: false # Watchdog owns the explicit Operator scrape job.
     admissionWebhooks:
       certManager:
-        # Enable this to use an existing cert-manager installation.
-        enabled: false
-      autoGenerateCert:
-        recreate: false
+        # Use the cluster's cert-manager installation for webhook certificates.
+        enabled: true
 
 # Host-level metrics from each node. Runs as a DaemonSet with host networking,
 # so it binds port 9100 on every node.

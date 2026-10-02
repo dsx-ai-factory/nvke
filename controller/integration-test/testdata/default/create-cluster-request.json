@@ -2,8 +2,8 @@
   "name": "integration-test",
   "nico": {
     "orgID": "novxwn552ssc",
-    "siteID": "e85ae455-2962-4742-b885-4b9ae22769c8",
-    "vpcID": "b64210af-8f8e-4e37-ad0a-8cf7c6babf28"
+    "siteID": "00000000-0000-4000-8000-000000000001",
+    "vpcID": "00000000-0000-4000-8000-000000000002"
   },
   "controlPlaneKubernetesVersion": "1.31.9",
   "cniPlugin": "calico",
@@ -12,8 +12,8 @@
     {
       "nodeNamePrefix": "cp",
       "nico": {
-        "subnetIDs": ["3bf3d3fc-8b0e-4005-a20d-58bb03bbea99", "53c42b79-3dbf-40e8-9363-75228d7b6e1b"],
-        "instanceTypeID": "3b7bc0c3-9fd4-49b9-8c08-357d84cdb456",
+        "subnetIDs": ["00000000-0000-4000-8000-000000000003", "00000000-0000-4000-8000-000000000004"],
+        "instanceTypeID": "00000000-0000-4000-8000-000000000009",
         "osProfile": "nke-1.31.9-250505",
         "configProfile": "nvcf-cp-v3"
       },

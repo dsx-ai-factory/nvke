@@ -78,7 +78,7 @@ NKECTL_LDFLAGS := \
 	$(RELEASE_LDFLAGS)
 
 .PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check check-no-docker \
-	ensure-capd-image ensure-provisioned-provider-image \
+	ensure-capd-image ensure-provisioned-provider-image images \
 	nodes-up nodes-down nodes-status nodes-hosts nodes-attested
 
 # The platforms shipped on a release. nkectl is the one binary here a human
@@ -183,12 +183,25 @@ ensure-capd-image:
 # which is what a release wants and not what a local `kind load` can use. The
 # build context is the repository root, because the Dockerfile builds from the
 # workspace vendor tree.
-CAPI_PROVISIONED_IMAGE ?= cluster-api-provider-provisioned:local
+CAPI_PROVISIONED_IMAGE ?= cluster-api-provider-provisioned:latest
+# The tags below are the defaults `bootstrap site` uses when NKECTL_CWE_IMAGE
+# and NKECTL_CAPI_PROVISIONED_IMAGE are unset; the bootstrap manifest pins them.
+CWE_IMAGE ?= nke-controller:latest
 
 ensure-provisioned-provider-image:
 	@nerdctl image inspect $(CAPI_PROVISIONED_IMAGE) >/dev/null 2>&1 || \
 	  nerdctl build -t $(CAPI_PROVISIONED_IMAGE) \
 	    -f ../cluster-api-provider-provisioned/Dockerfile ..
+
+# The controller image records the commit it was built from; the Dockerfile
+# defaults both to v0.0.0 otherwise.
+CWE_IMAGE_BUILD_ARGS = --build-arg BUILD_VERSION=$(NKECTL_VERSION) --build-arg GIT_VERSION=$(NKECTL_COMMIT)
+
+# `images` always rebuilds. An `ensure-*` target keeps a stale image after a
+# `git pull`; this target does not. BuildKit's cache keeps a no-op rebuild cheap.
+images: ## Build the two images `bootstrap site` side-loads by default.
+	nerdctl build -t $(CWE_IMAGE) $(CWE_IMAGE_BUILD_ARGS) -f ../controller/Dockerfile ..
+	nerdctl build -t $(CAPI_PROVISIONED_IMAGE) -f ../cluster-api-provider-provisioned/Dockerfile ..
 
 nodes-up: ensure-capd-image
 	$(GO) run ./e2e/bootstrap/substrate/cmd/nodes up

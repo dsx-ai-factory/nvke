@@ -45,8 +45,8 @@ func (t *tenantTest) useNkectl(ctx context.Context, timeouts nke.Options) {
 	GinkgoHelper()
 
 	runner, err := nkectl.New(ctx, nkectl.Options{
-		Kubeconfig: t.cfg.Kube.Kubeconfig,
-		Context:    t.cfg.Kube.Context,
+		Kubeconfig: t.mgmt.Kubeconfig,
+		Context:    t.mgmt.Context,
 		Timeouts:   timeouts,
 		Logf:       func(format string, args ...any) { t.log.Info(fmt.Sprintf(format, args...)) },
 	})

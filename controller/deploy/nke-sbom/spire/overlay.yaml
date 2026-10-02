@@ -18,3 +18,19 @@ spiffe-oidc-discovery-provider:
       - "nke.site-controller.internal"
       - "localhost"
       - "127.0.0.1"
+
+# PodMonitors for the server and the agent, so the nktp item scrapes them.
+# Their metrics endpoints are already on: global.spire.recommendations in
+# values.yaml turns on Prometheus telemetry on port 9988, named "prom". The
+# monitors are off by default because they need the monitoring CRDs, which the
+# nktp item installs before this one.
+spire-server:
+  telemetry:
+    prometheus:
+      podMonitor:
+        enabled: true
+spire-agent:
+  telemetry:
+    prometheus:
+      podMonitor:
+        enabled: true

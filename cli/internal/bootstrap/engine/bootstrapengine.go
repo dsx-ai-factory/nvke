@@ -96,6 +96,14 @@ type Config struct {
 	// mirror, given as a host with an optional port. Empty leaves the pulls
 	// going to Docker Hub directly.
 	DockerHubMirror string
+
+	// DiagnosticsDir is where a failed `kind create cluster` leaves what the
+	// half-built node container had to say. Empty skips the collection.
+	DiagnosticsDir string
+
+	// KeepFailedCluster leaves the node container of a failed create in place
+	// instead of deleting it once diagnostics are collected.
+	KeepFailedCluster bool
 }
 
 // DefaultConfig reads the engine's knobs from the environment, mirroring
@@ -193,6 +201,14 @@ func (e *Engine) Create(ctx context.Context, cfg Config) (*Cluster, error) {
 		"create", "cluster",
 		"--name", cfg.ClusterName,
 		"--config", configPath,
+		// --retain suppresses kind's own cleanup of a failed create. Without
+		// it kind deletes the node container as it exits, which takes the
+		// kubelet journal and the control-plane static pod logs with it — so
+		// a `kubeadm init` that never brings the API server up reports only
+		// "connection refused" and leaves nothing to explain why. The failure
+		// path below collects those and then deletes, so a caller sees the
+		// same end state as before, minus the missing evidence.
+		"--retain",
 	}
 	if cfg.WaitReady > 0 {
 		args = append(args, "--wait", cfg.WaitReady.String())
@@ -200,6 +216,14 @@ func (e *Engine) Create(ctx context.Context, cfg Config) (*Cluster, error) {
 
 	e.log.Info("creating bootstrap kind cluster", "cluster", cfg.ClusterName)
 	if out, err := e.Runner.Run(ctx, kindEnv(), "kind", args...); err != nil {
+		e.dumpCreateFailure(ctx, cfg)
+		if cfg.KeepFailedCluster {
+			e.log.Warn("--keep-bootstrap-cluster set: leaving the failed bootstrap kind cluster in place",
+				"cluster", cfg.ClusterName)
+		} else if deleteErr := e.Delete(ctx, cfg.ClusterName); deleteErr != nil {
+			e.log.Error("could not clean up after a failed create",
+				"cluster", cfg.ClusterName, "err", deleteErr)
+		}
 		return nil, fmt.Errorf("kind create cluster %s: %w\n%s", cfg.ClusterName, err, out)
 	}
 

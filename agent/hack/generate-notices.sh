@@ -138,6 +138,61 @@ done
 
 [[ -s "${CSV}" ]] || die "go-licenses produced no rows for ${PACKAGES[*]}."
 
+# Settle the major-version directory from the committed file, not the network.
+#
+# For a module in a repository subdirectory with a major version suffix --
+# go.etcd.io/etcd/client/v3, tagged client/v3.7.1 -- the directory may be
+# client/v3 or client, and etcd has both kinds: api/v3 lives in api/. The repair
+# above cannot help, because the tag carries the subdirectory either way.
+# go-licenses decides with a HEAD request for <dir>/vN/go.mod on github.com and,
+# in its own words, "on any failure, assume that the right directory is the one
+# without the version" (pkgsite's source.adjustVersionedModuleDirectory).
+# GitHub-hosted runners are throttled often enough that the URL flips between
+# runs, and notices-check cannot tell a flip from a change, since it compares
+# the file against a regeneration of itself.
+#
+# So when the committed file already has a URL for the package that differs
+# from the regenerated one only by that /vN segment, the committed URL stands:
+# a human verified it once, and the probe has no information the file lacks.
+# Anything else -- a new package, a new version, a different licence file --
+# still shows up as a diff, and a new package keeps whatever go-licenses chose,
+# to be verified when it is first committed. The root-module repair below runs
+# after this step on purpose: a committed URL may carry the spurious /vN segment
+# from before that repair existed, and the rule, not the file, decides for roots.
+if [[ -f "${OUTPUT}" ]]; then
+    SETTLED="${WORK}/licenses.settled.csv"
+    awk -F, 'BEGIN { OFS = "," }
+        # First file: the committed index rows, "| [pkg](url) | licence | module |".
+        FNR == NR {
+            if (match($0, /^\| \[[^]]+\]\([^)]+\)/)) {
+                row = substr($0, RSTART, RLENGTH)
+                pkg = substr(row, 4, index(row, "](") - 4)
+                url = substr(row, index(row, "](") + 2)
+                sub(/\)$/, "", url)
+                committed[pkg] = url
+            }
+            next
+        }
+        # Second file: the regenerated CSV.
+        {
+            if (($1 in committed) && committed[$1] != $2) {
+                a = $2; b = committed[$1]
+                # Drop the first /vN/ segment from each; equal means they differ
+                # only in that segment. The tag "client/v3.7.1" does not match:
+                # a dot follows its digits, not a slash.
+                a2 = a; sub(/\/v[0-9]+\//, "/", a2)
+                b2 = b; sub(/\/v[0-9]+\//, "/", b2)
+                if (a2 == b || b2 == a) { $2 = b }
+            }
+            print
+        }' "${OUTPUT}" "${CSV}" >"${SETTLED}"
+    SETTLED_N=$(diff <(cut -d, -f2 "${CSV}") <(cut -d, -f2 "${SETTLED}") | grep -c '^>' || true)
+    if [[ "${SETTLED_N}" -gt 0 ]]; then
+        log "kept ${SETTLED_N} committed major-version licence URL(s) over go-licenses' network-dependent choice"
+    fi
+    mv "${SETTLED}" "${CSV}"
+fi
+
 # Repair the licence URL of a major-version module.
 #
 # For a module whose path ends in /vN, go-licenses treats that suffix as a

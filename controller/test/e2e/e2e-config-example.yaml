@@ -19,3 +19,42 @@
 #   skipDelete: false         # leave the tenant cluster running after the suite
 #   preserveOnFailure: false  # keep the cluster only when a spec fails
 #   reuseCluster: ""          # non-empty -> verify this existing cluster, skip create
+
+# The site lane builds a site controller on a Forge node (-e2e.site-stage=
+# provision|bootstrap|full). `gmake site-inputs SITE_CONTROLLER_VERSION=...`
+# builds nkectl and the image archives below, pulling the published images
+# from SITE_IMAGE_REGISTRY: GHCR by default, or nvcr.io/<NGC org> after a
+# `docker login nvcr.io` with an NGC key. Secrets come only from the
+# environment: FORGE_API_KEY, and GHCR_USERNAME/GHCR_TOKEN for the full stage,
+# which the node pulls CAPNICo with.
+#
+# This block names only where artifacts come from. Component versions are
+# -e2e.versions keys (controller, capi-provisioned, os-image,
+# os-image-bootloader). The jump host and its login are the site's and live in
+# environments/<name>.yaml, from FORGE_JUMP_HOST and FORGE_TELEPORT_LOGIN.
+# site:
+#   deployPathRef: ""   # "" -> the controller version's commit, or its
+#                       #       controller/<version> release tag
+#   nkectl: ""          # "" -> cli/dist/nkectl-linux-<arch>
+#   # Each image the node stages: the reference it is bootstrapped and
+#   # deployed with, and the archive carrying it. Relative archive paths
+#   # resolve against the clone the suite runs from. The controller and
+#   # capi-provisioned tags are their -e2e.versions keys, so they take none
+#   # here.
+#   images:
+#     controller:
+#       repository: ghcr.io/dsx-ai-factory/nke/nke-controller   # or nvcr.io/<org>/nke-controller
+#       archive: ~/.cache/nke-e2e/site/controller.tar
+#     capi-provisioned:
+#       repository: ghcr.io/dsx-ai-factory/nke/cluster-api-provider-provisioned
+#       archive: ~/.cache/nke-e2e/site/capi-provisioned.tar
+#     profiles:       # built from controller/test/fixtures, published nowhere
+#       repository: nke-e2e-profiles
+#       tag: local
+#       archive: ~/.cache/nke-e2e/site/profiles.tar
+
+# What the machine running the suite supplies, rather than anything about the
+# site it reaches — which is why this is not under `site`.
+# runner:
+#   teleportIdentityFile: ""   # "" -> $TELEPORT_IDENTITY_FILE, else the runner's tsh profile
+#   (the Teleport proxy comes from $TELEPORT_PROXY or the tsh login profile)

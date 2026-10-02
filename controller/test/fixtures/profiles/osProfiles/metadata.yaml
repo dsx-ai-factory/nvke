@@ -8,7 +8,8 @@ profiles:
     architecture: amd64
     build_date: "2026-01-01"
     ubuntu_version: "24.04"
-  # Used by e2e/gofail SeedCWEGofailDB node pool/set rows.
+  # Used by e2e/gofail SeedCWEGofailDB node pool/set rows. The generated
+  # releases in ../../releases need a release of this name for those rows to resolve.
   test:
     kubernetes_version: "1.30.0"
     architecture: amd64
@@ -32,4 +33,11 @@ profiles:
     kubernetes_version_injected: true
     architecture: arm64
     build_date: "2026-03-23"
+    ubuntu_version: "24.04"
+  # The local-dev profile create-forge-cluster.sh selects. Its ipxeScript is a
+  # placeholder; it exists so the generated releases include one of this name.
+  nke-local-dev-kindest-arm64:
+    kubernetes_version: "1.34.2"
+    architecture: arm64
+    build_date: "2026-01-01"
     ubuntu_version: "24.04"

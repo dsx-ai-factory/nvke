@@ -10,9 +10,9 @@ exporters at its own.
 The default values run two replicas of every Collector except the node
 DaemonSet, and the gateways, the watchdog and the large-target pool autoscale on
 CPU and memory. Every signal is exported over OTLP/HTTP to one endpoint, the
-bundled backend until a site sets its own. A smaller cluster, such as a
-single-node site controller, lowers the replicas and requests in its values; the
-templates carry the full topology.
+bundled backend until a site sets its own. A smaller cluster, such as a site
+controller, lowers the replicas and requests in its values; the templates carry
+the full topology.
 
 The chart version is `version:` in [Chart.yaml](Chart.yaml). A release tag
 `nktp/vX.Y.Z` has to equal it; see [RELEASE.md](../../../../RELEASE.md).
@@ -54,8 +54,10 @@ there too. The watchdog sends its own telemetry to the backend.
 | `metrics-server` | The resource metrics API the autoscalers read. Off by default, because most clusters already have a provider; see [Bundled components](#bundled-components). |
 | `otel-lgtm` | Grafana, Loki, Tempo and Prometheus in one container, with the NKTP dashboards in [dashboards/default](dashboards/README.md). On by default for evaluation; see [The backend](#the-backend). |
 
-Footprint with default values on three nodes, before the Operator, the three
-Target Allocators and the development backend:
+Footprint with default values on three nodes, before the Operator and the
+development backend. Requests are per workload; a Collector's are set under
+`<workload>.kubernetes.resources` and its Target Allocator's under
+`<workload>.kubernetes.targetAllocator.resources`.
 
 | Workload | Pods | CPU request | Memory request |
 |---|---|---|---|
@@ -64,6 +66,7 @@ Target Allocators and the development backend:
 | Gateways | 6 | 1200m | 3Gi |
 | Large-target pool | 2 | 1000m | 16Gi |
 | Cluster event reader | 2 | 400m | 1Gi |
+| Target Allocators | 3 | 750m | 4Gi |
 | node-exporter | 3 | none set | none set |
 | kube-state-metrics | 9 | 900m | 1.1Gi |
 
@@ -74,6 +77,9 @@ Target Allocators and the development backend:
   when building dependencies.
 - A cluster that accepts the `opentelemetry.io/v1beta1` API. The chart installs
   the OpenTelemetry and Prometheus Operator CRDs by default.
+- cert-manager. It issues the Operator's webhook certificate and the mTLS
+  certificates between each Collector and its Target Allocator; see
+  [Certificates](#certificates) to run without it.
 - A release namespace whose Pod Security admission level is `privileged`. The
   node Collector runs as root with `SYS_CHROOT`, and mounts `/var/log/pods`,
   `/proc`, `/var/log`, the node's `journalctl` with its libraries and
@@ -170,6 +176,97 @@ logging is on, and only at the path its `audit-log-path` sets; point
 `daemonset.otelcol.config.receivers.filelog/kube-api-audit.include` at that
 path when it differs.
 
+### Kubernetes component metrics
+
+The chart turns on opentelemetry-kube-stack's monitors for the API server, the
+controller manager, the scheduler, etcd, CoreDNS and kube-proxy. They carry the
+large-target label, so the large-target pool scrapes them, and its Collectors'
+ServiceAccount may read the `/metrics` non-resource URL. The monitors reference
+the Collector's ServiceAccount token and CA files, so that pool's Target
+Allocator sets `denyFSAccessThroughSMs: false`; with `true` it drops those
+endpoints, as
+[opentelemetry-helm-charts#2408](https://github.com/open-telemetry/opentelemetry-helm-charts/issues/2408)
+describes.
+
+A monitor does not guarantee a reachable target. kubeadm binds the controller
+manager and the scheduler to `127.0.0.1` by default, some clusters do the same
+for etcd's metrics, and a cluster whose CNI replaces kube-proxy runs none.
+Turn off the monitors a cluster cannot serve:
+
+```yaml
+opentelemetry-kube-stack:
+  kubeScheduler:
+    enabled: false
+  kubeControllerManager:
+    enabled: false
+  kubeProxy:
+    enabled: false
+```
+
+### Certificates
+
+cert-manager issues and renews two sets of certificates by default: the
+Operator's admission webhook certificate, and a CA with server and client
+certificates for each Collector and its Target Allocator, so the Collectors
+fetch their scrape assignments over mTLS. The Operator provisions the second
+set; see the Operator's
+[Target Allocator documentation](https://github.com/open-telemetry/opentelemetry-operator/blob/main/docs/target-allocator/README.md#with-cert-manager-default).
+
+A cluster without cert-manager turns both off. Helm then generates a
+self-signed webhook certificate, reuses it on upgrade, and never renews it; it
+expires after 365 days. Each allocator's `mtls` block can instead reference
+certificates that already exist in the release namespace, with
+`useCertManager: false` and a `tls` block, as the Operator's
+[user-provided certificate documentation](https://github.com/open-telemetry/opentelemetry-operator/blob/main/docs/target-allocator/README.md#without-cert-manager-user-provided-certificates)
+describes.
+
+```yaml
+opentelemetry-kube-stack:
+  opentelemetry-operator:
+    admissionWebhooks:
+      certManager:
+        enabled: false
+      autoGenerateCert:
+        recreate: false
+watchdog:
+  kubernetes:
+    targetAllocator:
+      mtls:
+        enabled: false
+daemonset:
+  kubernetes:
+    targetAllocator:
+      mtls:
+        enabled: false
+large_target_metrics:
+  kubernetes:
+    targetAllocator:
+      mtls:
+        enabled: false
+```
+
+### Monitor credentials
+
+With mTLS between them, the node Target Allocator can hand its Collectors the
+Secret-backed credentials a monitor references, such as a bearer token or a
+client certificate. It reads them only in the namespaces listed in
+`daemonset.kubernetes.targetAllocator.prometheusCR.secretNamespaces`:
+
+```yaml
+daemonset:
+  kubernetes:
+    targetAllocator:
+      prometheusCR:
+        secretNamespaces: [metrics-monitors]
+```
+
+For each listed namespace the chart creates a Role granting `get`, `list` and
+`watch` on Secrets and `get` on ConfigMaps, bound to the allocator's
+ServiceAccount. The grant covers every Secret in the namespace, so list only
+namespaces whose monitor authors are trusted. The namespaces must already
+exist. The list is empty by default, which creates nothing;
+`daemonset.rbac.create: false` leaves the grants to you.
+
 ### The backend
 
 Every exporter ships pointed at the bundled development backend at
@@ -253,7 +350,10 @@ read by the Collector through `${env:NAME}` substitution, never in values.
   count grows. Secret metrics stay opt-in because they need list
   and watch access to whole Secret objects; add `secrets` to a group's
   `resource_types` and scope its `namespaces` list to enable them.
-  `kube-state-metrics.enabled: false` removes all of it.
+  Kubernetes labels are not exposed as series labels by default;
+  `kube-state-metrics.metricLabelsAllowlist` selects some, with entries such
+  as `pods=[app.kubernetes.io/name]`. `kube-state-metrics.enabled: false`
+  removes all of it.
 - `node-exporter` runs the upstream DaemonSet on host port 9100.
   `node-exporter.enabled: false` when the cluster already runs one.
 - `otel-lgtm` is the development backend described above.
@@ -287,6 +387,5 @@ opentelemetry-kube-stack:
     installPrometheus: false
 ```
 
-Helm generates the Operator's webhook certificate and reuses it on upgrade. It
-is valid for 365 days and not renewed. On clusters with cert-manager, set
-`opentelemetry-kube-stack.opentelemetry-operator.admissionWebhooks.certManager.enabled: true`.
+The Operator's webhook certificate comes from cert-manager; see
+[Certificates](#certificates).

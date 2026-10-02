@@ -36,35 +36,33 @@ infra:
     spec:
       siteID: 00000000-0000-0000-0000-000000000001
 
-nodePools:
-  - name: control-plane
-    nodeNamePrefix: cp
-    desiredNodeCount: 1
-    controlPlane: true
-    systemReservedMemory: "1Gi"
-    infra:
-      preKubeadmCommands:
-        - "mkdir -p /run/cluster-api"
-        - "echo success > /run/cluster-api/bootstrap-success.complete"
-      machineTemplate:
-        apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
-        kind: NicoMachineTemplate
-        metadata:
-          name: my-cluster-control-plane-template
-        spec:
-          template:
-            spec:
-              vpcID: 00000000-0000-0000-0000-000000000002
-              instanceTypeID: 00000000-0000-0000-0000-000000000005
-              cloudInitInjectHostname: true
-              ipxeScript: |
-                #!ipxe
-                echo local-nico-control-plane
-              sshKeyGroupIDs:
-                - 00000000-0000-0000-0000-000000000004
-              interfaces:
-                - subnetID: 00000000-0000-0000-0000-000000000003
+controlPlaneConfig:
+  desiredCount: 1
+  systemReservedMemory: "1Gi"
+  infra:
+    preKubeadmCommands:
+      - "mkdir -p /run/cluster-api"
+      - "echo success > /run/cluster-api/bootstrap-success.complete"
+    machineTemplate:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+      kind: NicoMachineTemplate
+      metadata:
+        name: my-cluster-control-plane-template
+      spec:
+        template:
+          spec:
+            vpcID: 00000000-0000-0000-0000-000000000002
+            instanceTypeID: 00000000-0000-0000-0000-000000000005
+            cloudInitInjectHostname: true
+            ipxeScript: |
+              #!ipxe
+              echo local-nico-control-plane
+            sshKeyGroupIDs:
+              - 00000000-0000-0000-0000-000000000004
+            interfaces:
+              - subnetID: 00000000-0000-0000-0000-000000000003
 
+nodePools:
   - name: worker
     nodeNamePrefix: w
     desiredNodeCount: 1

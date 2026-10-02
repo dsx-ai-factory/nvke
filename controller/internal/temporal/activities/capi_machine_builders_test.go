@@ -39,14 +39,15 @@ func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
 	bootstrapSecretName := "worker-0-bootstrap-data"
 
 	type parameters struct {
-		node             db.Node
-		nodeSet          db.NodeSet
-		nodePool         db.NodePool
-		cluster          db.Cluster
-		bootstrapSecret  string
-		wantVersion      string
-		wantControlPlane bool
-		wantErrContain   string
+		node              db.Node
+		nodeSet           db.NodeSet
+		nodePool          db.NodePool
+		cluster           db.Cluster
+		bootstrapSecret   string
+		wantVersion       string
+		wantFailureDomain string
+		wantControlPlane  bool
+		wantErrContain    string
 	}
 
 	tests := map[string]parameters{
@@ -68,8 +69,9 @@ func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
 		},
 		"falls back to cluster version": {
 			node: db.Node{
-				ID:   controlPlaneNodeID,
-				Name: "cp-0",
+				ID:            controlPlaneNodeID,
+				Name:          "cp-0",
+				FailureDomain: "fd-a",
 			},
 			nodeSet: db.NodeSet{
 				ID: controlPlaneNodeSetID,
@@ -81,9 +83,10 @@ func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
 				Name:              "cluster-a",
 				KubernetesVersion: "v1.31.9",
 			},
-			bootstrapSecret:  "cp-0-bootstrap-data",
-			wantVersion:      "v1.31.9",
-			wantControlPlane: true,
+			bootstrapSecret:   "cp-0-bootstrap-data",
+			wantVersion:       "v1.31.9",
+			wantFailureDomain: "fd-a",
+			wantControlPlane:  true,
 		},
 		"requires kubernetes version": {
 			node: db.Node{
@@ -124,6 +127,7 @@ func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
 			assert.Equal(t, "cwe-controlled", machine.Annotations[clusterv1.ExcludeNodeDrainingAnnotation])
 			assert.Equal(t, "cwe-controlled", machine.Annotations[clusterv1.ExcludeWaitForNodeVolumeDetachAnnotation])
 			assert.Equal(t, params.wantVersion, machine.Spec.Version)
+			assert.Equal(t, params.wantFailureDomain, machine.Spec.FailureDomain)
 			assert.Equal(t, params.bootstrapSecret, *machine.Spec.Bootstrap.DataSecretName)
 			assert.Equal(t, "NicoMachine", machine.Spec.InfrastructureRef.Kind)
 			if params.wantControlPlane {

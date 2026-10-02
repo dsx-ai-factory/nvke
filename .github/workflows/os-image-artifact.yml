@@ -45,8 +45,8 @@ name: OS Image Artifact
 # release and the arch, so pulling any combination into one directory does not
 # collide -- only the tags needed disambiguating.
 #
-# The arm64 leg runs on the self-hosted fleet from NVIDIA-dev/nke-gha-runners,
-# which has /dev/kvm. Both legs build both variants.
+# Both arches run on the ARC KVM scale sets (arc-amd64-kvm, arc-arm64-kvm).
+# Each matrix job builds one variant, so FDE and non-FDE bake in parallel.
 #
 # The Release is cut by the "release" job, not by a matrix leg: legs run
 # concurrently and none can see another's checksums.
@@ -98,6 +98,11 @@ concurrency:
 env:
   REPO_FDE: ghcr.io/dsx-ai-factory/nke/os-image-fde
   REPO_NON_FDE: ghcr.io/dsx-ai-factory/nke/os-image-non-fde
+  # The S3 build cache. The bucket and its two roles are repository variables;
+  # this workflow only reads, and os-image-cache.yml, on main, is the only
+  # writer.
+  BUILD_CACHE_REGION: us-east-1
+  BUILD_CACHE_ISO_PREFIX: nke/os-image/iso
 
 jobs:
   # A mirror-branch push carries base-branch commits, so the paths above fire
@@ -128,33 +133,24 @@ jobs:
           WANT: ${{ github.event.inputs.arch }}
         run: |
           set -euo pipefail
-          amd64='{"arch":"amd64","runner":"linux-amd64-gpu-l4-latest-1","timeout_minutes":180,"build_fde":true}'
-          # Scale set on the RelEng EKS fleet: 16 vCPU, 64 GiB and 200 GiB of
-          # ephemeral storage on the same c7g.metal, so /dev/kvm is real
-          # hardware. linux-arm64-cpu16 has no /dev/kvm at all.
-          #
-          # Back on arc-arm64-kvm after #863 backed it off. The only thing
-          # that failed there was the udev block above, which cannot work in
-          # a container; this leg never needed libvirt, because Packer drives
-          # its own QEMU. kubeadm-bringup-e2e stays on the self-hosted fleet
-          # until the libvirt side of #863 is solved — it is a different
-          # failure, so moving them separately isolates the variable rather
-          # than confusing it.
-          arm64='{"arch":"arm64","runner":"arc-arm64-kvm","timeout_minutes":180,"build_fde":true}'
+          amd64='{"arch":"amd64"}'
+          arm64='{"arch":"arm64"}'
           case "${WANT:-both}" in
             amd64) arches="[${amd64}]" ;;
             arm64) arches="[${arm64}]" ;;
             *)     arches="[${amd64},${arm64}]" ;;
           esac
-          # One leg per (arch, Ubuntu release). The default flavor's tag_suffix
-          # is empty, so its tags and artifact names stay byte-identical to what
-          # this workflow published before 24.04 existed. Keep that default in
-          # step with UBUNTU_RELEASE in the packer Makefile: the unsuffixed leg
-          # also carries the shared release assets.
+          # One build per (arch, Ubuntu release, variant), so FDE and non-FDE
+          # bake in parallel. The default flavor's tag_suffix is empty, so its
+          # tags stay byte-identical to what this workflow published before
+          # 24.04 existed. Keep that default in step with UBUNTU_RELEASE in the
+          # packer Makefile: its amd64 non-FDE build also carries the shared
+          # release assets.
           legs="$(jq -c -n --argjson arches "${arches}" '
             [{ubuntu_release:"26.04.1",tag_suffix:""},
              {ubuntu_release:"24.04.5",tag_suffix:"-ubuntu24.04"}] as $flavors
-            | [$arches[] as $a | $flavors[] as $f | $a + $f]')"
+            | [$arches[] as $a | $flavors[] as $f | ("fde","non-fde") as $v
+               | $a + $f + {variant:$v, timeout_minutes:90}]')"
           echo "legs=${legs}" >> "$GITHUB_OUTPUT"
           echo "building: ${legs}"
 
@@ -163,7 +159,7 @@ jobs:
     if: github.repository == 'dsx-ai-factory/nke' && needs.changes.outputs.run_e2e == 'true'
     name: Validate Packer project
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -171,6 +167,24 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      # Once per run here rather than in each of the eight bare-metal builds,
+      # which only need the binary.
+      - name: Test nke-os-image-check and the Packer scripts
+        working-directory: os-image
+        run: |
+          set -euo pipefail
+          make test
+          make -C packer test
 
       - name: Read pinned Packer version
         id: versions
@@ -207,31 +221,26 @@ jobs:
   publish:
     needs: [matrix, validate-packer]
     if: github.repository == 'dsx-ai-factory/nke'
-    name: Build and verify (${{ matrix.arch }}, ubuntu ${{ matrix.ubuntu_release }})
-    # Both legs need /dev/kvm; the "matrix" job picks them. The arm64 leg
-    # never finished under tcg, on the amd64 runner or on linux-arm64-cpu16,
-    # which has no /dev/kvm either (#730, #731, #733, #734). Now that it runs
-    # under KVM it builds the FDE variant too.
+    name: Build and verify (${{ matrix.arch }}, ubuntu ${{ matrix.ubuntu_release }}, ${{ matrix.variant }})
     strategy:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.matrix.outputs.legs) }}
-    # Both legs require KVM. The "Enable KVM access" step below enforces it.
-    runs-on: ${{ matrix.runner }}
-    # amd64: sized for real KVM (FDE bake + demo-fde.sh + non-FDE bake +
-    # boot-smoke, each a few minutes, with real headroom); the KVM gate below
-    # fails fast instead of burning the timeout if that ever regresses to
-    # tcg. Bumped from 120m to 180m after a real run's amd64 leg still timed
-    # out (https://github.com/dsx-ai-factory/nke/actions/runs/34525233526) for a
-    # cause not yet root-caused -- see #695 for one confirmed contributor
-    # (a bloated golden image) and the self-timeout + console-log dump on
-    # the build steps below for diagnosing the next one. arm64: 180m now it
-    # runs under KVM, down from 300m when it was emulated.
+    # Every build needs /dev/kvm, so it runs on the arc-*-kvm bare-metal scale
+    # sets. arm64 never finished under tcg, on the amd64 runner or on
+    # linux-arm64-cpu16, which has no /dev/kvm (#730, #731, #733, #734).
+    runs-on: arc-${{ matrix.arch }}-kvm
+    # One variant per job takes 14-27 min with a warm ISO cache, and a cold
+    # arm64 ISO download from cdimage.ubuntu.com adds ~25 min. 90 leaves
+    # headroom without tying up a bare-metal KVM runner for 3h on a hang (see
+    # #695 for one confirmed cause of slow builds: a bloated golden image).
+    # The KVM gate below fails fast if /dev/kvm ever regresses.
     timeout-minutes: ${{ matrix.timeout_minutes }}
     # contents: read, not write -- the Release is cut by the "release" job.
     permissions:
       contents: read
       packages: write
+      id-token: write  # the build cache's read role
     env:
       # Crane does not use the runner's Docker daemon mirror configuration.
       # Route Docker Hub reads through a public pull-through mirror reachable
@@ -287,6 +296,9 @@ jobs:
             echo "packer_version=$(make --no-print-directory print-PACKER_VERSION)"
             echo "packer_sha256_amd64=$(make --no-print-directory print-PACKER_SHA256_AMD64)"
             echo "packer_sha256_arm64=$(make --no-print-directory print-PACKER_SHA256_ARM64)"
+            echo "s5cmd_version=$(make --no-print-directory print-S5CMD_VERSION)"
+            echo "s5cmd_sha256_amd64=$(make --no-print-directory print-S5CMD_SHA256_AMD64)"
+            echo "s5cmd_sha256_arm64=$(make --no-print-directory print-S5CMD_SHA256_ARM64)"
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up ORAS
@@ -325,13 +337,12 @@ jobs:
           echo "Publishing ${version} as: ${aliases[*]}"
           echo "Baking nke-agent ${agent_version} from source"
 
-      - name: Build and test nke-os-image-check
+      # validate-packer runs the tests. Only the build that carries the shared
+      # release assets (see "Prepare release assets") needs the binary.
+      - name: Build nke-os-image-check
+        if: matrix.arch == 'amd64' && matrix.tag_suffix == '' && matrix.variant == 'non-fde'
         working-directory: os-image
-        run: |
-          set -euo pipefail
-          make test
-          make build
-          make -C packer test
+        run: make build
 
       # qemu-system-arm provides qemu-system-aarch64; qemu-efi-aarch64
       # provides the AAVMF firmware the arm64 leg needs (arm64's equivalent
@@ -422,6 +433,84 @@ jobs:
           echo "${GHCR_TOKEN}" | oras login ghcr.io \
             --username "${{ github.actor }}" --password-stdin
 
+      # The installer ISO is 2 to 3 GiB, and arm64's comes from
+      # cdimage.ubuntu.com at a couple of MB/s. os-image-cache.yml keeps each
+      # one in the S3 build cache, too large for the 10 GiB GitHub cache
+      # together. prepare-installer-iso.sh checks whatever lands in iso-cache/
+      # against Ubuntu's SHA256SUMS and downloads again on a mismatch, so the
+      # cache can speed a build up but cannot change what it bakes. So none of
+      # these three steps can fail the bake: a miss or an STS or S3 outage
+      # falls back to Ubuntu's mirror, and so do unset repository variables. The
+      # role gate keeps an empty role-to-assume from falling back to whatever
+      # ambient credentials the ARC pod has. The credentials go to the restore
+      # step only, not to the job environment. id-token: write is still
+      # job-wide, so a later step could mint its own; the role is read-only on
+      # a cache of public ISOs, which is why that is acceptable.
+      - name: Configure AWS credentials for the build cache
+        id: cache_aws
+        if: vars.NKE_GHA_CACHE_READ_ROLE_ARN != ''
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.NKE_GHA_CACHE_READ_ROLE_ARN }}
+          aws-region: ${{ env.BUILD_CACHE_REGION }}
+          output-credentials: true
+          output-env-credentials: false
+
+      - name: Install s5cmd
+        id: s5cmd
+        if: steps.cache_aws.outcome == 'success'
+        continue-on-error: true
+        env:
+          S5CMD_VERSION: ${{ steps.versions.outputs.s5cmd_version }}
+          S5CMD_SHA256: ${{ steps.versions.outputs.s5cmd_sha256_amd64 }}
+          S5CMD_SHA256_ARM64: ${{ steps.versions.outputs.s5cmd_sha256_arm64 }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          expected="${S5CMD_SHA256}"
+          platform=64bit
+          if [[ "${ARCH}" == "arm64" ]]; then
+            expected="${S5CMD_SHA256_ARM64}"
+            platform=arm64
+          fi
+          tarball="s5cmd_${S5CMD_VERSION}_Linux-${platform}.tar.gz"
+          tmp="$(mktemp -d)"
+          curl -fsSL -o "${tmp}/${tarball}" \
+            "https://github.com/peak/s5cmd/releases/download/v${S5CMD_VERSION}/${tarball}"
+          echo "${expected}  ${tmp}/${tarball}" | sha256sum -c -
+          tar -xzf "${tmp}/${tarball}" -C "${tmp}" s5cmd
+          sudo install -m 0755 "${tmp}/s5cmd" /usr/local/bin/s5cmd
+          s5cmd version
+
+      - name: Restore the installer ISO from the build cache
+        if: steps.s5cmd.outcome == 'success'
+        continue-on-error: true
+        # A stalled transfer would otherwise eat the whole job budget.
+        timeout-minutes: 15
+        env:
+          BUCKET: ${{ vars.NKE_GHA_CACHE_BUCKET }}
+          AWS_REGION: ${{ env.BUILD_CACHE_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ steps.cache_aws.outputs.aws-access-key-id }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.cache_aws.outputs.aws-secret-access-key }}
+          AWS_SESSION_TOKEN: ${{ steps.cache_aws.outputs.aws-session-token }}
+        run: |
+          set -euo pipefail
+          iso_url="$(make --no-print-directory -C os-image/packer print-ISO_URL \
+            ARCH=${{ matrix.arch }} UBUNTU_RELEASE=${{ matrix.ubuntu_release }})"
+          # The annotation names the object, not the bucket.
+          object="${BUILD_CACHE_ISO_PREFIX}/${iso_url##*/}"
+          mkdir -p os-image/packer/iso-cache
+          start="$(date +%s.%N)"
+          if s5cmd cp "s3://${BUCKET}/${object}" os-image/packer/iso-cache/; then
+            speed="$(awk -v b="$(stat -c %s "os-image/packer/iso-cache/${iso_url##*/}")" \
+              -v s="$(date +%s.%N)" -v t="${start}" \
+              'BEGIN { m = b / 1048576; d = s - t; printf "%d MiB in %.1fs, %.0f MiB/s", m, d, m / d }')"
+            echo "::notice::restored ${object}: ${speed}"
+          else
+            echo "::notice::could not restore ${object} from the build cache; the build downloads it from Ubuntu"
+          fi
+
       # Self-timeout, 30s inside the job's real timeout-minutes deadline (see
       # "Record job start time" above), so a hang here dumps the serial
       # console log -- the same file "Upload FDE/non-FDE install console
@@ -429,7 +518,7 @@ jobs:
       # exiting, instead of relying on GitHub's hard kill to leave anything
       # legible behind.
       - name: Build the FDE node image
-        if: matrix.build_fde
+        if: matrix.variant == 'fde'
         env:
           PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -467,11 +556,10 @@ jobs:
       # Full acceptance run: LUKS2+TPM-sealed, wrong-TPM-fails,
       # reboot-auto-unlocks. No manual/scripted console interaction needed —
       # the image auto-unlocks its own first boot via a build-time luks.key=
-      # GRUB parameter (see os-image/docs/full-disk-encryption.md). Only run
-      # where the FDE image was actually built (see matrix.build_fde above).
+      # GRUB parameter (see os-image/docs/full-disk-encryption.md).
       # ARCH picks the QEMU binary, machine type, UEFI firmware and TPM device.
       - name: Validate FDE TPM unlock (demo-fde.sh)
-        if: matrix.build_fde
+        if: matrix.variant == 'fde'
         working-directory: os-image
         env:
           ARCH: ${{ matrix.arch }}
@@ -479,6 +567,7 @@ jobs:
 
       # Same self-timeout pattern as "Build the FDE node image" above.
       - name: Build the non-FDE node image
+        if: matrix.variant == 'non-fde'
         env:
           PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -514,6 +603,7 @@ jobs:
           exit "${status}"
 
       - name: Boot-smoke the non-FDE qcow2
+        if: matrix.variant == 'non-fde'
         run: |
           if [[ "${{ matrix.arch }}" == "arm64" ]]; then
             make -C os-image boot-smoke ARCH=arm64 \
@@ -537,7 +627,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: fde-install-console-logs-${{ matrix.arch }}${{ matrix.tag_suffix }}
+          name: install-console-logs-${{ matrix.arch }}${{ matrix.tag_suffix }}-${{ matrix.variant }}
           path: os-image/packer/build-logs/
           if-no-files-found: ignore
           retention-days: 7
@@ -545,31 +635,21 @@ jobs:
       # Make owns the final QCOW2 conversion and collection. Its collection
       # targets require a clean source and exactly one regular image, preserve
       # Packer's basename, and compare the copied bytes before returning it.
-      - name: Collect the finalized qcow2s
+      - name: Collect the finalized qcow2
         id: disks
         env:
           EXPECTED_SOURCE_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
           mkdir -p dist
-          if [[ "${{ matrix.build_fde }}" == "true" ]]; then
-            fde_name="$(
-              make --no-print-directory --silent -C os-image/packer \
-                collect-qcow2-fde \
-                ARCH=${{ matrix.arch }} \
-                UBUNTU_RELEASE=${{ matrix.ubuntu_release }} \
-                QCOW2_DIST_DIR="$PWD/dist"
-            )"
-            echo "fde=${fde_name}" >> "$GITHUB_OUTPUT"
-          fi
-          non_fde_name="$(
+          disk="$(
             make --no-print-directory --silent -C os-image/packer \
-              collect-qcow2-non-fde \
+              collect-qcow2-${{ matrix.variant }} \
               ARCH=${{ matrix.arch }} \
               UBUNTU_RELEASE=${{ matrix.ubuntu_release }} \
               QCOW2_DIST_DIR="$PWD/dist"
           )"
-          echo "non_fde=${non_fde_name}" >> "$GITHUB_OUTPUT"
+          echo "disk=${disk}" >> "$GITHUB_OUTPUT"
 
       # --artifact-platform is still marked experimental in the ORAS CLI. It is
       # load-bearing: without it the manifest has no platform in its config and
@@ -578,7 +658,7 @@ jobs:
       # than one multi-platform manifest shared across matrix legs.
       # A pull-request branch must never publish. Its inputs are empty, so
       # dry_run alone would read as "not a dry run" and push.
-      - name: Push the qcow2s to GHCR
+      - name: Push the qcow2 to GHCR
         if: >-
           github.event.inputs.dry_run != 'true' &&
           (startsWith(github.ref, 'refs/tags/os-image/') ||
@@ -588,8 +668,8 @@ jobs:
           ALIASES: ${{ steps.meta.outputs.aliases }}
           ARCH: ${{ matrix.arch }}
           SUFFIX: ${{ matrix.tag_suffix }}
-          DISK_FDE: ${{ steps.disks.outputs.fde }}
-          DISK_NON_FDE: ${{ steps.disks.outputs.non_fde }}
+          REPO: ${{ matrix.variant == 'fde' && env.REPO_FDE || env.REPO_NON_FDE }}
+          DISK: ${{ steps.disks.outputs.disk }}
         run: |
           set -euo pipefail
           read -ra aliases <<< "${ALIASES}"
@@ -598,79 +678,58 @@ jobs:
             tags="${tags:+${tags},}${alias}${SUFFIX}-${ARCH}"
           done
 
-          variants=(non-fde)
-          if [[ "${{ matrix.build_fde }}" == "true" ]]; then
-            variants+=(fde)
-          fi
+          ( cd dist && oras push "${REPO}:${tags}" \
+              --artifact-type application/vnd.nvidia.nke.node.qcow2.v1 \
+              --artifact-platform "linux/${ARCH}" \
+              --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+              --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+              --annotation "org.opencontainers.image.version=${VERSION}" \
+              --annotation "org.opencontainers.image.licenses=Apache-2.0" \
+              --annotation "org.opencontainers.image.title=${DISK}" \
+              "${DISK}:application/vnd.qemu.qcow2" )
 
-          for variant in "${variants[@]}"; do
-            case "${variant}" in
-              fde) repo="${REPO_FDE}"; disk="${DISK_FDE}" ;;
-              non-fde) repo="${REPO_NON_FDE}"; disk="${DISK_NON_FDE}" ;;
-            esac
-            ( cd dist && oras push "${repo}:${tags}" \
-                --artifact-type application/vnd.nvidia.nke.node.qcow2.v1 \
-                --artifact-platform "linux/${ARCH}" \
-                --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
-                --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
-                --annotation "org.opencontainers.image.version=${VERSION}" \
-                --annotation "org.opencontainers.image.licenses=Apache-2.0" \
-                --annotation "org.opencontainers.image.title=${disk}" \
-                "${disk}:application/vnd.qemu.qcow2" )
-          done
-
-      - name: Show published manifests
+      - name: Show published manifest
         if: >-
           github.event.inputs.dry_run != 'true' &&
           (startsWith(github.ref, 'refs/tags/os-image/') ||
            github.event_name == 'workflow_dispatch')
-        run: |
-          set -euo pipefail
-          tag="sha-${GITHUB_SHA}${{ matrix.tag_suffix }}-${{ matrix.arch }}"
-          oras manifest fetch --pretty "${REPO_NON_FDE}:${tag}"
-          if [[ "${{ matrix.build_fde }}" == "true" ]]; then
-            oras manifest fetch --pretty "${REPO_FDE}:${tag}"
-          fi
+        env:
+          REPO: ${{ matrix.variant == 'fde' && env.REPO_FDE || env.REPO_NON_FDE }}
+        run: oras manifest fetch --pretty "${REPO}:sha-${GITHUB_SHA}${{ matrix.tag_suffix }}-${{ matrix.arch }}"
 
       # One file per leg; the release job concatenates them. The checker
-      # binary and the version metadata come from amd64 only -- and, now that
-      # two flavors share that arch, only from the default-flavor leg, or both
-      # would write the same two shared files.
+      # binary and the version metadata come from a single build -- amd64,
+      # default flavor, non-FDE -- or several would write the same two
+      # shared files.
       - name: Prepare release assets
         env:
-          ARCH: ${{ matrix.arch }}
-          SUFFIX: ${{ matrix.tag_suffix }}
-          DISK_FDE: ${{ steps.disks.outputs.fde }}
-          DISK_NON_FDE: ${{ steps.disks.outputs.non_fde }}
+          BUILD: ${{ matrix.arch }}${{ matrix.tag_suffix }}-${{ matrix.variant }}
+          DISK: ${{ steps.disks.outputs.disk }}
           VERSION: ${{ steps.meta.outputs.version }}
           AGENT_VERSION: ${{ steps.meta.outputs.agent_version }}
         run: |
           set -euo pipefail
           mkdir -p assets
-          disks=("${DISK_NON_FDE}")
-          if [[ -n "${DISK_FDE}" ]]; then
-            disks+=("${DISK_FDE}")
-          fi
-          ( cd dist && sha256sum "${disks[@]}" ) > "assets/checksums-${ARCH}${SUFFIX}.txt"
-          if [[ "${ARCH}" == "amd64" && -z "${SUFFIX}" ]]; then
+          ( cd dist && sha256sum "${DISK}" ) > "assets/checksums-${BUILD}.txt"
+          if [[ "${BUILD}" == "amd64-non-fde" ]]; then
             cp os-image/bin/nke-os-image-check assets/nke-os-image-check
-            ( cd assets && sha256sum nke-os-image-check >> "checksums-${ARCH}${SUFFIX}.txt" )
+            ( cd assets && sha256sum nke-os-image-check >> "checksums-${BUILD}.txt" )
             {
               echo "version=${VERSION}"
               echo "agent_version=${AGENT_VERSION}"
             } > assets/release-meta.env
           fi
-          cat "assets/checksums-${ARCH}${SUFFIX}.txt"
+          cat "assets/checksums-${BUILD}.txt"
 
       - name: Upload release assets
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-assets-${{ matrix.arch }}${{ matrix.tag_suffix }}
+          name: release-assets-${{ matrix.arch }}${{ matrix.tag_suffix }}-${{ matrix.variant }}
           path: assets/
           if-no-files-found: error
           retention-days: 7
 
-  # Fans the matrix back in: checksums.txt covers every disk both legs built.
+  # Fans the matrix back in: checksums.txt covers every disk all builds made.
   # Separate jobs, not more steps in "publish": that job also runs on
   # pull-request/* mirror branches with no publish step, and an
   # `environment:` gate would apply to the whole job, not just the push
@@ -682,7 +741,7 @@ jobs:
       github.event.inputs.dry_run != 'true' &&
       (startsWith(github.ref, 'refs/tags/os-image/') ||
        github.event_name == 'workflow_dispatch')
-    name: Publish to NVCR (${{ matrix.arch }}, ubuntu ${{ matrix.ubuntu_release }})
+    name: Publish to NVCR (${{ matrix.arch }}, ubuntu ${{ matrix.ubuntu_release }}, ${{ matrix.variant }})
     runs-on: ubuntu-latest
     environment: nvcr
     timeout-minutes: 30
@@ -727,8 +786,7 @@ jobs:
           fi
           {
             echo "tag=${tag}"
-            echo "nvcr_fde=nvcr.io/${NKE_NGC_ORG}/nke-os-image-fde"
-            echo "nvcr_non_fde=nvcr.io/${NKE_NGC_ORG}/nke-os-image-non-fde"
+            echo "nvcr_repo=nvcr.io/${NKE_NGC_ORG}/nke-os-image-${{ matrix.variant }}"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Log in to GHCR (pull) and NVCR (push)
@@ -748,15 +806,9 @@ jobs:
         shell: bash
         env:
           TAG: ${{ steps.meta.outputs.tag }}
-          NVCR_FDE: ${{ steps.meta.outputs.nvcr_fde }}
-          NVCR_NON_FDE: ${{ steps.meta.outputs.nvcr_non_fde }}
-          BUILD_FDE: ${{ matrix.build_fde }}
-        run: |
-          set -euo pipefail
-          oras cp "${REPO_NON_FDE}:${TAG}" "${NVCR_NON_FDE}:${TAG}"
-          if [[ "${BUILD_FDE}" == "true" ]]; then
-            oras cp "${REPO_FDE}:${TAG}" "${NVCR_FDE}:${TAG}"
-          fi
+          REPO: ${{ matrix.variant == 'fde' && env.REPO_FDE || env.REPO_NON_FDE }}
+          NVCR_REPO: ${{ steps.meta.outputs.nvcr_repo }}
+        run: oras cp "${REPO}:${TAG}" "${NVCR_REPO}:${TAG}"
 
   # Same "separate job" reasoning as publish-nvcr. Downloads the qcow2 from
   # GHCR rather than the runner's local disk, since this job doesn't share a
@@ -766,10 +818,11 @@ jobs:
     if: >-
       github.repository == 'dsx-ai-factory/nke' &&
       github.event.inputs.dry_run != 'true' &&
-      startsWith(github.ref, 'refs/tags/os-image/')
-    name: Publish to S3 (${{ matrix.arch }}, ubuntu ${{ matrix.ubuntu_release }})
+      (startsWith(github.ref, 'refs/tags/os-image/') ||
+       github.event_name == 'workflow_dispatch')
+    name: Publish to S3 (${{ matrix.arch }}, ubuntu ${{ matrix.ubuntu_release }}, ${{ matrix.variant }})
     runs-on: ubuntu-latest
-    environment: s3-publish
+    environment: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/os-image/') && 's3-publish' || 's3-publish-non-prod' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -804,12 +857,12 @@ jobs:
           echo "${GHCR_TOKEN}" | oras login ghcr.io \
             --username "${{ github.actor }}" --password-stdin
 
-      - name: Resolve release and pull qcow2s
+      - name: Resolve release and pull the qcow2
         id: meta
         env:
           ARCH: ${{ matrix.arch }}
           SUFFIX: ${{ matrix.tag_suffix }}
-          BUILD_FDE: ${{ matrix.build_fde }}
+          REPO: ${{ matrix.variant == 'fde' && env.REPO_FDE || env.REPO_NON_FDE }}
           S3_URI: ${{ vars.S3_PUBLISH_S3_URI }}
           ROLE_ARN: ${{ vars.S3_PUBLISH_AWS_ROLE_ARN }}
           REGION: ${{ vars.S3_PUBLISH_AWS_REGION }}
@@ -817,16 +870,16 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "${S3_URI}" || -z "${ROLE_ARN}" || -z "${CF_DOMAIN}" ]]; then
-            echo "::error::S3_PUBLISH_S3_URI / S3_PUBLISH_AWS_ROLE_ARN / S3_PUBLISH_CLOUDFRONT_DOMAIN not set in the s3-publish environment"
+            echo "::error::S3_PUBLISH_S3_URI / S3_PUBLISH_AWS_ROLE_ARN / S3_PUBLISH_CLOUDFRONT_DOMAIN not set in the selected S3 publishing environment"
             exit 1
           fi
-          release="${GITHUB_REF_NAME#os-image/}"
+          release="sha-${GITHUB_SHA}"
+          if [[ "${GITHUB_REF}" == refs/tags/os-image/* ]]; then
+            release="${GITHUB_REF_NAME#os-image/}"
+          fi
           tag="${release}${SUFFIX}-${ARCH}"
           mkdir -p dist
-          oras pull "${REPO_NON_FDE}:${tag}" -o dist
-          if [[ "${BUILD_FDE}" == "true" ]]; then
-            oras pull "${REPO_FDE}:${tag}" -o dist
-          fi
+          oras pull "${REPO}:${tag}" -o dist
           {
             echo "s3_uri=${S3_URI}"
             echo "role_arn=${ROLE_ARN}"
@@ -839,22 +892,21 @@ jobs:
       # whatever that tag points at now, not necessarily what this run built.
       # The build leg recorded the sha256 of each disk it produced; compare
       # against it before anything reaches S3.
-      - name: Download this leg's checksums
+      - name: Download this build's checksums
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: release-assets-${{ matrix.arch }}${{ matrix.tag_suffix }}
+          name: release-assets-${{ matrix.arch }}${{ matrix.tag_suffix }}-${{ matrix.variant }}
           path: expected
 
       - name: Verify the pulled qcow2s
         shell: bash
         env:
-          ARCH: ${{ matrix.arch }}
-          SUFFIX: ${{ matrix.tag_suffix }}
+          BUILD: ${{ matrix.arch }}${{ matrix.tag_suffix }}-${{ matrix.variant }}
         run: |
           set -euo pipefail
-          sums="expected/checksums-${ARCH}${SUFFIX}.txt"
-          # --ignore-missing, because the default flavor's amd64 leg also
-          # lists nke-os-image-check, which is a release asset, not a disk.
+          sums="expected/checksums-${BUILD}.txt"
+          # --ignore-missing, because the default flavor's amd64 non-FDE build
+          # also lists nke-os-image-check, which is a release asset, not a disk.
           # That makes an empty dist/ pass, so count the disks separately.
           disks=(dist/*.qcow2)
           if [[ ! -e "${disks[0]}" ]]; then
@@ -923,6 +975,11 @@ jobs:
       id-token: write       # the OIDC token the attestation is signed against
       attestations: write   # writes the provenance attestation
     steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Download every leg's assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -960,6 +1017,7 @@ jobs:
         run: cp "${BUNDLE}" dist/checksums.txt.sigstore.json
 
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/os-image/')
         id: release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
@@ -1017,6 +1075,7 @@ jobs:
       # require-all is false because the same file also covers the four
       # qcow2s, which ship as OCI artifacts rather than release assets.
       - name: Verify the release assets
+        if: startsWith(github.ref, 'refs/tags/os-image/')
         uses: ./.github/actions/verify-release-assets
         with:
           release-id: ${{ steps.release.outputs.id }}
@@ -1026,6 +1085,7 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/os-image/')
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           RELEASE_ID: ${{ steps.release.outputs.id }}
