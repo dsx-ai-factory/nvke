@@ -525,7 +525,7 @@ nkectl_smoke_create_rejections() {
   nkectl_smoke_stage_spec reject-name <<EOF || return 1
 name: Nkectl_Smoke
 controlPlaneKubernetesVersion: ${NKECTL_SMOKE_KUBERNETES_VERSION}
-cniPlugin: calico
+cniPlugin: ovn-kubernetes
 infra:
   cluster:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
@@ -538,7 +538,7 @@ EOF
 
   nkectl_smoke_stage_spec reject-version <<EOF || return 1
 name: ${NKECTL_SMOKE_REJECT_CLUSTER}
-cniPlugin: calico
+cniPlugin: ovn-kubernetes
 infra:
   cluster:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
@@ -552,7 +552,7 @@ EOF
   nkectl_smoke_stage_spec reject-provider <<EOF || return 1
 name: ${NKECTL_SMOKE_REJECT_CLUSTER}
 controlPlaneKubernetesVersion: ${NKECTL_SMOKE_KUBERNETES_VERSION}
-cniPlugin: calico
+cniPlugin: ovn-kubernetes
 EOF
   nkectl_smoke_expect_create_rejected reject-provider "neither nico nor infra" || return 1
 
@@ -599,7 +599,7 @@ nkectl_smoke_write_round_trip() {
   nkectl_smoke_stage_spec write <<EOF || return 1
 name: ${NKECTL_SMOKE_WRITE_CLUSTER}
 controlPlaneKubernetesVersion: ${NKECTL_SMOKE_KUBERNETES_VERSION}
-cniPlugin: calico
+cniPlugin: ovn-kubernetes
 etcdEncrypted: false
 nodePools:
   - name: control-plane

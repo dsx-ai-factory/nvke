@@ -18,6 +18,7 @@ repo_root="$(cd "${script_dir}/../.." && pwd)"
 : "${CAPD_NODE_AGENT_LOCAL_BUILD:=auto}"
 : "${CAPD_SPIRE_ATTESTATION_METHOD:=tpm}"
 : "${CAPD_CNI_MANIFESTS_DEB_PATH:=}"
+: "${CAPD_CNI_CHARTS_DEB_PATH:=}"
 : "${NKE_E2E_DOCKERHUB_MIRROR:=}"
 : "${NODE_AGENT_REPO_PATH:=${repo_root}/../agent}"
 # Empty by default: a bundle server is a deployment choice, and the CDN that used
@@ -208,6 +209,13 @@ if [[ -n "${CAPD_CNI_MANIFESTS_DEB_PATH}" ]]; then
     exit 1
   fi
   cp "${CAPD_CNI_MANIFESTS_DEB_PATH}" "${build_context}/scripts/cni-manifests.deb"
+fi
+if [[ -n "${CAPD_CNI_CHARTS_DEB_PATH}" ]]; then
+  if [[ ! -f "${CAPD_CNI_CHARTS_DEB_PATH}" ]]; then
+    echo "CAPD_CNI_CHARTS_DEB_PATH does not exist: ${CAPD_CNI_CHARTS_DEB_PATH}" >&2
+    exit 1
+  fi
+  cp "${CAPD_CNI_CHARTS_DEB_PATH}" "${build_context}/scripts/cni-charts.deb"
 fi
 
 should_build_local_node_agent() {

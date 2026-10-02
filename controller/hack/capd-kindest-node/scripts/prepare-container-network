@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+"""Describe Docker's IPv4 uplink to the agent and restore its bridge on boot."""
+
+import ipaddress
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+
+def run(*args: str) -> str:
+    return subprocess.check_output(args, text=True)
+
+
+def main() -> None:
+    routes = json.loads(run("ip", "-j", "-4", "route", "show", "default"))
+    if len(routes) != 1 or not routes[0].get("gateway"):
+        raise ValueError("expected one Docker IPv4 default route with a gateway")
+    route = routes[0]
+    uplink = route["dev"]
+    # A manual service restart after the agent moved the route needs no work.
+    if (Path("/etc/network/interfaces.d") / ("ifcfg-" + uplink)).exists():
+        return
+    bridge = "br" + uplink
+    bridge_path = Path("/etc/network/interfaces.d") / ("ifcfg-" + bridge)
+    links = json.loads(run("ip", "-j", "-4", "address", "show", "dev", uplink))
+    addresses = [a for a in links[0]["addr_info"] if a["scope"] == "global"]
+    if len(addresses) != 1:
+        raise ValueError("expected one Docker IPv4 address on the uplink")
+    address = addresses[0]
+    network = ipaddress.IPv4Interface(f'{address["local"]}/{address["prefixlen"]}')
+    config = (
+        f'auto {uplink}\niface {uplink} inet static\n'
+        f'\taddress {network.ip}\n\tnetmask {network.netmask}\n'
+        f'\tgateway {route["gateway"]}\n\tmtu {links[0]["mtu"]}\n'
+    )
+    config_path = Path("/etc/network/interfaces.d/nke-container-uplink")
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if bridge_path.exists():
+        # Docker recreates eth0 with its address on every start, while the
+        # agent's OVS database and bridge description survive in the rootfs.
+        # Use the newly assigned Docker address, including if IPAM changed it.
+        config = f'auto {uplink}\niface {uplink} inet manual\n'
+        bridge_path.write_text(
+            f'auto {bridge}\niface {bridge} inet static\n'
+            f'\taddress {network.ip}\n\tnetmask {network.netmask}\n'
+            f'\tgateway {route["gateway"]}\n\tmtu {links[0]["mtu"]}\n'
+            f'\tovs_type OVSBridge\n\tovs_ports {uplink}\n'
+        )
+        config_path.write_text(config)
+        run("ovs-vsctl", "--may-exist", "add-br", bridge)
+        run("ovs-vsctl", "--may-exist", "add-port", bridge, uplink)
+        run("ip", "-4", "address", "replace", str(network), "dev", bridge)
+        run("ip", "link", "set", bridge, "up")
+        run("ip", "link", "set", bridge, "mtu", str(links[0]["mtu"]))
+        run("ip", "-4", "route", "replace", "default", "via", route["gateway"], "dev", bridge, "onlink")
+        # The agent persists the OVS port and bridge MAC in its database.
+        # Flush only IPv4: Docker's IPv6 address remains on its uplink.
+        run("ip", "-4", "address", "flush", "dev", uplink)
+    else:
+        config_path.write_text(config)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        print(f"prepare container network: {error}", file=sys.stderr)
+        raise SystemExit(1) from error

@@ -70,7 +70,7 @@ on:
           the kube-vip startup race in focused CAPD lanes.
         required: false
         type: boolean
-        default: false
+        default: true
       nkectl-smoke:
         description: >-
           Run hack/ci/nkectl-smoke.sh once the suite passes: drive nkectl against

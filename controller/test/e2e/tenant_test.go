@@ -904,7 +904,7 @@ func capdSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpe
 		Name:              name,
 		Backend:           nke.BackendCAPD,
 		KubernetesVersion: defaultString(shape.kubernetesVersion, defaultKubernetesVersion),
-		CNIPlugin:         defaultString(shape.cniPlugin, CNIPluginCalico),
+		CNIPlugin:         defaultString(shape.cniPlugin, CNIPluginOVN),
 		CAPDNodeImage:     cfg.Cluster.CAPDNodeImage,
 		SiteID:            uuid.Nil.String(),
 		ControlPlane: nke.ControlPlane{
@@ -1017,7 +1017,7 @@ func nicoSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec 
 		Name:              name,
 		Backend:           nke.BackendNicoContainers,
 		KubernetesVersion: defaultString(shape.kubernetesVersion, defaultKubernetesVersion),
-		CNIPlugin:         defaultString(shape.cniPlugin, CNIPluginCalico),
+		CNIPlugin:         defaultString(shape.cniPlugin, CNIPluginOVN),
 		SiteID:            nicoSiteID,
 		VpcID:             nicoVpcID,
 		ControlPlane: nke.ControlPlane{

@@ -77,11 +77,24 @@ RUN set -eux; \
       python3 \
       python-is-python3 \
       python3-yaml \
+      openvswitch-switch \
+      ifupdown \
       swtpm \
       swtpm-tools \
       tpm2-tools \
       xxd; \
     rm -rf /var/lib/apt/lists/*
+
+# Docker supplies the initial address, rather than a distro network manager.
+# Give the agent an ifupdown description of it, and restore its OVS bridge on
+# container restarts before SPIRE or the agent need the network.
+COPY scripts/prepare-container-network /usr/local/sbin/prepare-container-network
+COPY scripts/nke-container-network.service /etc/systemd/system/nke-container-network.service
+RUN set -eux; \
+    chmod 0755 /usr/local/sbin/prepare-container-network; \
+    printf 'source /etc/network/interfaces.d/*\n' > /etc/network/interfaces; \
+    SYSTEMD_OFFLINE=1 systemctl disable networking.service; \
+    SYSTEMD_OFFLINE=1 systemctl enable nke-container-network.service
 
 # Local CAPD E2E may supply a CNI manifests deb through build-image.sh. The
 # scripts directory is always present, so this remains a no-op for callers that

@@ -36,10 +36,9 @@ nkeOIDCAuth:
     name: oidc-provider-upstream-ca
     key: ca.crt
 
-# The CAPD lane installs the CNI as part of cluster creation rather than after
-# init; the node-pool lane differs and overrides this.
+# The default container lane applies the staged OVN chart after kubeadm init.
 cni:
-  installAfterInit: false
+  installAfterInit: true
 
 # Of the variables the Tiltfile forwards, backend-e2e.sh sets only this one.
 # A container node cannot reboot in-guest, so the reboot goes out of band

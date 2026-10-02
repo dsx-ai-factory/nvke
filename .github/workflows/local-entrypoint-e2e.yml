@@ -75,23 +75,15 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      # Listed rather than crossed: arm64 covers the default CNI path only, so
-      # the pool carries three legs and not four.
       matrix:
-        # CNI reaches a node two ways. false is what a developer running this
-        # script gets; true installs it after kubeadm init from a Debian package,
-        # with no bundle mirror and no bundle flags on the node image. Only this
-        # lane covers the second one, and only on amd64.
+        # Both architectures install the staged OVN chart after kubeadm init.
         include:
-          - arch: amd64
-            runner: linux-amd64-cpu16
-            install_cni_after_init: false
           - arch: amd64
             runner: linux-amd64-cpu16
             install_cni_after_init: true
           - arch: arm64
             runner: linux-arm64-cpu16
-            install_cni_after_init: false
+            install_cni_after_init: true
     env:
       INSTALL_CNI_AFTER_INIT: ${{ matrix.install_cni_after_init }}
       # Pull-request mirrors run the same bounded lifecycle as the CAPD lane.
