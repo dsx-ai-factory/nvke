@@ -44,7 +44,7 @@ EOF
 
 KUBE_CONTEXT="${KUBE_CONTEXT:-kind-cwe-capi}"
 CWE_NAMESPACE="${CWE_NAMESPACE:-cloud-workflow-engine}"
-NKE_DEPLOYMENT="${NKE_DEPLOYMENT:-cloud-workflow-engine}"
+NKE_DEPLOYMENT="${NKE_DEPLOYMENT:-}"
 CWE_HTTP_PORT="${CWE_HTTP_PORT:-8080}"
 NKE_HTTP_URL="${NKE_HTTP_URL:-http://127.0.0.1:${CWE_HTTP_PORT}}"
 # Metrics are a separate listener (METRICS_LISTEN_ADDRESS, chart default
@@ -108,6 +108,10 @@ if [[ ${#missing[@]} -gt 0 ]]; then
   echo "  apply deploy/k8s/nke-auth-dev.yaml, or run tilt up" >&2
   exit 2
 fi
+
+# nke-token.sh picks nke-controller or cloud-workflow-engine when unset.
+NKE_DEPLOYMENT="$("${SCRIPT_DIR}/nke-token.sh" --deployment)"
+[[ -n "${NKE_DEPLOYMENT}" ]] || die "could not resolve NKE's Deployment in ${CWE_NAMESPACE}"
 
 # The audience comes from the live deployment, via nke-token.sh.
 AUDIENCE="$("${SCRIPT_DIR}/nke-token.sh" --audience)"

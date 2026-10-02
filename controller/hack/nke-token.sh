@@ -14,7 +14,8 @@
 # Environment:
 #   KUBE_CONTEXT               kube context (default: kubeconfig current-context)
 #   CWE_NAMESPACE              NKE's namespace (default cloud-workflow-engine)
-#   NKE_DEPLOYMENT             NKE's Deployment (default cloud-workflow-engine)
+#   NKE_DEPLOYMENT             NKE's Deployment (default nke-controller when it
+#                              exists in CWE_NAMESPACE, else cloud-workflow-engine)
 #   NKE_TOKEN_NAMESPACE        service account namespace (default nke-clients)
 #   NKE_TOKEN_SERVICE_ACCOUNT  service account (default nke-client)
 #   NKE_TOKEN_TTL              requested lifetime (default 30m)
@@ -25,13 +26,14 @@ set -euo pipefail
 
 KUBE_CONTEXT="${KUBE_CONTEXT:-}"
 CWE_NAMESPACE="${CWE_NAMESPACE:-cloud-workflow-engine}"
-NKE_DEPLOYMENT="${NKE_DEPLOYMENT:-cloud-workflow-engine}"
+NKE_DEPLOYMENT="${NKE_DEPLOYMENT:-}"
 NKE_TOKEN_NAMESPACE="${NKE_TOKEN_NAMESPACE:-nke-clients}"
 NKE_TOKEN_SERVICE_ACCOUNT="${NKE_TOKEN_SERVICE_ACCOUNT:-nke-client}"
 NKE_TOKEN_TTL="${NKE_TOKEN_TTL:-30m}"
 
-# An explicit token wins, including an invalid one.
-if [[ -n "${NKE_AUTH_TOKEN:-}" ]]; then
+# An explicit token wins, including an invalid one. Not for --deployment or
+# --audience, which would otherwise print the token as a name.
+if [[ -n "${NKE_AUTH_TOKEN:-}" && -z "${1:-}" ]]; then
   printf '%s' "${NKE_AUTH_TOKEN}"
   exit 0
 fi
@@ -79,6 +81,33 @@ if [[ "${1:-}" == "--audience" ]]; then
   audience="${NKE_AUDIENCE:-$(cwe_discover_audience)}"
   [[ -n "${audience}" ]] || die "no audience in configmap ${CWE_NAMESPACE}/nke-auth-config; set NKE_AUDIENCE to override"
   printf '%s' "${audience}"
+  exit 0
+fi
+
+# --- deployment -------------------------------------------------------------
+
+# A greenfield site installs NKE as nke-controller; Tilt and the e2e lanes
+# still use cloud-workflow-engine. The container shares the Deployment's name
+# in both, which the AUTH_CONFIG_PATH lookup below relies on.
+# Only a confirmed absence falls back; any other lookup failure is fatal.
+if [[ -z "${NKE_DEPLOYMENT}" ]]; then
+  found="$(
+    "${KUBECTL[@]}" get deploy nke-controller -n "${CWE_NAMESPACE}" \
+      --ignore-not-found -o name 2>&1
+  )" || die "cannot look up deploy ${CWE_NAMESPACE}/nke-controller:
+  ${found}
+  Check KUBE_CONTEXT, CWE_NAMESPACE and that this identity may read Deployments,
+  or set NKE_DEPLOYMENT."
+  if [[ "${found}" == *"deployment.apps/nke-controller"* ]]; then
+    NKE_DEPLOYMENT="nke-controller"
+  else
+    NKE_DEPLOYMENT="cloud-workflow-engine"
+  fi
+fi
+
+# --deployment lets other scripts reuse this lookup, as --audience does above.
+if [[ "${1:-}" == "--deployment" ]]; then
+  printf '%s' "${NKE_DEPLOYMENT}"
   exit 0
 fi
 
