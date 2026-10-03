@@ -325,7 +325,7 @@ The composer consumes `agent`, `calico`, `kubeadm-distro`, `ovn`, and
 `spire-agent` from the materials directory. The runner must authenticate those
 files before calling it. It streams regular package members into a private stage,
 rejects unsafe entries and duplicate filenames, and bounds input archives to
-16384 members each, 16384 packages overall, 1 GiB per package and 7 GiB total
+16384 entries each, 16384 packages overall, 1 GiB per package and 7 GiB total
 package bytes. It normalizes archive directory permissions independently of the host
 umask, and preserves all staged versions in the local APT index. The ISO patcher
 accepts a prepared local ISO and performs no acquisition. Both adapters leave
