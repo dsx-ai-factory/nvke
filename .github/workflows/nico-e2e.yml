@@ -111,9 +111,10 @@ jobs:
       # The nico provider installs CAPNICo, starts nico-sim by default, and
       # brings its own node image step. capi_core is required.
       providers: '["capi_core", "bgp-containers", "nico"]'
-      # Keep diagnostic headroom above the 15-minute pull-request target. Full
-      # runs retain their existing allowance for both modes and extended rows.
-      timeout-minutes: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 20 || 240 }}
+      # Leave enough pull-request headroom for arm64 diagnostics and action
+      # cleanup after the selected suite finishes. Full runs retain their
+      # existing allowance for both modes and extended rows.
+      timeout-minutes: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 30 || 240 }}
       # Without this, a broken auth deployment turns the authn specs into
       # skips and the lane stays green having tested nothing new.
       require-authn: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}
