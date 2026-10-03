@@ -149,6 +149,17 @@ variable "cpu_model" {
   description = "QEMU CPU model. Use host with KVM and max with TCG emulation."
 }
 
+variable "guest_memory_mib" {
+  type        = number
+  default     = 8192
+  description = "Guest memory in MiB."
+
+  validation {
+    condition     = var.guest_memory_mib >= 1024 && floor(var.guest_memory_mib) == var.guest_memory_mib
+    error_message = "The guest_memory_mib value must be an integer of at least 1024."
+  }
+}
+
 variable "cpus" {
   type        = number
   default     = 4

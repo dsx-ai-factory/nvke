@@ -61,7 +61,7 @@ source "qemu" "nke-non-fde" {
   vm_name          = "nke-node.qcow2"
   output_directory = "${var.output_directory}/non-fde"
   headless         = true
-  memory           = 8192
+  memory           = var.guest_memory_mib
   cpus             = var.cpus
   net_device       = "virtio-net"
 }

@@ -1386,6 +1386,7 @@ exec "${REAL_MV:?}" "$@"
         self.assertEqual(len(re.findall(r"skip_compaction\s*=\s*true", project)), 2)
         self.assertEqual(len(re.findall(r"disk_compression\s*=\s*false", project)), 2)
         self.assertEqual(len(re.findall(r"efi_drop_efivars\s*=\s*true", project)), 2)
+        self.assertEqual(len(re.findall(r"memory\s*=\s*var\.guest_memory_mib", project)), 2)
         self.assertNotIn('${path.root}/artifacts', project)
         self.assertNotIn('${path.root}/.ssh', project)
 

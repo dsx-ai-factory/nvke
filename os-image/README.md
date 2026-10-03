@@ -306,6 +306,37 @@ project also checks the `image-inputs` archive against its manifest digest
 before extracting it into transient host-side state and uploading the expanded
 contents. The archive itself is not copied into the guest disk.
 
+External runners can prepare the same input archive and patched installer from
+individually built component outputs, without invoking `fetch-artifacts.sh`:
+
+```bash
+packer/scripts/compose-image-inputs.py \
+  --materials-dir /run/nke-image/materials \
+  --source-files-dir files \
+  --output /run/nke-image/image-inputs.tar \
+  --source-date-epoch "$SOURCE_DATE_EPOCH"
+
+packer/scripts/patch-installer-iso.sh \
+  /run/nke-image/materials/ubuntu-installer.iso \
+  /run/nke-image/installer.iso
+```
+
+The composer consumes `agent`, `calico`, `kubeadm-distro`, `ovn`, and
+`spire-agent` from the materials directory. The runner must authenticate those
+files before calling it. It streams regular package members into a private stage,
+rejects unsafe entries and duplicate filenames, and bounds input archives to
+16384 members each, 16384 packages overall, 1 GiB per package and 7 GiB total
+package bytes. It normalizes archive directory permissions independently of the host
+umask, and preserves all staged versions in the local APT index. The ISO patcher
+accepts a prepared local ISO and performs no acquisition. Both adapters leave
+the source tree unchanged and write under caller-selected output directories.
+`guest_memory_mib` controls Packer guest memory, with the existing 8192 MiB
+default and a minimum of 1024 MiB.
+
+The composer delegates archive parsing to Python's standard library. Its regular
+member budgets do not authenticate input archives or replace the runner's
+resource isolation and material verification.
+
 The SSH files are caller-owned attempt state. The direct caller generates the
 pair before invoking Packer and supplies both absolute paths. Packer uses the
 private key while autoinstall injects the matching public key. Packer's generated
