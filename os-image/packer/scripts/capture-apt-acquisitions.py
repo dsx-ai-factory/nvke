@@ -126,8 +126,8 @@ def capture(root, output, architecture, cache):
                 info.mode, info.size = 0o444, len(raw)
                 archive.addfile(info, io.BytesIO(raw))
                 for entry in entries:
-                    descriptor = os.open(sources[entry["digest"].removeprefix("sha256:")], os.O_RDONLY | os.O_NOFOLLOW)
-                    with os.fdopen(descriptor, "rb") as package:
+                    package_descriptor = os.open(sources[entry["digest"].removeprefix("sha256:")], os.O_RDONLY | os.O_NOFOLLOW)
+                    with os.fdopen(package_descriptor, "rb") as package:
                         info = tarfile.TarInfo(entry["path"])
                         info.mode, info.size = 0o444, entry["size"]
                         archive.addfile(info, package)

@@ -69,6 +69,7 @@ class CaptureAPTTest(unittest.TestCase):
             ("version mismatch", {"version": "unrelated"}),
             ("URI credentials", {"uris": ["https://secret:token@example.invalid/package.deb"]}),
             ("URI query", {"uris": ["https://example.invalid/package.deb?token=secret"]}),
+            ("URI mixed sources", {"uris": ["https://archive.example.invalid/package.deb", "file:/installer/package.deb"]}),
             ("missing URI", {"uris": []}),
         ):
             with self.subTest(name=name):
@@ -167,13 +168,22 @@ class CaptureAPTTest(unittest.TestCase):
         configuration = (SCRIPTS.parent / "cidata" / "apt-capture.conf").read_text()
         expected = next(line for line in configuration.splitlines() if line.startswith("DPkg::Pre-Install-Pkgs::nke-capture "))
         self.assertIn(expected, result.stdout.splitlines())
+        # GNU xargs, not the shell, interprets the C-style newline delimiter.
+        delimiter = subprocess.run(["xargs", "-r", "-d", r"\n", "printf", "<%s>"],
+                                   input="one path\ntwo path\n", check=True,
+                                   capture_output=True, text=True, timeout=30)
+        self.assertEqual(delimiter.stdout, "<one path><two path>")
 
     def test_both_packer_variants_export_before_ssh_key_cleanup(self):
         for variant, selector in (("non-fde", "qemu.nke-non-fde"), ("fde", "qemu.nke-fde")):
             text = (SCRIPTS.parent / f"nke-node-{variant}.pkr.hcl").read_text()
             self.assertIn(f'except      = var.capture_apt_acquisitions ? [] : ["{selector}"]', text)
             self.assertIn('direction   = "download"', text)
-            self.assertLess(text.index('direction   = "download"'), text.index('/scripts/provision.sh'))
+            download = text.index('direction   = "download"')
+            provisioning = text.index('/scripts/provision.sh')
+            for cleanup in ("/etc/apt/apt.conf.d/94curtin-config", "sudo rm -rf /var/lib/nke/apt-acquisitions"):
+                self.assertLess(download, text.index(cleanup))
+                self.assertLess(text.index(cleanup), provisioning)
             self.assertIn(f'/{variant}-apt-acquisitions.tar', text)
 
     @unittest.skipUnless(os.environ.get("NKE_TEST_PACKER"), "real Packer is opt-in")

@@ -33,7 +33,8 @@ non-APT downloads and package events after the export window are not covered.
 The hook's installer-to-target behavior still requires a real NKE image build;
 native APT container tests and Packer validation alone do not prove that handoff.
 Captured archives whose exact repository metadata has disappeared, or whose
-matching locations use `file:` or `cdrom:` instead of HTTP(S), fail export. The
+matching locations include any `file:` or `cdrom:` URI, fail export, even when
+an HTTP(S) location is also available. The
 current installer-media path has not been exercised with capture enabled.
 
 Run the ordinary source contract suite with `make -C os-image/packer test`.
