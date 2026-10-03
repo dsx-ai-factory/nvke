@@ -78,6 +78,17 @@ class CaptureAPTTest(unittest.TestCase):
                 self.assertFalse(self.output.exists())
                 self.assertFalse(list(self.root.glob(".apt-capture-*")))
 
+    def test_all_architecture_package_uses_bare_repository_name(self):
+        cache = {"fixture": self.cache("all")["fixture:all"]}
+        for architecture in ("amd64", "arm64"):
+            with self.subTest(architecture=architecture):
+                with patch.object(CAPTURE, "package_metadata", return_value=["fixture", "1:2.0-1", "all"]):
+                    manifest = CAPTURE.capture(self.captured, self.output, architecture, cache)
+                self.assertEqual(manifest["architecture"], architecture)
+                self.assertEqual(manifest["packages"][0]["architecture"], "all")
+                self.assertEqual(manifest["packages"][0]["repositoryUris"], cache["fixture"].versions[0].uris)
+                self.output.unlink()
+
     def test_rejects_wrong_name_links_extra_files_and_empty_set(self):
         self.package.write_bytes(b"substitution")
         with self.assertRaises(ValueError):
@@ -160,6 +171,18 @@ class CaptureAPTTest(unittest.TestCase):
             self.assertEqual(archive.extractfile(f"packages/{self.digest}.deb").read(), self.payload)
 
     @unittest.skipUnless(os.environ.get("NKE_TEST_APT_CONFIG"), "native APT is opt-in")
+    def test_native_dpkg_reads_real_package_metadata(self):
+        package_root = self.root / "fixture"
+        (package_root / "DEBIAN").mkdir(parents=True)
+        (package_root / "DEBIAN" / "control").write_text(
+            "Package: fixture\nVersion: 1:2.0-1\nArchitecture: all\n"
+            "Maintainer: Fixture <fixture@example.invalid>\nDescription: metadata test fixture\n")
+        package = self.root / "fixture.deb"
+        subprocess.run(["dpkg-deb", "--build", str(package_root), str(package)],
+                       check=True, capture_output=True, text=True, timeout=30)
+        self.assertEqual(CAPTURE.package_metadata(package), ["fixture", "1:2.0-1", "all"])
+
+    @unittest.skipUnless(os.environ.get("NKE_TEST_APT_CONFIG"), "native APT is opt-in")
     def test_native_apt_parses_capture_hook(self):
         result = subprocess.run([os.environ["NKE_TEST_APT_CONFIG"], "-c",
                                  str(SCRIPTS.parent / "cidata" / "apt-capture.conf"), "dump"],
@@ -177,9 +200,11 @@ class CaptureAPTTest(unittest.TestCase):
     def test_both_packer_variants_export_before_ssh_key_cleanup(self):
         for variant, selector in (("non-fde", "qemu.nke-non-fde"), ("fde", "qemu.nke-fde")):
             text = (SCRIPTS.parent / f"nke-node-{variant}.pkr.hcl").read_text()
-            self.assertIn(f'except      = var.capture_apt_acquisitions ? [] : ["{selector}"]', text)
+            gates = [" ".join(line.split()) for line in text.splitlines() if line.strip().startswith("except ")]
+            self.assertEqual(gates, [f'except = var.capture_apt_acquisitions ? [] : ["{selector}"]'] * 4)
             self.assertIn('direction   = "download"', text)
             download = text.index('direction   = "download"')
+            self.assertLess(text.index('sudo python3 /var/tmp/capture-apt-acquisitions.py'), download)
             provisioning = text.index('/scripts/provision.sh')
             for cleanup in ("/etc/apt/apt.conf.d/94curtin-config", "sudo rm -rf /var/lib/nke/apt-acquisitions"):
                 self.assertLess(download, text.index(cleanup))
