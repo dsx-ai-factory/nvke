@@ -54,6 +54,14 @@ autoinstall:
   ntp:
     enabled: true
 
+%{ if capture_apt_acquisitions ~}
+  # Capture real archives before APT cache cleanup. Repository metadata is
+  # checked after autoinstall, when python3-apt is available in the target.
+  apt:
+    conf: |
+      ${indent(6, apt_capture_configuration)}
+%{ endif ~}
+
   packages:
     - lvm2
 %{ if luks_enabled ~}

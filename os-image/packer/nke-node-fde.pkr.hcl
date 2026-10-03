@@ -35,11 +35,13 @@ source "qemu" "nke-fde" {
 
   http_content = {
     "/user-data" = templatefile("${local.project_root}/cidata/autoinstall-lvm.pkrtpl", {
-      ssh_public_key        = local.ssh_public_key
-      luks_enabled          = true
-      luks_passphrase       = var.luks_passphrase
-      nvidia_kernel_package = local.nvidia_kernel_package
-      serial_console        = local.serial_console
+      ssh_public_key            = local.ssh_public_key
+      luks_enabled              = true
+      luks_passphrase           = var.luks_passphrase
+      nvidia_kernel_package     = local.nvidia_kernel_package
+      serial_console            = local.serial_console
+      capture_apt_acquisitions  = var.capture_apt_acquisitions
+      apt_capture_configuration = file("${local.project_root}/cidata/apt-capture.conf")
     })
     "/meta-data" = "instance-id: nke-packer-fde\nlocal-hostname: nke-packer-fde\n"
   }
@@ -115,6 +117,29 @@ build {
     # Run before provision.sh removes Packer's authorized SSH key.
     environment_vars = ["LUKS_PASSPHRASE=${var.luks_passphrase}"]
     script           = "${local.project_root}/scripts/configure-fde.sh"
+  }
+
+  provisioner "file" {
+    except      = var.capture_apt_acquisitions ? [] : ["qemu.nke-fde"]
+    source      = "${local.project_root}/scripts/capture-apt-acquisitions.py"
+    destination = "/var/tmp/capture-apt-acquisitions.py"
+  }
+
+  provisioner "shell" {
+    except = var.capture_apt_acquisitions ? [] : ["qemu.nke-fde"]
+    inline = ["sudo python3 /var/tmp/capture-apt-acquisitions.py --root /var/lib/nke/apt-acquisitions --output /var/tmp/nke-apt-acquisitions.tar --architecture ${var.architecture}"]
+  }
+
+  provisioner "file" {
+    except      = var.capture_apt_acquisitions ? [] : ["qemu.nke-fde"]
+    direction   = "download"
+    source      = "/var/tmp/nke-apt-acquisitions.tar"
+    destination = "${var.output_directory}/fde-apt-acquisitions.tar"
+  }
+
+  provisioner "shell" {
+    except = var.capture_apt_acquisitions ? [] : ["qemu.nke-fde"]
+    inline = ["sudo rm -f /var/tmp/capture-apt-acquisitions.py /var/tmp/nke-apt-acquisitions.tar /etc/apt/apt.conf.d/94curtin-config", "sudo rm -rf /var/lib/nke/apt-acquisitions"]
   }
 
   provisioner "shell" {

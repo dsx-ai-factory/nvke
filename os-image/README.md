@@ -584,6 +584,14 @@ keys, higher or lower. `boot-smoke.sh` and
 `demo-fde.sh` run `packer/scripts/check-conntrack.sh` against each built
 image.
 
+## Optional APT acquisition capture
+
+Direct Packer callers can set `capture_apt_acquisitions=true` to download the
+actual APT package archives before final provisioning cleanup. See
+[the capture contract](docs/apt-acquisition-capture.md) for output paths, scope,
+limits and validation. Capture is disabled by default and does not by itself
+prove a complete acquisition closure or bind evidence to a build Run.
+
 ## Checker
 
 From the repository root (`make build` writes `bin/nke-os-image-check`):

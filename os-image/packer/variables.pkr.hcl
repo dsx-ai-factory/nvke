@@ -11,6 +11,12 @@ variable "architecture" {
   }
 }
 
+variable "capture_apt_acquisitions" {
+  type        = bool
+  default     = false
+  description = "Retain autoinstall APT archives and export their metadata/byte capture beside the image. This is not a full closure or authenticated acquisition receipt."
+}
+
 variable "material_manifest" {
   type        = string
   description = "Absolute path to the caller-authenticated material manifest. Materials are staged in its sibling materials directory."
