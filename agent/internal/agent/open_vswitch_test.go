@@ -173,7 +173,8 @@ func TestOpenVSwitchNetdevDatapathKeepsManagementUplink(t *testing.T) {
 		"ip -j route show default": {{
 			output: []byte(`[{"dst":"default","gateway":"10.0.0.1","dev":"eth0"}]`),
 		}},
-		"ovs-vsctl set Open_vSwitch . external_ids:ovn-bridge-datapath-type=netdev": {{}},
+		"ovs-vsctl set Open_vSwitch . external_ids:ovn-bridge-datapath-type=netdev":   {{}},
+		"ovs-vsctl --may-exist add-br br-ex -- set bridge br-ex datapath_type=netdev": {{}},
 	})
 	server := &NodeAgentServer{Runner: runner}
 
@@ -186,6 +187,7 @@ func TestOpenVSwitchNetdevDatapathKeepsManagementUplink(t *testing.T) {
 	assert.Equal(t, pb.OpenVSwitchReconciliationResult_NETWORK_BACKEND_NETPLAN, result.GetNetworkBackend())
 	assert.NotContains(t, runner.calls, "netplan apply")
 	assert.NotContains(t, runner.calls, "ovs-vsctl --may-exist add-br breth0")
+	assert.Contains(t, runner.calls, "ovs-vsctl --may-exist add-br br-ex -- set bridge br-ex datapath_type=netdev")
 }
 
 func TestPrepareOpenVSwitchRejectsUnsupportedDatapath(t *testing.T) {

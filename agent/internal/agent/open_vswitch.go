@@ -251,6 +251,12 @@ func (s *NodeAgentServer) reconcileOpenVSwitchDatapathOverride(
 	); err != nil {
 		return nil, true, fmt.Errorf("configure Open vSwitch %s datapath: %w", datapathType, err)
 	}
+	if _, err := s.runOpenVSwitchCommand(
+		"ovs-vsctl",
+		"--may-exist", "add-br", "br-ex", "--", "set", "bridge", "br-ex", "datapath_type="+datapathType,
+	); err != nil {
+		return nil, true, fmt.Errorf("configure dummy gateway bridge for Open vSwitch %s datapath: %w", datapathType, err)
+	}
 	slog.InfoContext(ctx, "configured Open vSwitch datapath without bridging the management uplink",
 		"datapathType", datapathType,
 		"uplink", defaultRoute.Device,
