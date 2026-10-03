@@ -148,12 +148,25 @@ class CaptureAPTTest(unittest.TestCase):
         with tarfile.open(self.output) as archive:
             self.assertEqual(archive.getnames(), ["manifest.json", f"packages/{self.digest}.deb"])
 
+    def test_capture_without_python_311_file_digest(self):
+        # Reproduce the Python 3.10 stdlib boundary without raising the host floor.
+        file_digest = getattr(hashlib, "file_digest", None)
+        if file_digest is not None:
+            del hashlib.file_digest
+            self.addCleanup(setattr, hashlib, "file_digest", file_digest)
+        self.capture()
+        with tarfile.open(self.output) as archive:
+            self.assertEqual(archive.extractfile(f"packages/{self.digest}.deb").read(), self.payload)
+
     @unittest.skipUnless(os.environ.get("NKE_TEST_APT_CONFIG"), "native APT is opt-in")
     def test_native_apt_parses_capture_hook(self):
         result = subprocess.run([os.environ["NKE_TEST_APT_CONFIG"], "-c",
                                  str(SCRIPTS.parent / "cidata" / "apt-capture.conf"), "dump"],
                                 check=True, capture_output=True, text=True, timeout=30)
         self.assertIn("DPkg::Pre-Install-Pkgs::nke-capture", result.stdout)
+        configuration = (SCRIPTS.parent / "cidata" / "apt-capture.conf").read_text()
+        expected = next(line for line in configuration.splitlines() if line.startswith("DPkg::Pre-Install-Pkgs::nke-capture "))
+        self.assertIn(expected, result.stdout.splitlines())
 
     def test_both_packer_variants_export_before_ssh_key_cleanup(self):
         for variant, selector in (("non-fde", "qemu.nke-non-fde"), ("fde", "qemu.nke-fde")):
@@ -162,6 +175,28 @@ class CaptureAPTTest(unittest.TestCase):
             self.assertIn('direction   = "download"', text)
             self.assertLess(text.index('direction   = "download"'), text.index('/scripts/provision.sh'))
             self.assertIn(f'/{variant}-apt-acquisitions.tar', text)
+
+    @unittest.skipUnless(os.environ.get("NKE_TEST_PACKER"), "real Packer is opt-in")
+    def test_real_packer_renders_autoinstall_capture_configuration(self):
+        # Packer owns HCL template expansion and YAML decoding. The test does
+        # not approximate the template grammar or add a Python YAML dependency.
+        configuration = (SCRIPTS.parent / "cidata" / "apt-capture.conf").read_text()
+        template = str(SCRIPTS.parent / "cidata" / "autoinstall-lvm.pkrtpl")
+        for capture in (False, True):
+            for encrypted in (False, True):
+                with self.subTest(capture=capture, encrypted=encrypted):
+                    values = dict(ssh_public_key="ssh-ed25519 fixture", luks_enabled=encrypted,
+                                  luks_passphrase="fixture-only", nvidia_kernel_package="linux-nvidia",
+                                  serial_console="ttyS0", capture_apt_acquisitions=capture,
+                                  apt_capture_configuration=configuration)
+                    expression = f"jsonencode(yamldecode(templatefile({json.dumps(template)}, {json.dumps(values)})))\n"
+                    result = subprocess.run([os.environ["NKE_TEST_PACKER"], "console", "-config-type=hcl2"],
+                                            input=expression, check=True, capture_output=True, text=True, timeout=30)
+                    autoinstall = json.loads(result.stdout)["autoinstall"]
+                    if capture:
+                        self.assertEqual(autoinstall["apt"]["conf"], configuration)
+                    else:
+                        self.assertNotIn("apt", autoinstall)
 
     @unittest.skipUnless(os.environ.get("NKE_TEST_PACKER"), "real Packer is opt-in")
     def test_real_packer_validates_capture_and_default_for_all_targets(self):

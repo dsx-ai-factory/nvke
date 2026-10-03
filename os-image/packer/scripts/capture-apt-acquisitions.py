@@ -29,7 +29,16 @@ MAX_PACKAGE_BYTES = 1 << 30
 MAX_TOTAL_BYTES = 7 << 30
 
 
+def sha256_stream(source):
+    """Hash bounded read chunks using hashlib APIs available on Python 3.10."""
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: source.read(1 << 20), b""):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
 def package_metadata(path):
+    """Read Debian metadata with the owning dpkg tool, not a local parser."""
     # dpkg validates Debian package syntax. This is fixed-output transport,
     # not a second implementation of the Debian control-file grammar.
     output = subprocess.run(
@@ -43,6 +52,7 @@ def package_metadata(path):
 
 
 def repository_uris(cache, name, version, architecture, digest, size):
+    """Select exact source-reported package locations without claiming origin."""
     key = name if architecture == "all" else f"{name}:{architecture}"
     if key not in cache:
         raise ValueError(f"captured package {name} is absent from repository metadata")
@@ -63,6 +73,7 @@ def repository_uris(cache, name, version, architecture, digest, size):
 
 
 def capture(root, output, architecture, cache):
+    """Publish a bounded deterministic byte capture without replacing output."""
     if architecture not in ("amd64", "arm64"):
         raise ValueError("architecture must be amd64 or arm64")
     root = Path(root)
@@ -87,7 +98,7 @@ def capture(root, output, architecture, cache):
             total += info.st_size
             if total > MAX_TOTAL_BYTES:
                 raise ValueError("captured package closure exceeds its byte budget")
-            digest = hashlib.file_digest(package, "sha256").hexdigest()
+            digest = sha256_stream(package)
         if digest in sources:
             continue
         sources[digest] = path
@@ -128,7 +139,7 @@ def capture(root, output, architecture, cache):
         with tarfile.open(temporary, mode="r:") as exported:
             for entry in entries:
                 with exported.extractfile(entry["path"]) as package:
-                    if f"sha256:{hashlib.file_digest(package, 'sha256').hexdigest()}" != entry["digest"]:
+                    if f"sha256:{sha256_stream(package)}" != entry["digest"]:
                         raise ValueError("captured package changed during export")
         os.link(temporary, output)
         published = True
@@ -147,6 +158,7 @@ def capture(root, output, architecture, cache):
 
 
 def main():
+    """Run the capture in the guest using its installed python3-apt package."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)

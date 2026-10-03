@@ -113,6 +113,11 @@ jobs:
     permissions:
       contents: read
 
+  packer-contracts:
+    uses: ./.github/workflows/packer-contracts.yml
+    permissions:
+      contents: read
+
   management-engine-controller-test-policy:
     uses: ./.github/workflows/management-engine-controller-test-policy.yml
     permissions:
@@ -212,6 +217,7 @@ jobs:
       - build
       - controller-test
       - agent-test
+      - packer-contracts
       - management-engine-controller-test-policy
       - workspace
       - chart
