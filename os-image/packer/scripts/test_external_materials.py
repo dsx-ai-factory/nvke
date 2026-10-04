@@ -13,7 +13,9 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -209,6 +211,43 @@ class ComposeImageInputsTest(unittest.TestCase):
                     self.assertEqual(list(stage.iterdir()), [])
                 finally:
                     setattr(module, limit, previous)
+
+    def test_agent_and_combined_byte_budgets_preserve_output(self):
+        spec = importlib.util.spec_from_file_location("compose_image_inputs", SCRIPTS / "compose-image-inputs.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        agent = self.materials / "agent"
+        payload = agent.read_bytes()
+        archive_bytes = sum(len(f"package:{binding}.deb\n".encode()) for binding in module.ARCHIVE_BINDINGS)
+        for name, agent_payload, package_limit, total_limit, expected, copies_agent in (
+            ("empty agent", b"", 1024, 1024, "agent package exceeds its size budget", False),
+            ("oversized agent", payload, len(payload) - 1, 1024, "agent package exceeds its size budget", False),
+            ("agent exceeds total", payload, 1024, len(payload) - 1, "total package byte budget", False),
+            ("combined total", payload, 1024, archive_bytes, "total package byte budget", True),
+        ):
+            for existing in (False, True):
+                with self.subTest(name=name, existing=existing):
+                    agent.write_bytes(agent_payload)
+                    output = self.root / "budget.tar"
+                    if existing:
+                        output.write_bytes(b"prior output")
+                    arguments = SimpleNamespace(materials_dir=self.materials, source_files_dir=self.source_files,
+                                                output=output, source_date_epoch=1787932620)
+                    with patch.object(module, "parse_args", return_value=arguments), \
+                            patch.object(module, "MAX_PACKAGE_BYTES", package_limit), \
+                            patch.object(module, "MAX_TOTAL_PACKAGE_BYTES", total_limit), \
+                            patch.object(module, "install_file", wraps=module.install_file) as install, \
+                            patch.object(module.subprocess, "run") as index:
+                        with self.assertRaisesRegex(SystemExit, expected):
+                            module.main()
+                        self.assertEqual(install.call_count, 3 if copies_agent else 0)
+                        index.assert_not_called()
+                    if existing:
+                        self.assertEqual(output.read_bytes(), b"prior output")
+                        output.unlink()
+                    else:
+                        self.assertFalse(output.exists())
+                    self.assertFalse(list(self.root.glob(".image-inputs.*")))
 
 
 class PatchInstallerISOTest(unittest.TestCase):

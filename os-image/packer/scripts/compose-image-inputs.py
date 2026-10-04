@@ -130,7 +130,13 @@ def main() -> None:
         debs = stage / "debs"
         debs.mkdir(mode=0o755, parents=True)
 
-        install_file(args.materials_dir / "agent", stage / "nke-agent.deb", 0o644)
+        agent = args.materials_dir / "agent"
+        total_bytes = require_regular(agent, "agent package").st_size
+        if not 0 < total_bytes <= MAX_PACKAGE_BYTES:
+            raise SystemExit("agent package exceeds its size budget")
+        if total_bytes > MAX_TOTAL_PACKAGE_BYTES:
+            raise SystemExit("image inputs exceed their total package byte budget")
+        install_file(agent, stage / "nke-agent.deb", 0o644)
         install_file(
             args.source_files_dir / "nke-agent-spire.conf",
             stage / "nke-agent-spire.conf",
@@ -143,7 +149,6 @@ def main() -> None:
         )
 
         names: set[str] = set()
-        total_bytes = 0
         for binding in ARCHIVE_BINDINGS:
             total_bytes = stage_archive_debs(args.materials_dir / binding, debs, names, total_bytes)
 
