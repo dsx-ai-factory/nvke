@@ -78,6 +78,32 @@ class CaptureAPTTest(unittest.TestCase):
                 self.assertFalse(self.output.exists())
                 self.assertFalse(list(self.root.glob(".apt-capture-*")))
 
+    def test_malformed_dpkg_metadata_produces_no_output(self):
+        for name, output in (
+            ("missing field", "fixture\t1:2.0-1\n"),
+            ("extra field", "fixture\t1:2.0-1\tamd64\textra\n"),
+            ("empty package", "\t1:2.0-1\tamd64\n"),
+            ("empty version", "fixture\t\tamd64\n"),
+            ("empty architecture", "fixture\t1:2.0-1\t\n"),
+            ("package whitespace", "fixture name\t1:2.0-1\tamd64\n"),
+            ("version whitespace", "fixture\t1:2.0-1 \tamd64\n"),
+            ("architecture whitespace", "fixture\t1:2.0-1\tamd64\r\n"),
+            ("multiple rows", "fixture\t1:2.0-1\tamd64\nother\t1\tamd64\n"),
+        ):
+            with self.subTest(name=name), patch.object(
+                CAPTURE.subprocess, "run", return_value=SimpleNamespace(stdout=output)
+            ) as dpkg:
+                with self.assertRaisesRegex(ValueError, "dpkg-deb returned invalid package metadata"):
+                    CAPTURE.package_metadata(self.package)
+                with self.assertRaisesRegex(ValueError, "dpkg-deb returned invalid package metadata"):
+                    CAPTURE.capture(self.captured, self.output, "amd64", self.cache())
+                self.assertEqual(dpkg.call_count, 2)
+                self.assertEqual(dpkg.call_args.args[0], [
+                    "dpkg-deb", "--show", "--showformat=${Package}\t${Version}\t${Architecture}\n", str(self.package)
+                ])
+                self.assertFalse(self.output.exists())
+                self.assertFalse(list(self.root.glob(".apt-capture-*")))
+
     def test_all_architecture_package_uses_bare_repository_name(self):
         cache = {"fixture": self.cache("all")["fixture:all"]}
         for architecture in ("amd64", "arm64"):
