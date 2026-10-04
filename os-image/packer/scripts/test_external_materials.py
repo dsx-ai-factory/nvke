@@ -249,6 +249,62 @@ class ComposeImageInputsTest(unittest.TestCase):
                         self.assertFalse(output.exists())
                     self.assertFalse(list(self.root.glob(".image-inputs.*")))
 
+    def test_agent_copy_budget_uses_actual_bytes_after_size_check(self):
+        spec = importlib.util.spec_from_file_location("compose_image_inputs", SCRIPTS / "compose-image-inputs.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        agent = self.materials / "agent"
+        initial = b"agent-deb\n"
+        archive_bytes = sum(len(f"package:{binding}.deb\n".encode()) for binding in module.ARCHIVE_BINDINGS)
+        for name, changed, package_limit, total_limit, expected in (
+            ("grows past package limit", initial + b"more", len(initial), 1024, "byte budget"),
+            ("grows past total limit", initial + b"more", 1024, len(initial), "byte budget"),
+            ("grows past combined limit", initial + b"x", 1024, len(initial) + archive_bytes, "total package byte budget"),
+            ("shrinks to empty", b"", 1024, 1024, "agent package exceeds its size budget"),
+            ("shrinks within combined limit", b"a", 1024, 1 + archive_bytes, None),
+            ("grows within limits", initial + b"more", 1024, 1024, None),
+        ):
+            with self.subTest(name=name):
+                agent.write_bytes(initial)
+                output = self.root / "changed-agent.tar"
+                output.write_bytes(b"prior output")
+                arguments = SimpleNamespace(materials_dir=self.materials, source_files_dir=self.source_files,
+                                            output=output, source_date_epoch=1787932620)
+                original_install = module.install_file
+
+                def install_after_change(source, destination, mode, **options):
+                    if source == agent:
+                        agent.write_bytes(changed)
+                    return original_install(source, destination, mode, **options)
+
+                with patch.object(module, "parse_args", return_value=arguments), \
+                        patch.object(module, "MAX_PACKAGE_BYTES", package_limit), \
+                        patch.object(module, "MAX_TOTAL_PACKAGE_BYTES", total_limit), \
+                        patch.object(module, "install_file", side_effect=install_after_change), \
+                        patch.object(module.subprocess, "run", return_value=SimpleNamespace(stdout=b"index\n")) as index:
+                    if expected is not None:
+                        with self.assertRaisesRegex(SystemExit, expected):
+                            module.main()
+                        index.assert_not_called()
+                        self.assertEqual(output.read_bytes(), b"prior output")
+                    else:
+                        module.main()
+                        index.assert_called_once()
+                        with tarfile.open(output) as archive:
+                            self.assertEqual(archive.extractfile("nke-agent.deb").read(), changed)
+                self.assertFalse(list(self.root.glob(".image-inputs.*")))
+
+    def test_install_file_bounds_each_chunk(self):
+        spec = importlib.util.spec_from_file_location("compose_image_inputs", SCRIPTS / "compose-image-inputs.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        source = self.root / "large-agent"
+        source.write_bytes(b"a" * (2 << 20))
+        destination = self.root / "bounded-agent"
+        with self.assertRaisesRegex(SystemExit, "byte budget"):
+            module.install_file(source, destination, 0o644, max_bytes=(1 << 20) + 1)
+        self.assertEqual(destination.stat().st_size, 1 << 20)
+
 
 class PatchInstallerISOTest(unittest.TestCase):
     def setUp(self):

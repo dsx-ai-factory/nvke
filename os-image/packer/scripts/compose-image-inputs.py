@@ -87,11 +87,19 @@ def stage_archive_debs(
     return total_bytes
 
 
-def install_file(source: pathlib.Path, destination: pathlib.Path, mode: int) -> None:
+def install_file(
+    source: pathlib.Path, destination: pathlib.Path, mode: int, *, max_bytes: int | None = None
+) -> int:
     require_regular(source, "source file")
+    copied = 0
     with source.open("rb") as src, destination.open("xb") as dst:
-        shutil.copyfileobj(src, dst)
+        while chunk := src.read(1 << 20):
+            if max_bytes is not None and len(chunk) > max_bytes - copied:
+                raise SystemExit("source file exceeds its byte budget")
+            dst.write(chunk)
+            copied += len(chunk)
     destination.chmod(mode)
+    return copied
 
 
 def write_deterministic_archive(source: pathlib.Path, output: pathlib.Path, epoch: int) -> None:
@@ -136,7 +144,12 @@ def main() -> None:
             raise SystemExit("agent package exceeds its size budget")
         if total_bytes > MAX_TOTAL_PACKAGE_BYTES:
             raise SystemExit("image inputs exceed their total package byte budget")
-        install_file(agent, stage / "nke-agent.deb", 0o644)
+        total_bytes = install_file(
+            agent, stage / "nke-agent.deb", 0o644,
+            max_bytes=min(MAX_PACKAGE_BYTES, MAX_TOTAL_PACKAGE_BYTES),
+        )
+        if total_bytes == 0:
+            raise SystemExit("agent package exceeds its size budget")
         install_file(
             args.source_files_dir / "nke-agent-spire.conf",
             stage / "nke-agent-spire.conf",
