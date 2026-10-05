@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+---
+global:
+  gc: true
+  gcMetrics: false
+  deletionStrategy: gvr
+  measurements:
+    - name: podLatency
+      thresholds:
+        - conditionType: Ready
+          metric: P99
+          threshold: 15s
+metricsEndpoints:
+  - endpoint: "{{.PROMETHEUS_URL}}"
+    metrics: [metrics.yml,metrics-report.yml]
+    alerts: [../../../../alerts/1.34/control-plane.yml]
+    skipTLSVerify: false
+    indexer:
+      type: local
+      metricsDirectory: collected-metrics
+
+
+
+jobs:
+  - name: node-density
+    namespace: node-density
+    jobIterations: 4120
+    qps: 20
+    burst: 20
+    cleanup: false
+    namespacedIterations: true
+    iterationsPerNamespace: 1000
+    churnConfig:
+      cycles: 0
+      duration: 0s
+      percent: 10
+      delay: 2m0s
+      mode: objects
+    podWait: false
+    waitWhenFinished: true
+    preLoadImages: true
+    namespaceLabels:
+      pod-security.kubernetes.io/enforce: privileged
+      pod-security.kubernetes.io/audit: privileged
+      pod-security.kubernetes.io/warn: privileged
+    objects:
+
+      - objectTemplate: pod.yml
+        replicas: 1
+        inputVars:
+          containerImage: registry.k8s.io/pause:3.1
+          nodeSelector: {"nodeSelectorTerms":[{"matchExpressions":[{"key":"node-role.kubernetes.io/worker","operator":"Exists"}]}]}

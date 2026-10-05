@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+kind: Pod
+apiVersion: v1
+metadata:
+  labels:
+    name: node-density-{{.Iteration}}
+    app: pause
+  name: {{.JobName}}-{{.Iteration}}
+spec:
+  topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app: pause
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution: {{.nodeSelector|toJson}}
+  containers:
+  - image: {{.containerImage}}
+    name: node-density
+    resources:
+      requests:
+        memory: "10Mi"
+        cpu: "10m"
+    imagePullPolicy: IfNotPresent
