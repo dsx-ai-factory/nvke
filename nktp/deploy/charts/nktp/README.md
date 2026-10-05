@@ -98,7 +98,7 @@ Top-level keys in [values.yaml](values.yaml):
 | `otelcol_image` | The Collector image every workload uses unless it sets `<workload>.otelcol.image`, as `registry`, `repository` and `tag`. |
 | `watchdog`, `gateway_logs`, `gateway_metrics`, `gateway_traces`, `daemonset`, `large_target_metrics`, `cluster_events` | One block per Collector. `otelcol.config` is the Collector configuration, and `daemonset.kubelet` selects the kubelet endpoints the node Collector scrapes; `kubernetes` is the workload: replicas, resources, environment, Target Allocator, scheduling and, for every Collector but the node DaemonSet and the event reader, the `autoscaler` bounds. |
 | `kube-state-metrics` | `enabled`, the node DaemonSet, the central `deployments` with their `resource_types`, `shards` and `namespaces`, and the image. |
-| `otel-lgtm` | The development backend: `enabled` and `image`. |
+| `otel-lgtm` | The development backend: `enabled`, `image`, `env`, `resources`, `nodeSelector`, `tolerations`, `extraVolumes` and `extraVolumeMounts`. |
 | `opentelemetry-kube-stack`, `node-exporter`, `metrics-server` | Values passed through to the bundled charts. |
 
 ### Images
@@ -276,6 +276,31 @@ the watchdog block. Grafana is on port 3000 of the `lgtm` Service in the release
 namespace, with anonymous admin access, and Prometheus on port 9090. That
 backend keeps its data in memory, has no authentication and does not scale, so
 it is for evaluation only.
+
+`otel-lgtm` sets the backend's `resources`, `nodeSelector` and `tolerations`,
+adds container variables with `env`, and appends volumes and mounts to the
+chart's own with `extraVolumes` and `extraVolumeMounts`. To replace a component's
+configuration, mount a ConfigMap from the release namespace over the file the
+image reads:
+
+```yaml
+otel-lgtm:
+  extraVolumes:
+    - name: backend-config
+      configMap:
+        name: my-lgtm-config
+  extraVolumeMounts:
+    - name: backend-config
+      mountPath: /otel-lgtm/loki-config.yaml
+      subPath: loki-config.yaml
+      readOnly: true
+```
+
+Give extra volumes and mounts names and paths of their own, so the dashboard
+and storage mounts stay. A file mounted with `subPath` does not change when its
+ConfigMap does; restart the `lgtm` Pod to pick it up. For troubleshooting,
+`ENABLE_LOGS_LOKI` and `ENABLE_LOGS_OTELCOL` set to `"true"` in `env` write
+Loki's and the backend Collector's output to the container log.
 
 A site points those endpoints at its own backend and turns the bundled one
 off. The backend has to accept OTLP over HTTP for metrics, logs and traces;

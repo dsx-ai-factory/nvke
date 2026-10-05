@@ -72,9 +72,21 @@ spec:
         # Roll the pod when dashboards change; Grafana only reads them at startup.
         checksum/dashboards: {{ print ((.Files.Glob "dashboards/default/*.json").AsConfig) $provider | sha256sum }}
     spec:
+      {{- with $lgtm.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $lgtm.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: lgtm
           image: {{ include "nktp.image" (dict "imageRegistry" .Values.global.imageRegistry "image" $lgtm.image) }}
+          {{- with $lgtm.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           env:
             - name: GF_AUTH_ANONYMOUS_ENABLED
               value: "true"
@@ -84,6 +96,9 @@ spec:
             # as delta despite cumulative temporality being requested.
             - name: PROMETHEUS_EXTRA_ARGS
               value: --enable-feature=otlp-deltatocumulative
+            {{- with $lgtm.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           ports:
             - containerPort: 3000
             - containerPort: 4317
@@ -114,6 +129,9 @@ spec:
               mountPath: /data/prometheus
             - name: pyroscope-storage
               mountPath: /data/pyroscope
+            {{- with $lgtm.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
       volumes:
         - name: dashboard-provider
           configMap:
@@ -133,4 +151,7 @@ spec:
           emptyDir: {}
         - name: pyroscope-storage
           emptyDir: {}
+        {{- with $lgtm.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
 {{- end }}
