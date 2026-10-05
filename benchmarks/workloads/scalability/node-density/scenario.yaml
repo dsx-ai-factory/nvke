@@ -10,7 +10,7 @@ description: >-
   Publicly available kube-burner "node-density" workload filling worker nodes to a
   chosen pod density with one pause pod per iteration. The pods carry no Service,
   no probe and no application, so the latency measured is the scheduler and kubelet
-  path alone.
+  path, including CNI sandbox setup.
 
 intent:
   goal: >-
@@ -19,7 +19,7 @@ intent:
     nothing to initialize and nothing to probe, so what remains is scheduling,
     image admission from cache, sandbox creation and the kubelet reporting Ready.
   characterizes:
-    - Pod-ready p99 with no readiness probe and no network dependency
+    - Pod-ready p99 with no readiness probe and no Service connectivity
     - Pod scheduling latency at high per-node density
     - Container start latency from a pre-pulled image
     - API server and etcd CPU and memory headroom
