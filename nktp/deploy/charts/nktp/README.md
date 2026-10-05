@@ -72,11 +72,23 @@ development backend. Requests are per workload; a Collector's are set under
 
 ## Prerequisites
 
+- Kubernetes 1.29 or later.
 - Helm 4. The repository pins the version in `make/tool-versions.mk`.
 - Network access to the chart repositories named in [Chart.yaml](Chart.yaml)
   when building dependencies.
+- Pull access to `docker.io`, `ghcr.io`, `quay.io` and `registry.k8s.io`, or
+  mirrors of them; see [Images](#images). The uninstall hook pulls
+  `rancher/kubectl` from `docker.io`.
 - A cluster that accepts the `opentelemetry.io/v1beta1` API. The chart installs
   the OpenTelemetry and Prometheus Operator CRDs by default.
+- Network paths between the components. The API server calls the Operator's
+  admission webhook on TCP 9443 of the node it runs on, which a firewall or a
+  managed cluster's security groups can block. Each node Collector scrapes its
+  kubelet on TCP 10250 and node-exporter on TCP 9100, and every Collector sends
+  OTLP to the gateways and the watchdog on other nodes.
+- The resource metrics API, `metrics.k8s.io`, which the gateway, watchdog and
+  large-target autoscalers read. The chart's metrics-server is off by default;
+  see [Bundled components](#bundled-components).
 - cert-manager. It issues the Operator's webhook certificate and the mTLS
   certificates between each Collector and its Target Allocator; see
   [Certificates](#certificates) to run without it.
@@ -94,8 +106,9 @@ Top-level keys in [values.yaml](values.yaml):
 
 | Key | What it sets |
 |---|---|
-| `global.imageRegistry` | A registry that replaces the registry of every image the chart and its dependencies pull, apart from two; see [Images](#images). |
+| `global.imageRegistry` | A registry that replaces the registry of every image the chart and its dependencies pull, apart from three; see [Images](#images). |
 | `otelcol_image` | The Collector image every workload uses unless it sets `<workload>.otelcol.image`, as `registry`, `repository` and `tag`. |
+| `targetallocator_image` | The Target Allocator image of the watchdog, the node Collector and the large-target pool, as `registry`, `repository` and `tag`. |
 | `watchdog`, `gateway_logs`, `gateway_metrics`, `gateway_traces`, `daemonset`, `large_target_metrics`, `cluster_events` | One block per Collector. `otelcol.config` is the Collector configuration, and `daemonset.kubelet` selects the kubelet endpoints the node Collector scrapes; `kubernetes` is the workload: replicas, resources, environment, Target Allocator, scheduling and, for every Collector but the node DaemonSet and the event reader, the `autoscaler` bounds. |
 | `kube-state-metrics` | `enabled`, the node DaemonSet, the central `deployments` with their `resource_types`, `shards` and `namespaces`, and the image. |
 | `otel-lgtm` | The development backend: `enabled` and `image`. |
@@ -104,10 +117,18 @@ Top-level keys in [values.yaml](values.yaml):
 ### Images
 
 Every image is set as `registry`, `repository` and `tag`. An empty `registry`
-pulls from the image's default registry. `global.imageRegistry` replaces the
-registry of every image at once, for a mirror. Two images do not read it: the
-metrics-server dependency's and the OpenTelemetry Operator's, which is nested in
-opentelemetry-kube-stack. Point those at the mirror through their own values:
+pulls from the image's default registry. A tag is a string: quote one that YAML
+would read as a number, such as `"1.0"`, or the chart fails to render.
+
+The Target Allocators run `targetallocator_image`, whose tag stays equal to the
+Operator's version. A workload's `kubernetes.targetAllocator.image`, a full
+image reference, overrides it for that workload.
+
+`global.imageRegistry` replaces the registry of every image at once, for a
+mirror. Three images do not read it: the metrics-server dependency's, the
+OpenTelemetry Operator's, which is nested in opentelemetry-kube-stack, and the
+kubectl image opentelemetry-kube-stack's uninstall hook runs. Point those at the
+mirror through their own values:
 
 ```yaml
 metrics-server:
@@ -118,6 +139,9 @@ opentelemetry-kube-stack:
     manager:
       image:
         repository: <mirror>/open-telemetry/opentelemetry-operator/opentelemetry-operator
+  cleanupJob:
+    image:
+      repository: <mirror>/rancher/kubectl
 ```
 
 ### Kubelet endpoints
@@ -339,6 +363,41 @@ gateway_traces:
 
 Credentials belong in a Secret referenced from the workload's `kubernetes.env`,
 read by the Collector through `${env:NAME}` substitution, never in values.
+
+For TLS to the backend, put the CA that signs the backend's certificate in a
+Secret in the release namespace, with a client certificate and key if the
+backend authenticates clients, mount it into each exporting Collector, and point
+its `otlp_http` exporter at the files. For each gateway, and the watchdog:
+
+```yaml
+gateway_logs:
+  kubernetes:
+    podSecurityContext:
+      fsGroup: 10001 # The Collector image's group, which may then read the 0440 files.
+    volumes:
+      - name: backend-tls
+        secret:
+          secretName: backend-tls # Keys ca.crt, tls.crt and tls.key.
+          defaultMode: 0440
+    volumeMounts:
+      - name: backend-tls
+        mountPath: /etc/nktp/backend-tls
+        readOnly: true
+  otelcol:
+    config:
+      exporters:
+        otlp_http:
+          endpoint: https://<backend>
+          tls:
+            ca_file: /etc/nktp/backend-tls/ca.crt
+            cert_file: /etc/nktp/backend-tls/tls.crt
+            key_file: /etc/nktp/backend-tls/tls.key
+            reload_interval: 1m
+```
+
+A backend that does not authenticate clients needs only `ca.crt` and `ca_file`.
+`volumes` and `volumeMounts` replace the chart's lists, so restate any entries
+the chart sets for that workload.
 
 ### Bundled components
 

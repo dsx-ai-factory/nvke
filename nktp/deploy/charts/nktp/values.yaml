@@ -21,6 +21,15 @@ global:
 otelcol_image:
   registry: "" # Empty pulls from the image's default registry (Docker Hub for this repository).
   repository: otel/opentelemetry-collector-k8s
+  tag: 0.162.0
+
+# Target Allocator image used by the watchdog, daemonset, and large_target_metrics
+# allocators. global.imageRegistry replaces registry. Keep the tag equal to the
+# Operator version from opentelemetry-kube-stack. A workload's
+# kubernetes.targetAllocator.image, as a full image string, overrides it.
+targetallocator_image:
+  registry: ghcr.io
+  repository: open-telemetry/opentelemetry-operator/target-allocator
   tag: 0.159.0
 
 # OTel workloads. Each workload uses the same structure:
@@ -118,7 +127,7 @@ watchdog:
     # image:
     #   registry: ""
     #   repository: otel/opentelemetry-collector-k8s
-    #   tag: 0.159.0
+    #   tag: 0.162.0
     config:
       extensions:
         health_check:
@@ -267,7 +276,7 @@ gateway_logs:
     # image:
     #   registry: ""
     #   repository: otel/opentelemetry-collector-k8s
-    #   tag: 0.159.0
+    #   tag: 0.162.0
     config:
       extensions:
         health_check:
@@ -385,7 +394,7 @@ gateway_metrics:
     # image:
     #   registry: ""
     #   repository: otel/opentelemetry-collector-k8s
-    #   tag: 0.159.0
+    #   tag: 0.162.0
     config:
       extensions:
         health_check:
@@ -503,7 +512,7 @@ gateway_traces:
     # image:
     #   registry: ""
     #   repository: otel/opentelemetry-collector-k8s
-    #   tag: 0.159.0
+    #   tag: 0.162.0
     config:
       extensions:
         health_check:
@@ -797,7 +806,7 @@ daemonset:
     # image:
     #   registry: ""
     #   repository: otel/opentelemetry-collector-k8s
-    #   tag: 0.159.0
+    #   tag: 0.162.0
     config:
       extensions:
         health_check:
@@ -1194,7 +1203,7 @@ large_target_metrics:
     # image:
     #   registry: ""
     #   repository: otel/opentelemetry-collector-k8s
-    #   tag: 0.159.0
+    #   tag: 0.162.0
     config:
       extensions:
         health_check:
@@ -1278,7 +1287,7 @@ cluster_events:
         memory: 512Mi
       limits:
         cpu: "1"
-        memory: 1Gi # The receiver lists Events at leadership start. Size for retained Event volume.
+        memory: 1Gi # Size for Event rate and the export queue. Startup no longer lists retained Events.
     env:
       - name: GOMEMLIMIT
         value: 896MiB # Soft Go runtime target. Leaves 128Mi nominal headroom below the container limit.
@@ -1318,7 +1327,7 @@ cluster_events:
     # image:
     #   registry: ""
     #   repository: otel/opentelemetry-collector-k8s
-    #   tag: 0.159.0
+    #   tag: 0.162.0
     config:
       extensions:
         health_check:
