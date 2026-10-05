@@ -31,7 +31,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "### Scope\nReference dashboard for NKE node provisioning duration, terminal success vs give-up rate, teardown, and currently in-progress nodes. It is not deployed by nke-stack. Import this JSON and select a Prometheus datasource scraping the NKE controller `/metrics` endpoint.\n\nMetric names are bilingual: existing sites emit `cwe_*`; a greenfield site with the compiled-in prefix change emits `nke_controller_*`. Queries match both via `{__name__=~\"(cwe|nke_controller)_…\"}` so the operator does not pick a prefix. Filter variables are the labels the controller emits: `$tenant_cluster` and `$node_type`. There is no `env` variable. Scrapes sometimes add a `k8s_cluster_name` label for the site-controller cluster that runs the controller; this dashboard does not require it. To join these series with kube-state-metrics on a `k8s_cluster_name` board, rewrite the label: `label_replace({__name__=~\"(cwe|nke_controller)_node_info\",tenant_cluster=~\"$tenant_cluster\"}, \"k8s_cluster_name\", \"$1\", \"tenant_cluster\", \"(.*)\")`.\n\n### How to read outcomes\n`cwe_node_provision_total{result=\"failure\"}` counts **Temporal attempts**, not failed nodes. A stuck node with unlimited retries inflates that counter. Terminal outcomes are **successes** vs **give-ups** (`cwe_node_provisioning_giveups_total`: recycled after `NODE_PROVISIONING_TIMEOUT`, default 2h). Success rate = successes \u00f7 (successes + give-ups).\n\nGive-up series are labeled `cluster_name` (tenant cluster), not `tenant_cluster`. The `$tenant_cluster` variable is applied as `cluster_name` on those queries. Give-ups have no `node_type` label.\n\n### In-progress nodes\n`cwe_node_lifecycle_elapsed_seconds{state=\"provisioning\"}` is a DB-backed gauge: seconds since the node entered provisioning. Pending (not yet claimed) uses `cwe_node_pool_pending_count`.\n\n### Phases (current controller)\n`capi_create`, `capi_ready`, `host_preparation`, `reboot`, `join`, `post_join`. Older fleet dashboards may still show `forge_ready`. Join p95 has a 300s threshold line (KubeadmJoin StartToClose ceiling).\n\n### Teardown\n`cwe_node_teardown_duration_seconds` and `cwe_node_teardown_total`. Recycle path is give-up \u2192 teardown \u2192 re-provision."
+        "content": "### Scope\nReference dashboard for NKE node provisioning duration, terminal success vs give-up rate, teardown, and currently in-progress nodes. It is not deployed by nke-stack. Import this JSON and select a Prometheus datasource scraping the NKE controller `/metrics` endpoint.\n\nQueries use the NKE controller metrics with the `nke_controller_*` prefix. Filter variables are the labels the controller emits: `$tenant_cluster` and `$node_type`. There is no `env` variable. Scrapes sometimes add a `k8s_cluster_name` label for the site-controller cluster that runs the controller; this dashboard does not require it. To join these series with kube-state-metrics on a `k8s_cluster_name` board, rewrite the label: `label_replace(nke_controller_node_info{tenant_cluster=~\"$tenant_cluster\"}, \"k8s_cluster_name\", \"$1\", \"tenant_cluster\", \"(.*)\")`.\n\n### How to read outcomes\n`nke_controller_node_provision_total{result=\"failure\"}` counts **Temporal attempts**, not failed nodes. A stuck node with unlimited retries inflates that counter. Terminal outcomes are **successes** vs **give-ups** (`nke_controller_node_provisioning_giveups_total`: recycled after `NODE_PROVISIONING_TIMEOUT`, default 2h). Success rate = successes \u00f7 (successes + give-ups).\n\nGive-up series are labeled `cluster_name` (tenant cluster), not `tenant_cluster`. The `$tenant_cluster` variable is applied as `cluster_name` on those queries. Give-ups have no `node_type` label.\n\n### In-progress nodes\n`nke_controller_node_lifecycle_elapsed_seconds{state=\"provisioning\"}` is a DB-backed gauge: seconds since the node entered provisioning. Pending (not yet claimed) uses `nke_controller_node_pool_pending_count`.\n\n### Phases (current controller)\n`capi_create`, `capi_ready`, `host_preparation`, `reboot`, `join`, `post_join`. Older fleet dashboards may still show `forge_ready`. Join p95 has a 300s threshold line (KubeadmJoin StartToClose ceiling).\n\n### Teardown\n`nke_controller_node_teardown_duration_seconds` and `nke_controller_node_teardown_total`. Recycle path is give-up \u2192 teardown \u2192 re-provision."
       }
     },
     {
@@ -51,7 +51,7 @@
       "id": 2,
       "type": "stat",
       "title": "Nodes currently provisioning",
-      "description": "Count of cwe_node_lifecycle_elapsed_seconds{state=\"provisioning\"}.",
+      "description": "Count of nke_controller_node_lifecycle_elapsed_seconds{state=\"provisioning\"}.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -68,7 +68,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "count({__name__=~\"(cwe|nke_controller)_node_lifecycle_elapsed_seconds\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"provisioning\"}) or vector(0)",
+          "expr": "count(nke_controller_node_lifecycle_elapsed_seconds{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"provisioning\"}) or vector(0)",
           "legendFormat": "provisioning",
           "refId": "A",
           "instant": true,
@@ -118,7 +118,7 @@
       "id": 3,
       "type": "stat",
       "title": "Pending nodes (pool)",
-      "description": "cwe_node_pool_pending_count \u2014 nodes not yet in the provisioning workflow.",
+      "description": "nke_controller_node_pool_pending_count \u2014 nodes not yet in the provisioning workflow.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -135,7 +135,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum({__name__=~\"(cwe|nke_controller)_node_pool_pending_count\",tenant_cluster=~\"$tenant_cluster\"}) or vector(0)",
+          "expr": "sum(nke_controller_node_pool_pending_count{tenant_cluster=~\"$tenant_cluster\"}) or vector(0)",
           "legendFormat": "pending",
           "refId": "A",
           "instant": true,
@@ -194,7 +194,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "max({__name__=~\"(cwe|nke_controller)_node_lifecycle_elapsed_seconds\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"provisioning\"}) or vector(0)",
+          "expr": "max(nke_controller_node_lifecycle_elapsed_seconds{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"provisioning\"}) or vector(0)",
           "legendFormat": "max elapsed",
           "refId": "A",
           "instant": true,
@@ -261,7 +261,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "count({__name__=~\"(cwe|nke_controller)_node_lifecycle_elapsed_seconds\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"markedForRecycling\"}) or vector(0)",
+          "expr": "count(nke_controller_node_lifecycle_elapsed_seconds{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"markedForRecycling\"}) or vector(0)",
           "legendFormat": "recycling",
           "refId": "A",
           "instant": true,
@@ -328,7 +328,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "{__name__=~\"(cwe|nke_controller)_node_lifecycle_elapsed_seconds\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"provisioning\"}",
+          "expr": "nke_controller_node_lifecycle_elapsed_seconds{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"provisioning\"}",
           "legendFormat": "__auto",
           "refId": "A",
           "instant": true,
@@ -403,7 +403,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "count({__name__=~\"(cwe|nke_controller)_node_lifecycle_elapsed_seconds\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"provisioning\"}) or vector(0)",
+          "expr": "count(nke_controller_node_lifecycle_elapsed_seconds{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"provisioning\"}) or vector(0)",
           "legendFormat": "provisioning",
           "refId": "A",
           "instant": false,
@@ -414,7 +414,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "count({__name__=~\"(cwe|nke_controller)_node_lifecycle_elapsed_seconds\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"pending\"}) or vector(0)",
+          "expr": "count(nke_controller_node_lifecycle_elapsed_seconds{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"pending\"}) or vector(0)",
           "legendFormat": "pending (lifecycle)",
           "refId": "B",
           "instant": false,
@@ -425,7 +425,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum({__name__=~\"(cwe|nke_controller)_node_pool_pending_count\",tenant_cluster=~\"$tenant_cluster\"}) or vector(0)",
+          "expr": "sum(nke_controller_node_pool_pending_count{tenant_cluster=~\"$tenant_cluster\"}) or vector(0)",
           "legendFormat": "pending (pool)",
           "refId": "C",
           "instant": false,
@@ -436,7 +436,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "count({__name__=~\"(cwe|nke_controller)_node_lifecycle_elapsed_seconds\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"deleting\"}) or vector(0)",
+          "expr": "count(nke_controller_node_lifecycle_elapsed_seconds{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", state=\"deleting\"}) or vector(0)",
           "legendFormat": "deleting",
           "refId": "D",
           "instant": false,
@@ -531,7 +531,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "(sum(increase({__name__=~\"(cwe|nke_controller)_node_provision_total\",result=\"success\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])) or vector(0)) / ((sum(increase({__name__=~\"(cwe|nke_controller)_node_provision_total\",result=\"success\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])) or vector(0)) + (sum(increase({__name__=~\"(cwe|nke_controller)_node_provisioning_giveups_total\",cluster_name=~\"$tenant_cluster\"}[$__range])) or vector(0)))",
+          "expr": "(sum(increase(nke_controller_node_provision_total{result=\"success\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])) or vector(0)) / ((sum(increase(nke_controller_node_provision_total{result=\"success\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])) or vector(0)) + (sum(increase(nke_controller_node_provisioning_giveups_total{cluster_name=~\"$tenant_cluster\"}[$__range])) or vector(0)))",
           "legendFormat": "success rate",
           "refId": "A",
           "instant": true,
@@ -598,7 +598,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(increase({__name__=~\"(cwe|nke_controller)_node_provisioning_giveups_total\",cluster_name=~\"$tenant_cluster\"}[$__range])) or vector(0)",
+          "expr": "sum(increase(nke_controller_node_provisioning_giveups_total{cluster_name=~\"$tenant_cluster\"}[$__range])) or vector(0)",
           "legendFormat": "give-ups",
           "refId": "A",
           "instant": true,
@@ -648,7 +648,7 @@
       "id": 11,
       "type": "stat",
       "title": "Successful provisions (range)",
-      "description": "cwe_node_provision_total{result=\"success\"} increase over the dashboard range.",
+      "description": "nke_controller_node_provision_total{result=\"success\"} increase over the dashboard range.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -665,7 +665,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(increase({__name__=~\"(cwe|nke_controller)_node_provision_total\",result=\"success\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])) or vector(0)",
+          "expr": "sum(increase(nke_controller_node_provision_total{result=\"success\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])) or vector(0)",
           "legendFormat": "successes",
           "refId": "A",
           "instant": true,
@@ -724,7 +724,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(increase({__name__=~\"(cwe|nke_controller)_node_provision_total\",result=\"failure\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])) or vector(0)",
+          "expr": "sum(increase(nke_controller_node_provision_total{result=\"failure\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])) or vector(0)",
           "legendFormat": "failed attempts",
           "refId": "A",
           "instant": true,
@@ -791,7 +791,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate({__name__=~\"(cwe|nke_controller)_node_provision_total\",result=\"success\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])) * 3600",
+          "expr": "sum(rate(nke_controller_node_provision_total{result=\"success\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])) * 3600",
           "legendFormat": "successes/hr",
           "refId": "A",
           "instant": false,
@@ -802,7 +802,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate({__name__=~\"(cwe|nke_controller)_node_provisioning_giveups_total\",cluster_name=~\"$tenant_cluster\"}[$__rate_interval])) * 3600",
+          "expr": "sum(rate(nke_controller_node_provisioning_giveups_total{cluster_name=~\"$tenant_cluster\"}[$__rate_interval])) * 3600",
           "legendFormat": "give-ups/hr",
           "refId": "B",
           "instant": false,
@@ -880,7 +880,7 @@
       "id": 15,
       "type": "timeseries",
       "title": "End-to-end provision duration (p50/p95/p99)",
-      "description": "cwe_node_provision_duration_seconds. Combined success and failure observations.",
+      "description": "nke_controller_node_provision_duration_seconds. Combined success and failure observations.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -897,7 +897,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_provision_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(nke_controller_node_provision_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
           "legendFormat": "p50",
           "refId": "A",
           "instant": false,
@@ -908,7 +908,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_provision_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nke_controller_node_provision_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
           "legendFormat": "p95",
           "refId": "B",
           "instant": false,
@@ -919,7 +919,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_provision_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(nke_controller_node_provision_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
           "legendFormat": "p99",
           "refId": "C",
           "instant": false,
@@ -1001,7 +1001,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_provision_phase_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"capi_create\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nke_controller_node_provision_phase_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"capi_create\"}[$__rate_interval])))",
           "legendFormat": "capi_create",
           "refId": "A",
           "instant": false,
@@ -1012,7 +1012,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_provision_phase_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"capi_ready\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nke_controller_node_provision_phase_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"capi_ready\"}[$__rate_interval])))",
           "legendFormat": "capi_ready",
           "refId": "B",
           "instant": false,
@@ -1023,7 +1023,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_provision_phase_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"host_preparation\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nke_controller_node_provision_phase_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"host_preparation\"}[$__rate_interval])))",
           "legendFormat": "host_preparation",
           "refId": "C",
           "instant": false,
@@ -1034,7 +1034,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_provision_phase_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"reboot\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nke_controller_node_provision_phase_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"reboot\"}[$__rate_interval])))",
           "legendFormat": "reboot",
           "refId": "D",
           "instant": false,
@@ -1045,7 +1045,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_provision_phase_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"join\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nke_controller_node_provision_phase_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"join\"}[$__rate_interval])))",
           "legendFormat": "join",
           "refId": "E",
           "instant": false,
@@ -1056,7 +1056,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_provision_phase_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"post_join\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nke_controller_node_provision_phase_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"post_join\"}[$__rate_interval])))",
           "legendFormat": "post_join",
           "refId": "F",
           "instant": false,
@@ -1138,7 +1138,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_provision_phase_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"join\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(nke_controller_node_provision_phase_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"join\"}[$__rate_interval])))",
           "legendFormat": "p50",
           "refId": "A",
           "instant": false,
@@ -1149,7 +1149,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_provision_phase_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"join\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nke_controller_node_provision_phase_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"join\"}[$__rate_interval])))",
           "legendFormat": "p95",
           "refId": "B",
           "instant": false,
@@ -1160,7 +1160,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_provision_phase_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"join\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(nke_controller_node_provision_phase_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"join\"}[$__rate_interval])))",
           "legendFormat": "p99",
           "refId": "C",
           "instant": false,
@@ -1242,7 +1242,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_provision_phase_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"host_preparation\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(nke_controller_node_provision_phase_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"host_preparation\"}[$__rate_interval])))",
           "legendFormat": "p50",
           "refId": "A",
           "instant": false,
@@ -1253,7 +1253,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_provision_phase_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"host_preparation\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nke_controller_node_provision_phase_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"host_preparation\"}[$__rate_interval])))",
           "legendFormat": "p95",
           "refId": "B",
           "instant": false,
@@ -1264,7 +1264,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_provision_phase_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"host_preparation\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(nke_controller_node_provision_phase_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"host_preparation\"}[$__rate_interval])))",
           "legendFormat": "p99",
           "refId": "C",
           "instant": false,
@@ -1346,7 +1346,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (phase) (rate({__name__=~\"(cwe|nke_controller)_node_provision_phase_duration_seconds_sum\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])) / clamp_min(sum by (phase) (rate({__name__=~\"(cwe|nke_controller)_node_provision_phase_duration_seconds_count\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])), 1)",
+          "expr": "sum by (phase) (rate(nke_controller_node_provision_phase_duration_seconds_sum{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])) / clamp_min(sum by (phase) (rate(nke_controller_node_provision_phase_duration_seconds_count{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__range])), 1)",
           "legendFormat": "__auto",
           "refId": "A",
           "instant": true,
@@ -1412,7 +1412,7 @@
       "id": 21,
       "type": "timeseries",
       "title": "Teardown duration (p50/p95/p99)",
-      "description": "cwe_node_teardown_duration_seconds plus phase p95 (cluster_remove, capi_delete).",
+      "description": "nke_controller_node_teardown_duration_seconds plus phase p95 (cluster_remove, capi_delete).",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1429,7 +1429,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_teardown_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(nke_controller_node_teardown_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
           "legendFormat": "p50",
           "refId": "A",
           "instant": false,
@@ -1440,7 +1440,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_teardown_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nke_controller_node_teardown_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
           "legendFormat": "p95",
           "refId": "B",
           "instant": false,
@@ -1451,7 +1451,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_teardown_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(nke_controller_node_teardown_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])))",
           "legendFormat": "p99",
           "refId": "C",
           "instant": false,
@@ -1462,7 +1462,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_teardown_phase_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"cluster_remove\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nke_controller_node_teardown_phase_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"cluster_remove\"}[$__rate_interval])))",
           "legendFormat": "cluster_remove p95",
           "refId": "D",
           "instant": false,
@@ -1473,7 +1473,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"(cwe|nke_controller)_node_teardown_phase_duration_seconds_bucket\",tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"capi_delete\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(nke_controller_node_teardown_phase_duration_seconds_bucket{tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\", phase=\"capi_delete\"}[$__rate_interval])))",
           "legendFormat": "capi_delete p95",
           "refId": "E",
           "instant": false,
@@ -1555,7 +1555,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate({__name__=~\"(cwe|nke_controller)_node_teardown_total\",result=\"success\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])) * 3600",
+          "expr": "sum(rate(nke_controller_node_teardown_total{result=\"success\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])) * 3600",
           "legendFormat": "success/hr",
           "refId": "A",
           "instant": false,
@@ -1566,7 +1566,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate({__name__=~\"(cwe|nke_controller)_node_teardown_total\",result=\"failure\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])) * 3600",
+          "expr": "sum(rate(nke_controller_node_teardown_total{result=\"failure\", tenant_cluster=~\"$tenant_cluster\", node_type=~\"$node_type\"}[$__rate_interval])) * 3600",
           "legendFormat": "failure/hr",
           "refId": "B",
           "instant": false,
@@ -1645,8 +1645,8 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values({__name__=~\"(cwe|nke_controller)_node_provision_total\"}, tenant_cluster)",
-        "query": "label_values({__name__=~\"(cwe|nke_controller)_node_provision_total\"}, tenant_cluster)",
+        "definition": "label_values(nke_controller_node_provision_total, tenant_cluster)",
+        "query": "label_values(nke_controller_node_provision_total, tenant_cluster)",
         "current": {
           "selected": true,
           "text": "All",
@@ -1657,7 +1657,7 @@
         "multi": true,
         "refresh": 2,
         "sort": 1,
-        "description": "Tenant cluster label on cwe_node_provision_total. Give-up queries use the same value as cluster_name."
+        "description": "Tenant cluster label on nke_controller_node_provision_total. Give-up queries use the same value as cluster_name."
       },
       {
         "name": "node_type",
@@ -1667,8 +1667,8 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values({__name__=~\"(cwe|nke_controller)_node_provision_total\"}, node_type)",
-        "query": "label_values({__name__=~\"(cwe|nke_controller)_node_provision_total\"}, node_type)",
+        "definition": "label_values(nke_controller_node_provision_total, node_type)",
+        "query": "label_values(nke_controller_node_provision_total, node_type)",
         "current": {
           "selected": true,
           "text": "All",
