@@ -1,0 +1,81 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Installs the GitHub CLI at a pinned version and verifies its sha256.
+#
+# GitHub-hosted runner images ship gh, so most of this repository just calls
+# it. The image promotion jobs run on self-hosted runners, where it may be
+# absent or several releases behind, and the verification gates they depend on
+# use flags -- --signer-workflow, --source-digest, --source-ref -- that older
+# releases do not have. Taking whatever is on PATH would make the gate's
+# strictness a property of the runner image. This pins it instead.
+#
+# Prepends to PATH, so a gh already on the runner is shadowed rather than used.
+
+name: Set up gh
+description: Download the GitHub CLI at a pinned version, verify sha256, add it to PATH
+
+inputs:
+  gh_version:
+    description: >-
+      GitHub CLI release version without the leading v, for example 2.97.0.
+      Empty reads GH_CLI_VERSION from make/tool-versions.mk, where the pin lives.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_CLI_VERSION: ${{ inputs.gh_version }}
+      run: |
+        set -euo pipefail
+        # env -u, not a plain call: this step exports GH_CLI_VERSION, and an
+        # empty input exports it empty. tool-versions.mk assigns with ?=, which
+        # make skips when the name is already set in the environment -- empty
+        # counts as set, print-GH_CLI_VERSION then echoes nothing, and every
+        # fetch 404s. See setup-crane/action.yml, which was bitten by this.
+        if [ -z "${GH_CLI_VERSION}" ]; then
+          GH_CLI_VERSION="$(env -u GH_CLI_VERSION make -C "${GITHUB_WORKSPACE}" --no-print-directory print-GH_CLI_VERSION)"
+        fi
+        if [ -z "${GH_CLI_VERSION}" ]; then
+          echo "::error::gh version resolved empty from make/tool-versions.mk"
+          exit 1
+        fi
+
+        arch="$(uname -m)"
+        case "${arch}" in
+          x86_64)  arch=amd64 ;;
+          aarch64) arch=arm64 ;;
+          *) echo "::error::no committed gh digest for ${arch}"; exit 1 ;;
+        esac
+
+        archive="gh_${GH_CLI_VERSION}_linux_${arch}.tar.gz"
+        base="https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}"
+        bin="${RUNNER_TEMP}/gh-bin"
+        mkdir -p "${bin}"
+        cd "${bin}"
+
+        # No --retry-delay: it replaces curl's exponential backoff with a flat
+        # wait. See install-k8s-community.sh for what that cost.
+        curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 \
+          -o "${archive}" "${base}/${archive}"
+
+        # A committed digest, not the release's own checksums.txt: that file is
+        # served by the host that serves the artifact, so it shares the same
+        # compromise boundary. make/tool-versions.mk owns both lines.
+        case "${arch}" in
+          amd64) want="$(make -C "${GITHUB_WORKSPACE}" --no-print-directory print-GH_CLI_SHA256_AMD64)" ;;
+          arm64) want="$(make -C "${GITHUB_WORKSPACE}" --no-print-directory print-GH_CLI_SHA256_ARM64)" ;;
+        esac
+        if [ -z "${want}" ]; then
+          echo "::error::no committed gh digest for linux/${arch}"
+          exit 1
+        fi
+        echo "${want}  ${archive}" | sha256sum -c
+
+        tar -xzf "${archive}" --strip-components=2 "gh_${GH_CLI_VERSION}_linux_${arch}/bin/gh"
+        chmod +x gh
+        echo "${bin}" >> "${GITHUB_PATH}"
+        "${bin}/gh" --version

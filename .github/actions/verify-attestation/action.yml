@@ -1,0 +1,171 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Verify the build-provenance attestation over an image digest, and fail when
+# the evidence is missing, unverifiable, or over something else.
+#
+# Promotion is the moment a candidate becomes authoritative, so it is the
+# moment to check rather than to assume: a promotion job otherwise trusts that
+# an earlier job in the same run did its work, which is the assumption an
+# attestation exists to remove. `release.yml` already sets the bar on the
+# binary path -- it re-hashes every uploaded asset before publishing and leaves
+# the release a draft on any mismatch. This is the image equivalent.
+#
+# Fails closed by construction. Every outcome other than "an attestation from
+# the expected signer, over this exact digest, verified" is an error:
+#
+#   - no attestation for the digest          gh exits non-zero
+#   - a different signer or source repo      gh exits non-zero
+#   - a different predicate type             gh exits non-zero
+#   - verified, but naming another subject   the digest check below
+#   - verified, but naming no subject        the empty check below
+#
+# `--repo` is not decoration. Without an identity constraint, verification
+# establishes only that some GitHub workflow somewhere built the image. See the
+# "Verifying a release" section of RELEASE.md.
+
+name: Verify image attestation
+description: Verify a build-provenance attestation over an image digest, failing closed.
+
+inputs:
+  image:
+    description: Image repository, with no tag and no digest, e.g. ghcr.io/owner/repo/name.
+    required: true
+  digest:
+    description: The sha256 digest of the subject that must be attested.
+    required: true
+  signer-workflow:
+    description: >-
+      The workflow that must have signed the attestation, as
+      <owner>/<repo>/<path>/<to>/<workflow>. This is what pins the builder.
+    required: true
+  repo:
+    description: The repository the attestation must be linked with.
+    required: false
+    default: ${{ github.repository }}
+  source-digest:
+    description: >-
+      The commit the attestation must name as its source. Empty skips the
+      check; leave it at the default so a candidate built from another commit
+      cannot be promoted here.
+    required: false
+    default: ${{ github.sha }}
+  source-ref:
+    description: The git ref the attestation must name as its source. Empty skips the check.
+    required: false
+    default: ${{ github.ref }}
+  predicate-type:
+    description: The predicate type the attestation must carry.
+    required: false
+    default: https://slsa.dev/provenance/v1
+  from-registry:
+    description: >-
+      Read the bundle from the image's OCI referrers rather than from the
+      GitHub API. True for GHCR, where push-to-registry put it there and a
+      consumer verifies the same way, so this checks the copy they will read.
+      NVCR answers /v2/<repo>/referrers/<digest> with a route-level 404, so
+      leave it false there and the lookup goes to GitHub by subject digest.
+    required: false
+    default: "false"
+  github-token:
+    description: A token that can read this repository's attestations.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # Pinned, not whatever the runner carries. The promotion jobs run on
+    # self-hosted runners, and the flags below are not in every gh release --
+    # a gate whose strictness depends on the runner image is not a gate.
+    - name: Set up gh
+      uses: ./.github/actions/setup-gh
+
+    - name: Verify the attestation
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        DIGEST: ${{ inputs.digest }}
+        SIGNER_WORKFLOW: ${{ inputs.signer-workflow }}
+        REPO: ${{ inputs.repo }}
+        SOURCE_DIGEST: ${{ inputs.source-digest }}
+        SOURCE_REF: ${{ inputs.source-ref }}
+        PREDICATE_TYPE: ${{ inputs.predicate-type }}
+        FROM_REGISTRY: ${{ inputs.from-registry }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+
+        if [[ -z "${IMAGE}" ]]; then
+          echo "::error::image is empty, so there is nothing to verify"
+          exit 1
+        fi
+
+        # A tag or a digest here would defeat the point: the attestation is
+        # over a digest, and a reference that resolves later is a reference
+        # that can resolve to something else.
+        if [[ "${IMAGE}" == *@* || "${IMAGE##*/}" == *:* ]]; then
+          echo "::error::image is '${IMAGE}'; pass the repository alone and the digest separately"
+          exit 1
+        fi
+
+        if [[ ! "${DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+          echo "::error::digest is '${DIGEST}', which is not a sha256 digest, so nothing can be verified"
+          exit 1
+        fi
+
+        if [[ -z "${SIGNER_WORKFLOW}" ]]; then
+          echo "::error::signer-workflow is empty, which would accept an attestation from any workflow"
+          exit 1
+        fi
+
+        if [[ -z "${REPO}" ]]; then
+          echo "::error::repo is empty, which would accept an attestation from any repository"
+          exit 1
+        fi
+
+        args=(
+          "oci://${IMAGE}@${DIGEST}"
+          --repo "${REPO}"
+          --signer-workflow "${SIGNER_WORKFLOW}"
+          --predicate-type "${PREDICATE_TYPE}"
+        )
+        if [[ -n "${SOURCE_DIGEST}" ]]; then
+          args+=(--source-digest "${SOURCE_DIGEST}")
+        fi
+        if [[ -n "${SOURCE_REF}" ]]; then
+          args+=(--source-ref "${SOURCE_REF}")
+        fi
+        if [[ "${FROM_REGISTRY}" == "true" ]]; then
+          args+=(--bundle-from-oci)
+        fi
+
+        echo "verifying ${IMAGE}@${DIGEST}"
+        echo "  signer-workflow ${SIGNER_WORKFLOW}"
+        echo "  repo            ${REPO}"
+        echo "  source-digest   ${SOURCE_DIGEST:-<unchecked>}"
+        echo "  source-ref      ${SOURCE_REF:-<unchecked>}"
+        echo "  predicate-type  ${PREDICATE_TYPE}"
+
+        # The subjects come back from the verified statement so the digest can
+        # be asserted here as well. gh matches the subject itself, so this is
+        # belt and braces -- but promotion is a one-way door and the second
+        # read costs nothing.
+        if ! subjects="$(gh attestation verify "${args[@]}" \
+          --format json \
+          --jq '[.[].verificationResult.statement.subject[].digest.sha256] | unique | join(" ")')"; then
+          echo "::error::no verifiable attestation for ${IMAGE}@${DIGEST} from ${SIGNER_WORKFLOW}; promotion blocked"
+          exit 1
+        fi
+
+        if [[ -z "${subjects}" ]]; then
+          echo "::error::verification of ${IMAGE}@${DIGEST} returned no attested subject, so nothing was verified; promotion blocked"
+          exit 1
+        fi
+
+        want="${DIGEST#sha256:}"
+        if [[ " ${subjects} " != *" ${want} "* ]]; then
+          echo "::error::the attestation for ${IMAGE}@${DIGEST} is over [${subjects}], not ${want}; promotion blocked"
+          exit 1
+        fi
+
+        echo "- verified \`${IMAGE}@${DIGEST}\` against \`${SIGNER_WORKFLOW}\`" >> "${GITHUB_STEP_SUMMARY}"

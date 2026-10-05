@@ -28,6 +28,15 @@ SHELLCHECK_SHA256  ?= 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e
 GITLEAKS_VERSION   ?= 8.30.1
 GITLEAKS_SHA256_AMD64 ?= 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
 
+# The GitHub CLI, for `gh attestation verify` in the image promotion gates.
+# Pinned rather than taken from the runner image: the promotion jobs run on
+# self-hosted runners, where gh may be absent or old, and the flags those gates
+# depend on -- --signer-workflow, --source-digest, --source-ref -- are not in
+# every release. A gate that silently degrades is not a gate.
+GH_CLI_VERSION ?= 2.97.0
+GH_CLI_SHA256_AMD64 ?= a2c9b8497e1f85b1ad0dfcb78b5a622e098801b8e461e459e88e1ee12f018112
+GH_CLI_SHA256_ARM64 ?= 73ea440ecad9c9e284429997ee6f93577bc6f7bc6fba357ef62c53ad8fb641a5
+
 # tsh and tbot for the Forge site-controller lane, out of one tarball. This
 # pin is not free to move: it is matched to the Teleport cluster's server
 # version rather than merely kept within the supported skew, because an

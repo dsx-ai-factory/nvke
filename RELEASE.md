@@ -215,10 +215,38 @@ the artifact was built by some GitHub workflow somewhere. Use
 | Release assets (`nkectl`, agent `.deb`s, `nke-os-image-check`, the NKTP chart archive) | `checksums.txt`, which names each by digest | GitHub, plus the attached bundle |
 | `os-image` qcow2 OCI artifacts | the same `checksums.txt` | GitHub, plus the attached bundle |
 | `nke-controller`, `cluster-api-provider-provisioned` on GHCR | the multi-arch index digest | attached to the image in GHCR as an OCI referrer |
+| the same two images on NVCR | the same index digest | GitHub's attestation store only |
 
 Attestations are made where the artifact lands. `crane copy` preserves an image
 digest but does not carry its referrers, so each GHCR promotion attests the
 image it just pushed rather than relying on the source.
+
+### Verification before promotion
+
+Promotion is the moment a candidate becomes authoritative, so the promotion
+jobs verify rather than assume. `.github/actions/verify-attestation` wraps
+`gh attestation verify` and fails the job on missing, unverifiable or
+mismatched evidence; `image-nvcr.yml` and `image-provisioned-nvcr.yml` call it
+in three places:
+
+1. **Before the GHCR copy** and **before the DSX promotion**, over the NVCR
+   index digest the `manifest` job published and attested. Nothing is copied
+   until that passes.
+2. **After the GHCR copy**, with `--bundle-from-oci`, so the check reads the
+   referrer GHCR serves — the same path a consumer takes — rather than the
+   GitHub API, which would have answered from the NVCR attestation over the
+   same digest and proved nothing about what landed.
+
+Each call pins the repository, the signer workflow, the source commit and the
+source ref, and re-reads the attested subject digest out of the verified
+statement. Mutable aliases — `sha-<commit>` on GHCR, `edge` on DSX — move only
+after every gate above them has passed, so an alias never points at an image
+the run has not finished vouching for. Nothing in either path rebuilds the
+artifact it promotes: `crane copy` and `crane push` move the index the
+`manifest` job created, and the digest is asserted equal on the far side.
+
+This is the image equivalent of the asset re-hash `release.yml` runs before it
+publishes a release, and it fails the same way: closed.
 
 ### Why GitHub attestations rather than cosign signatures
 
@@ -244,13 +272,26 @@ a specific version and track, which has not been done.
 
 ### Not yet covered
 
-The NVCR and DSX copies of the two images are **not** attested. NVCR does not
-implement the OCI referrers API — `/v2/<repo>/referrers/<digest>` returns a
-route-level 404 rather than an OCI error — so `push-to-registry` has nowhere to
-put the bundle. The GHCR copy carries the same index digest, so an operator can
-attest a DSX pull indirectly by comparing digests, but that is a manual step
-and not a substitute. Closing it properly needs either referrers support from
-NGC or a second mechanism for those registries.
+The NVCR and DSX copies of the two images carry **no attestation in the
+registry**. NVCR does not implement the OCI referrers API —
+`/v2/<repo>/referrers/<digest>` returns a route-level 404 rather than an OCI
+error — so `push-to-registry` has nowhere to put the bundle. The provenance for
+the NVCR index exists in GitHub's attestation store, which is what the
+promotion gates above read, and it can be verified by hand the same way:
+
+```bash
+gh attestation verify \
+  oci://nvcr.io/<org>/nke-controller@sha256:<digest> \
+  --repo dsx-ai-factory/nke \
+  --signer-workflow dsx-ai-factory/nke/.github/workflows/image-nvcr.yml
+```
+
+That needs network access to GitHub, so it is not a substitute for a bundle
+beside the image: an air-gapped or offline consumer of the NVCR or DSX copies
+still has nothing local to check. The DSX copy has no attestation of its own at
+all — it shares the index digest, so the command above covers it, but only
+because the digests match. Closing this properly needs either referrers support
+from NGC or a second mechanism for those registries.
 
 The other artifacts nke publishes to GHCR — the Helm charts, the `agent` and
 `cli` OCI artifacts, `agent-deb`, and the `os-image-*` repositories — are not
