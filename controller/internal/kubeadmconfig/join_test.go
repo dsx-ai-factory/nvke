@@ -145,7 +145,6 @@ func TestNewJoinConfigFromString(t *testing.T) {
 		nodeIP     string
 		nodeName   string
 		joinString string
-		labels     KubeLabels
 		want       *JoinConfig
 		wantErr    error
 	}{
@@ -154,14 +153,12 @@ func TestNewJoinConfigFromString(t *testing.T) {
 			nodeIP:     "10.0.0.1",
 			nodeName:   "worker-1",
 			joinString: "kubeadm join 1.2.3.4:6443 --token abcdef --discovery-token-ca-cert-hash sha256:123456",
-			labels:     KubeLabels{"role": "worker"},
 			want: &JoinConfig{
 				APIServerEndpoint:        "1.2.3.4:6443",
 				Token:                    "abcdef",
 				DiscoveryTokenCACertHash: "sha256:123456",
 				NodeName:                 "worker-1",
 				NodeIP:                   "10.0.0.1",
-				Labels:                   "role=worker",
 				NodeTaints: []constants.NodeTaint{
 					constants.NodeTaintProvisioning(),
 				},
@@ -188,7 +185,6 @@ func TestNewJoinConfigFromString(t *testing.T) {
 			nodeIP:     "10.0.0.2",
 			nodeName:   "cp-1",
 			joinString: "kubeadm join 1.2.3.4:6443 --control-plane --certificate-key certkey123 --token abcdef --discovery-token-ca-cert-hash sha256:123456",
-			labels:     KubeLabels{"role": "control-plane"},
 			want: &JoinConfig{
 				ControlPlane:             true,
 				NodeIP:                   "10.0.0.2",
@@ -197,7 +193,6 @@ func TestNewJoinConfigFromString(t *testing.T) {
 				NodeName:                 "cp-1",
 				DiscoveryTokenCACertHash: "sha256:123456",
 				Token:                    "abcdef",
-				Labels:                   "role=control-plane",
 			},
 		},
 		{
@@ -246,7 +241,7 @@ func TestNewJoinConfigFromString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewJoinConfigFromString(tt.nodeIP, tt.nodeName, tt.joinString, tt.labels)
+			got, err := NewJoinConfigFromString(tt.nodeIP, tt.nodeName, tt.joinString)
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
 

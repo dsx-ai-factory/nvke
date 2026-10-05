@@ -100,7 +100,6 @@ func (a *Activities) kubeadmInit(ctx context.Context, input KubeadmInitInput) er
 		PodSubnet:             cluster.PodCIDR,
 		ServiceSubnet:         cluster.ServiceCIDR,
 		EtcdQuotaBackendBytes: kubeadmconfig.EtcdQuotaBackendBytes,
-		Labels:                nodeLabels(nodePool.NodeLabels).String(),
 		ImageRepository:       a.cfg.KubeadmImageRepository,
 		SkipKubeProxy:         cluster.CniPlugin == db.CNIOvnKubernetes,
 		EnableEncryption:      cluster.EtcdEncrypted,

@@ -8,7 +8,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -43,18 +42,6 @@ func (a *Activities) kubeadmContainerMode(ctx context.Context, cluster db.Cluste
 		return false, fmt.Errorf("failed to check if node is docker machine backed: %w", err)
 	}
 	return isKubeadmContainerMode, nil
-}
-
-func nodeLabels(labels []string) kubeadmconfig.KubeLabels {
-	out := kubeadmconfig.KubeLabels{}
-	for _, label := range labels {
-		key, value, ok := strings.Cut(label, "=")
-		if !ok || key == "" {
-			continue
-		}
-		out[key] = value
-	}
-	return out
 }
 
 func toNodeAgentFiles(files []kubeadmconfig.File) []*nkeproto.File {

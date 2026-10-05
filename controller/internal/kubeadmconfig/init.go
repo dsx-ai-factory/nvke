@@ -32,7 +32,6 @@ type InitConfig struct {
 	PodSubnet             string
 	ServiceSubnet         string
 	EtcdQuotaBackendBytes string
-	Labels                string
 	// Token is the kubeadm token used for joining nodes to the cluster.
 	// If empty, a new token will be generated.
 	Token string
