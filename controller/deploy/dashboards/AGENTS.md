@@ -11,7 +11,6 @@ Operators: import steps and a short description of each file are in [README.md](
 | File | Purpose | Primary scrape |
 |---|---|---|
 | `nke-site-controller-health-reference.json` | Site-controller workload and node health | kube-state-metrics; optional apiserver/etcd, CNPG |
-| `nke-etcd-reference.json` | etcd member health | etcd mixin metrics, scoped by `$job` |
 | `nke-provisioning-duration-reference.json` | Node provision/teardown duration and outcomes | controller `/metrics` (`nke_controller_*`) |
 | `nke-cluster-upgrade-overview-reference.json` | GPU-cluster upgrade progress | kube-state-metrics; optional controller inventory metrics |
 
@@ -71,7 +70,6 @@ exporters already define `cluster` as something else — CNPG's `cluster` is the
 | Context | Do | Do not |
 |---|---|---|
 | Kubernetes cluster identity | `k8s_cluster_name=~"$cluster"` | A bare `cluster=` label, `$env`, or a hardcoded cluster-name regex |
-| etcd mixin dashboard | `$cluster` = `k8s_cluster_name`; expose the mixin's `clusterLabel: job` as a separate `$job` | Name a variable `$cluster` and bind it to the Prometheus `job` |
 | NKE controller lifecycle | Filter `tenant_cluster`, `node_type`; give-ups use `cluster_name`. Query `nke_controller_*` metrics directly. | Invent `env`; keep phase labels that are not in `lifecycle.go` |
 | Workloads | Match `cloud-workflow-engine\|nke-controller` for the controller Deployment/container; SPIRE as above | Query SWE or `job="process-exporter"` |
 
@@ -95,9 +93,7 @@ HA thresholds of **3** (etcd members, ready nodes) are colo-sized. Parameterize 
 
 ## Per-dashboard contracts
 
-**Site controller health.** Glance: NKE controller, SPIRE, Temporal, cert-manager, node Ready. Optional collapsed: apiserver/etcd (needs scrape), CNPG **or** postgres. One etcd “members with leader” stat is enough; drill-down is the etcd reference dashboard. Empty optional ≠ red.
-
-**etcd.** Panel set from [etcd mixin](https://github.com/etcd-io/etcd/tree/main/contrib/mixin) (`etcd.libsonnet` / `targets.libsonnet`): Up (`etcd_server_has_leader`, not scrape `up{}`), RPC rate, active streams, DB size, disk sync, memory, client/peer traffic, raft/leader elections, peer RTT. `$cluster` is `k8s_cluster_name`; the mixin's `clusterLabel: job` is a separate `$job` variable, which is single-select and also scopes the non-etcd-specific `grpc_server_*` and `process_resident_memory_bytes` series to the etcd process. Empty until kube-prometheus `kubeEtcd` (or equivalent) scrapes kubeadm etcd. Do not add apiserver watch-cache or process-exporter CPU here.
+**Site controller health.** Glance: NKE controller, SPIRE, Temporal, cert-manager, node Ready. Optional collapsed: apiserver/etcd (needs scrape), CNPG **or** postgres. Keep the etcd Has Leader panel as the control-plane health signal. Empty optional ≠ red.
 
 **Provisioning duration.** Source of truth: `controller/internal/metrics/lifecycle.go` and `node_provisioning.go`.
 
@@ -106,10 +102,6 @@ HA thresholds of **3** (etcd members, ready nodes) are colo-sized. Parameterize 
 - Provision phases: `capi_create`, `capi_ready`, `host_preparation`, `reboot` (optional), `join`, `post_join`.
 - Teardown phases: `cluster_remove`, `capi_delete`.
 - Drop any other `phase` label values copied from older dashboards (SWE and previous infrastructure-provider names).
-
-## Duplication
-
-Do not copy the same etcd WAL/leader graphs onto two reference dashboards. Glance board = one stat; detail board = mixin subset.
 
 ## Verification
 
