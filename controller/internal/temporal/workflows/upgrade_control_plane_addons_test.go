@@ -14,6 +14,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/workflow"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/temporal/activities"
 )
@@ -46,6 +47,11 @@ func TestUpgradeControlPlaneAddonsUsesKubeadmUpgradeActivity(t *testing.T) {
 		mock.Anything,
 		activities.InstallKubeLocalDNSInput{ClusterID: clusterID},
 	).Return(nil).Once()
+	env.OnActivity(
+		a.LabelSystemNamespacesForPSA,
+		mock.Anything,
+		activities.LabelSystemNamespacesForPSAInput{ClusterID: clusterID},
+	).Return(nil).Once()
 
 	var heartbeatTimeout time.Duration
 	env.SetOnActivityStartedListener(func(info *activity.Info, _ context.Context, _ converter.EncodedValues) {
@@ -66,5 +72,35 @@ func TestUpgradeControlPlaneAddonsUsesKubeadmUpgradeActivity(t *testing.T) {
 		Output:   "plan\napply\n",
 	}, result)
 	require.Equal(t, defaultRunbookActivityHeartbeatTimeout(), heartbeatTimeout)
+	env.AssertExpectations(t)
+}
+
+// An upgrade that started before LabelSystemNamespacesForPSA existed has no
+// marker for it in its history, so replay must not schedule it.
+func TestUpgradeControlPlaneAddonsSkipsPSALabelingOnOldHistory(t *testing.T) {
+	clusterID := uuid.New()
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	var a *activities.Activities
+	env.OnActivity(a.KubeadmUpgradeApply, mock.Anything, mock.Anything).
+		Return(activities.KubeadmUpgradeApplyResult{}, nil).Once()
+	env.OnActivity(a.InstallKubeLocalDNS, mock.Anything, mock.Anything).Return(nil).Once()
+	env.OnGetVersion(psaLabelSystemNamespacesChangeID, workflow.DefaultVersion, 1).Return(workflow.DefaultVersion)
+
+	labeled := false
+	env.SetOnActivityStartedListener(func(info *activity.Info, _ context.Context, _ converter.EncodedValues) {
+		if info.ActivityType.Name == "LabelSystemNamespacesForPSA" {
+			labeled = true
+		}
+	})
+
+	env.ExecuteWorkflow(UpgradeControlPlaneAddons, UpgradeControlPlaneAddonsInput{
+		ClusterID:         clusterID,
+		KubernetesVersion: "1.34.2",
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.False(t, labeled)
 	env.AssertExpectations(t)
 }

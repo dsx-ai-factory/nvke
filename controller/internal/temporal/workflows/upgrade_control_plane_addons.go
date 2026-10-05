@@ -31,7 +31,8 @@ type UpgradeControlPlaneAddonsResult struct {
 // UpgradeControlPlaneAddons runs kubeadm upgrade apply through the node agent on
 // a healthy control-plane node to upgrade cluster add-ons (kube-proxy, CoreDNS)
 // to the target Kubernetes version, then re-applies NKE DNS overlays via
-// InstallKubeLocalDNS. The kubelet is upgraded separately through node
+// InstallKubeLocalDNS and the Pod Security Admission labels via
+// LabelSystemNamespacesForPSA. The kubelet is upgraded separately through node
 // replacement, and kubeadm upgrade apply is safe to retry.
 func UpgradeControlPlaneAddons(ctx workflow.Context, input UpgradeControlPlaneAddonsInput) (UpgradeControlPlaneAddonsResult, error) {
 	logger := workflow.GetLogger(ctx)
@@ -89,6 +90,13 @@ func UpgradeControlPlaneAddons(ctx workflow.Context, input UpgradeControlPlaneAd
 		},
 	).Get(ctx, nil); err != nil {
 		return UpgradeControlPlaneAddonsResult{}, fmt.Errorf("failed to reconcile kube-local DNS after addon upgrade: %w", err)
+	}
+
+	// Upgrades started before this step existed must replay without it.
+	if workflow.GetVersion(ctx, psaLabelSystemNamespacesChangeID, workflow.DefaultVersion, 1) >= 1 {
+		if err := labelSystemNamespacesForPSA(ctx, input.ClusterID, ""); err != nil {
+			return UpgradeControlPlaneAddonsResult{}, err
+		}
 	}
 
 	return UpgradeControlPlaneAddonsResult{

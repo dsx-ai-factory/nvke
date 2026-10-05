@@ -20,6 +20,10 @@ const (
 	provisioningCompleted = "Provisioning completed"
 	removeEtcdMember      = "remove-etcd-member"
 	unknownValue          = "unknown"
+
+	// psaLabelSystemNamespacesChangeID gates LabelSystemNamespacesForPSA in
+	// every workflow that runs it.
+	psaLabelSystemNamespacesChangeID = "psa-label-system-namespaces"
 )
 
 type ProvisionClusterInput struct {
@@ -72,6 +76,13 @@ func provisionCluster(ctx workflow.Context, input ProvisionClusterInput) error {
 	// This could be expanded into an add-on system later, but for now this is the only thing we install after cluster creation
 	if err := installKubeLocalDNS(ctx, input.ClusterID); err != nil {
 		return fmt.Errorf("failed to install kube-local-dns: %w", err)
+	}
+
+	// Clusters provisioned before this step existed must replay without it.
+	if workflow.GetVersion(ctx, psaLabelSystemNamespacesChangeID, workflow.DefaultVersion, 1) >= 1 {
+		if err := labelSystemNamespacesForPSA(ctx, input.ClusterID, "Labeling system namespaces for Pod Security Admission"); err != nil {
+			return err
+		}
 	}
 
 	// All necessary daemonsets we need running from the get-go - kube-proxy; node-local-dns; cni - [calico, ovn-kube] by default have generic
@@ -278,6 +289,37 @@ func installKubeLocalDNS(ctx workflow.Context, clusterID uuid.UUID) error {
 		},
 	).Get(ctx, nil); err != nil {
 		return fmt.Errorf("failed to install kube-local-dns: %w", err)
+	}
+
+	return nil
+}
+
+// labelSystemNamespacesForPSA runs a DB read and a few namespace Get/Patch
+// calls, so it gets a short timeout. Retries are bounded: by this point the CNI
+// install has created every namespace it labels, so a failure that outlasts
+// about seven minutes of retries is a broken cluster, not a slow one.
+func labelSystemNamespacesForPSA(ctx workflow.Context, clusterID uuid.UUID, conditionMessage string) error {
+	var a *activities.Activities
+
+	activityOptions := workflow.ActivityOptions{
+		StartToCloseTimeout: 1 * time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    10 * time.Second,
+			BackoffCoefficient: 2,
+			MaximumInterval:    1 * time.Minute,
+			MaximumAttempts:    10,
+		},
+	}
+
+	if err := workflow.ExecuteActivity(
+		workflow.WithActivityOptions(ctx, activityOptions),
+		a.LabelSystemNamespacesForPSA,
+		activities.LabelSystemNamespacesForPSAInput{
+			ClusterID:                           clusterID,
+			ClusterProvisioningConditionMessage: conditionMessage,
+		},
+	).Get(ctx, nil); err != nil {
+		return fmt.Errorf("failed to label system namespaces for Pod Security Admission: %w", err)
 	}
 
 	return nil

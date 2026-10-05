@@ -37,8 +37,6 @@ const (
 	prometheusPortAnnotation = "prometheus.io/port"
 	prometheusScrapeAnnot    = "prometheus.io/scrape"
 	metricsPortName          = "metrics"
-	psaEnforceLabelKey       = "pod-security.kubernetes.io/enforce"
-	ovnKubernetesNamespace   = "ovn-kubernetes"
 )
 
 //go:embed kube_local_dns.yaml
@@ -51,12 +49,7 @@ type InstallKubeLocalDNSInput struct {
 }
 
 // InstallKubeLocalDNS applies the node-local DNS resources directly to a tenant cluster,
-// patches kubeadm-managed CoreDNS and the kube-dns Service for OVN prefer-local DNS, and
-// labels the tenant cluster's system namespaces -- kube-system and the CNI's namespace --
-// privileged for Pod Security Admission. Those namespaces run components (kube-proxy, the
-// CNI, node-local-dns) that need host access, so privileged is the correct, standard level
-// for them; the label makes that an explicit, auditable decision instead of PSA silently
-// having no opinion. Tenant namespaces are never touched.
+// then patches kubeadm-managed CoreDNS and the kube-dns Service for OVN prefer-local DNS.
 func (a *Activities) InstallKubeLocalDNS(ctx context.Context, input InstallKubeLocalDNSInput) error {
 	conditionUpdateWrapper := ActivityStatusConditionUpdateWrapper[struct{}]{
 		Message:         input.ClusterProvisioningConditionMessage,
@@ -85,9 +78,6 @@ func (a *Activities) InstallKubeLocalDNS(ctx context.Context, input InstallKubeL
 			if err := configureKubeDNSService(ctx, tenantClient); err != nil {
 				return struct{}{}, err
 			}
-			if err := labelSystemNamespacesPrivileged(ctx, tenantClient, cluster.CniPlugin); err != nil {
-				return struct{}{}, err
-			}
 
 			return struct{}{}, nil
 		},
@@ -95,61 +85,6 @@ func (a *Activities) InstallKubeLocalDNS(ctx context.Context, input InstallKubeL
 
 	_, err := conditionUpdateWrapper.Run(ctx)
 	return err
-}
-
-// labelSystemNamespacesPrivileged labels kube-system and the CNI's namespace(s)
-// privileged. cniNamespaceForPlugin returning nil (an unrecognized plugin) is a
-// deliberate no-op, not an error, so provisioning isn't blocked on it.
-func labelSystemNamespacesPrivileged(ctx context.Context, tenantClient ctrlclient.Client, plugin db.CniPlugin) error {
-	if err := labelNamespacePrivileged(ctx, tenantClient, metav1.NamespaceSystem); err != nil {
-		return err
-	}
-	for _, ns := range cniNamespacesForPlugin(plugin) {
-		if err := labelNamespacePrivileged(ctx, tenantClient, ns); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// cniNamespacesForPlugin returns the CNI namespace(s) to label. Each is created
-// synchronously by the CNI install, which finishes before this activity
-// starts, so a missing one is an error. calico-system is left out: the tigera
-// operator creates it asynchronously, already labeled enforce=privileged, and
-// keeps it that way.
-//
-// These names aren't importable constants anywhere else in the codebase:
-// agent/internal/agent/cni.go's own "tigera-operator" (its Calico --namespace
-// flag) is the same kind of inline literal, in a separate Go module this one
-// can't import from.
-func cniNamespacesForPlugin(plugin db.CniPlugin) []string {
-	switch plugin {
-	case db.CNICalico:
-		return []string{"tigera-operator"}
-	case db.CNIOvnKubernetes:
-		return []string{ovnKubernetesNamespace}
-	default:
-		return nil
-	}
-}
-
-func labelNamespacePrivileged(ctx context.Context, tenantClient ctrlclient.Client, name string) error {
-	var ns corev1.Namespace
-	if err := tenantClient.Get(ctx, ctrlclient.ObjectKey{Name: name}, &ns); err != nil {
-		return fmt.Errorf("getting namespace %s: %w", name, err)
-	}
-	if ns.Labels[psaEnforceLabelKey] == "privileged" {
-		return nil
-	}
-	before := ns.DeepCopy()
-	if ns.Labels == nil {
-		ns.Labels = map[string]string{}
-	}
-	ns.Labels[psaEnforceLabelKey] = "privileged"
-	if err := tenantClient.Patch(ctx, &ns, ctrlclient.MergeFrom(before)); err != nil {
-		return fmt.Errorf("labeling namespace %s: %w", name, err)
-	}
-	return nil
 }
 
 func applyKubeLocalDNSManifest(ctx context.Context, tenantClient ctrlclient.Client, fieldManagerName string) error {

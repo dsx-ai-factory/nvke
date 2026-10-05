@@ -4,12 +4,16 @@
 package workflows
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
@@ -59,4 +63,49 @@ func TestInstallKubeLocalDNSSchedulesInProcessActivity(t *testing.T) {
 
 func installKubeLocalDNSTestWorkflow(ctx workflow.Context, clusterID uuid.UUID) error {
 	return installKubeLocalDNS(ctx, clusterID)
+}
+
+func TestLabelSystemNamespacesForPSASchedulesActivityWithConditionMessage(t *testing.T) {
+	clusterID := uuid.New()
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	a := &activities.Activities{}
+
+	env.OnActivity(a.LabelSystemNamespacesForPSA, mock.Anything, activities.LabelSystemNamespacesForPSAInput{
+		ClusterID:                           clusterID,
+		ClusterProvisioningConditionMessage: "Labeling system namespaces for Pod Security Admission",
+	}).Return(nil).Once()
+
+	env.ExecuteWorkflow(labelSystemNamespacesForPSATestWorkflow, clusterID)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+func TestLabelSystemNamespacesForPSARetriesAreBounded(t *testing.T) {
+	clusterID := uuid.New()
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	a := &activities.Activities{}
+
+	env.OnActivity(a.LabelSystemNamespacesForPSA, mock.Anything, mock.Anything).
+		Return(errors.New("getting namespace kube-system: not found"))
+
+	attempts := 0
+	env.SetOnActivityStartedListener(func(info *activity.Info, _ context.Context, _ converter.EncodedValues) {
+		if info.ActivityType.Name == "LabelSystemNamespacesForPSA" {
+			attempts++
+		}
+	})
+
+	env.ExecuteWorkflow(labelSystemNamespacesForPSATestWorkflow, clusterID)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.ErrorContains(t, env.GetWorkflowError(), "failed to label system namespaces for Pod Security Admission")
+	require.Equal(t, 10, attempts)
+}
+
+func labelSystemNamespacesForPSATestWorkflow(ctx workflow.Context, clusterID uuid.UUID) error {
+	return labelSystemNamespacesForPSA(ctx, clusterID, "Labeling system namespaces for Pod Security Admission")
 }

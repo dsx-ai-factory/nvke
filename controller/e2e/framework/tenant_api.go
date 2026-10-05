@@ -43,7 +43,8 @@ const (
 )
 
 // TenantAPIServer is the narrow Kubernetes API fixture needed by the production
-// InstallKubeLocalDNS activity in the gofail crash-recovery scenario.
+// InstallKubeLocalDNS and LabelSystemNamespacesForPSA activities in the gofail
+// crash-recovery scenario.
 type TenantAPIServer struct {
 	server *httptest.Server
 

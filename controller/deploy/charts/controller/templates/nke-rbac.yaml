@@ -118,7 +118,7 @@ data:
       - apiGroups: [""]
         resources: ["pods/eviction"]
         verbs: ["create"]
-      # InstallKubeLocalDNS gets and patches these specific cluster-scoped
+      # LabelSystemNamespacesForPSA gets and patches these specific cluster-scoped
       # Namespace objects to label them privileged for Pod Security
       # Admission; resourceNames keeps it from reading or writing any other
       # namespace. Add a rule here for a new CNI's namespace once
