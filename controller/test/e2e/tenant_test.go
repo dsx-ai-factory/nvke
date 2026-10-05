@@ -460,25 +460,11 @@ func nicoForgeTenant() testSpec {
 		// against the 30 minutes this used to be, while the instances were
 		// still reporting Terminating.
 		options: nke.Options{Provision: 90 * time.Minute, Delete: 45 * time.Minute, Poll: 30 * time.Second},
-		// Everything that asserts against the cluster as it stands. The ones
-		// left off all add, remove, replace, reboot or roll a node: scale,
-		// nodeReplacement, manualScaleDown, nodePoolLifecycle,
-		// nodePoolCascade, reboot, upgrade, cpRotation and the three
-		// controlPlaneController mutations.
-		//
-		// Off for other reasons:
-		//   postReadyChecks and kubeVipRouteWithdrawal want a control-plane
-		//   VIP, which no Forge tenant here is created with.
-		//   certificateRenewal restarts every control-plane node in turn.
-		//   brownfieldEtcdEncryption and brownfieldOIDC mutate a running
-		//   cluster and roll the control plane to do it.
-		validate: validations{
-			clusterConfig:          true,
-			openVSwitch:            true,
-			ovnNetworking:          true,
-			csrApproval:            true,
-			controlPlaneController: true,
-		},
+		// Provisioning only, because that is the path this lane exercises:
+		// a tenant is created on real hardware, its nodes reach Ready, and it
+		// is deleted. The rest assert against a running cluster and belong to
+		// a lane that has one for longer than a GB200 can be held.
+		validate: validations{provisioningOnly: true},
 	}
 }
 
