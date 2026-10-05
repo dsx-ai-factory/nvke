@@ -478,12 +478,13 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			test    tenantTest
 			failed  bool
 			deleted bool
-			// Set once the delete spec has asked CWE to delete and waited out
-			// its budget, whether or not the cluster went. deleted alone cannot
-			// carry that: it means the wait succeeded, so a timed-out wait left
-			// it false and the AfterAll below spent a second full budget on the
-			// same cluster.
-			deleteWaited bool
+			// Set once CWE has accepted a delete for this cluster, before the
+			// wait for it to go. deleted alone cannot carry that: it means the
+			// wait succeeded, so a timed-out wait left it false and the
+			// AfterAll below spent a second full budget on the same cluster.
+			// It stays false when the delete request itself failed, so the
+			// AfterAll still retries a delete CWE never took.
+			deleteAccepted bool
 		)
 
 		// Record any spec failure so the cluster delete can honor preserveOnFailure.
@@ -629,8 +630,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				Skip("Preserving the cluster after a failure")
 			}
 
-			deleteWaited = true
-			test.deleteClusterAndWait(ctx)
+			test.deleteClusterAndWait(ctx, &deleteAccepted)
 			deleted = true
 		}, Label("lifecycle"), NodeTimeout(1*time.Hour))
 
@@ -680,14 +680,14 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			}
 			// Use AfterAll so the cluster is removed even if a spec before the
 			// delete spec fails (or the delete spec is skipped). It is a no-op
-			// once the delete spec has run.
+			// once CWE has accepted a delete for the cluster.
 			switch {
 			case deleted, test.cluster == nil:
 			case keepCluster:
-			case deleteWaited:
-				// The delete spec already asked CWE to delete this cluster and
-				// waited the full budget without it going. Asking again changes
-				// nothing, and waiting again spends the suite's remaining time
+			case deleteAccepted:
+				// CWE already accepted a delete for this cluster and the wait
+				// ran out without it going. Asking again changes nothing, and
+				// waiting again spends the suite's remaining time
 				// on a cluster that is not moving -- time the site teardown
 				// needs, because releasing the site is what stops its Forge
 				// instance leaking. Run 36147423536 waited three times on one
@@ -697,7 +697,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				GinkgoLogr.Info("tenant delete already timed out; leaving it to the site sweep rather than waiting again",
 					"cluster", test.cluster.ID)
 			default:
-				test.deleteClusterAndWait(ctx)
+				test.deleteClusterAndWait(ctx, &deleteAccepted)
 			}
 			// Sized to what this node can actually contain rather than to the
 			// suite: WaitForClusterDeleted is bounded by the entry's
@@ -1059,11 +1059,14 @@ func validateTenantAccessSecretGCPostDelete(test *tenantTest) {
 }
 
 // deleteClusterAndWait deletes the tenant cluster and blocks until CWE reports
-// it gone (404). Shared by the delete spec and the AfterAll cleanup.
-func (t *tenantTest) deleteClusterAndWait(ctx context.Context) {
+// it gone (404). Shared by the delete spec and the AfterAll cleanup. accepted
+// is set once CWE takes the delete, so a failure in the wait leaves it true and
+// a failure in the request leaves it as it was.
+func (t *tenantTest) deleteClusterAndWait(ctx context.Context, accepted *bool) {
 	GinkgoHelper()
 	By("Deleting the tenant cluster")
 	Expect(t.lifecycle.DeleteCluster(ctx, t.cluster.ID)).To(Succeed())
+	*accepted = true
 	By("Waiting for the tenant cluster to be deleted")
 	Expect(t.lifecycle.WaitForClusterDeleted(ctx, t.cluster.ID)).To(Succeed())
 }

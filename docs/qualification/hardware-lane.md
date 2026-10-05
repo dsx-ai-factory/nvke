@@ -282,9 +282,14 @@ The blocked arrow from the runner is why the relay exists at all, and the
 dotted edge is the relay: a local address on the runner whose traffic comes out
 of the site node.
 
-**Teardown.** `SweepTenants` deletes every tenant cluster CWE knows about
-before the site node is released, so a tenant is never orphaned by the machine
-its control plane ran on going away.
+**Teardown.** Before the site node is released, `SweepTenants` asks CWE to
+delete every tenant cluster it knows about and waits for each to go, so a
+tenant's Forge instances are not left allocated by the site node going away
+first. The sweep is an attempt, not a guarantee: it runs inside a 20-minute
+budget, and when it fails the site node is released anyway. The run log then
+carries `tenant sweep failed; releasing the site anyway` with the tenants it
+could not delete, and the instances of their tenant control-plane pools and
+tenant worker pools have to be released by hand in the Forge site.
 
 ## 4. Node pools
 
