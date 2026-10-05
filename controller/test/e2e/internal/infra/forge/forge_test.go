@@ -253,7 +253,7 @@ func TestProvisionNode(t *testing.T) {
 	}
 	wantRan := []string{
 		"cloud-init status --wait >/dev/null 2>&1 || true",
-		"cloud-init status --format=json || true",
+		"cloud-init status --format=json 2>/dev/null || true",
 	}
 	if got := dialer.conn.ran; !slices.Equal(got, wantRan) {
 		t.Errorf("ran %q, want the node held until cloud-init finished and then read for errors", got)

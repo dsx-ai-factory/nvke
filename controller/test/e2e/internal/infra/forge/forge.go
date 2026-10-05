@@ -339,7 +339,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 		// here: the alternative is a bare auth error after the whole
 		// provisioning wait, with nothing naming the setting to change.
 		if strings.Contains(err.Error(), "unable to authenticate") {
-			err = fmt.Errorf("%w\n\tthe node answered but refused this run's key, so cloud-init likely wrote authorized_keys for a different account: check node.user (%q) against the account %s bakes", err, p.nodeUser(), req.Name)
+			err = fmt.Errorf("%w\n\t%s answered but refused this run's key, so cloud-init likely wrote authorized_keys for a different account: check node.user (%q) against the account its OS image bakes", err, req.Name, p.nodeUser())
 		}
 		return fail(err)
 	}
@@ -380,7 +380,10 @@ func awaitCloudInit(ctx context.Context, conn Conn, name string) error {
 		return fmt.Errorf("forge: waiting for cloud-init on %s: %w", name, err)
 	}
 
-	out, err := conn.Run(ctx, "cloud-init status --format=json || true")
+	// stderr discarded, not merged: Run returns combined output, and a
+	// warning on stderr would be spliced into the JSON and fail the parse,
+	// rejecting a node that is fine.
+	out, err := conn.Run(ctx, "cloud-init status --format=json 2>/dev/null || true")
 	if err != nil {
 		return fmt.Errorf("forge: reading cloud-init status on %s: %w", name, err)
 	}
