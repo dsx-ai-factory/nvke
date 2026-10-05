@@ -1,0 +1,227 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Run-window summary metrics profile for this scenario.
+#
+# Adapted from the metrics profiles that ship with the kube-burner-ocp
+# companion project, on the same basis as metrics.yml beside it: trimmed, and
+# retargeted at a kube-prometheus-stack deployment. Where metrics.yml collects
+# time series, the queries here collect one summary value per run window --
+# the max-* and avg-* documents the published result quotes.
+#
+# Named by cluster-density-v2.yml as one of its metrics profiles.
+
+---
+# API server
+
+- query: avg_over_time(histogram_quantile(0.99, sum(irate(apiserver_request_duration_seconds_bucket{job="apiserver", verb=~"LIST|GET", subresource!~"log|exec|portforward|attach|proxy"}[2m])) by (le, resource, verb, scope))[{{.elapsed}}:]) > 0
+  metricName: avg-ro-apicalls-latency
+  instant: true
+
+- query: max_over_time(histogram_quantile(0.99, sum(irate(apiserver_request_duration_seconds_bucket{job="apiserver", verb=~"LIST|GET", subresource!~"log|exec|portforward|attach|proxy"}[2m])) by (le, resource, verb, scope))[{{.elapsed}}:]) > 0
+  metricName: max-ro-apicalls-latency
+  instant: true
+
+- query: avg_over_time(histogram_quantile(0.99, sum(irate(apiserver_request_duration_seconds_bucket{job="apiserver", verb=~"POST|PUT|DELETE|PATCH", subresource!~"log|exec|portforward|attach|proxy"}[2m])) by (le, resource, verb, scope))[{{.elapsed}}:]) > 0
+  metricName: avg-mutating-apicalls-latency
+  instant: true
+
+- query: max_over_time(histogram_quantile(0.99, sum(irate(apiserver_request_duration_seconds_bucket{job="apiserver", verb=~"POST|PUT|DELETE|PATCH", subresource!~"log|exec|portforward|attach|proxy"}[2m])) by (le, resource, verb, scope))[{{.elapsed}}:]) > 0
+  metricName: max-mutating-apicalls-latency
+  instant: true
+
+- query: max_over_time(sum(apiserver_current_inflight_requests{job="apiserver",request_kind="readOnly"})[{{.elapsed}}:])
+  metricName: max-readonly-inflight
+  instant: true
+
+- query: max_over_time(sum(apiserver_current_inflight_requests{job="apiserver",request_kind="mutating"})[{{.elapsed}}:])
+  metricName: max-mutating-inflight
+  instant: true
+
+# Kubelet (no kube_node_role join — NKE doesn't apply the worker label uniformly)
+
+- query: avg(avg_over_time(irate(process_cpu_seconds_total{job="kubelet"}[2m])[{{.elapsed}}:]))
+  metricName: cpu-kubelet
+  instant: true
+
+- query: max(max_over_time(irate(process_cpu_seconds_total{job="kubelet"}[2m])[{{.elapsed}}:]))
+  metricName: max-cpu-kubelet
+  instant: true
+
+- query: avg(avg_over_time(process_resident_memory_bytes{job="kubelet"}[{{.elapsed}}:]))
+  metricName: memory-kubelet
+  instant: true
+
+- query: max(max_over_time(process_resident_memory_bytes{job="kubelet"}[{{.elapsed}}:]))
+  metricName: max-memory-kubelet
+  instant: true
+
+# etcd
+
+- query: avg(avg_over_time(histogram_quantile(0.99, rate(etcd_disk_backend_commit_duration_seconds_bucket[2m]))[{{.elapsed}}:]))
+  metricName: 99thEtcdDiskBackendCommit
+  instant: true
+
+- query: max(max_over_time(histogram_quantile(0.99, rate(etcd_disk_backend_commit_duration_seconds_bucket[2m]))[{{.elapsed}}:]))
+  metricName: max-99thEtcdDiskBackendCommit
+  instant: true
+
+- query: avg(avg_over_time(histogram_quantile(0.99, rate(etcd_disk_wal_fsync_duration_seconds_bucket[2m]))[{{.elapsed}}:]))
+  metricName: 99thEtcdDiskWalFsync
+  instant: true
+
+- query: max(max_over_time(histogram_quantile(0.99, rate(etcd_disk_wal_fsync_duration_seconds_bucket[2m]))[{{.elapsed}}:]))
+  metricName: max-99thEtcdDiskWalFsync
+  instant: true
+
+- query: avg(avg_over_time(histogram_quantile(0.99, irate(etcd_network_peer_round_trip_time_seconds_bucket[2m]))[{{.elapsed}}:]))
+  metricName: 99thEtcdRoundTripTime
+  instant: true
+
+- query: max(max_over_time(histogram_quantile(0.99, irate(etcd_network_peer_round_trip_time_seconds_bucket[2m]))[{{.elapsed}}:]))
+  metricName: max-99thEtcdRoundTripTime
+  instant: true
+
+- query: max(max_over_time(etcd_mvcc_db_total_size_in_use_in_bytes[{{.elapsed}}:]))
+  metricName: max-etcdDBSizeInUseBytes
+  instant: true
+
+# Control plane components (NKE: static pods in kube-system)
+
+- query: avg(avg_over_time(topk(3, sum(irate(container_cpu_usage_seconds_total{name!="", namespace="kube-system", pod=~"kube-apiserver-.*"}[2m])) by (pod))[{{.elapsed}}:]))
+  metricName: cpu-kube-apiserver
+  instant: true
+
+- query: max(max_over_time(topk(3, sum(irate(container_cpu_usage_seconds_total{name!="", namespace="kube-system", pod=~"kube-apiserver-.*"}[2m])) by (pod))[{{.elapsed}}:]))
+  metricName: max-cpu-kube-apiserver
+  instant: true
+
+- query: avg(avg_over_time(topk(3, sum(container_memory_rss{name!="", namespace="kube-system", pod=~"kube-apiserver-.*"}) by (pod))[{{.elapsed}}:]))
+  metricName: memory-kube-apiserver
+  instant: true
+
+- query: max(max_over_time(topk(3, sum(container_memory_rss{name!="", namespace="kube-system", pod=~"kube-apiserver-.*"}) by (pod))[{{.elapsed}}:]))
+  metricName: max-memory-kube-apiserver
+  instant: true
+
+- query: avg(avg_over_time(topk(1, sum(irate(container_cpu_usage_seconds_total{name!="", namespace="kube-system", pod=~"kube-controller-manager-.*"}[2m])) by (pod))[{{.elapsed}}:]))
+  metricName: cpu-kube-controller-manager
+  instant: true
+
+- query: max(max_over_time(topk(1, sum(irate(container_cpu_usage_seconds_total{name!="", namespace="kube-system", pod=~"kube-controller-manager-.*"}[2m])) by (pod))[{{.elapsed}}:]))
+  metricName: max-cpu-kube-controller-manager
+  instant: true
+
+- query: avg(avg_over_time(topk(1, sum(container_memory_rss{name!="", namespace="kube-system", pod=~"kube-controller-manager-.*"}) by (pod))[{{.elapsed}}:]))
+  metricName: memory-kube-controller-manager
+  instant: true
+
+- query: max(max_over_time(topk(1, sum(container_memory_rss{name!="", namespace="kube-system", pod=~"kube-controller-manager-.*"}) by (pod))[{{.elapsed}}:]))
+  metricName: max-memory-kube-controller-manager
+  instant: true
+
+- query: avg(avg_over_time(topk(1, sum(irate(container_cpu_usage_seconds_total{name!="", namespace="kube-system", pod=~"kube-scheduler-.*"}[2m])) by (pod))[{{.elapsed}}:]))
+  metricName: cpu-kube-scheduler
+  instant: true
+
+- query: max(max_over_time(topk(1, sum(irate(container_cpu_usage_seconds_total{name!="", namespace="kube-system", pod=~"kube-scheduler-.*"}[2m])) by (pod))[{{.elapsed}}:]))
+  metricName: max-cpu-kube-scheduler
+  instant: true
+
+- query: avg(avg_over_time(topk(1, sum(container_memory_rss{name!="", namespace="kube-system", pod=~"kube-scheduler-.*"}) by (pod))[{{.elapsed}}:]))
+  metricName: memory-kube-scheduler
+  instant: true
+
+- query: max(max_over_time(topk(1, sum(container_memory_rss{name!="", namespace="kube-system", pod=~"kube-scheduler-.*"}) by (pod))[{{.elapsed}}:]))
+  metricName: max-memory-kube-scheduler
+  instant: true
+
+- query: avg(avg_over_time(topk(3, sum(irate(container_cpu_usage_seconds_total{name!="", namespace="kube-system", pod=~"etcd-.*"}[2m])) by (pod))[{{.elapsed}}:]))
+  metricName: cpu-etcd
+  instant: true
+
+- query: max(max_over_time(topk(3, sum(irate(container_cpu_usage_seconds_total{name!="", namespace="kube-system", pod=~"etcd-.*"}[2m])) by (pod))[{{.elapsed}}:]))
+  metricName: max-cpu-etcd
+  instant: true
+
+- query: avg(avg_over_time(topk(3, sum(container_memory_rss{name!="", namespace="kube-system", pod=~"etcd-.*"}) by (pod))[{{.elapsed}}:]))
+  metricName: memory-etcd
+  instant: true
+
+- query: max(max_over_time(topk(3, sum(container_memory_rss{name!="", namespace="kube-system", pod=~"etcd-.*"}) by (pod))[{{.elapsed}}:]))
+  metricName: max-memory-etcd
+  instant: true
+
+# CNI — ovn-kubernetes (upstream OVN-K)
+
+- query: avg(avg_over_time(irate(container_cpu_usage_seconds_total{name!="", namespace="ovn-kubernetes", pod=~"ovnkube-control-plane.+", container!="POD"}[2m])[{{.elapsed}}:])) by (container)
+  metricName: cpu-ovn-control-plane
+  instant: true
+
+- query: max(max_over_time(irate(container_cpu_usage_seconds_total{name!="", namespace="ovn-kubernetes", pod=~"ovnkube-control-plane.+", container!="POD"}[2m])[{{.elapsed}}:])) by (container)
+  metricName: max-cpu-ovn-control-plane
+  instant: true
+
+- query: avg(avg_over_time(container_memory_rss{name!="", namespace="ovn-kubernetes", pod=~"ovnkube-control-plane.+", container!="POD"}[{{.elapsed}}:])) by (container)
+  metricName: memory-ovn-control-plane
+  instant: true
+
+- query: max(max_over_time(container_memory_rss{name!="", namespace="ovn-kubernetes", pod=~"ovnkube-control-plane.+", container!="POD"}[{{.elapsed}}:])) by (container)
+  metricName: max-memory-ovn-control-plane
+  instant: true
+
+- query: avg(avg_over_time(irate(container_cpu_usage_seconds_total{name!="", namespace="ovn-kubernetes", pod=~"ovnkube-node.+", container!="POD"}[2m])[{{.elapsed}}:])) by (container)
+  metricName: cpu-ovnkube-node
+  instant: true
+
+- query: max(max_over_time(irate(container_cpu_usage_seconds_total{name!="", namespace="ovn-kubernetes", pod=~"ovnkube-node.+", container!="POD"}[2m])[{{.elapsed}}:])) by (container)
+  metricName: max-cpu-ovnkube-node
+  instant: true
+
+- query: avg(avg_over_time(container_memory_rss{name!="", namespace="ovn-kubernetes", pod=~"ovnkube-node.+", container!="POD"}[{{.elapsed}}:])) by (container)
+  metricName: memory-ovnkube-node
+  instant: true
+
+- query: max(max_over_time(container_memory_rss{name!="", namespace="ovn-kubernetes", pod=~"ovnkube-node.+", container!="POD"}[{{.elapsed}}:])) by (container)
+  metricName: max-memory-ovnkube-node
+  instant: true
+
+# Prometheus self-monitoring (kube-prometheus-stack convention: pods named `prometheus-*` in `monitoring`)
+
+- query: avg(avg_over_time(sum(irate(container_cpu_usage_seconds_total{name!="", namespace="monitoring", pod=~"prometheus-.*"}[2m])) by (pod)[{{.elapsed}}:]))
+  metricName: cpu-prometheus
+  instant: true
+
+- query: max(max_over_time(sum(irate(container_cpu_usage_seconds_total{name!="", namespace="monitoring", pod=~"prometheus-.*"}[2m])) by (pod)[{{.elapsed}}:]))
+  metricName: max-cpu-prometheus
+  instant: true
+
+- query: avg(avg_over_time(sum(container_memory_rss{name!="", namespace="monitoring", pod=~"prometheus-.*"}) by (pod)[{{.elapsed}}:]))
+  metricName: memory-prometheus
+  instant: true
+
+- query: max(max_over_time(sum(container_memory_rss{name!="", namespace="monitoring", pod=~"prometheus-.*"}) by (pod)[{{.elapsed}}:]))
+  metricName: max-memory-prometheus
+  instant: true
+
+# Nodes (no role split — NKE doesn't apply node-role.kubernetes.io/worker by default)
+
+- query: avg(avg_over_time(sum(irate(node_cpu_seconds_total{mode!="idle", mode!="steal"}[2m])) by (instance)[{{.elapsed}}:]))
+  metricName: cpu-nodes
+  instant: true
+
+- query: max(max_over_time(sum(irate(node_cpu_seconds_total{mode!="idle", mode!="steal"}[2m])) by (instance)[{{.elapsed}}:]))
+  metricName: max-cpu-nodes
+  instant: true
+
+- query: avg(avg_over_time((node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)[{{.elapsed}}:]))
+  metricName: memory-nodes
+  instant: true
+
+- query: max(max_over_time((node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)[{{.elapsed}}:]))
+  metricName: max-memory-nodes
+  instant: true
+
+- query: max_over_time(sum(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)[{{.elapsed}}:])
+  metricName: max-memory-sum-nodes
+  instant: true

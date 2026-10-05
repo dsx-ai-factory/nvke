@@ -1,0 +1,176 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Time-series metrics profile for this scenario.
+#
+# Adapted from the metrics profiles that ship with the kube-burner-ocp
+# companion project: trimmed to the series this scenario reports, and
+# retargeted at a kube-prometheus-stack deployment -- the container CPU and
+# memory queries filter on the control-plane and CNI namespaces rather than
+# OpenShift's. Roughly two thirds of the queries here are shared with the
+# upstream profile; the rest are additions or replacements.
+#
+# Named by cluster-density-v2.yml as one of its metrics profiles. Run kube-burner
+# from engine/; it resolves paths from its working directory. kube-burner evaluates each query against the Prometheus given in
+# metricsEndpoints and writes the series to the run's metrics directory.
+
+- query: histogram_quantile(0.99, sum(irate(apiserver_request_duration_seconds_bucket{job="apiserver", verb=~"LIST|GET", subresource!~"log|exec|portforward|attach|proxy"}[2m])) by (le, resource, verb, scope)) > 0
+  metricName: readOnlyAPICallsLatency
+
+- query: histogram_quantile(0.99, sum(irate(apiserver_request_duration_seconds_bucket{job="apiserver", verb=~"POST|PUT|DELETE|PATCH", subresource!~"log|exec|portforward|attach|proxy"}[2m])) by (le, resource, verb, scope)) > 0
+  metricName: mutatingAPICallsLatency
+
+- query: sum(irate(apiserver_request_total{job="apiserver",verb!="WATCH"}[2m])) by (verb,resource,code) > 0
+  metricName: APIRequestRate
+
+- query: sum(apiserver_current_inflight_requests{job="apiserver"}) by (request_kind)
+  metricName: apiserverInflight
+
+# etcd
+
+- query: histogram_quantile(0.99, rate(etcd_disk_wal_fsync_duration_seconds_bucket[2m]))
+  metricName: 99thEtcdDiskWalFsyncDurationSeconds
+
+- query: histogram_quantile(0.99, rate(etcd_disk_backend_commit_duration_seconds_bucket[2m]))
+  metricName: 99thEtcdDiskBackendCommitDurationSeconds
+
+- query: histogram_quantile(0.99, rate(etcd_network_peer_round_trip_time_seconds_bucket[5m]))
+  metricName: 99thEtcdRoundTripTimeSeconds
+
+- query: rate(etcd_server_leader_changes_seen_total[2m])
+  metricName: etcdLeaderChangesRate
+
+- query: etcd_mvcc_db_total_size_in_use_in_bytes
+  metricName: etcdDBSizeInUseBytes
+
+- query: etcd_mvcc_db_total_size_in_bytes
+  metricName: etcdDBSizeTotalBytes
+
+# Containers & pod metrics
+
+- query: (sum(irate(container_cpu_usage_seconds_total{name!="",container!~"POD|",namespace=~"kube-system|ovn-.*"}[2m]) * 100) by (container, pod, namespace, node)) > 0
+  metricName: containerCPU
+
+- query: sum(container_memory_rss{name!="",container!~"POD|",namespace=~"kube-system|ovn-.*"}) by (container, pod, namespace, node)
+  metricName: containerMemory
+
+# Kubelet
+
+- query: sum(irate(process_cpu_seconds_total{job="kubelet"}[2m]) * 100) by (node)
+  metricName: kubeletCPU
+
+- query: sum(process_resident_memory_bytes{job="kubelet"}) by (node)
+  metricName: kubeletMemory
+
+- query: histogram_quantile(0.99, sum(rate(kubelet_pod_start_duration_seconds_bucket[2m])) by (le))
+  metricName: 99thKubeletPodStartDuration
+
+# Container runtime ops — emitted by kubelet, runtime-agnostic (NKE uses
+# containerd; these same metric names work for crio/dockerd as well).
+
+- query: histogram_quantile(0.99, sum(rate(kubelet_runtime_operations_duration_seconds_bucket[2m])) by (le, operation_type))
+  metricName: 99thRuntimeOpsLatency
+
+- query: sum(rate(kubelet_runtime_operations_total[2m])) by (operation_type)
+  metricName: runtimeOpsRate
+
+- query: sum(rate(kubelet_runtime_operations_errors_total[2m])) by (operation_type)
+  metricName: runtimeOpsErrorRate
+
+# Scheduler — include both old and new metric names so one always fires across K8s versions
+
+- query: sum(irate(scheduler_schedule_attempts_total{result="scheduled"}[2m]))
+  metricName: schedulerThroughput
+
+- query: histogram_quantile(0.99, sum(rate(scheduler_e2e_scheduling_duration_seconds_bucket[2m])) by (le))
+  metricName: 99thSchedulerE2ELatencyLegacy
+
+- query: histogram_quantile(0.99, sum(rate(scheduler_scheduling_attempt_duration_seconds_bucket[2m])) by (le))
+  metricName: 99thSchedulerAttemptLatency
+
+# Controller manager
+
+- query: sum(workqueue_depth) by (name, instance)
+  metricName: kcmWorkqueueDepth
+
+- query: histogram_quantile(0.99, sum(rate(workqueue_queue_duration_seconds_bucket[2m])) by (le, name))
+  metricName: 99thKcmWorkqueueLatency
+
+# Node metrics (no role join — NKE doesn't apply node-role labels uniformly)
+
+- query: sum(irate(node_cpu_seconds_total[2m])) by (mode, instance)
+  metricName: nodeCPU
+
+- query: node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes
+  metricName: nodeMemoryUtilization
+
+# Node network
+
+- query: sum by (instance, device) (irate(node_network_receive_bytes_total{device!~"lo"}[2m]) > 0)
+  metricName: nodeRxNetwork
+
+- query: sum by (instance, device) (irate(node_network_transmit_bytes_total{device!~"lo"}[2m]) > 0)
+  metricName: nodeTxNetwork
+
+- query: sum by (instance, device) (irate(node_network_receive_errs_total{device!~"lo"}[2m]) > 0)
+  metricName: nodeNetworkErrRXTotal
+
+- query: sum by (instance, device) (irate(node_network_transmit_errs_total{device!~"lo"}[2m]) > 0)
+  metricName: nodeNetworkErrTXTotal
+
+# Cluster object counts
+
+- query: sum(kube_namespace_status_phase) by (phase) > 0
+  metricName: namespaceCount
+
+- query: sum(kube_pod_status_phase{}) by (phase)
+  metricName: podStatusCount
+
+- query: count(kube_secret_info{})
+  metricName: secretCount
+  instant: true
+
+- query: count(kube_deployment_spec_replicas{})
+  metricName: deploymentCount
+  instant: true
+
+- query: count(kube_configmap_info{})
+  metricName: configmapCount
+  instant: true
+
+- query: count(kube_service_info{})
+  metricName: serviceCount
+  instant: true
+
+- query: sum(kube_node_status_condition{status="true"}) by (condition)
+  metricName: nodeStatus
+
+# Page faults
+
+- query: rate(node_vmstat_pgmajfault[1m])
+  metricName: nodeMajorFaults
+
+# Version info (info-style gauges; one doc per instance/version)
+
+- query: kubernetes_build_info{job="apiserver"}
+  metricName: kubernetesVersion
+  instant: true
+
+- query: etcd_server_version
+  metricName: etcdVersion
+  instant: true
+
+# Node count parity panel — kube_node_info exposes labels: node, kernel,
+# kubelet_version, os_image, internal_ip, etc. NKE doesn't apply role labels
+# uniformly, so the OCP "Node count by role" view collapses to "Node count
+# by kubelet_version" in the dashboard.
+
+- query: kube_node_info
+  metricName: nodeRoles
+  instant: true
+
+# Per-node pod distribution (kubelet exposes a `node` label after the
+# kube-prom-stack relabel that gives kubeletCPU/Memory their node labels too)
+
+- query: sum(kubelet_running_pods) by (node)
+  metricName: podDistribution

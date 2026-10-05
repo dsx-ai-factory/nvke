@@ -1,0 +1,89 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+---
+global:
+  gc: true
+  gcMetrics: false
+  deletionStrategy: default
+  measurements:
+    - name: podLatency
+      thresholds:
+        - conditionType: Ready
+          metric: P99
+          threshold: 2m0s
+    # serviceLatency is default-on here because cluster-density-v2 creates
+    # 5 Services per iteration. svcTimeout = how long the measurement waits
+    # for the Service's endpoint to be reachable from inside the cluster.
+    - name: serviceLatency
+      svcTimeout: 10s
+    # netpolLatency intentionally NOT enabled: kube-burner's netpolLatency
+    # measurement needs a `network-policy-proxy` pod + ping targets on
+    # port 8080 that the cluster-density-v2 workload doesn't set up. With
+    # those missing, the measurement runs but writes empty documents and
+    # logs `Empty document list in netpolLatencyMeasurement-...`. A future
+    # dedicated `network-policy` workload would be the right place to
+    # enable it.
+metricsEndpoints:
+  - endpoint: "{{.PROMETHEUS_URL}}"
+    metrics: [metrics.yml,metrics-report.yml]
+    alerts: [../../../../alerts/1.34/control-plane.yml]
+    skipTLSVerify: false
+    indexer:
+      type: local
+      metricsDirectory: collected-metrics
+
+
+
+jobs:
+  - name: cluster-density-v2
+    namespace: cluster-density-v2
+    jobIterations: 378
+    qps: 20
+    burst: 20
+    cleanup: false
+    namespacedIterations: true
+    podWait: false
+    waitWhenFinished: true
+    preLoadImages: true
+    churnConfig:
+      cycles: 0
+      duration: 0s
+      percent: 10
+      delay: 2m0s
+      mode: namespaces
+    namespaceLabels:
+      pod-security.kubernetes.io/enforce: privileged
+      pod-security.kubernetes.io/audit: privileged
+      pod-security.kubernetes.io/warn: privileged
+    objects:
+
+      - objectTemplate: service.yml
+        replicas: 5
+
+      - objectTemplate: secret.yml
+        replicas: 10
+
+      - objectTemplate: configmap.yml
+        replicas: 10
+
+      - objectTemplate: np-deny-all.yml
+        replicas: 1
+
+      - objectTemplate: np-allow-from-clients.yml
+        replicas: 1
+
+      - objectTemplate: np-allow-from-ingress.yml
+        replicas: 1
+
+      - objectTemplate: deployment-server.yml
+        replicas: 3
+        inputVars:
+          podReplicas: 2
+          nodeSelector: {"nodeSelectorTerms":[{"matchExpressions":[{"key":"node-role.kubernetes.io/worker","operator":"Exists"}]}]}
+
+      - objectTemplate: deployment-client.yml
+        replicas: 2
+        inputVars:
+          podReplicas: 2
+          nodeSelector: {"nodeSelectorTerms":[{"matchExpressions":[{"key":"node-role.kubernetes.io/worker","operator":"Exists"}]}]}
