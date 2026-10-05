@@ -16,7 +16,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -200,18 +199,6 @@ func (f *fakeSession) cmd(t *testing.T, substr string) string {
 	return unquoted(f.runs[i])
 }
 
-type fakeDeployer struct {
-	called bool
-	target DeployTarget
-	err    error
-}
-
-func (d *fakeDeployer) Deploy(_ context.Context, _ infra.Session, t DeployTarget) error {
-	d.called = true
-	d.target = t
-	return d.err
-}
-
 func writeFile(t *testing.T, p, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -222,47 +209,39 @@ func writeFile(t *testing.T, p, content string) {
 	}
 }
 
-func testCandidate(t *testing.T, d Deployer) Candidate {
+// testNkectl is the binary the bootstrap stages, written per test so its
+// absence can be exercised separately from a bad spec.
+func testNkectl(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "nkectl")
+	writeFile(t, path, "binary")
+	return path
+}
+
+func testSite(t *testing.T) Spec {
 	t.Helper()
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "nkectl"), "binary")
 	writeFile(t, filepath.Join(dir, "cwe.tar"), "image")
-	checkout := filepath.Join(dir, "checkout")
-	writeFile(t, filepath.Join(checkout, "build", "use-nke-sbom.sh"), "#!/bin/bash")
-	writeFile(t, filepath.Join(checkout, "controller", "deploy", "nke-sbom", "release.yaml"), "items: []")
-	return Candidate{
-		SiteName:          "e2e-site",
-		Nkectl:            filepath.Join(dir, "nkectl"),
-		Assets:            checkout,
-		AssetPaths:        []string{"build", "controller/deploy"},
-		Images:            []string{filepath.Join(dir, "cwe.tar")},
-		KubernetesVersion: "1.32.0",
-		CNI:               "calico",
-		DisableMTLS:       true,
-		BootstrapEnv:      map[string]string{"NKECTL_CWE_SPIRE_CHART": "{assets}/controller/deploy/charts/spire"},
-		ControllerVersion: "v1.2.3",
-		Deploy:            d,
+	return Spec{
+		Name:                 "e2e-site",
+		ImageArchives:        []string{filepath.Join(dir, "cwe.tar")},
+		KubernetesVersion:    "1.32.0",
+		CNI:                  "calico",
+		DisableMTLS:          true,
+		ControllerImage:      "nvcr.io/nke/cwe:v1.2.3",
+		CAPIProvisionedImage: "nvcr.io/nke/capi-provisioned:v0.1.0",
 	}
 }
 
 var testNode = infra.Node{Name: "e2e-site-0", IP: "10.0.0.5", TPMEkThumbprint: "abc123"}
 
-func testOptions(t *testing.T, probe Prober) Options {
-	t.Helper()
-	return Options{Probe: probe, OutputDir: t.TempDir(), ReadyTimeout: time.Second, PollInterval: time.Millisecond}
-}
-
-func versionProbe(v string) Prober {
-	return func(context.Context, string) (string, error) { return v, nil }
-}
-
 func TestBootstrap(t *testing.T) {
 	s := newFakeSession()
-	d := &fakeDeployer{}
-	res, err := Bootstrap(context.Background(), testNode, s, testCandidate(t, d), testOptions(t, versionProbe("v1.2.3")))
+	res, err := Bootstrap(context.Background(), testNode, s, testNkectl(t), testSite(t))
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(res.Kubeconfig)) })
 
 	if got := s.puts[nkectlPath]; string(got.data) != "binary" || got.mode != 0o755 {
 		t.Errorf("nkectl staged as %q mode %o", got.data, got.mode)
@@ -273,10 +252,13 @@ func TestBootstrap(t *testing.T) {
 	if _, ok := s.puts[filepath.Join(imagesDir, "cwe.tar")]; !ok {
 		t.Error("image archive not staged")
 	}
+	// The deploy path is the deploy's to stage: nkectl reads none of it.
+	if _, ok := s.puts[assetsArchive]; ok {
+		t.Error("bootstrap staged the deploy path")
+	}
 
 	order := []string{
 		"nkectl version",
-		"tar -C",
 		"ctr -n k8s.io images import",
 		"generate sitespec e2e-site",
 		"bootstrap site",
@@ -297,18 +279,13 @@ func TestBootstrap(t *testing.T) {
 		}
 	}
 	boot := s.cmd(t, "bootstrap site")
-	for _, want := range []string{"sudo -n -i sh -c ", "--disable-mtls", "--kubeconfig-out", "NKECTL_CWE_SPIRE_CHART=", "/var/lib/nke-e2e/assets/controller/deploy/charts/spire"} {
+	for _, want := range []string{"sudo -n -i sh -c ", "--disable-mtls", "--kubeconfig-out", "NKECTL_CWE_IMAGE=nvcr.io/nke/cwe:v1.2.3", "NKECTL_CAPI_PROVISIONED_IMAGE="} {
 		if !strings.Contains(boot, want) {
 			t.Errorf("bootstrap site lacks %s: %s", want, boot)
 		}
 	}
 	if !strings.Contains(s.cmd(t, "ctr -n k8s.io"), "ctr -n default images import") {
 		t.Error("image not imported into the default namespace")
-	}
-
-	if !d.called || d.target.Kubeconfig != kubeconfigPath || d.target.Assets != assetsDir ||
-		d.target.TrustDomain != "e2e-site.nke.local" || d.target.Node != testNode {
-		t.Errorf("deployer target = %+v", d.target)
 	}
 
 	// Loopback, because the site's own API server runs on the node this
@@ -327,16 +304,8 @@ func TestBootstrap(t *testing.T) {
 	if info, err := os.Stat(res.Kubeconfig); err != nil || info.Mode().Perm() != 0o600 {
 		t.Errorf("kubeconfig mode = %v, %v", info.Mode(), err)
 	}
-	if res.Version != "v1.2.3" {
-		t.Errorf("version = %q", res.Version)
-	}
-}
-
-func TestBootstrapVersionMismatch(t *testing.T) {
-	_, err := Bootstrap(context.Background(), testNode, newFakeSession(), testCandidate(t, &fakeDeployer{}),
-		testOptions(t, versionProbe("v9.9.9")))
-	if err == nil || !strings.Contains(err.Error(), `"v9.9.9", want "v1.2.3"`) {
-		t.Fatalf("err = %v", err)
+	if res.NodeKubeconfig != kubeconfigPath {
+		t.Errorf("node paths = %+v", res)
 	}
 }
 
@@ -348,91 +317,23 @@ func TestBootstrapStepFailureStopsAndReports(t *testing.T) {
 		}
 		return "", nil
 	}
-	d := &fakeDeployer{}
-	_, err := Bootstrap(context.Background(), testNode, s, testCandidate(t, d), testOptions(t, versionProbe("v1.2.3")))
+	_, err := Bootstrap(context.Background(), testNode, s, testNkectl(t), testSite(t))
 	if err == nil || !strings.Contains(err.Error(), "bootstrap site") || !strings.Contains(err.Error(), "port 6443 in use") {
 		t.Fatalf("err = %v", err)
 	}
-	if d.called {
-		t.Error("deployer ran after a failed bootstrap")
-	}
 }
 
-func TestBootstrapDeployFailure(t *testing.T) {
-	d := &fakeDeployer{err: errors.New("helm: timed out")}
-	_, err := Bootstrap(context.Background(), testNode, newFakeSession(), testCandidate(t, d), testOptions(t, versionProbe("v1.2.3")))
-	if err == nil || !strings.Contains(err.Error(), "deploy: helm: timed out") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestBootstrapWaitsForCWE(t *testing.T) {
-	calls := 0
-	probe := func(context.Context, string) (string, error) {
-		calls++
-		if calls < 3 {
-			return "", errUnhealthy
-		}
-		return "v1.2.3", nil
-	}
-	if _, err := Bootstrap(context.Background(), testNode, newFakeSession(), testCandidate(t, &fakeDeployer{}),
-		testOptions(t, probe)); err != nil {
-		t.Fatal(err)
-	}
-	if calls != 3 {
-		t.Errorf("probed %d times, want 3", calls)
-	}
-}
-
-func TestBootstrapCWENeverHealthy(t *testing.T) {
-	opts := testOptions(t, func(context.Context, string) (string, error) { return "", errUnhealthy })
-	opts.ReadyTimeout = 20 * time.Millisecond
-	_, err := Bootstrap(context.Background(), testNode, newFakeSession(), testCandidate(t, &fakeDeployer{}), opts)
-	if !errors.Is(err, errUnhealthy) || !strings.Contains(err.Error(), "did not become healthy") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-// TestBootstrapCWEProbeHangs covers the attempt that connects and then never
-// answers, which is how a site looks while CWE listens but its database and
-// Temporal checks have not passed yet. The wait has to outlive that attempt
-// and come round again, or the site is called dead on the strength of one
-// request.
-func TestBootstrapCWEProbeHangs(t *testing.T) {
-	calls := 0
-	probe := func(ctx context.Context, _ string) (string, error) {
-		calls++
-		<-ctx.Done()
-		return "", ctx.Err()
-	}
-	opts := testOptions(t, probe)
-	opts.ReadyTimeout = 200 * time.Millisecond
-	opts.ProbeTimeout = 20 * time.Millisecond
-
-	_, err := Bootstrap(context.Background(), testNode, newFakeSession(), testCandidate(t, &fakeDeployer{}), opts)
-	if !strings.Contains(err.Error(), "did not become healthy") {
-		t.Fatalf("err = %v", err)
-	}
-	if calls < 5 {
-		t.Errorf("probed %d times in %s with a %s attempt timeout, want the loop to keep polling",
-			calls, opts.ReadyTimeout, opts.ProbeTimeout)
-	}
-}
-
-func TestCandidateValidation(t *testing.T) {
-	for name, mutate := range map[string]func(*Candidate){
-		"site name":   func(c *Candidate) { c.SiteName = "Bad_Name" },
-		"v prefix":    func(c *Candidate) { c.KubernetesVersion = "v1.32.0" },
-		"no deployer": func(c *Candidate) { c.Deploy = nil },
-		"no nkectl":   func(c *Candidate) { c.Nkectl = "/does/not/exist" },
-		"escape":      func(c *Candidate) { c.AssetPaths = []string{"../outside"} },
-		"no CNI":      func(c *Candidate) { c.CNI = "" },
+func TestSiteValidation(t *testing.T) {
+	for name, mutate := range map[string]func(*Spec){
+		"site name": func(c *Spec) { c.Name = "Bad_Name" },
+		"v prefix":  func(c *Spec) { c.KubernetesVersion = "v1.32.0" },
+		"no CNI":    func(c *Spec) { c.CNI = "" },
 	} {
 		t.Run(name, func(t *testing.T) {
-			c := testCandidate(t, &fakeDeployer{})
+			c := testSite(t)
 			mutate(&c)
 			s := newFakeSession()
-			if _, err := Bootstrap(context.Background(), testNode, s, c, testOptions(t, versionProbe(""))); err == nil {
+			if _, err := Bootstrap(context.Background(), testNode, s, testNkectl(t), c); err == nil {
 				t.Fatal("expected a validation error")
 			}
 			if len(s.runs) != 0 || len(s.puts) != 0 {

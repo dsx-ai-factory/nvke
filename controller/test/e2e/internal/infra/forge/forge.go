@@ -19,7 +19,6 @@ import (
 	"github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/environment"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra/teleport"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
@@ -110,8 +109,10 @@ func (t teleportDialer) Dial(ctx context.Context, target teleport.Target) (Conn,
 
 // Options configures a Provider.
 type Options struct {
-	Env  *environment.Forge
-	Site string // empty resolves to the only site declared
+	Env *Environment
+	// SiteName is the site to create machines at, by the name it is filed
+	// under. Empty resolves to the only site declared.
+	SiteName string
 
 	// APIKey is an NGC key. An nvapi- key is the bearer token as-is; a legacy
 	// key is exchanged for one.
@@ -156,7 +157,7 @@ type Options struct {
 // Provider creates Forge instances ready for `nkectl bootstrap site`.
 type Provider struct {
 	opts Options
-	site environment.ForgeSite
+	site Site
 	// client serves everything but create. Its short per-request timeout is
 	// what makes a hung poll fail and retry rather than stall.
 	client *standard.APIClient
@@ -177,7 +178,7 @@ func New(opts Options) (*Provider, error) {
 	if opts.Env == nil {
 		return nil, errors.New("forge: no environment")
 	}
-	site, err := opts.Env.Site(opts.Site)
+	site, err := opts.Env.Site(opts.SiteName)
 	if err != nil {
 		return nil, fmt.Errorf("forge: %w", err)
 	}
@@ -438,7 +439,7 @@ func cloudInitDiagnostics(ctx context.Context, conn Conn) string {
 
 // payloads returns the iPXE script and the cloud-init user data, in that
 // order.
-func (p *Provider) payloads(req infra.NodeRequest, instanceType environment.ForgeInstanceType, authorizedKey string) (string, string, error) {
+func (p *Provider) payloads(req infra.NodeRequest, instanceType InstanceType, authorizedKey string) (string, string, error) {
 	// Resolved first: it selects the image, the console and kernel parameters
 	// the iPXE script sets, and the host tools. The instance type is the only
 	// thing here that knows which machine is being created.

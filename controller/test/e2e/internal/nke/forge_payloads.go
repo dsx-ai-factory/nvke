@@ -82,7 +82,7 @@ const (
 	// Provisioning until the timeout rather than reporting anything.
 	//
 	// os-image/SPEC.md does not list this as a supported production mode. It
-	// is how a site gets built today: the SBOM procedure bootstraps this way
+	// is how a site gets built today: the Stack procedure bootstraps this way
 	// and turns SPIRE and TPM on afterwards, in the management-plane install.
 	AgentArgsNoMTLS = defaultAgentArgs + " --disable-mtls"
 )

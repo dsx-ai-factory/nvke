@@ -52,11 +52,6 @@
 # site:
 #   deployPathRef: ""   # "" -> the controller version's commit, or its
 #                       #       controller/<version> release tag
-#   nkectl: ""          # "" -> cli/dist/nkectl-linux-<arch>, which
-#                       #       `make site-inputs` builds. With
-#                       #       SITE_CLI_BUILD=0 it fetches a published one to
-#                       #       <SITE_INPUTS>/nkectl/nkectl-linux-<arch>;
-#                       #       point this there.
 #   # Each image the node stages: the reference it is bootstrapped and
 #   # deployed with, and the archive carrying it. Relative archive paths
 #   # resolve against the clone the suite runs from. The controller and
@@ -79,3 +74,10 @@
 # runner:
 #   teleportIdentityFile: ""   # "" -> $TELEPORT_IDENTITY_FILE, else the runner's tsh profile
 #   (the Teleport proxy comes from $TELEPORT_PROXY or the tsh login profile)
+
+# The CLI the bootstrap runs on the node.
+# nkectl:
+#   binary: ""   # "" -> cli/dist/nkectl-linux-<arch>, which `make site-inputs`
+#                #       builds. With SITE_CLI_BUILD=0 it fetches a published
+#                #       one to <SITE_INPUTS>/nkectl/nkectl-linux-<arch>, so
+#                #       point this there.

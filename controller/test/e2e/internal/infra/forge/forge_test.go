@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/environment"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra/teleport"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
@@ -143,17 +142,17 @@ func (d *fakeDialer) Dial(_ context.Context, target teleport.Target) (Conn, erro
 	return d.conn, nil
 }
 
-func testEnv() *environment.Forge {
-	return &environment.Forge{
-		Org: environment.ForgeOrg{ID: testOrg},
-		Sites: map[string]environment.ForgeSite{
+func testEnv() *Environment {
+	return &Environment{
+		Org: Org{ID: testOrg},
+		Sites: map[string]Site{
 			"default": {
 				Key:           "default",
 				ID:            "site-uuid",
 				VpcID:         "vpc-uuid",
 				SubnetID:      "subnet-uuid",
 				SSHKeyGroupID: "keygroup-uuid",
-				InstanceTypes: []environment.ForgeInstanceType{
+				InstanceTypes: []InstanceType{
 					{Name: "cpu.himem.t1", ID: "cpu-type-uuid", Provides: map[string]string{"machineType": "cpu", "arch": "amd64"}},
 				},
 			},

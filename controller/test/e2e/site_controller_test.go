@@ -33,14 +33,14 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/site"
 )
 
-// The stages of the site lane, each doing everything the one before it did.
+// The stages of the site controller run, each doing everything the one before it did.
 const (
 	siteStageProvision = "provision" // a Forge node, reachable, then released
 	siteStageBootstrap = "bootstrap" // plus vanilla Kubernetes from nkectl
 	siteStageFull      = "full"      // plus the NKE stack, CWE, and a tenant
 )
 
-// Secrets the site lane reads from the environment. They are never written to
+// Secrets the site controller run reads from the environment. They are never written to
 // the config file, a values file on the runner, or a command line.
 const (
 	envForgeAPIKey   = "FORGE_API_KEY"
@@ -54,14 +54,20 @@ const (
 // Host tools the node installs for nkectl, pinned to what has built a site on
 // the Forge hardware. Each can be overridden through -e2e.versions, as can
 // capi-provisioned, the only published CAPI provider tag there is.
+//
+// The first three mirror pins the repository keeps elsewhere, so a bump there
+// belongs here too: kind and clusterctl in make/tool-versions.mk as
+// KIND_VERSION and CAPI_VERSION, nerdctl in nkectl-bootstrap-e2e.yml as
+// NERDCTL_VERSION. They are copied rather than read because a test binary
+// cannot see a make variable.
 const (
 	siteDefaultNerdctlVersion         = "2.3.5"
-	siteDefaultKindVersion            = "v0.30.0"
+	siteDefaultKindVersion            = "v0.32.0"
 	siteDefaultClusterctlVersion      = "v1.12.3"
 	siteDefaultCAPIProvisionedVersion = "v0.1.0-rc.1"
 )
 
-// The shape of the site the lane bootstraps.
+// The shape of the site this run bootstraps.
 const (
 	siteCNI = CNIPluginOVN
 
@@ -94,7 +100,7 @@ var (
 
 func init() {
 	flag.StringVar(&siteStage, "e2e.site-stage", "",
-		"build a site controller on Forge up to this stage: provision, bootstrap or full (empty skips the site lane)")
+		"build a site controller on Forge up to this stage: provision, bootstrap or full (empty skips the site controller)")
 	flag.BoolVar(&keepSite, "e2e.keep-site", false,
 		"keep the site controller's node after the run, for debugging")
 }
@@ -111,15 +117,42 @@ var siteReaches = []string{
 	"https://raw.githubusercontent.com/",
 }
 
-// The lane is serial: one site, built once, holding the tenant specs that run
+// The container is serial: one site, built once, holding the tenant specs that run
 // against it. ContinueOnFailure lets teardown and the tenant sweep run after a
 // failure; a failed build still skips the tenants, which check for a site.
 var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("site-controller"), func() {
 	var (
-		lane    siteLane
+		cfg config.Config
+		// provider creates the site node. Settled before anything is created,
+		// so an environment no site can satisfy fails without taking a machine.
+		provider infra.Provider
+		// capabilities is what the site node is created with: the run's own,
+		// and the source of the architecture every artifact is chosen by, since
+		// siteCapabilities defaults the key so it is never empty.
+		// less the GPU. The site controller supports the tenants this site
+		// will host and runs no workload of its own, so asking for the run's
+		// accelerator would put it on one. Nothing insists on a CPU machine
+		// either, so a site offering only GPU shapes can still host one.
+		capabilities map[string]string
+		// secrets is every credential on the node, for redacting the
+		// diagnostics archive. Empty until the deploy, which is correct:
+		// bootstrap stages a binary, an archive, images and a host list, and
+		// none of them is a credential.
+		//
+		// Named by newStack, which reads or generates every one of them.
+		secrets []string
+		// spec is the site to build, resolved in BeforeAll so a missing input
+		// fails the run before a machine exists.
+		spec site.Spec
+		// stack is what gets installed onto it, resolved by the stage that
+		// installs it. It carries the credentials the deploy places, so it is
+		// held rather than local: teardown redacts them from the diagnostics,
+		// and a zero one before the deploy names nothing, which is right
+		// because nothing has been placed yet.
+		stack   site.Stack
 		node    infra.Node
 		session infra.Session
-		built   site.Result
+		cluster site.Cluster
 		failed  bool
 	)
 
@@ -135,16 +168,20 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		if err := os.Remove(siteDiagnostics); err != nil && !errors.Is(err, os.ErrNotExist) {
 			Fail(fmt.Sprintf("removing a stale %s: %v", siteDiagnostics, err))
 		}
-		lane = expectSucceed(newSiteLane())
+		cfg = expectSucceed(config.Load(cfgPath))
+		provider = expectSucceed(newInfraProvider(cfg))
+		capabilities = siteCapabilities(expectSucceed(runCapabilities()))
+		name := expectSucceed(newSiteName())
+		spec = expectSucceed(siteSpec(cfg, name))
 	})
 
 	AfterEach(func() { failed = failed || CurrentSpecReport().Failed() })
 
 	It("provisions a node", func(ctx SpecContext) {
 		var err error
-		node, session, err = lane.provider.ProvisionNode(ctx, infra.NodeRequest{
-			Name:         lane.name,
-			Capabilities: lane.capabilities,
+		node, session, err = provider.ProvisionNode(ctx, infra.NodeRequest{
+			Name:         spec.Name,
+			Capabilities: capabilities,
 			Labels:       map[string]string{"purpose": "nke-e2e-site-controller"},
 		})
 		Expect(err).NotTo(HaveOccurred(), "should provision and reach a Forge node")
@@ -168,36 +205,90 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		Expect(unreachable).To(BeEmpty(), "the node needs egress to these")
 	}, NodeTimeout(5*time.Minute))
 
+	// The stage gates by calling or not calling, and nothing else. A stage
+	// that stops earlier runs fewer specs rather than running the same spec
+	// with a collaborator neutered, which is what a do-nothing deployer and a
+	// substitute probe used to express.
 	if siteStage == siteStageBootstrap || siteStage == siteStageFull {
 		It("bootstraps the site controller", func(ctx SpecContext) {
 			if session == nil {
 				Skip("no node")
 			}
-			candidate, opts := expectSucceed2(lane.candidate(node))
+			nkectl := expectSucceed(nkectlBinary(cfg, capabilities[infra.CapabilityArch]))
 			var err error
-			built, err = site.Bootstrap(ctx, node, session, candidate, opts)
+			cluster, err = site.Bootstrap(ctx, node, session, nkectl, spec)
 			if err != nil {
-				collectSiteDiagnostics(ctx, session, lane.placedSecrets()...)
-				collectSiteClusterState(ctx, session, lane.placedSecrets()...)
+				collectSiteDiagnostics(ctx, session, secrets...)
+				collectSiteClusterState(ctx, session, secrets...)
 			}
-			Expect(err).NotTo(HaveOccurred(), "should build the site controller")
-			GinkgoLogr.Info("site controller", "kubeconfig", built.Kubeconfig, "cweVersion", built.Version)
+			Expect(err).NotTo(HaveOccurred(), "should bootstrap Kubernetes on the node")
+			// The kubeconfig is an admin credential in a temporary directory
+			// nothing else removes. Every spec after this one reads it, so it
+			// goes when the container does.
+			DeferCleanup(func() { _ = os.RemoveAll(filepath.Dir(cluster.Kubeconfig)) })
+			GinkgoLogr.Info("site controller", "kubeconfig", cluster.Kubeconfig)
 		}, NodeTimeout(3*time.Hour))
+
+		// Asserted in both stages, which the old shape could not do: the
+		// substitute probe only ran on the path that skipped the deploy, so
+		// the full stage never checked the API server was up before
+		// installing onto it.
+		It("reaches its API server", func(_ SpecContext) {
+			if cluster.Kubeconfig == "" {
+				Skip("the site controller was not bootstrapped")
+			}
+			Expect(apiServerReachable(cluster.Kubeconfig)).To(Succeed(),
+				"the forwarded kubeconfig should reach the API server")
+		}, NodeTimeout(5*time.Minute))
+	}
+
+	if siteStage == siteStageFull {
+		It("deploys the stack", func(ctx SpecContext) {
+			if cluster.Kubeconfig == "" || session == nil {
+				Skip("the site controller was not bootstrapped")
+			}
+			stack, secrets = expectSucceed2(newStack(cfg, capabilities[infra.CapabilityArch]))
+			err := stack.Deploy(ctx, session, site.DeployTarget{
+				Node:        node,
+				SiteName:    spec.Name,
+				TrustDomain: site.TrustDomain(spec.Name),
+				Cluster:     cluster,
+			})
+			if err != nil {
+				collectSiteDiagnostics(ctx, session, secrets...)
+			}
+			Expect(err).NotTo(HaveOccurred(), "should install the NKE stack")
+		}, NodeTimeout(1*time.Hour))
+
+		It("reports its CWE version", func(ctx SpecContext) {
+			if cluster.Kubeconfig == "" {
+				Skip("the site controller was not bootstrapped")
+			}
+			version, err := site.ProbeCWE(ctx, cluster.Kubeconfig, 0, 0)
+			Expect(err).NotTo(HaveOccurred(), "CWE should become healthy")
+			GinkgoLogr.Info("site controller", "cweVersion", version)
+			// Empty when the deploy never ran, which ContinueOnFailure allows:
+			// a bootstrap failure still reaches this spec.
+			if deployed := stack.Controller.Tag; deployed != "" {
+				Expect(version).To(Equal(deployed),
+					"CWE should report the version the run deployed")
+			}
+		}, NodeTimeout(15*time.Minute))
 	}
 
 	if siteStage == siteStageFull {
 		DescribeTableSubtree("tenant on the built site", tenantSubtree(func() (managementCluster, error) {
-			if built.Kubeconfig == "" || session == nil {
+			if cluster.Kubeconfig == "" || session == nil {
 				return managementCluster{}, errors.New("the site controller was not built")
 			}
 			return managementCluster{
-				Kubeconfig:  built.Kubeconfig,
-				TrustDomain: site.TrustDomain(lane.name),
+				Kubeconfig:  cluster.Kubeconfig,
+				TrustDomain: site.TrustDomain(spec.Name),
 				Relay:       sessionRelay(session),
 			}, nil
 		}),
 			// Labeled nico-forge because it is: the same tenant the
-			// standalone lane creates, on a site this lane built rather than
+			// standalone entry creates, on a site this run built rather than
 			// one that already existed. Selecting between the two is
 			// site-controller, which accumulates from the container above and
 			// so is on this entry and not on that one.
@@ -220,10 +311,10 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		// hang off, so releasing it either deletes them through the sweep --
 		// silently undoing the flag -- or orphans them with no CWE left to
 		// release them. Whatever keeps a tenant has to keep its site.
-		if keepSite || lane.cfg.Lifecycle.SkipDelete || (lane.cfg.Lifecycle.PreserveOnFailure && failed) {
+		if keepSite || cfg.Lifecycle.SkipDelete || (cfg.Lifecycle.PreserveOnFailure && failed) {
 			GinkgoLogr.Info("keeping the site controller", "name", node.Name, "ip", node.IP,
-				"jumpHost", lane.site.JumpHost, "kubeconfig", built.Kubeconfig,
-				"reason", keepReason(keepSite, lane.cfg.Lifecycle.SkipDelete))
+				"kubeconfig", cluster.Kubeconfig,
+				"reason", keepReason(keepSite, cfg.Lifecycle.SkipDelete))
 			GinkgoLogr.Info("the Forge instance survives this run and must be released by hand", "name", node.Name)
 			return
 		}
@@ -233,11 +324,11 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		// Ready is a failure of the site's control plane, and the node holding
 		// that evidence is released three lines down.
 		if failed {
-			collectSiteDiagnostics(detached, session, lane.placedSecrets()...)
-			collectSiteClusterState(detached, session, lane.placedSecrets()...)
+			collectSiteDiagnostics(detached, session, secrets...)
+			collectSiteClusterState(detached, session, secrets...)
 		}
-		if built.Kubeconfig != "" {
-			if err := sweepSiteTenants(detached, built.Kubeconfig); err != nil {
+		if cluster.Kubeconfig != "" {
+			if err := sweepSiteTenants(detached, cluster.Kubeconfig); err != nil {
 				GinkgoLogr.Error(err, "tenant sweep failed; releasing the site anyway, and its tenants' instances may need releasing by hand")
 			}
 		}
@@ -245,53 +336,104 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 	}, NodeTimeout(45*time.Minute))
 })
 
-// siteLane is what the lane resolves once, before it creates anything, so a
-// missing input fails the run before a machine exists.
-type siteLane struct {
-	cfg  config.Config
-	name string
-	env  *environment.Forge
-	site environment.ForgeSite
-	// capabilities is what the site node is provisioned with, which is a CPU
-	// machine of the configured architecture rather than what the run asked
-	// to qualify. The run's own capabilities pick the site, not this machine.
-	capabilities map[string]string
-	apiKey       string
-	provider     infra.Provider
-	// Generated once for the lane rather than at deploy time, so that
-	// everything the run puts on the node is known to placedSecrets and can
-	// be taken back out of the diagnostics.
-	tenantPassword string
-	dbPassword     string
-}
-
-// placedSecrets is every credential the run writes onto the node, for
-// redacting the diagnostics archive before it is uploaded. Only values worth
-// hiding: the tenant login's user name travels with them but is not a
-// credential, and redacting it would only make the journal harder to read.
-func (l siteLane) placedSecrets() []string {
-	return []string{l.apiKey, os.Getenv(envRegistryToken), l.tenantPassword, l.dbPassword}
-}
-
-func newSiteLane() (siteLane, error) {
-	cfg, err := config.Load(cfgPath)
+// newSiteName is the run's identity. Per run and never configured: it is the
+// cluster name and, through site.TrustDomain, the SPIRE trust domain, and two
+// runs sharing one would collide on both.
+func newSiteName() (string, error) {
+	suffix, err := randomHex(3)
 	if err != nil {
-		return siteLane{}, err
+		return "", err
 	}
+	return "nke-e2e-site-" + suffix, nil
+}
+
+// siteCapabilities is what the site node is created with, from what the run
+// asked to qualify.
+//
+// The GPU goes and the architecture is defaulted the way matching defaults it,
+// so a run naming neither still resolves. Everything else is carried through
+// untouched: a key no machine answers is ignored when matching, and dropping
+// keys here would mean this function had to know which ones those are.
+func siteCapabilities(run map[string]string) map[string]string {
+	node := make(map[string]string, len(run))
+	for key, value := range run {
+		if key == infra.CapabilityGPU {
+			continue
+		}
+		node[key] = value
+	}
+	node[infra.CapabilityArch] = cmp.Or(node[infra.CapabilityArch], infra.DefaultArch)
+	return node
+}
+
+// newInfraProvider builds what creates this run's site node, as the run's
+// environment declares it.
+//
+// One of two factories, and the only one that speaks a provider's vocabulary
+// about machines. Creating a machine now and configuring the controller that
+// will create machines later are separate concerns with separate lifetimes,
+// so they are resolved separately and neither knows the other ran.
+//
+// A switch rather than a registry the providers enlist in. The set is closed
+// and small, and a package that defines an interface should not know who
+// implements it -- which is also why this cannot live in infra, since forge
+// already imports it.
+func newInfraProvider(cfg config.Config) (infra.Provider, error) {
 	env, err := runEnvironment()
 	if err != nil {
-		return siteLane{}, err
+		return nil, err
 	}
-	// Projected here rather than by the suite: this lane is one of the two
-	// places that speak Forge, and the suite only knows that -e2e.environment
-	// named a file.
-	forgeEnv, err := env.Forge()
+	switch env.Provider {
+	case forge.ProviderName:
+		return newForgeProvider(cfg, env)
+	default:
+		return nil, fmt.Errorf("environment %q names provider %q, which this suite does not implement", env.Name, env.Provider)
+	}
+}
+
+// newDeployConfig builds what the Cluster API provider the stack installs
+// authenticates to its infrastructure with.
+//
+// The other factory. It shares an account and a credential with the provider
+// above and nothing else: this one outlives the run, as a Secret in the
+// cluster the run leaves behind.
+func newDeployConfig() (site.CAPIProviderConfig, error) {
+	env, err := runEnvironment()
 	if err != nil {
-		return siteLane{}, err
+		return nil, err
+	}
+	switch env.Provider {
+	case forge.ProviderName:
+		return newNicoConfig(env)
+	default:
+		return nil, fmt.Errorf("environment %q names provider %q, which this suite does not implement", env.Name, env.Provider)
+	}
+}
+
+// newNicoConfig is how the site's CAPNICo reaches the same Forge org the
+// provider created the site node in.
+func newNicoConfig(env *environment.Environment) (site.CAPIProviderConfig, error) {
+	forgeEnv, err := forge.Decode(env.Infrastructure)
+	if err != nil {
+		return nil, fmt.Errorf("environment %q: %w", env.Name, err)
+	}
+	apiKey := os.Getenv(envForgeAPIKey)
+	if apiKey == "" {
+		return nil, fmt.Errorf("%s is not set", envForgeAPIKey)
+	}
+	return site.NewNico(forge.DefaultEndpoint, forgeEnv.Org.ID, apiKey), nil
+}
+
+// newForgeProvider projects the environment into Forge's dialect and builds a
+// provider from it.
+func newForgeProvider(cfg config.Config, env *environment.Environment) (infra.Provider, error) {
+	forgeEnv, err := forge.Decode(env.Infrastructure)
+	if err != nil {
+		return nil, fmt.Errorf("environment %q: %w", env.Name, err)
 	}
 	capabilities, err := runCapabilities()
 	if err != nil {
-		return siteLane{}, err
+		return nil, err
 	}
 	// The run's capabilities choose the site, not a name: a stream asks for
 	// {gpu: gb200, arch: amd64} and which site owns both such machines is
@@ -300,42 +442,14 @@ func newSiteLane() (siteLane, error) {
 	// provisioning.
 	selection, err := forgeEnv.Resolve(capabilities)
 	if err != nil {
-		return siteLane{}, err
+		return nil, err
 	}
 	forgeSite := selection.Site
-	// The site node is the run's CPU shape, never its GPU one. The site
-	// controller supports the tenants this site will host and runs no
-	// workload of its own, so passing the run's capabilities straight through
-	// would put it on a GB200. Its architecture is still the run's: Resolve
-	// matched this shape on the `arch` capability, so asking for what the
-	// shape provides asks for that architecture.
-	//
-	// The shape's own `provides` rather than a map rebuilt here. The provider
-	// matches again when it creates the machine, and handing it the matched
-	// shape's description is what makes the second match land on the first
-	// one's answer.
-	siteCapabilities := selection.CPU.Provides
 	apiKey := os.Getenv(envForgeAPIKey)
 	if apiKey == "" {
-		return siteLane{}, fmt.Errorf("%s is not set", envForgeAPIKey)
-	}
-	// Per run, never configured: it is the cluster name and the SPIRE trust
-	// domain, and two runs sharing one would collide on both.
-	suffix, err := randomHex(3)
-	if err != nil {
-		return siteLane{}, err
-	}
-	name := "nke-e2e-site-" + suffix
-	tenantPassword, err := randomHex(16)
-	if err != nil {
-		return siteLane{}, err
-	}
-	dbPassword, err := randomHex(16)
-	if err != nil {
-		return siteLane{}, err
+		return nil, fmt.Errorf("%s is not set", envForgeAPIKey)
 	}
 
-	kubernetesVersion := cmp.Or(optionalVersion("kube"), forgeDefaultKubernetesVersion)
 	dialer := &teleport.Dialer{
 		Login:        forgeSite.TeleportLogin,
 		IdentityFile: cfg.Runner.TeleportIdentityFile,
@@ -351,12 +465,14 @@ func newSiteLane() (siteLane, error) {
 			Password:           password,
 			HostKeyFingerprint: forgeSite.JumpHostKeyFingerprint,
 		}); jerr != nil {
-			return siteLane{}, jerr
+			return nil, jerr
 		}
 	}
+
+	kubernetesVersion := cmp.Or(optionalVersion("kube"), forgeDefaultKubernetesVersion)
 	provider, err := forge.New(forge.Options{
 		Env:      forgeEnv,
-		Site:     forgeSite.Key,
+		SiteName: forgeSite.Key,
 		APIKey:   apiKey,
 		JumpHost: forgeSite.JumpHost,
 		NodeUser: cfg.Node.User,
@@ -376,13 +492,9 @@ func newSiteLane() (siteLane, error) {
 		DisableMTLS: siteDisableMTLS,
 	})
 	if err != nil {
-		return siteLane{}, err
+		return nil, err
 	}
-	return siteLane{
-		cfg: cfg, name: name, env: forgeEnv, site: forgeSite,
-		capabilities: siteCapabilities, apiKey: apiKey, provider: provider,
-		tenantPassword: tenantPassword, dbPassword: dbPassword,
-	}, nil
+	return provider, nil
 }
 
 // keepReason names which setting held the node, so the log says what to
@@ -404,7 +516,7 @@ func keepReason(keepSite, skipDelete bool) string {
 // One tunnel per address, kept for the life of the session. Every tenant
 // client asks for a REST config of its own -- twenty-odd specs do, some of
 // them repeatedly inside an Eventually -- and a tunnel each would leak
-// listeners for the hour the lane runs.
+// listeners for the hour the run lasts.
 func sessionRelay(session infra.Session) kube.EndpointRelay {
 	var mu sync.Mutex
 	forwards := map[string]string{}
@@ -514,72 +626,61 @@ func nodeInputs(kubernetesVersion string) nke.NodeInputs {
 // candidate is what the site is built from, resolved once the node exists.
 // Only the full stage deploys the stack; the bootstrap stage checks the API
 // server instead of CWE.
-func (l siteLane) candidate(node infra.Node) (site.Candidate, site.Options, error) {
-	top, err := exec.CommandContext(context.Background(), "git", "rev-parse", "--show-toplevel").Output()
+// nkectlBinary is the linux nkectl for an architecture, on the runner. Staged
+// rather than downloaded: every release is a pre-release, which the
+// latest-release URL skips.
+func nkectlBinary(cfg config.Config, arch string) (string, error) {
+	repo, err := cloneRoot()
 	if err != nil {
-		return site.Candidate{}, site.Options{}, fmt.Errorf("find the clone to export the deploy path from: %w", err)
+		return "", err
 	}
-	repo := strings.TrimSpace(string(top))
-	nkectl := cmp.Or(l.cfg.Site.Nkectl, filepath.Join("cli", "dist", "nkectl-linux-"+node.Arch))
+	return inRepo(repo, cmp.Or(cfg.Nkectl.Binary, filepath.Join("cli", "dist", "nkectl-linux-"+arch))), nil
+}
+
+// siteSpec is what the node is staged with: the image
+// archives. It says nothing about what is installed afterwards, which is
+// stack's business, so a run that stops at Kubernetes calls only this one.
+func siteSpec(cfg config.Config, name string) (site.Spec, error) {
+	repo, err := cloneRoot()
+	if err != nil {
+		return site.Spec{}, err
+	}
 	version, err := requireVersion("controller")
 	if err != nil {
-		return site.Candidate{}, site.Options{}, err
+		return site.Spec{}, err
 	}
-	images := l.cfg.Site.Images
+	images := cfg.Site.Images
 	controller := site.Image{Repository: images.Controller.Repository, Tag: version}
 	provisioned := site.Image{
 		Repository: images.CAPIProvisioned.Repository,
 		Tag:        cmp.Or(optionalVersion("capi-provisioned"), siteDefaultCAPIProvisionedVersion),
 	}
 
-	ref, err := deployPathRef(repo, l.cfg.Site.DeployPathRef, version)
-	if err != nil {
-		return site.Candidate{}, site.Options{}, err
-	}
-	assets, err := site.ExportRef(context.Background(), repo, ref, site.DeployAssetPaths())
-	if err != nil {
-		return site.Candidate{}, site.Options{}, err
-	}
-	DeferCleanup(func() { _ = os.RemoveAll(assets) })
-
-	// Before a machine is taken: the deploy path chooses the name CWE is
-	// installed under, the lane chooses the name the suite looks for, and
-	// nothing else makes the two agree.
-	if nameErr := site.CheckControllerName(assets); nameErr != nil {
-		return site.Candidate{}, site.Options{}, nameErr
-	}
-
-	c := site.Candidate{
-		SiteName:   l.name,
-		Nkectl:     inRepo(repo, nkectl),
-		Assets:     assets,
-		AssetPaths: site.DeployAssetPaths(),
-		Images: []string{
+	return site.Spec{
+		Name: name,
+		ImageArchives: []string{
 			inRepo(repo, images.Controller.Archive),
 			inRepo(repo, images.CAPIProvisioned.Archive),
 			inRepo(repo, images.Profiles.Archive),
 		},
-		KubernetesVersion: cmp.Or(optionalVersion("kube"), forgeDefaultKubernetesVersion),
-		CNI:               siteCNI,
-		DisableMTLS:       siteDisableMTLS,
-		// The references the archives carry, so the bootstrap's kind cluster
-		// resolves them from containerd rather than a registry.
-		BootstrapEnv: map[string]string{
-			"NKECTL_CWE_IMAGE":              controller.Ref(),
-			"NKECTL_CAPI_PROVISIONED_IMAGE": provisioned.Ref(),
-		},
-	}
-	if siteStage != siteStageFull {
-		c.Deploy = noDeploy{}
-		return c, site.Options{Probe: probeAPIServer}, nil
-	}
+		KubernetesVersion:    cmp.Or(optionalVersion("kube"), forgeDefaultKubernetesVersion),
+		CNI:                  siteCNI,
+		DisableMTLS:          siteDisableMTLS,
+		ControllerImage:      controller.Ref(),
+		CAPIProvisionedImage: provisioned.Ref(),
+	}, nil
+}
 
-	deployer, err := l.sbom(node, controller)
+// stack is what gets installed once Kubernetes is up, and the controller
+// version CWE is then expected to report.
+
+// cloneRoot is the checkout the deploy path is exported from.
+func cloneRoot() (string, error) {
+	top, err := exec.CommandContext(context.Background(), "git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
-		return site.Candidate{}, site.Options{}, err
+		return "", fmt.Errorf("find the clone to export the deploy path from: %w", err)
 	}
-	c.Deploy, c.ControllerVersion = deployer, version
-	return c, site.Options{}, nil
+	return strings.TrimSpace(string(top)), nil
 }
 
 // deployPathRef is the commit the deploy path is exported from. It carries
@@ -600,54 +701,94 @@ func deployPathRef(repo, configured, controllerVersion string) (string, error) {
 		"fetch the release tag or set site.deployPathRef", strings.Join(candidates, " nor "), repo)
 }
 
-func (l siteLane) sbom(node infra.Node, controller site.Image) (site.SBOM, error) {
-	images := l.cfg.Site.Images
+// newStack builds the stack and names the credentials it put in it, for
+// redacting the diagnostics archive. Returned rather than asked of the stack
+// afterwards: this is where every one of them is read or generated, so nothing
+// else has to know which fields are credentials, and a provider configuration
+// that could be asked for its own would have to hand them to anything holding
+// it.
+func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
+	deployConfig, err := newDeployConfig()
+	if err != nil {
+		return site.Stack{}, nil, err
+	}
+	version, err := requireVersion("controller")
+	if err != nil {
+		return site.Stack{}, nil, err
+	}
+	controller := site.Image{Repository: cfg.Site.Images.Controller.Repository, Tag: version}
+	repo, err := cloneRoot()
+	if err != nil {
+		return site.Stack{}, nil, err
+	}
+	// The deploy path carries the controller's own chart, so it is exported
+	// from the commit that controller was built from rather than from whatever
+	// is checked out.
+	ref, err := deployPathRef(repo, cfg.Site.DeployPathRef, version)
+	if err != nil {
+		return site.Stack{}, nil, err
+	}
+	assets, err := site.ExportRef(context.Background(), repo, ref, site.DeployAssetPaths())
+	if err != nil {
+		return site.Stack{}, nil, err
+	}
+	DeferCleanup(func() { _ = os.RemoveAll(assets) })
+
+	// Before a machine is taken: the deploy path chooses the name CWE is
+	// installed under, the lane chooses the name the suite looks for, and
+	// nothing else makes the two agree. Checked here rather than beside the
+	// spec because the stack is what exports these assets and so what knows
+	// the name they install.
+	if nameErr := site.CheckControllerName(assets); nameErr != nil {
+		return site.Stack{}, nil, nameErr
+	}
+	images := cfg.Site.Images
 	profiles := site.Image{Repository: images.Profiles.Repository, Tag: images.Profiles.Tag}
 	user, token := os.Getenv(envRegistryUser), os.Getenv(envRegistryToken)
 	if user == "" || token == "" {
-		return site.SBOM{}, fmt.Errorf("%s and %s are required for the node to pull CAPNICo from %s", envRegistryUser, envRegistryToken, siteCAPNICoRegistry)
+		return site.Stack{}, nil, fmt.Errorf("%s and %s are required for the node to pull CAPNICo from %s", envRegistryUser, envRegistryToken, siteCAPNICoRegistry)
 	}
-	unameArch := map[string]string{"amd64": "x86_64", "arm64": "arm64"}[node.Arch]
-	GinkgoLogr.Info("deploying the stack", "node", node.Name, "controller", controller.Ref(), "profiles", profiles.Ref())
-	return site.SBOM{
+	tenantPassword, err := randomHex(16)
+	if err != nil {
+		return site.Stack{}, nil, err
+	}
+	dbPassword, err := randomHex(16)
+	if err != nil {
+		return site.Stack{}, nil, err
+	}
+	unameArch := map[string]string{"amd64": "x86_64", "arm64": "arm64"}[arch]
+	GinkgoLogr.Info("deploying the stack", "controller", controller.Ref(), "profiles", profiles.Ref())
+	return site.Stack{
+		Assets:     assets,
+		AssetPaths: site.DeployAssetPaths(),
 		Controller: controller,
 		Profiles:   profiles,
-		Nico: site.Nico{
-			Endpoint: forge.DefaultEndpoint,
-			OrgID:    l.env.Org.ID,
-			Token:    l.apiKey,
-		},
-		Registry: site.Registry{Server: siteCAPNICoRegistry, Username: user, Token: token},
-		// The login baked into tenant nodes' user-data; nothing outside the
+		Provider:   deployConfig,
+		Registry:   site.Registry{Server: siteCAPNICoRegistry, Username: user, Token: token},
+		// The login baked into tenant nodes' user-data. Nothing outside the
 		// run needs it.
-		Tenant: site.Tenant{User: "nke-tenant", Password: l.tenantPassword},
+		Tenant: site.Tenant{User: "nke-tenant", Password: tenantPassword},
 		// Set here rather than left for the deployer to generate, so the
-		// value is one placedSecrets can name.
-		DatabasePassword: l.dbPassword,
+		// value is one the redaction list can name.
+		DatabasePassword: dbPassword,
 		Arch:             unameArch,
-	}, nil
+	}, []string{os.Getenv(envForgeAPIKey), token, tenantPassword, dbPassword}, nil
 }
 
-// noDeploy is the bootstrap stage's deployer: Kubernetes only.
-type noDeploy struct{}
-
-func (noDeploy) Deploy(context.Context, infra.Session, site.DeployTarget) error { return nil }
-
-// probeAPIServer stands in for the CWE probe when nothing is deployed: the
-// forwarded kubeconfig has to reach the API server.
-func probeAPIServer(_ context.Context, kubeconfig string) (string, error) {
+// apiServerReachable reports whether the forwarded kubeconfig reaches the
+// cluster's API server. Asserted in its own spec rather than substituted for
+// the CWE probe, so it holds in every stage that bootstraps.
+func apiServerReachable(kubeconfig string) error {
 	restConfig, err := kube.RESTConfig(kubeconfig, "")
 	if err != nil {
-		return "", err
+		return err
 	}
 	client, err := discovery.NewDiscoveryClientForConfig(restConfig)
 	if err != nil {
-		return "", err
+		return err
 	}
-	if _, err := client.ServerVersion(); err != nil {
-		return "", err
-	}
-	return "", nil
+	_, err = client.ServerVersion()
+	return err
 }
 
 // Budgets for the teardown sweep, sized against the AfterAll's 45-minute

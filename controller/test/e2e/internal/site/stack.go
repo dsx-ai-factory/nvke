@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -41,6 +42,13 @@ const (
 	// valuesCleanupTimeout bounds removing the rendered values files. Short on
 	// purpose: it is one rm over a session that was answering a moment ago.
 	valuesCleanupTimeout = 2 * time.Minute
+)
+
+// Where the deploy path lives on the node. assetsArchive is transient: it is
+// uploaded, untarred into assetsDir, and deleted in the same command.
+const (
+	assetsArchive = workDir + "/assets.tar.gz"
+	assetsDir     = workDir + "/assets"
 )
 
 // The deploy path's releases. Each gets a values file named after it, passed
@@ -84,12 +92,56 @@ func (i Image) valid() bool { return i.Repository != "" && i.Tag != "" }
 // Ref is the image as repository:tag.
 func (i Image) Ref() string { return i.Repository + ":" + i.Tag }
 
+// CAPIProviderConfig is how the Cluster API infrastructure provider the stack
+// installs reaches the infrastructure it creates tenant machines on. That
+// provider needs an endpoint and a credential of its own, because the site
+// controller creates machines long after this run is over.
+//
+// Named for CAPI because three things here are called a provider: infra.Provider
+// creates the site node from the test process, environment.Environment.Provider
+// names the dialect a file is written in, and this one is the CAPI provider
+// running in the cluster the run just built.
+//
+// An interface because which provider is installed follows which one built the
+// site, and nothing between here and the deploy should have to name it. The
+// value renders into bootstrap-config.json under its own key, and the deploy
+// tree's credentials template reaches for that key, so adding a provider is a
+// type here and a template there with nothing in between.
+type CAPIProviderConfig interface {
+	// ConfigKey is the key this renders under in bootstrap-config.json.
+	ConfigKey() string
+
+	// Validate reports what the provider cannot be configured without. Called
+	// before the deploy stages anything, so a missing credential fails the
+	// run rather than the controller that reads the Secret.
+	Validate() error
+}
+
 // Nico is where the site's CAPNICo reaches the NICo API.
 type Nico struct {
 	Endpoint string `json:"Endpoint"`
 	OrgID    string `json:"OrgID"`
 	Token    string `json:"Token"`
 	APIName  string `json:"APIName"`
+}
+
+// NewNico is the CAPNICo configuration, with the API name defaulted. The name
+// is the path segment the API is served under and is the same for every site,
+// so a caller states the three values that differ.
+func NewNico(endpoint, orgID, token string) Nico {
+	return Nico{Endpoint: endpoint, OrgID: orgID, Token: token, APIName: defaultNicoAPIName}
+}
+
+// ConfigKey implements CAPIProviderConfig. "Nico" is what
+// 20-nico-credentials.yaml.tmpl reaches for.
+func (n Nico) ConfigKey() string { return "Nico" }
+
+// Validate implements CAPIProviderConfig.
+func (n Nico) Validate() error {
+	if n.Endpoint == "" || n.OrgID == "" || n.Token == "" {
+		return errors.New("NICo endpoint, org and token are required")
+	}
+	return nil
 }
 
 // Registry is the credential the site pulls private images with.
@@ -105,14 +157,14 @@ type Tenant struct {
 	Password string `json:"Password"`
 }
 
-// SBOM deploys the NKE stack with a deploy path from the SBOM: it does what
+// Stack deploys the NKE stack with a deploy path from the Stack: it does what
 // the deploy path's README says a driver does around the install, and renders
 // the values only a site knows.
 //
 // The deploy path and the scripts that apply it come from the staged assets,
 // not from this suite, so the suite follows whatever deploy path the checkout
 // it stages carries.
-type SBOM struct {
+type Stack struct {
 	// Target is the deploy path under controller/deploy. Defaults to
 	// nke-sbom.
 	Target string
@@ -120,7 +172,20 @@ type SBOM struct {
 	Controller Image
 	Profiles   Image
 
-	Nico     Nico
+	// Assets is a checkout on the runner. AssetPaths, relative to it, are
+	// staged to the node with their layout intact, which the deploy path
+	// depends on: a release reaches its chart by relative path.
+	//
+	// Nothing in the bootstrap reads them: nkectl pulls its charts from their
+	// repositories and embeds its values. These are the deploy's own
+	// installer, tree and scripts.
+	Assets     string
+	AssetPaths []string
+
+	// Provider is how the installed Cluster API provider reaches its
+	// infrastructure. Required: a stack with no way to create machines
+	// deploys and then cannot do its job.
+	Provider CAPIProviderConfig
 	Registry Registry
 	Tenant   Tenant
 
@@ -142,8 +207,37 @@ type SBOM struct {
 	ControllerEnv map[string]string
 }
 
+// stageAssets copies the deploy path onto the node, with the layout the
+// scripts in it expect.
+func (d Stack) stageAssets(ctx context.Context, s infra.Session) error {
+	archive, err := archiveAssets(d.Assets, d.AssetPaths)
+	if err != nil {
+		return err
+	}
+	if err := s.Put(ctx, assetsArchive, archive, 0o600); err != nil {
+		return err
+	}
+	cmd := fmt.Sprintf("rm -rf %[1]s && mkdir -p %[1]s && tar -C %[1]s -xzf %[2]s && rm -f %[2]s",
+		shellQuote(assetsDir), shellQuote(assetsArchive))
+	if out, err := s.Run(ctx, asRoot(cmd)); err != nil {
+		return fmt.Errorf("stage the deploy path: %w\n%s", err, tail(out))
+	}
+	return nil
+}
+
+// sortedKeys renders a map in a stable order, so the same input produces the
+// same command twice.
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // Deploy implements Deployer.
-func (d SBOM) Deploy(ctx context.Context, s infra.Session, t DeployTarget) error {
+func (d Stack) Deploy(ctx context.Context, s infra.Session, t DeployTarget) error {
 	d = d.withDefaults()
 	if err := d.validate(); err != nil {
 		return err
@@ -156,7 +250,11 @@ func (d SBOM) Deploy(ctx context.Context, s infra.Session, t DeployTarget) error
 		d.DatabasePassword = password
 	}
 
-	sbomDir := path.Join(t.Assets, deployDir)
+	if err := d.stageAssets(ctx, s); err != nil {
+		return err
+	}
+
+	sbomDir := path.Join(assetsDir, deployDir)
 	overlay, err := s.Fetch(ctx, path.Join(sbomDir, d.Target, releaseSpire, "overlay.yaml"))
 	if err != nil {
 		return fmt.Errorf("read the deploy path's SPIRE overlay: %w", err)
@@ -194,7 +292,7 @@ func (d SBOM) Deploy(ctx context.Context, s infra.Session, t DeployTarget) error
 	return nil
 }
 
-func (d SBOM) withDefaults() SBOM {
+func (d Stack) withDefaults() Stack {
 	if d.Target == "" {
 		d.Target = defaultSBOMTarget
 	}
@@ -203,9 +301,6 @@ func (d SBOM) withDefaults() SBOM {
 		if d.StorageClassName == "" {
 			d.StorageClassName = defaultStorageClassName
 		}
-	}
-	if d.Nico.APIName == "" {
-		d.Nico.APIName = defaultNicoAPIName
 	}
 	return d
 }
@@ -282,7 +377,7 @@ func controllerName() string { return cwe.Service() }
 // authorization check, which reads as an RBAC fault rather than a naming one.
 func spireAdminPath() string { return "/nke-service/" + controllerName() }
 
-func (d SBOM) validate() error {
+func (d Stack) validate() error {
 	var problems []string
 	if !d.Controller.valid() {
 		problems = append(problems, "controller image needs a repository and a tag")
@@ -290,17 +385,29 @@ func (d SBOM) validate() error {
 	if !d.Profiles.valid() {
 		problems = append(problems, "profiles image needs a repository and a tag")
 	}
+	if d.Assets == "" {
+		problems = append(problems, "no assets")
+	} else if _, err := os.Stat(d.Assets); err != nil {
+		problems = append(problems, fmt.Sprintf("assets: %v", err))
+	}
+	for _, rel := range d.AssetPaths {
+		if filepath.IsAbs(rel) || strings.HasPrefix(filepath.Clean(rel), "..") {
+			problems = append(problems, fmt.Sprintf("asset path %q is not inside the checkout", rel))
+		}
+	}
 	if _, ok := tpmServerChecksum(d.Arch); !ok {
 		problems = append(problems, fmt.Sprintf("no TPM attestor checksum for architecture %q", d.Arch))
 	}
 	if d.StorageClassName == "" {
 		problems = append(problems, "a storage class manifest needs the name of the class it creates")
 	}
-	if d.Nico.Endpoint == "" || d.Nico.OrgID == "" || d.Nico.Token == "" {
-		problems = append(problems, "NICo endpoint, org and token are required")
+	if d.Provider == nil {
+		problems = append(problems, "no provider configuration, so the stack could not create a machine")
+	} else if err := d.Provider.Validate(); err != nil {
+		problems = append(problems, err.Error())
 	}
 	if len(problems) > 0 {
-		return errors.New("sbom deployer: " + strings.Join(problems, "; "))
+		return errors.New("stack deployer: " + strings.Join(problems, "; "))
 	}
 	return nil
 }
@@ -313,8 +420,8 @@ type step struct {
 // commands are the install and what the deploy path's README says surrounds
 // it: untaint and clusterctl init and a default StorageClass before, the CAPI
 // SPIFFE patch after.
-func (d SBOM) commands(t DeployTarget, sbomDir, valuesDir string) []step {
-	kc := shellQuote(t.Kubeconfig)
+func (d Stack) commands(t DeployTarget, sbomDir, valuesDir string) []step {
+	kc := shellQuote(t.Cluster.NodeKubeconfig)
 	env := "KUBECONFIG=" + kc + " "
 	values := func(release string) string {
 		return "--values-for " + shellQuote(release+"="+path.Join(valuesDir, valuesFile(release)))
@@ -325,7 +432,7 @@ func (d SBOM) commands(t DeployTarget, sbomDir, valuesDir string) []step {
 		{"clusterctl init", env + "clusterctl init --wait-providers"},
 		{"default storage class", env + "kubectl apply -f " + shellQuote(d.StorageClassManifest) +
 			" && " + env + "kubectl patch storageclass " + shellQuote(d.StorageClassName) + " -p " + shellQuote(defaultClass)},
-		{"install " + d.Target, env + "bash " + shellQuote(path.Join(t.Assets, scriptsDir, "use-nke-sbom.sh")) + " install" +
+		{"install " + d.Target, env + "bash " + shellQuote(path.Join(assetsDir, scriptsDir, "use-nke-sbom.sh")) + " install" +
 			" --sbom " + shellQuote(sbomDir) +
 			" --target " + shellQuote(d.Target) +
 			" --config " + shellQuote(path.Join(valuesDir, "bootstrap-config.json")) +
@@ -334,13 +441,13 @@ func (d SBOM) commands(t DeployTarget, sbomDir, valuesDir string) []step {
 			" " + values(releasePostgreSQL) +
 			" " + values(releaseTemporal) +
 			" --kubeconfig " + kc},
-		{"CAPI SPIFFE exec auth", env + "bash " + shellQuote(path.Join(t.Assets, hackDir, "apply-capi-spiffe-exec-auth.sh"))},
+		{"CAPI SPIFFE exec auth", env + "bash " + shellQuote(path.Join(assetsDir, hackDir, "apply-capi-spiffe-exec-auth.sh"))},
 	}
 }
 
 // render produces the per-site values files and the BootstrapConfig the
 // deploy path's template items render against.
-func (d SBOM) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, error) {
+func (d Stack) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, error) {
 	vip := t.Node.IP
 	domains, err := oidcDomains(spireOverlay, vip)
 	if err != nil {
@@ -408,10 +515,13 @@ func (d SBOM) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, er
 		}
 		files[name] = data
 	}
-	// ClusterName is the name NKTP labels the site's telemetry with; NKE's
+	// ClusterName is the name NKTP labels the site's telemetry with. NKE's
 	// kubeadm configuration names every cluster "kubernetes".
 	config, err := json.MarshalIndent(map[string]any{
-		"Nico": d.Nico, "Registry": d.Registry, "Tenant": d.Tenant, "ClusterName": t.SiteName,
+		d.Provider.ConfigKey(): d.Provider,
+		"Registry":             d.Registry,
+		"Tenant":               d.Tenant,
+		"ClusterName":          t.SiteName,
 	}, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("render bootstrap config: %w", err)

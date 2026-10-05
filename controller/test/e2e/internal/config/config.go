@@ -57,16 +57,27 @@ type Config struct {
 	Site Site `json:"site"`
 	// Runner is what the machine running the suite supplies.
 	Runner Runner `json:"runner"`
+	// Nkectl is the CLI the bootstrap runs.
+	Nkectl Nkectl `json:"nkectl"`
 }
 
 // Runner is the machine the suite runs from, as distinct from the site it
-// reaches. Nothing here describes what is under test; it is what this
-// particular runner has, which is where a CI bot and a laptop differ.
+// reaches. Nothing here says what is under test, only where this particular
+// runner keeps it, which is where a CI bot and a laptop differ.
 type Runner struct {
 	// TeleportIdentityFile is a tsh identity file, as a CI bot has instead
 	// of a login session. Empty leaves it to tsh: $TELEPORT_IDENTITY_FILE,
 	// else the runner's tsh profile.
 	TeleportIdentityFile string `json:"teleportIdentityFile"`
+}
+
+// Nkectl is the CLI the bootstrap runs on the node. Its own section rather
+// than a field under runner or site: it is neither the machine the suite runs
+// from nor the site it builds, and what the bootstrap asks of it will grow.
+type Nkectl struct {
+	// Binary is a linux nkectl for the node's architecture, on this machine.
+	// Empty is what `gmake -C cli build-cross` writes for that architecture.
+	Binary string `json:"binary"`
 }
 
 // Site is where a site controller's artifacts come from. Only that: the run's
@@ -80,10 +91,6 @@ type Site struct {
 	// deploy path carries the controller's own chart, so the two have to
 	// agree; override only when developing the deploy path itself.
 	DeployPathRef string `json:"deployPathRef"`
-
-	// Nkectl is a linux nkectl for the node. Empty is what
-	// `gmake -C cli build-cross` writes for the node's architecture.
-	Nkectl string `json:"nkectl"`
 
 	// Images are the site's images and the archives staged into the node's
 	// containerd, which is the cluster's, so they resolve with IfNotPresent

@@ -11,6 +11,30 @@ import (
 	"context"
 )
 
+// The capability keys a machine can answer, and the architecture a run that
+// named none gets.
+//
+// Here rather than with a provider because they are the vocabulary a run and
+// a provider share: a request states them and every provider has to answer
+// the same words. A second provider reads them from the contract rather than
+// from the first implementation.
+//
+// A run states more than these -- kube names a software version, not a
+// property of any machine -- so a provider matches on the keys it knows and
+// ignores the rest, which is what stops a Kubernetes version from excluding
+// every machine.
+const (
+	CapabilityMachineType = "machineType"
+	CapabilityArch        = "arch"
+	CapabilityGPU         = "gpu"
+
+	// DefaultArch is what a run that named no architecture gets. Every site
+	// onboarded so far has an amd64 shape, so this keeps a run without
+	// -e2e.capabilities resolving as it did before architectures were told
+	// apart.
+	DefaultArch = "amd64"
+)
+
 // NodeRequest is what a run asks for.
 type NodeRequest struct {
 	// Name identifies the run's machine to the provider and to anyone reading

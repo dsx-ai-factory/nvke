@@ -36,13 +36,13 @@ const (
 	nktpChartDir = "nktp/deploy/charts/nktp"
 )
 
-// DeployAssetPaths are what the SBOM deployer runs from.
+// DeployAssetPaths are what the Stack deployer runs from.
 func DeployAssetPaths() []string {
 	return []string{scriptsDir, deployDir, hackDir, nktpChartDir}
 }
 
 // ExportRef writes paths as they are at ref in the repository at repo into a
-// new temporary directory, and returns it for Candidate.Assets. Only tracked
+// new temporary directory, and returns it for Site.Assets. Only tracked
 // files are exported, so nothing from the runner's working tree leaks in.
 func ExportRef(ctx context.Context, repo, ref string, paths []string) (string, error) {
 	if len(paths) == 0 {

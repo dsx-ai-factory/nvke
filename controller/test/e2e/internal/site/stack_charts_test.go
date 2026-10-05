@@ -20,7 +20,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
 )
 
-// These tests run what SBOM renders through the deploy path's own scripts and
+// These tests run what Stack renders through the deploy path's own scripts and
 // charts, as exported from DeployPathRef. The unit tests pin what is rendered;
 // these catch a value the charts do not read, which on a live site fails
 // silently or an hour in.
@@ -55,7 +55,7 @@ func deployPath(t *testing.T) string {
 	return dir
 }
 
-// databasePassword is what renderValues gives SBOM, and wantDBSecret is how a
+// databasePassword is what renderValues gives Stack, and wantDBSecret is how a
 // chart's Secret carries it once rendered.
 const databasePassword = "db-secret"
 
@@ -72,7 +72,7 @@ func skipOffline(t *testing.T, chart string, err error) {
 	}
 }
 
-// renderValues writes what SBOM renders for sbomTarget into a directory.
+// renderValues writes what Stack renders for sbomTarget into a directory.
 func renderValues(t *testing.T, assets string) string {
 	t.Helper()
 	overlay, err := os.ReadFile(filepath.Join(assets, "controller", "deploy", "nke-sbom", "spire", "overlay.yaml"))

@@ -1,49 +1,40 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package environment
+package forge
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra"
 )
 
 const (
-	// DefaultArch is the CPU architecture a run that named none gets. Every
-	// site onboarded so far has an amd64 CPU shape, so this keeps a run
-	// without -e2e.capabilities resolving as it did before architectures were
-	// told apart.
-	DefaultArch = "amd64"
-
-	// ForgeProvider is the provider name environments/forge.yaml declares.
-	ForgeProvider = "forge"
-
-	// The capability keys a machine can answer. A run asks for more than
-	// these -- kube names a software version, not a property of any machine --
-	// so matching considers these and ignores the rest, which is what stops a
-	// Kubernetes version from excluding every instance type.
-	capabilityMachineType = "machineType"
-	capabilityArch        = "arch"
-	capabilityGPU         = "gpu"
+	// ProviderName is the provider name environments/forge.yaml declares.
+	ProviderName = "forge"
 )
 
-// Forge is Forge's dialect of an infrastructure declaration. None of it is
-// generic: an org, a site and a VPC are Forge's own vocabulary.
-type Forge struct {
-	Org   ForgeOrg             `json:"org"`
-	Sites map[string]ForgeSite `json:"sites"`
+// Environment is Forge's dialect of an infrastructure declaration. None of it
+// is generic: an org, a site and a VPC are Forge's own vocabulary, which is
+// why this lives here rather than in the environment package.
+type Environment struct {
+	Org   Org             `json:"org"`
+	Sites map[string]Site `json:"sites"`
 }
 
-// ForgeOrg identifies the Forge tenancy the run creates things in.
-type ForgeOrg struct {
+// Org identifies the Forge tenancy the run creates things in.
+type Org struct {
 	ID string `json:"id"`
 }
 
-// ForgeSite is one location, carrying the network identifiers a cluster is
+// Site is one location, carrying the network identifiers a cluster is
 // created against and the machines the site can offer.
-type ForgeSite struct {
+type Site struct {
 	// Key is the name this site is filed under, populated on lookup so callers
 	// can report which site answered without threading the name alongside.
 	Key string `json:"-"`
@@ -88,13 +79,13 @@ type ForgeSite struct {
 	// sends no VIP at all. The simulator backends need one because their BGP
 	// speakers advertise it, and a real site does not work that way.
 
-	InstanceTypes []ForgeInstanceType `json:"instanceTypes"`
+	InstanceTypes []InstanceType `json:"instanceTypes"`
 }
 
-// ForgeInstanceType is a machine shape the site offers, and what it provides.
+// InstanceType is a machine shape the site offers, and what it provides.
 // Matching is against Provides rather than against the name, so a request is
 // answered by what a machine is rather than by what it is called.
-type ForgeInstanceType struct {
+type InstanceType struct {
 	Name     string            `json:"name"`
 	ID       string            `json:"id"`
 	Provides map[string]string `json:"provides"`
@@ -103,29 +94,41 @@ type ForgeInstanceType struct {
 // Arch is the architecture this type provides, or empty if it declares none.
 // A method rather than a caller reaching into Provides, so the capability key
 // stays in the package that defines it.
-func (t ForgeInstanceType) Arch() string { return t.Provides[capabilityArch] }
+func (t InstanceType) Arch() string { return t.Provides[infra.CapabilityArch] }
 
 func isInfrastructureCapability(key string) bool {
 	switch key {
-	case capabilityMachineType, capabilityArch, capabilityGPU:
+	case infra.CapabilityMachineType, infra.CapabilityArch, infra.CapabilityGPU:
 		return true
 	default:
 		return false
 	}
 }
 
-// Forge decodes the environment as a Forge declaration, failing when it is
-// provided by something else.
-func (e *Environment) Forge() (*Forge, error) {
-	var f Forge
-	if err := e.decodeInfrastructure(ForgeProvider, &f); err != nil {
-		return nil, err
+// Decode reads an environment's opaque infrastructure block as Forge's
+// dialect.
+//
+// Raw bytes rather than the environment they came from: this package speaks
+// one dialect and has no reason to know the generic declaration that carries
+// it. Which provider wrote the block is the caller's to establish before
+// calling, and the caller that dispatches on it has already done so.
+func Decode(raw json.RawMessage) (*Environment, error) {
+	if len(raw) == 0 {
+		return nil, errors.New("no infrastructure declared")
+	}
+	// Strict: a misspelled optional key, such as the jump host's key
+	// fingerprint, would otherwise drop the pin without a word.
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	var f Environment
+	if err := dec.Decode(&f); err != nil {
+		return nil, fmt.Errorf("decoding forge infrastructure: %w", err)
 	}
 	if f.Org.ID == "" {
-		return nil, fmt.Errorf("environment %q declares no org id", e.Name)
+		return nil, errors.New("no org id declared")
 	}
 	if len(f.Sites) == 0 {
-		return nil, fmt.Errorf("environment %q declares no sites", e.Name)
+		return nil, errors.New("no sites declared")
 	}
 	return &f, nil
 }
@@ -133,10 +136,10 @@ func (e *Environment) Forge() (*Forge, error) {
 // Site returns the named site. An empty name resolves to the only site when
 // there is exactly one, which is the common case and saves every caller naming
 // it; with several declared, the caller has to choose.
-func (f *Forge) Site(name string) (ForgeSite, error) {
+func (f *Environment) Site(name string) (Site, error) {
 	if name == "" {
 		if len(f.Sites) != 1 {
-			return ForgeSite{}, fmt.Errorf("no site named and %d are declared (%s)", len(f.Sites), strings.Join(f.siteNames(), ", "))
+			return Site{}, fmt.Errorf("no site named and %d are declared (%s)", len(f.Sites), strings.Join(f.siteNames(), ", "))
 		}
 		for key := range f.Sites {
 			name = key
@@ -145,11 +148,11 @@ func (f *Forge) Site(name string) (ForgeSite, error) {
 
 	site, ok := f.Sites[name]
 	if !ok {
-		return ForgeSite{}, fmt.Errorf("no site %q; declared sites are %s", name, strings.Join(f.siteNames(), ", "))
+		return Site{}, fmt.Errorf("no site %q; declared sites are %s", name, strings.Join(f.siteNames(), ", "))
 	}
 	site.Key = name
 	if err := site.validate(); err != nil {
-		return ForgeSite{}, err
+		return Site{}, err
 	}
 	return site, nil
 }
@@ -158,7 +161,7 @@ func (f *Forge) Site(name string) (ForgeSite, error) {
 // without. Checked on lookup so the run stops at the environment file, naming
 // the field, rather than at an API rejection naming a field the caller never
 // set.
-func (s ForgeSite) validate() error {
+func (s Site) validate() error {
 	missing := make([]string, 0, 6)
 	for _, field := range []struct{ name, value string }{
 		{"id", s.ID},
@@ -200,7 +203,7 @@ func (s ForgeSite) validate() error {
 	return nil
 }
 
-func (f *Forge) siteNames() []string {
+func (f *Environment) siteNames() []string {
 	names := make([]string, 0, len(f.Sites))
 	for name := range f.Sites {
 		names = append(names, name)
@@ -216,20 +219,20 @@ func (f *Forge) siteNames() []string {
 // workers behind an amd64 control plane, and the site controller in front of
 // both is a third machine of the CPU kind.
 type Selection struct {
-	Site ForgeSite
+	Site Site
 
 	// CPU carries the site controller and the tenant control plane. Its
 	// architecture is the run's `arch` capability, because that is the one a
 	// caller chooses: the CPU machines are supporting infrastructure and
 	// nothing about the workload decides what they are.
-	CPU ForgeInstanceType
+	CPU InstanceType
 
 	// GPU carries the tenant workers, and is the zero value when the run
 	// asked for no GPU. Its architecture is read from the shape rather than
 	// requested, because a GPU model comes on the architecture it comes on:
 	// asking for a GB200 has already decided arm64, and stating it separately
 	// could only contradict the hardware.
-	GPU ForgeInstanceType
+	GPU InstanceType
 }
 
 // HasGPU reports whether the run asked for a GPU shape.
@@ -237,7 +240,7 @@ func (s Selection) HasGPU() bool { return s.GPU.ID != "" }
 
 // WorkerType is the shape a tenant's workers take: the GPU shape when the run
 // asked for one, else the same CPU shape as everything else.
-func (s Selection) WorkerType() ForgeInstanceType {
+func (s Selection) WorkerType() InstanceType {
 	if s.HasGPU() {
 		return s.GPU
 	}
@@ -262,15 +265,15 @@ func (s Selection) WorkerType() ForgeInstanceType {
 // Sites are searched in name order so two sites offering the same shapes
 // resolve the same way twice. Within a site, MatchInstanceType takes the first
 // declared type, so a file lists shapes cheapest first.
-func (f *Forge) Resolve(capabilities map[string]string) (Selection, error) {
+func (f *Environment) Resolve(capabilities map[string]string) (Selection, error) {
 	if len(f.Sites) == 0 {
 		return Selection{}, errors.New("the environment declares no sites")
 	}
-	arch := capabilities[capabilityArch]
+	arch := capabilities[infra.CapabilityArch]
 	if strings.TrimSpace(arch) == "" {
-		arch = DefaultArch
+		arch = infra.DefaultArch
 	}
-	gpu := strings.TrimSpace(capabilities[capabilityGPU])
+	gpu := strings.TrimSpace(capabilities[infra.CapabilityGPU])
 
 	// A site that does not validate is skipped rather than fatal: the file
 	// declares what exists, and a repository that has not onboarded one of
@@ -326,7 +329,7 @@ func (f *Forge) Resolve(capabilities map[string]string) (Selection, error) {
 // There is no fallback. A request nothing satisfies fails, because the site
 // genuinely cannot host that configuration and a near-miss machine would
 // qualify something other than what was asked for.
-func (s ForgeSite) MatchInstanceType(capabilities map[string]string) (ForgeInstanceType, error) {
+func (s Site) MatchInstanceType(capabilities map[string]string) (InstanceType, error) {
 	for _, candidate := range s.InstanceTypes {
 		if candidate.provides(capabilities) {
 			return candidate, nil
@@ -337,7 +340,7 @@ func (s ForgeSite) MatchInstanceType(capabilities map[string]string) (ForgeInsta
 	for _, candidate := range s.InstanceTypes {
 		offered = append(offered, candidate.Name)
 	}
-	return ForgeInstanceType{}, fmt.Errorf(
+	return InstanceType{}, fmt.Errorf(
 		"site %q offers no instance type providing %s; it offers %s",
 		s.Key, formatCapabilities(capabilities), strings.Join(offered, ", "),
 	)
@@ -351,24 +354,24 @@ func (s ForgeSite) MatchInstanceType(capabilities map[string]string) (ForgeInsta
 // The architecture is a parameter rather than derived, because the caller
 // asking for this already has one to match: a cluster's control plane and its
 // workers cannot run different OS images.
-func (s ForgeSite) MatchCPU(arch string) (ForgeInstanceType, error) {
+func (s Site) MatchCPU(arch string) (InstanceType, error) {
 	return s.MatchInstanceType(map[string]string{
-		capabilityMachineType: "cpu",
-		capabilityArch:        arch,
+		infra.CapabilityMachineType: "cpu",
+		infra.CapabilityArch:        arch,
 	})
 }
 
 // MatchGPU returns this site's shape for a GPU model. No architecture is
 // asked for: a model comes on the architecture it comes on, and this is read
 // back off the result rather than requested.
-func (s ForgeSite) MatchGPU(model string) (ForgeInstanceType, error) {
+func (s Site) MatchGPU(model string) (InstanceType, error) {
 	return s.MatchInstanceType(map[string]string{
-		capabilityMachineType: "gpu",
-		capabilityGPU:         model,
+		infra.CapabilityMachineType: "gpu",
+		infra.CapabilityGPU:         model,
 	})
 }
 
-func (t ForgeInstanceType) provides(capabilities map[string]string) bool {
+func (t InstanceType) provides(capabilities map[string]string) bool {
 	for key, want := range capabilities {
 		if !isInfrastructureCapability(key) {
 			continue

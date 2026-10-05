@@ -5,27 +5,21 @@ package site
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
-
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
 )
 
 // forwardKubeconfig fetches the admin kubeconfig from the node, forwards its
 // API server port, and writes a copy that reaches the cluster through the
 // forward.
-func (b bootstrap) forwardKubeconfig(ctx context.Context, outputDir string) (string, error) {
+func (b bootstrap) forwardKubeconfig(ctx context.Context) (string, error) {
 	raw, err := b.session.Fetch(ctx, kubeconfigPath)
 	if err != nil {
 		return "", err
@@ -43,12 +37,11 @@ func (b bootstrap) forwardKubeconfig(ctx context.Context, outputDir string) (str
 	if err != nil {
 		return "", err
 	}
-	if outputDir == "" {
-		if outputDir, err = os.MkdirTemp("", "nke-e2e-site-"); err != nil {
-			return "", err
-		}
+	outputDir, err := os.MkdirTemp("", "nke-e2e-site-")
+	if err != nil {
+		return "", err
 	}
-	out := filepath.Join(outputDir, b.candidate.SiteName+".kubeconfig")
+	out := filepath.Join(outputDir, b.spec.Name+".kubeconfig")
 	if err := os.WriteFile(out, rewritten, 0o600); err != nil {
 		return "", err
 	}
@@ -112,74 +105,4 @@ func currentCluster(cfg *clientcmdapi.Config) (*clientcmdapi.Cluster, error) {
 		return nil, fmt.Errorf("kubeconfig cluster %q not found", kctx.Cluster)
 	}
 	return cluster, nil
-}
-
-// waitForCWE polls until CWE answers /healthz, then returns its version.
-//
-// Every attempt is bounded by ProbeTimeout rather than by the deadline of the
-// wait as a whole. Sharing that one deadline meant a request which connected
-// and then hung spent the entire ReadyTimeout inside a single attempt, so the
-// ticker below never fired and the loop polled once. Runs 37444155035 and
-// 37454470331 both failed that way with "context deadline exceeded" against
-// /healthz, on sites whose CWE answered in under 4ms once reached by hand:
-// the port-forward reaches the pod as soon as it listens, which is before its
-// database and Temporal checks pass.
-func waitForCWE(ctx context.Context, opts Options, kubeconfig string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, opts.ReadyTimeout)
-	defer cancel()
-	ticker := time.NewTicker(opts.PollInterval)
-	defer ticker.Stop()
-	for {
-		version, err := probeOnce(ctx, opts, kubeconfig)
-		if err == nil {
-			return version, nil
-		}
-		select {
-		case <-ctx.Done():
-			return "", fmt.Errorf("CWE did not become healthy within %s: %w", opts.ReadyTimeout, err)
-		case <-ticker.C:
-		}
-	}
-}
-
-func probeOnce(ctx context.Context, opts Options, kubeconfig string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, opts.ProbeTimeout)
-	defer cancel()
-	return opts.Probe(ctx, kubeconfig)
-}
-
-var errUnhealthy = errors.New("CWE unhealthy")
-
-func probeCWE(ctx context.Context, kubeconfig string) (string, error) {
-	restConfig, err := kube.RESTConfig(kubeconfig, "")
-	if err != nil {
-		return "", err
-	}
-	forwarder, err := kube.NewServiceForwarder(restConfig, cwe.Namespace(), cwe.Service(), cwe.Port())
-	if err != nil {
-		return "", err
-	}
-	defer forwarder.Close()
-
-	status, body, err := forwarder.Get(ctx, "/healthz")
-	if err != nil {
-		return "", err
-	}
-	if status != 200 {
-		return "", fmt.Errorf("%w: /healthz returned %d: %s", errUnhealthy, status, body)
-	}
-	status, body, err = forwarder.Get(ctx, "/api/version")
-	if err != nil {
-		return "", err
-	}
-	if status != 200 {
-		return "", fmt.Errorf("%w: /api/version returned %d: %s", errUnhealthy, status, body)
-	}
-	var v struct {
-		Version string `json:"version"`
-	}
-	if err := json.Unmarshal(body, &v); err != nil {
-		return "", fmt.Errorf("decode /api/version: %w", err)
-	}
-	return v.Version, nil
 }

@@ -17,7 +17,6 @@
 package environment
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -62,12 +61,12 @@ func Load(name string) (*Environment, error) {
 		return nil, fmt.Errorf("environment name %q must be a bare name, not a path", name)
 	}
 
-	return loadPath(name, filepath.Join(Dir, name+".yaml"))
+	return LoadPath(name, filepath.Join(Dir, name+".yaml"))
 }
 
-// loadPath is Load with the path already resolved, so a test can read the
+// LoadPath is Load with the path already resolved, so a test can read the
 // checked-in environments from wherever it runs.
-func loadPath(name, path string) (*Environment, error) {
+func LoadPath(name, path string) (*Environment, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading environment %q from %s: %w", name, path, err)
@@ -150,24 +149,4 @@ func expand(data []byte) ([]byte, error) {
 	}
 
 	return expanded, nil
-}
-
-// decodeInfrastructure decodes the opaque block into a provider's own shape. It
-// is unexported because the provider accessors below are the way in: decoding
-// Forge's dialect as some other provider's would otherwise be silent.
-func (e *Environment) decodeInfrastructure(provider string, into any) error {
-	if e.Provider != provider {
-		return fmt.Errorf("environment %q is provided by %q, not %q", e.Name, e.Provider, provider)
-	}
-	if len(e.Infrastructure) == 0 {
-		return fmt.Errorf("environment %q declares no infrastructure", e.Name)
-	}
-	// Strict like the top level: a misspelled optional key, such as the jump
-	// host's key fingerprint, would otherwise drop the pin without a word.
-	dec := json.NewDecoder(bytes.NewReader(e.Infrastructure))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(into); err != nil {
-		return fmt.Errorf("decoding %s infrastructure in environment %q: %w", provider, e.Name, err)
-	}
-	return nil
 }

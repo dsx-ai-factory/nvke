@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -30,15 +32,36 @@ var sbomTarget = DeployTarget{
 	Node:        testNode,
 	SiteName:    "e2e-site",
 	TrustDomain: "e2e-site.nke.local",
-	Kubeconfig:  kubeconfigPath,
-	Assets:      assetsDir,
+	Cluster:     Cluster{NodeKubeconfig: kubeconfigPath},
 }
 
-func testSBOM() SBOM {
-	return SBOM{
+// stackCheckout is a tree with the two paths the stack stages, written once
+// for the package rather than per test: Stack.validate stats it, and nothing
+// mutates it.
+var stackCheckout = func() string {
+	dir, err := os.MkdirTemp("", "nke-stack-assets-")
+	if err != nil {
+		panic(err)
+	}
+	for _, rel := range []string{"build/use-nke-sbom.sh", "controller/deploy/nke-sbom/release.yaml"} {
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			panic(err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+			panic(err)
+		}
+	}
+	return dir
+}()
+
+func testSBOM() Stack {
+	return Stack{
+		Assets:     stackCheckout,
+		AssetPaths: []string{"build", "controller/deploy"},
 		Controller: Image{Repository: "nvcr.io/nke/cwe", Tag: "v1.2.3"},
 		Profiles:   Image{Repository: "nvcr.io/nke/profiles", Tag: "run-42"},
-		Nico:       Nico{Endpoint: "https://forge.example", OrgID: "org", Token: "tok"},
+		Provider:   NewNico("https://forge.example", "org", "tok"),
 		Registry:   Registry{Server: "ghcr.io", Username: "u", Token: "r"},
 		Tenant:     Tenant{User: "admin", Password: "p"},
 		Arch:       "arm64",
@@ -195,12 +218,14 @@ func TestSBOMDeploy(t *testing.T) {
 	}
 
 	order := []string{
+		// The deploy path is staged first: every step after it runs from the
+		// tree it unpacks.
+		"assets.tar.gz",
 		"node-role.kubernetes.io/control-plane-",
 		"clusterctl init",
 		"local-path-storage.yaml",
 		"use-nke-sbom.sh",
 		"apply-capi-spiffe-exec-auth.sh",
-		"rm -rf",
 	}
 	last := -1
 	for _, want := range order {
@@ -209,6 +234,12 @@ func TestSBOMDeploy(t *testing.T) {
 			t.Fatalf("%q ran at %d, want after %d:\n%s", want, i, last, strings.Join(s.runs, "\n"))
 		}
 		last = i
+	}
+	// The rendered values hold credentials, so removing them is the last thing
+	// that happens. Asserted on the final command rather than by searching for
+	// "rm -rf", which the staging step also runs.
+	if final := s.runs[len(s.runs)-1]; !strings.Contains(final, valuesDir) || !strings.Contains(final, "rm -rf") {
+		t.Errorf("last command should remove the values directory, got %s", final)
 	}
 	install := s.cmd(t, "use-nke-sbom.sh")
 	for _, want := range []string{
@@ -250,13 +281,14 @@ func TestSBOMDeployCleansUpOnFailure(t *testing.T) {
 	}
 }
 
-func TestSBOMValidation(t *testing.T) {
-	for name, mutate := range map[string]func(*SBOM){
-		"arch":          func(d *SBOM) { d.Arch = "riscv64" },
-		"controller":    func(d *SBOM) { d.Controller.Tag = "" },
-		"profiles":      func(d *SBOM) { d.Profiles = Image{} },
-		"nico":          func(d *SBOM) { d.Nico.Token = "" },
-		"storage class": func(d *SBOM) { d.StorageClassManifest = "https://example/sc.yaml" },
+func TestStackValidation(t *testing.T) {
+	for name, mutate := range map[string]func(*Stack){
+		"arch":          func(d *Stack) { d.Arch = "riscv64" },
+		"controller":    func(d *Stack) { d.Controller.Tag = "" },
+		"profiles":      func(d *Stack) { d.Profiles = Image{} },
+		"provider":      func(d *Stack) { d.Provider = NewNico("https://forge.example", "org", "") },
+		"no provider":   func(d *Stack) { d.Provider = nil },
+		"storage class": func(d *Stack) { d.StorageClassManifest = "https://example/sc.yaml" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			d := testSBOM()
