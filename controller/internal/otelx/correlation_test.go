@@ -78,3 +78,28 @@ func TestCorrelationMissingAndInvalidParent(t *testing.T) {
 	// Rows written before the migration carry no correlation and remain readable.
 	require.False(t, trace.SpanContextFromContext(Restore(context.Background(), nil)).IsValid())
 }
+
+func TestNormalizeLogAttr(t *testing.T) {
+	t.Parallel()
+	tests := map[string]string{
+		"TraceID":      "trace_id",
+		"SpanID":       "span_id",
+		"WorkflowID":   "workflow_id",
+		"workflowID":   "workflow_id",
+		"RunID":        "run_id",
+		"runID":        "run_id",
+		"ActivityID":   "activity_id",
+		"Attempt":      "attempt",
+		"workflowType": "workflowType",
+		"msg":          "msg",
+		"trace_id":     "trace_id",
+	}
+	for key, want := range tests {
+		t.Run(key, func(t *testing.T) {
+			t.Parallel()
+			got := NormalizeLogAttr(nil, slog.String(key, "value"))
+			require.Equal(t, want, got.Key)
+			require.Equal(t, "value", got.Value.String())
+		})
+	}
+}

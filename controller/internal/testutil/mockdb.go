@@ -573,3 +573,17 @@ func (m *MockTx) CreateWorkflowOutboxEntry(
 	}
 	return v, args.Error(1)
 }
+
+func (m *MockTx) ListUnprocessedWorkflowOutboxEntries(ctx context.Context, limit int) ([]db.WorkflowOutbox, error) {
+	args := m.Called(ctx, limit)
+	v, ok := args.Get(0).([]db.WorkflowOutbox)
+	if !ok {
+		return nil, args.Error(1)
+	}
+	return v, args.Error(1)
+}
+
+func (m *MockTx) MarkWorkflowOutboxEntryProcessed(ctx context.Context, id uuid.UUID) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
