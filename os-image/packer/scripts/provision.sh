@@ -138,6 +138,8 @@ sudo rm -f /home/ubuntu/.ssh/authorized_keys
 sudo install -d -m 0755 /etc/cloud/cloud.cfg.d /etc/netplan
 sudo install -m 0644 "${SRC}/99-disable-network-config.cfg" /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
 sudo install -m 0600 "${SRC}/00-dhcp-all.yaml" /etc/netplan/00-dhcp-all.yaml
+# Remove the installer config so DHCP cannot also run on a bridged physical NIC.
+sudo rm -f /etc/netplan/50-cloud-init.yaml
 
 # cidata/autoinstall-lvm.pkrtpl sets kernel.package to the NVIDIA-tuned
 # flavor specifically so, per its own comment, "there's no generic kernel to
