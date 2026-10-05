@@ -107,8 +107,16 @@ identifiers also removes a resolution API call from the hot path of every run.
 ## Where the identifiers come from
 
 Not from the file. Every `${NAME}` above is read from the process environment
-when the environment loads, and an unset one fails the run before anything is
-created. CI supplies them from repository variables, which is the same route
+when the environment loads.
+
+A plain `${NAME}` is required: unset or empty fails the run before anything is
+created, and every missing name is reported at once. `${NAME:-}` defaults to
+empty instead, which is why ytl's identifiers take that form. A site missing
+any of them does not validate, and `Resolve` skips it rather than failing, so a
+repository that has not onboarded ytl still runs against az61. Set them to
+qualify at ytl.
+
+CI supplies them from repository variables, which is the same route
 `FORGE_TELEPORT_PROXY` already takes. `FORGE_JUMP_HOST` and
 `FORGE_TELEPORT_JOIN_TOKEN` are repository secrets instead, so that the job
 log masks them.
