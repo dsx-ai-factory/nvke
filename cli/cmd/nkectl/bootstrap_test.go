@@ -241,7 +241,7 @@ func TestBootstrapSiteImageFlags(t *testing.T) {
 // and dry-run returns no error without dispatching anything.
 func TestRunBootstrapSiteDryRunValid(t *testing.T) {
 	path := writeSiteSpec(t, validSiteSpec)
-	if err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{siteSpec: path, dryRun: true}); err != nil {
+	if err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{siteSpec: path, dryRun: true}); err != nil {
 		t.Fatalf("dry-run of valid site spec returned error: %v", err)
 	}
 }
@@ -263,7 +263,7 @@ registry:
   bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
   bootstrapChart: "cloud-workflow-engine"
 `
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{siteSpec: writeSiteSpec(t, bad)})
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{siteSpec: writeSiteSpec(t, bad)})
 	if err == nil {
 		t.Fatal("invalid site spec did not error")
 	}
@@ -289,7 +289,7 @@ func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
 	kubeconfigOut := filepath.Join(t.TempDir(), "nke-site.kubeconfig")
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	spireEntriesDumped := false
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           fakeCWERunner{},
@@ -336,7 +336,7 @@ func TestRunBootstrapSiteRetainsBootstrapClusterWhenSpireEntryDumpFails(t *testi
 	startFakeCWEAPI(t, true)
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           fakeCWERunner{},
@@ -362,7 +362,7 @@ func TestRunBootstrapSiteSkipsSpireEntryDumpWhenMTLSDisabled(t *testing.T) {
 	startFakeCWEAPI(t, true)
 
 	dumpCalled := false
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		disableMTLS:         true,
 		bootstrapRunner:     fakeBootstrapRunner{},
@@ -395,7 +395,7 @@ func TestRunBootstrapSiteFailsWhenTheClusterNeverComesUp(t *testing.T) {
 	t.Setenv("NKECTL_BOOTSTRAP_CLUSTER_TIMEOUT", "5ms")
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           fakeCWERunner{},
@@ -425,7 +425,7 @@ func TestRunBootstrapSiteRetainsClusterWhenKubeconfigIsNotPublished(t *testing.T
 	startFakeCWEAPI(t, true)
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           missingKubeconfigRunner{},
@@ -507,7 +507,7 @@ func TestRunBootstrapSiteUsesNerdctl(t *testing.T) {
 	startFakeCWEAPI(t, true)
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
-	_ = runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	_ = runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           fakeCWERunner{},
@@ -535,7 +535,7 @@ func TestRunBootstrapSiteRequiresNerdctlOnPath(t *testing.T) {
 	setBootstrapEnv(t)
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:        writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner: runner,
 		cweRunner:       fakeCWERunner{},
@@ -614,7 +614,7 @@ func TestRunBootstrapSiteDefaultsImagesToTheLocalBuild(t *testing.T) {
 	startFakeCWEAPI(t, true)
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           fakeCWERunner{},
@@ -713,7 +713,7 @@ func TestRunBootstrapSiteRefusesMissingLocalImageBeforeCreate(t *testing.T) {
 		return fakeBootstrapRunner{}.Run(ctx, env, name, args...)
 	})
 	runner := &recordingRunner{next: inner}
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           fakeCWERunner{},
@@ -869,7 +869,7 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 	t.Run("a successful bootstrap writes nothing", func(t *testing.T) {
 		startFakeCWEAPI(t, true)
 		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
-		err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 			siteSpec:            writeSiteSpec(t, validSiteSpec),
 			diagnosticsDir:      dir,
 			bootstrapRunner:     fakeBootstrapRunner{},
@@ -897,7 +897,7 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 		t.Setenv("NKECTL_CWE_READY_TIMEOUT", "1s")
 		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
 		// CWE never reports healthy: the failure this exists for.
-		err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 			siteSpec:            writeSiteSpec(t, validSiteSpec),
 			diagnosticsDir:      dir,
 			bootstrapRunner:     fakeBootstrapRunner{},
@@ -962,7 +962,7 @@ func TestRunBootstrapSiteWaitsForEveryControlPlaneNode(t *testing.T) {
 			startFakeCWEAPIWithNodes(t, true, 3, tc.joined)
 
 			runner := &recordingRunner{next: fakeBootstrapRunner{}}
-			err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+			err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 				siteSpec:        writeSiteSpec(t, threeNodeSiteSpec),
 				bootstrapRunner: runner,
 				cweRunner:       fakeCWERunner{},
@@ -1011,7 +1011,7 @@ func TestRunBootstrapSiteTearsDownOnceEveryNodeHasJoined(t *testing.T) {
 	startFakeCWEAPIWithNodes(t, true, 3, 3)
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, threeNodeSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           fakeCWERunner{},
@@ -1079,7 +1079,7 @@ func TestRunBootstrapSiteSavesTheEtcdEncryptionKey(t *testing.T) {
 
 	keyOut := filepath.Join(t.TempDir(), "site-key.json")
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           fakeCWERunner{},
@@ -1147,7 +1147,7 @@ func TestRunBootstrapSiteRetainsClusterWhenKeyCaptureFails(t *testing.T) {
 	keyOut := filepath.Join(t.TempDir(), "key.json")
 	kubeconfigOut := filepath.Join(t.TempDir(), "site.kubeconfig")
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           missingEtcdKeyRunner{},
@@ -1219,7 +1219,7 @@ func TestRunBootstrapSiteSkipsKeyCaptureWhenEncryptionIsOff(t *testing.T) {
 
 	keyOut := filepath.Join(t.TempDir(), "key.json")
 	cwe := &recordingCWERunner{next: fakeCWERunner{}}
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, strings.Replace(validSiteSpec, "  k8sVersion:", "  etcdEncryption: false\n  k8sVersion:", 1)),
 		bootstrapRunner:     &recordingRunner{next: fakeBootstrapRunner{}},
 		cweRunner:           cwe,
@@ -1253,7 +1253,7 @@ func TestRunBootstrapSiteRefusesAnExistingKeyFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           fakeCWERunner{},
@@ -1292,7 +1292,7 @@ func TestRunBootstrapSiteRefusesHostsServingAControlPlane(t *testing.T) {
 	setBootstrapEnv(t)
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:         writeSiteSpec(t, threeNodeSiteSpec),
 		bootstrapRunner:  runner,
 		cweRunner:        fakeCWERunner{},
@@ -1342,7 +1342,7 @@ func TestRunBootstrapSiteRefusesWhileAnEarlierBootstrapClusterRuns(t *testing.T)
 	setBootstrapEnv(t)
 
 	runner := &recordingRunner{next: leftoverKindRunner{}}
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:            writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:     runner,
 		cweRunner:           fakeCWERunner{},
@@ -1382,7 +1382,7 @@ func TestRunBootstrapSiteRemovesTheControlPlaneTaint(t *testing.T) {
 
 	kubeconfigOut := filepath.Join(t.TempDir(), "nke-site.kubeconfig")
 	untaintedWith := ""
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:         writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:  &recordingRunner{next: fakeBootstrapRunner{}},
 		cweRunner:        fakeCWERunner{},
@@ -1417,7 +1417,7 @@ func TestRunBootstrapSiteReportsAnUntaintFailure(t *testing.T) {
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	cwe := &recordingCWERunner{next: fakeCWERunner{}}
 	var out bytes.Buffer
-	err := runBootstrapSite(&out, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), &out, &bootstrapSiteOptions{
 		siteSpec:         writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:  runner,
 		cweRunner:        cwe,

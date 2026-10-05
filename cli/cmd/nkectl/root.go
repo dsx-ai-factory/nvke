@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -23,9 +24,13 @@ var (
 
 func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
 	root := &cobra.Command{
-		Use:          "nkectl",
-		Short:        "NKE control-plane CLI",
-		SilenceUsage: true,
+		Use:   "nkectl",
+		Short: "NKE control-plane CLI",
+		// Errors reach the operator from main, which maps them to an exit code
+		// at the same time. Leaving cobra to print as well would double every
+		// message on stderr.
+		SilenceErrors: true,
+		SilenceUsage:  true,
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			return setupLogging(verbose, jsonLogs)
 		},
@@ -102,9 +107,11 @@ func resolveSiteConfig(cfg *config.Config) (config.SiteConfig, error) {
 	return siteCfg, nil
 }
 
-// Execute is the entry point called from main.
-func Execute(ver, commit, treeState, date string) error {
-	return newRootCmd(ver, commit, treeState, date).Execute()
+// Execute runs the command tree and returns the error the command failed with,
+// or nil. ctx becomes the root context every command sees through
+// cmd.Context(), so cancelling it cancels the command in flight.
+func Execute(ctx context.Context, ver, commit, treeState, date string) error {
+	return newRootCmd(ver, commit, treeState, date).ExecuteContext(ctx)
 }
 
 func setupLogging(verbose, jsonLogs bool) error {

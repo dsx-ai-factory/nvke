@@ -240,6 +240,26 @@ make build          # builds all binaries including cli/nkectl into bin/
 make build
 ```
 
+## Compatibility
+
+`nkectl` releases on its own `cli/vX.Y.Z` tags and follows
+[the compatibility policy](docs/compatibility.md): what is contract and what is
+not, the exit codes, signal and non-interactive behaviour, and how something
+gets deprecated before it is removed.
+
+The short version, for scripting:
+
+| | |
+|---|---|
+| Exit `0` | Success |
+| Exit `1` | Failure — the reason is on stderr |
+| Exit `130` | Interrupted by a signal before finishing |
+| stdout | Results only |
+| stderr | Diagnostics, progress and logs only |
+
+Parse `-o json`, not the table output: columns are presentation and may change
+in a patch release. Match on the exit code, not on error text.
+
 ## Platform support
 
 | OS | amd64 | arm64 |
@@ -249,6 +269,7 @@ make build
 
 ## Related docs
 
+- [Compatibility and deprecation policy](docs/compatibility.md)
 - [Site Controller Bootstrap](../docs/site-bootstrap/overview.md)
 - [Architecture](../docs/architecture.md)
 - [Authenticating to the NKE API](../controller/docs/authenticating-to-the-api.md)

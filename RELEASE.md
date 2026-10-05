@@ -16,6 +16,11 @@ v<MAJOR>.<MINOR>.<PATCH>
 | `MINOR` | New backwards-compatible features |
 | `MAJOR` | Breaking API or behavioral changes |
 
+What counts as breaking differs per component, so each states its own surface.
+For `nkectl` that is [the CLI compatibility policy](cli/docs/compatibility.md),
+which lists the commands, flags, exit codes and output formats these increments
+apply to, and the deprecation sequence a removal has to go through first.
+
 ## Release cadence
 
 There is no fixed release schedule. Releases are made when a meaningful

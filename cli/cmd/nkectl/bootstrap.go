@@ -171,7 +171,7 @@ site spec file format.`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runBootstrapSite(cmd.OutOrStdout(), opts)
+			return runBootstrapSite(cmd.Context(), cmd.OutOrStdout(), opts)
 		},
 	}
 
@@ -209,7 +209,7 @@ site spec file format.`,
 	return cmd
 }
 
-func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
+func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	logger := slog.Default().With("component", "bootstrap-site")
 
 	// Step 1: load and validate the sitespec. Fail fast on any problem.
@@ -248,7 +248,6 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	// It is normally torn down on exit. After site-cluster creation starts, a
 	// later failure retains it so the operator does not lose the controllers and
 	// credentials needed for recovery.
-	ctx := context.Background()
 	cfg := bootstrapengine.DefaultConfig()
 	// A create that fails never reaches the diagnostics defer below, so the
 	// engine collects for itself and honours the same two flags.

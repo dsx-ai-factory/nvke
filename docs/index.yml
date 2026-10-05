@@ -81,6 +81,8 @@ navigation:
         contents:
           - page: nkectl CLI
             path: ../cli/docs/user-flow.md
+          - page: nkectl Compatibility Policy
+            path: ../cli/docs/compatibility.md
           - page: Site Spec
             path: ../cli/docs/sitespec.md
           - page: Configuring API Authentication
