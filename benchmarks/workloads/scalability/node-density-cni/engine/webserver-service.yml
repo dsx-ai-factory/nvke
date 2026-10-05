@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+kind: Service
+apiVersion: v1
+metadata:
+  name: webserver-{{.Replica}}-{{.Iteration}}
+spec:
+  selector:
+    name: webserver-{{.Replica}}-{{.Iteration}}
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
+  type: ClusterIP
