@@ -196,7 +196,7 @@ func (f *fakeCWE) create(w http.ResponseWriter, r *http.Request) {
 		ID:                            uuid.New(),
 		Name:                          req.Name,
 		ControlPlaneKubernetesVersion: req.ControlPlaneKubernetesVersion,
-		CniPlugin:                     req.CniPlugin,
+		CniPlugin:                     string(req.CniPlugin),
 		CniVersion:                    cniVersion,
 		EtcdEncrypted:                 req.EtcdEncrypted,
 		CreatedAt:                     time.Now(),

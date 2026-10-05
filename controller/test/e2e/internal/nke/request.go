@@ -247,7 +247,7 @@ func buildCAPNicoRequest(spec ClusterSpec, payloads func(controlPlane bool) Node
 	req := api.CreateClusterRequest{
 		Name:                          name,
 		ControlPlaneKubernetesVersion: spec.KubernetesVersion,
-		CniPlugin:                     spec.CNIPlugin,
+		CniPlugin:                     api.CreateClusterRequestCniPlugin(spec.CNIPlugin),
 		EtcdEncrypted:                 spec.ControlPlane.EtcdEncrypted,
 		ControlPlaneVIP:               spec.ControlPlane.ControlPlaneVIP,
 		Infra: &api.InfraClusterProvider{
@@ -386,7 +386,7 @@ func buildCAPDRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 
 	req.Name = timestampedName(spec.Name)
 	req.ControlPlaneKubernetesVersion = spec.KubernetesVersion
-	req.CniPlugin = spec.CNIPlugin
+	req.CniPlugin = api.CreateClusterRequestCniPlugin(spec.CNIPlugin)
 	req.EtcdEncrypted = spec.ControlPlane.EtcdEncrypted
 	req.ControlPlaneVIP = spec.ControlPlane.ControlPlaneVIP
 	applyNetworkConfig(&req, spec.Network)
@@ -498,7 +498,7 @@ func buildNicoVMSRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	req := api.CreateClusterRequest{
 		Name:                          timestampedName(spec.Name),
 		ControlPlaneKubernetesVersion: spec.KubernetesVersion,
-		CniPlugin:                     spec.CNIPlugin,
+		CniPlugin:                     api.CreateClusterRequestCniPlugin(spec.CNIPlugin),
 		EtcdEncrypted:                 spec.ControlPlane.EtcdEncrypted,
 		ControlPlaneVIP:               spec.ControlPlane.ControlPlaneVIP,
 		TeleportEnabled:               &teleportDisabled,

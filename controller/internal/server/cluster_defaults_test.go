@@ -186,7 +186,7 @@ func TestDbClusterFromAPI_TeleportDefault(t *testing.T) {
 }
 
 func TestDbClusterFromAPI_CNIVersion(t *testing.T) {
-	baseReq := func(plugin string, cniVersion *string) *api.CreateClusterRequest {
+	baseReq := func(plugin api.CreateClusterRequestCniPlugin, cniVersion *string) *api.CreateClusterRequest {
 		return &api.CreateClusterRequest{
 			Name: "test",
 			Nico: &api.NicoClusterProvider{
@@ -202,23 +202,23 @@ func TestDbClusterFromAPI_CNIVersion(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		plugin     string
+		plugin     api.CreateClusterRequestCniPlugin
 		cniVersion *string
 		want       string
 	}{
 		{
 			name:   "defaults calico",
-			plugin: string(db.CNICalico),
+			plugin: api.CreateClusterRequestCniPluginCalico,
 			want:   db.DefaultCalicoCNIVersion,
 		},
 		{
 			name:   "defaults ovn",
-			plugin: string(db.CNIOvnKubernetes),
+			plugin: api.CreateClusterRequestCniPluginOvnKubernetes,
 			want:   db.DefaultOvnKubernetesCNIVersion,
 		},
 		{
 			name:       "preserves explicit value",
-			plugin:     string(db.CNICalico),
+			plugin:     api.CreateClusterRequestCniPluginCalico,
 			cniVersion: ptrString("3.31.5"),
 			want:       "3.31.5",
 		},

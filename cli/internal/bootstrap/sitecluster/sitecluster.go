@@ -55,7 +55,7 @@ func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, e
 	req := api.CreateClusterJSONRequestBody{
 		Name:                          inv.ClusterName,
 		ControlPlaneKubernetesVersion: inv.Cluster.K8sVersion,
-		CniPlugin:                     inv.Cluster.CniName,
+		CniPlugin:                     api.CreateClusterRequestCniPlugin(inv.Cluster.CniName),
 		EtcdEncrypted:                 inv.Cluster.EtcdEncryptionEnabled(),
 		// A plain string with omitempty: an unset VIP is left out of the body.
 		ControlPlaneVIP: inv.Cluster.ControlPlaneVIP,

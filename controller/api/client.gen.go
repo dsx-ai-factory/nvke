@@ -118,9 +118,6 @@ type ClientInterface interface {
 	// GetClusterControlPlaneConfigHistory request
 	GetClusterControlPlaneConfigHistory(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ListCNIPlugins request
-	ListCNIPlugins(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// ListConfigProfiles request
 	ListConfigProfiles(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -268,18 +265,6 @@ func (c *Client) GetClusterControlPlane(ctx context.Context, clusterID openapi_t
 
 func (c *Client) GetClusterControlPlaneConfigHistory(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetClusterControlPlaneConfigHistoryRequest(c.Server, clusterID)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ListCNIPlugins(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListCNIPluginsRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -747,33 +732,6 @@ func NewGetClusterControlPlaneConfigHistoryRequest(server string, clusterID open
 	}
 
 	operationPath := fmt.Sprintf("/clusters/%s/control-plane/configHistory", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewListCNIPluginsRequest generates requests for ListCNIPlugins
-func NewListCNIPluginsRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/cniPlugins")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1476,9 +1434,6 @@ type ClientWithResponsesInterface interface {
 	// GetClusterControlPlaneConfigHistoryWithResponse request
 	GetClusterControlPlaneConfigHistoryWithResponse(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetClusterControlPlaneConfigHistoryClientResponse, error)
 
-	// ListCNIPluginsWithResponse request
-	ListCNIPluginsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListCNIPluginsClientResponse, error)
-
 	// ListConfigProfilesWithResponse request
 	ListConfigProfilesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListConfigProfilesClientResponse, error)
 
@@ -1690,30 +1645,6 @@ func (r GetClusterControlPlaneConfigHistoryClientResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetClusterControlPlaneConfigHistoryClientResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type ListCNIPluginsClientResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *ListCNIPluginsResponse
-	JSON401      *Unauthorized
-	JSON403      *Forbidden
-}
-
-// Status returns HTTPResponse.Status
-func (r ListCNIPluginsClientResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListCNIPluginsClientResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -2138,15 +2069,6 @@ func (c *ClientWithResponses) GetClusterControlPlaneConfigHistoryWithResponse(ct
 	return ParseGetClusterControlPlaneConfigHistoryClientResponse(rsp)
 }
 
-// ListCNIPluginsWithResponse request returning *ListCNIPluginsClientResponse
-func (c *ClientWithResponses) ListCNIPluginsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListCNIPluginsClientResponse, error) {
-	rsp, err := c.ListCNIPlugins(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListCNIPluginsClientResponse(rsp)
-}
-
 // ListConfigProfilesWithResponse request returning *ListConfigProfilesClientResponse
 func (c *ClientWithResponses) ListConfigProfilesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListConfigProfilesClientResponse, error) {
 	rsp, err := c.ListConfigProfiles(ctx, reqEditors...)
@@ -2552,46 +2474,6 @@ func ParseGetClusterControlPlaneConfigHistoryClientResponse(rsp *http.Response) 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ControlPlaneConfigHistory
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest Unauthorized
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest Forbidden
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseListCNIPluginsClientResponse parses an HTTP response from a ListCNIPluginsWithResponse call
-func ParseListCNIPluginsClientResponse(rsp *http.Response) (*ListCNIPluginsClientResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListCNIPluginsClientResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ListCNIPluginsResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

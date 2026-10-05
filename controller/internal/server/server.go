@@ -211,7 +211,6 @@ func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, tempo
 		nodeService:          *NewNodeService(logger, database, temporalClient, cfg.UseControlPlaneControllerForControlPlane()),
 		osProfileService:     *NewOSProfileService(cfg, logger),
 		configProfileService: *NewConfigProfileService(cfg, logger),
-		cniPluginsService:    *NewCNIPluginsService(),
 	}
 }
 
@@ -222,7 +221,6 @@ type serverImpl struct {
 	nodeService
 	osProfileService
 	configProfileService
-	cniPluginsService
 }
 
 // temporalUIURL returns the Temporal Web UI base URL to surface in the version

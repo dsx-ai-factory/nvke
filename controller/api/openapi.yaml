@@ -124,8 +124,9 @@ tags:
       and a pool's `kubernetesVersion` are desired versions; the control plane's
       current running version is reported in `ControlPlaneStatus.kubernetesVersion`.
 
-      **Networking.** The supported CNI plugin is ovn-kubernetes (default version
-      1.4.0). Pod and service CIDRs are IPv4, private, and immutable after
+      **Networking.** Supported CNI plugins are calico (default version 3.30.1)
+      and ovn-kubernetes (default version 1.4.0). Pod and service CIDRs are IPv4,
+      private, and immutable after
       creation; the defaults are 192.168.0.0/16 for pods and 10.96.0.0/12 for
       services. NKE allocates a /24 from the pod CIDR to each node, so the pod
       CIDR must have room for every desired node plus surge, or one spare block
@@ -183,29 +184,9 @@ tags:
       provisioning, reboot and teardown operations run for it, with per-step
       timing.
   - name: Catalog
-    description: Supported CNI plugins.
+    description: Profile catalogs.
 
 paths:
-  /cniPlugins:
-    get:
-      tags: [Catalog]
-      summary: List CNI plugins
-      operationId: listCNIPlugins
-      description: Returns the CNI plugins a cluster can be created with.
-      responses:
-        "200":
-          description: Supported CNI plugins
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ListCNIPluginsResponse"
-              example:
-                cniPlugins: [ovn-kubernetes]
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-
   /clusters:
     get:
       tags: [Clusters]
@@ -1044,14 +1025,15 @@ components:
           x-order: 5
         cniPlugin:
           type: string
+          enum: [calico, ovn-kubernetes]
           example: "ovn-kubernetes"
-          description: CNI plugin. See GET /cniPlugins.
+          description: CNI plugin. Supported values are calico and ovn-kubernetes.
           x-order: 6
         cniVersion:
           type: string
           pattern: '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$'
           example: "1.4.0"
-          description: CNI version, as X.Y.Z. Defaults to 1.4.0.
+          description: CNI version, as X.Y.Z. Defaults to 3.30.1 for calico or 1.4.0 for ovn-kubernetes.
           x-order: 7
         etcdEncrypted:
           type: boolean
@@ -1466,18 +1448,6 @@ components:
         serviceCIDR:
           type: string
           description: IPv4 service CIDR in effect.
-
-    ListCNIPluginsResponse:
-      description: Supported CNI plugins.
-      type: object
-      required:
-        - cniPlugins
-      properties:
-        cniPlugins:
-          type: array
-          items:
-            type: string
-          description: Supported CNI plugins.
 
     ListClustersResponse:
       description: A list of clusters.

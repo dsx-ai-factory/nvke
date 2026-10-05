@@ -23,6 +23,12 @@ const (
 	ConditionStatusUnknown ConditionStatus = "Unknown"
 )
 
+// Defines values for CreateClusterRequestCniPlugin.
+const (
+	CreateClusterRequestCniPluginCalico        CreateClusterRequestCniPlugin = "calico"
+	CreateClusterRequestCniPluginOvnKubernetes CreateClusterRequestCniPlugin = "ovn-kubernetes"
+)
+
 // Defines values for DiskSelectionStrategy.
 const (
 	DiskSelectionStrategyLargest  DiskSelectionStrategy = "largest"
@@ -375,10 +381,10 @@ type CreateClusterRequest struct {
 	// ControlPlaneKubernetesVersion Kubernetes version for the cluster, as X.Y.Z with no leading "v".
 	ControlPlaneKubernetesVersion string `json:"controlPlaneKubernetesVersion"`
 
-	// CniPlugin CNI plugin. See GET /cniPlugins.
-	CniPlugin string `json:"cniPlugin"`
+	// CniPlugin CNI plugin. Supported values are calico and ovn-kubernetes.
+	CniPlugin CreateClusterRequestCniPlugin `json:"cniPlugin"`
 
-	// CniVersion CNI version, as X.Y.Z. Defaults to 1.4.0.
+	// CniVersion CNI version, as X.Y.Z. Defaults to 3.30.1 for calico or 1.4.0 for ovn-kubernetes.
 	CniVersion *string `json:"cniVersion,omitempty"`
 
 	// EtcdEncrypted Encrypt etcd at rest. Can be turned on later with `enableEtcdEncryption`; cannot be turned off.
@@ -412,6 +418,9 @@ type CreateClusterRequest struct {
 	// NodePools Initial worker node pools.
 	NodePools *[]NodePoolCreateConfig `json:"nodePools,omitempty"`
 }
+
+// CreateClusterRequestCniPlugin CNI plugin. Supported values are calico and ovn-kubernetes.
+type CreateClusterRequestCniPlugin string
 
 // CreateNodePoolRequest defines model for CreateNodePoolRequest.
 type CreateNodePoolRequest struct {
@@ -561,12 +570,6 @@ type InfraNodeSetProvider struct {
 
 	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
 	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
-}
-
-// ListCNIPluginsResponse Supported CNI plugins.
-type ListCNIPluginsResponse struct {
-	// CniPlugins Supported CNI plugins.
-	CniPlugins []string `json:"cniPlugins"`
 }
 
 // ListClustersResponse A list of clusters.
