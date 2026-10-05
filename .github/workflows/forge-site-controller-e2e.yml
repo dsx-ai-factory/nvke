@@ -438,6 +438,13 @@ jobs:
         run: |
           set -Eeuo pipefail
 
+          # FORGE_JUMP_HOST is a secret, so the log masks it without being
+          # asked. FORGE_YTL_JUMP_HOST is a repository variable and gets none
+          # of that, so it is masked here, before any step can print it.
+          if [ -n "${FORGE_YTL_JUMP_HOST}" ]; then
+            echo "::add-mask::${FORGE_YTL_JUMP_HOST}"
+          fi
+
           # The join token allows refs/heads/main and refs/pull/*/merge and
           # nothing else, so a dispatch from any other branch mints nothing.
           # Checked here because the join failure names neither the ref nor
@@ -514,7 +521,12 @@ jobs:
             amd64|arm64) ;;
             *) echo "::error::arch is ${arch}, which is neither amd64 nor arm64"; exit 1 ;;
           esac
-          if [ "${arch}" != amd64 ] && [ -z "${SITE_CONTROLLER_VERSION}" ]; then
+          # SITE_CONTROLLER_BUILD, not SITE_CONTROLLER_VERSION: the resolve
+          # step above writes a commit into the version when none was given,
+          # so the version is never empty by here. The build flag is what
+          # records that the image is built from this checkout, which is the
+          # amd64-only path.
+          if [ "${arch}" != amd64 ] && [ "${SITE_CONTROLLER_BUILD}" = 1 ]; then
             echo "::error::arch=${arch} needs controller-version set: building the controller image here is amd64-only"
             exit 1
           fi
@@ -863,7 +875,7 @@ jobs:
               # from, both of which survive. Whether each was set is the part
               # that is diagnostic.
               case "${resolved}" in
-                FORGE_JUMP_HOST|FORGE_TELEPORT_JOIN_TOKEN) withhold=1 ;;
+                FORGE_JUMP_HOST|FORGE_YTL_JUMP_HOST|FORGE_TELEPORT_JOIN_TOKEN) withhold=1 ;;
                 *) withhold=0 ;;
               esac
               if [ "${withhold}" = 1 ] && [ "${value}" != "<unset>" ]; then
@@ -989,17 +1001,22 @@ jobs:
       # The suite names the jump host in its own errors ("not reachable
       # through ..."), and those land in the log and the JUnit report. GitHub
       # masks a secret in the job log, not in an uploaded artifact.
+      #
+      # Both sites' hosts: a run reaches one of them, and which one is not
+      # worth branching on here.
       - name: Withhold the jump host from the run log
         if: always()
         shell: bash
         working-directory: controller/test/e2e
         run: |
           set -Eeuo pipefail
-          [ -n "${FORGE_JUMP_HOST}" ] || exit 0
-          host="$(printf '%s' "${FORGE_JUMP_HOST}" | sed 's/[][\.*^$/]/\\&/g')"
-          for f in site-e2e.log site-e2e.junit.xml; do
-            [ -f "${f}" ] || continue
-            sed -i "s/${host}/<jump host>/g" "${f}"
+          for raw in "${FORGE_JUMP_HOST}" "${FORGE_YTL_JUMP_HOST}"; do
+            [ -n "${raw}" ] || continue
+            host="$(printf '%s' "${raw}" | sed 's/[][\.*^$/]/\\&/g')"
+            for f in site-e2e.log site-e2e.junit.xml; do
+              [ -f "${f}" ] || continue
+              sed -i "s/${host}/<jump host>/g" "${f}"
+            done
           done
 
       # The Ginkgo log carries every phase boundary, remote command and
