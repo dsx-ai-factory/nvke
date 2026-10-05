@@ -43,7 +43,7 @@ case "${1:-test}" in
     mkdir -p .local/tracing-poc
     export POC_LOG_PATH="$PWD/.local/tracing-poc/logs.jsonl"
     export GOTOOLCHAIN="go$(awk '/^go / {print $2; exit}' ../go.work)"
-    GOPROXY=off go test -tags tracing_poc ./internal/temporal -run '^TestTracingPOC$' -count=1 -v -timeout=3m
+    go test -tags tracing_poc ./internal/temporal -run '^TestTracingPOC$' -count=1 -v -timeout=3m
     ;;
   stop)
     for name in cwe-tracing-poc-postgres cwe-tracing-poc-temporal cwe-tracing-poc-jaeger; do

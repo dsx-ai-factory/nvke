@@ -265,7 +265,7 @@ func (b *pocLogBuffer) snapshot() []byte {
 }
 
 // pocSpanExporter observes the SDK's real completed spans without an additional
-// test-only dependency in the vendored workspace.
+// test-only dependency.
 type pocSpanExporter struct {
 	mu    sync.Mutex
 	spans []sdktrace.ReadOnlySpan
