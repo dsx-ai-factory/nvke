@@ -25,7 +25,6 @@ import (
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.temporal.io/sdk/activity"
-	"go.temporal.io/sdk/interceptor"
 	sdktemporal "go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -80,7 +79,7 @@ func TestTracingPOC(t *testing.T) {
 	temporalClient, err := cwetemporal.NewClient(cfg, logger)
 	require.NoError(t, err)
 	defer temporalClient.Close()
-	w := worker.New(temporalClient, cfg.TemporalTaskQueue, worker.Options{Interceptors: []interceptor.WorkerInterceptor{&cwetemporal.OutcomeInterceptor{}}})
+	w := worker.New(temporalClient, cfg.TemporalTaskQueue, cwetemporal.WorkerOptions())
 	w.RegisterWorkflowWithOptions(pocProvision, workflow.RegisterOptions{Name: "ProvisionCluster"})
 	w.RegisterActivityWithOptions(func(ctx context.Context, clusterID string) error {
 		cluster, err := database.GetCluster(ctx, uuid.MustParse(clusterID))

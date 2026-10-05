@@ -165,10 +165,7 @@ func NewWorker(
 		controllerClientCABundle = string(caPEM)
 	}
 
-	// The SDK inherits the client's tracing interceptor for its worker side.
-	// Installing it again here creates duplicate workflow/activity spans.
-	workerOpts := worker.Options{Interceptors: []interceptor.WorkerInterceptor{&OutcomeInterceptor{}}}
-	w := worker.New(temporalClient, cfg.TemporalTaskQueue, workerOpts)
+	w := worker.New(temporalClient, cfg.TemporalTaskQueue, WorkerOptions())
 
 	w.RegisterActivity(activities.NewActivities(
 		cfg,

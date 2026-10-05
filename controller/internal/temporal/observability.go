@@ -5,6 +5,7 @@ package temporal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/log"
 	sdktemporal "go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/otelx"
@@ -74,6 +76,15 @@ func (OperationPropagator) ExtractToWorkflow(ctx workflow.Context, reader workfl
 		return ctx, err
 	}
 	return workflow.WithValue(ctx, otelx.OperationKey{}, id), nil
+}
+
+// WorkerOptions returns the options every CWE worker runs with, so production
+// and tests share one interceptor wiring.
+//
+// The SDK inherits the client's tracing interceptor for its worker side.
+// Installing it again here creates duplicate workflow/activity spans.
+func WorkerOptions() worker.Options {
+	return worker.Options{Interceptors: []interceptor.WorkerInterceptor{&OutcomeInterceptor{}}}
 }
 
 // OutcomeInterceptor records workflow returns and activity-attempt outcomes.
@@ -160,9 +171,9 @@ func executionOutcome(err error) string {
 	switch {
 	case err == nil:
 		return "succeeded"
-	case sdktemporal.IsCanceledError(err):
+	case sdktemporal.IsCanceledError(err), errors.Is(err, context.Canceled):
 		return "canceled"
-	case sdktemporal.IsTimeoutError(err):
+	case sdktemporal.IsTimeoutError(err), errors.Is(err, context.DeadlineExceeded):
 		return "timed_out"
 	default:
 		return "failed"
