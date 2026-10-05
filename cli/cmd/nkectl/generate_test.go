@@ -173,3 +173,152 @@ func TestGenerateSiteSpecRejects(t *testing.T) {
 		})
 	}
 }
+
+func writeAdminKubeconfig(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "admin.kubeconfig")
+	const body = `apiVersion: v1
+kind: Config
+clusters:
+- name: site
+  cluster:
+    server: https://10.10.50.2:6443
+    certificate-authority-data: Q0EgQ0VSVA==
+contexts:
+- name: kubernetes-admin@site
+  context:
+    cluster: site
+    user: kubernetes-admin
+current-context: kubernetes-admin@site
+users:
+- name: kubernetes-admin
+  user: {}
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write admin kubeconfig: %v", err)
+	}
+	return path
+}
+
+func TestGenerateOIDCKubeconfigWritesToStdout(t *testing.T) {
+	stdout, _, err := runGenerate(t,
+		"generate", "oidc-kubeconfig",
+		"--kubeconfig", writeAdminKubeconfig(t),
+		"--oidc-issuer-url", "https://idp.example/realms/nke",
+		"--oidc-client-id", "nke-cli",
+	)
+	if err != nil {
+		t.Fatalf("generate oidc-kubeconfig: %v", err)
+	}
+	for _, want := range []string{
+		"https://10.10.50.2:6443",
+		"oidc-login",
+		"--oidc-issuer-url=https://idp.example/realms/nke",
+		"--oidc-client-id=nke-cli",
+		"oidc@site",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("generated kubeconfig is missing %q:\n%s", want, stdout)
+		}
+	}
+	if strings.Contains(stdout, "kubernetes-admin") {
+		t.Errorf("admin identity leaked into generated kubeconfig:\n%s", stdout)
+	}
+}
+
+func TestGenerateOIDCKubeconfigWritesFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "oidc.kubeconfig")
+	stdout, _, err := runGenerate(t,
+		"generate", "oidc-kubeconfig",
+		"--kubeconfig", writeAdminKubeconfig(t),
+		"--oidc-issuer-url", "https://idp.example/realms/nke",
+		"--oidc-client-id", "nke-cli",
+		"--output-file", path,
+	)
+	if err != nil {
+		t.Fatalf("generate oidc-kubeconfig: %v", err)
+	}
+	if !strings.Contains(stdout, path) {
+		t.Errorf("stdout = %q, want the output path", stdout)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat output: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %o, want 0600", info.Mode().Perm())
+	}
+}
+
+func TestGenerateOIDCKubeconfigRejects(t *testing.T) {
+	valid := writeAdminKubeconfig(t)
+	for name, tc := range map[string]struct {
+		args    []string
+		wantSub string
+	}{
+		"no --kubeconfig": {
+			[]string{
+				"generate", "oidc-kubeconfig",
+				"--oidc-issuer-url", "https://idp.example",
+				"--oidc-client-id", "nke-cli",
+			},
+			"kubeconfig",
+		},
+		"no --oidc-issuer-url": {
+			[]string{
+				"generate", "oidc-kubeconfig",
+				"--kubeconfig", valid,
+				"--oidc-client-id", "nke-cli",
+			},
+			"oidc-issuer-url",
+		},
+		"no --oidc-client-id": {
+			[]string{
+				"generate", "oidc-kubeconfig",
+				"--kubeconfig", valid,
+				"--oidc-issuer-url", "https://idp.example",
+			},
+			"oidc-client-id",
+		},
+		"empty --kubeconfig": {
+			[]string{
+				"generate", "oidc-kubeconfig",
+				"--kubeconfig", "",
+				"--oidc-issuer-url", "https://idp.example",
+				"--oidc-client-id", "nke-cli",
+			},
+			"kubeconfig",
+		},
+		"empty --oidc-issuer-url": {
+			[]string{
+				"generate", "oidc-kubeconfig",
+				"--kubeconfig", valid,
+				"--oidc-issuer-url", "",
+				"--oidc-client-id", "nke-cli",
+			},
+			"oidc-issuer-url",
+		},
+		"empty --oidc-client-id": {
+			[]string{
+				"generate", "oidc-kubeconfig",
+				"--kubeconfig", valid,
+				"--oidc-issuer-url", "https://idp.example",
+				"--oidc-client-id", "",
+			},
+			"oidc-client-id",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stdout, _, err := runGenerate(t, tc.args...)
+			if err == nil {
+				t.Fatalf("accepted invalid input; want an error mentioning %q", tc.wantSub)
+			}
+			if !strings.Contains(err.Error(), tc.wantSub) {
+				t.Errorf("error %q does not mention %q", err, tc.wantSub)
+			}
+			if stdout != "" {
+				t.Errorf("a failed generate wrote to stdout:\n%s", stdout)
+			}
+		})
+	}
+}

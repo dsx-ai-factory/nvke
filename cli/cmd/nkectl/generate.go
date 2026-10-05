@@ -11,16 +11,18 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitespec"
+	"github.com/dsx-ai-factory/nke/cli/internal/oidckubeconfig"
+	"github.com/dsx-ai-factory/nke/cli/internal/util"
 )
 
-// newGenerateCmd is the "generate" command group. Site spec is the only
-// subcommand today; the group leaves room for further generated artifacts.
+// newGenerateCmd is the "generate" command group.
 func newGenerateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "generate",
 		Short: "Generate NKE configuration files",
 	}
 	cmd.AddCommand(newGenerateSiteSpecCmd())
+	cmd.AddCommand(newGenerateOIDCKubeconfigCmd())
 	return cmd
 }
 
@@ -116,4 +118,80 @@ func readNodesCSV(cmd *cobra.Command, path string) ([]sitespec.Node, error) {
 	defer func() { _ = file.Close() }()
 
 	return sitespec.ParseNodesCSV(path, file)
+}
+
+type generateOIDCKubeconfigOptions struct {
+	kubeconfig  string
+	issuerURL   string
+	clientID    string
+	extraScopes []string
+	outputFile  string
+}
+
+func newGenerateOIDCKubeconfigCmd() *cobra.Command {
+	opts := &generateOIDCKubeconfigOptions{}
+
+	cmd := &cobra.Command{
+		Use:   "oidc-kubeconfig",
+		Short: "Generate an oidc-login kubeconfig from an input kubeconfig",
+		Long: `Write an oidc-login kubeconfig from an input kubeconfig.
+
+The cluster server and certificate authority come from the input file's current
+context. The input user is not copied. The generated user is an exec plugin:
+
+  kubectl oidc-login get-token --oidc-issuer-url ... --oidc-client-id ...
+
+Nothing is sent to the cluster. After OIDC is enabled on the API server, the
+file can be passed to config set-site --kubeconfig.
+
+By default the kubeconfig is printed to stdout. Use --output-file to write it
+to a file instead.`,
+		Example: `  nkectl generate oidc-kubeconfig \
+    --kubeconfig ./cluster.kubeconfig \
+    --oidc-issuer-url https://idp.example/realms/nke \
+    --oidc-client-id nke-cli \
+    --output-file ./oidc.kubeconfig
+
+  nkectl config set-site --name my-tier0-site \
+    --url https://cwe.my-tier0-site.example.com \
+    --kubeconfig ./oidc.kubeconfig`,
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runGenerateOIDCKubeconfig(cmd, opts)
+		},
+	}
+
+	cmd.Flags().StringVar(&opts.kubeconfig, "kubeconfig", "", "Path to the input kubeconfig (required)")
+	cmd.Flags().StringVar(&opts.issuerURL, "oidc-issuer-url", "", "OIDC issuer URL (required)")
+	cmd.Flags().StringVar(&opts.clientID, "oidc-client-id", "", "OIDC client ID (required)")
+	cmd.Flags().StringArrayVar(&opts.extraScopes, "oidc-extra-scope", nil, "Extra OIDC scope. Repeatable.")
+	cmd.Flags().StringVar(&opts.outputFile, "output-file", "", "Write kubeconfig to file instead of stdout")
+	_ = cmd.MarkFlagRequired("kubeconfig")
+	_ = cmd.MarkFlagRequired("oidc-issuer-url")
+	_ = cmd.MarkFlagRequired("oidc-client-id")
+
+	return cmd
+}
+
+func runGenerateOIDCKubeconfig(cmd *cobra.Command, opts *generateOIDCKubeconfigOptions) error {
+	data, err := oidckubeconfig.Generate(opts.kubeconfig, oidckubeconfig.Options{
+		IssuerURL:   opts.issuerURL,
+		ClientID:    opts.clientID,
+		ExtraScopes: opts.extraScopes,
+	})
+	if err != nil {
+		return err
+	}
+
+	if opts.outputFile != "" {
+		if err := util.WritePrivateFile(opts.outputFile, data); err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "kubeconfig written to %s\n", opts.outputFile)
+		return nil
+	}
+
+	_, err = cmd.OutOrStdout().Write(data)
+	return err
 }

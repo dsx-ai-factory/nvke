@@ -8,12 +8,11 @@ package command
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dsx-ai-factory/nke/cli/internal/config"
+	"github.com/dsx-ai-factory/nke/cli/internal/util"
 )
 
 // SiteFn is a factory that resolves the active site's configuration.
@@ -83,7 +82,7 @@ Example:
 			}
 
 			if outputFile != "" {
-				if err := writeKubeconfigFile(outputFile, data); err != nil {
+				if err := util.WritePrivateFile(outputFile, data); err != nil {
 					return err
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "kubeconfig written to %s\n", outputFile)
@@ -98,32 +97,4 @@ Example:
 	cmd.Flags().StringVar(&outputFile, "output-file", "", "Write kubeconfig to file instead of stdout")
 
 	return cmd
-}
-
-// writeKubeconfigFile writes data to a temp file in path's directory, sets
-// its mode to 0600, and renames it over path.
-func writeKubeconfigFile(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".kubeconfig-*")
-	if err != nil {
-		return fmt.Errorf("creating temp file in %q: %w", dir, err)
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("setting permissions on %q: %w", tmpPath, err)
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("writing kubeconfig to %q: %w", tmpPath, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing %q: %w", tmpPath, err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("writing kubeconfig to %q: %w", path, err)
-	}
-	return nil
 }
