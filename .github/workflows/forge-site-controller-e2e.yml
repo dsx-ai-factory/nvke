@@ -473,8 +473,12 @@ jobs:
       # published CWE. site-inputs does the download and the checks
       # (hack/fetch-nkectl.sh); this step only decides which, and names the
       # binary the config points at. The path is the Makefile's SITE_NKECTL.
+      # It does look the release up, so a mistyped version fails here rather
+      # than after the Teleport and registry logins.
       - name: Resolve the nkectl version
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           if [ -z "${SITE_CLI_VERSION}" ]; then
@@ -486,6 +490,12 @@ jobs:
             } >> "${GITHUB_ENV}"
             echo "building nkectl from ${version}"
             exit 0
+          fi
+          if ! curl -fsS -o /dev/null --retry 3 -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/releases/tags/cli/${SITE_CLI_VERSION}"; then
+            echo "::error::no published cli/${SITE_CLI_VERSION} release"
+            exit 1
           fi
           {
             echo "SITE_CLI_BUILD=0"

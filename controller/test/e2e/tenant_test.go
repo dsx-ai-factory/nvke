@@ -694,7 +694,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				// stuck tenant, 112 minutes of a 150-minute suite, and the
 				// suite timeout then killed the teardown before it released the
 				// site.
-				GinkgoLogr.Info("tenant delete already timed out; leaving it to the site sweep rather than waiting again",
+				GinkgoLogr.Info("tenant delete already accepted but not complete; leaving it to the site sweep rather than waiting again",
 					"cluster", test.cluster.ID)
 			default:
 				test.deleteClusterAndWait(ctx, &deleteAccepted)

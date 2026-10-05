@@ -41,16 +41,22 @@
 #
 # This block names only where artifacts come from. Component versions are
 # -e2e.versions keys (controller, capi-provisioned, os-image,
-# os-image-bootloader). The two OS-image keys may be suffixed with an
-# architecture, as os-image-arm64, which is how one run boots two: a GB200
-# tenant puts arm64 workers behind an amd64 control plane, and each role boots
-# the image built for its own machine. The unsuffixed key is what a run on one
-# architecture passes, and is used when no suffixed one is given. The jump host and its login are the site's and live in
-# environments/<name>.yaml, from FORGE_JUMP_HOST and FORGE_TELEPORT_LOGIN.
+# os-image-bootloader, and cli, which is recorded but not checked against
+# site.nkectl). The two OS-image keys may be suffixed with an architecture, as
+# os-image-arm64, which is how one run boots two: a GB200 tenant puts arm64
+# workers behind an amd64 control plane, and each role boots the image built
+# for its own machine. The unsuffixed key is what a run on one architecture
+# passes, and is used when no suffixed one is given. The jump host and its
+# login are the site's and live in environments/<name>.yaml, from
+# FORGE_JUMP_HOST and FORGE_TELEPORT_LOGIN.
 # site:
 #   deployPathRef: ""   # "" -> the controller version's commit, or its
 #                       #       controller/<version> release tag
-#   nkectl: ""          # "" -> cli/dist/nkectl-linux-<arch>
+#   nkectl: ""          # "" -> cli/dist/nkectl-linux-<arch>, which
+#                       #       `make site-inputs` builds. With
+#                       #       SITE_CLI_BUILD=0 it fetches a published one to
+#                       #       <SITE_INPUTS>/nkectl/nkectl-linux-<arch>;
+#                       #       point this there.
 #   # Each image the node stages: the reference it is bootstrapped and
 #   # deployed with, and the archive carrying it. Relative archive paths
 #   # resolve against the clone the suite runs from. The controller and
