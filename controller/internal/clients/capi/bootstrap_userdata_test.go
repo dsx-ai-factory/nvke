@@ -1,21 +1,71 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package activities
+package capi
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
+	"text/template"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/utils"
 )
+
+func testNodeAgentBootstrapFiles(cfg config.Config, controllerClientCABundle string) func(db.Node) ([]db.CloudInitFile, error) {
+	return func(node db.Node) ([]db.CloudInitFile, error) {
+		var files []db.CloudInitFile
+		args := []string{"--secure-server-port", cfg.NodeAgent.Port}
+		if node.NodeAgentExternalMTLSEnabled {
+			if controllerClientCABundle == "" {
+				return nil, errors.New("controller client CA bundle is required when external node-agent mTLS is enabled")
+			}
+			files = append(files, db.CloudInitFile{
+				Path:        config.NodeAgentControllerCAPath,
+				Owner:       "root:root",
+				Permissions: "0644",
+				Encoding:    "b64",
+				Content:     base64.StdEncoding.EncodeToString([]byte(controllerClientCABundle)),
+			})
+			args = append(args, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
+		}
+		if node.NodeAgentTLSJWTEnabled {
+			args = append(args, "--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url="+cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)
+		}
+		files = append(files, db.CloudInitFile{
+			Path:        config.NodeAgentConfigPath,
+			Owner:       "root:root",
+			Permissions: "0644",
+			Content:     fmt.Sprintf("AGENT_ARGS=%q\n", strings.Join(args, " ")),
+		})
+		return files, nil
+	}
+}
+
+func testDeps(cfg config.Config, controllerClientCABundle string, bundleLookupCalled *bool, trustDomain, trustBundle string, trustBundleErr error) shared.MachineCreateDeps {
+	return shared.MachineCreateDeps{
+		Config:                   cfg,
+		ControllerClientCABundle: controllerClientCABundle,
+		NodeAgentBootstrapFiles:  testNodeAgentBootstrapFiles(cfg, controllerClientCABundle),
+		GetTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
+			if bundleLookupCalled != nil {
+				*bundleLookupCalled = true
+			}
+			return trustDomain, trustBundle, trustBundleErr
+		},
+	}
+}
 
 func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 	t.Parallel()
@@ -169,7 +219,7 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 			provider: customBootstrap,
 			verify: func(t *testing.T, userData string) {
 				t.Helper()
-				var rendered capiCloudInitConfig
+				var rendered cloudInitConfig
 				require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
 				var agentFiles int
 				for _, file := range rendered.WriteFiles {
@@ -190,7 +240,7 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 			},
 			verify: func(t *testing.T, userData string) {
 				t.Helper()
-				var rendered capiCloudInitConfig
+				var rendered cloudInitConfig
 				require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
 				assert.Equal(t, []string{"echo prepare agent", "systemctl restart nke-agent", "systemctl restart nke-agent.service"}, rendered.RunCmd)
 			},
@@ -199,7 +249,7 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 			config: config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}},
 			verify: func(t *testing.T, userData string) {
 				t.Helper()
-				var rendered capiCloudInitConfig
+				var rendered cloudInitConfig
 				require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
 				assert.Equal(t, []string{"systemctl restart nke-agent.service"}, rendered.RunCmd)
 			},
@@ -211,13 +261,7 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 			t.Parallel()
 
 			trustBundleCalled := false
-			activities := &Activities{
-				cfg: params.config,
-				getTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
-					trustBundleCalled = true
-					return params.trustDomain, params.trustBundle, params.trustBundleError
-				},
-			}
+			deps := testDeps(params.config, "", &trustBundleCalled, params.trustDomain, params.trustBundle, params.trustBundleError)
 			var nodeSet db.NodeSet
 			nodeSet.SetCapi(params.provider)
 			node := nodeForBootstrapConfig(params.config)
@@ -225,8 +269,9 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 				node = *params.node
 			}
 
-			userData, err := activities.renderCAPIBootstrapUserData(
+			userData, err := (&Client{}).renderBootstrapUserData(
 				context.Background(),
+				deps,
 				node,
 				nodeSet,
 				params.spireJoinToken,
@@ -245,20 +290,15 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 
 func TestRenderCAPIBootstrapUserData_ExternalMTLS(t *testing.T) {
 	controllerCA := "-----BEGIN CERTIFICATE-----\npublic-ca\n-----END CERTIFICATE-----\n"
-	activities := &Activities{
-		cfg: config.Config{
-			NodeAgentExternalMTLSEnabled: true,
-			NodeAgent: config.NodeAgentConfig{
-				Port:                   "15005",
-				SpireAttestationMethod: config.SpireAttestationMethodTPM,
-			},
-			SpiffeEnabled: true,
+	cfg := config.Config{
+		NodeAgentExternalMTLSEnabled: true,
+		NodeAgent: config.NodeAgentConfig{
+			Port:                   "15005",
+			SpireAttestationMethod: config.SpireAttestationMethodTPM,
 		},
-		controllerClientCABundle: controllerCA,
-		getTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
-			return "example.org", "spire trust bundle", nil
-		},
+		SpiffeEnabled: true,
 	}
+	deps := testDeps(cfg, controllerCA, nil, "example.org", "spire trust bundle", nil)
 
 	var nodeSet db.NodeSet
 	nodeSet.SetCapi(db.CAPINodePoolProvider{
@@ -267,10 +307,10 @@ func TestRenderCAPIBootstrapUserData_ExternalMTLS(t *testing.T) {
 		},
 		SpireAttestationMethod: db.SpireAttestationMethodTPM,
 	})
-	userData, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeForBootstrapConfig(activities.cfg), nodeSet, "")
+	userData, err := (&Client{}).renderBootstrapUserData(context.Background(), deps, nodeForBootstrapConfig(cfg), nodeSet, "")
 	require.NoError(t, err)
 
-	var cloudConfig capiCloudInitConfig
+	var cloudConfig cloudInitConfig
 	require.NoError(t, yaml.Unmarshal([]byte(userData), &cloudConfig))
 	require.Len(t, cloudConfig.WriteFiles, 5)
 	assert.Equal(t, "/etc/provider.conf", cloudConfig.WriteFiles[0].Path)
@@ -300,13 +340,12 @@ func TestRenderCAPIBootstrapUserData_ExternalMTLS(t *testing.T) {
 }
 
 func TestRenderCAPIBootstrapUserData_ExternalMTLSRequiresCA(t *testing.T) {
-	activities := &Activities{
-		cfg: config.Config{NodeAgentExternalMTLSEnabled: true},
-	}
+	cfg := config.Config{NodeAgentExternalMTLSEnabled: true}
+	deps := testDeps(cfg, "", nil, "", "", nil)
 
 	var nodeSet db.NodeSet
 	nodeSet.SetCapi(db.CAPINodePoolProvider{SpireAttestationMethod: db.SpireAttestationMethodTPM})
-	_, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeForBootstrapConfig(activities.cfg), nodeSet, "")
+	_, err := (&Client{}).renderBootstrapUserData(context.Background(), deps, nodeForBootstrapConfig(cfg), nodeSet, "")
 	require.ErrorContains(t, err, "controller client CA bundle is required")
 }
 
@@ -326,20 +365,18 @@ func TestUnit_RenderCAPIBootstrapUserData_AllowsFileOverride(t *testing.T) {
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			activities := &Activities{
-				cfg: config.Config{
-					NodeAgent:                    config.NodeAgentConfig{Port: "15005"},
-					NodeAgentExternalMTLSEnabled: params.externalMTLS,
-				},
-				controllerClientCABundle: "public-ca",
+			cfg := config.Config{
+				NodeAgent:                    config.NodeAgentConfig{Port: "15005"},
+				NodeAgentExternalMTLSEnabled: params.externalMTLS,
 			}
+			deps := testDeps(cfg, "public-ca", nil, "", "", nil)
 			var nodeSet db.NodeSet
 			nodeSet.SetCapi(db.CAPINodePoolProvider{
 				BootstrapFiles: []db.CloudInitFile{{Path: params.path, Content: "caller content"}},
 			})
-			userData, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeForBootstrapConfig(activities.cfg), nodeSet, "")
+			userData, err := (&Client{}).renderBootstrapUserData(context.Background(), deps, nodeForBootstrapConfig(cfg), nodeSet, "")
 			require.NoError(t, err)
-			var rendered capiCloudInitConfig
+			var rendered cloudInitConfig
 			require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
 			require.GreaterOrEqual(t, len(rendered.WriteFiles), 2)
 			assert.Equal(t, params.path, rendered.WriteFiles[0].Path)
@@ -373,4 +410,60 @@ func assertDSXIMDSAgentConfig(t *testing.T, userData, checksum string) {
 	assert.NotContains(t, userData, `NodeAttestor "join_token"`)
 	assert.NotContains(t, userData, `NodeAttestor "tpm"`)
 	assert.NotContains(t, userData, "join_token =")
+}
+
+func TestUnit_RenderGenericCloudInitFilesTemplate(t *testing.T) {
+	t.Parallel()
+
+	const fileTemplate = `write_files:
+{{- range .Files }}
+  - path: {{ quote .Path }}
+    owner: {{ quote .Owner }}
+    permissions: {{ quote .Permissions }}
+{{- if .Encoding }}
+    encoding: {{ quote .Encoding }}
+{{- end }}
+    content: {{ quote .Content }}
+{{- end }}
+`
+	tmpl := template.Must(template.New("files").Funcs(template.FuncMap{
+		"quote": utils.Quote,
+	}).Parse(fileTemplate))
+
+	type parameters struct {
+		files []db.CloudInitFile
+	}
+	tests := map[string]parameters{
+		"multiple files with YAML-sensitive metadata": {
+			files: []db.CloudInitFile{
+				{Path: "/etc/example #1", Owner: "root:root", Permissions: "0600", Encoding: "b64", Content: base64.StdEncoding.EncodeToString([]byte("first\nfile\n"))},
+				{Path: "/etc/example:2", Owner: "user:group", Permissions: "0644", Content: "second\x00file"},
+			},
+		},
+		"empty files": {},
+	}
+
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var rendered bytes.Buffer
+			require.NoError(t, tmpl.Execute(&rendered, struct{ Files []db.CloudInitFile }{Files: params.files}))
+			assert.Equal(t, 1, strings.Count(rendered.String(), "write_files:"))
+
+			var parsedCloudConfig struct {
+				WriteFiles []cloudInitFile `yaml:"write_files"`
+			}
+			require.NoError(t, yaml.Unmarshal(rendered.Bytes(), &parsedCloudConfig))
+			require.Len(t, parsedCloudConfig.WriteFiles, len(params.files))
+			for index, want := range params.files {
+				got := parsedCloudConfig.WriteFiles[index]
+				assert.Equal(t, want.Path, got.Path)
+				assert.Equal(t, want.Owner, got.Owner)
+				assert.Equal(t, want.Permissions, got.Permissions)
+				assert.Equal(t, want.Encoding, got.Encoding)
+				assert.Equal(t, want.Content, got.Content)
+			}
+		})
+	}
 }

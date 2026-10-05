@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package activities
+package nico
 
 import (
 	"bytes"
@@ -15,24 +15,27 @@ import (
 	"github.com/GehirnInc/crypt/sha512_crypt"
 	"github.com/google/uuid"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/clients/nico"
+	"github.com/dsx-ai-factory/nke/controller/internal/clients/shared"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/teleport"
 	"github.com/dsx-ai-factory/nke/controller/internal/utils"
 )
 
-func (a *Activities) renderTemplateLessForgeCAPIBootstrapUserData(ctx context.Context, createCtx *capiMachineCreateContext) (string, error) {
-	provisioningConfig, err := nico.ResolveNodeConfig(createCtx.nodeSet, createCtx.nodePool)
+// renderBootstrapUserData renders the template-less Forge/NICo node's
+// cloud-init user data from its OS profile template.
+func (*Client) renderBootstrapUserData(ctx context.Context, deps shared.MachineCreateDeps, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) (string, error) {
+	provisioningConfig, err := ResolveNodeConfig(nodeSet, nodePool)
 	if err != nil {
 		return "", err
 	}
 
-	osProfileDir := path.Join(a.cfg.ProfilesDir, "osProfiles", provisioningConfig.OSProfile)
-	teleportCfg, err := a.nicoMachineTeleportConfig(createCtx, provisioningConfig.TeleportEnabled, provisioningConfig.NodePoolID, provisioningConfig.IsControlPlaneRole)
+	osProfileDir := path.Join(deps.ProfilesDir, "osProfiles", provisioningConfig.OSProfile)
+	teleportCfg, err := nicoMachineTeleportConfig(deps.Config, node, cluster, provisioningConfig.TeleportEnabled, provisioningConfig.NodePoolID, provisioningConfig.IsControlPlaneRole)
 	if err != nil {
 		return "", err
 	}
-	userData, err := a.getUserData(ctx, osProfileDir, createCtx.node, provisioningConfig.DiskSelectionStrategy, provisioningConfig.KubernetesVersion, teleportCfg, createCtx.cluster)
+	userData, err := getUserData(ctx, deps, osProfileDir, node, provisioningConfig.DiskSelectionStrategy, provisioningConfig.KubernetesVersion, teleportCfg, cluster)
 	if err != nil {
 		return "", fmt.Errorf("failed to get user data for OS profile %s: %w", provisioningConfig.OSProfile, err)
 	}
@@ -40,21 +43,21 @@ func (a *Activities) renderTemplateLessForgeCAPIBootstrapUserData(ctx context.Co
 	return userData, nil
 }
 
-func (a *Activities) nicoMachineTeleportConfig(createCtx *capiMachineCreateContext, teleportEnabled bool, nodePoolID uuid.UUID, isControlPlaneRole bool) (*TeleportUserDataConfig, error) {
-	if !a.cfg.Teleport.Enabled || !createCtx.cluster.TeleportEnabled || !teleportEnabled {
+func nicoMachineTeleportConfig(cfg config.Config, node db.Node, cluster db.Cluster, teleportEnabled bool, nodePoolID uuid.UUID, isControlPlaneRole bool) (*TeleportUserDataConfig, error) {
+	if !cfg.Teleport.Enabled || !cluster.TeleportEnabled || !teleportEnabled {
 		return &TeleportUserDataConfig{}, nil
 	}
-	nicoProvider, err := createCtx.cluster.NicoProvider()
+	nicoProvider, err := cluster.NicoProvider()
 	if err != nil {
 		return nil, err
 	}
 
 	return &TeleportUserDataConfig{
 		Enabled:      true,
-		TokenName:    teleport.TPMTokenName(a.cfg.Teleport.TokenNamePrefix, createCtx.node.ID),
-		ProxyAddress: a.cfg.Teleport.ProxyAddress,
+		TokenName:    teleport.TPMTokenName(cfg.Teleport.TokenNamePrefix, node.ID),
+		ProxyAddress: cfg.Teleport.ProxyAddress,
 		JoinMethod:   string(teleport.JoinMethodTPM),
-		Labels:       buildTeleportLabels(createCtx.node, createCtx.cluster, nicoProvider, nodePoolID, isControlPlaneRole, a.cfg.NKESiteControllerName, a.cfg.Teleport.Environment, a.cfg.Teleport.ManagedByLabelValue),
+		Labels:       buildTeleportLabels(node, cluster, nicoProvider, nodePoolID, isControlPlaneRole, cfg.NKESiteControllerName, cfg.Teleport.Environment, cfg.Teleport.ManagedByLabelValue),
 	}, nil
 }
 
@@ -67,8 +70,9 @@ type TeleportUserDataConfig struct {
 	Labels       string
 }
 
-func (a *Activities) getUserData(
+func getUserData(
 	ctx context.Context,
+	deps shared.MachineCreateDeps,
 	osProfileDir string,
 	node db.Node,
 	diskSelectionStrategy db.DiskSelectionStrategy,
@@ -81,11 +85,12 @@ func (a *Activities) getUserData(
 		return "", fmt.Errorf("failed to read user data template file: %w", err)
 	}
 
-	return a.renderUserData(ctx, string(userDataTemplateBytes), node, diskSelectionStrategy, kubernetesVersion, teleportCfg, cluster)
+	return renderUserData(ctx, deps, string(userDataTemplateBytes), node, diskSelectionStrategy, kubernetesVersion, teleportCfg, cluster)
 }
 
-func (a *Activities) renderUserData(
+func renderUserData(
 	ctx context.Context,
+	deps shared.MachineCreateDeps,
 	userDataTemplateText string,
 	node db.Node,
 	diskSelectionStrategy db.DiskSelectionStrategy,
@@ -107,7 +112,7 @@ func (a *Activities) renderUserData(
 	var trustDomain string
 	var trustBundle string
 	if node.SpiffeEnabled {
-		trustDomain, trustBundle, err = a.getTrustDomainBundle(ctx, a.cfg)
+		trustDomain, trustBundle, err = deps.GetTrustDomainBundle(ctx, deps.Config)
 		if err != nil {
 			return "", fmt.Errorf("failed to get trust domain and bundle: %w", err)
 		}
@@ -159,15 +164,15 @@ func (a *Activities) renderUserData(
 		Username              string
 	}
 
-	files, err := a.nodeAgentBootstrapFiles(node)
+	files, err := deps.NodeAgentBootstrapFiles(node)
 	if err != nil {
 		return "", err
 	}
 
-	if err := a.validateDgxcTenantCredentials(); err != nil {
+	if err := validateDgxcTenantCredentials(deps.Config); err != nil {
 		return "", err
 	}
-	hashedPassword, err := sha512_crypt.New().Generate([]byte(a.cfg.DgxcTenantPassword), nil)
+	hashedPassword, err := sha512_crypt.New().Generate([]byte(deps.Config.DgxcTenantPassword), nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to hash DGXC tenant password: %w", err)
 	}
@@ -183,14 +188,14 @@ func (a *Activities) renderUserData(
 		HashedPassword:        hashedPassword,
 		Hostname:              node.Name,
 		KubernetesVersion:     kubernetesVersion,
-		NodeAgentPort:         a.cfg.NodeAgent.Port,
+		NodeAgentPort:         deps.Config.NodeAgent.Port,
 		OvnEnabled:            ovnEnabled,
 		SpiffeEnabled:         node.SpiffeEnabled,
-		SpireServerAddress:    a.cfg.SpireServerAddress,
-		SpireServerPort:       a.cfg.SpireServerPort,
+		SpireServerAddress:    deps.Config.SpireServerAddress,
+		SpireServerPort:       deps.Config.SpireServerPort,
 		TrustBundle:           trustBundle,
 		TrustDomain:           trustDomain,
-		Username:              a.cfg.DgxcTenantUser,
+		Username:              deps.Config.DgxcTenantUser,
 	}
 
 	if teleportCfg != nil && teleportCfg.Enabled {
@@ -209,11 +214,11 @@ func (a *Activities) renderUserData(
 	return userDataByteBuffer.String(), nil
 }
 
-func (a *Activities) validateDgxcTenantCredentials() error {
-	if strings.TrimSpace(a.cfg.DgxcTenantUser) == "" {
+func validateDgxcTenantCredentials(cfg config.Config) error {
+	if strings.TrimSpace(cfg.DgxcTenantUser) == "" {
 		return fmt.Errorf("DGXC_TENANT_USER is required for Forge OS profile user-data rendering")
 	}
-	if strings.TrimSpace(a.cfg.DgxcTenantPassword) == "" {
+	if strings.TrimSpace(cfg.DgxcTenantPassword) == "" {
 		return fmt.Errorf("DGXC_TENANT_PASSWORD is required for Forge OS profile user-data rendering")
 	}
 	return nil

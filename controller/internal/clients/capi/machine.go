@@ -82,7 +82,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 		return err
 	}
 
-	userData, err := deps.RenderCAPIBootstrapUserData(ctx, node, nodeSet, spireJoinToken)
+	userData, err := c.renderBootstrapUserData(ctx, deps, node, nodeSet, spireJoinToken)
 	if err != nil {
 		return fmt.Errorf("failed to render CAPI bootstrap user data: %w", err)
 	}

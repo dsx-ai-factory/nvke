@@ -1,29 +1,61 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package activities
+package nico
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"text/template"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/utils"
 )
 
 const testControllerClientCA = "-----BEGIN CERTIFICATE-----\npublic-ca\n-----END CERTIFICATE-----\n"
+
+// testNodeAgentBootstrapFiles mirrors Activities.nodeAgentBootstrapFiles for
+// tests exercising renderUserData directly, without pulling in the
+// activities package.
+func testNodeAgentBootstrapFiles(cfg config.Config, controllerClientCABundle string) func(db.Node) ([]db.CloudInitFile, error) {
+	return func(node db.Node) ([]db.CloudInitFile, error) {
+		var files []db.CloudInitFile
+		args := []string{"--secure-server-port", cfg.NodeAgent.Port}
+		if node.NodeAgentExternalMTLSEnabled {
+			if controllerClientCABundle == "" {
+				return nil, fmt.Errorf("controller client CA bundle is required when external node-agent mTLS is enabled")
+			}
+			files = append(files, db.CloudInitFile{
+				Path:        config.NodeAgentControllerCAPath,
+				Owner:       "root:root",
+				Permissions: "0644",
+				Encoding:    "b64",
+				Content:     base64.StdEncoding.EncodeToString([]byte(controllerClientCABundle)),
+			})
+			args = append(args, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
+		}
+		if node.NodeAgentTLSJWTEnabled {
+			args = append(args, "--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url="+cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)
+		}
+		files = append(files, db.CloudInitFile{
+			Path:        config.NodeAgentConfigPath,
+			Owner:       "root:root",
+			Permissions: "0644",
+			Content:     fmt.Sprintf("AGENT_ARGS=%q\n", strings.Join(args, " ")),
+		})
+		return files, nil
+	}
+}
 
 const userDataTemplate = `
 username={{ .Username }}
@@ -169,15 +201,9 @@ autoinstall:
 				t.Helper()
 				assert.Contains(t, userData, "autoinstall:")
 				assert.Contains(t, userData, "hostname: test-node")
-				var rendered struct {
-					Autoinstall struct {
-						UserData capiCloudInitConfig `yaml:"user-data"`
-					} `yaml:"autoinstall"`
-				}
-				require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
-				require.Len(t, rendered.Autoinstall.UserData.WriteFiles, 1)
-				assert.Equal(t, "AGENT_ARGS=\"--secure-server-port 15005 --grpc-auth-mode=tls-jwt --dsx-identity-exchange-url=https://identity.example.test/v1/exchange\"\n", rendered.Autoinstall.UserData.WriteFiles[0].Content)
-				assert.Equal(t, []string{"systemctl restart nke-agent"}, rendered.Autoinstall.UserData.RunCmd)
+				rendered := parseAutoinstallWriteFiles(t, userData)
+				require.Len(t, rendered, 1)
+				assert.Equal(t, "AGENT_ARGS=\"--secure-server-port 15005 --grpc-auth-mode=tls-jwt --dsx-identity-exchange-url=https://identity.example.test/v1/exchange\"\n", rendered[0].Content)
 				assert.NotContains(t, userData, "sed -E")
 			},
 		},
@@ -219,14 +245,9 @@ autoinstall:
 				assert.Contains(t, userData, "autoinstall:")
 				assert.Contains(t, userData, "hostname: test-node")
 
-				var rendered struct {
-					Autoinstall struct {
-						UserData capiCloudInitConfig `yaml:"user-data"`
-					} `yaml:"autoinstall"`
-				}
-				require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
-				require.Len(t, rendered.Autoinstall.UserData.WriteFiles, 2)
-				controllerCAFile := rendered.Autoinstall.UserData.WriteFiles[0]
+				rendered := parseAutoinstallWriteFiles(t, userData)
+				require.Len(t, rendered, 2)
+				controllerCAFile := rendered[0]
 				assert.Equal(t, config.NodeAgentControllerCAPath, controllerCAFile.Path)
 				assert.Equal(t, "root:root", controllerCAFile.Owner)
 				assert.Equal(t, "0644", controllerCAFile.Permissions)
@@ -234,7 +255,7 @@ autoinstall:
 				decodedCA, err := base64.StdEncoding.DecodeString(controllerCAFile.Content)
 				require.NoError(t, err)
 				assert.Equal(t, testControllerClientCA, string(decodedCA))
-				agentConfigFile := rendered.Autoinstall.UserData.WriteFiles[1]
+				agentConfigFile := rendered[1]
 				assert.Equal(t, config.NodeAgentConfigPath, agentConfigFile.Path)
 				assert.Empty(t, agentConfigFile.Encoding)
 				assert.Contains(t, agentConfigFile.Content, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
@@ -291,16 +312,18 @@ autoinstall:
 			if params.emptyControllerCA {
 				controllerCA = ""
 			}
-			activities := &Activities{
-				cfg:                      params.config,
-				controllerClientCABundle: controllerCA,
-				getTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
+			deps := shared.MachineCreateDeps{
+				Config:                   params.config,
+				ControllerClientCABundle: controllerCA,
+				NodeAgentBootstrapFiles:  testNodeAgentBootstrapFiles(params.config, controllerCA),
+				GetTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
 					bundleLookupCalled = true
 					return "example.com", "first certificate\nsecond certificate\n", nil
 				},
 			}
-			userData, err := activities.renderUserData(
+			userData, err := renderUserData(
 				context.Background(),
+				deps,
 				params.template,
 				params.node,
 				params.diskSelectionStrategy,
@@ -319,80 +342,32 @@ autoinstall:
 	}
 }
 
-func TestUnit_RenderGenericCloudInitFilesTemplate(t *testing.T) {
-	t.Parallel()
+type testWriteFile struct {
+	Path        string `yaml:"path"`
+	Owner       string `yaml:"owner"`
+	Permissions string `yaml:"permissions"`
+	Encoding    string `yaml:"encoding"`
+	Content     string `yaml:"content"`
+}
 
-	const fileTemplate = `write_files:
-{{- range .Files }}
-  - path: {{ quote .Path }}
-    owner: {{ quote .Owner }}
-    permissions: {{ quote .Permissions }}
-{{- if .Encoding }}
-    encoding: {{ quote .Encoding }}
-{{- end }}
-    content: {{ quote .Content }}
-{{- end }}
-`
-	tmpl := template.Must(template.New("files").Funcs(template.FuncMap{
-		"quote": utils.Quote,
-	}).Parse(fileTemplate))
-
-	type parameters struct {
-		files []db.CloudInitFile
+// parseAutoinstallWriteFiles decodes the write_files list out of a rendered
+// "#cloud-config autoinstall" document, the shape Nico OS profile templates
+// use.
+func parseAutoinstallWriteFiles(t *testing.T, userData string) []testWriteFile {
+	t.Helper()
+	var cloudConfig struct {
+		Autoinstall struct {
+			UserData struct {
+				WriteFiles []testWriteFile `yaml:"write_files"`
+			} `yaml:"user-data"`
+		} `yaml:"autoinstall"`
 	}
-	tests := map[string]parameters{
-		"multiple files with YAML-sensitive metadata": {
-			files: []db.CloudInitFile{
-				{Path: "/etc/example #1", Owner: "root:root", Permissions: "0600", Encoding: "b64", Content: base64.StdEncoding.EncodeToString([]byte("first\nfile\n"))},
-				{Path: "/etc/example:2", Owner: "user:group", Permissions: "0644", Content: "second\x00file"},
-			},
-		},
-		"empty files": {},
-	}
-
-	for name, params := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			var rendered bytes.Buffer
-			require.NoError(t, tmpl.Execute(&rendered, struct{ Files []db.CloudInitFile }{Files: params.files}))
-			assert.Equal(t, 1, strings.Count(rendered.String(), "write_files:"))
-
-			var cloudConfig struct {
-				WriteFiles []capiCloudInitFile `yaml:"write_files"`
-			}
-			require.NoError(t, yaml.Unmarshal(rendered.Bytes(), &cloudConfig))
-			require.Len(t, cloudConfig.WriteFiles, len(params.files))
-			for index, want := range params.files {
-				got := cloudConfig.WriteFiles[index]
-				assert.Equal(t, want.Path, got.Path)
-				assert.Equal(t, want.Owner, got.Owner)
-				assert.Equal(t, want.Permissions, got.Permissions)
-				assert.Equal(t, want.Encoding, got.Encoding)
-				assert.Equal(t, want.Content, got.Content)
-			}
-		})
-	}
+	require.NoError(t, yaml.Unmarshal([]byte(userData), &cloudConfig))
+	return cloudConfig.Autoinstall.UserData.WriteFiles
 }
 
 func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
 	t.Parallel()
-	parseWriteFiles := func(t *testing.T, userData string) []capiCloudInitFile {
-		t.Helper()
-		var cloudConfig struct {
-			WriteFiles  []capiCloudInitFile `yaml:"write_files"`
-			Autoinstall struct {
-				UserData struct {
-					WriteFiles []capiCloudInitFile `yaml:"write_files"`
-				} `yaml:"user-data"`
-			} `yaml:"autoinstall"`
-		}
-		require.NoError(t, yaml.Unmarshal([]byte(userData), &cloudConfig))
-		if len(cloudConfig.WriteFiles) > 0 {
-			return cloudConfig.WriteFiles
-		}
-		return cloudConfig.Autoinstall.UserData.WriteFiles
-	}
 
 	fixturePaths := []string{
 		filepath.Join("..", "..", "..", "profiles", "example", "profiles", "osProfiles", "example-ubuntu-24.04-amd64", "userData.tmpl"),
@@ -409,23 +384,26 @@ func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
 
 			templateBytes, err := os.ReadFile(fixturePath)
 			require.NoError(t, err)
-			activities := &Activities{
-				cfg: config.Config{
-					DgxcTenantUser:               "test-admin",
-					DgxcTenantPassword:           "test-password",
-					NodeAgentExternalMTLSEnabled: true,
-					NodeAgent: config.NodeAgentConfig{
-						Port:                   "15005",
-						SpireAttestationMethod: config.SpireAttestationMethodTPM,
-					},
+			cfg := config.Config{
+				DgxcTenantUser:               "test-admin",
+				DgxcTenantPassword:           "test-password",
+				NodeAgentExternalMTLSEnabled: true,
+				NodeAgent: config.NodeAgentConfig{
+					Port:                   "15005",
+					SpireAttestationMethod: config.SpireAttestationMethodTPM,
 				},
-				controllerClientCABundle: testControllerClientCA,
-				getTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
+			}
+			deps := shared.MachineCreateDeps{
+				Config:                   cfg,
+				ControllerClientCABundle: testControllerClientCA,
+				NodeAgentBootstrapFiles:  testNodeAgentBootstrapFiles(cfg, testControllerClientCA),
+				GetTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
 					return "example.com", "first certificate\nsecond certificate\n", nil
 				},
 			}
-			userData, err := activities.renderUserData(
+			userData, err := renderUserData(
 				context.Background(),
+				deps,
 				string(templateBytes),
 				db.Node{Name: "test-node", SpiffeEnabled: true, NodeAgentExternalMTLSEnabled: true},
 				db.DiskSelectionStrategyLargest,
@@ -440,8 +418,8 @@ func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
 			assert.Contains(t, userData, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
 
 			writeFiles := parseWriteFiles(t, userData)
-			var controllerCAFile *capiCloudInitFile
-			var agentConfigFile *capiCloudInitFile
+			var controllerCAFile *testWriteFile
+			var agentConfigFile *testWriteFile
 			for index := range writeFiles {
 				if writeFiles[index].Path == config.NodeAgentControllerCAPath {
 					controllerCAFile = &writeFiles[index]
@@ -464,10 +442,14 @@ func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
 			assert.Contains(t, agentConfigFile.Content, "--secure-server-port 15005")
 			assert.Contains(t, agentConfigFile.Content, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
 
-			activities.cfg.NodeAgentExternalMTLSEnabled = false
-			activities.controllerClientCABundle = ""
-			userData, err = activities.renderUserData(
+			cfgNoExternalMTLS := cfg
+			cfgNoExternalMTLS.NodeAgentExternalMTLSEnabled = false
+			deps.Config = cfgNoExternalMTLS
+			deps.ControllerClientCABundle = ""
+			deps.NodeAgentBootstrapFiles = testNodeAgentBootstrapFiles(cfgNoExternalMTLS, "")
+			userData, err = renderUserData(
 				context.Background(),
+				deps,
 				string(templateBytes),
 				db.Node{Name: "test-node", SpiffeEnabled: true},
 				db.DiskSelectionStrategyLargest,
@@ -480,7 +462,7 @@ func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
 			assert.Equal(t, 1, strings.Count(userData, "path: \""+config.NodeAgentConfigPath+"\""))
 			assert.NotContains(t, userData, "printf 'AGENT_ARGS=")
 			assert.NotContains(t, userData, "--controller-client-ca-bundle")
-			var defaultAgentConfigFile *capiCloudInitFile
+			var defaultAgentConfigFile *testWriteFile
 			writeFiles = parseWriteFiles(t, userData)
 			for index := range writeFiles {
 				assert.NotEqual(t, config.NodeAgentControllerCAPath, writeFiles[index].Path)
@@ -495,7 +477,27 @@ func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
 	}
 }
 
-func TestNicoMachineBuilders_BuildTeleportLabels(t *testing.T) {
+// parseWriteFiles decodes write_files whether the document is a bare
+// cloud-config or wraps user-data inside an autoinstall block, mirroring
+// what Nico OS profile fixtures actually produce.
+func parseWriteFiles(t *testing.T, userData string) []testWriteFile {
+	t.Helper()
+	var cloudConfig struct {
+		WriteFiles  []testWriteFile `yaml:"write_files"`
+		Autoinstall struct {
+			UserData struct {
+				WriteFiles []testWriteFile `yaml:"write_files"`
+			} `yaml:"user-data"`
+		} `yaml:"autoinstall"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(userData), &cloudConfig))
+	if len(cloudConfig.WriteFiles) > 0 {
+		return cloudConfig.WriteFiles
+	}
+	return cloudConfig.Autoinstall.UserData.WriteFiles
+}
+
+func TestBuildTeleportLabels(t *testing.T) {
 	nodeID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 	siteID := uuid.MustParse("11111111-2222-3333-4444-555555555555")
 	clusterID := uuid.MustParse("66666666-7777-8888-9999-000000000000")

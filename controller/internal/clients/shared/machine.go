@@ -21,38 +21,55 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 // MachineCreateDeps bundles what Activities supplies so a provider client's
 // CreateMachine can run without the clients package depending on
-// Activities-level infrastructure (k8s field managers aside): SPIFFE/SPIRE,
-// Teleport, and node-agent config.
+// Activities-level infrastructure: the k8s client, raw config, and a few
+// generic operations (SPIFFE trust bundle lookup, node-agent bootstrap
+// files, SPIRE join token minting, control-plane instance-type seeding) that
+// only Activities can perform (DB/SPIRE-server access a client doesn't
+// have).
 //
-// Activities populates every field the same way regardless of the cluster's
-// provider type — it does not branch to decide which callbacks to set. Each
-// client calls only the callbacks relevant to its own provider and ignores
-// the rest, so the cluster's provider type is still checked in exactly one
-// place: the factory that selected the client.
+// This is a fixed shape every provider client draws from — there is no
+// per-provider-named field here. Bootstrap-content rendering, which does
+// differ by provider, lives entirely inside each client package instead of
+// being handed in as a pre-built callback; a client composes its own content
+// from the primitives below. Activities populates every field the same way
+// regardless of the cluster's provider type, so the cluster's provider type
+// is still checked in exactly one place: the factory that selected the
+// client.
 type MachineCreateDeps struct {
 	K8sClient        client.Client
 	FieldManagerName string
 	ProfilesDir      string
 	Namespace        string
 
+	// Config is the subset of Activities' own config a client's bootstrap
+	// rendering needs (SPIRE/Teleport/node-agent/DGXC-tenant settings). A
+	// client reads only the fields relevant to its own provider.
+	Config config.Config
+
+	// ControllerClientCABundle is the PEM bundle a node needs to verify CWE's
+	// client certificate when external node-agent mTLS is enabled. Empty when
+	// not configured.
+	ControllerClientCABundle string
+
+	// GetTrustDomainBundle resolves the local SPIFFE trust domain and bundle.
+	// Only called when a node has SpiffeEnabled set.
+	GetTrustDomainBundle func(ctx context.Context, cfg config.Config) (trustDomain, trustBundle string, err error)
+
+	// NodeAgentBootstrapFiles returns the cloud-init files that configure the
+	// node agent (and, when external mTLS is enabled, the controller CA).
+	NodeAgentBootstrapFiles func(node db.Node) ([]db.CloudInitFile, error)
+
 	// CreateSpireJoinToken mints a SPIRE join token for the node, or returns
 	// ("", "", nil) if none is needed. Only the CAPI template-backed client
 	// calls this today.
 	CreateSpireJoinToken func(ctx context.Context, node db.Node) (token, alternateSpiffeIDPath string, err error)
-
-	// RenderCAPIBootstrapUserData renders bootstrap user-data for a
-	// template-backed CAPI node. Only the capi client calls this.
-	RenderCAPIBootstrapUserData func(ctx context.Context, node db.Node, nodeSet db.NodeSet, spireJoinToken string) (string, error)
-
-	// RenderNicoBootstrapUserData renders bootstrap user-data for a
-	// template-less NICo node. Only the nico client calls this.
-	RenderNicoBootstrapUserData func(ctx context.Context, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) (string, error)
 
 	// SeedControlPlaneInstanceType pre-fills a control-plane node's instance
 	// type when CWE didn't set one, returning the (possibly updated) node

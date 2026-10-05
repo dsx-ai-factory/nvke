@@ -132,7 +132,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 		return fmt.Errorf("failed to apply NicoMachine %s: %w", nicoMachine.Name, err)
 	}
 
-	userData, err := deps.RenderNicoBootstrapUserData(ctx, node, nodeSet, nodePool, cluster)
+	userData, err := c.renderBootstrapUserData(ctx, deps, node, nodeSet, nodePool, cluster)
 	if err != nil {
 		return err
 	}

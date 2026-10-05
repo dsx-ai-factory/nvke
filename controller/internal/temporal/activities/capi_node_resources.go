@@ -49,14 +49,6 @@ type DeleteCAPIMachineRebootAnnotationInput struct {
 	NodeID uuid.UUID
 }
 
-type capiMachineCreateContext struct {
-	node      db.Node
-	nodeSet   db.NodeSet
-	nodePool  db.NodePool
-	cluster   db.Cluster
-	namespace string
-}
-
 // CreateCAPIInfraMachineForNode resolves the node's provider client via
 // clients.GetMachineMaterialization — the only place this flow decides which
 // provider it's dealing with — and delegates the entire create (render,
@@ -83,21 +75,15 @@ func (a *Activities) CreateCAPIInfraMachineForNode(ctx context.Context, input Cr
 	}
 
 	deps := shared.MachineCreateDeps{
-		K8sClient:                   a.k8sClient,
-		FieldManagerName:            a.cfg.FieldManagerName,
-		ProfilesDir:                 a.cfg.ProfilesDir,
-		Namespace:                   constants.NamespaceNKESystem,
-		CreateSpireJoinToken:        a.createCAPISpireJoinToken,
-		RenderCAPIBootstrapUserData: a.renderCAPIBootstrapUserData,
-		RenderNicoBootstrapUserData: func(ctx context.Context, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) (string, error) {
-			return a.renderTemplateLessForgeCAPIBootstrapUserData(ctx, &capiMachineCreateContext{
-				node:      node,
-				nodeSet:   nodeSet,
-				nodePool:  nodePool,
-				cluster:   cluster,
-				namespace: constants.NamespaceNKESystem,
-			})
-		},
+		K8sClient:                    a.k8sClient,
+		FieldManagerName:             a.cfg.FieldManagerName,
+		ProfilesDir:                  a.cfg.ProfilesDir,
+		Namespace:                    constants.NamespaceNKESystem,
+		Config:                       a.cfg,
+		ControllerClientCABundle:     a.controllerClientCABundle,
+		GetTrustDomainBundle:         a.getTrustDomainBundle,
+		NodeAgentBootstrapFiles:      a.nodeAgentBootstrapFiles,
+		CreateSpireJoinToken:         a.createCAPISpireJoinToken,
 		SeedControlPlaneInstanceType: a.seedControlPlaneInstanceType,
 	}
 

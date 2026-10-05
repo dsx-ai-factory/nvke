@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package activities
+package capi
 
 import (
 	"bytes"
@@ -12,19 +12,20 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 //go:embed capi_spire_agent.conf.tmpl
-var capiSpireAgentConfigTemplateText string
+var spireAgentConfigTemplateText string
 
-type capiCloudInitConfig struct {
-	WriteFiles []capiCloudInitFile `yaml:"write_files,omitempty"`
-	RunCmd     []string            `yaml:"runcmd,omitempty"`
+type cloudInitConfig struct {
+	WriteFiles []cloudInitFile `yaml:"write_files,omitempty"`
+	RunCmd     []string        `yaml:"runcmd,omitempty"`
 }
 
-type capiCloudInitFile struct {
+type cloudInitFile struct {
 	Path        string `yaml:"path"`
 	Owner       string `yaml:"owner,omitempty"`
 	Permissions string `yaml:"permissions,omitempty"`
@@ -32,7 +33,7 @@ type capiCloudInitFile struct {
 	Content     string `yaml:"content"`
 }
 
-func (f capiCloudInitFile) MarshalYAML() (interface{}, error) {
+func (f cloudInitFile) MarshalYAML() (interface{}, error) {
 	node := &yaml.Node{Kind: yaml.MappingNode}
 	appendMappingNode(node, "path", 0, f.Path, "")
 	if f.Owner != "" {
@@ -63,8 +64,11 @@ func appendMappingNode(node *yaml.Node, key string, style yaml.Style, value, tag
 	)
 }
 
-func (a *Activities) renderCAPIBootstrapUserData(
+// renderBootstrapUserData renders the template-backed CAPI node's cloud-init
+// user data.
+func (*Client) renderBootstrapUserData(
 	ctx context.Context,
+	deps shared.MachineCreateDeps,
 	node db.Node,
 	nodeSet db.NodeSet,
 	spireJoinToken string,
@@ -73,7 +77,7 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	if err != nil {
 		return "", fmt.Errorf("failed to read node set capi provider: %w", err)
 	}
-	controllerFiles, err := a.nodeAgentBootstrapFiles(node)
+	controllerFiles, err := deps.NodeAgentBootstrapFiles(node)
 	if err != nil {
 		return "", err
 	}
@@ -87,15 +91,15 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	// retries forever, and the cluster never leaves Provisioning.
 	var trustDomain, trustBundle string
 	if node.SpiffeEnabled {
-		trustDomain, trustBundle, err = a.getTrustDomainBundle(ctx, a.cfg)
+		trustDomain, trustBundle, err = deps.GetTrustDomainBundle(ctx, deps.Config)
 		if err != nil {
 			return "", fmt.Errorf("failed to get trust domain and bundle: %w", err)
 		}
 	}
 
-	files := make([]capiCloudInitFile, 0, len(capiNodeSetProvider.BootstrapFiles)+len(controllerFiles)+2)
+	files := make([]cloudInitFile, 0, len(capiNodeSetProvider.BootstrapFiles)+len(controllerFiles)+2)
 	for _, file := range capiNodeSetProvider.BootstrapFiles {
-		files = append(files, capiCloudInitFile{
+		files = append(files, cloudInitFile{
 			Path:        file.Path,
 			Owner:       file.Owner,
 			Permissions: file.Permissions,
@@ -103,29 +107,29 @@ func (a *Activities) renderCAPIBootstrapUserData(
 		})
 	}
 	if node.SpiffeEnabled {
-		dsxIMDSPluginChecksum := a.cfg.NodeAgent.DSXImds.PluginChecksum
+		dsxIMDSPluginChecksum := deps.Config.NodeAgent.DSXImds.PluginChecksum
 		if dsxIMDSPluginChecksum == "" {
 			dsxIMDSPluginChecksum = "${DSX_IMDS_PLUGIN_CHECKSUM}"
 		}
 		files = append(files,
-			capiCloudInitFile{
+			cloudInitFile{
 				Path:        constants.CAPISpireTrustBundlePath,
 				Owner:       "root:root",
 				Permissions: "0644",
 				Content:     trustBundle,
 			},
-			capiCloudInitFile{
+			cloudInitFile{
 				Path:        constants.CAPISpireAgentConfigPath,
 				Owner:       "root:root",
 				Permissions: "0644",
-				Content: buildCAPISpireAgentConfig(capiSpireAgentConfig{
+				Content: buildSpireAgentConfig(spireAgentConfig{
 					AttestationMethod:     string(node.SpireAttestationMethod),
-					ServerAddress:         a.cfg.SpireServerAddress,
-					ServerPort:            a.cfg.SpireServerPort,
+					ServerAddress:         deps.Config.SpireServerAddress,
+					ServerPort:            deps.Config.SpireServerPort,
 					TrustDomain:           trustDomain,
 					TrustBundlePath:       constants.CAPISpireTrustBundlePath,
 					SpireJoinToken:        spireJoinToken,
-					DSXIMDSEndpoint:       a.cfg.NodeAgent.DSXImds.Endpoint,
+					DSXIMDSEndpoint:       deps.Config.NodeAgent.DSXImds.Endpoint,
 					DSXIMDSPluginChecksum: dsxIMDSPluginChecksum,
 				}),
 			},
@@ -133,7 +137,7 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	}
 
 	for _, file := range controllerFiles {
-		files = append(files, capiCloudInitFile{
+		files = append(files, cloudInitFile{
 			Path:        file.Path,
 			Owner:       file.Owner,
 			Permissions: file.Permissions,
@@ -145,7 +149,7 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	runCommands := append([]string(nil), capiNodeSetProvider.PreKubeadmCommands...)
 	runCommands = append(runCommands, "systemctl restart nke-agent.service")
 
-	userData := capiCloudInitConfig{
+	userData := cloudInitConfig{
 		WriteFiles: files,
 		RunCmd:     runCommands,
 	}
@@ -158,7 +162,7 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	return "#cloud-config\n" + string(yamlBytes), nil
 }
 
-type capiSpireAgentConfig struct {
+type spireAgentConfig struct {
 	ServerAddress         string
 	ServerPort            string
 	TrustDomain           string
@@ -169,9 +173,9 @@ type capiSpireAgentConfig struct {
 	DSXIMDSPluginChecksum string
 }
 
-func buildCAPISpireAgentConfig(data capiSpireAgentConfig) string {
+func buildSpireAgentConfig(data spireAgentConfig) string {
 	var buf bytes.Buffer
-	tmpl := template.Must(template.New("capi-spire-agent-config").Parse(capiSpireAgentConfigTemplateText))
+	tmpl := template.Must(template.New("capi-spire-agent-config").Parse(spireAgentConfigTemplateText))
 	if err := tmpl.Execute(&buf, data); err != nil {
 		panic(fmt.Sprintf("failed to render CAPI SPIRE agent config template: %v", err))
 	}
