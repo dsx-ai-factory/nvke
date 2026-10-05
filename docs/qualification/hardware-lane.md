@@ -315,21 +315,19 @@ nico-vms, but none are enabled for `nico-forge`.
 is a single node, and the upgrade specs act on a tenant cluster's control-plane
 version through CWE.
 
-**GPUs.** `gpu.l40sx8` is declared in `environments/forge.yaml` and the
-capability match would select it, but three things stand between that and a
-meaningful GPU test:
+**GPUs.** A run names the accelerator its workers need with `-e2e.capabilities
+gpu=<model>`, and the lane has qualified a GB200 tenant at ytl on both amd64
+and arm64 CPU nodes.
 
-- The lane passes no `-e2e.capabilities`, so the match is vacuous — every type
-  satisfies an empty request and the first declared type always wins. The
-  selection machinery has never actually selected anything.
-- One capability set is resolved per run and applied to every pool, so "CPU
-  control plane, GPU workers" cannot be expressed through capabilities. The
-  supported route is pinning `InstanceTypeID` on the worker pool, as the
-  nico-vms entries already do.
+`Resolve` returns two shapes rather than one, so "CPU control plane, GPU
+workers" is expressed through capabilities rather than by pinning
+`InstanceTypeID`. `arch` applies to the CPU machines alone, because that is
+the one a caller chooses: a GPU model already determines its own architecture,
+so asking for both could only contradict the hardware.
+
+One thing still stands between that and a meaningful GPU test:
+
 - Nothing in the deploy path installs a GPU operator or device plugin, so a GPU
-  node would come up Ready without advertising `nvidia.com/gpu`. A test written
-  today would prove the machine schedules, not that a GPU workload runs.
-
-Site capacity also constrains this: the declared site offers no GB200. The
-sites that have that capacity attach an interface by VPC prefix rather than by
-subnet, and the environment schema has no prefix alternative yet.
+  node comes up Ready without advertising `nvidia.com/gpu`. What has been
+  proved is that the machines provision, join and release cleanly, not that a
+  GPU workload runs.

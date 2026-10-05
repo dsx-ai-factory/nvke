@@ -107,9 +107,11 @@ through create, node readiness, and delete.
   lane does not.
 - **Site controller upgrade and scale.** The site is a single node, and the
   upgrade specs act on a tenant cluster's control plane.
-- **A second site or a second provider.** One site is declared. The
-  environment schema cannot yet express a site that attaches by VPC prefix,
-  which is where the GB200 capacity lives.
+- **A second provider.** Two sites are declared, az61 and ytl, and the lane
+  resolves between them by capability. Forge is still the only provider.
+- **GPU software.** A GB200 tenant has been qualified at ytl, but only to the
+  point of its nodes going Ready. Nothing checks the driver, the device plugin
+  or the `nvidia.com/gpu` resource.
 
 ## Where to go next
 

@@ -27,11 +27,11 @@ provider: forge
 infrastructure:          # opaque to the loader; the forge provider decodes it
   org:
     id: "${FORGE_ORG_ID}"
-  sites:
-    default:
+  sites:                 # named for the site, not the role: capabilities choose
+    az61:
       id:            "${FORGE_SITE_ID}"
       vpcID:         "${FORGE_VPC_ID}"
-      subnetID:      "${FORGE_SUBNET_ID}"
+      subnetID:      "${FORGE_SUBNET_ID}"      # this fabric attaches by subnet
       sshKeyGroupID: "${FORGE_SSH_KEY_GROUP_ID}"
       instanceTypes:
         - name: cpu.himem.t1
@@ -40,6 +40,18 @@ infrastructure:          # opaque to the loader; the forge provider decodes it
         - name: gpu.l40sx8
           id: "${FORGE_INSTANCE_TYPE_GPU_ID}"
           provides: {machineType: gpu, arch: amd64, gpu: l40}
+    ytl:
+      id:            "${FORGE_YTL_SITE_ID:-}"
+      vpcID:         "${FORGE_YTL_VPC_ID:-}"
+      vpcPrefixID:   "${FORGE_YTL_VPC_PREFIX_ID:-}"   # this one attaches by prefix
+      sshKeyGroupID: "${FORGE_YTL_SSH_KEY_GROUP_ID:-}"
+      instanceTypes:
+        - name: cpu.arm
+          id: "${FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID:-}"
+          provides: {machineType: cpu, arch: arm64}
+        - name: gpu.gb200.h05.ibx4.dpux2
+          id: "${FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID:-}"
+          provides: {machineType: gpu, arch: arm64, gpu: gb200}
 ```
 
 That split is the point. A second provider describes its infrastructure in its
@@ -73,9 +85,9 @@ Two consequences worth internalising.
 several types satisfy a request, the first listed wins.
 
 **An empty request matches everything.** Asking for nothing is satisfied by
-every type, so the first declared type wins by default. The Forge lane passes
-no `-e2e.capabilities` today, which is why it always lands on `cpu.himem.t1`
-and why the GPU type has never actually been selected.
+every type, so the first declared type wins by default. The Forge lane always
+passes `-e2e.capabilities`, built from its `arch` and `gpu` inputs, so this is
+the shape a hand-run with neither falls back to.
 
 A request nothing satisfies **fails rather than falling back**. Asking for
 `{gpu: gb200}` at a site with no GB200 is an error, not a quiet substitution of
@@ -156,17 +168,13 @@ input. Those arrive as `-e2e.versions`.
 
 ## Adding a site
 
-Two things will stop you, and both are worth knowing before you start.
+One thing will stop you, and it is worth knowing before you start.
 
-**Network attachment differs by site.** The declared site's fabric attaches an
-interface by subnet, which is what `subnetID` carries. Other fabrics attach by
-**VPC prefix** instead. The schema has no prefix alternative, so a
-prefix-attached site **cannot currently be declared.** Adding one means adding
-that arm to the schema and to `interfaces()` in the provider.
-
-This is on the critical path for GPU qualification: the sites with GB200
-capacity are the prefix-attached ones, so a stream asking for `{gpu: gb200}`
-has nothing to run on until that work is done.
+**Network attachment differs by site.** A fabric attaches an interface by
+subnet or by **VPC prefix**, never both, and which one is a property of the
+fabric rather than a choice. A site declares `subnetID` or `vpcPrefixID`
+accordingly, and declaring both is rejected on lookup. az61 attaches by
+subnet, ytl by prefix.
 
 **Enumerating instance types is awkward.** A Forge instance-type list caps at
 twenty rows and ignores every filter, so discovering the rest means reading
