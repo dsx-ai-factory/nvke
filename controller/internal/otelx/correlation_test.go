@@ -27,7 +27,7 @@ func TestCorrelationSurvivesRequestLifetime(t *testing.T) {
 	var requestSpan trace.SpanContext
 	var logs bytes.Buffer
 	logger := slog.New(LogHandler{Handler: slog.NewJSONHandler(&logs, nil)}).With("component", "test")
-	handler := otelhttp.NewHandler(CorrelateHTTP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := otelhttp.NewHandler(ExposeTraceID(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestSpan = trace.SpanContextFromContext(r.Context())
 		carrier = Capture(r.Context())
 		logger.InfoContext(r.Context(), "accepted")
@@ -52,11 +52,9 @@ func TestCorrelationSurvivesRequestLifetime(t *testing.T) {
 	require.Equal(t, "vendor=value", sc.TraceState().String())
 	require.NotContains(t, carrier, "baggage")
 	require.Equal(t, sc.TraceID().String(), response.Header().Get("X-Trace-ID"))
-	require.Equal(t, OperationID(restored), response.Header().Get("X-Operation-ID"))
 	var record map[string]any
 	require.NoError(t, json.Unmarshal(logs.Bytes(), &record))
 	require.Equal(t, sc.TraceID().String(), record["trace_id"])
-	require.Equal(t, OperationID(restored), record["operation_id"])
 	stopConsumer()
 	require.ErrorIs(t, restored.Err(), context.Canceled)
 }
@@ -67,7 +65,7 @@ func TestCorrelationMissingAndInvalidParent(t *testing.T) {
 	defer func() { require.NoError(t, provider.Shutdown(context.Background())) }()
 	for _, parent := range []string{"", "invalid", "00-00000000000000000000000000000000-2222222222222222-01"} {
 		var valid bool
-		handler := otelhttp.NewHandler(CorrelateHTTP(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		handler := otelhttp.NewHandler(ExposeTraceID(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 			valid = trace.SpanContextFromContext(r.Context()).IsValid()
 		})), "request", otelhttp.WithTracerProvider(provider), otelhttp.WithPropagators(propagation.TraceContext{}))
 		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", http.NoBody)
@@ -76,7 +74,6 @@ func TestCorrelationMissingAndInvalidParent(t *testing.T) {
 		handler.ServeHTTP(response, req)
 		require.True(t, valid)
 		require.Len(t, response.Header().Get("X-Trace-ID"), 32)
-		require.NotEmpty(t, response.Header().Get("X-Operation-ID"))
 	}
 	// Rows written before the migration carry no correlation and remain readable.
 	require.False(t, trace.SpanContextFromContext(Restore(context.Background(), nil)).IsValid())

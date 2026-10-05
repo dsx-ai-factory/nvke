@@ -136,7 +136,7 @@ func (p *OutboxProcessor) processBatch(ctx context.Context) error {
 // processEntry processes a single outbox entry by starting the appropriate workflow.
 func (p *OutboxProcessor) processEntry(ctx context.Context, entry db.WorkflowOutbox) error {
 	ctx = otelx.Restore(ctx, entry.TraceContext)
-	ctx, span := otel.Tracer("cwe.outbox").Start(ctx, "outbox.dispatch", trace.WithAttributes(attribute.String("workflow_id", entry.WorkflowID), attribute.String("operation_id", otelx.OperationID(ctx))))
+	ctx, span := otel.Tracer("cwe.outbox").Start(ctx, "outbox.dispatch", trace.WithAttributes(attribute.String("workflow_id", entry.WorkflowID)))
 	defer span.End()
 	err := p.startWorkflow(ctx, entry)
 	if err != nil {

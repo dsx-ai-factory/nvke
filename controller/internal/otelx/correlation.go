@@ -8,63 +8,43 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
 
-// OperationKey identifies the durable operation ID in Go and Temporal contexts.
-type OperationKey struct{}
-
-// OperationID returns the operation ID from a Go or Temporal workflow context.
-func OperationID(ctx interface{ Value(key any) any }) string {
-	id, _ := ctx.Value(OperationKey{}).(string)
-	return id
-}
-
-// Capture persists only W3C trace context and the server-generated operation ID.
-// Arbitrary inbound baggage is deliberately not copied into database rows.
+// Capture persists the W3C trace context of the current span. Arbitrary inbound
+// baggage is deliberately not copied into database rows.
 func Capture(ctx context.Context) map[string]string {
 	carrier := propagation.MapCarrier{}
 	propagation.TraceContext{}.Inject(ctx, carrier)
-	if id := OperationID(ctx); id != "" {
-		carrier["operation_id"] = id
-	}
 	return carrier
 }
 
-// Restore attaches durable correlation to a fresh consumer context, preserving
-// its cancellation and deadline rather than the original HTTP request lifetime.
+// Restore attaches a persisted trace context to a fresh consumer context,
+// preserving its cancellation and deadline rather than the original HTTP
+// request lifetime.
 func Restore(ctx context.Context, carrier map[string]string) context.Context {
-	ctx = propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier(carrier))
-	if id := carrier["operation_id"]; id != "" {
-		ctx = context.WithValue(ctx, OperationKey{}, id)
-	}
-	return ctx
+	return propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier(carrier))
 }
 
-// CorrelateHTTP runs inside the HTTP tracing middleware and before request logs.
-func CorrelateHTTP(next http.Handler) http.Handler {
+// ExposeTraceID returns the request's trace ID in the X-Trace-ID response
+// header. It runs inside the HTTP tracing middleware and before request logs.
+func ExposeTraceID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), OperationKey{}, uuid.NewString())
-		w.Header().Set("X-Operation-ID", OperationID(ctx))
-		if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+		if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() {
 			w.Header().Set("X-Trace-ID", sc.TraceID().String())
 		}
-		next.ServeHTTP(w, r.WithContext(ctx))
+		next.ServeHTTP(w, r)
 	})
 }
 
 // LogHandler enriches context-aware slog calls with correlation fields.
 type LogHandler struct{ slog.Handler }
 
-// Handle adds the current span and operation identifiers to a log record.
+// Handle adds the current span identifiers to a log record.
 func (h LogHandler) Handle(ctx context.Context, record slog.Record) error {
 	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
 		record.AddAttrs(slog.String("trace_id", sc.TraceID().String()), slog.String("span_id", sc.SpanID().String()))
-	}
-	if id := OperationID(ctx); id != "" {
-		record.AddAttrs(slog.String("operation_id", id))
 	}
 	return h.Handler.Handle(ctx, record)
 }

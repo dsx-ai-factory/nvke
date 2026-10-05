@@ -33,7 +33,7 @@ all published ports bind to loopback.
 ## What the test verifies
 
 - Valid incoming W3C context is preserved; malformed or absent context produces
-  a new trace. Responses expose `X-Trace-ID` and server-generated `X-Operation-ID`.
+  a new trace. Responses expose `X-Trace-ID`.
 - The same database transaction stores resource changes and outbox trace context.
 - A background outbox consumer restores the context after the HTTP request ends.
 - HTTP, SQL, workflow-start, workflow-run, and activity-run spans share a trace.
@@ -43,11 +43,11 @@ all published ports bind to loopback.
 - API, SQL, workflow, and activity logs carry matching correlation fields.
 - Temporal tracing is registered once: the worker inherits the client interceptor.
 
-The test prints a Jaeger link, workflow ID, and operation ID for each scenario.
+The test prints a Jaeger link, and workflow ID for each scenario.
 Jaeger service name: `cwe-tracing-poc`. Look for:
 
 ```text
-POST
+POST /api/clusters
 ├── INSERT / UPDATE / transaction spans
 └── outbox.dispatch
     └── StartWorkflow:ProvisionCluster
@@ -58,14 +58,14 @@ POST
 ```
 
 Logs are written to `.local/tracing-poc/logs.jsonl` and replaced on each run.
-For example, copy an operation ID printed by the test:
+For example, copy a trace ID printed by the test:
 
 ```bash
-jq -c --arg id 'PASTE_OPERATION_ID' \
-  'select(.operation_id == $id)' .local/tracing-poc/logs.jsonl
+jq -c --arg id 'PASTE_TRACE_ID' \
+  'select(.trace_id == $id)' .local/tracing-poc/logs.jsonl
 
 jq -c 'select(.event == "workflow.returned" or .event == "activity.returned") |
-  {trace_id, operation_id, workflow_id, run_id, activity_id, attempt, outcome, error}' \
+  {trace_id, workflow_id, run_id, activity_id, attempt, outcome, error}' \
   .local/tracing-poc/logs.jsonl
 ```
 
@@ -81,15 +81,13 @@ export OTEL_EXPORTER_OTLP_INSECURE=true
 ```
 
 The worker applies the additive `workflow_outbox.trace_context` migration on
-startup. It stores W3C `traceparent`, optional `tracestate`, and `operation_id` in
-a JSONB column. Existing rows with NULL context still dispatch normally.
-`operation_id` is carried across Temporal headers independently of sampling.
-Tracing still requires the existing enable flag and OTLP endpoint; this POC does
-not change deployment defaults. Requests still receive an operation ID when
-tracing is disabled.
+startup. It stores W3C `traceparent` and optional `tracestate` in a JSONB column.
+Existing rows with NULL context still dispatch normally. Tracing still requires
+the existing enable flag and OTLP endpoint; this POC does not change deployment
+defaults.
 
-The standard worker logger adds `trace_id`, `span_id`, and `operation_id` to
-context-aware calls. Use `logger.InfoContext(ctx, ...)` in Go code and
+The standard worker logger adds `trace_id` and `span_id` to context-aware
+calls. Use `logger.InfoContext(ctx, ...)` in Go code and
 `workflow.GetLogger(ctx)` / `activity.GetLogger(ctx)` in Temporal code. Legacy
 context-free `slog.Info(...)` calls cannot infer the current request automatically.
 
@@ -110,8 +108,7 @@ and execution status remain authoritative. A production operation-status monitor
 would be needed to publish every terminal server-side outcome reliably.
 
 The POC uses one trace across the outbox boundary. Trace sampling can discard
-spans; operation IDs and outcome logs remain available independently. There is
-no automatic retry-wide error retention policy in this POC.
+spans and log correlation. There is no automatic retry-wide error retention policy in this POC.
 
 To stop the plain-Docker services without removing their containers:
 

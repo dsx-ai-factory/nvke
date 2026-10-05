@@ -130,9 +130,8 @@ func TestTracingPOC(t *testing.T) {
 			responseBody, err := io.ReadAll(response.Body)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusCreated, response.StatusCode, string(responseBody))
-			traceID, operationID := response.Header.Get("X-Trace-ID"), response.Header.Get("X-Operation-ID")
+			traceID := response.Header.Get("X-Trace-ID")
 			require.Len(t, traceID, 32)
-			require.NotEmpty(t, operationID)
 			if scenario.name == "success" {
 				require.Equal(t, strings.Split(scenario.parent, "-")[1], traceID)
 			}
@@ -145,7 +144,6 @@ func TestTracingPOC(t *testing.T) {
 			require.Eventually(t, func() bool {
 				return bunDB.NewSelect().Model(&entry).Where("workflow_id = ?", workflowID).Scan(ctx) == nil && entry.ProcessedAt != nil
 			}, 15*time.Second, 100*time.Millisecond)
-			require.Equal(t, operationID, entry.TraceContext["operation_id"])
 			require.Contains(t, entry.TraceContext["traceparent"], traceID)
 			err = temporalClient.GetWorkflow(ctx, workflowID, "").Get(ctx, nil)
 			if scenario.name == "fail" {
@@ -155,8 +153,8 @@ func TestTracingPOC(t *testing.T) {
 			}
 			require.NoError(t, provider.ForceFlush(ctx))
 			assertPOCTrace(t, spans.Ended(), traceID, scenario.name == "retry")
-			assertPOCLogs(t, logs.snapshot(), traceID, operationID, scenario.name)
-			t.Logf("%s: operation_id=%s workflow_id=%s trace=http://localhost:16686/trace/%s logs=%s", scenario.name, operationID, workflowID, traceID, logPath)
+			assertPOCLogs(t, logs.snapshot(), traceID, scenario.name)
+			t.Logf("%s: workflow_id=%s trace=http://localhost:16686/trace/%s logs=%s", scenario.name, workflowID, traceID, logPath)
 		})
 	}
 }
@@ -183,11 +181,11 @@ func assertPOCTrace(t *testing.T, spans []sdktrace.ReadOnlySpan, traceID string,
 			byName[span.Name()] = span
 		}
 	}
-	for _, name := range []string{"POST", "outbox.dispatch", "StartWorkflow:ProvisionCluster", "RunWorkflow:ProvisionCluster"} {
+	for _, name := range []string{"POST /api/clusters", "outbox.dispatch", "StartWorkflow:ProvisionCluster", "RunWorkflow:ProvisionCluster"} {
 		require.Equal(t, 1, names[name], "missing/duplicate span %s: %v", name, names)
 	}
 	for child, parent := range map[string]string{
-		"outbox.dispatch":                "POST",
+		"outbox.dispatch":                "POST /api/clusters",
 		"StartWorkflow:ProvisionCluster": "outbox.dispatch",
 		"RunWorkflow:ProvisionCluster":   "StartWorkflow:ProvisionCluster",
 		"StartActivity:POCReadCluster":   "RunWorkflow:ProvisionCluster",
@@ -211,7 +209,7 @@ func assertPOCTrace(t *testing.T, spans []sdktrace.ReadOnlySpan, traceID string,
 	require.Positive(t, sqlSpans, "no SQL spans in trace: %v", names)
 }
 
-func assertPOCLogs(t *testing.T, data []byte, traceID, operationID, scenario string) {
+func assertPOCLogs(t *testing.T, data []byte, traceID, scenario string) {
 	t.Helper()
 	events := map[string]int{}
 	for _, line := range bytes.Split(data, []byte("\n")) {
@@ -220,10 +218,9 @@ func assertPOCLogs(t *testing.T, data []byte, traceID, operationID, scenario str
 		}
 		var record map[string]any
 		require.NoError(t, json.Unmarshal(line, &record))
-		if record["operation_id"] != operationID {
+		if record["trace_id"] != traceID {
 			continue
 		}
-		require.Equal(t, traceID, record["trace_id"], "%s", line)
 		if event, ok := record["event"].(string); ok {
 			events[event+":"+fmt.Sprint(record["outcome"])]++
 		}

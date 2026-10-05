@@ -133,7 +133,7 @@ func NewServer(
 	if authn != nil {
 		handler = authn.Wrap(handler)
 	}
-	handler = otelx.CorrelateHTTP(loggingMiddleware(handler, logger))
+	handler = otelx.ExposeTraceID(loggingMiddleware(handler, logger))
 	if cfg.Tracing.Enabled {
 		handler = otelhttp.NewHandler(handler, "cloud-workflow-engine",
 			otelhttp.WithFilter(func(r *http.Request) bool {

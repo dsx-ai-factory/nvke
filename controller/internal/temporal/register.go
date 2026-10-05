@@ -25,7 +25,6 @@ import (
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/worker"
-	"go.temporal.io/sdk/workflow"
 	"google.golang.org/protobuf/types/known/durationpb"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -91,10 +90,9 @@ func NewClient(cfg config.Config, logger *slog.Logger) (client.Client, error) {
 			GetSystemInfoTimeout: 10 * time.Second, // Found this helps when local dev over slow SSH tunnel
 			TLS:                  tlsConfig,
 		},
-		Logger:             log.NewStructuredLogger(logger.With("temporalClient", "cwe")),
-		MetricsHandler:     sdktally.NewMetricsHandler(newPrometheusScope()), // Adding a metrics handler gets the built in temporal metrics for the CWE temporal worker.
-		DataConverter:      NewDataConverter(),
-		ContextPropagators: []workflow.ContextPropagator{OperationPropagator{}},
+		Logger:         log.NewStructuredLogger(logger.With("temporalClient", "cwe")),
+		MetricsHandler: sdktally.NewMetricsHandler(newPrometheusScope()), // Adding a metrics handler gets the built in temporal metrics for the CWE temporal worker.
+		DataConverter:  NewDataConverter(),
 	}
 
 	if cfg.Tracing.Enabled {
