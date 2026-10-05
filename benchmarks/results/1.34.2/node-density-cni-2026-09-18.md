@@ -13,7 +13,7 @@ Scenario: [node-density-cni](../../workloads/scalability/node-density-cni/README
 
 ## TL;DR
 
-2,060 iterations filled 42 workers to 105 pods per node, creating 4,120 pods in
+2,060 iterations filled 42 workers to an average of 105 pods per node, creating 4,120 pods in
 996 s. Every curl pod became Ready only after reaching a webserver through its Service, so
 the headline figure is time-to-connectivity: **pod-ready p99 of 3 s** against a
 1 minute p99 bar. Peak Pending was 8 pods and latency coverage was complete. The

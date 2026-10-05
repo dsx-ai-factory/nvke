@@ -47,7 +47,7 @@ sizing:
       pods already resident on those nodes, then halve the result. The halving is
       because each iteration creates two pods — a webserver and a curl client
       whose startup probe gates on reaching the webserver through its Service —
-      so the halved count still lands at the requested pod density. Two inputs
+      so the halved count still lands at the requested average pod density. Two inputs
       are easy to get wrong. The subtraction counts every pod already on those
       nodes with no phase or namespace filter, so system DaemonSets count and so
       do completed pods not yet garbage collected; the same command therefore
