@@ -167,8 +167,15 @@ make api-compat-check  # the openapi.yaml change does not break an existing clie
 A removed field or a newly required property passes the first and fails the
 second. `api-compat-check` compares against the newest published
 `controller/api/vX.Y.Z` tag and is waived, never disabled, per change in
-`api/openapi-compat-waivers.yaml`. See
-[`api/README.md`](api/README.md#compatibility) and
+`api/openapi-compat-waivers.yaml`.
+
+Removing an operation is the exception, and the one agents get wrong: do not
+write a waiver for it. Mark it `deprecated: true` with an `x-sunset` date at
+least 180 days out, ship that, and remove it once the date has passed — the gate
+lets that through on its own. A deprecation with no `x-sunset`, or one dated
+sooner than that, fails.
+
+See [`api/README.md`](api/README.md#compatibility) and
 [`hack/openapi-compat/README.md`](hack/openapi-compat/README.md).
 
 ## Database

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 const (
@@ -44,6 +45,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	differVersion := flags.String("differ-version", "", "Version of --differ to run; required unless --report is given")
 	reportPath := flags.String("report", "", "Read an existing engine report instead of running the engine")
 	reportOut := flags.String("report-out", "", "Also write the engine report here, for a CI artifact")
+	noticeDays := flags.Int("deprecation-days", deprecationNoticeDays, "Days of notice an operation owes consumers between being deprecated and being removed")
 	flags.Usage = func() {
 		out := flags.Output()
 		if _, err := fmt.Fprint(out, `Usage: openapi-compat --differ-version <version>
@@ -77,7 +79,7 @@ engine writes a report this tool does not recognize.
 		return err
 	}
 
-	rep, resolved, err := gatherReport(ctx, *reportPath, *reportOut, reportRequest{
+	got, err := gatherReport(ctx, *reportPath, *reportOut, reportRequest{
 		spec:          *spec,
 		specInRepo:    *specInRepo,
 		baseline:      *baseline,
@@ -89,61 +91,85 @@ engine writes a report this tool does not recognize.
 		return err
 	}
 
-	result := evaluate(rep.Changes, rules)
-	writeSummary(stdout, resolved, *spec, rep, result)
+	// The deprecation rules read the two documents rather than the diff, so
+	// they run whether or not the engine found anything: a deprecation
+	// announced in this change still has to be a real one.
+	life, err := evaluateLifecycle(got.specs.baseline, got.specs.revision, time.Now().UTC(), *noticeDays)
+	if err != nil {
+		return err
+	}
+	kept, discharged := applyLifecycle(got.report.Changes, life)
+	kept = append(kept, life.Findings...)
+
+	result := evaluate(kept, rules)
+	writeSummary(stdout, got.baseline, *spec, got.report, result, discharged, *noticeDays)
 
 	switch {
 	case len(result.Unwaived) > 0 && len(result.Unused) > 0:
 		return fmt.Errorf("%d unwaived breaking change(s), and %d waiver(s) that match nothing", len(result.Unwaived), len(result.Unused))
 	case len(result.Unwaived) > 0:
-		return fmt.Errorf("%d unwaived breaking change(s) against %s", len(result.Unwaived), resolved)
+		return fmt.Errorf("%d unwaived breaking change(s) against %s", len(result.Unwaived), got.baseline)
 	case len(result.Unused) > 0:
 		return fmt.Errorf("%d waiver(s) in %s match nothing; remove them", len(result.Unused), *waivers)
 	}
 	return nil
 }
 
-// gatherReport returns the engine's report, and the baseline it was produced
-// against. With --report the report is read from disk and the baseline is
-// reported as the literal "(report supplied)", because this tool did not
-// resolve one.
-func gatherReport(ctx context.Context, reportPath, reportOut string, req reportRequest) (*report, string, error) {
+// gathered is everything a verdict is reached from: what the engine said, the
+// two documents it said it about, and the ref the baseline came from.
+type gathered struct {
+	report   *report
+	specs    specPair
+	baseline string
+}
+
+// gatherReport resolves both specifications and obtains the engine's report
+// over them, reading one from disk instead when --report supplies it.
+func gatherReport(ctx context.Context, reportPath, reportOut string, req reportRequest) (gathered, error) {
+	// Both specifications are resolved either way. --report replaces the
+	// engine, not the documents: the deprecation rules read them directly, and
+	// a mode that skipped them would be a mode in which a removal looked
+	// sanctioned because nothing had checked.
+	specs, resolved, err := req.resolve(ctx)
+	if err != nil {
+		return gathered{}, err
+	}
+	out := gathered{specs: specs, baseline: resolved}
+
 	if reportPath != "" {
 		raw, err := os.ReadFile(reportPath)
 		if err != nil {
-			return nil, "", fmt.Errorf("reading report %s: %w", reportPath, err)
+			return gathered{}, fmt.Errorf("reading report %s: %w", reportPath, err)
 		}
-		rep, err := parseReport(raw)
-		if err != nil {
-			return nil, "", err
+		if out.report, err = parseReport(raw); err != nil {
+			return gathered{}, err
 		}
-		return rep, "(report supplied)", nil
+		return out, nil
 	}
 
-	raw, resolved, err := req.produce(ctx)
+	raw, err := req.produce(ctx, specs)
 	if err != nil {
-		return nil, "", err
+		return gathered{}, err
 	}
 	if reportOut != "" {
 		if err := os.MkdirAll(filepath.Dir(reportOut), 0o755); err != nil {
-			return nil, "", fmt.Errorf("creating the report directory: %w", err)
+			return gathered{}, fmt.Errorf("creating the report directory: %w", err)
 		}
 		if err := os.WriteFile(reportOut, raw, 0o600); err != nil {
-			return nil, "", fmt.Errorf("writing report %s: %w", reportOut, err)
+			return gathered{}, fmt.Errorf("writing report %s: %w", reportOut, err)
 		}
 	}
-	rep, err := parseReport(raw)
-	if err != nil {
-		return nil, "", err
+	if out.report, err = parseReport(raw); err != nil {
+		return gathered{}, err
 	}
-	return rep, resolved, nil
+	return out, nil
 }
 
 // writeSummary prints what changed and what the policy made of it. It is always
 // printed, including on success: the additive total is the number a reviewer
 // wants beside "no breaking changes", and a silent pass teaches nobody what the
 // gate actually compared.
-func writeSummary(w io.Writer, baseline, spec string, rep *report, result policyResult) {
+func writeSummary(w io.Writer, baseline, spec string, rep *report, result policyResult, discharged []change, noticeDays int) {
 	fmt.Fprintf(w, "baseline: %s\n", baseline)
 	fmt.Fprintf(w, "spec:     %s\n", spec)
 	if rep.NoChanges {
@@ -180,12 +206,40 @@ func writeSummary(w io.Writer, baseline, spec string, rep *report, result policy
 		}
 	}
 
+	if len(discharged) > 0 {
+		fmt.Fprintf(w, "\n%d removal(s) needed no waiver: deprecated, with an %s date that has passed.\n", len(discharged), sunsetExtension)
+		for _, c := range discharged {
+			fmt.Fprintf(w, "  %s\n", c.describe())
+		}
+	}
+
+	// Printed only when a removal is among the failures, because it is advice
+	// about removals. On a newly-required property it would be a non sequitur,
+	// and a gate that answers a question nobody asked gets skimmed.
+	if anyRemoval(result.Unwaived) {
+		fmt.Fprintf(w, "\nA removal does not have to be waived. Mark the operation `deprecated: true`\n")
+		fmt.Fprintf(w, "with an %s date at least %d days out, ship that, and remove it once the date\n", sunsetExtension, noticeDays)
+		fmt.Fprintf(w, "has passed; the gate then lets it through on its own.\n")
+	}
+
 	if kinds := breakingByKind(result.Unwaived); len(kinds) > 0 {
 		fmt.Fprintf(w, "\nunwaived breaking changes by kind:\n")
 		for _, k := range kinds {
 			fmt.Fprintf(w, "  %-28s %d\n", k.kind, k.count)
 		}
 	}
+}
+
+// anyRemoval reports whether a removal is among these changes. The two kinds
+// are the shapes the engine reports a removed path item and a removed operation
+// in; see applyLifecycle, which discharges exactly the same two.
+func anyRemoval(changes []change) bool {
+	for _, c := range changes {
+		if c.ChangeText == "object_removed" || c.ChangeText == "property_removed" {
+			return true
+		}
+	}
+	return false
 }
 
 type kindCount struct {

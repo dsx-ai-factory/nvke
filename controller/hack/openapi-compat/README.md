@@ -52,6 +52,40 @@ for checking a change against an older release rather than the latest.
 
 The failure message prints a pasteable waiver stub for each unwaived change.
 
+### Removal has a second route
+
+A waiver is not the only way to remove an operation, and it should not be the
+usual one. An operation that was marked `deprecated: true`, carried an
+`x-sunset` date, and whose date has passed may be removed with **no waiver at
+all**: the gate reports the removal as one it did not have to be asked about.
+
+That route exists because without it the patient path and the abrupt one cost a
+reviewer exactly the same — one waiver either way — and the gate would be
+quietly arguing against the behaviour it is supposed to encourage.
+
+Its price is that the deprecation has to be a real one, which `lifecycle.go`
+enforces. Each of these fails:
+
+| Declaration | Why it is not a deprecation |
+|---|---|
+| `deprecated: true` with no `x-sunset` | Open-ended. Nothing a consumer can plan around. |
+| `x-sunset` that is not a `YYYY-MM-DD` date | Cannot be honoured, so the removal rule could never fire. |
+| `x-sunset` less than `deprecationNoticeDays` away | A fortnight is not notice. |
+| `x-sunset` on an operation not marked `deprecated` | `deprecated` is the half that reaches a generated client and the rendered reference. The date alone tells nobody. |
+
+Every one of those rules is scoped to what **changed**. An operation whose
+deprecation fields are identical in both specifications is not examined at all,
+however they are set. A state rule would fail a pull request that never touched
+the specification the moment some older deprecation drifted out of compliance,
+and a gate that fails unrelated work is a gate someone turns off.
+
+The route covers operations only. The engine reports a removed operation as a
+single change naming it — `object_removed` at `$.paths` for a whole path item,
+`property_removed` at `$.paths['<path>']` for one method — which is what makes
+"this exact removal was announced" decidable. A removed property or parameter is
+reported in a shape where it is not, so those are breaks like any other and take
+a waiver.
+
 Waivers are matched on `change` + `path` + `property`, deliberately not on the
 engine's `changeHash`. That hash covers the *shape* of a change and not its
 location: in one sample diff, 89 of 91 breaking changes shared five hashes. A
@@ -76,6 +110,7 @@ of these is an error, never a pass:
 | The engine's report is empty, truncated, or an unrecognised shape | The output format has moved. Fix the tool; do not assume. |
 | The waiver file is missing | It is committed. Its absence means the path or the checkout is wrong — not that nothing is waived. |
 | A waiver has an unknown key | A misspelled key would make the waiver a silent no-op. |
+| Either specification cannot be read as `paths` | The deprecation rules would then see no operations, and every removal would look un-announced rather than un-checked. |
 
 The "no changes" case is the one positive result the engine reports with no
 `changes` array, and it is matched explicitly. A future rewording of that message
@@ -87,10 +122,21 @@ fails the gate rather than being mistaken for success.
 go test ./hack/openapi-compat/
 ```
 
-The policy, the waiver schema and the report parser are unit tested, including
-every fail-closed case above. The tests do not invoke the engine or the network.
+The policy, the deprecation rules, the waiver schema and the report parser are
+unit tested, including every fail-closed case above. The deprecation tests fix
+the clock, so a sunset date cannot start passing or failing with the calendar.
+The tests do not invoke the engine or the network.
 
 To see it reject something, break the specification on purpose — change a
 response code, remove a required property — and run the target.
+
+To see the deprecation route end to end, which needs a baseline that already
+carries the deprecation: commit a specification with `deprecated: true` and a
+past `x-sunset` on one operation, then remove that operation and compare against
+the commit you just made.
+
+```bash
+make -C controller api-compat-check API_COMPAT_BASELINE=<that commit>
+```
 
 [engine]: https://github.com/pb33f/openapi-changes

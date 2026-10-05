@@ -15,6 +15,12 @@
 # one, add a new endpoint instead of repurposing one, and deprecate before you
 # remove.
 #
+# A removed OPERATION usually belongs nowhere near this file. Mark it
+# `deprecated: true` with an `x-sunset` date at least 180 days out, ship that,
+# and remove it once the date has passed -- the gate lets that through with no
+# entry here, because the notice was given and has run out. A waiver for a
+# removal is the record of a promise that was not kept.
+#
 # Each waiver matches exactly one change, on all three of:
 #
 #   change    the engine's change kind, e.g. property_removed, object_removed

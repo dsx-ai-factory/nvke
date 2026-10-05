@@ -128,17 +128,35 @@ func TestWaiverStubMatchesTheChangeItDescribes(t *testing.T) {
 }
 
 // --report has to go through the same parser as a live run, so a hand-supplied
-// report cannot bypass the fail-closed checks.
+// report cannot bypass the fail-closed checks. The request resolves both
+// specifications first, which is why this one names a ref that has them.
 func TestGatherReportRejectsAnUnreadableSuppliedReport(t *testing.T) {
-	_, _, err := gatherReport(t.Context(), "testdata/does-not-exist.json", "", reportRequest{})
+	_, err := gatherReport(t.Context(), "testdata/does-not-exist.json", "", reportRequest{
+		spec:       "../../api/openapi.yaml",
+		specInRepo: defaultSpecInRepo,
+		baseline:   "HEAD",
+	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "reading report")
+}
+
+// --report supplies a report, never the documents. The deprecation rules read
+// those directly, so a run that cannot reach them must fail rather than reach a
+// verdict without them.
+func TestGatherReportStillNeedsBothSpecifications(t *testing.T) {
+	_, err := gatherReport(t.Context(), "testdata/does-not-exist.json", "", reportRequest{
+		spec:       "testdata/no-such-openapi.yaml",
+		specInRepo: defaultSpecInRepo,
+		baseline:   "HEAD",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reading the working-tree specification")
 }
 
 // Without a pinned engine version the tool would run whatever `go run` resolves,
 // so the classification could change under a run that looks identical.
 func TestProduceRequiresAPinnedEngineVersion(t *testing.T) {
-	_, _, err := reportRequest{spec: "../../api/openapi.yaml"}.produce(t.Context())
+	_, err := reportRequest{spec: "../../api/openapi.yaml"}.produce(t.Context(), specPair{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--differ-version is required")
 }

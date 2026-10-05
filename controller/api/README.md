@@ -121,20 +121,54 @@ Reach for the shape that adds rather than the one that edits:
 | Narrow a type or an enum | Breaking. Widening an enum of *response* values is also breaking for a client that switches exhaustively — call it out in review. |
 | Replace an endpoint | Add the new one and deprecate the old one. |
 
-### Deprecating
+### Deprecating, then removing
 
 Deprecation is additive, so it passes the gate on its own. Removal is the
-breaking step, and it is the one that needs a waiver.
+breaking step — and for an **operation** it is the one case that can clear the
+gate without a waiver, provided the notice was real and has run out.
 
-1. Mark it `deprecated: true` — OpenAPI 3.0 accepts this on an operation, a
-   parameter and a schema property.
-2. Say so in the description: what replaces it, and from when. The description
-   is what both Swagger UI and the Fern reference render, so this is the only
-   place a consumer actually reads it.
-3. Keep serving it. A deprecated field still has its documented behaviour.
-4. Remove it in a later change, with a waiver in
-   `openapi-compat-waivers.yaml` naming the person who decided and the
-   consumers that had to move.
+1. Mark the operation `deprecated: true`, and give it an `x-sunset` date at
+   least **180 days** out:
+
+   ```yaml
+     /widgets:
+       get:
+         operationId: listWidgets
+         deprecated: true
+         x-sunset: "2027-06-01"
+   ```
+
+   OpenAPI has no sunset concept of its own, only the `deprecated` boolean;
+   `x-sunset` is the extension the surrounding tooling has converged on. The
+   gate holds this declaration to its word: `deprecated: true` with no
+   `x-sunset`, an `x-sunset` that is not a `YYYY-MM-DD` date, a date less than
+   180 days away, and an `x-sunset` on an operation that is not marked
+   deprecated all fail. Each is a deprecation that announces nothing a consumer
+   can act on.
+
+2. Say so in the description too: what replaces it, and from when. The
+   description is what Swagger UI and the Fern reference render, so it is where
+   a consumer actually reads it. `x-sunset` is for the gate; the prose is for
+   the person.
+
+3. Keep serving it. A deprecated operation still has its documented behaviour.
+
+4. Remove it once the date has passed. **No waiver** — the gate reports the
+   removal as one it did not have to be asked about, because the promise was
+   made, kept and discharged. Removing it before the date, or without having
+   deprecated it, still fails and still needs a waiver.
+
+Only operations have this route. A deprecated **property** or **parameter** has
+no sunset rule behind it, so removing one is a break like any other and takes a
+waiver. That is a deliberate limit rather than an oversight: the engine reports
+an operation removal as a single change naming the operation, which is what
+makes "this exact removal was announced" a decidable question, and a property
+removal is reported in a shape where it is not.
+
+The notice period is one number for the whole API, `deprecationNoticeDays` in
+[`../hack/openapi-compat/lifecycle.go`](../hack/openapi-compat/lifecycle.go). It
+is a promise to consumers, so moving it is a decision taken once and in the
+open, not a flag raised to get one pull request through.
 
 ### When a waiver is the right answer
 
@@ -147,6 +181,11 @@ Mostly it is not: the entries below are the cases where it is.
 - **A field that never shipped**, added and removed between two published tags.
 - **A deliberate break the team has agreed to take**, where the waiver is the
   record of that decision rather than a way around it.
+
+Removing a deprecated operation whose sunset has passed is **not** on this list,
+and does not need an entry. If you find yourself writing a waiver for a removal,
+check whether the deprecation route above applies first — it usually should
+have.
 
 A waiver is deleted once the baseline tag has moved past the release that
 carried the break — the gate fails on a waiver that matches nothing, so it

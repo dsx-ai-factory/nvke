@@ -135,46 +135,57 @@ type reportRequest struct {
 	differVersion string
 }
 
-// produce resolves the baseline, extracts its copy of the specification, and
-// runs the change engine over the pair. It returns the raw report and the
-// baseline ref it used.
-func (r reportRequest) produce(ctx context.Context) ([]byte, string, error) {
-	if r.differVersion == "" {
-		return nil, "", fmt.Errorf("--differ-version is required; run this through `make -C controller api-compat-check`, which passes the pinned version")
-	}
-	if _, err := os.Stat(r.spec); err != nil {
-		return nil, "", fmt.Errorf("reading the working-tree specification: %w", err)
+// specPair is the two documents under comparison. The deprecation rules read
+// them directly: the engine reports differences, and whether a removal was
+// announced first is a fact about the documents, not about the diff.
+type specPair struct {
+	baseline []byte
+	revision []byte
+}
+
+// resolve picks the baseline ref and reads both specifications. It is separate
+// from running the engine so that --report, which supplies a report rather than
+// producing one, still gets the documents the deprecation rules need. A run
+// that cannot read both is an error either way: there is no mode in which this
+// tool passes without having seen them.
+func (r reportRequest) resolve(ctx context.Context) (specPair, string, error) {
+	revision, err := os.ReadFile(r.spec)
+	if err != nil {
+		return specPair{}, "", fmt.Errorf("reading the working-tree specification: %w", err)
 	}
 
 	baseline := r.baseline
 	if baseline == "" {
-		var err error
 		if baseline, err = newestTag(ctx, r.tagGlob); err != nil {
-			return nil, "", err
+			return specPair{}, "", err
 		}
 	}
 
 	baselineSpec, err := showAtRef(ctx, baseline, r.specInRepo)
 	if err != nil {
-		return nil, "", err
+		return specPair{}, "", err
+	}
+	return specPair{baseline: baselineSpec, revision: revision}, baseline, nil
+}
+
+// produce runs the change engine over a resolved pair.
+func (r reportRequest) produce(ctx context.Context, specs specPair) ([]byte, error) {
+	if r.differVersion == "" {
+		return nil, fmt.Errorf("--differ-version is required; run this through `make -C controller api-compat-check`, which passes the pinned version")
 	}
 
 	dir, err := os.MkdirTemp("", "openapi-compat")
 	if err != nil {
-		return nil, "", fmt.Errorf("creating a temporary directory: %w", err)
+		return nil, fmt.Errorf("creating a temporary directory: %w", err)
 	}
 	defer os.RemoveAll(dir)
 
 	baselinePath := filepath.Join(dir, "baseline-openapi.yaml")
-	if err := os.WriteFile(baselinePath, baselineSpec, 0o600); err != nil {
-		return nil, "", fmt.Errorf("writing the baseline specification: %w", err)
+	if err := os.WriteFile(baselinePath, specs.baseline, 0o600); err != nil {
+		return nil, fmt.Errorf("writing the baseline specification: %w", err)
 	}
 
-	raw, err := runDiffer(ctx, r.differ, r.differVersion, baselinePath, r.spec)
-	if err != nil {
-		return nil, "", err
-	}
-	return raw, baseline, nil
+	return runDiffer(ctx, r.differ, r.differVersion, baselinePath, r.spec)
 }
 
 // newestTag picks the baseline. It fails when no tag matches rather than
