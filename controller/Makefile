@@ -277,12 +277,18 @@ e2e-gofail: ## Execute gofail e2e tests against a local Temporal dev server.
 			CWE_GOFAIL_E2E_WORKER_BINARY="$(CWE_GOFAIL_E2E_WORKER_BINARY)" \
 			CWE_GOFAIL_E2E_CLUSTER_CRDS="$(CWE_GOFAIL_E2E_CLUSTER_CRDS)" \
 			CWE_GOFAIL_E2E_CAPNICO_CRDS="$(CWE_GOFAIL_E2E_CAPNICO_CRDS)" \
-			go test -v -tags gofail ./e2e/gofail -timeout 30m -count=1; \
+			go test -v -tags gofail ./e2e/gofail ./e2e/tracing -timeout 30m -count=1; \
 		phase "run-tests"; \
 		cleanup; \
 		trap - EXIT; \
 		test -z "$$(find . -name "*.fail.go" -print)" \
 	'
+
+
+.PHONY: e2e-tracing
+e2e-tracing: ## Execute the tracing e2e test against a local Temporal dev server and PostgreSQL (initdb and postgres on PATH, or set CWE_GOFAIL_E2E_DB_CONNECTION_STRING).
+	mkdir -p "$(TEMPORAL_CLI_DOWNLOAD_DIR)"
+	TEMPORAL_CLI_DOWNLOAD_DIR="$(TEMPORAL_CLI_DOWNLOAD_DIR)" go test -v -tags gofail ./e2e/tracing -timeout 10m -count=1
 
 
 .PHONY: docker-build-local
