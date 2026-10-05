@@ -16,6 +16,16 @@ GOVULNCHECK_WAIVED ?=
 GOVULNCHECK_WAIVER_OWNER  ?=
 GOVULNCHECK_WAIVER_REVIEW ?=
 
+# Waived OpenAPI compatibility findings, as oasdiff check ids, space-separated.
+# Scoped to the check rather than to the endpoint, which makes a waiver blunt on
+# purpose. Empty: nothing is waived. A waived check that stops being reported
+# fails the gate, so an entry cannot outlive its reason. The policy, and the
+# three alternatives to reaching for this, are in controller/api/COMPATIBILITY.md.
+OPENAPI_COMPAT_WAIVED ?=
+# Set both with any waiver. Name a person as the owner, not a team.
+OPENAPI_COMPAT_WAIVER_OWNER  ?=
+OPENAPI_COMPAT_WAIVER_REVIEW ?=
+
 # Committed digests, not fetched from the release. A checksum served by the
 # same host as the artifact shares its compromise boundary; a committed one
 # does not. One line per tool per platform, updated with the version above it.

@@ -20,12 +20,13 @@ endif
 GOLANGCI_LINT_GOWORK :=
 include ../../make/golangci.mk
 
-# VACUUM_VERSION, pinned with the other repository-wide tool versions.
+# VACUUM_VERSION, and the OPENAPI_COMPAT_WAIVED set that compat-check reads,
+# pinned with the other repository-wide tool versions.
 include ../../make/tool-versions.mk
 
 GO_TEST_FLAGS ?=
 
-.PHONY: help lint lint-spec test docs
+.PHONY: help lint lint-spec compat-check test docs
 
 ##@ Help
 
@@ -43,6 +44,19 @@ lint: lint-spec ## Run golangci-lint and the OpenAPI lint over this module. (run
 # vacuum is a Go program, so `go run` pins it the way generate.go pins gofumpt,
 # and nothing has to be installed. The rules, and why each is on or off, are in
 # openapi-lint.yaml.
+# The compatibility half of the contract. generate-check asks whether the
+# generated code matches the spec; this asks whether the spec still keeps the
+# promise the last published version made. hack/openapi-compat-check.sh records
+# how, and controller/api/COMPATIBILITY.md records the policy it enforces.
+#
+# It reads git tags, which `go test` and the linters do not, so it is a target
+# of its own rather than another dependency of `lint`.
+compat-check: ## Compare openapi.yaml against the last published API tag. (run by the merge gate)
+	@OPENAPI_COMPAT_WAIVED='$(OPENAPI_COMPAT_WAIVED)' \
+	 OPENAPI_COMPAT_WAIVER_OWNER='$(OPENAPI_COMPAT_WAIVER_OWNER)' \
+	 OPENAPI_COMPAT_WAIVER_REVIEW='$(OPENAPI_COMPAT_WAIVER_REVIEW)' \
+	 GO='$(GO)' ../../hack/openapi-compat-check.sh
+
 API_DOCS_OUT ?= ../.local/api-reference.html
 
 ##@ Documentation

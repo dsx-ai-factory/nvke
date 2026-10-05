@@ -143,6 +143,14 @@ jobs:
     permissions:
       contents: read
 
+  # generate-check's other half: that one proves the generated code matches the
+  # specification, this one proves the specification still keeps the promise the
+  # last published controller/api tag made.
+  openapi-compat:
+    uses: ./.github/workflows/openapi-compat.yml
+    permissions:
+      contents: read
+
   actionlint:
     uses: ./.github/workflows/actionlint.yml
     permissions:
@@ -218,6 +226,7 @@ jobs:
       - nktp-chart
       - licenses
       - generated
+      - openapi-compat
       - actionlint
       - shellcheck
       - docs-check

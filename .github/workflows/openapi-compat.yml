@@ -1,0 +1,81 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Verifies that controller/api/openapi.yaml still keeps the promise the last
+# published version of it made.
+#
+# generate-check.yml already proves the committed *.gen.go match the spec. That
+# is a different question from whether the spec change is safe: a removed
+# response field, a narrowed type or a newly-required request property all pass
+# generate-check -- the generated code matches the new spec perfectly -- and
+# break every client built against the old one.
+#
+# The baseline is the newest controller/api/vX.Y.Z tag, which
+# controller-api-tag.yml allocates for every API change on main, so it is the
+# most recent spec a consumer could have pinned. That is why this job needs the
+# full history: with no tags there is no baseline, and the check fails rather
+# than reporting the comparison it could not make as "compatible".
+#
+# The policy it enforces is controller/api/COMPATIBILITY.md.
+#
+# Deliberately NOT path-filtered, for the reason recorded in actionlint.yml: a
+# filtered check does not report on a pull request that misses the filter, and
+# a required check that never reports leaves that pull request waiting forever.
+# See .github/workflows/README.md.
+
+name: OpenAPI Compatibility
+
+# All pull requests, including forks and Dependabot, reach this through
+# merge-gate.yml. The standalone push trigger is post-merge coverage on main;
+# naming mirror or Dependabot branches here too would run it a second time.
+on:
+  push:
+    branches: [main]
+  workflow_call:
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  # The sha is part of the group on main, so every commit gets its own. See the
+  # longer note in generate-check.yml for why, and why this is a literal name
+  # rather than ${{ github.workflow }}.
+  group: OpenAPI Compatibility-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  openapi-compat:
+    name: Check the API specification against the last published version
+    runs-on: ubuntu-latest
+    if: github.repository == 'dsx-ai-factory/nke'
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    # GOWORK=off for the same reason generate-check.yml sets it: the comparison
+    # tool is pinned in its own module file (controller/api/oasdiff.mod), and Go
+    # refuses -modfile in workspace mode.
+    env:
+      GOWORK: "off"
+    steps:
+      # fetch-depth: 0, because the baseline is a tag. A shallow checkout has
+      # none, and the check then fails closed -- correctly, but for a reason
+      # that is this file's to fix rather than an author's.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The api module's own Go, not the workspace's: the tool module declares a
+      # floor this satisfies, and it is the toolchain the other api jobs use.
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: controller/api/go.mod
+          cache: true
+          cache-dependency-path: |
+            controller/api/go.sum
+            controller/api/oasdiff.sum
+
+      - name: Compare the specification against the last published API tag
+        run: make --no-print-directory -C controller/api compat-check

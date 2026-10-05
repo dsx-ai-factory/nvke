@@ -56,6 +56,18 @@ If you forget, CI fails. `make -C controller generate-check` regenerates and the
 fails if the committed output differs, and the merge gate runs it. The failure
 names the files that are out of date.
 
+A spec change also has to be compatible, which `generate-check` says nothing
+about: it compares the generated code to the spec, and a removed response field
+or a newly-required request property matches its regenerated code perfectly
+while breaking every existing client. `make -C controller/api compat-check`
+is the check that asks the second question, comparing `openapi.yaml` against
+the newest published `controller/api/vX.Y.Z` tag. The merge gate runs it too.
+
+[COMPATIBILITY.md](COMPATIBILITY.md) is the policy it enforces: what counts as
+breaking, how to deprecate an operation before removing it, and the three ways
+to land a change that breaks the contract on purpose. Read it before changing
+anything that already exists, as opposed to adding something new.
+
 ## Rendering the reference
 
 Fern renders `openapi.yaml` into the REST API Reference tab of the documentation
@@ -79,6 +91,7 @@ On `main` it publishes the site.
 
 ```bash
 make -C controller/api lint
+make -C controller/api compat-check
 make -C controller/api test
 ```
 
