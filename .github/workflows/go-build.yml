@@ -111,6 +111,14 @@ jobs:
       - name: Check release-relevant base images are digest-pinned
         run: make base-image-check
 
+      # The grype scans themselves need a vulnerability database, a network and
+      # an NVIDIA runner, so they are not in the merge gate and do not run on a
+      # fork pull request. The policy their ignore list has to satisfy is pure
+      # file reading, so it is checked here, where it gates the pull request
+      # that adds the entry rather than the weekly scan long afterwards.
+      - name: Check .grype.yaml exceptions are scoped, owned and in date
+        run: make grype-ignore-check
+
       - name: Build
         run: make version-check
 

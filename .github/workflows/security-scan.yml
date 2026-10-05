@@ -158,3 +158,46 @@ jobs:
         with:
           sarif_file: ${{ steps.scan.outputs.sarif }}
           category: grype
+
+      # The scan above honours .grype.yaml but never says whether the entries in
+      # it still match anything. An entry whose upstream has shipped a fix
+      # suppresses nothing, and a no-op entry is what hides the next real
+      # finding: it stays in the file, nobody is forced to look at it, and the
+      # day the same package gets a new advisory it is already excused.
+      #
+      # Only entries declaring `scope=source` or `scope=both` are judged here.
+      # The image scan in image.yml judges the rest; neither scan sees the
+      # other's packages, so neither can call the other's entries dead.
+      #
+      # Everything else the ignore list has to satisfy -- one advisory, one
+      # package, a real owner, an unexpired review date -- is file reading, and
+      # is checked in the merge gate by go-build.yml. This job is only for the
+      # part that needs a scanner.
+      #
+      # Skipped entirely while the list is empty, which is the normal state, so
+      # this costs a second scan only once there is something to check.
+      - name: Count the ignore entries
+        id: ignore
+        if: always()
+        run: echo "count=$(./hack/grype-ignore-check.sh --count)" >> "${GITHUB_OUTPUT}"
+
+      # A second pass, in JSON, because the SARIF above omits suppressed matches
+      # entirely -- they are exactly what this needs to read. No cutoff and no
+      # only-fixed filter, unlike the gating scan: an entry covering an advisory
+      # with no fix available is still an entry that has to be matching
+      # something, and `only-fixed: true` would hide it and call it stale.
+      - name: Re-scan for suppressed findings
+        id: suppressed
+        if: always() && steps.ignore.outputs.count != '0'
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          path: "."
+          severity-cutoff: negligible
+          output-format: json
+          only-fixed: false
+          config: .grype.yaml
+          fail-build: false
+
+      - name: Check every source-scoped exception still suppresses a finding
+        if: always() && steps.ignore.outputs.count != '0'
+        run: ./hack/grype-ignore-check.sh --applied source "${{ steps.suppressed.outputs.json }}"

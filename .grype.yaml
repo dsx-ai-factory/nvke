@@ -5,7 +5,8 @@
 # An entry here says "we know, and we cannot fix it here". It does NOT claim
 # the finding is unexploitable -- that would be a VEX `not_affected` assertion,
 # and it needs someone to analyse reachability first. Nothing here has been
-# analysed that way.
+# analysed that way. If an entry ever is, say so in its prose and move it to a
+# real VEX document; this file is not the place to record that claim.
 #
 # Rules to keep this from becoming a dumping ground:
 #
@@ -15,6 +16,34 @@
 #   2. Say who can remove it, not just why it is here.
 #   3. Re-check on the review date. An entry whose upstream has shipped a fix
 #      is a stale entry hiding a real finding.
+#
+# hack/grype-ignore-check.sh enforces all three. It runs in the merge gate and
+# in `make gate`, so an entry that breaks one of them fails the build instead of
+# quietly suppressing more than it was meant to. The shape it requires:
+#
+#   ignore:
+#     - vulnerability: CVE-2026-1234          # rule 1: one advisory,
+#       package:
+#         name: libcrypto3                    #         one package
+#       reason: owner=@org/team review=2026-12-31 scope=image
+#         why this cannot be fixed here
+#
+# `owner`, `review` and `scope` live inside `reason` because grype owns the
+# schema for the rest of an entry, and a key it does not know is a key it is
+# free to reject. `reason` is the one field it carries verbatim. The three
+# tokens come first, in that order, on the `reason:` line itself; the prose
+# follows and may wrap onto further indented lines.
+#
+#   owner   a GitHub handle or team, so "who can remove this" is someone who
+#           can actually be asked.
+#   review  YYYY-MM-DD. Past that date the build fails, naming the owner.
+#           Renew it only after re-checking the finding -- that re-check is the
+#           entire point of the date.
+#   scope   source, image or both: which scan is entitled to call the entry
+#           stale. An entry for an OS package in the published image never
+#           matches the source-tree scan, so only the image scan can judge it.
+#           A scoped scan that an entry suppresses nothing in fails the build
+#           too; a no-op entry is what hides the next real finding.
 #
 # Everything from `medium` up is still reported to Security -> Code scanning
 # either way; this only affects what fails the build.
