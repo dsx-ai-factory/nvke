@@ -186,7 +186,7 @@ func TestConfigureKubeVip_RPCFallbackBoundary(t *testing.T) {
 				ControlPlane: true,
 				IP:           "10.0.0.20",
 			}
-			cluster := db.Cluster{ID: clusterID, ControlPlaneVIP: "10.0.0.10"}
+			cluster := db.Cluster{ID: clusterID, ProviderType: db.ProviderTypeCAPI, ControlPlaneVIP: "10.0.0.10"}
 			nodePool := db.NodePool{ID: nodePoolID, ControlPlane: true, Capi: &db.CAPINodePoolProvider{}}
 			mockDB := &testutil.MockDB{}
 			mockDB.On("GetNode", mock.Anything, nodeID).Return(node, nil).Times(2 + len(tt.wantRunbooks))
