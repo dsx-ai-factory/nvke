@@ -140,6 +140,8 @@ navigation:
             path: ../cli/docs/sitespec.md
           - page: Configuring API Authentication
             path: ../controller/docs/configuring-api-authentication.md
+          - page: Go API Compatibility
+            path: go-api-compatibility.md
 
   - tab: api
     layout:

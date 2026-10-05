@@ -50,6 +50,8 @@ show-versions: ## Print every pinned tool version.
 		"PACKER_VERSION"         "$(PACKER_VERSION)" \
 		"S5CMD_VERSION"          "$(S5CMD_VERSION)" \
 		"GO_LICENSES_VERSION"    "$(GO_LICENSES_VERSION)" \
+		"APIDIFF_VERSION"        "$(APIDIFF_VERSION)" \
+		"API_COMPAT_WAIVED"      "$(API_COMPAT_WAIVED)" \
 		"VACUUM_VERSION"         "$(VACUUM_VERSION)" \
 		"REDOCLY_VERSION"        "$(REDOCLY_VERSION)" \
 		"FERN_VERSION"           "$(FERN_VERSION)"

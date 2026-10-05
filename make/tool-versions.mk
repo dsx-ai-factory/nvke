@@ -85,6 +85,19 @@ S5CMD_VERSION      ?= 2.3.0
 S5CMD_SHA256_AMD64 ?= de0fdbfa3aceae55e069ba81a0fc17b2026567637603734a387b2fca06c299b4
 S5CMD_SHA256_ARM64 ?= 1439f0d00ecedcd2a2f1f2c6749bbb0152b2257bf5086f29646ec8ae38798e24
 GO_LICENSES_VERSION ?= v2.0.2-0.20260709180300-7e73597a45d1
+
+# apidiff, for the Go API compatibility gate on the supported modules. A pseudo-
+# version because x/exp is not tagged. Pinned, not @latest: a tool upgrade must
+# not be able to change the verdict on a tree nobody touched.
+# See hack/api-compat.sh and docs/go-api-compatibility.md.
+APIDIFF_VERSION ?= v0.0.0-20261005173118-76772065c9b0
+# Breaking changes waived for one baseline, as <module>@<base-version>, space
+# separated. Version-bounded on purpose: the entry stops matching as soon as the
+# next tag is published, so a waiver cannot outlive the release it was reviewed
+# for. Empty: nothing is waived.
+API_COMPAT_WAIVED ?=
+# Set with any waiver. Name a person, not a team.
+API_COMPAT_WAIVER_OWNER ?=
 # Lints controller/api/openapi.yaml (`make -C controller/api lint-spec`).
 VACUUM_VERSION      ?= v0.30.6
 # Diffs controller/api/openapi.yaml against the newest published controller/api

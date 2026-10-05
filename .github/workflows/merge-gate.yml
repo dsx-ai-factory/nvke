@@ -166,6 +166,16 @@ jobs:
     permissions:
       contents: read
 
+  # The sibling of `api-compat`, one level further out. That one diffs the
+  # OpenAPI spec; this one diffs the Go surface controller/api publishes as a
+  # module, against the version controller-api-tag.yml is about to mint for it.
+  # A hand-written helper or a changed generator can break an importer without
+  # the spec moving at all.
+  go-api-compat:
+    uses: ./.github/workflows/api-compat-check.yml
+    permissions:
+      contents: read
+
   actionlint:
     uses: ./.github/workflows/actionlint.yml
     permissions:
@@ -244,6 +254,7 @@ jobs:
       - licenses
       - generated
       - api-compat
+      - go-api-compat
       - actionlint
       - shellcheck
       - docs-check

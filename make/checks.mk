@@ -43,6 +43,23 @@ lint-shell: ## Lint every tracked shell script. (run by the merge gate)
 docs-check: ## Check the documented facts against the repository. (run by the merge gate)
 	@./hack/docs-check.sh
 
+# The Go API compatibility gate for the modules documented as importable
+# contracts. controller-api-tag.yml publishes a patch bump for every change
+# under controller/api without looking at what changed, so without this a
+# removed or retyped exported symbol reaches importers as a patch release.
+#
+# Same script, same tool pin and same waivers as CI, so a local run and the gate
+# cannot reach different verdicts. `go run` downloads apidiff on first use and
+# the baseline is checked out from a local tag, so this needs network access
+# once and a clone with tags -- a tagless clone fails rather than passing.
+# See docs/go-api-compatibility.md.
+api-compat: ## Check the supported Go modules for breaking API changes. (run by the merge gate)
+	@$(call require_command,go)
+	@APIDIFF_VERSION="$(APIDIFF_VERSION)" \
+	 API_COMPAT_WAIVED="$(API_COMPAT_WAIVED)" \
+	 API_COMPAT_WAIVER_OWNER="$(API_COMPAT_WAIVER_OWNER)" \
+		./hack/api-compat.sh
+
 # Identifiers of infrastructure only NVIDIA can see. Not credentials, which
 # is why they read as safe and are not: this repository is the staging ground
 # for a public one, and an org, site, VPC or subnet id is a map of a real

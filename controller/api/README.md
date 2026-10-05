@@ -247,3 +247,13 @@ one does run here.
 
 There is no `fmt` target, on purpose. Formatting the generated files belongs to
 the generator.
+
+## Compatibility
+
+This module is the one Go package set in the repository that is a supported
+contract: other code may import it and pin a version, and a patch bump will not
+remove or retype an exported symbol. `.github/workflows/controller-api-tag.yml`
+publishes `controller/api/vX.Y.Z` for every change here without looking at what
+changed, so `make api-compat` is what stops a breaking change going out under a
+patch tag. Read [docs/go-api-compatibility.md](../../docs/go-api-compatibility.md)
+before making one deliberately.

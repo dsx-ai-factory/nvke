@@ -1,0 +1,93 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Fails when a module nke supports as an importable Go contract breaks
+# compatibility with its last published tag.
+#
+# controller/api is its own Go module and controller-api-tag.yml mints
+# controller/api/vX.Y.(Z+1) on every push to main that touches it. The tagger
+# never inspects the change: it increments the patch and pushes. So a removed
+# method, a renamed field or a retyped one is published as a patch release,
+# `go get -u` takes it, and the break surfaces at the importer with nothing in
+# this repository having warned anyone. Until now the repository had no API diff
+# of any kind -- no apidiff, no gorelease, no equivalent.
+#
+# docs/go-api-compatibility.md is the decision record for which modules are in
+# that supported set and what the promise on them is. This workflow enforces the
+# half of it a check can enforce.
+#
+# This is the fifth generated-and-published-artefact gate, alongside
+# generate-check.yml, notices-check.yml, go-work-check.yml and license.yml.
+
+name: API Compatibility Check
+
+# All pull requests, including forks and Dependabot, reach this through
+# merge-gate.yml. The standalone push trigger is post-merge coverage on main,
+# scoped to the paths that can change a verdict: the supported modules
+# themselves, and the gate's own definition.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'controller/api/**'
+      - 'hack/api-compat.sh'
+      - 'make/tool-versions.mk'
+      - '.github/workflows/api-compat-check.yml'
+  workflow_call:
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  # The sha is part of the group on main, so every commit gets its own.
+  # Without it, back-to-back merges lose CI results: GitHub allows one
+  # running and one pending run per group, and cancels the pending one
+  # when a third arrives -- whatever cancel-in-progress says, because that
+  # setting only protects a run that has already started.
+  #
+  # Pull-request branches keep sharing a group and still cancel, which is
+  # what you want there.
+  # A literal name, NOT ${{ github.workflow }}. Inside a called workflow that
+  # expression is the CALLER's name, so every workflow merge-gate.yml calls would
+  # compute the same group and cancel each other.
+  group: API Compatibility Check-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  api-compat:
+    name: Check the supported Go modules for breaking API changes
+    runs-on: ubuntu-latest
+    if: github.repository == 'dsx-ai-factory/nke'
+    # apidiff and the two module dependency graphs download on a cold runner.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # fetch-depth: 0 is load-bearing, not caution. The baseline is a local
+          # git tag -- gorelease, which would resolve it through the module
+          # proxy, cannot be used because this repository is private and the
+          # proxy answers 404 for every version of it. Checking the tag out of
+          # the clone needs no credentials, which is also what keeps this
+          # runnable on a fork pull request. A shallow checkout has no tags, and
+          # hack/api-compat.sh fails on a missing baseline rather than passing.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # go.work, not controller/api/go.mod. setup-go pins GOTOOLCHAIN=local,
+          # and apidiff's own module requires a newer Go than controller/api
+          # asks for; under the module's Go it fails to build before it compares
+          # anything. The workspace Go is newer than both.
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            controller/api/go.sum
+
+      - name: Compare the supported modules against their last published tags
+        run: make api-compat
