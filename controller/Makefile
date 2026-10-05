@@ -130,6 +130,28 @@ generate-check: generate-api ## Verify generated API code is up to date. (run by
 	 [ -z "$$untracked" ] \
 		|| { echo "ERROR: generated API files are not tracked. Run 'make generate' and commit them:"; printf '%s\n' "$$untracked" | sed 's/^/    /'; exit 1; }
 
+# The layer above generate-check. That target proves the committed Go matches
+# api/openapi.yaml; it says nothing about whether the specification change is
+# safe for an existing client. A removed field or a newly required property
+# regenerates perfectly and breaks every one of them.
+#
+# The baseline is the newest published controller/api version tag, not the merge
+# base: the tag is what a consumer can pin, so it is the only ref against which
+# "backward compatible" means anything to them. Override it with
+# API_COMPAT_BASELINE=<ref> to compare against something else.
+#
+# It needs tags. A shallow CI checkout has none, and the target fails rather
+# than silently comparing against nothing -- see hack/openapi-compat/README.md.
+API_COMPAT_BASELINE ?=
+API_COMPAT_REPORT   ?=
+
+.PHONY: api-compat-check
+api-compat-check: ## Verify api/openapi.yaml is backward compatible with the newest published controller/api tag. (run by the merge gate)
+	go run ./hack/openapi-compat \
+		--differ-version $(OPENAPI_CHANGES_VERSION) \
+		$(if $(API_COMPAT_BASELINE),--baseline $(API_COMPAT_BASELINE),) \
+		$(if $(API_COMPAT_REPORT),--report-out $(API_COMPAT_REPORT),)
+
 RELEASE_LDFLAGS ?= -s -w -buildid= -extldflags -static
 
 # Read one variable, so a caller that needs the same value this Makefile computes

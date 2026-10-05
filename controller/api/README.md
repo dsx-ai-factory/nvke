@@ -10,7 +10,8 @@ without pulling in the engine and everything the engine needs. It is imported by
 ## What is written by hand, and what is generated
 
 `openapi.yaml` is the source of truth. It is OpenAPI 3.0.3, and it describes 15
-paths.
+paths. It is the only authored schema in the directory, and the only file whose
+change can break a consumer.
 
 These three files are generated from it and must not be edited:
 
@@ -19,6 +20,16 @@ These three files are generated from it and must not be edited:
 | `models.gen.go` | The request and response types |
 | `server.gen.go` | The server interface the engine implements |
 | `client.gen.go` | The client the CLI and the tests use |
+
+The other authored files beside the specification configure what is done to it,
+and are not part of the API surface:
+
+| File | What it governs |
+|---|---|
+| `config-{models,server,client}.yaml` | What oapi-codegen emits |
+| `openapi-lint.yaml`, `openapi-lint-ignore.yaml` | The spec lint (`make lint`) |
+| `openapi-compat-waivers.yaml` | Accepted breaking changes ([Compatibility](#compatibility)) |
+| `redocly.yaml` | The rendered reference page |
 
 The generator is oapi-codegen. It is pinned in `oapi-codegen.mod` and
 `oapi-codegen.sum`, which are separate from this module's own `go.mod` so that
@@ -55,6 +66,91 @@ blob the gate rejects.
 If you forget, CI fails. `make -C controller generate-check` regenerates and then
 fails if the committed output differs, and the merge gate runs it. The failure
 names the files that are out of date.
+
+## Compatibility
+
+`generate-check` proves the committed Go matches the specification. It says
+nothing about whether the specification change itself is safe. A removed field,
+a narrowed type or a newly required property regenerates perfectly and breaks
+every client already built against the old specification. Those are different
+questions, and there is a separate gate for the second:
+
+```bash
+make -C controller api-compat-check
+```
+
+It compares `openapi.yaml` against the newest published `controller/api` version
+tag and fails on any breaking change that is not waived. The merge gate runs it.
+How the baseline is chosen, how a waiver is written, and the full list of
+conditions that fail rather than pass, are in
+[`../hack/openapi-compat/README.md`](../hack/openapi-compat/README.md).
+
+### What a client is holding
+
+There is one surface. `/api` carries no version segment, no version header and
+no content negotiation: the running management plane serves exactly the
+specification in this file, and `GET /api/version` reports the build it came
+from.
+
+What a consumer can pin is the Go module:
+
+```bash
+go get github.com/dsx-ai-factory/nke/controller/api@v0.0.17
+```
+
+`controller-api-tag.yml` publishes a `controller/api/vX.Y.Z` tag for every `main`
+commit that touches this directory. That tag is an **immutable snapshot, not a
+semantic-version contract** — it only ever increments the patch number, so no
+tag has ever signalled a break and none ever will. Compatibility is held by the
+gate above instead of by the version number, which is why a break has to be
+waived by name rather than released as a major.
+
+`info.version` in `openapi.yaml` (`0.1.0-alpha`) describes the maturity of the
+API, not the module. The surface is public preview.
+
+### Making a change compatibly
+
+Reach for the shape that adds rather than the one that edits:
+
+| Want to | Compatible way |
+|---|---|
+| Add data to a response | Add an optional property. A client that does not know it ignores it. |
+| Take new input | Add an optional request property with a server-side default. Making an existing property required is breaking. |
+| Replace a field | Add the new one, deprecate the old one, keep serving both. |
+| Change what a field means | Do not. Add a new field; the old one keeps its old meaning. |
+| Narrow a type or an enum | Breaking. Widening an enum of *response* values is also breaking for a client that switches exhaustively — call it out in review. |
+| Replace an endpoint | Add the new one and deprecate the old one. |
+
+### Deprecating
+
+Deprecation is additive, so it passes the gate on its own. Removal is the
+breaking step, and it is the one that needs a waiver.
+
+1. Mark it `deprecated: true` — OpenAPI 3.0 accepts this on an operation, a
+   parameter and a schema property.
+2. Say so in the description: what replaces it, and from when. The description
+   is what both Swagger UI and the Fern reference render, so this is the only
+   place a consumer actually reads it.
+3. Keep serving it. A deprecated field still has its documented behaviour.
+4. Remove it in a later change, with a waiver in
+   `openapi-compat-waivers.yaml` naming the person who decided and the
+   consumers that had to move.
+
+### When a waiver is the right answer
+
+Mostly it is not: the entries below are the cases where it is.
+
+- **Surface marked `x-fern-ignore: true`.** It is not customer-facing — today
+  the `infra` provider, `teleportEnabled`, the legacy `controlPlane` node-pool
+  flag, and `/osProfiles` and `/configProfiles`. The gate still sees a break,
+  because the specification is one document; the blast radius is in-tree.
+- **A field that never shipped**, added and removed between two published tags.
+- **A deliberate break the team has agreed to take**, where the waiver is the
+  record of that decision rather than a way around it.
+
+A waiver is deleted once the baseline tag has moved past the release that
+carried the break — the gate fails on a waiver that matches nothing, so it
+cannot be forgotten.
 
 ## Rendering the reference
 
@@ -95,10 +191,20 @@ carry `x-fern-ignore` beside their `$ref` on purpose; `openapi-lint-ignore.yaml`
 lists them so the rule stays an error everywhere else.
 The rules, and why each is on or off, are commented in the ruleset.
 
+Two checks live outside this module's Makefile, because both run from
+`controller/`:
+
+```bash
+make -C controller generate-check    # the committed Go matches the spec
+make -C controller api-compat-check  # the spec change does not break a client
+```
+
 This module has **no test files**. `make test` therefore compiles the module and
 reports success without running anything. That matters when you change the API:
-nothing here will catch a break, and the modules that will are `controller`,
-`cli` and `controller/test/e2e`. Build those too before you open a pull request.
+nothing here will catch a break *in the Go*, and the modules that will are
+`controller`, `cli` and `controller/test/e2e`. Build those too before you open a
+pull request. A break in the *contract* is `api-compat-check`'s job, and that
+one does run here.
 
 There is no `fmt` target, on purpose. Formatting the generated files belongs to
 the generator.

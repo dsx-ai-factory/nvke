@@ -1,0 +1,88 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Verifies that a change to controller/api/openapi.yaml is backward compatible
+# with the newest published controller/api version tag.
+#
+# This is deliberately not a job inside generate-check.yml. That workflow asks
+# whether the committed generated code matches the specification; this one asks
+# whether the specification change is safe. A removed field, a narrowed type or
+# a newly required property passes generate-check cleanly -- the generated code
+# matches the new spec perfectly -- while breaking every existing client.
+#
+# The baseline is the tag, not the merge base, because the tag is what a
+# consumer pins: `go get github.com/dsx-ai-factory/nke/controller/api@v0.0.17`.
+# That is what "backward compatible" has to be measured against.
+
+name: API Compatibility
+
+# All pull requests, including forks and Dependabot, reach this through
+# merge-gate.yml, which ignores the path filter below. The standalone push
+# trigger is post-merge coverage on main, and there the check genuinely is
+# scoped: nothing outside these paths can change the verdict.
+on:
+  push:
+    branches: [main]
+    paths:
+      - controller/api/openapi.yaml
+      - controller/api/openapi-compat-waivers.yaml
+      - controller/hack/openapi-compat/**
+      - controller/Makefile
+      - make/tool-versions.mk
+      - .github/workflows/api-compat.yml
+  workflow_call:
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  # A literal name, NOT ${{ github.workflow }}: inside a called workflow that
+  # expression is the CALLER's name, so every workflow merge-gate.yml calls
+  # would compute the same group and cancel each other. The sha is part of the
+  # group on main so back-to-back merges do not lose results. See the long
+  # explanation in generate-check.yml.
+  group: API Compatibility-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  api-compat:
+    name: Check the OpenAPI spec is backward compatible
+    runs-on: ubuntu-latest
+    if: github.repository == 'dsx-ai-factory/nke'
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      # fetch-depth: 0 is load-bearing, not caution. The baseline is a tag, and
+      # the default shallow checkout fetches none. Without it the checker finds
+      # no baseline -- and fails, by design, rather than reporting a clean diff
+      # it never computed.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            controller/go.sum
+
+      - name: Check the specification against the newest published API tag
+        working-directory: controller
+        run: make api-compat-check API_COMPAT_REPORT=.local/openapi-changes.json
+
+      # The report is the evidence behind the verdict, and the thing a reviewer
+      # wants when arguing with it. Uploaded on failure too -- especially then.
+      - name: Upload the change report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: openapi-changes
+          path: controller/.local/openapi-changes.json
+          if-no-files-found: ignore
+          retention-days: 14

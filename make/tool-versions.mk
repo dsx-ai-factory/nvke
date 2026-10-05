@@ -78,6 +78,11 @@ S5CMD_SHA256_ARM64 ?= 1439f0d00ecedcd2a2f1f2c6749bbb0152b2257bf5086f29646ec8ae38
 GO_LICENSES_VERSION ?= v2.0.2-0.20260709180300-7e73597a45d1
 # Lints controller/api/openapi.yaml (`make -C controller/api lint-spec`).
 VACUUM_VERSION      ?= v0.30.6
+# Diffs controller/api/openapi.yaml against the newest published controller/api
+# tag and classifies each change (`make -C controller api-compat-check`). From
+# the same author as vacuum, over the same libopenapi parser, so the gate and
+# the spec linter agree on what the document says.
+OPENAPI_CHANGES_VERSION ?= v0.2.11
 # Renders controller/api/openapi.yaml into one HTML page (`make -C controller/api docs`).
 REDOCLY_VERSION     ?= 2.57.0
 # Checks and publishes the documentation site (.github/workflows/api-docs.yml).

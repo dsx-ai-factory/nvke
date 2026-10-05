@@ -148,6 +148,15 @@ jobs:
     permissions:
       contents: read
 
+  # The layer above `generated`. That one proves the committed Go matches
+  # openapi.yaml; this one asks whether the openapi.yaml change is safe for a
+  # client already built against the published tag. A removed field passes the
+  # first and fails the second.
+  api-compat:
+    uses: ./.github/workflows/api-compat.yml
+    permissions:
+      contents: read
+
   actionlint:
     uses: ./.github/workflows/actionlint.yml
     permissions:
@@ -224,6 +233,7 @@ jobs:
       - nktp-chart
       - licenses
       - generated
+      - api-compat
       - actionlint
       - shellcheck
       - docs-check

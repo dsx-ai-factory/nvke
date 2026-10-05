@@ -263,12 +263,21 @@ make notices-check    # fails if THIRD_PARTY_NOTICES.md has drifted
 In `controller/`:
 
 ```bash
-make generate     # only if you changed openapi.yaml
+make generate         # only if you changed openapi.yaml
+make api-compat-check # only if you changed openapi.yaml
 make license
 make fmt
 make lint
 make test
 ```
+
+`api-compat-check` is the gate `generate-check` is not: it compares
+`api/openapi.yaml` against the newest published `controller/api/vX.Y.Z` tag and
+fails on a change that would break an existing client. A removed field passes
+`generate-check` and fails this. Breaks are waived per change, with a named
+owner, in `controller/api/openapi-compat-waivers.yaml` — never by disabling the
+check. See
+[controller/hack/openapi-compat/README.md](controller/hack/openapi-compat/README.md).
 
 In `cluster-api-provider-provisioned/`:
 
