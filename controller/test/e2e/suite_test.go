@@ -6,7 +6,6 @@ package e2e
 import (
 	"flag"
 	"fmt"
-	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sort"
 	"strings"
 	"sync"
@@ -14,6 +13,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/environment"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
