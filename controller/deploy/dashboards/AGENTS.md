@@ -10,7 +10,7 @@ Operators: import steps and a short description of each file are in [README.md](
 
 | File | Purpose | Primary scrape |
 |---|---|---|
-| `nke-site-controller-health-reference.json` | Site-controller workload and node health | kube-state-metrics; optional apiserver/etcd, CNPG, Argo CD, Longhorn, Teleport |
+| `nke-site-controller-health-reference.json` | Site-controller workload and node health | kube-state-metrics; optional apiserver/etcd, CNPG |
 | `nke-etcd-reference.json` | etcd member health | etcd mixin metrics, scoped by `$job` |
 | `nke-provisioning-duration-reference.json` | Node provision/teardown duration and outcomes | controller `/metrics` (`nke_controller_*`) |
 | `nke-cluster-upgrade-overview-reference.json` | GPU-cluster upgrade progress | kube-state-metrics; optional controller inventory metrics |
@@ -49,7 +49,7 @@ When porting a dashboard from elsewhere, treat it as a **query catalog**, not a 
 - Temporal (`temporal`)
 - NKE controller (`cloud-workflow-engine`, `nameOverride: cloud-workflow-engine`, default **replicaCount 1**)
 
-**Not** in nke-stack: SWE / `site-workflow-engine`, Longhorn, Teleport `tbot`, process-exporter, sdn-monitoring, Argo CD (deploy-repo only), CNPG (docs/overlays may use it; default stack does not).
+**Not** in nke-stack: SWE / `site-workflow-engine`, process-exporter, sdn-monitoring, CNPG (docs/overlays may use it; default stack does not).
 
 ## Selectors and labels
 
@@ -73,7 +73,7 @@ exporters already define `cluster` as something else — CNPG's `cluster` is the
 | Kubernetes cluster identity | `k8s_cluster_name=~"$cluster"` | A bare `cluster=` label, `$env`, or a hardcoded cluster-name regex |
 | etcd mixin dashboard | `$cluster` = `k8s_cluster_name`; expose the mixin's `clusterLabel: job` as a separate `$job` | Name a variable `$cluster` and bind it to the Prometheus `job` |
 | NKE controller lifecycle | Filter `tenant_cluster`, `node_type`; give-ups use `cluster_name`. Query `nke_controller_*` metrics directly. | Invent `env`; keep phase labels that are not in `lifecycle.go` |
-| Workloads | Match `cloud-workflow-engine\|nke-controller` for the controller Deployment/container; SPIRE as above | Query SWE, `tbot`, `job="process-exporter"` |
+| Workloads | Match `cloud-workflow-engine\|nke-controller` for the controller Deployment/container; SPIRE as above | Query SWE or `job="process-exporter"` |
 
 Controller metrics carry `tenant_cluster`, not `k8s_cluster_name`. A pure-controller board
 (the provisioning dashboard) should filter `tenant_cluster` directly. Only when joining
@@ -88,8 +88,6 @@ HA thresholds of **3** (etcd members, ready nodes) are colo-sized. Parameterize 
 ## Do not ship
 
 - SWE (`site-workflow-engine`) — deprecated; the NKE controller replaced it
-- Teleport `tbot` as a required panel
-- Longhorn as required for “renders with data”
 - `namedprocess_namegroup_*` / `job="process-exporter"` (not packaged)
 - Full SDN / ovn-kubernetes dashboard catalog (IC pack `dashboard-ic` is off for NKE).
 - Alert overlay lines (`vector(0.15)` “alert fires”) unless this repo ships those Prometheus rules
@@ -97,7 +95,7 @@ HA thresholds of **3** (etcd members, ready nodes) are colo-sized. Parameterize 
 
 ## Per-dashboard contracts
 
-**Site controller health.** Glance: NKE controller, SPIRE, Temporal, cert-manager, node Ready. Optional collapsed: apiserver/etcd (needs scrape), CNPG **or** postgres, Argo CD, Longhorn, Teleport. One etcd “members with leader” stat is enough; drill-down is the etcd reference dashboard. Empty optional ≠ red.
+**Site controller health.** Glance: NKE controller, SPIRE, Temporal, cert-manager, node Ready. Optional collapsed: apiserver/etcd (needs scrape), CNPG **or** postgres. One etcd “members with leader” stat is enough; drill-down is the etcd reference dashboard. Empty optional ≠ red.
 
 **etcd.** Panel set from [etcd mixin](https://github.com/etcd-io/etcd/tree/main/contrib/mixin) (`etcd.libsonnet` / `targets.libsonnet`): Up (`etcd_server_has_leader`, not scrape `up{}`), RPC rate, active streams, DB size, disk sync, memory, client/peer traffic, raft/leader elections, peer RTT. `$cluster` is `k8s_cluster_name`; the mixin's `clusterLabel: job` is a separate `$job` variable, which is single-select and also scopes the non-etcd-specific `grpc_server_*` and `process_resident_memory_bytes` series to the etcd process. Empty until kube-prometheus `kubeEtcd` (or equivalent) scrapes kubeadm etcd. Do not add apiserver watch-cache or process-exporter CPU here.
 

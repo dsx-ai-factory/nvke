@@ -39,7 +39,7 @@ the Prometheus that actually scrapes that cluster.
 
 | File | Title | What it shows |
 |---|---|---|
-| [`nke-site-controller-health-reference.json`](nke-site-controller-health-reference.json) | Reference - NKE Site Controller Health | Glance board for the site controller: NKE, SPIRE, Temporal, cert-manager, and node Ready. Optional collapsed rows for apiserver/etcd, PostgreSQL/CNPG, Argo CD, Longhorn, and Teleport. |
+| [`nke-site-controller-health-reference.json`](nke-site-controller-health-reference.json) | Reference - NKE Site Controller Health | Glance board for the site controller: NKE, SPIRE, Temporal, cert-manager, and node Ready. Optional collapsed rows for apiserver/etcd and PostgreSQL/CNPG. |
 | [`nke-etcd-reference.json`](nke-etcd-reference.json) | Reference - etcd | Panels adapted from the upstream etcd mixin (reusable monitoring dashboard definitions). You do not need to install the mixin to use this dashboard; you do need a Prometheus scrape of etcd. |
 | [`nke-provisioning-duration-reference.json`](nke-provisioning-duration-reference.json) | Reference - NKE Provisioning Duration | Node provision/teardown duration, success vs give-up rate, and in-progress nodes from controller `/metrics`. |
 | [`nke-cluster-upgrade-overview-reference.json`](nke-cluster-upgrade-overview-reference.json) | Reference - NKE Cluster Upgrade Overview | Upgrade progress for GPU clusters: kubelet, control plane, and OS profile. Applies only to GPU clusters. |
