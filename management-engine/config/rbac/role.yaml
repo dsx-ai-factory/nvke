@@ -10,7 +10,6 @@ rules:
   - internal.nke.nvidia.com
   resources:
   - nkeclusters
-  - nodepools
   verbs:
   - get
   - list
@@ -19,7 +18,6 @@ rules:
   - internal.nke.nvidia.com
   resources:
   - nkeclusters/status
-  - nodepools/status
   verbs:
   - get
   - patch

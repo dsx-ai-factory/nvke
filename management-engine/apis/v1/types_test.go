@@ -41,22 +41,20 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 						Services:      NetworkRanges{CIDRBlocks: []NetworkCIDR{"10.96.0.0/12"}},
 						ServiceDomain: "cluster.local",
 					},
-					Release:           ClusterReleaseSelection{Channel: ReleaseChannelReference{Name: "stable"}},
-					ControlPlaneClass: "standard",
-				},
-			},
-		},
-		{
-			resource: "nodepools", kind: "NodePool",
-			object: &NodePool{
-				ObjectMeta: metav1.ObjectMeta{Name: "workers", Namespace: "org-demo"},
-				Spec: NodePoolSpec{
-					ClusterName: "demo", Replicas: &zero, InstanceType: "gpu-small",
-					Release: ReleaseReference{Name: "ubuntu", Version: "2026.09.1"},
+					Release:            ReleaseSelection{Channel: ReleaseChannelReference{Name: "stable"}},
+					ControlPlaneClass:  "standard",
+					AcceleratedRuntime: &AcceleratedRuntimeSelection{Name: "gb200-ubuntu", Version: "1.2.3"},
+					Network: &Network{
+						VPCID: "147ca92b-a90f-4094-92cd-7a0b3f10c30d",
+					},
+					NodePools: []NodePool{{
+						Name: "workers", Replicas: &zero, InstanceType: "gpu-small", NodeProfile: "ubuntu:2026.09.1",
+						VPCSubnetID: "b91c0605-17aa-4ade-aa2c-6a5eb1601dcd",
+					}},
 				},
 			},
 			verify: func(t *testing.T, decoded runtime.Object) {
-				if replicas := decoded.(*NodePool).Spec.Replicas; replicas == nil || *replicas != 0 {
+				if replicas := decoded.(*NKECluster).Spec.NodePools[0].Replicas; replicas == nil || *replicas != 0 {
 					t.Fatal("explicit zero replicas lost during round-trip")
 				}
 			},
@@ -116,33 +114,15 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 		})
 	}
 
-	for _, kind := range []string{"NKEClusterList", "NodePoolList", "MachineImageList", "ClusterReleaseList", "NodePoolReleaseList"} {
+	for _, kind := range []string{"NKEClusterList", "MachineImageList", "ClusterReleaseList", "NodePoolReleaseList"} {
 		if _, err := scheme.New(GroupVersion.WithKind(kind)); err != nil {
 			t.Fatal(err)
 		}
 	}
-}
-
-func TestNodePoolDeepCopyIsolatesMutableFields(t *testing.T) {
-	replicas := int32(2)
-	original := &NodePool{
-		ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"team": "research"}},
-		Spec: NodePoolSpec{
-			Replicas: &replicas,
-			Template: &NodeTemplate{Metadata: &NodeTemplateMetadata{Labels: map[string]LabelValue{"workload": "training"}}},
-		},
-		Status: NodePoolStatus{ClusterRef: &ClusterReference{Name: "demo", UID: "original"}},
-	}
-
-	clone := original.DeepCopy()
-	clone.Labels["team"] = "other"
-	*clone.Spec.Replicas = 0
-	clone.Spec.Template.Metadata.Labels["workload"] = "inference"
-	clone.Status.ClusterRef.UID = "other"
-
-	if original.Labels["team"] != "research" || *original.Spec.Replicas != 2 ||
-		original.Spec.Template.Metadata.Labels["workload"] != "training" || original.Status.ClusterRef.UID != "original" {
-		t.Fatal("deepcopy mutation changed the cached resource")
+	for _, kind := range []string{"NodePool", "NodePoolList"} {
+		if _, err := scheme.New(GroupVersion.WithKind(kind)); !runtime.IsNotRegisteredError(err) {
+			t.Fatalf("removed kind %s is still registered: %v", kind, err)
+		}
 	}
 }
 

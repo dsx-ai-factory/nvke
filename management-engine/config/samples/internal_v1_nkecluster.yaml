@@ -1,11 +1,13 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+# Target API example; downstream provisioning is not wired up yet.
 apiVersion: internal.nke.nvidia.com/v1
 kind: NKECluster
 metadata:
   name: prod-us-west
 spec:
+  # Configurable public API access requires downstream support.
   apiServerAccess:
     publicAccessEnabled: false
   clusterNetwork:
@@ -13,9 +15,49 @@ spec:
       cidrBlocks: [10.244.0.0/16]
     services:
       cidrBlocks: [10.96.0.0/12]
+    # Custom DNS domains require downstream support; currently fixed to cluster.local.
     serviceDomain: cluster.local
+  # Release-channel selection requires downstream support.
   release:
     channel:
       name: stable
       version: "1.34"
+  # Control-plane class selection requires downstream support.
   controlPlaneClass: standard
+  # Existing VPC shared by node pools; replace with your VPC ID.
+  network:
+    vpcID: 147ca92b-a90f-4094-92cd-7a0b3f10c30d
+  nodePools:
+    - name: gpu-pool
+      # Resolving instance-type names to downstream IDs is not implemented yet.
+      instanceType: gb200-nvl72
+      replicas: 8
+      # Existing subnet in the shared VPC; replace with this pool's subnet ID.
+      vpcSubnetID: b91c0605-17aa-4ade-aa2c-6a5eb1601dcd
+      # Versioned node-profile selection requires downstream support.
+      nodeProfile: ubuntu-24.04:1.38.1.X
+      userParams:
+        # Updating labels after pool creation requires downstream support.
+        labels:
+          workload: pretraining
+        # Applying node taints requires downstream support.
+        # taints:
+        #   - key: workload
+        #     value: gpu
+        #     effect: NoSchedule
+      # Enforcing rollout budgets and schedules requires downstream support.
+      rollout:
+        strategy:
+          type: RollingUpdate
+          disruption:
+            budgets:
+              - nodes: 10%
+              - schedule: "0 9 * * mon-fri"
+                duration: 8h
+                nodes: "0"
+
+  # Accelerated runtime selection requires downstream support.
+  # All pools must match the bundle's accelerator family and OS; core runtime follows the cluster release.
+  # acceleratedRuntime:
+  #   name: gb200-ubuntu # Bundle name; "none" opts out.
+  #   version: "x.y.z" # Explicit OCI tag; version defaulting is not implemented yet.

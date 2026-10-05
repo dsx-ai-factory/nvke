@@ -19,7 +19,6 @@ import (
 	"k8s.io/apiextensions-apiserver/pkg/apiserver/schema/listtype"
 	apivalidation "k8s.io/apiextensions-apiserver/pkg/apiserver/validation"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	celconfig "k8s.io/apiserver/pkg/apis/cel"
@@ -191,17 +190,6 @@ var baseResources = map[string]string{
 			"controlPlaneClass": "standard"
 		}
 	}`,
-	"nodepools": `{
-		"apiVersion": "internal.nke.nvidia.com/v1",
-		"kind": "NodePool",
-		"metadata": {"name": "workers", "namespace": "org-demo"},
-		"spec": {
-			"clusterName": "demo",
-			"replicas": 2,
-			"instanceType": "gpu-small",
-			"release": {"name": "ubuntu", "version": "1.0"}
-		}
-	}`,
 	"machineimages": `{
 		"apiVersion": "internal.nke.nvidia.com/v1",
 		"kind": "MachineImage",
@@ -315,141 +303,69 @@ func deleteField(obj map[string]any, path []string) {
 }
 
 func TestGeneratedResourceSchemas(t *testing.T) {
-	for _, resource := range []string{"nkeclusters", "nodepools"} {
+	for _, resource := range []string{"nkeclusters", "machineimages", "clusterreleases", "nodepoolreleases"} {
 		t.Run(resource, func(t *testing.T) {
 			loadResourceSchema(t, resource).admit(t, baseResource(t, resource), nil)
 		})
 	}
 }
 
-func TestNodePoolSchemaAdmission(t *testing.T) {
-	schema := loadResourceSchema(t, "nodepools")
-	replicas := []string{"spec", "replicas"}
-	labels := []string{"spec", "template", "metadata", "labels"}
-	taints := []string{"spec", "template", "spec", "taints"}
-
-	schema.runCreate(t, "nodepools", []fieldCase{
-		{name: "zero replicas", path: replicas, value: int64(0)},
-		{name: "missing replicas", path: replicas, remove: true, invalid: true},
-		{name: "null replicas", path: replicas, invalid: true},
-		{name: "negative replicas", path: replicas, value: int64(-1), invalid: true},
-		{name: "tenant labels", path: labels, value: map[string]any{"example.com/team": "research", "workload": ""}},
-		{name: "reserved NKE label", path: labels, value: map[string]any{"nke.nvidia.com/role": "worker"}, invalid: true},
-		{name: "reserved Kubernetes label", path: labels, value: map[string]any{"kubernetes.io/role": "worker"}, invalid: true},
-		{name: "reserved Kubernetes subdomain", path: labels, value: map[string]any{"topology.kubernetes.io/foo": "bar"}, invalid: true},
-		{name: "reserved k8s label", path: labels, value: map[string]any{"k8s.io/foo": "bar"}, invalid: true},
-		{name: "invalid label key", path: labels, value: map[string]any{"bad key": "worker"}, invalid: true},
-		{name: "invalid label prefix", path: labels, value: map[string]any{"Example.com/team": "worker"}, invalid: true},
-		{name: "invalid label value", path: labels, value: map[string]any{"team": "bad value"}, invalid: true},
-		{name: "valid taint", path: taints, value: []any{map[string]any{"key": "example.com/workload", "value": "gpu", "effect": "NoSchedule"}}},
-		{name: "invalid taint effect", path: taints, value: []any{map[string]any{"key": "workload", "effect": "Unknown"}}, invalid: true},
-		{name: "invalid taint key", path: taints, value: []any{map[string]any{"key": "bad key", "effect": "NoExecute"}}, invalid: true},
-	})
-
-	t.Run("rollout default", func(t *testing.T) {
-		obj := baseResource(t, "nodepools")
-		schema.admit(t, obj, nil)
-		rollout, ok := obj["spec"].(map[string]any)["rollout"].(map[string]any)
-		if !ok {
-			t.Fatal("rollout default missing")
-		}
-		strategy, _ := rollout["strategy"].(map[string]any)
-		rollingUpdate, _ := strategy["rollingUpdate"].(map[string]any)
-		if strategy["type"] != "RollingUpdate" || rollingUpdate["maxSurge"] != int64(1) {
-			t.Fatalf("unexpected rollout default: %#v", rollout)
-		}
-	})
-}
-
-func TestNodePoolImmutableBinding(t *testing.T) {
-	schema := loadResourceSchema(t, "nodepools")
-	bound := baseResource(t, "nodepools")
-	bound["status"] = map[string]any{"clusterRef": map[string]any{"name": "demo", "uid": "cluster-uid"}}
-	schema.admit(t, bound, nil)
-
-	schema.runUpdate(t, bound, []fieldCase{
-		{name: "scale", path: []string{"spec", "replicas"}, value: int64(5)},
-		{name: "change cluster", path: []string{"spec", "clusterName"}, value: "other", invalid: true},
-		{name: "change instance type", path: []string{"spec", "instanceType"}, value: "gpu-large", invalid: true},
-		{name: "change cluster UID", path: []string{"status", "clusterRef", "uid"}, value: "replacement-uid", invalid: true},
-		{name: "remove binding", path: []string{"status", "clusterRef"}, remove: true, invalid: true},
-		{name: "remove status", path: []string{"status"}, remove: true, invalid: true},
-	})
-
-	// First binding is permitted, but must identify the cluster requested in spec.
-	for _, name := range []string{"demo", "different"} {
-		t.Run("first binding to "+name, func(t *testing.T) {
-			obj := baseResource(t, "nodepools")
-			obj["status"] = map[string]any{"clusterRef": map[string]any{"name": name, "uid": "first-uid"}}
-			schema.check(t, name != "demo", obj, baseResource(t, "nodepools"))
-		})
-	}
-}
-
-func TestNodePoolRolloutAdmission(t *testing.T) {
-	schema := loadResourceSchema(t, "nodepools")
-	for _, tt := range []struct {
-		name    string
-		surge   any
-		invalid bool
-	}{
-		{name: "zero surge", surge: int64(0)},
-		{name: "one surge", surge: int64(1)},
-		{name: "percentage surge", surge: "25%"},
-		{name: "zero percent surge", surge: "0%"},
-		{name: "over one hundred percent surge", surge: "200%"},
-		{name: "maximum count", surge: int64(2147483647)},
-		{name: "maximum percentage numerator", surge: "2147483647%"},
-		{name: "count overflow", surge: int64(2147483648), invalid: true},
-		{name: "percentage numerator overflow", surge: "2147483648%", invalid: true},
-		{name: "unparseable percentage", surge: "999999999999999999999999999999999999999999%", invalid: true},
-		{name: "negative surge", surge: int64(-1), invalid: true},
-		{name: "numeric string surge", surge: "1", invalid: true},
-		{name: "negative percentage surge", surge: "-1%", invalid: true},
-		{name: "empty surge", surge: "", invalid: true},
-		{name: "missing numerator", surge: "%", invalid: true},
-		{name: "leading zero percentage", surge: "01%", invalid: true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			obj := baseResource(t, "nodepools")
-			setField(obj, []string{"spec", "rollout", "strategy"}, map[string]any{
-				"type":          "RollingUpdate",
-				"rollingUpdate": map[string]any{"maxSurge": tt.surge},
-			})
-			schema.check(t, tt.invalid, obj, nil)
-			if tt.invalid {
-				return
-			}
-			// Whatever the schema admits must also decode and scale in Go.
-			pool := decodeJSON[NodePool](t, encodeJSON(t, obj))
-			if _, err := intstr.GetScaledValueFromIntOrPercent(&pool.Spec.Rollout.Strategy.RollingUpdate.MaxSurge, 2, true); err != nil {
-				t.Fatalf("admitted surge cannot be scaled: %v", err)
-			}
-		})
-	}
-
-	t.Run("empty rollout", func(t *testing.T) {
-		obj := baseResource(t, "nodepools")
-		setField(obj, []string{"spec", "rollout"}, map[string]any{})
-		schema.check(t, true, obj, nil)
-	})
-}
-
 func TestNKEClusterSchemaAdmission(t *testing.T) {
 	channelVersion := []string{"spec", "release", "channel", "version"}
-	acceleratedRuntime := []string{"spec", "acceleratedRuntime"}
 
 	loadResourceSchema(t, "nkeclusters").runCreate(t, "nkeclusters", []fieldCase{
 		{name: "channel with preferred version", path: channelVersion, value: "1.35"},
 		{name: "missing channel", path: []string{"spec", "release", "channel"}, remove: true, invalid: true},
 		{name: "empty channel name", path: []string{"spec", "release", "channel", "name"}, value: "", invalid: true},
 		{name: "empty channel version", path: channelVersion, value: "", invalid: true},
-		{name: "runtime opt out", path: acceleratedRuntime, value: map[string]any{"name": "none"}},
-		{name: "runtime release", path: acceleratedRuntime, value: map[string]any{"name": "gpu", "version": "1.0"}},
-		{name: "opt out with version", path: acceleratedRuntime, value: map[string]any{"name": "none", "version": "1.0"}, invalid: true},
-		{name: "runtime missing version", path: acceleratedRuntime, value: map[string]any{"name": "gpu"}, invalid: true},
 		{name: "invalid network CIDR", path: []string{"spec", "clusterNetwork", "pods", "cidrBlocks"}, value: []any{"invalid"}, invalid: true},
 	})
+}
+
+func TestNKEClusterAcceleratedRuntimeAdmission(t *testing.T) {
+	path := []string{"spec", "acceleratedRuntime"}
+	loadResourceSchema(t, "nkeclusters").runCreate(t, "nkeclusters", []fieldCase{
+		{name: "omitted runtime", path: path, remove: true},
+		{name: "runtime with version", path: path, value: map[string]any{"name": "gb200-ubuntu", "version": "1.2.3"}},
+		{name: "explicit opt out", path: path, value: map[string]any{"name": "none"}},
+		{name: "missing name", path: path, value: map[string]any{"version": "1.2.3"}, invalid: true},
+		{name: "missing version", path: path, value: map[string]any{"name": "gb200-ubuntu"}, invalid: true},
+		{name: "empty version", path: path, value: map[string]any{"name": "gb200-ubuntu", "version": ""}, invalid: true},
+		{name: "oversized version", path: path, value: map[string]any{"name": "gb200-ubuntu", "version": strings.Repeat("a", 129)}, invalid: true},
+		{name: "opt out with version", path: path, value: map[string]any{"name": "none", "version": "1.2.3"}, invalid: true},
+	})
+}
+
+func TestAcceleratedRuntimeTags(t *testing.T) {
+	schema := loadResourceSchema(t, "nkeclusters")
+	for _, tt := range []struct {
+		tag     string
+		invalid bool
+	}{
+		{tag: "1.2.3"},
+		{tag: "v1.2.3-rc.1"},
+		{tag: "GB200_ubuntu-24.04"},
+		{tag: "_preview"},
+		{tag: "latest"},
+		{tag: "x.y.z"},
+		{tag: strings.Repeat("a", 128)},
+		{tag: strings.Repeat("a", 129), invalid: true},
+		{tag: "", invalid: true},
+		{tag: " ", invalid: true},
+		{tag: "not a tag", invalid: true},
+		{tag: "1.2.3+build", invalid: true},
+		{tag: "-preview", invalid: true},
+		{tag: ".preview", invalid: true},
+		{tag: "repo:tag", invalid: true},
+		{tag: "repo/tag", invalid: true},
+		{tag: "café", invalid: true},
+	} {
+		t.Run(tt.tag, func(t *testing.T) {
+			obj := baseResource(t, "nkeclusters")
+			setField(obj, []string{"spec", "acceleratedRuntime"}, map[string]any{"name": "gb200-ubuntu", "version": tt.tag})
+			schema.check(t, tt.invalid, obj, nil)
+		})
+	}
 }
 
 // NetworkRanges is shared by pods and services, so the dual-stack rule is
@@ -590,55 +506,41 @@ func TestNKEClusterAuthenticationCreateOnly(t *testing.T) {
 }
 
 func TestResourceCollectionUniqueness(t *testing.T) {
-	schemas := map[string]resourceSchema{
-		"nkeclusters": loadResourceSchema(t, "nkeclusters"),
-		"nodepools":   loadResourceSchema(t, "nodepools"),
-	}
-	taints := []string{"spec", "template", "spec", "taints"}
+	schema := loadResourceSchema(t, "nkeclusters")
 	serviceCIDRs := []string{"spec", "clusterNetwork", "services", "cidrBlocks"}
 
 	for _, tt := range []struct {
-		name     string
-		resource string
-		path     []string
-		items    string
-		invalid  bool
+		name    string
+		path    []string
+		items   string
+		invalid bool
 	}{
 		{
-			name: "duplicate taint key and effect", resource: "nodepools", path: taints,
-			items:   `[{"key":"workload","effect":"NoSchedule","value":"a"},{"key":"workload","effect":"NoSchedule","value":"b"}]`,
-			invalid: true,
-		},
-		{
-			name: "same taint key with distinct effects", resource: "nodepools", path: taints,
-			items: `[{"key":"workload","effect":"NoSchedule"},{"key":"workload","effect":"NoExecute"}]`,
-		},
-		{
-			name: "duplicate condition type", resource: "nodepools", path: []string{"status", "conditions"},
+			name: "duplicate condition type", path: []string{"status", "conditions"},
 			items: `[{"type":"Ready","status":"True","reason":"Ready","message":"","lastTransitionTime":"2026-01-01T00:00:00Z"},
 			         {"type":"Ready","status":"False","reason":"Pending","message":"","lastTransitionTime":"2026-01-01T00:00:00Z"}]`,
 			invalid: true,
 		},
 		{
-			name: "duplicate access CIDR", resource: "nkeclusters", path: []string{"spec", "apiServerAccess", "publicAccessCidrs"},
+			name: "duplicate access CIDR", path: []string{"spec", "apiServerAccess", "publicAccessCidrs"},
 			items:   `[{"cidr":"10.0.0.0/8"},{"cidr":"10.0.0.0/8","description":"duplicate"}]`,
 			invalid: true,
 		},
 		{
-			name: "duplicate audience", resource: "nkeclusters", path: []string{"spec", "authentication", "jwt"},
+			name: "duplicate audience", path: []string{"spec", "authentication", "jwt"},
 			items:   `[{"issuer":{"url":"https://issuer.example.com","audiences":["nke","nke"]},"claimMappings":{"username":{"claim":"sub"}}}]`,
 			invalid: true,
 		},
 		{
-			name: "duplicate network CIDR", resource: "nkeclusters", path: serviceCIDRs,
+			name: "duplicate network CIDR", path: serviceCIDRs,
 			items:   `["10.96.0.0/12","10.96.0.0/12"]`,
 			invalid: true,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			obj := baseResource(t, tt.resource)
+			obj := baseResource(t, "nkeclusters")
 			setField(obj, tt.path, decodeJSON[[]any](t, []byte(tt.items)))
-			schemas[tt.resource].check(t, tt.invalid, obj, nil)
+			schema.check(t, tt.invalid, obj, nil)
 		})
 	}
 }

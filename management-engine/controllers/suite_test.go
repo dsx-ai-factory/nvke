@@ -29,7 +29,6 @@ import (
 const (
 	testNamespace = "default"
 	testCluster   = "cluster-1"
-	testNodePool  = "workers-1"
 	timeout       = 15 * time.Second
 	pollInterval  = 100 * time.Millisecond
 )
@@ -67,7 +66,7 @@ func controllerCaseSet(description, dirPrefix string, defineSteps func(*fixture.
 		SchemeFn:             newScheme,
 		EnvironmentFn:        newEnvironment,
 		CompareObjects: func() []client.ObjectList {
-			return []client.ObjectList{&internalv1.NKEClusterList{}, &internalv1.NodePoolList{}}
+			return []client.ObjectList{&internalv1.NKEClusterList{}}
 		},
 		Setup: func(ctx SpecContext, tc *fixture.Case, _ fixture.CaseSet) {
 			tc.Client = client.WithFieldOwner(tc.Client, "management-engine-envtest")
@@ -86,6 +85,5 @@ func setupWithManager(ctx SpecContext, tc *fixture.Case) {
 	})
 	Expect(err).NotTo(HaveOccurred())
 	Expect((&NKEClusterReconciler{Client: mgr.GetClient(), Scheme: tc.Scheme}).SetupWithManager(mgr)).To(Succeed())
-	Expect((&NodePoolReconciler{Client: mgr.GetClient(), Scheme: tc.Scheme}).SetupWithManager(mgr)).To(Succeed())
 	tc.StartManager(ctx, mgr)
 }

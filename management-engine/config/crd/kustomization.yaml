@@ -7,7 +7,6 @@ resources:
 - bases/internal.nke.nvidia.com_machineimages.yaml
 - bases/internal.nke.nvidia.com_nkeclusters.yaml
 - bases/internal.nke.nvidia.com_nodepoolreleases.yaml
-- bases/internal.nke.nvidia.com_nodepools.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

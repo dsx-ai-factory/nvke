@@ -236,8 +236,7 @@ See the [NKECluster sample](config/samples/internal_v1_nkecluster.yaml).
 `replicas` is required; zero requests zero workers. Omitted rollout defaults to a
 rolling update with one surge node; `maxSurge` accepts an integer or percentage.
 
-See the [NodePool sample](config/samples/internal_v1_nodepool.yaml). Apply tenant
-samples to an existing org namespace using `kubectl --context <state-context>
+Apply tenant samples to an existing org namespace using `kubectl --context <state-context>
 apply -n <org-namespace> -f <sample-file>`.
 
 Status carries conditions, observed generation and resolved release. NodePool
