@@ -66,6 +66,10 @@ type Cluster struct {
 	Nico         *NicoClusterProvider `bun:"nico,type:jsonb"`
 	Capi         *CAPIClusterProvider `bun:"capi,type:jsonb"`
 
+	// OIDCProviders is nil until PinClusterOIDCProviders sets it, and does not
+	// change after that: UpdateCluster neither writes it nor keeps a stale value.
+	OIDCProviders []ClusterOIDCProvider `bun:"oidc_providers,type:jsonb,nullzero"`
+
 	// ControlPlaneConfig keeps the API/business shape while persisting these
 	// fields as real DB columns on clusters (configuration_id, cp_desired_count,
 	// cp_max_surge) via bun embed mapping.
@@ -462,6 +466,9 @@ type ClusterQueries interface {
 	CreateCluster(ctx context.Context, cluster *Cluster) (Cluster, error)
 	UpdateCluster(ctx context.Context, cluster *Cluster) (Cluster, error)
 	UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID uuid.UUID, nextDue time.Time) error
+	// PinClusterOIDCProviders sets the cluster's OIDC providers unless they are
+	// already set, and returns what is set, so a retry gets its first attempt's.
+	PinClusterOIDCProviders(ctx context.Context, clusterID uuid.UUID, providers []ClusterOIDCProvider) ([]ClusterOIDCProvider, error)
 	DeleteCluster(ctx context.Context, id uuid.UUID) error
 	// SyncClusterControlPlaneConfigFromCPNodePools sets control_plane_config from all control-plane
 	// node pools for the cluster that are not marked deleting.
@@ -537,7 +544,9 @@ func (q *queriesImpl) CreateCluster(ctx context.Context, cluster *Cluster) (Clus
 
 func (q *queriesImpl) UpdateCluster(ctx context.Context, cluster *Cluster) (Cluster, error) {
 	cluster.UpdatedAt = time.Now()
-	res, err := q.db.NewUpdate().Model(cluster).WherePK().Exec(ctx)
+	res, err := q.db.NewUpdate().Model(cluster).
+		ExcludeColumn("oidc_providers").
+		WherePK().Returning("oidc_providers").Exec(ctx)
 	if err != nil {
 		return Cluster{}, err
 	}

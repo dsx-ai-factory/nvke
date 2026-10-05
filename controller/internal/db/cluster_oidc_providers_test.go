@@ -1,0 +1,179 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package db_test
+
+import (
+	"context"
+	"reflect"
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
+)
+
+func newOIDCProvidersTestCluster(ctx context.Context, t *testing.T) (db.DB, db.Cluster) {
+	t.Helper()
+	q := db.NewDB(testutil.SetupDB(ctx, t, (*db.Cluster)(nil), (*db.ControlPlaneConfiguration)(nil)))
+	cluster := newControlPlaneConfigTestCluster()
+	created, err := q.CreateCluster(ctx, &cluster)
+	require.NoError(t, err)
+	return q, created
+}
+
+func corpProvider() db.ClusterOIDCProvider {
+	return db.ClusterOIDCProvider{
+		Name:           "corp",
+		IssuerURL:      "https://issuer.example.com",
+		Audiences:      []string{"nke"},
+		UsernameClaim:  "sub",
+		UsernamePrefix: "corp:",
+		GroupsClaim:    "groups",
+		GroupsPrefix:   "corp:",
+		RequiredClaims: map[string]string{"tenant": "a"},
+		CABundle:       "-----BEGIN CERTIFICATE-----\nexample\n-----END CERTIFICATE-----\n",
+	}
+}
+
+func otherProvider() db.ClusterOIDCProvider {
+	p := corpProvider()
+	p.Name = "other"
+	p.IssuerURL = "https://other.example.com"
+	return p
+}
+
+// A field added to the file's provider and not to the stored one would be
+// dropped from every snapshot without an error.
+func TestClusterOIDCProviderHasEveryConfigField(t *testing.T) {
+	fields := func(typ reflect.Type) map[string]string {
+		out := map[string]string{}
+		for i := range typ.NumField() {
+			out[typ.Field(i).Name] = typ.Field(i).Tag.Get("json")
+		}
+		return out
+	}
+	assert.Equal(t,
+		fields(reflect.TypeFor[controllerconfig.OIDCProvider]()),
+		fields(reflect.TypeFor[db.ClusterOIDCProvider]()),
+	)
+}
+
+func TestClusterOIDCProvidersFromConfig(t *testing.T) {
+	t.Run("nil gives an empty list", func(t *testing.T) {
+		got := db.ClusterOIDCProvidersFromConfig(nil)
+		assert.NotNil(t, got)
+		assert.Empty(t, got)
+	})
+
+	t.Run("copies every field without sharing slices or maps", func(t *testing.T) {
+		want := corpProvider()
+		in := []controllerconfig.OIDCProvider{{
+			Name:           want.Name,
+			IssuerURL:      want.IssuerURL,
+			Audiences:      []string{"nke"},
+			UsernameClaim:  want.UsernameClaim,
+			UsernamePrefix: want.UsernamePrefix,
+			GroupsClaim:    want.GroupsClaim,
+			GroupsPrefix:   want.GroupsPrefix,
+			RequiredClaims: map[string]string{"tenant": "a"},
+			CABundle:       want.CABundle,
+		}}
+
+		got := db.ClusterOIDCProvidersFromConfig(in)
+		in[0].Audiences[0] = "changed"
+		in[0].RequiredClaims["tenant"] = "changed"
+
+		assert.Equal(t, []db.ClusterOIDCProvider{want}, got)
+	})
+}
+
+func TestPinClusterOIDCProviders(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("a new cluster has none pinned", func(t *testing.T) {
+		q, cluster := newOIDCProvidersTestCluster(ctx, t)
+		got, err := q.GetCluster(ctx, cluster.ID)
+		require.NoError(t, err)
+		assert.Nil(t, got.OIDCProviders)
+	})
+
+	t.Run("pins and reads back the providers", func(t *testing.T) {
+		q, cluster := newOIDCProvidersTestCluster(ctx, t)
+
+		pinned, err := q.PinClusterOIDCProviders(ctx, cluster.ID, []db.ClusterOIDCProvider{corpProvider()})
+		require.NoError(t, err)
+		assert.Equal(t, []db.ClusterOIDCProvider{corpProvider()}, pinned)
+
+		got, err := q.GetCluster(ctx, cluster.ID)
+		require.NoError(t, err)
+		assert.Equal(t, pinned, got.OIDCProviders)
+	})
+
+	t.Run("a second pin returns the first", func(t *testing.T) {
+		q, cluster := newOIDCProvidersTestCluster(ctx, t)
+
+		first, err := q.PinClusterOIDCProviders(ctx, cluster.ID, []db.ClusterOIDCProvider{corpProvider()})
+		require.NoError(t, err)
+		second, err := q.PinClusterOIDCProviders(ctx, cluster.ID, []db.ClusterOIDCProvider{otherProvider()})
+		require.NoError(t, err)
+		assert.Equal(t, first, second)
+	})
+
+	t.Run("no providers pins an empty list that a later pin keeps", func(t *testing.T) {
+		q, cluster := newOIDCProvidersTestCluster(ctx, t)
+
+		pinned, err := q.PinClusterOIDCProviders(ctx, cluster.ID, nil)
+		require.NoError(t, err)
+		assert.NotNil(t, pinned)
+		assert.Empty(t, pinned)
+
+		again, err := q.PinClusterOIDCProviders(ctx, cluster.ID, []db.ClusterOIDCProvider{corpProvider()})
+		require.NoError(t, err)
+		assert.NotNil(t, again)
+		assert.Empty(t, again)
+	})
+
+	t.Run("an unknown cluster is not found", func(t *testing.T) {
+		q, _ := newOIDCProvidersTestCluster(ctx, t)
+		_, err := q.PinClusterOIDCProviders(ctx, uuid.New(), nil)
+		assert.ErrorIs(t, err, db.ErrNotFound)
+	})
+}
+
+func TestUpdateClusterKeepsPinnedOIDCProviders(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name  string
+		stale []db.ClusterOIDCProvider
+	}{
+		{name: "stale copy read before the pin", stale: nil},
+		{name: "stale copy holding other providers", stale: []db.ClusterOIDCProvider{otherProvider()}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q, cluster := newOIDCProvidersTestCluster(ctx, t)
+			stale, err := q.GetCluster(ctx, cluster.ID)
+			require.NoError(t, err)
+
+			_, err = q.PinClusterOIDCProviders(ctx, cluster.ID, []db.ClusterOIDCProvider{corpProvider()})
+			require.NoError(t, err)
+
+			stale.OIDCProviders = tt.stale
+			stale.KubernetesVersion = "1.35"
+			updated, err := q.UpdateCluster(ctx, &stale)
+			require.NoError(t, err)
+			assert.Equal(t, []db.ClusterOIDCProvider{corpProvider()}, updated.OIDCProviders)
+
+			got, err := q.GetCluster(ctx, cluster.ID)
+			require.NoError(t, err)
+			assert.Equal(t, "1.35", got.KubernetesVersion)
+			assert.Equal(t, []db.ClusterOIDCProvider{corpProvider()}, got.OIDCProviders)
+		})
+	}
+}
