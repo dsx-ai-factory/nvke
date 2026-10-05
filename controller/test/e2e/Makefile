@@ -9,6 +9,7 @@ GOBIN = $(shell $(GO) env GOPATH)/bin
 endif
 
 include ../../../make/golangci.mk
+include ../../../make/coverage.mk
 
 GO_TEST_FLAGS ?=
 
@@ -21,7 +22,8 @@ lint: ## Run golangci-lint. (run by the merge gate)
 	@$(GOLANGCI_LINT_RUN) run --timeout 10m --max-same-issues 0 --max-issues-per-linter 0 ./...
 
 test: ## Run tests. (run by the merge gate)
-	$(GO) test $(GO_TEST_FLAGS) -skip '^TestE2E$$' . ./internal/...
+	@$(COVERAGE_MKDIR)
+	$(GO) test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) -skip '^TestE2E$$' . ./internal/...
 
 # What the site lane (site_controller_test.go) stages onto its node. The image
 # archives are written outside the clone so they can't be committed.

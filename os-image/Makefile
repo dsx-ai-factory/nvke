@@ -37,6 +37,7 @@ endif
 include ../make/tool-versions.mk
 # golangci-lint pin and bootstrap, shared with every other module.
 include ../make/golangci.mk
+include ../make/coverage.mk
 
 # Version stamping, mirroring cli/Makefile.
 #
@@ -77,7 +78,8 @@ compile: ## Type-check every package, including the ones with no binary.
 	$(GO) build ./...
 
 test: test-qemu ## Run this module's tests. (run by the merge gate)
-	$(GO) test $(GO_TEST_FLAGS) ./...
+	@$(COVERAGE_MKDIR)
+	$(GO) test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) ./...
 
 fmt: ## Format the source with golangci-lint's formatters.
 	@$(GOLANGCI_LINT_RUN) fmt ./...

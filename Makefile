@@ -148,7 +148,7 @@ include make/versions.mk
 include make/checks.mk
 
 .DEFAULT_GOAL := help
-.PHONY: help show-versions tools-check lint-workflows lint-shell docs-check internal-config-check lint-chart chart-rbac-check chart-package-check chart-controller-config-check chart-check vulncheck fmt lint gate test-compile test-e2e-backend-ci work work-sync work-check build test preflight version-check clean licenses licenses-check license-deps-check notices notices-check license-header-check
+.PHONY: help show-versions tools-check lint-workflows lint-shell docs-check internal-config-check lint-chart chart-rbac-check chart-package-check chart-controller-config-check chart-check vulncheck fmt lint gate test-compile test-e2e-backend-ci work work-sync work-check build test coverage coverage-report coverage-check preflight version-check clean licenses licenses-check license-deps-check notices notices-check license-header-check
 
 ##@ Help
 
@@ -289,6 +289,21 @@ test: ## Run each module's own test suite.
 			$(GO) -C $$m test $(GO_TEST_FLAGS) -skip '^TestE2E$$' ./... || exit 1; \
 		fi; \
 	done
+
+coverage: ## Run the tests of every collecting module and report the coverage.
+	@# Not folded into `test` above. `test` runs every workspace module, this
+	@# runs the nine that collect, and a developer wanting one does not always
+	@# want the other. The profiles land in coverage/ at the root; the report
+	@# fails on a missing, malformed or empty one, and on a test package that
+	@# nothing ran. It does not fail on a percentage -- see
+	@# docs/coverage-policy.md for why not.
+	@MAKE='$(MAKE)' ./hack/coverage.sh run
+
+coverage-report: ## Validate and summarise the profiles already in coverage/.
+	@./hack/coverage.sh report
+
+coverage-check: ## Check the coverage registry against the tree. Runs no tests.
+	@./hack/coverage.sh check
 
 test-compile: ## Type-check test variants that need external services to run.
 	@echo "- compile controller/test/e2e"
@@ -687,8 +702,8 @@ license-header-check: ## Verify every source file carries the Apache-2.0 SPDX he
 
 ##@ Housekeeping
 
-clean: ## Remove the built binaries.
-	@rm -rf $(BIN_DIR)
+clean: ## Remove the built binaries and the coverage profiles.
+	@rm -rf $(BIN_DIR) $(CURDIR)/coverage
 
 ##@ End-to-end
 

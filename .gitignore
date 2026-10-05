@@ -85,3 +85,8 @@ controller/test/e2e/site-e2e.log
 controller/test/e2e/site-e2e.junit.xml
 controller/test/e2e/report.json
 controller/test/e2e/site-diagnostics.tar.gz
+
+# Coverage profiles. make/coverage.mk points every module's `go test` here, and
+# hack/coverage.sh reads the directory. Nothing in it is committed: a profile
+# describes one run on one machine, and CI uploads it as an artifact instead.
+/coverage/

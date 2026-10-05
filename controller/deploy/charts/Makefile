@@ -16,6 +16,7 @@ endif
 # match the other module builds.
 GOLANGCI_LINT_GOWORK :=
 include ../../../make/golangci.mk
+include ../../../make/coverage.mk
 
 GO_TEST_FLAGS ?=
 
@@ -38,4 +39,5 @@ lint: ## Run golangci-lint over this module. (run by the merge gate)
 	@$(GOLANGCI_LINT_RUN) run --timeout 10m
 
 test: ## Run this module's tests.
-	$(GO) test $(GO_TEST_FLAGS) ./...
+	@$(COVERAGE_MKDIR)
+	$(GO) test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) ./...
