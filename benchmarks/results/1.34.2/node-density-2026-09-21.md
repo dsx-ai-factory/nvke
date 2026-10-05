@@ -13,7 +13,7 @@ Scenario: [node-density](../../workloads/scalability/node-density/README.md)
 
 ## TL;DR
 
-4,120 iterations filled 42 workers to 105 pods per node, creating 4,120 pause pods in
+4,120 iterations filled 42 workers to an average of 105 pods per node, creating 4,120 pause pods in
 212 s. With no probe and no Service connectivity gating readiness, the headline figure
 is a pod-startup floor: **pod-ready p99 of 2 s**. Peak Pending was 23 pods, every one
 of the 4,120 pods reached Ready, and latency coverage was complete. The calculated
