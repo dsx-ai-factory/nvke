@@ -475,13 +475,15 @@ newest CWE on GHCR predates #850 and rejects this checkout's nkectl at
 `SITE_CONTROLLER_VERSION` as a published tag instead, for qualifying a release
 once one is cut past #850.
 
-To stage a published nkectl instead, download `nkectl-linux-amd64` from its
-`cli/<version>` GitHub Release, check it against the release's
-`checksums.txt`, and skip the build:
+To stage a published nkectl instead, set `SITE_CLI_BUILD=0` and name the
+version. `site-inputs` downloads `nkectl-linux-$(SITE_ARCH)` from its
+`cli/<version>` GitHub Release into `$(SITE_INPUTS)/nkectl/`, checks it against
+the release's `checksums.txt`, and, when the binary is for the host it runs on,
+checks it reports that version. It needs `GITHUB_TOKEN` and `jq`:
 
 ```bash
-gmake site-inputs SITE_CLI_BUILD=0 SITE_CONTROLLER_VERSION=...
-# and in e2e-config.yaml, site.nkectl: <path to the downloaded binary>
+GITHUB_TOKEN=... gmake site-inputs SITE_CLI_BUILD=0 SITE_CLI_VERSION=v0.1.0 SITE_CONTROLLER_VERSION=...
+# and in e2e-config.yaml, site.nkectl: <SITE_INPUTS>/nkectl/nkectl-linux-<arch>
 # and on the suite, -e2e.versions=...,cli=<version>
 ```
 

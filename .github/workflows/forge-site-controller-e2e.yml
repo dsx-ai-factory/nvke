@@ -313,6 +313,10 @@ jobs:
       # interpolates this, so the paths keep the shape
       # e2e-config-example.yaml documents even though the prefix differs.
       SITE_INPUTS: ${{ github.workspace }}/.site-inputs
+      # The node's architecture, for nkectl and every image archive that
+      # site-inputs stages. arm64 also needs a published controller-version:
+      # building the CWE here produces amd64 only.
+      SITE_ARCH: amd64
       # The proxy for the auth step. It also exports TELEPORT_PROXY and
       # TELEPORT_IDENTITY_FILE for tsh, which is how the dialer is configured
       # -- config.go leaves teleportIdentityFile empty and tsh reads the
@@ -466,71 +470,28 @@ jobs:
 
       # A named version stages the nkectl that release shipped rather than
       # one built here, so a candidate can pair a published CLI with a
-      # published CWE. The release is the checksummed channel release.yml
-      # verifies, and the binary is checked against the version it was asked
-      # for: a release whose asset reported anything else is not that release.
-      # The repository is private, so the assets come through the API with
-      # the job's token rather than their browser URLs.
+      # published CWE. site-inputs does the download and the checks
+      # (hack/fetch-nkectl.sh); this step only decides which, and names the
+      # binary the config points at. The path is the Makefile's SITE_NKECTL.
       - name: Resolve the nkectl version
         shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
-          asset="nkectl-linux-amd64"
           if [ -z "${SITE_CLI_VERSION}" ]; then
             version="$(git rev-parse --short=12 HEAD)"
             {
               echo "SITE_CLI_BUILD=1"
               echo "SITE_CLI_VERSION=${version}"
-              echo "SITE_NKECTL=cli/dist/${asset}"
+              echo "SITE_NKECTL=cli/dist/nkectl-linux-${SITE_ARCH}"
             } >> "${GITHUB_ENV}"
             echo "building nkectl from ${version}"
             exit 0
           fi
-
-          command -v jq >/dev/null || { echo "::error::jq is not on this runner, so the release assets cannot be located"; exit 1; }
-          tag="cli/${SITE_CLI_VERSION}"
-          dir="${SITE_INPUTS}/nkectl"
-          mkdir -p "${dir}"
-          api="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}"
-          if ! release="$(curl -fsSL --retry 3 -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              -H "Accept: application/vnd.github+json" "${api}/releases/tags/${tag}")"; then
-            echo "::error::no published ${tag} release"
-            exit 1
-          fi
-          for name in "${asset}" checksums.txt; do
-            id="$(jq -r --arg n "${name}" '.assets[] | select(.name == $n) | .id' <<<"${release}")"
-            if [ -z "${id}" ]; then
-              echo "::error::the ${tag} release has no ${name}"
-              exit 1
-            fi
-            curl -fsSL --retry 3 -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              -H "Accept: application/octet-stream" -o "${dir}/${name}" "${api}/releases/assets/${id}"
-          done
-          # checksums.txt is sha256sum's own output, one line per asset.
-          ( cd "${dir}" && grep -E "^[0-9a-f]{64}  ${asset}\$" checksums.txt | sha256sum -c - ) || {
-            echo "::error::${asset} does not match the ${tag} checksums.txt"
-            exit 1
-          }
-          chmod 0755 "${dir}/${asset}"
-          # The trailing space stops v0.1.0 accepting a v0.1.0-rc.1 binary.
-          if ! out="$("${dir}/${asset}" version 2>&1)"; then
-            echo "::error::${asset} version exited non-zero: ${out}"
-            exit 1
-          fi
-          case "${out}" in
-            "nkectl ${SITE_CLI_VERSION} "*) ;;
-            *)
-              echo "::error::asked for ${SITE_CLI_VERSION}, and the ${tag} binary reports: ${out}"
-              exit 1
-              ;;
-          esac
           {
             echo "SITE_CLI_BUILD=0"
-            echo "SITE_NKECTL=${dir}/${asset}"
+            echo "SITE_NKECTL=${SITE_INPUTS}/nkectl/nkectl-linux-${SITE_ARCH}"
           } >> "${GITHUB_ENV}"
-          echo "staging the published nkectl ${SITE_CLI_VERSION}: ${out}"
+          echo "staging the published nkectl ${SITE_CLI_VERSION}"
 
       # Two checks that each cost a second and each save a run: the ref the
       # join token will see, and the three values a pull_request event does
@@ -797,13 +758,19 @@ jobs:
       # published.
       - name: Build the site inputs
         shell: bash
+        env:
+          # Only the published-nkectl path reads it: the repository is
+          # private, so release assets come through the API with a token.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           make -C controller/test/e2e site-inputs \
+            SITE_ARCH="${SITE_ARCH}" \
             SITE_CONTROLLER_VERSION="${SITE_CONTROLLER_VERSION}" \
             SITE_CONTROLLER_BUILD="${SITE_CONTROLLER_BUILD}" \
             SITE_ARCH="${SITE_ARCH}" \
             SITE_CLI_BUILD="${SITE_CLI_BUILD}" \
+            SITE_CLI_VERSION="${SITE_CLI_VERSION}" \
             SITE_IMAGE_REGISTRY="${SITE_IMAGES}" \
             SITE_PROVISIONED_VERSION="${CAPI_PROVISIONED_VERSION}" \
             SITE_INPUTS="${SITE_INPUTS}"
