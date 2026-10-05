@@ -129,9 +129,11 @@ jobs:
       # authn-spire is excluded (needs SPIRE pod attestation not wired in CAPD).
       label-filter: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'core-docker || health' || '((capd || health) && !cp-controller) || (authn && !authn-spire) || authn-permissive' }}
       providers: '["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]'
-      # Leave enough pull-request headroom for arm64 diagnostics and action
-      # cleanup after the selected suite finishes. Full runs still need room
-      # for two modes and every extended CAPD scenario.
+      # copy-pr-bot mirrors PRs onto pull-request/<n> for self-hosted runners.
+      # Mirrored runs select the smaller core/health suite; 30 minutes leaves
+      # room for arm64 diagnostics and action cleanup after that suite finishes.
+      # Full runs cover both control-plane modes and extended CAPD scenarios,
+      # so they retain their 150-minute allowance.
       timeout-minutes: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 30 || 150 }}
       # Turn "authentication is not deployed" from a per-spec skip into a failure:
       # the authn specs run on the node-pool leg, and without this a broken auth

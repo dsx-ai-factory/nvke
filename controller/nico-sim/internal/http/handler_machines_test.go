@@ -13,6 +13,7 @@ import (
 	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 )
 
+// TestUnit_HandleListMachinesReturnsEmptyInventory verifies both API names return an empty machine inventory.
 func TestUnit_HandleListMachinesReturnsEmptyInventory(t *testing.T) {
 	store := newUnifiedTestStore(t)
 	handler := newDispatchHandler(t, store, &fakeContainerService{instances: map[string]nicosdk.Instance{}})

@@ -280,6 +280,9 @@ func TestProvisionNodeReleasesOnFailure(t *testing.T) {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
 				defer cancel()
+				// Cancel after creation returns an instance ID so the test exercises
+				// readiness cleanup rather than racing setup or instance creation.
+				// See https://github.com/dsx-ai-factory/nke/issues/1200.
 				forge.onPoll = cancel
 			}
 			if _, _, err := p.ProvisionNode(ctx, testRequest()); err == nil {

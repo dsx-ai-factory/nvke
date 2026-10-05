@@ -68,6 +68,10 @@ const (
 	cniPluginCalico = "calico"
 	cniPluginTigera = "tigera"
 
+	// OVN Helm overrides for OVS netdev nodes (CAPD and NICo containers).
+	// A dummy br-ex with no uplink and local gateway mode preserves Docker's
+	// management eth0 and its BGP connection. These keys are chart values:
+	// https://github.com/ovn-kubernetes/ovn-kubernetes/blob/v1.4.0/helm/ovn-kubernetes/values-single-node-zone.yaml
 	ovnDummyGatewayBridgeHelmValue = "global.dummyGatewayBridge"
 	ovnDummyGatewayBridgeEnabled   = "true"
 	ovnGatewayModeHelmValue        = "global.gatewayMode"
