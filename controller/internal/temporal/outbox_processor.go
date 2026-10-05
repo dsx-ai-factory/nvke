@@ -110,8 +110,10 @@ func (p *OutboxProcessor) processBatch(ctx context.Context) error {
 
 		// Process each entry
 		for _, entry := range entries {
-			if err := p.processEntry(ctx, entry); err != nil {
-				p.logger.ErrorContext(otelx.Restore(ctx, entry.TraceContext), "Failed to process workflow outbox entry",
+			// Each entry belongs to a different request, so restore its trace context here.
+			entryCtx := otelx.Restore(ctx, entry.TraceContext)
+			if err := p.processEntry(entryCtx, entry); err != nil {
+				p.logger.ErrorContext(entryCtx, "Failed to process workflow outbox entry",
 					"error", err,
 					"id", entry.ID.String(),
 					"workflowType", entry.WorkflowType)
@@ -120,8 +122,8 @@ func (p *OutboxProcessor) processBatch(ctx context.Context) error {
 			}
 
 			// Mark the entry as processed within the transaction
-			if err := tx.MarkWorkflowOutboxEntryProcessed(otelx.Restore(ctx, entry.TraceContext), entry.ID); err != nil {
-				p.logger.ErrorContext(otelx.Restore(ctx, entry.TraceContext), "Failed to mark workflow outbox entry as processed",
+			if err := tx.MarkWorkflowOutboxEntryProcessed(entryCtx, entry.ID); err != nil {
+				p.logger.ErrorContext(entryCtx, "Failed to mark workflow outbox entry as processed",
 					"error", err,
 					"id", entry.ID.String())
 				// Continue processing other entries even if marking one as processed fails
@@ -134,8 +136,8 @@ func (p *OutboxProcessor) processBatch(ctx context.Context) error {
 }
 
 // processEntry processes a single outbox entry by starting the appropriate workflow.
+// ctx must already carry the entry's restored trace context.
 func (p *OutboxProcessor) processEntry(ctx context.Context, entry db.WorkflowOutbox) error {
-	ctx = otelx.Restore(ctx, entry.TraceContext)
 	ctx, span := otel.Tracer("cwe.outbox").Start(ctx, "outbox.dispatch", trace.WithAttributes(attribute.String("workflow_id", entry.WorkflowID)))
 	defer span.End()
 	err := p.startWorkflow(ctx, entry)
