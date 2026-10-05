@@ -8,7 +8,7 @@ on, see [Authenticating to the NKE API](authenticating-to-the-api.md).
 
 ## What you are setting up
 
-NKE can require a signed JWT on every `/api/*` request. There are three states:
+NKE can require a signed JWT on every `/api/*` request, in one of these states:
 
 | State | Behaviour |
 |---|---|
@@ -22,7 +22,7 @@ find out who would break before they do. Use it.
 A token is accepted when its issuer is one you configured, its signature
 verifies, it names your deployment in its `aud` claim, it has not expired, and
 its subject matches a rule you wrote. The first four failing gives a 401. The
-last one gives a 403 — the token was real, the caller just is not on the list.
+last one gives a 403: the token was real, the caller just isn't on the list.
 
 NKE does no authorization. Every admitted caller can call every endpoint.
 
@@ -64,7 +64,7 @@ kubectl get --raw /.well-known/openid-configuration
 
 Take the `issuer` value.
 
-**Do not take `jwks_uri`.** It is built from the API server's advertise address,
+Do not take `jwks_uri`. It is built from the API server's advertise address,
 so it is a node IP or a load-balancer address that can change. Use the
 in-cluster name instead, which is stable and serves the same thing:
 
@@ -82,7 +82,7 @@ kubectl create namespace nke-clients
 kubectl -n nke-clients create serviceaccount nke-client
 ```
 
-**`nkectl` mints this pair and no other.** The names `nke-clients` /
+`nkectl` mints this pair and no other. The names `nke-clients` /
 `nke-client` and ConfigMap `cloud-workflow-engine/nke-auth-config` are fixed in
 the CLI. Other names work for `curl` and `hack/nke-token.sh` if you override
 them; they will not work for `nkectl`. One account per caller is still easier
@@ -90,8 +90,8 @@ to revoke when those callers are not the CLI.
 
 Minting a token for that account needs `create` on `serviceaccounts/token` in
 its namespace. A cluster administrator already has it. To let something else
-mint — `nkectl` under a least-privilege kubeconfig, a CI job, or an application
-that renews its own token — grant it:
+mint it, such as `nkectl` under a least-privilege kubeconfig, a CI job, or an
+application that renews its own token, grant it:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -108,7 +108,7 @@ rules:
 
 `resourceNames` holds that grant to the one account, so it does not become a way
 to mint tokens for anything else in the namespace. Bind it to whoever is doing
-the minting — the user or group in the kubeconfig `nkectl` uses.
+the minting: the user or group in the kubeconfig `nkectl` uses.
 
 ### 3. Write the configuration
 
@@ -129,7 +129,7 @@ issuers:
 ```
 
 **`audiences`** is what callers must name in their token. Pick something unique
-to this deployment — its external URL is a good choice. Do not reuse your issuer
+to this deployment; its external URL is a good choice. Do not reuse your issuer
 or a `kubernetes.default.svc` address: every pod in the cluster already carries
 those, so the check would admit everything.
 
@@ -162,8 +162,8 @@ apiAuth:
 
 Start permissive. The next section covers going enforcing.
 
-If you would rather manage the config yourself — a sealed secret, an existing
-GitOps pipeline — leave `create` at its default of `false` and put the document
+If you would rather manage the config yourself, with a sealed secret or an
+existing GitOps pipeline, leave `create` at its default of `false` and put the document
 in a ConfigMap named by `configMap.name`, under the key `auth.yaml`:
 
 ```bash
@@ -187,8 +187,8 @@ kubectl -n "$NS" logs deploy/cloud-workflow-engine | grep 'API authentication'
 ```
 
 You want one `fetched issuer signing keys` line per issuer. If one is missing,
-fix it now — while permissive, a failed fetch is only a warning, but when
-enforcing it stops NKE from starting at all.
+fix it now: while permissive, a failed fetch is only a warning; enforcing, it
+stops NKE from starting at all.
 
 ### 6. Tell callers what to ask for
 
@@ -203,8 +203,8 @@ kubectl create token nke-client -n nke-clients \
   --audience=https://nke.example.com --duration=30m
 ```
 
-This has to be `kubectl create token`. The older approach — reading a
-ServiceAccount `Secret` — produces a token with no audience, which NKE refuses.
+This has to be `kubectl create token`. The older approach, reading a
+ServiceAccount `Secret`, produces a token with no audience, which NKE refuses.
 
 ## Recipe: SPIRE
 
@@ -228,7 +228,7 @@ kubectl -n spire-server get secret spire-spiffe-oidc-discovery-provider-cert \
   openssl x509 -noout -ext subjectAltName
 ```
 
-If the only usable name is an IP address, use it — but know that you are pinning
+If the only usable name is an IP address, use it, but know you're pinning
 something that may move.
 
 ### 2. Get the CA certificate into NKE
@@ -242,7 +242,7 @@ kubectl -n spire-server get secret oidc-provider-upstream-ca \
 ```
 
 NKE reads it from a file inside its container. It goes beside the configuration,
-under `extraFiles` — the whole ConfigMap is mounted as a directory, so anything
+under `extraFiles`: the whole ConfigMap is mounted as a directory, so anything
 listed here is a file next to `auth.yaml`:
 
 ```yaml
@@ -305,7 +305,7 @@ spire-server jwt mint \
 Do not skip permissive. It is the only way to find callers you did not know
 about.
 
-**Watch the counter, not the log.** Successful reads are logged at debug level,
+Watch the counter, not the log. Successful reads are logged at debug level,
 so the log will undercount them:
 
 ```bash
@@ -319,7 +319,7 @@ nke_auth_requests_total{issuer="unknown",outcome="would_reject",reason="no_token
 ```
 
 Every `would_reject` series is a caller that enforcing would break. The `reason`
-label says what each one needs — usually a token, or a subject added to your
+label says what each one needs: usually a token, or a subject added to your
 allow-list. Rejections are also logged in full:
 
 ```bash
@@ -355,7 +355,7 @@ changes; if yours does not, restart it yourself:
 kubectl -n "$NS" rollout restart deploy/cloud-workflow-engine
 ```
 
-Values are matched exactly — leading or trailing whitespace is an error, not
+Values are matched exactly: leading or trailing whitespace is an error, not
 something NKE trims.
 
 ### Chart values
@@ -403,11 +403,11 @@ call to `/api/version` tells you nothing about whether authentication is on.
 **NKE will not start, and the log says it could not set up authentication.**
 When enforcing, every issuer's keys must be reachable at startup. The message
 names the issuer and the error. Check the keys URL is reachable from inside the
-pod, and that any `caBundlePath` points at a file that is actually mounted — if
+pod, and that any `caBundlePath` points at a file that is actually mounted. If
 it sits under `/etc/nke/auth`, it has to be listed in `extraFiles`.
 
 **Everything returns 401, including tokens that look right.**
-Check the audience first — it is the usual cause. A token minted for the wrong
+Check the audience first: it's the usual cause. A token minted for the wrong
 audience is rejected identically to no token at all. Compare its `aud` claim
 against the audiences NKE logs at startup.
 
@@ -433,4 +433,4 @@ kubectl -n "$NS" get deploy cloud-workflow-engine \
 
 ## See also
 
-- [Authenticating to the NKE API](authenticating-to-the-api.md) — the caller's side, including `nkectl`.
+- [Authenticating to the NKE API](authenticating-to-the-api.md): the caller's side, including `nkectl`.

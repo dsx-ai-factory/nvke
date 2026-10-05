@@ -503,7 +503,7 @@ what to check when you get an unexpected 401, see
 and the binding described under RBAC Prerequisite.
 
 `nkectl` uses that admitted identity. After `nkectl config set-site` with the
-kind kubeconfig, CWE commands mint on their own — there is no token
+kind kubeconfig, CWE commands mint tokens on their own. There is no token
 environment variable:
 
 ```bash
@@ -533,8 +533,8 @@ NKE_PERMISSIVE_MODE=true tilt up
 ### Enabling Authentication
 
 For a step-by-step guide to configuring authentication on a deployment you
-operate — writing the config, per-issuer recipes, and moving a running site from
-permissive to enforcing — see
+operate: writing the config, per-issuer recipes, and moving a running site from
+permissive to enforcing. See
 [Configuring NKE API Authentication](docs/configuring-api-authentication.md).
 
 With the Helm chart, set the `apiAuth` values:
@@ -552,7 +552,7 @@ apiAuth:
 The chart renders those into the two environment variables NKE reads. Set them
 directly if you deploy without the chart. Both are read at startup, and so is
 the configuration file, so changing any of them needs a pod restart. The chart
-arranges that restart itself -- see *Authentication Configuration* below.
+arranges that restart itself; see [Authentication Configuration](#authentication-configuration) below.
 
 | State | `AUTH_CONFIG_PATH` | `PERMISSIVE_MODE` | Result |
 | --- | --- | --- | --- |
@@ -573,10 +573,12 @@ starting with authentication disabled.
 
 ### Authentication Configuration
 
-One file, mounted at `AUTH_CONFIG_PATH` from a ConfigMap named by
-`apiAuth.configMap.name`. Two ways to get one there, and they are alternatives:
-setting `apiAuth.config` without `create`, or `create` without `apiAuth.config`,
-fails the render rather than quietly ignoring one of them.
+NKE reads one file, mounted at `AUTH_CONFIG_PATH` from a ConfigMap named by
+`apiAuth.configMap.name`. Populate it one of two ways: let the chart render it
+from `apiAuth.config` (`configMap.create: true`), or supply your own ConfigMap
+and leave `create` false. Setting `apiAuth.config` without `create`, or
+`create` without `apiAuth.config`, fails the render rather than quietly
+ignoring one of them.
 
 **The chart renders it** when `apiAuth.configMap.create` is true. Put the
 document under `apiAuth.config`, carrying `audiences` and `issuers` only --
@@ -616,8 +618,8 @@ manifest.
 
 The chart validates only that `audiences` and `issuers` are present. Everything
 else is checked by `internal/auth/config.go` at startup, which is strict and
-names the field at fault -- but it means a bad value is a `CrashLoopBackOff`
-rather than a failed render. Read the pod logs, not the Helm output.
+names the field at fault. A bad value becomes a `CrashLoopBackOff` rather than
+a failed render, so read the pod logs, not the Helm output.
 
 An issuer whose `jwks.uri` sits behind a private CA needs its bundle as a file
 in the same directory, which `extraFiles` puts there. The whole ConfigMap is
@@ -659,7 +661,7 @@ Either way, editing the configuration only takes effect when the pods restart:
 `auth.Load` runs once at startup and Kubernetes does not restart anything when a
 mounted ConfigMap changes. So whenever `apiAuth.enabled` is true the chart
 annotates the Deployment for [Reloader](https://github.com/stakater/Reloader),
-which watches the ConfigMap and rolls the Deployment when it changes -- from any
+which watches the ConfigMap and rolls the Deployment when it changes, from any
 source, `kubectl edit` included. Set
 `deploymentAnnotations."configmap.reloader.stakater.com/reload"` to take that
 over; the chart leaves an annotation you set alone. Without Reloader running,
