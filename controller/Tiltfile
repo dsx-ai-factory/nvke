@@ -998,7 +998,6 @@ _cwe_permissive_mode = os.getenv(
     "NKE_PERMISSIVE_MODE", _tilt_env.get("NKE_PERMISSIVE_MODE", "false")) == "true"
 
 _cwe_chart_extra_env_names = [
-    "TEMPORAL_UI_URL",
     "NODE_HEALTH_CHECK_POLLING_INTERVAL",
     "NODE_HEALTH_CHECK_INTERVAL",
     "NODE_PROVISIONING_TIMEOUT",

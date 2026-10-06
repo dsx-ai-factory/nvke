@@ -142,10 +142,6 @@ type Config struct {
 	// TemporalTaskQueue is the Temporal task queue to use for CWE workflows
 	TemporalTaskQueue string `env:"TEMPORAL_TASK_QUEUE" default:"cloud-workflow-engine-tasks"`
 
-	// TemporalUIURL is the base URL of the Temporal Web UI (e.g. http://temporal-ui.example.com).
-	// When set, the node history UI renders workflow titles as links into the Temporal UI.
-	TemporalUIURL string `env:"TEMPORAL_UI_URL" default:""`
-
 	// TemporalTLS configures optional mTLS for CWE's Temporal client.
 	TemporalTLS TemporalTLSConfig `envPrefix:"TEMPORAL_MTLS_"`
 

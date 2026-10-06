@@ -160,9 +160,6 @@ type ClientInterface interface {
 	// GetNode request
 	GetNode(ctx context.Context, nodeID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetNodeHistory request
-	GetNodeHistory(ctx context.Context, nodeID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// ListOSProfiles request
 	ListOSProfiles(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
@@ -445,18 +442,6 @@ func (c *Client) DeleteNode(ctx context.Context, nodeID openapi_types.UUID, body
 
 func (c *Client) GetNode(ctx context.Context, nodeID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetNodeRequest(c.Server, nodeID)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetNodeHistory(ctx context.Context, nodeID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetNodeHistoryRequest(c.Server, nodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -1305,40 +1290,6 @@ func NewGetNodeRequest(server string, nodeID openapi_types.UUID) (*http.Request,
 	return req, nil
 }
 
-// NewGetNodeHistoryRequest generates requests for GetNodeHistory
-func NewGetNodeHistoryRequest(server string, nodeID openapi_types.UUID) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "nodeID", runtime.ParamLocationPath, nodeID)
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/nodes/%s/history", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
 // NewListOSProfilesRequest generates requests for ListOSProfiles
 func NewListOSProfilesRequest(server string) (*http.Request, error) {
 	var err error
@@ -1475,9 +1426,6 @@ type ClientWithResponsesInterface interface {
 
 	// GetNodeWithResponse request
 	GetNodeWithResponse(ctx context.Context, nodeID openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetNodeClientResponse, error)
-
-	// GetNodeHistoryWithResponse request
-	GetNodeHistoryWithResponse(ctx context.Context, nodeID openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetNodeHistoryClientResponse, error)
 
 	// ListOSProfilesWithResponse request
 	ListOSProfilesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListOSProfilesClientResponse, error)
@@ -1942,30 +1890,6 @@ func (r GetNodeClientResponse) StatusCode() int {
 	return 0
 }
 
-type GetNodeHistoryClientResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *NodeHistory
-	JSON401      *Unauthorized
-	JSON403      *Forbidden
-}
-
-// Status returns HTTPResponse.Status
-func (r GetNodeHistoryClientResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetNodeHistoryClientResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
 type ListOSProfilesClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -2199,15 +2123,6 @@ func (c *ClientWithResponses) GetNodeWithResponse(ctx context.Context, nodeID op
 		return nil, err
 	}
 	return ParseGetNodeClientResponse(rsp)
-}
-
-// GetNodeHistoryWithResponse request returning *GetNodeHistoryClientResponse
-func (c *ClientWithResponses) GetNodeHistoryWithResponse(ctx context.Context, nodeID openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetNodeHistoryClientResponse, error) {
-	rsp, err := c.GetNodeHistory(ctx, nodeID, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetNodeHistoryClientResponse(rsp)
 }
 
 // ListOSProfilesWithResponse request returning *ListOSProfilesClientResponse
@@ -2975,46 +2890,6 @@ func ParseGetNodeClientResponse(rsp *http.Response) (*GetNodeClientResponse, err
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest Node
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest Unauthorized
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest Forbidden
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetNodeHistoryClientResponse parses an HTTP response from a GetNodeHistoryWithResponse call
-func ParseGetNodeHistoryClientResponse(rsp *http.Response) (*GetNodeHistoryClientResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetNodeHistoryClientResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest NodeHistory
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

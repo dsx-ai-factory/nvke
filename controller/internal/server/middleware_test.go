@@ -21,7 +21,6 @@ func TestIsExemptPath(t *testing.T) {
 	}{
 		{"/api/nodes", true},
 		{"/api/nodes/550e8400-e29b-41d4-a716-446655440000", true},
-		{"/api/nodes/550e8400-e29b-41d4-a716-446655440000/history", true},
 		{"/api/nodePools/550e8400-e29b-41d4-a716-446655440000", false},
 		{"/api/nodesBackup", false},
 		{"/api/clusters", false},

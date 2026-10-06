@@ -870,60 +870,6 @@ type NodeConditions struct {
 	TeleportRegistered *Condition `json:"teleportRegistered,omitempty"`
 }
 
-// NodeHistory The provisioning, reboot and teardown operations run for a node.
-type NodeHistory struct {
-	// Workflows Operations run for the node.
-	Workflows []NodeHistoryWorkflow `json:"workflows"`
-}
-
-// NodeHistoryActivity One step within an operation.
-type NodeHistoryActivity struct {
-	// CloseTime End time. Absent while running.
-	CloseTime *time.Time `json:"closeTime,omitempty"`
-
-	// DurationMs Duration in milliseconds, or elapsed time if still running.
-	DurationMs int64 `json:"durationMs"`
-
-	// FailureMessage Why the step failed, when it did.
-	FailureMessage *string `json:"failureMessage,omitempty"`
-
-	// Name Step name. Names are illustrative.
-	Name string `json:"name"`
-
-	// ScheduledTime When the step was scheduled.
-	ScheduledTime time.Time `json:"scheduledTime"`
-
-	// Status One of Running, Completed, Failed or Canceled.
-	Status string `json:"status"`
-}
-
-// NodeHistoryWorkflow One operation run for the node.
-type NodeHistoryWorkflow struct {
-	// Activities Steps of the operation, with per-step timing.
-	Activities []NodeHistoryActivity `json:"activities"`
-
-	// CloseTime End time. Absent while running.
-	CloseTime *time.Time `json:"closeTime,omitempty"`
-
-	// DurationMs Duration in milliseconds, or elapsed time if still running.
-	DurationMs int64 `json:"durationMs"`
-
-	// RunID Run ID.
-	RunID string `json:"runID"`
-
-	// StartTime Start time.
-	StartTime time.Time `json:"startTime"`
-
-	// Status One of Running, Completed, Failed, Canceled, Terminated, TimedOut, ContinuedAsNew, Paused or Unknown.
-	Status string `json:"status"`
-
-	// WorkflowID Operation ID.
-	WorkflowID string `json:"workflowID"`
-
-	// WorkflowType Operation name. Names are illustrative.
-	WorkflowType string `json:"workflowType"`
-}
-
 // NodeNamePrefix Prefix for generated node names: `<cluster name>-<nodeNamePrefix>-<suffix>`.
 // CWE assigns suffix as a 4-digit decimal number (0000–9999).
 // Generated names must fit within 63 characters (Kubernetes Node name limit).

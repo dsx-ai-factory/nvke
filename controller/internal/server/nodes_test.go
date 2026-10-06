@@ -283,7 +283,7 @@ func TestNodeService_ListNodes(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("ListNodes", mock.Anything, tt.filters).Return(tt.dbNodes, tt.dbError)
 
-			service := server.NewNodeService(&slog.Logger{}, mockDB, nil, false)
+			service := server.NewNodeService(&slog.Logger{}, mockDB, false)
 
 			resp, err := service.ListNodes(context.Background(), api.ListNodesRequestObject{
 				Params: api.ListNodesParams{
@@ -381,7 +381,7 @@ func TestNodeService_GetNode(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("GetNode", mock.Anything, tt.nodeID).Return(tt.dbNode, tt.dbError)
 
-			service := server.NewNodeService(&slog.Logger{}, mockDB, nil, false)
+			service := server.NewNodeService(&slog.Logger{}, mockDB, false)
 
 			resp, err := service.GetNode(context.Background(), api.GetNodeRequestObject{
 				NodeID: tt.nodeID,
@@ -680,7 +680,7 @@ func TestNodeService_DeleteNode(t *testing.T) {
 
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-			service := server.NewNodeService(&slog.Logger{}, mockDB, nil, false)
+			service := server.NewNodeService(&slog.Logger{}, mockDB, false)
 
 			var body *api.DeleteNodeJSONRequestBody
 			if tt.machineHealthIssue != nil || tt.forceUnreachable {
@@ -731,41 +731,6 @@ func TestNodeService_DeleteNode(t *testing.T) {
 			mockDB.MockTx.AssertExpectations(t)
 		})
 	}
-}
-
-func TestNodeService_GetNodeHistory(t *testing.T) {
-	nodeID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
-
-	t.Run("returns empty workflows when temporal client is nil", func(t *testing.T) {
-		mockDB := &mockDB{}
-		mockDB.On("GetNode", mock.Anything, nodeID).Return(db.Node{ID: nodeID}, nil)
-
-		service := server.NewNodeService(&slog.Logger{}, mockDB, nil, false)
-		resp, err := service.GetNodeHistory(context.Background(), api.GetNodeHistoryRequestObject{
-			NodeID: nodeID,
-		})
-
-		require.NoError(t, err)
-		result, ok := resp.(api.GetNodeHistory200JSONResponse)
-		require.True(t, ok)
-		assert.NotNil(t, result.Workflows)
-		assert.Empty(t, result.Workflows)
-		mockDB.AssertExpectations(t)
-	})
-
-	t.Run("returns 404 when node does not exist", func(t *testing.T) {
-		mockDB := &mockDB{}
-		mockDB.On("GetNode", mock.Anything, nodeID).Return(db.Node{}, db.ErrNotFound)
-
-		service := server.NewNodeService(&slog.Logger{}, mockDB, nil, false)
-		resp, err := service.GetNodeHistory(context.Background(), api.GetNodeHistoryRequestObject{
-			NodeID: nodeID,
-		})
-
-		require.NoError(t, err)
-		assert.IsType(t, api.GetNodeHistory404Response{}, resp)
-		mockDB.AssertExpectations(t)
-	})
 }
 
 func mockDBNodeConditions(now time.Time) db.NodeConditions {
@@ -994,7 +959,7 @@ func TestNodeService_ListNodes_ControlPlaneRollout(t *testing.T) {
 		}, nil,
 	)
 
-	service := server.NewNodeService(&slog.Logger{}, mockDB, nil, false)
+	service := server.NewNodeService(&slog.Logger{}, mockDB, false)
 
 	resp, err := service.ListNodes(context.Background(), api.ListNodesRequestObject{})
 	require.NoError(t, err)
@@ -1068,7 +1033,7 @@ func TestNodeService_GetNode_ControlPlaneRollout(t *testing.T) {
 		[]db.ControlPlaneConfiguration{{ID: driftedCfgID, Config: driftedSpec}}, nil,
 	)
 
-	service := server.NewNodeService(&slog.Logger{}, mockDB, nil, false)
+	service := server.NewNodeService(&slog.Logger{}, mockDB, false)
 
 	resp, err := service.GetNode(context.Background(), api.GetNodeRequestObject{NodeID: nodeID})
 	require.NoError(t, err)
@@ -1164,7 +1129,7 @@ func TestNodeService_DeleteControlPlaneNodeThroughController(t *testing.T) {
 			mockDB := &mockDB{MockTx: tx}
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-			service := server.NewNodeService(&slog.Logger{}, mockDB, nil, true)
+			service := server.NewNodeService(&slog.Logger{}, mockDB, true)
 
 			resp, err := service.DeleteNode(context.Background(), api.DeleteNodeRequestObject{
 				NodeID: tt.target.ID,

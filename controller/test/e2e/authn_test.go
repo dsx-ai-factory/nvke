@@ -151,8 +151,8 @@ var _ = Describe("NKE API authentication", Label("authn"), func() {
 				"%s is on the anonymous surface in internal/auth/routes.go and must stay reachable without a credential; response body: %s",
 				path, body)
 		},
-		// Exempt deliberately: Tilt probes it and the UI reads temporalUIURL and
-		// temporalNamespace from it with no token. The only "/api/"-prefixed
+		// Exempt deliberately: Tilt probes it and the UI reads version metadata
+		// from it with no token. The only "/api/"-prefixed
 		// exemption, so the only one a narrowing of the exemption table would
 		// break. /healthz and /readyz are covered credential-free in health_test.go.
 		Entry("version", "/api/version"),

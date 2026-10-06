@@ -10,7 +10,6 @@ import (
 	"log/slog"
 
 	"github.com/google/uuid"
-	"go.temporal.io/sdk/client"
 
 	"github.com/dsx-ai-factory/nke/controller/api"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
@@ -19,9 +18,8 @@ import (
 )
 
 type nodeService struct {
-	logger         *slog.Logger
-	db             db.DB
-	temporalClient client.Client
+	logger *slog.Logger
+	db     db.DB
 
 	// useControlPlaneController makes DeleteNode record a control-plane node
 	// delete as intent for the control-plane controller instead of starting the
@@ -32,13 +30,11 @@ type nodeService struct {
 func NewNodeService(
 	logger *slog.Logger,
 	database db.DB,
-	temporalClient client.Client,
 	useControlPlaneController bool,
 ) *nodeService {
 	return &nodeService{
 		logger:                    logger,
 		db:                        database,
-		temporalClient:            temporalClient,
 		useControlPlaneController: useControlPlaneController,
 	}
 }

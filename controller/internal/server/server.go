@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	pathpkg "path"
 	"time"
@@ -91,7 +90,6 @@ func NewServer(
 		w.Header().Set("Content-Type", "application/json")
 		resp := map[string]any{
 			"version":           version.Version,
-			"temporalUIURL":     temporalUIURL(cfg),
 			"temporalNamespace": cfg.TemporalNamespace,
 			// Exposes the control-plane-controller provisioning feature flag so the
 			// UI can switch between cluster-level control plane config mode and the
@@ -208,7 +206,7 @@ func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, tempo
 		),
 		nodePoolService:      *nodePoolService,
 		nodeSetService:       *NewNodeSetService(logger, database, temporalClient),
-		nodeService:          *NewNodeService(logger, database, temporalClient, cfg.UseControlPlaneControllerForControlPlane()),
+		nodeService:          *NewNodeService(logger, database, cfg.UseControlPlaneControllerForControlPlane()),
 		osProfileService:     *NewOSProfileService(cfg, logger),
 		configProfileService: *NewConfigProfileService(cfg, logger),
 	}
@@ -221,23 +219,4 @@ type serverImpl struct {
 	nodeService
 	osProfileService
 	configProfileService
-}
-
-// temporalUIURL returns the Temporal Web UI base URL to surface in the version
-// response. An explicit TEMPORAL_UI_URL always wins (e.g. Tilt sets this to
-// the local port-forward). Otherwise it is derived from the Teleport proxy
-// address and site controller name, which are always set in non-local
-// deployments.
-func temporalUIURL(cfg config.Config) string {
-	if cfg.TemporalUIURL != "" {
-		return cfg.TemporalUIURL
-	}
-	if cfg.Teleport.ProxyAddress == "" || cfg.NKESiteControllerName == "" {
-		return ""
-	}
-	host := cfg.Teleport.ProxyAddress
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	return fmt.Sprintf("https://temporal-web-%s.%s", cfg.NKESiteControllerName, host)
 }

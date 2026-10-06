@@ -180,9 +180,7 @@ tags:
   - name: Nodes
     description: |
       A single machine in a cluster, in a node pool or in the control plane,
-      with lifecycle and health conditions. A node's history lists the
-      provisioning, reboot and teardown operations run for it, with per-step
-      timing.
+      with lifecycle and health conditions.
   - name: Catalog
     description: Profile catalogs.
 
@@ -878,36 +876,6 @@ paths:
                 $ref: "#/components/schemas/GenericError"
               example:
                 message: 'cannot delete control-plane node "tenant-a-prod-cp-0002": only 2 joined control-plane node(s) would remain, below the minimum of 3 needed for etcd to survive another failure. Raise the control-plane desired count first so a replacement joins before this node is removed, or delete the cluster instead'
-        "404":
-          description: Node not found. No body is returned.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-
-  /nodes/{nodeID}/history:
-    parameters:
-      - name: nodeID
-        in: path
-        required: true
-        description: Node ID.
-        schema:
-          type: string
-          format: uuid
-    get:
-      tags: [Nodes]
-      summary: Get node operation history
-      operationId: getNodeHistory
-      description: |
-        Returns the provisioning, reboot and teardown operations NKE has run for
-        a node, with per-step timing. Up to 50 runs are returned per operation.
-      responses:
-        "200":
-          description: Node operation history
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NodeHistory"
         "404":
           description: Node not found. No body is returned.
         "401":
@@ -2167,93 +2135,6 @@ components:
           items:
             $ref: "#/components/schemas/Node"
           description: Nodes.
-
-    NodeHistory:
-      description: The provisioning, reboot and teardown operations run for a node.
-      type: object
-      required:
-        - workflows
-      properties:
-        workflows:
-          type: array
-          items:
-            $ref: "#/components/schemas/NodeHistoryWorkflow"
-          description: Operations run for the node.
-
-    NodeHistoryWorkflow:
-      description: One operation run for the node.
-      type: object
-      required:
-        - workflowID
-        - runID
-        - workflowType
-        - status
-        - startTime
-        - durationMs
-        - activities
-      properties:
-        workflowID:
-          type: string
-          description: Operation ID.
-        runID:
-          type: string
-          description: Run ID.
-        workflowType:
-          type: string
-          description: Operation name. Names are illustrative.
-          example: ProvisionNode
-        status:
-          type: string
-          description: One of Running, Completed, Failed, Canceled, Terminated, TimedOut, ContinuedAsNew, Paused or Unknown.
-        startTime:
-          type: string
-          format: date-time
-          description: Start time.
-        closeTime:
-          type: string
-          format: date-time
-          description: End time. Absent while running.
-        durationMs:
-          type: integer
-          format: int64
-          description: Duration in milliseconds, or elapsed time if still running.
-        activities:
-          type: array
-          items:
-            $ref: "#/components/schemas/NodeHistoryActivity"
-          description: Steps of the operation, with per-step timing.
-
-    NodeHistoryActivity:
-      description: One step within an operation.
-      type: object
-      required:
-        - name
-        - scheduledTime
-        - status
-        - durationMs
-      properties:
-        name:
-          type: string
-          description: Step name. Names are illustrative.
-          example: CreateInstance
-        scheduledTime:
-          type: string
-          format: date-time
-          description: When the step was scheduled.
-        closeTime:
-          type: string
-          format: date-time
-          description: End time. Absent while running.
-        durationMs:
-          type: integer
-          format: int64
-          description: Duration in milliseconds, or elapsed time if still running.
-        status:
-          type: string
-          description: One of Running, Completed, Failed or Canceled.
-        failureMessage:
-          type: string
-          description: Why the step failed, when it did.
 
     DeleteNodeRequest:
       description: Optional body of a node delete.

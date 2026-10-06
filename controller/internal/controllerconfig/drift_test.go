@@ -126,7 +126,6 @@ var stayEnv = map[string]string{
 	"DB_QUERY_LOG_LEVEL":                                    chartUnset,
 	"DB_MAX_OPEN_CONNECTIONS":                               chartUnset,
 	"SERVER_LISTEN_ADDRESS":                                 chartUnset,
-	"TEMPORAL_UI_URL":                                       chartUnset,
 	"OUTBOX_POLLING_INTERVAL":                               chartUnset,
 	"OUTBOX_JITTER_FACTOR":                                  chartUnset,
 	"OUTBOX_BATCH_SIZE":                                     chartUnset,

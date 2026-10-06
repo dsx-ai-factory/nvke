@@ -54,8 +54,8 @@ func isAnonymousPath(p string) bool {
 	// Read by the Swagger UI page and by client generators.
 	case "/openapi.yaml",
 
-		// Tilt points both probes at it, and the UI reads temporalUIURL and
-		// temporalNamespace from it with no token.
+		// Tilt points both probes at it, and the UI reads version metadata
+		// from it with no token.
 		"/api/version",
 
 		// The mux redirects this onto the subtree, but downstream of here, so
