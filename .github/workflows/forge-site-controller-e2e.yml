@@ -235,8 +235,10 @@ jobs:
       SITE_CONTROLLER_VERSION: ${{ inputs.controller-version || vars.SITE_E2E_CONTROLLER_VERSION || vars.FORGE_E2E_CONTROLLER_VERSION }}
       # The same shape for nkectl: empty builds it from this checkout, a
       # version stages that cli/<version> release. The resolve step fills in
-      # the commit when it builds, so -e2e.versions always names one.
-      SITE_CLI_VERSION: ${{ inputs.cli-version || vars.SITE_E2E_CLI_VERSION }}
+      # the commit when it builds, so -e2e.versions always names one. Named
+      # for the component, as CAPI_PROVISIONED_VERSION is; the make variable
+      # it feeds keeps the SITE_ prefix.
+      CLI_VERSION: ${{ inputs.cli-version || vars.SITE_E2E_CLI_VERSION }}
       # The name CWE is installed under, which the deploy path decides and the
       # suite has to be told. The deploy path is exported from
       # SITE_CONTROLLER_VERSION, and CWE was renamed partway through the
@@ -481,11 +483,11 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
-          if [ -z "${SITE_CLI_VERSION}" ]; then
+          if [ -z "${CLI_VERSION}" ]; then
             version="$(git rev-parse --short=12 HEAD)"
             {
               echo "SITE_CLI_BUILD=1"
-              echo "SITE_CLI_VERSION=${version}"
+              echo "CLI_VERSION=${version}"
               echo "SITE_NKECTL=cli/dist/nkectl-linux-${SITE_ARCH}"
             } >> "${GITHUB_ENV}"
             echo "building nkectl from ${version}"
@@ -493,21 +495,21 @@ jobs:
           fi
           # The two shapes release.yml publishes a cli/<version> tag in. Also
           # what keeps the value inert in the URL below and in site-inputs.
-          if [[ ! "${SITE_CLI_VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
-            echo "::error::cli-version '${SITE_CLI_VERSION}' is neither vX.Y.Z nor vX.Y.Z-rc.N"
+          if [[ ! "${CLI_VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+            echo "::error::cli-version '${CLI_VERSION}' is neither vX.Y.Z nor vX.Y.Z-rc.N"
             exit 1
           fi
           if ! curl -fsS -o /dev/null --retry 3 -H "Authorization: Bearer ${GITHUB_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
-              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/releases/tags/cli/${SITE_CLI_VERSION}"; then
-            echo "::error::no published cli/${SITE_CLI_VERSION} release"
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/releases/tags/cli/${CLI_VERSION}"; then
+            echo "::error::no published cli/${CLI_VERSION} release"
             exit 1
           fi
           {
             echo "SITE_CLI_BUILD=0"
             echo "SITE_NKECTL=${SITE_INPUTS}/nkectl/nkectl-linux-${SITE_ARCH}"
           } >> "${GITHUB_ENV}"
-          echo "staging the published nkectl ${SITE_CLI_VERSION}"
+          echo "staging the published nkectl ${CLI_VERSION}"
 
       # Two checks that each cost a second and each save a run: the ref the
       # join token will see, and the three values a pull_request event does
@@ -570,7 +572,7 @@ jobs:
               ;;
           esac
           echo "SITE_IMAGES=${images}" >> "${GITHUB_ENV}"
-          echo "stage=${SITE_STAGE} controller=${SITE_CONTROLLER_VERSION} cli=${SITE_CLI_VERSION} images=${images}"
+          echo "stage=${SITE_STAGE} controller=${SITE_CONTROLLER_VERSION} cli=${CLI_VERSION} images=${images}"
 
       # nkectl is a client of the CWE it bootstraps, so the two have to agree
       # on the cluster API. By default both are built from this checkout,
@@ -786,7 +788,7 @@ jobs:
             SITE_CONTROLLER_BUILD="${SITE_CONTROLLER_BUILD}" \
             SITE_ARCH="${SITE_ARCH}" \
             SITE_CLI_BUILD="${SITE_CLI_BUILD}" \
-            SITE_CLI_VERSION="${SITE_CLI_VERSION}" \
+            SITE_CLI_VERSION="${CLI_VERSION}" \
             SITE_IMAGE_REGISTRY="${SITE_IMAGES}" \
             SITE_PROVISIONED_VERSION="${CAPI_PROVISIONED_VERSION}" \
             SITE_INPUTS="${SITE_INPUTS}"
@@ -894,7 +896,7 @@ jobs:
           rows=(
             "stage|SITE_STAGE|IN_STAGE|VAR_STAGE|SITE_E2E_STAGE|WAS_STAGE|FORGE_E2E_STAGE"
             "controller version|SITE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|SITE_E2E_CONTROLLER_VERSION|WAS_CONTROLLER_VERSION|FORGE_E2E_CONTROLLER_VERSION"
-            "nkectl version|SITE_CLI_VERSION|IN_CLI_VERSION|VAR_CLI_VERSION|SITE_E2E_CLI_VERSION||"
+            "nkectl version|CLI_VERSION|IN_CLI_VERSION|VAR_CLI_VERSION|SITE_E2E_CLI_VERSION||"
             "keep the node|KEEP_SITE|IN_KEEP_SITE|VAR_KEEP_SITE|SITE_E2E_KEEP_SITE||"
             "image registry|SITE_IMAGE_REGISTRY|IN_IMAGE_REGISTRY|VAR_IMAGE_REGISTRY|SITE_E2E_IMAGE_REGISTRY|WAS_IMAGE_REGISTRY|FORGE_E2E_IMAGE_REGISTRY"
             "NGC org|SITE_E2E_NGC_ORG||VAR_NGC_ORG|SITE_E2E_NGC_ORG|WAS_NGC_ORG|FORGE_E2E_NGC_ORG"
@@ -1003,7 +1005,7 @@ jobs:
               # The resolve steps fill these in from the checkout when no
               # published version was asked for, so neither arm above named it.
               if { [ "${resolved}" = "SITE_CONTROLLER_VERSION" ] && [ "${SITE_CONTROLLER_BUILD}" = "1" ]; } ||
-                 { [ "${resolved}" = "SITE_CLI_VERSION" ] && [ "${SITE_CLI_BUILD}" = "1" ]; }; then
+                 { [ "${resolved}" = "CLI_VERSION" ] && [ "${SITE_CLI_BUILD}" = "1" ]; }; then
                 source="built from this checkout"
               fi
               printf '  %-22s = %s\n' "${label}" "${value}"
@@ -1099,7 +1101,7 @@ jobs:
             -e2e.config=e2e-config.yaml \
             -e2e.environment=forge \
             -e2e.site-stage="${SITE_STAGE}" \
-            -e2e.versions="controller=${SITE_CONTROLLER_VERSION},cli=${SITE_CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}" \
+            -e2e.versions="controller=${SITE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}" \
             -e2e.capabilities="${CAPABILITIES}" \
             "${keep[@]}" 2>&1 | tee site-e2e.log
 
