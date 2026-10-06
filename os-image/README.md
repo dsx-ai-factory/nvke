@@ -346,9 +346,11 @@ the authenticated bytes immutable until composition returns. The composer
 copies each component archive through a no-follow descriptor into a bounded,
 private snapshot before validating and staging its regular package members.
 This snapshot prevents caller writes between framing validation and parsing.
-The composer rejects unsafe entries and duplicate filenames, and bounds input archives to
-16384 entries each, 16384 packages across component archives plus the standalone
-agent, 1 GiB per package and 7 GiB total package bytes. It normalizes archive
+The composer rejects unsafe entries and duplicate filenames. Each input archive
+is limited to 16,384 entries. Component archives may supply at most 16,384
+packages, plus one standalone agent package, for 16,385 packages total. The
+limits are 1 GiB per package and 7 GiB aggregate package bytes, including the
+standalone agent. It normalizes archive
 directory permissions independently of the host
 umask, and preserves all staged versions in the local APT index. The ISO patcher
 accepts a prepared local ISO and performs no acquisition. The runner must verify
