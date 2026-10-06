@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Scenario L: 100 CRDs × 1000 CRs = 100,000 CRs  |  Simple schema
+# This config creates CRDs only. The custom-resource pass is a separate
+# invocation per CRD -- see cr-pass.yaml.tmpl.
+global: {}
+
+jobs:
+  - name: create-crds-l
+    jobType: create
+    jobIterations: 100
+    qps: 20
+    burst: 20
+    namespacedIterations: false
+    waitWhenFinished: true
+    verifyObjects: false
+    maxWaitTimeout: 20m
+    cleanup: false
+    objects:
+      - objectTemplate: crd-simple.yaml
+        replicas: 1
+        inputVars:
+          ScenarioGroup: l

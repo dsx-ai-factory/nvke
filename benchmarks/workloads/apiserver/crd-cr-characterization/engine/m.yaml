@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Scenario M: 50 CRDs × 100 CRs = 5,000 CRs  |  Complex (nested) schema
+# This config creates CRDs only. The custom-resource pass is a separate
+# invocation per CRD -- see cr-pass.yaml.tmpl.
+global: {}
+
+jobs:
+  - name: create-crds-m
+    jobType: create
+    jobIterations: 50
+    qps: 20
+    burst: 20
+    namespacedIterations: false
+    waitWhenFinished: true
+    verifyObjects: false
+    maxWaitTimeout: 10m
+    cleanup: false
+    objects:
+      - objectTemplate: crd-complex.yaml
+        replicas: 1
+        inputVars:
+          ScenarioGroup: m

@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# CR template — Simple schema instance
+# Target etcd size: ~2000-3000 bytes (matches the ExternalSecret / VaultStaticSecret range)
+#
+# Two-pass templating:
+#   Pass 1 - envsubst:
+#     ${CRD_KIND}   → e.g. TestResource00042
+#     ${CRD_INDEX}  → e.g. 00042
+#     ${SCENARIO}   → e.g. xs
+#   Pass 2 — kube-burner Go templates:
+#     {{.Iteration}}    → CR index within this CRD (0 to CR_COUNT-1)
+#     {{.JobNamespace}} → namespace set in the per-CRD kube-burner config
+apiVersion: ${SCENARIO}.burner.io/v1
+kind: ${CRD_KIND}
+metadata:
+  name: testresource-${CRD_INDEX}-{{printf "%06d" .Iteration}}
+  namespace: {{.JobNamespace}}
+  labels:
+    burner.io/crd-index: "${CRD_INDEX}"
+    burner.io/scenario: "${SCENARIO}"
+    burner.io/schema: simple
+spec:
+  storeRef:
+    name: secretstore-${CRD_INDEX}
+    kind: SecretStore
+  path: /data/${SCENARIO}/${CRD_INDEX}/secret-{{printf "%06d" .Iteration}}
+  target:
+    name: generated-secret-${CRD_INDEX}-{{printf "%06d" .Iteration}}
+    creationPolicy: Owner
+  refreshInterval: 1h
+  enabled: true
+  data:
+    - secretKey: DB_PASSWORD
+      remoteRef:
+        key: database/${CRD_INDEX}/credentials
+        property: password
+        version: latest
+    - secretKey: API_KEY
+      remoteRef:
+        key: api/${CRD_INDEX}/keys
+        property: primary
+        version: latest
+    - secretKey: TLS_CERT
+      remoteRef:
+        key: pki/${CRD_INDEX}/tls
+        property: certificate
+        version: latest
+    - secretKey: TLS_KEY
+      remoteRef:
+        key: pki/${CRD_INDEX}/tls
+        property: privateKey
+        version: latest
+    - secretKey: OAUTH_SECRET
+      remoteRef:
+        key: oauth/${CRD_INDEX}/credentials
+        property: clientSecret
+        version: latest

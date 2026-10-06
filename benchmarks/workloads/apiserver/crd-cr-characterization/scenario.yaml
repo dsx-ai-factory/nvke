@@ -1,0 +1,162 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Validated against ../../../schemas/scenario.schema.json.
+# The human-readable replication narrative is README.md in this directory.
+---
+slug: crd-cr-characterization
+workload: apiserver
+description: >-
+  API-server behaviour under burst create and delete of Custom Resource
+  Definitions and Custom Resources, across five sizes and two schema
+  complexity classes.
+
+intent:
+  goal: >-
+    Establish how the API server behaves when a controller-heavy cluster
+    registers many CRDs and writes many custom resources under them: whether
+    request latency holds, whether API Priority and Fairness rejects anything
+    at the default inflight configuration, and whether etcd absorbs the write
+    volume.
+  characterizes:
+    - POST p99 latency for CRD and CR creation
+    - DELETE p99 latency during teardown
+    - API Priority and Fairness rejections at the default inflight limits
+    - etcd database growth against total bytes written
+    - The cost of schema complexity, measured as simple against nested schemas
+
+topology:
+  node_count: 7
+  node_type:
+    cpu: AMD EPYC 9004 series
+    cpu_cores: 128
+    memory_gib: 1007
+    arch: x86_64
+  roles:
+    control_plane: 3
+    worker: 2
+    monitoring: 2
+
+sizing:
+  derivation:
+    rule: >-
+      Sizes vary two independent inputs: how many CRDs are registered, and how
+      many custom resources are written under each. Object counts are absolute
+      rather than derived from cluster shape -- this workload loads the control
+      plane, so it does not scale with worker count. Scale it to your own
+      cluster by holding the shape and moving the CRD count: registering a CRD
+      costs the API server discovery and OpenAPI work regardless of how many
+      workers exist, and that cost is what the larger sizes expose. The two
+      schema classes are defined by the size of the stored resource, roughly
+      2-3 KB for simple and 6-10 KB for nested, because validation and
+      serialization cost tracks object size rather than field names.
+    inputs:
+      - CRD count
+      - Custom resources per CRD
+      - Schema complexity class
+  observed:
+    sizes: [XS, S, M, L, XL]
+    crd_count: [100, 500, 50, 100, 100]
+    crs_per_crd: [100, 100, 100, 1000, 100]
+    schema_complexity: [simple, simple, complex, simple, complex]
+    # Client-side rate, per phase. XS ran the CRD pass at 10 rather than 20;
+    # carried from the published run rather than normalised, so the XS-to-S
+    # comparison holds one more variable than the others.
+    crd_pass_qps: [10, 20, 20, 20, 20]
+    crd_pass_burst: [10, 20, 20, 20, 20]
+    cr_pass_qps: 50
+    cr_pass_burst: 50
+    apf_inflight_mutating: 200
+    apf_inflight_read_only: 400
+
+stack:
+  kubernetes: 1.34.2
+  cni:
+    name: OVN-Kubernetes
+    version: 1.2.0
+    build: vendor
+    dataplane: OVS 3.6.1
+  # Determined rather than observed: the run tracked the latest kube-burner
+  # release rather than pinning one, and v2.6.1 was the current release from
+  # 2026-04-13 until v2.6.2 on 2026-05-19 -- a window containing the run date.
+  engine:
+    name: kube-burner
+    version: v2.6.1
+    build: upstream
+  container_runtime: containerd 1.7.28
+  node_os:
+    distro: Ubuntu 22.04.4 LTS
+    kernel: 5.15.0-113-generic
+  etcd: 3.6.5
+
+engine_config: engine/xs.yaml
+
+metrics:
+  required:
+    - size
+    - scenario
+    - duration_s
+    - post_p99_ms
+    - delete_p99_ms
+    - peak_reqs_per_sec
+    - etcd_size_increase_mb
+  workload_specific:
+    - num_crds
+    - num_crs_per_crd
+    - schema_complexity
+    - 429s_count
+
+slo:
+  - metric: post_p99_ms
+    op: lte
+    value: 1000
+    unit: milliseconds
+    severity: error
+    source: "Scenario bar at the SIG-Scalability mutating-API value, 1s p99; that SLO excludes CRDs"
+  - metric: delete_p99_ms
+    op: lte
+    value: 1000
+    unit: milliseconds
+    severity: error
+    source: "Scenario bar at the SIG-Scalability mutating-API value, 1s p99; that SLO excludes CRDs"
+  - metric: 429s_count
+    op: lte
+    value: 0
+    unit: count
+    severity: error
+    source: >-
+      A rejection at the default 200 mutating / 400 read-only inflight
+      configuration means the workload exceeded what the API server admits,
+      which is the condition this scenario exists to detect.
+
+dashboard: ../../../dashboards/1.34/control-plane.json
+
+prerequisites:
+  namespaces:
+    - crd-cr-characterization
+  baseline_validation:
+    - Confirm kubectl reaches the cluster and every node is Ready
+    - Start each size from a clean baseline; etcd growth is measured across the create window
+    - Confirm no other large-scale workload is running against the same control plane
+    - Confirm API Priority and Fairness is at its default inflight configuration
+
+upstream:
+  project: https://github.com/kube-burner/kube-burner
+  docs: https://kube-burner.github.io/kube-burner/
+  engine: kube-burner
+  engine_version: v2.6.1
+  config: engine/xs.yaml
+  argv:
+    - "cd engine && kube-burner init -c xs.yaml"
+    - "cd engine && kube-burner init -c s.yaml"
+    - "cd engine && kube-burner init -c m.yaml"
+    - "cd engine && kube-burner init -c l.yaml"
+    - "cd engine && kube-burner init -c xl.yaml"
+  notes: >-
+    One config per size, CRD pass only, each a separate run against a clean
+    baseline. Run from engine/: kube-burner resolves paths from its working
+    directory. Custom resources are a second pass from cr-pass.yaml.tmpl, one
+    invocation per CRD, and teardown is kubectl. Metrics come from kube-burner
+    index over the create and teardown windows; the README has the steps. The
+    version is determined from the run date: v2.6.1 was the current release on
+    2026-04-17.

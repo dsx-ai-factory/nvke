@@ -1,0 +1,200 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# CR template — Complex (nested) schema instance
+# Target etcd size: ~6000-10000 bytes (matches a controller-heavy production cluster ServiceMonitor/PrometheusRule/OTelCollector range)
+#
+# Two-pass templating:
+#   Pass 1 - envsubst:
+#     ${CRD_KIND}   → e.g. TestResource00042
+#     ${CRD_INDEX}  → e.g. 00042
+#     ${SCENARIO}   → e.g. m
+#   Pass 2 — kube-burner Go templates:
+#     {{.Iteration}}    → CR index within this CRD (0 to CR_COUNT-1)
+#     {{.JobNamespace}} → namespace set in the per-CRD kube-burner config
+apiVersion: ${SCENARIO}.burner.io/v1
+kind: ${CRD_KIND}
+metadata:
+  name: testresource-${CRD_INDEX}-{{printf "%06d" .Iteration}}
+  namespace: {{.JobNamespace}}
+  labels:
+    burner.io/crd-index: "${CRD_INDEX}"
+    burner.io/scenario: "${SCENARIO}"
+    burner.io/schema: complex
+spec:
+  selector:
+    matchLabels:
+      app: service-${CRD_INDEX}
+      tier: backend
+      environment: production
+      owner: platform-team
+    matchExpressions:
+      - key: region
+        operator: In
+        values:
+          - us-west-2
+          - eu-west-1
+          - ap-southeast-1
+      - key: maintenance
+        operator: DoesNotExist
+        values: []
+      - key: canary
+        operator: NotIn
+        values:
+          - "true"
+  namespaceSelector:
+    matchNames:
+      - monitoring
+      - observability
+      - platform
+      - kube-system
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      scheme: https
+      honorLabels: true
+      tlsConfig:
+        caFile: /etc/ssl/certs/ca-bundle.crt
+        certFile: /etc/ssl/certs/client-${CRD_INDEX}.crt
+        keyFile: /etc/ssl/private/client-${CRD_INDEX}.key
+        serverName: metrics-${CRD_INDEX}.cluster.local
+        insecureSkipVerify: false
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_name, __meta_kubernetes_namespace]
+          targetLabel: instance
+          regex: (.+);(.+)
+          replacement: $2/$1
+          action: replace
+        - sourceLabels: [__meta_kubernetes_pod_label_app]
+          targetLabel: app
+          action: replace
+        - sourceLabels: [__meta_kubernetes_node_name]
+          targetLabel: node
+          action: replace
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: go_gc_.*
+          action: drop
+        - sourceLabels: [namespace]
+          targetLabel: kubernetes_namespace
+          action: replace
+        - sourceLabels: [__name__]
+          regex: process_open_fds|process_max_fds
+          action: drop
+    - port: admin
+      path: /admin/metrics
+      interval: 60s
+      scrapeTimeout: 20s
+      scheme: http
+      honorLabels: false
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_service_name]
+          targetLabel: service
+          action: replace
+        - sourceLabels: [__meta_kubernetes_pod_ready]
+          regex: "true"
+          action: keep
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: debug_.*
+          action: drop
+        - sourceLabels: [__name__]
+          regex: test_.*
+          action: drop
+  rules:
+    - alert: HighErrorRate-${CRD_INDEX}
+      expr: rate(http_requests_total{status=~"5..",service="${CRD_INDEX}"}[5m]) / rate(http_requests_total{service="${CRD_INDEX}"}[5m]) > 0.05
+      for: 5m
+      labels:
+        severity: critical
+        team: platform
+        crd_index: "${CRD_INDEX}"
+        scenario: "${SCENARIO}"
+      annotations:
+        summary: "High error rate on service ${CRD_INDEX}"
+        description: "Error rate above 5% for more than 5 minutes on service ${CRD_INDEX}."
+        runbook: "https://runbooks.example.com/alerts/high-error-rate"
+    - alert: HighLatencyP99-${CRD_INDEX}
+      expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{service="${CRD_INDEX}"}[5m])) > 1.0
+      for: 10m
+      labels:
+        severity: warning
+        team: platform
+        crd_index: "${CRD_INDEX}"
+        scenario: "${SCENARIO}"
+      annotations:
+        summary: "P99 latency high on service ${CRD_INDEX}"
+        description: "P99 latency above 1s for 10 consecutive minutes on service ${CRD_INDEX}."
+        runbook: "https://runbooks.example.com/alerts/high-latency"
+    - alert: PodRestartLoop-${CRD_INDEX}
+      expr: increase(kube_pod_container_status_restarts_total{namespace="${SCENARIO}",service="${CRD_INDEX}"}[1h]) > 5
+      for: 15m
+      labels:
+        severity: warning
+        team: platform
+        crd_index: "${CRD_INDEX}"
+        scenario: "${SCENARIO}"
+      annotations:
+        summary: "Pod restart loop detected for service ${CRD_INDEX}"
+        description: "Pod restarted more than 5 times in the last hour for service ${CRD_INDEX}."
+        runbook: "https://runbooks.example.com/alerts/pod-restart-loop"
+    - alert: CertExpiringSoon-${CRD_INDEX}
+      expr: (x509_cert_expiry{service="${CRD_INDEX}"} - time()) / 86400 < 30
+      for: 1h
+      labels:
+        severity: warning
+        team: security
+        crd_index: "${CRD_INDEX}"
+        scenario: "${SCENARIO}"
+      annotations:
+        summary: "TLS certificate expiring within 30 days for service ${CRD_INDEX}"
+        description: "Certificate for service ${CRD_INDEX} expires in less than 30 days. Renew immediately."
+        runbook: "https://runbooks.example.com/alerts/cert-expiring"
+  pipeline:
+    receivers:
+      - name: otlp-grpc-${CRD_INDEX}
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+      - name: otlp-http-${CRD_INDEX}
+        otlp:
+          protocols:
+            http:
+              endpoint: 0.0.0.0:55681
+    processors:
+      - name: batch-${CRD_INDEX}
+        batch:
+          timeout: 10s
+          sendBatchSize: 1024
+      - name: memory-limiter-${CRD_INDEX}
+        memoryLimiter:
+          checkInterval: 1s
+          limitMib: 512
+    exporters:
+      - name: prometheus-${CRD_INDEX}
+        endpoint: http://kube-prom-stack-kube-prome-prometheus.monitoring.svc.cluster.local:9090/api/v1/write
+        headers:
+          X-Scope-OrgID: platform-${CRD_INDEX}
+          X-Burner-Scenario: "${SCENARIO}"
+        tls:
+          insecure: false
+          caFile: /etc/ssl/certs/ca-bundle.crt
+      - name: otlp-collector-${CRD_INDEX}
+        endpoint: otelcol-${CRD_INDEX}.observability.svc.cluster.local:4317
+        headers:
+          authorization: Bearer burner-token-${CRD_INDEX}
+          X-Burner-Scenario: "${SCENARIO}"
+        tls:
+          insecure: true
+      - name: jaeger-${CRD_INDEX}
+        endpoint: jaeger-collector.tracing.svc.cluster.local:14250
+        headers:
+          X-Tenant: platform-${CRD_INDEX}
+        tls:
+          insecure: false
+          caFile: /etc/ssl/certs/ca-bundle.crt

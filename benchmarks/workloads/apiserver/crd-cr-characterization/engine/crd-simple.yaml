@@ -1,0 +1,104 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# CRD template — Simple schema
+# Inspired by: externalsecrets.external-secrets.io (2047-2241 B avg)
+#              vaultstaticsecrets.secrets.hashicorp.com (3146-4167 B avg)
+#              dnsendpoints.externaldns.k8s.io (1749 B avg)
+#
+# Pattern: flat spec with a store reference, key-value data mappings,
+#          and a status block with conditions — representative of the
+#          majority of secret-sync and DNS-style CRDs in a controller-heavy cluster.
+#
+# kube-burner variables used:
+#   {{.Iteration}}     — CRD index (0-based), zero-padded to 5 digits
+#   {{.ScenarioGroup}} — passed via inputVars (e.g. "xs", "s", "l")
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: testresources{{printf "%05d" .Iteration}}s.{{.ScenarioGroup}}.burner.io
+  labels:
+    burner.io/scenario: "{{.ScenarioGroup}}"
+    burner.io/iteration: "{{printf "%05d" .Iteration}}"
+    burner.io/schema: simple
+spec:
+  group: {{.ScenarioGroup}}.burner.io
+  names:
+    kind: TestResource{{printf "%05d" .Iteration}}
+    listKind: TestResource{{printf "%05d" .Iteration}}List
+    plural: testresources{{printf "%05d" .Iteration}}s
+    singular: testresource{{printf "%05d" .Iteration}}
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                storeRef:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    kind:
+                      type: string
+                      enum: [SecretStore, ClusterSecretStore]
+                path:
+                  type: string
+                target:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    creationPolicy:
+                      type: string
+                      enum: [Owner, Merge, None]
+                refreshInterval:
+                  type: string
+                enabled:
+                  type: boolean
+                data:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      secretKey:
+                        type: string
+                      remoteRef:
+                        type: object
+                        properties:
+                          key:
+                            type: string
+                          property:
+                            type: string
+                          version:
+                            type: string
+            status:
+              type: object
+              properties:
+                refreshTime:
+                  type: string
+                syncedResourceVersion:
+                  type: string
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string

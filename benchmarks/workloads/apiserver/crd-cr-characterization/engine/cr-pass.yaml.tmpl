@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Custom-resource pass, one per CRD. The README lists the substitutions.
+#
+# JobNamespace is an inputVar, not a kube-burner builtin (Iteration, Replica,
+# JobName, UUID, RunID), so the object template needs this block to render.
+#
+# qps 50 against 10-20 for the CRD pass -- registering a CRD costs the API
+# server far more than writing a resource under one.
+global: {}
+
+jobs:
+  - name: create-crs-${SCENARIO}-${CRD_INDEX}
+    jobType: create
+    jobIterations: ${CR_COUNT}
+    qps: 50
+    burst: 50
+    namespace: ${NAMESPACE}
+    namespacedIterations: false
+    waitWhenFinished: true
+    verifyObjects: false
+    maxWaitTimeout: 15m
+    cleanup: false
+    objects:
+      - objectTemplate: ${CR_TEMPLATE}
+        replicas: 1
+        inputVars:
+          JobNamespace: ${NAMESPACE}
+          JobName: ${SCENARIO}-${CRD_INDEX}
+          JobIteration: ${CRD_INDEX}

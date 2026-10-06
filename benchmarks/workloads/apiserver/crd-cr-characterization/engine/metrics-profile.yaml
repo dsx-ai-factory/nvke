@@ -1,0 +1,49 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# One instant query per figure, over the window kube-burner is given: a job's
+# run for `kube-burner init`, or --start/--end for `kube-burner index`.
+# {{.elapsed}} is that window's length. Latencies are in milliseconds.
+#
+# delete_p99_ms is single-object DELETE. A namespace delete removes its custom
+# resources by DELETECOLLECTION, which it does not include.
+
+- query: 1000 * histogram_quantile(0.99, sum(increase(apiserver_request_duration_seconds_bucket{job="apiserver", verb="POST", subresource!~"log|exec|portforward|attach|proxy"}[{{.elapsed}}])) by (le))
+  metricName: post_p99_ms
+  instant: true
+
+- query: 1000 * histogram_quantile(0.99, sum(increase(apiserver_request_duration_seconds_bucket{job="apiserver", verb="DELETE", subresource!~"log|exec|portforward|attach|proxy"}[{{.elapsed}}])) by (le))
+  metricName: delete_p99_ms
+  instant: true
+
+- query: 1000 * histogram_quantile(0.99, sum(increase(apiserver_request_duration_seconds_bucket{job="apiserver", verb=~"GET|LIST", subresource!~"log|exec|portforward|attach|proxy"}[{{.elapsed}}])) by (le))
+  metricName: read_p99_ms
+  instant: true
+
+- query: 1000 * histogram_quantile(0.99, sum(increase(apiserver_request_duration_seconds_bucket{job="apiserver", verb=~"PUT|PATCH", subresource!~"log|exec|portforward|attach|proxy"}[{{.elapsed}}])) by (le))
+  metricName: update_p99_ms
+  instant: true
+
+# kube-burner writes 0 for a quantile over no requests; these counts tell a
+# p99 of 0 apart from a window with no calls.
+- query: sum(increase(apiserver_request_total{job="apiserver", verb="POST"}[{{.elapsed}}]))
+  metricName: post_count
+  instant: true
+- query: sum(increase(apiserver_request_total{job="apiserver", verb="DELETE"}[{{.elapsed}}]))
+  metricName: delete_count
+  instant: true
+
+- query: max_over_time(sum(rate(apiserver_request_total{job="apiserver"}[1m]))[{{.elapsed}}:15s])
+  metricName: peak_reqs_per_sec
+  instant: true
+
+# Absent when nothing was rejected.
+- query: sum(increase(apiserver_flowcontrol_rejected_requests_total{job="apiserver"}[{{.elapsed}}]))
+  metricName: apf_rejected
+  instant: true
+
+# etcd_size_increase_mb is this value minus its -start value.
+- query: max(etcd_mvcc_db_total_size_in_use_in_bytes)
+  metricName: etcd_db_in_use_bytes
+  instant: true
+  captureStart: true
