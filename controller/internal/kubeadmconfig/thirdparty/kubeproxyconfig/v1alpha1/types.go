@@ -1,16 +1,36 @@
+/*
+Copyright 2017 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
+//
+// Derived from Kubernetes (Apache-2.0) and modified by NVIDIA; see "Local changes".
 
 // Package v1alpha1 contains a local copy of the upstream
 // k8s.io/kube-proxy/config/v1alpha1 KubeProxyConfiguration top-level struct.
 //
-// Source:
+// Source (Kubernetes v1.35.0, commit 66452049f3d692768c39c797b21b793dce80314e):
 //
-//	https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/kube-proxy/config/v1alpha1/types.go
+//	https://github.com/kubernetes/kubernetes/blob/v1.35.0/staging/src/k8s.io/kube-proxy/config/v1alpha1/types.go
 //
 // Local changes:
 //   - only the top-level KubeProxyConfiguration struct is copied locally
 //   - nested kube-proxy and component-base types remain imported from upstream modules
+//   - APIVersion, KubeProxyConfigurationKind and type aliases to the upstream package are added
+//   - the upstream doc comment on KubeProxyConfiguration is omitted
 //   - top-level json tags are adjusted to use omitzero; map and slice fields
 //     also retain omitempty so empty collections are omitted from CWE-rendered
 //     YAML unless explicitly set

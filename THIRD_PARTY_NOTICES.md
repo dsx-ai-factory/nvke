@@ -82,6 +82,27 @@ attributed modules that appear in no `go.sum` here and are not vendored, while
 missing others. **A wrong notices file is worse than a missing one, because it
 looks compliant.** The check in CI is what makes the difference.
 
+## Copied source files
+
+The generated notices cover Go modules only. These five files under
+`controller/internal/kubeadmconfig/thirdparty/` are copied from
+[kubernetes/kubernetes](https://github.com/kubernetes/kubernetes) at **v1.35.0**
+(commit `66452049f3d692768c39c797b21b793dce80314e`), modified, and keep their
+upstream copyright and license block. Kubernetes ships no `NOTICE` file at that
+revision.
+
+| Local file | Upstream file(s) | Upstream copyright |
+|---|---|---|
+| `bootstraptoken/v1/types.go` | `cmd/kubeadm/app/apis/bootstraptoken/v1/types.go`, `utils.go` | Copyright 2021 The Kubernetes Authors. |
+| `kubeadmtypes/v1beta3/types.go` | `cmd/kubeadm/app/apis/kubeadm/v1beta3/types.go` | Copyright 2021 The Kubernetes Authors. |
+| `kubeadmtypes/v1beta4/types.go` | `cmd/kubeadm/app/apis/kubeadm/v1beta4/types.go` | Copyright 2023 The Kubernetes Authors. |
+| `kubeletconfig/v1beta1/types.go` | `staging/src/k8s.io/kubelet/config/v1beta1/types.go` | Copyright 2017 The Kubernetes Authors. |
+| `kubeproxyconfig/v1alpha1/types.go` | `staging/src/k8s.io/kube-proxy/config/v1alpha1/types.go` | Copyright 2017 The Kubernetes Authors. |
+
+License: Apache License, Version 2.0, the same terms as this repository's
+[LICENSE](LICENSE); the original is
+[v1.35.0/LICENSE](https://github.com/kubernetes/kubernetes/blob/v1.35.0/LICENSE).
+
 ## Scope of a generated file
 
 Each generated file lists every Go module reachable from that component's
