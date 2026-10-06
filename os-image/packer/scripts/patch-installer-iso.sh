@@ -15,7 +15,7 @@ readonly output_iso="$2"
 output_root="$(dirname "${output_iso}")"
 readonly output_root
 
-for tool in 7z grep mv sed xorriso; do
+for tool in 7z grep mv sed xorriso python3; do
   command -v "${tool}" >/dev/null 2>&1 || {
     echo "patch-installer-iso: ${tool} is required" >&2
     exit 1
@@ -40,9 +40,28 @@ work="$(mktemp -d "${output_root}/.installer.XXXXXX")"
 cleanup() {
   rm -rf -- "${work}"
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-7z e -y -o"${work}" "${source_iso}" boot/grub/grub.cfg >/dev/null
+# Snapshot through one no-follow descriptor so both ISO tools read the same
+# runner-owned bytes. The runner authenticates the input before this call.
+python3 - "${source_iso}" "${work}/source.iso" <<'PY'
+import os
+import shutil
+import stat
+import sys
+
+fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+with os.fdopen(fd, "rb") as source:
+    if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+        raise SystemExit("patch-installer-iso: source is not one regular file")
+    with open(sys.argv[2], "xb") as destination:
+        shutil.copyfileobj(source, destination, length=1 << 20)
+PY
+
+7z e -y -o"${work}" "${work}/source.iso" boot/grub/grub.cfg >/dev/null
 readonly grub_cfg="${work}/grub.cfg"
 if [[ ! -f "${grub_cfg}" || -L "${grub_cfg}" ]]; then
   echo "patch-installer-iso: ISO has no regular boot/grub/grub.cfg" >&2
@@ -59,7 +78,7 @@ if [[ "$(grep -Ec '^set timeout=300$' "${work}/grub.cfg.patched" || true)" != 1 
   exit 1
 fi
 
-xorriso -indev "${source_iso}" -outdev "${work}/installer.iso" \
+xorriso -indev "${work}/source.iso" -outdev "${work}/installer.iso" \
   -boot_image any replay \
   -update "${work}/grub.cfg.patched" /boot/grub/grub.cfg \
   -- -commit >/dev/null
@@ -67,4 +86,11 @@ if [[ ! -s "${work}/installer.iso" || -L "${work}/installer.iso" ]]; then
   echo "patch-installer-iso: xorriso produced no regular ISO" >&2
   exit 1
 fi
-mv -f -- "${work}/installer.iso" "${output_iso}"
+# os.replace rejects a directory swapped in at the final destination and is
+# atomic on this filesystem, unlike mv's implicit move-into-directory mode.
+python3 - "${work}/installer.iso" "${output_iso}" <<'PY'
+import os
+import sys
+
+os.replace(sys.argv[1], sys.argv[2])
+PY

@@ -76,16 +76,7 @@ if [[ -s "${PATCHED_PATH}" && "${PATCHED_PATH}" -nt "${ISO_PATH}" ]]; then
   echo "prepare-installer-iso: ${PATCHED_PATH} already up to date"
 else
   echo "prepare-installer-iso: patching GRUB timeout in ${ISO_NAME}"
-  WORK="$(mktemp -d)"
-  trap 'rm -rf "${WORK}"' EXIT
-  7z e -y -o"${WORK}" "${ISO_PATH}" boot/grub/grub.cfg >/dev/null
-  sed 's/^set timeout=.*/set timeout=300/' "${WORK}/grub.cfg" > "${WORK}/grub.cfg.patched"
-  rm -f "${PATCHED_PATH}.tmp"
-  xorriso -indev "${ISO_PATH}" -outdev "${PATCHED_PATH}.tmp" \
-    -boot_image any replay \
-    -update "${WORK}/grub.cfg.patched" /boot/grub/grub.cfg \
-    -- -commit >/dev/null
-  mv "${PATCHED_PATH}.tmp" "${PATCHED_PATH}"
+  "$(dirname "${BASH_SOURCE[0]}")/patch-installer-iso.sh" "${ISO_PATH}" "${PATCHED_PATH}"
 fi
 
 echo "prepare-installer-iso: iso=${ISO_PATH} patched=${PATCHED_PATH}"

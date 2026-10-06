@@ -160,6 +160,7 @@ SSH_TIMEOUT ?= $(if $(filter kvm,$(ACCELERATOR)),30m,180m)
 # copying the squashfs at 2 h 15 m where run 34771011057 with 4 had reached
 # the postinstall packages at 2 h.
 CPUS ?= 4
+GUEST_MEMORY_MIB ?= 8192
 
 # FDE/non-FDE only: how long boot_command waits before typing into GRUB.
 # prepare-installer-iso.sh patches the ISO's own GRUB timeout to 300s, so
@@ -537,6 +538,7 @@ _os-image-fde: prepare-image-build
 		-var "accelerator=$(ACCELERATOR)" \
 		-var "cpu_model=$(CPU_MODEL)" \
 		-var "cpus=$(CPUS)" \
+		-var "guest_memory_mib=$(GUEST_MEMORY_MIB)" \
 		-var "ssh_timeout=$(SSH_TIMEOUT)" \
 		-var "boot_wait=$(BOOT_WAIT)" \
 		-var "root_fs_label=$(ROOT_FS_LABEL)" \
@@ -576,6 +578,7 @@ _os-image-non-fde: prepare-image-build
 		-var "accelerator=$(ACCELERATOR)" \
 		-var "cpu_model=$(CPU_MODEL)" \
 		-var "cpus=$(CPUS)" \
+		-var "guest_memory_mib=$(GUEST_MEMORY_MIB)" \
 		-var "ssh_timeout=$(SSH_TIMEOUT)" \
 		-var "boot_wait=$(BOOT_WAIT)" \
 		-var "root_fs_label=$(ROOT_FS_LABEL)" \

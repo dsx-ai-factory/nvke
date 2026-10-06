@@ -152,7 +152,7 @@ variable "cpu_model" {
 variable "guest_memory_mib" {
   type        = number
   default     = 8192
-  description = "Guest memory in MiB."
+  description = "Guest memory in MiB. 1024 is a schema floor, not a supported installer sizing recommendation; the default is 8192."
 
   validation {
     condition     = var.guest_memory_mib >= 1024 && floor(var.guest_memory_mib) == var.guest_memory_mib

@@ -46,13 +46,15 @@ class ComposeImageInputsTest(unittest.TestCase):
             directory.mkdir()
         (self.materials / "agent").write_bytes(b"agent-deb\n")
         for binding in ("calico", "kubeadm-distro", "ovn", "spire-agent"):
-            write_package_archive(self.materials / binding, f"{binding}.deb")
+            name = "spire-agent_1.0_all.deb" if binding == "spire-agent" else f"{binding}.deb"
+            write_package_archive(self.materials / binding, name)
         (self.source_files / "nke-agent-spire.conf").write_text("override\n", encoding="utf-8")
         (self.source_files / "wait-spiffe-socket.sh").write_text("#!/bin/sh\n", encoding="utf-8")
         write_executable(
             self.tools / "dpkg-scanpackages",
             "#!/bin/sh\nprintf 'Package: fixture\\n'\n",
         )
+        write_executable(self.tools / "dpkg-deb", "#!/bin/sh\nprintf 'all\\n'\n")
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -64,6 +66,7 @@ class ComposeImageInputsTest(unittest.TestCase):
             [
                 sys.executable,
                 str(SCRIPTS / "compose-image-inputs.py"),
+                "--architecture", "amd64",
                 "--materials-dir",
                 str(self.materials),
                 "--source-files-dir",
@@ -102,7 +105,7 @@ class ComposeImageInputsTest(unittest.TestCase):
                 "debs/calico.deb",
                 "debs/kubeadm-distro.deb",
                 "debs/ovn.deb",
-                "debs/spire-agent.deb",
+                "debs/spire-agent_1.0_all.deb",
                 "nke-agent-spire.conf",
                 "nke-agent.deb",
                 "wait-spiffe-socket.sh",
@@ -137,8 +140,9 @@ class ComposeImageInputsTest(unittest.TestCase):
     )
     def test_real_index_covers_multiple_versions(self):
         (self.tools / "dpkg-scanpackages").unlink()
-        for number, binding in enumerate(("calico", "kubeadm-distro", "ovn", "spire-agent"), 1):
-            name = "fixture-shared" if number <= 2 else f"fixture-{binding}"
+        (self.tools / "dpkg-deb").unlink()
+        for number, binding in enumerate(("agent", "calico", "kubeadm-distro", "ovn", "spire-agent")):
+            name = "fixture-shared" if number in (1, 2) else ("spire-agent" if binding == "spire-agent" else f"fixture-{binding}")
             package = self.root / f"package-{number}"
             control = package / "DEBIAN"
             control.mkdir(parents=True)
@@ -153,8 +157,11 @@ class ComposeImageInputsTest(unittest.TestCase):
                 ["dpkg-deb", "--build", "--root-owner-group", str(package), str(deb)],
                 check=True, capture_output=True,
             )
-            with tarfile.open(self.materials / binding, "w") as archive:
-                archive.add(deb, arcname=deb.name)
+            if binding == "agent":
+                shutil.copyfile(deb, self.materials / binding)
+            else:
+                with tarfile.open(self.materials / binding, "w", format=tarfile.USTAR_FORMAT) as archive:
+                    archive.add(deb, arcname=deb.name)
         output = self.root / "real-index.tar"
         result = self.run_compose(output)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -188,7 +195,7 @@ class ComposeImageInputsTest(unittest.TestCase):
         output = self.root / "oversized.tar"
         result = self.run_compose(output)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("count or size budget", result.stderr)
+        self.assertIn("per-package size budget", result.stderr)
         self.assertFalse(output.exists())
 
     def test_streaming_stage_checks_all_budgets(self):
@@ -197,7 +204,7 @@ class ComposeImageInputsTest(unittest.TestCase):
         spec.loader.exec_module(module)
         for limit, value, total, expected in (
             ("MAX_ARCHIVE_MEMBERS", 0, 0, "member budget"),
-            ("MAX_PACKAGES", 0, 0, "count or size budget"),
+            ("MAX_PACKAGES", 0, 0, "package count budget"),
             ("MAX_TOTAL_PACKAGE_BYTES", 1, 0, "total package byte budget"),
         ):
             with self.subTest(limit=limit):
@@ -218,9 +225,12 @@ class ComposeImageInputsTest(unittest.TestCase):
         spec.loader.exec_module(module)
         agent = self.materials / "agent"
         payload = agent.read_bytes()
-        archive_bytes = sum(len(f"package:{binding}.deb\n".encode()) for binding in module.ARCHIVE_BINDINGS)
+        archive_bytes = 0
+        for binding in module.ARCHIVE_BINDINGS:
+            with tarfile.open(self.materials / binding) as archive:
+                archive_bytes += sum(member.size for member in archive)
         for name, agent_payload, package_limit, total_limit, expected, copies_agent in (
-            ("empty agent", b"", 1024, 1024, "agent package exceeds its size budget", False),
+            ("empty agent", b"", 1024, 1024, "agent package is empty", False),
             ("oversized agent", payload, len(payload) - 1, 1024, "agent package exceeds its size budget", False),
             ("agent exceeds total", payload, 1024, len(payload) - 1, "total package byte budget", False),
             ("combined total", payload, 1024, archive_bytes, "total package byte budget", True),
@@ -231,9 +241,11 @@ class ComposeImageInputsTest(unittest.TestCase):
                     output = self.root / "budget.tar"
                     if existing:
                         output.write_bytes(b"prior output")
-                    arguments = SimpleNamespace(materials_dir=self.materials, source_files_dir=self.source_files,
+                    arguments = SimpleNamespace(architecture="amd64", materials_dir=self.materials, source_files_dir=self.source_files,
                                                 output=output, source_date_epoch=1787932620)
                     with patch.object(module, "parse_args", return_value=arguments), \
+                            patch.object(module.shutil, "which", return_value="fixture"), \
+                            patch.object(module, "require_architecture"), \
                             patch.object(module, "MAX_PACKAGE_BYTES", package_limit), \
                             patch.object(module, "MAX_TOTAL_PACKAGE_BYTES", total_limit), \
                             patch.object(module, "install_file", wraps=module.install_file) as install, \
@@ -255,12 +267,15 @@ class ComposeImageInputsTest(unittest.TestCase):
         spec.loader.exec_module(module)
         agent = self.materials / "agent"
         initial = b"agent-deb\n"
-        archive_bytes = sum(len(f"package:{binding}.deb\n".encode()) for binding in module.ARCHIVE_BINDINGS)
+        archive_bytes = 0
+        for binding in module.ARCHIVE_BINDINGS:
+            with tarfile.open(self.materials / binding) as archive:
+                archive_bytes += sum(member.size for member in archive)
         for name, changed, package_limit, total_limit, expected in (
             ("grows past package limit", initial + b"more", len(initial), 1024, "byte budget"),
             ("grows past total limit", initial + b"more", 1024, len(initial), "byte budget"),
             ("grows past combined limit", initial + b"x", 1024, len(initial) + archive_bytes, "total package byte budget"),
-            ("shrinks to empty", b"", 1024, 1024, "agent package exceeds its size budget"),
+            ("shrinks to empty", b"", 1024, 1024, "agent package is empty"),
             ("shrinks within combined limit", b"a", 1024, 1 + archive_bytes, None),
             ("grows within limits", initial + b"more", 1024, 1024, None),
         ):
@@ -268,7 +283,7 @@ class ComposeImageInputsTest(unittest.TestCase):
                 agent.write_bytes(initial)
                 output = self.root / "changed-agent.tar"
                 output.write_bytes(b"prior output")
-                arguments = SimpleNamespace(materials_dir=self.materials, source_files_dir=self.source_files,
+                arguments = SimpleNamespace(architecture="amd64", materials_dir=self.materials, source_files_dir=self.source_files,
                                             output=output, source_date_epoch=1787932620)
                 original_install = module.install_file
 
@@ -278,6 +293,8 @@ class ComposeImageInputsTest(unittest.TestCase):
                     return original_install(source, destination, mode, **options)
 
                 with patch.object(module, "parse_args", return_value=arguments), \
+                        patch.object(module.shutil, "which", return_value="fixture"), \
+                        patch.object(module, "require_architecture"), \
                         patch.object(module, "MAX_PACKAGE_BYTES", package_limit), \
                         patch.object(module, "MAX_TOTAL_PACKAGE_BYTES", total_limit), \
                         patch.object(module, "install_file", side_effect=install_after_change), \
@@ -304,6 +321,135 @@ class ComposeImageInputsTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "byte budget"):
             module.install_file(source, destination, 0o644, max_bytes=(1 << 20) + 1)
         self.assertEqual(destination.stat().st_size, 1 << 20)
+
+    def test_rejects_damaged_archive_endings(self):
+        path = self.materials / "ovn"
+        original = path.read_bytes()
+        for name, payload in (
+            ("corrupt second header", original[:1024] + b"invalid" + bytes(505) + bytes(1024)),
+            ("member-boundary truncation", original[:1024]),
+            ("garbage tail", original + b"garbage"),
+            ("one end marker", original[:1536]),
+        ):
+            with self.subTest(name=name):
+                path.write_bytes(payload)
+                output = self.root / "corrupt.tar"
+                output.write_bytes(b"prior output")
+                result = self.run_compose(output)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("package archive", result.stderr)
+                self.assertEqual(output.read_bytes(), b"prior output")
+
+    def test_rejects_unsupported_members_and_names(self):
+        for name, kind, size in (
+            ("nested/ovn.deb", tarfile.REGTYPE, 1),
+            ("ovn.deb", tarfile.LNKTYPE, 0),
+            ("ovn.deb", tarfile.REGTYPE, 0),
+            (".deb", tarfile.REGTYPE, 1),
+            ("-rf .deb", tarfile.REGTYPE, 1),
+            ("x\nPackage: evil\n.deb", tarfile.REGTYPE, 1),
+            ("pax", tarfile.XHDTYPE, 200 << 20),
+            ("longname", tarfile.GNUTYPE_LONGNAME, 200 << 20),
+        ):
+            with self.subTest(name=name, kind=kind):
+                member = tarfile.TarInfo(name)
+                member.type = kind
+                member.size = size
+                with (self.materials / "ovn").open("wb") as archive:
+                    archive.write(member.tobuf())
+                    if size < 512:
+                        archive.write(b"x" * size + bytes((-size) % 512) + bytes(1024))
+                result = self.run_compose(self.root / "bad-member.tar")
+                self.assertNotEqual(result.returncode, 0)
+                expected = "is empty" if size == 0 and kind == tarfile.REGTYPE else "unsafe or unexpected member"
+                self.assertIn(expected, result.stderr)
+
+    def test_rejects_gzip_archive(self):
+        import gzip
+        path = self.materials / "ovn"
+        path.write_bytes(gzip.compress(path.read_bytes()))
+        result = self.run_compose(self.root / "gzip.tar")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("package archive", result.stderr)
+
+    def test_checks_package_architecture(self):
+        for architecture, status in (("amd64", 0), ("all", 0), ("arm64", 1)):
+            with self.subTest(architecture=architecture):
+                write_executable(self.tools / "dpkg-deb", f"#!/bin/sh\nprintf '{architecture}\\n'\n")
+                result = self.run_compose(self.root / "architecture.tar")
+                self.assertEqual(result.returncode, status, result.stderr)
+                if status:
+                    self.assertIn("has architecture 'arm64'", result.stderr)
+
+    def test_rejects_mixed_architecture_repository_package(self):
+        write_executable(self.tools / "dpkg-deb", "#!/bin/sh\ncase \"$2\" in */ovn.deb) echo arm64;; *) echo all;; esac\n")
+        result = self.run_compose(self.root / "mixed-architecture.tar")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("package 'ovn.deb' has architecture 'arm64'", result.stderr)
+
+    def test_spire_agent_binding_cardinality(self):
+        for filenames in (("other.deb",), ("spire-agent_1_all.deb", "spire-agent_2_all.deb")):
+            with self.subTest(filenames=filenames):
+                with tarfile.open(self.materials / "spire-agent", "w") as archive:
+                    for name in filenames:
+                        member = tarfile.TarInfo(name)
+                        member.size = 1
+                        archive.addfile(member, io.BytesIO(b"x"))
+                result = self.run_compose(self.root / "spire.tar")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("exactly one spire-agent_*.deb", result.stderr)
+
+    def test_missing_files_and_unsafe_outputs(self):
+        for relative in ("materials/ovn", "materials/agent", "source-files/nke-agent-spire.conf"):
+            with self.subTest(relative=relative):
+                path = self.root / relative
+                saved = path.read_bytes()
+                path.unlink()
+                result = self.run_compose(self.root / "missing.tar")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("cannot", result.stderr)
+                path.write_bytes(saved)
+        for kind in ("directory", "symlink"):
+            with self.subTest(kind=kind):
+                output = self.root / kind
+                if kind == "directory":
+                    output.mkdir()
+                else:
+                    output.symlink_to(self.materials / "agent")
+                result = self.run_compose(output)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("refusing unsafe output", result.stderr)
+
+    def test_tool_preflight_and_failed_index(self):
+        spec = importlib.util.spec_from_file_location("compose_image_inputs", SCRIPTS / "compose-image-inputs.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        arguments = SimpleNamespace(architecture="amd64", materials_dir=self.materials, source_files_dir=self.source_files,
+                                    output=self.root / "preflight.tar", source_date_epoch=1787932620)
+        with patch.object(module, "parse_args", return_value=arguments), \
+                patch.object(module.shutil, "which", side_effect=lambda tool: None if tool == "dpkg-scanpackages" else "fixture"):
+            with self.assertRaisesRegex(SystemExit, "dpkg-scanpackages is required"):
+                module.main()
+        self.assertFalse(arguments.output.exists())
+        write_executable(self.tools / "dpkg-scanpackages", "#!/bin/sh\nexit 7\n")
+        result = self.run_compose(self.root / "failed-index.tar")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("dpkg-scanpackages failed with exit status 7", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_regular_descriptor_rejects_swapped_symlink_and_fifo(self):
+        spec = importlib.util.spec_from_file_location("compose_image_inputs", SCRIPTS / "compose-image-inputs.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        for kind in ("symlink", "fifo"):
+            with self.subTest(kind=kind):
+                source = self.root / kind
+                if kind == "symlink":
+                    source.symlink_to(self.materials / "agent")
+                else:
+                    os.mkfifo(source)
+                with self.assertRaises(SystemExit):
+                    module.install_file(source, self.root / f"{kind}-output", 0o644)
 
 
 class PatchInstallerISOTest(unittest.TestCase):
@@ -333,11 +479,12 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     -indev) input=$2; shift 2;;
     -outdev) output=$2; shift 2;;
+    -update) patched=$2; shift 3;;
     *) shift;;
   esac
 done
 cp "$input" "$output"
-printf 'patched\n' >>"$output"
+cat "$patched" >>"$output"
 """,
         )
 
@@ -359,7 +506,53 @@ printf 'patched\n' >>"$output"
         output = self.root / "output" / "installer.iso"
         result = self.run_patch(self.source, output)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(output.read_bytes(), b"source-iso\npatched\n")
+        self.assertEqual(output.read_bytes(), b"source-iso\nset timeout=300\nmenuentry fixture {}\n")
+
+    def test_rejects_missing_or_multiple_grub_timeouts(self):
+        for content, count in (("menuentry fixture {}\n", 0), ("set timeout=30\nset timeout=5\n", 2)):
+            with self.subTest(count=count):
+                write_executable(self.tools / "7z", "#!/bin/sh\n"
+                    "for arg in \"$@\"; do case \"$arg\" in -o*) output=${arg#-o};; esac; done\n"
+                    f"printf '{content}' >\"$output/grub.cfg\"\n")
+                output = self.root / "bad-grub.iso"
+                output.write_bytes(b"prior output")
+                result = self.run_patch(self.source, output)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"expected one GRUB timeout, found {count}", result.stderr)
+                self.assertEqual(output.read_bytes(), b"prior output")
+
+    def test_rejects_unsafe_outputs(self):
+        for kind in ("directory", "symlink"):
+            with self.subTest(kind=kind):
+                output = self.root / kind
+                if kind == "directory":
+                    output.mkdir()
+                else:
+                    output.symlink_to(self.source)
+                result = self.run_patch(self.source, output)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("refusing unsafe output", result.stderr)
+
+    def test_termination_does_not_publish_output(self):
+        write_executable(self.tools / "xorriso", "#!/bin/sh\nkill -TERM \"$PPID\"\n")
+        output = self.root / "terminated.iso"
+        output.write_bytes(b"prior output")
+        result = self.run_patch(self.source, output)
+        self.assertEqual(result.returncode, 143, result.stderr)
+        self.assertEqual(output.read_bytes(), b"prior output")
+        self.assertFalse(list(self.root.glob(".installer.*")))
+
+    def test_snapshot_is_shared_and_directory_swap_is_rejected(self):
+        output = self.root / "swap.iso"
+        write_executable(self.tools / "xorriso", "#!/bin/sh\nset -eu\n"
+            "while [ \"$#\" -gt 0 ]; do case \"$1\" in -indev) input=$2; shift 2;; "
+            "-outdev) output=$2; shift 2;; *) shift;; esac; done\n"
+            f"printf 'changed source' > '{self.source}'\n"
+            "cp \"$input\" \"$output\"\n"
+            f"mkdir '{output}'\n")
+        result = self.run_patch(self.source, output)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(list(output.iterdir()), [])
 
     def test_rejects_source_symlink(self):
         source_link = self.root / "source-link.iso"
@@ -379,9 +572,13 @@ printf 'patched\n' >>"$output"
         grub = source_tree / "boot" / "grub"
         grub.mkdir(parents=True)
         (grub / "grub.cfg").write_text("set timeout=30\nmenuentry fixture {}\n", encoding="utf-8")
+        (grub / "bios.img").write_bytes(bytes(2048))
+        (grub / "efi.img").write_bytes(bytes(2048))
         source = self.root / "real-source.iso"
         subprocess.run(
-            ["xorriso", "-as", "mkisofs", "-o", str(source), str(source_tree)],
+            ["xorriso", "-as", "mkisofs", "-o", str(source),
+             "-b", "boot/grub/bios.img", "-no-emul-boot", "-boot-load-size", "4",
+             "-eltorito-alt-boot", "-e", "boot/grub/efi.img", "-no-emul-boot", str(source_tree)],
             check=True, capture_output=True, timeout=30,
         )
         output = self.root / "real-patched.iso"
@@ -392,6 +589,15 @@ printf 'patched\n' >>"$output"
             check=True, capture_output=True, timeout=30,
         ).stdout
         self.assertEqual(extracted, b"set timeout=300\nmenuentry fixture {}\n")
+        catalogs = []
+        for image in (source, output):
+            report = subprocess.run(
+                ["xorriso", "-indev", str(image), "-report_el_torito", "plain"],
+                check=True, capture_output=True, text=True, timeout=30,
+            ).stdout
+            catalogs.append([line.split()[:-1] for line in report.splitlines() if line.startswith("El Torito boot img")])
+        self.assertEqual(catalogs[0], catalogs[1])
+        self.assertEqual(len(catalogs[0]), 2)
 
 
 if __name__ == "__main__":

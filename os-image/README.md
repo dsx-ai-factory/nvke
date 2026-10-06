@@ -32,6 +32,7 @@ Common prerequisites for image builds:
 | `curl` | any | via your package manager |
 | `qemu-system-x86_64` or `qemu-system-aarch64`, `qemu-img`, `cloud-localds`, `swtpm`, OVMF/AAVMF | any | via your package manager |
 | `xorriso`, `p7zip-full` (`7z`) | any | via your package manager |
+| `dpkg-dev` (`dpkg-deb`, `dpkg-scanpackages`) | any | via your package manager |
 
 Package-builder prerequisites depend on the selected mode:
 
@@ -311,6 +312,7 @@ individually built component outputs, without invoking `fetch-artifacts.sh`:
 
 ```bash
 packer/scripts/compose-image-inputs.py \
+  --architecture amd64 \
   --materials-dir /run/nke-image/materials \
   --source-files-dir files \
   --output /run/nke-image/image-inputs.tar \
@@ -321,20 +323,39 @@ packer/scripts/patch-installer-iso.sh \
   /run/nke-image/installer.iso
 ```
 
-The composer consumes `agent`, `calico`, `kubeadm-distro`, `ovn`, and
-`spire-agent` from the materials directory. The runner must authenticate those
-files before calling it. It streams regular package members into a private stage,
+The `agent` binding is one bare `.deb` file. `calico`, `kubeadm-distro`, `ovn`,
+and `spire-agent` are uncompressed GNU/USTAR archives of flat regular `.deb`
+files, with filenames unique across all bindings. Only the optional root `.`
+directory entry is accepted; omit `Packages`, subdirectories, links, and PAX/GNU
+extended metadata headers. The package builders are `packages/cni-calico`,
+`packages/kubeadm-distro`, `packages/cni-ovn`, and `packages/spire-agent`.
+Run their `debs` targets and archive only the resulting `.deb` files with
+`tar --format=ustar -cf component.tar -C "$OUT_DIR" <package filenames>`.
+The composer regenerates `Packages` itself. The SPIRE binding must contain
+exactly one `spire-agent_*.deb`; Calico inputs may contain at most one
+`nke-cni-calico-manifests-*.deb`. Every package must declare the requested
+`--architecture` or `all`, checked with `dpkg-deb`.
+
+The runner must authenticate these files before calling the composer.
+It streams regular package members into a private stage,
 rejects unsafe entries and duplicate filenames, and bounds input archives to
 16384 entries each, 16384 packages overall, 1 GiB per package and 7 GiB total
 package bytes. It normalizes archive directory permissions independently of the host
 umask, and preserves all staged versions in the local APT index. The ISO patcher
-accepts a prepared local ISO and performs no acquisition. Both adapters leave
+accepts a prepared local ISO and performs no acquisition. The runner must verify
+the source ISO against its authenticated upstream digest, for example Ubuntu's
+signed `SHA256SUMS`, before either ISO tool parses it. The patched ISO digest
+does not authenticate the upstream ISO. Both adapters leave
 the source tree unchanged and write under caller-selected output directories.
 `guest_memory_mib` controls Packer guest memory, with the existing 8192 MiB
-default and a minimum of 1024 MiB.
+default. Its 1024 MiB validation floor is a schema constraint only; it does not
+claim the Ubuntu installer will complete at that memory size. Keep the default
+unless an alternative has passed image-bake and boot validation.
+Make callers can pass `GUEST_MEMORY_MIB` to set the same Packer input.
 
 The composer delegates archive parsing to Python's standard library. Its regular
-member budgets do not authenticate input archives or replace the runner's
+member budgets, strict end markers, and rejection of extended metadata do not
+authenticate input archives or replace the runner's
 resource isolation and material verification.
 
 The SSH files are caller-owned attempt state. The direct caller generates the

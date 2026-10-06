@@ -47,6 +47,26 @@ for architecture in amd64 arm64; do
   done
 done
 
+# The schema minimum is tested separately from a successful image bake.
+if output="$("${packer_bin}" validate \
+  -only=nke-node-non-fde.qemu.nke-non-fde \
+  -var "architecture=amd64" \
+  -var "material_manifest=${work}/amd64/material-manifest.json" \
+  -var "output_directory=${work}/amd64/output" \
+  -var "build_log_directory=${work}/amd64/logs" \
+  -var "ssh_private_key_file=${work}/id_ed25519" \
+  -var "ssh_public_key_file=${work}/id_ed25519.pub" \
+  -var "guest_memory_mib=1023" \
+  "${project_root}" 2>&1)"; then
+  echo "Packer accepted guest_memory_mib below the schema floor" >&2
+  exit 1
+fi
+grep -F "integer of at least 1024" <<<"${output}" >/dev/null || {
+  printf '%s\n' "${output}" >&2
+  echo "Packer rejected guest_memory_mib without the schema error" >&2
+  exit 1
+}
+
 if output="$("${packer_bin}" validate \
   -only=nke-node-non-fde.qemu.nke-non-fde \
   -var "architecture=arm64" \

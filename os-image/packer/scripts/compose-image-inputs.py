@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import os
 import pathlib
+import re
 import shutil
 import stat
 import subprocess
@@ -21,6 +23,7 @@ MAX_ARCHIVE_MEMBERS = 16384
 MAX_PACKAGES = 16384
 MAX_PACKAGE_BYTES = 1 << 30
 MAX_TOTAL_PACKAGE_BYTES = 7 << 30
+MAX_ARCHIVE_BYTES = MAX_TOTAL_PACKAGE_BYTES + MAX_ARCHIVE_MEMBERS * 1024 + tarfile.RECORDSIZE
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,6 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-files-dir", type=pathlib.Path, required=True)
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--source-date-epoch", type=int, required=True)
+    parser.add_argument("--architecture", choices=("amd64", "arm64"), required=True)
     return parser.parse_args()
 
 
@@ -42,46 +46,105 @@ def require_regular(path: pathlib.Path, label: str) -> os.stat_result:
     return info
 
 
+@contextmanager
+def open_regular(path: pathlib.Path, label: str):
+    """Bind reads to one descriptor, refusing symlinks and non-regular files."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError as exc:
+        raise SystemExit(f"{label}: cannot open {path}: {exc}") from exc
+    with os.fdopen(fd, "rb") as source:
+        if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+            raise SystemExit(f"{label}: {path} is not one regular file")
+        yield source
+
+
+def validate_archive_framing(source, path: pathlib.Path) -> None:
+    """Use stdlib header validation before tarfile's permissive iteration.
+
+    tarfile treats a damaged subsequent header as EOF and expands PAX/GNU
+    metadata before yielding a member. This package-only interface needs
+    neither extension, so reject them before their payloads can be expanded.
+    """
+    zero = bytes(tarfile.BLOCKSIZE)
+    if os.fstat(source.fileno()).st_size > MAX_ARCHIVE_BYTES:
+        raise SystemExit(f"package archive {path} exceeds its raw archive byte budget")
+    count = 0
+    while True:
+        header = source.read(tarfile.BLOCKSIZE)
+        if header == zero:
+            if source.read(tarfile.BLOCKSIZE) != zero:
+                raise SystemExit(f"package archive {path} lacks two end-of-archive zero blocks")
+            while chunk := source.read(1 << 20):
+                if any(chunk):
+                    raise SystemExit(f"package archive {path} has data after end-of-archive")
+            source.seek(0)
+            return
+        try:
+            member = tarfile.TarInfo.frombuf(header, "utf-8", "strict")
+        except (tarfile.HeaderError, UnicodeError) as exc:
+            raise SystemExit(f"package archive {path} is invalid: {exc}") from exc
+        count += 1
+        if count > MAX_ARCHIVE_MEMBERS:
+            raise SystemExit(f"package archive {path} exceeds its member budget")
+        if not member.isreg() and not (member.isdir() and member.name in (".", "./")):
+            raise SystemExit(f"package archive {path} has unsafe or unexpected member {member.name!r}")
+        if member.size < 0 or member.size > MAX_PACKAGE_BYTES:
+            raise SystemExit(f"package {member.name!r} exceeds its per-package size budget")
+        padded_size = (member.size + tarfile.BLOCKSIZE - 1) // tarfile.BLOCKSIZE * tarfile.BLOCKSIZE
+        # Seek over content without allocating it, but require its final byte.
+        if padded_size:
+            source.seek(padded_size - 1, os.SEEK_CUR)
+            if not source.read(1):
+                raise SystemExit(f"package archive {path} is invalid: unexpected end of data")
+
+
 def stage_archive_debs(
     path: pathlib.Path, destination: pathlib.Path, names: set[str], total_bytes: int
 ) -> int:
     """Stream bounded regular members into a private stage, never extract paths."""
-    require_regular(path, "package archive")
-    found = False
     try:
-        with tarfile.open(path, mode="r|") as archive:
-            for count, member in enumerate(archive, 1):
-                if count > MAX_ARCHIVE_MEMBERS:
-                    raise SystemExit(f"package archive {path} exceeds its member budget")
-                name = member.name.removeprefix("./")
-                if member.isdir() and name in ("", "."):
-                    continue
-                if (
-                    not member.isreg()
-                    or pathlib.PurePosixPath(name).name != name
-                    or not name.endswith(".deb")
-                ):
-                    raise SystemExit(
-                        f"package archive {path} has unsafe or unexpected member {member.name!r}"
-                    )
-                if name in names:
-                    raise SystemExit(f"duplicate Debian package filename {name!r}")
-                if len(names) >= MAX_PACKAGES or not 0 < member.size <= MAX_PACKAGE_BYTES:
-                    raise SystemExit(f"package archive {path} exceeds its package count or size budget")
-                total_bytes += member.size
-                if total_bytes > MAX_TOTAL_PACKAGE_BYTES:
-                    raise SystemExit("image inputs exceed their total package byte budget")
-                source = archive.extractfile(member)
-                if source is None:
-                    raise SystemExit(f"package archive {path} cannot read {member.name!r}")
-                target = destination / name
-                with source, target.open("xb") as output:
-                    shutil.copyfileobj(source, output, length=1 << 20)
-                target.chmod(0o644)
-                names.add(name)
-                found = True
-    except (OSError, tarfile.TarError) as exc:
+        with open_regular(path, "package archive") as content:
+            validate_archive_framing(content, path)
+            archive = tarfile.open(fileobj=content, mode="r:")
+            with archive:
+                return _stage_archive_debs(archive, path, destination, names, total_bytes)
+    except tarfile.TarError as exc:
         raise SystemExit(f"package archive {path} is invalid: {exc}") from exc
+
+
+def _stage_archive_debs(archive, path, destination, names, total_bytes):
+    found = False
+    for count, member in enumerate(archive, 1):
+        if count > MAX_ARCHIVE_MEMBERS:
+            raise SystemExit(f"package archive {path} exceeds its member budget")
+        name = member.name.removeprefix("./")
+        if member.isdir() and name in ("", "."):
+            continue
+        # This restricts transport filenames; dpkg-deb validates the package.
+        if (not member.isreg() or pathlib.PurePosixPath(name).name != name
+                or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.+~_:-]*\.deb", name) is None):
+            raise SystemExit(f"package archive {path} has unsafe or unexpected member {member.name!r}")
+        if name in names:
+            raise SystemExit(f"duplicate Debian package filename {name!r}")
+        if len(names) >= MAX_PACKAGES:
+            raise SystemExit(f"package archive {path} exceeds its package count budget ({MAX_PACKAGES})")
+        if member.size == 0:
+            raise SystemExit(f"package {name!r} is empty")
+        if not 0 < member.size <= MAX_PACKAGE_BYTES:
+            raise SystemExit(f"package {name!r} exceeds its per-package size budget ({MAX_PACKAGE_BYTES} bytes)")
+        total_bytes += member.size
+        if total_bytes > MAX_TOTAL_PACKAGE_BYTES:
+            raise SystemExit("image inputs exceed their total package byte budget")
+        source = archive.extractfile(member)
+        if source is None:
+            raise SystemExit(f"package archive {path} cannot read {member.name!r}")
+        target = destination / name
+        with source, target.open("xb") as output:
+            shutil.copyfileobj(source, output, length=1 << 20)
+        target.chmod(0o644)
+        names.add(name)
+        found = True
     if not found:
         raise SystemExit(f"package archive {path} contains no Debian packages")
     return total_bytes
@@ -90,9 +153,8 @@ def stage_archive_debs(
 def install_file(
     source: pathlib.Path, destination: pathlib.Path, mode: int, *, max_bytes: int | None = None
 ) -> int:
-    require_regular(source, "source file")
     copied = 0
-    with source.open("rb") as src, destination.open("xb") as dst:
+    with open_regular(source, "source file") as src, destination.open("xb") as dst:
         while chunk := src.read(1 << 20):
             if max_bytes is not None and len(chunk) > max_bytes - copied:
                 raise SystemExit("source file exceeds its byte budget")
@@ -100,6 +162,18 @@ def install_file(
             copied += len(chunk)
     destination.chmod(mode)
     return copied
+
+
+def require_architecture(package: pathlib.Path, architecture: str) -> None:
+    result = subprocess.run(
+        ["dpkg-deb", "-f", str(package), "Architecture"],
+        check=False, capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode:
+        raise SystemExit(f"cannot read Debian package architecture for {package.name}: {result.stderr.strip()}")
+    observed = result.stdout.strip()
+    if observed not in (architecture, "all"):
+        raise SystemExit(f"package {package.name!r} has architecture {observed!r}, expected {architecture!r} or 'all'")
 
 
 def write_deterministic_archive(source: pathlib.Path, output: pathlib.Path, epoch: int) -> None:
@@ -126,6 +200,9 @@ def main() -> None:
     args = parse_args()
     if args.source_date_epoch <= 0:
         raise SystemExit("--source-date-epoch must be a positive integer")
+    for tool in ("dpkg-deb", "dpkg-scanpackages"):
+        if shutil.which(tool) is None:
+            raise SystemExit(f"{tool} is required (apt install dpkg-dev)")
 
     output = args.output.absolute()
     output.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
@@ -140,7 +217,9 @@ def main() -> None:
 
         agent = args.materials_dir / "agent"
         total_bytes = require_regular(agent, "agent package").st_size
-        if not 0 < total_bytes <= MAX_PACKAGE_BYTES:
+        if total_bytes == 0:
+            raise SystemExit("agent package is empty")
+        if total_bytes > MAX_PACKAGE_BYTES:
             raise SystemExit("agent package exceeds its size budget")
         if total_bytes > MAX_TOTAL_PACKAGE_BYTES:
             raise SystemExit("image inputs exceed their total package byte budget")
@@ -149,7 +228,8 @@ def main() -> None:
             max_bytes=min(MAX_PACKAGE_BYTES, MAX_TOTAL_PACKAGE_BYTES),
         )
         if total_bytes == 0:
-            raise SystemExit("agent package exceeds its size budget")
+            raise SystemExit("agent package is empty")
+        require_architecture(stage / "nke-agent.deb", args.architecture)
         install_file(
             args.source_files_dir / "nke-agent-spire.conf",
             stage / "nke-agent-spire.conf",
@@ -163,18 +243,30 @@ def main() -> None:
 
         names: set[str] = set()
         for binding in ARCHIVE_BINDINGS:
+            previous_names = names.copy()
             total_bytes = stage_archive_debs(args.materials_dir / binding, debs, names, total_bytes)
+            binding_names = names - previous_names
+            if binding == "spire-agent" and len([name for name in binding_names if name.startswith("spire-agent_")]) != 1:
+                raise SystemExit("spire-agent binding must contain exactly one spire-agent_*.deb")
+            for name in sorted(binding_names):
+                require_architecture(debs / name, args.architecture)
+        if len(list(debs.glob("nke-cni-calico-manifests-*.deb"))) > 1:
+            raise SystemExit("calico inputs must contain at most one nke-cni-calico-manifests-*.deb")
 
         environment = os.environ.copy()
         environment.update({"LC_ALL": "C", "LANG": "C", "TZ": "UTC"})
-        index = subprocess.run(
-            ["dpkg-scanpackages", "--multiversion", ".", "/dev/null"],
-            cwd=debs,
-            env=environment,
-            check=True,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-        ).stdout
+        try:
+            index = subprocess.run(
+                ["dpkg-scanpackages", "--multiversion", ".", "/dev/null"],
+                cwd=debs,
+                env=environment,
+                check=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                timeout=300,
+            ).stdout
+        except subprocess.CalledProcessError as exc:
+            raise SystemExit(f"dpkg-scanpackages failed with exit status {exc.returncode}") from exc
         (debs / "Packages").write_bytes(index)
         (debs / "Packages").chmod(0o644)
 
@@ -184,4 +276,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except OSError as exc:
+        raise SystemExit(f"cannot compose image inputs: {exc}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise SystemExit(f"image input tool {exc.cmd[0]} exceeded its time limit") from exc
