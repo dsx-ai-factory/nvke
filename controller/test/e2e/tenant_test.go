@@ -1527,7 +1527,10 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.Cluster
 
 	kubernetesVersion := cmp.Or(optionalVersion("kube"), shape.kubernetesVersion, forgeDefaultKubernetesVersion)
 
-	payloads, err := forgeRolePayloads(controlPlaneType.Arch(), workerType.Arch(), kubernetesVersion)
+	payloads, err := forgeRolePayloads(roleArchs{
+		ControlPlane: controlPlaneType.Arch(),
+		Worker:       workerType.Arch(),
+	}, kubernetesVersion)
 	Expect(err).NotTo(HaveOccurred(), "should render the Forge node payloads")
 
 	return nke.ClusterSpec{
@@ -1581,10 +1584,24 @@ func forgeControlPlaneConfig(
 	return &out
 }
 
+// roleArchs is the architecture each role's machines are, named rather than
+// ordered.
+//
+// A struct because the two are both strings and differ only on a
+// mixed-architecture cluster, so passing them positionally makes a
+// transposition compile, pass every test, and read correctly. What it would
+// actually do is boot each role on the other's image, and a worker that boots
+// the wrong image never reports, which is indistinguishable from the hardware
+// failing to provision.
+type roleArchs struct {
+	ControlPlane string
+	Worker       string
+}
+
 // forgeRolePayloads renders one payload set per role. When both roles are the
 // same architecture the work is done once and shared, which is the ordinary
 // single-architecture cluster.
-func forgeRolePayloads(controlPlaneArch, workerArch, kubernetesVersion string) (*nke.RolePayloads, error) {
+func forgeRolePayloads(archs roleArchs, kubernetesVersion string) (*nke.RolePayloads, error) {
 	build := func(arch string) (nke.NodePayloads, error) {
 		bootLoaderURL, imageURL, err := requireNodeArtifacts(arch)
 		if err != nil {
@@ -1599,14 +1616,14 @@ func forgeRolePayloads(controlPlaneArch, workerArch, kubernetesVersion string) (
 		})
 	}
 
-	controlPlane, err := build(controlPlaneArch)
+	controlPlane, err := build(archs.ControlPlane)
 	if err != nil {
-		return nil, fmt.Errorf("control plane (%s): %w", controlPlaneArch, err)
+		return nil, fmt.Errorf("control plane (%s): %w", archs.ControlPlane, err)
 	}
 	worker := controlPlane
-	if workerArch != controlPlaneArch {
-		if worker, err = build(workerArch); err != nil {
-			return nil, fmt.Errorf("workers (%s): %w", workerArch, err)
+	if archs.Worker != archs.ControlPlane {
+		if worker, err = build(archs.Worker); err != nil {
+			return nil, fmt.Errorf("workers (%s): %w", archs.Worker, err)
 		}
 	}
 	return &nke.RolePayloads{ControlPlane: controlPlane, Worker: worker}, nil
