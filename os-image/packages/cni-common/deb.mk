@@ -89,7 +89,6 @@ repro-check: ## Build `debs` twice into throwaway OUT_DIRs and diff every .deb b
 
 $(BIN_DIR)/crane: ## Download the pinned crane (go-containerregistry) release into ./bin.
 	@set -eu; \
-	mkdir -p "$(BIN_DIR)"; \
 	arch="$$(uname -m)"; \
 	case "$$arch" in aarch64) arch=arm64 ;; esac; \
 	archive="go-containerregistry_$$(uname -s)_$${arch}.tar.gz"; \
@@ -100,9 +99,10 @@ $(BIN_DIR)/crane: ## Download the pinned crane (go-containerregistry) release in
 		-o "$$tmp/$$archive" "$$base/$$archive"; \
 	curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 \
 		-o "$$tmp/checksums.txt" "$$base/checksums.txt"; \
-	(cd "$$tmp" && grep " $$archive\$$" checksums.txt | sha256sum -c); \
+	(trap - EXIT; cd "$$tmp" && grep " $$archive\$$" checksums.txt | sha256sum -c); \
 	tar -xzf "$$tmp/$$archive" -C "$$tmp" crane; \
 	chmod +x "$$tmp/crane"; \
+	mkdir -p "$(BIN_DIR)"; \
 	mv "$$tmp/crane" "$(BIN_DIR)/crane"
 
 .PHONY: nfpm

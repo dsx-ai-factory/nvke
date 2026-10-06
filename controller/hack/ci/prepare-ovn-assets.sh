@@ -30,11 +30,13 @@ trap 'rm -rf "${scratch}"' EXIT
 mkdir -p "${output_dir}"
 output_dir="$(cd "${output_dir}" && pwd)"
 # Reuse the reference OS packaging, including the committed per-arch image
-# digest and its containerd-importing postinst. Keep tools/artifacts out of source.
+# digest and its containerd-importing postinst. Keep crane and nfpm in the
+# scratch directory: the package tree's bin/ is gitignored, and a checkout
+# sync can remove it while crane is still downloading.
 make -C "${workspace_root}/os-image/packages/cni-ovn" debs \
   ARCH="${arch}" OVN_STREAMS="${version}" DEB_REVISION="${version}" \
   OUT_DIR="${output_dir}" DIST_DIR="${scratch}/dist" \
-  BIN_DIR="${OVN_TOOLS_DIR:-${workspace_root}/os-image/packages/cni-ovn/bin}"
+  BIN_DIR="${OVN_TOOLS_DIR:-${scratch}/tools}"
 
 # KinD's node image has kubeadm but no Helm. Use the reference OS image pin.
 helm_lock="${workspace_root}/os-image/packages/kubeadm-distro/lock/${BUNDLE_ARCH:-amd64}/v1.34.2.lock"
