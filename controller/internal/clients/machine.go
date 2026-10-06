@@ -7,8 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/dsx-ai-factory/nke/controller/internal/clients/capi"
 	"github.com/dsx-ai-factory/nke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nke/controller/internal/clients/shared"
@@ -21,11 +19,6 @@ import (
 // provider type has its own implementation, selected by
 // GetMachineMaterialization.
 type MachineMaterialization interface {
-	// RenderInfraMachine builds the infra machine object for the node.
-	// profilesDir is the OS/config profiles directory on disk; only the NICo
-	// implementation reads from it (for the iPXE script).
-	RenderInfraMachine(profilesDir, namespace string, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) (client.Object, error)
-
 	// CreateMachine renders and applies the infra machine, bootstrap secret,
 	// and generic CAPI Machine for the node, calling whichever of deps'
 	// callbacks this provider needs.
