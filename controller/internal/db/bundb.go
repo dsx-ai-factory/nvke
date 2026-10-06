@@ -79,7 +79,8 @@ func NewBunDB(cfg config.Config, logger *slog.Logger) (*bun.DB, error) {
 		queryLogLevel = slog.LevelInfo
 	}
 
-	db.AddQueryHook(bunslog.NewQueryHook(
+	// WithQueryHook returns a copy carrying the hook; the original is untouched.
+	db = db.WithQueryHook(bunslog.NewQueryHook(
 		bunslog.WithQueryLogLevel(queryLogLevel),
 		bunslog.WithSlowQueryLogLevel(slog.LevelWarn),
 		bunslog.WithErrorQueryLogLevel(slog.LevelError),
@@ -89,7 +90,7 @@ func NewBunDB(cfg config.Config, logger *slog.Logger) (*bun.DB, error) {
 	))
 
 	if cfg.Tracing.Enabled {
-		db.AddQueryHook(newTracingHook(connector))
+		db = db.WithQueryHook(newTracingHook(connector))
 	}
 
 	if err := db.PingContext(context.Background()); err != nil {
