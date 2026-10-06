@@ -509,6 +509,24 @@ func TestBuildForgeNodePayloadsLuksKeyFollowsTheArch(t *testing.T) {
 	}
 }
 
+// cloud-init reports the exit status of the last command in runcmd, so without
+// a guard a failed apt step still ends with the success sentinel and the node
+// reports clean while missing what it needs to join. The site node guards for
+// the same reason; this asserts the tenant path does too, and that the guard
+// is first, since anything above it runs unguarded.
+func TestBuildForgeNodePayloadsGuardsAgainstAFailedStep(t *testing.T) {
+	payloads, err := BuildForgeNodePayloads(completeForgeInputs())
+	if err != nil {
+		t.Fatalf("building payloads: %v", err)
+	}
+	if len(payloads.PreKubeadmCommands) == 0 {
+		t.Fatal("no pre-kubeadm commands")
+	}
+	if got := payloads.PreKubeadmCommands[0]; got != "set -eu" {
+		t.Errorf("first pre-kubeadm command is %q, want \"set -eu\": anything before it runs unguarded", got)
+	}
+}
+
 // The image builds nke-agent from this checkout's agent/ source at bake time,
 // so the installed agent is the build under qualification. Installing the apt
 // repository's unpinned nke-agent over it would swap that for whichever build

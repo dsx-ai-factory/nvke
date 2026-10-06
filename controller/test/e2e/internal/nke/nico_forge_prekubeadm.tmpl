@@ -43,7 +43,18 @@ the repository publishes 1.14.1+tpm1.9.0 against the image's
 1.14.1+tpm1.9.0-1, doing so is a downgrade to an identical build of itself.
 A node without a baked agent is the bring-your-own-Ubuntu path, which
 bootstraps with --disable-mtls and is out of scope here.
+
+set -eu is the first command for the reason the site node has it
+(internal/infra/forge/userdata.go): cloud-init runs these as one /bin/sh
+script and reports the exit status of the last one, which is the
+touch at the end. Without the guard a failed apt step still writes the
+success sentinel, so the node reports a clean cloud-init while missing the
+packages it needs to join, never phones home, and the run spends its whole
+budget on KubernetesReady=Unknown ("Node data not available") with nothing
+saying why. set -u is safe because every command below is fully rendered
+before it is sent: none of them reads a shell variable.
 */ -}}
+set -eu
 install -d -m 0755 /etc/apt/keyrings
 curl -fsSL -o /etc/apt/keyrings/nke.asc https://nke-prod-assets.s3.us-west-2.amazonaws.com/nke-apt-public.key
 echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://nke-prod-assets.s3.us-west-2.amazonaws.com/nke-apt-{{ .AptSuite }} nke-{{ .AptSuite }} main' > /etc/apt/sources.list.d/nke-apt.list
