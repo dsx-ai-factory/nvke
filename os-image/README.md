@@ -336,6 +336,11 @@ exactly one `spire-agent_*.deb`; Calico inputs may contain at most one
 `nke-cni-calico-manifests-*.deb`. Every package must declare the requested
 `--architecture` or `all`, checked with `dpkg-deb`.
 
+`--source-files-dir` supplies the checkout's image-owned provisioning files:
+`nke-agent-spire.conf`, `wait-spiffe-socket.sh`, `conntrack-tune.service`,
+`configure-conntrack.sh`, and `10-nke-conntrack-timeouts.conf`. All five are
+required, copied unchanged, and staged with the same modes as the Make build.
+
 The runner must authenticate these files before calling the composer and keep
 the authenticated bytes immutable until composition returns. The composer
 copies each component archive through a no-follow descriptor into a bounded,

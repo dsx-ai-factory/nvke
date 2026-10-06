@@ -48,8 +48,10 @@ class ComposeImageInputsTest(unittest.TestCase):
         for binding in ("calico", "kubeadm-distro", "ovn", "spire-agent"):
             name = "spire-agent_1.0_all.deb" if binding == "spire-agent" else f"{binding}.deb"
             write_package_archive(self.materials / binding, name)
-        (self.source_files / "nke-agent-spire.conf").write_text("override\n", encoding="utf-8")
-        (self.source_files / "wait-spiffe-socket.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+        for name in ("nke-agent-spire.conf", "wait-spiffe-socket.sh",
+                     "conntrack-tune.service", "configure-conntrack.sh",
+                     "10-nke-conntrack-timeouts.conf"):
+            shutil.copyfile(SCRIPTS.parent.parent / "files" / name, self.source_files / name)
         write_executable(
             self.tools / "dpkg-scanpackages",
             "#!/bin/sh\nprintf 'Package: fixture\\n'\n",
@@ -109,8 +111,27 @@ class ComposeImageInputsTest(unittest.TestCase):
                 "nke-agent-spire.conf",
                 "nke-agent.deb",
                 "wait-spiffe-socket.sh",
+                "conntrack-tune.service",
+                "configure-conntrack.sh",
+                "10-nke-conntrack-timeouts.conf",
             },
         )
+
+    def test_stages_provisioner_files_with_source_bytes_and_modes(self):
+        output = self.root / "source-files.tar"
+        result = self.run_compose(output)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with tarfile.open(output) as archive:
+            for name, mode in (
+                ("nke-agent-spire.conf", 0o644),
+                ("wait-spiffe-socket.sh", 0o755),
+                ("conntrack-tune.service", 0o644),
+                ("configure-conntrack.sh", 0o755),
+                ("10-nke-conntrack-timeouts.conf", 0o644),
+            ):
+                with self.subTest(name=name):
+                    self.assertEqual(archive.getmember(name).mode, mode)
+                    self.assertEqual(archive.extractfile(name).read(), (self.source_files / name).read_bytes())
 
     def test_directory_modes_are_independent_of_umask(self):
         outputs = [self.root / "permissive.tar", self.root / "restrictive.tar"]
@@ -253,7 +274,7 @@ class ComposeImageInputsTest(unittest.TestCase):
                             patch.object(module.subprocess, "run") as index:
                         with self.assertRaisesRegex(SystemExit, expected):
                             module.main()
-                        self.assertEqual(install.call_count, 3 if copies_agent else 0)
+                        self.assertEqual(install.call_count, 6 if copies_agent else 0)
                         index.assert_not_called()
                     if existing:
                         self.assertEqual(output.read_bytes(), b"prior output")
@@ -464,7 +485,9 @@ class ComposeImageInputsTest(unittest.TestCase):
         self.assertIn("exactly one spire-agent_*.deb across all bindings", result.stderr)
 
     def test_missing_files_and_unsafe_outputs(self):
-        for relative in ("materials/ovn", "materials/agent", "source-files/nke-agent-spire.conf"):
+        for relative in ("materials/ovn", "materials/agent", "source-files/nke-agent-spire.conf",
+                         "source-files/wait-spiffe-socket.sh", "source-files/conntrack-tune.service",
+                         "source-files/configure-conntrack.sh", "source-files/10-nke-conntrack-timeouts.conf"):
             with self.subTest(relative=relative):
                 path = self.root / relative
                 saved = path.read_bytes()

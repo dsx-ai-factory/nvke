@@ -250,16 +250,14 @@ def main() -> None:
         if total_bytes == 0:
             raise SystemExit("agent package is empty")
         require_architecture(stage / "nke-agent.deb", args.architecture)
-        install_file(
-            args.source_files_dir / "nke-agent-spire.conf",
-            stage / "nke-agent-spire.conf",
-            0o644,
-        )
-        install_file(
-            args.source_files_dir / "wait-spiffe-socket.sh",
-            stage / "wait-spiffe-socket.sh",
-            0o755,
-        )
+        for name, mode in (
+            ("nke-agent-spire.conf", 0o644),
+            ("wait-spiffe-socket.sh", 0o755),
+            ("conntrack-tune.service", 0o644),
+            ("configure-conntrack.sh", 0o755),
+            ("10-nke-conntrack-timeouts.conf", 0o644),
+        ):
+            install_file(args.source_files_dir / name, stage / name, mode)
 
         names: set[str] = set()
         for binding in ARCHIVE_BINDINGS:
