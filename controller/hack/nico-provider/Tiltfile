@@ -262,10 +262,10 @@ def register(ctx):
         icon_name="add_box",
         text="Create sample local NICo cluster",
         inputs=[
-            text_input("CLUSTER_NAME", default="nico-local"),
-            text_input("KUBERNETES_VERSION", default="1.34.2"),
-            text_input("CONTROL_PLANE_DESIRED_COUNT", default="1"),
-            text_input("WORKER_DESIRED_COUNT", default="0"),
+            text_input("CLUSTER_NAME", label="Cluster name", default="nico-local"),
+            text_input("KUBERNETES_VERSION", label="Kubernetes version", default="1.34.2"),
+            text_input("CONTROL_PLANE_DESIRED_COUNT", label="Control-plane nodes", default="1"),
+            text_input("WORKER_DESIRED_COUNT", label="Worker nodes", default="0"),
         ],
     )
 
