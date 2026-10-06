@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+
 	"github.com/dsx-ai-factory/nke/controller/internal/clients/capi"
 	"github.com/dsx-ai-factory/nke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nke/controller/internal/clients/shared"
@@ -23,6 +25,13 @@ type MachineMaterialization interface {
 	// and generic CAPI Machine for the node, calling whichever of deps'
 	// callbacks this provider needs.
 	CreateMachine(ctx context.Context, deps shared.MachineCreateDeps, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) error
+
+	// TryAdvanceStuckMachine inspects a Machine that has been waiting with no
+	// IP address and, if the failure looks like a retryable unavailability,
+	// advances it to the next pinned option (network candidate or instance
+	// type). Returns true when it advanced (caller should keep waiting for
+	// the new attempt); false when there was nothing to advance.
+	TryAdvanceStuckMachine(ctx context.Context, deps shared.MachineAdvanceDeps, node db.Node, nodeSet db.NodeSet, machine *clusterv1.Machine) (bool, error)
 }
 
 // GetMachineMaterialization selects the MachineMaterialization

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -75,6 +76,21 @@ type MachineCreateDeps struct {
 	// type when CWE didn't set one, returning the (possibly updated) node
 	// pool. Only the nico client calls this.
 	SeedControlPlaneInstanceType func(ctx context.Context, node db.Node, nodePool db.NodePool) (db.NodePool, error)
+}
+
+// MachineAdvanceDeps bundles what Activities supplies so a provider client's
+// TryAdvanceStuckMachine can run. Separate from MachineCreateDeps because it
+// serves a different caller (waitForCAPIMachineReady, not
+// CreateCAPIInfraMachineForNode) with a much smaller set of needs — just the
+// k8s client and the one DB-backed lookup only Activities can perform.
+type MachineAdvanceDeps struct {
+	K8sClient client.Client
+
+	// ControlPlaneInstanceTypePreference returns the ordered instance-type
+	// preference a control-plane node is pinned to, or nil if it carries
+	// none (not a control-plane node, or provisioned without a pinned
+	// control-plane configuration). Only the nico client calls this.
+	ControlPlaneInstanceTypePreference func(ctx context.Context, node db.Node) ([]uuid.UUID, error)
 }
 
 // BuildBootstrapSecret builds the bootstrap data Secret for a node. Identical

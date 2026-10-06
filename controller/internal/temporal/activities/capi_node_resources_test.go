@@ -193,8 +193,9 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		},
 	}
 	cluster := db.Cluster{
-		ID:   clusterID,
-		Name: "cluster-a",
+		ID:           clusterID,
+		Name:         "cluster-a",
+		ProviderType: db.ProviderTypeNico,
 		ControlPlaneConfig: db.ControlPlaneConfig{
 			ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
 				KubernetesVersion: "1.32.1",
@@ -661,17 +662,6 @@ func testNicoMachineForCAPIMachineReady(params nicoMachineRotationParameters) *n
 	return nicoMachine
 }
 
-func newNicoMachineRotationClient(t *testing.T, nicoMachine *nicov1.NicoMachine) client.Client {
-	t.Helper()
-
-	scheme := runtime.NewScheme()
-	require.NoError(t, nicov1.AddToScheme(scheme))
-	return fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(nicoMachine).
-		Build()
-}
-
 func newCAPIMachineCreateClient(t *testing.T) client.Client {
 	t.Helper()
 
@@ -993,22 +983,6 @@ func getTestNicoMachine(t *testing.T, k8sClient client.Client) *nicov1.NicoMachi
 		Name:      "worker-0",
 	}, nicoMachine))
 	return nicoMachine
-}
-
-func testCAPINicoMachine() *clusterv1.Machine {
-	return &clusterv1.Machine{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "worker-0",
-			Namespace: "capi-cluster-a",
-		},
-		Spec: clusterv1.MachineSpec{
-			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-				APIGroup: nicov1.GroupVersion.Group,
-				Kind:     "NicoMachine",
-				Name:     "worker-0",
-			},
-		},
-	}
 }
 
 // A site stood up without SPIFFE has no SPIRE server and no trust domain, so

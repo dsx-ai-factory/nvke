@@ -243,12 +243,16 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 		}
 	}
 	if ipAddress == "" {
-		// Template-backed nodes have no rotation fallback (nil); templateless
-		// Nico nodes advance to the next pinned option in place.
-		if fb := a.provisioningFallbackFor(nodeSet); fb != nil {
-			if _, err := fb.tryNext(ctx, node, nodeSet, machine); err != nil {
-				return "", err
-			}
+		machineClient, clientErr := clients.GetMachineMaterialization(cluster)
+		if clientErr != nil {
+			return "", clientErr
+		}
+		advanceDeps := shared.MachineAdvanceDeps{
+			K8sClient:                          a.k8sClient,
+			ControlPlaneInstanceTypePreference: a.controlPlaneInstanceTypePreference,
+		}
+		if _, err := machineClient.TryAdvanceStuckMachine(ctx, advanceDeps, node, nodeSet, machine); err != nil {
+			return "", err
 		}
 
 		return "", fmt.Errorf("capi machine %s has no IP addresses in status or infrastructure ref", machine.Name)
