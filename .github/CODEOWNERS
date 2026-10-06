@@ -37,6 +37,7 @@ go.sum @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
 
 # area/chart
 /controller/deploy/ @dsx-ai-factory/nke-write @TerryHowe @vwilson-nvidia @danbudris @rbever-nvidia
+/deploy/ @dsx-ai-factory/nke-write @TerryHowe @vwilson-nvidia @danbudris @rbever-nvidia
 /controller/hack/chart-*-assertions.* @dsx-ai-factory/nke-write @TerryHowe @vwilson-nvidia @danbudris @rbever-nvidia
 
 # area/docs

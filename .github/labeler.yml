@@ -32,6 +32,7 @@ area/chart:
       - any-glob-to-any-file:
           - "controller/deploy/**"
           - "controller/hack/chart-*-assertions.*"
+          - "deploy/**"
           - "nktp/deploy/**"
 
 area/os-image:
