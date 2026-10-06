@@ -50,6 +50,9 @@ asset="nkectl-linux-${arch}"
 tag="cli/${version}"
 api="${GITHUB_API_URL:-https://api.github.com}/repos/${GITHUB_REPOSITORY:-dsx-ai-factory/nke}"
 mkdir -p "${dir}"
+# site.nkectl points at this path, so a binary that fails any check below
+# must not be left there for a later suite run to pick up.
+trap '[ "$?" -eq 0 ] || rm -f "${dir}/${asset}"' EXIT
 
 if ! release="$(curl -fsSL --retry 3 -H "Authorization: Bearer ${GITHUB_TOKEN}" \
 	-H "Accept: application/vnd.github+json" "${api}/releases/tags/${tag}")"; then
