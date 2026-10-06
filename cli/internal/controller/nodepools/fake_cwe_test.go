@@ -130,7 +130,7 @@ func newFakeCWE(t *testing.T, seeds ...seed) (*fakeCWE, ControllerClientFn) {
 			NodeNamePrefix:    s.name,
 			KubernetesVersion: "1.30.0",
 			DesiredNodeCount:  s.desiredNodeCount,
-			NodeLabels:        []string{},
+			NodeLabels:        map[string]string{},
 			ControlPlane:      s.controlPlane,
 			Conditions:        conditionsFor(s),
 		})
@@ -352,7 +352,7 @@ func (f *fakeCWE) create(w http.ResponseWriter, r *http.Request) {
 		Name:             name,
 		NodeNamePrefix:   prefix,
 		DesiredNodeCount: int(count),
-		NodeLabels:       []string{},
+		NodeLabels:       map[string]string{},
 	}
 	f.nodePools = append(f.nodePools, pool)
 	writeJSON(w, http.StatusCreated, pool)

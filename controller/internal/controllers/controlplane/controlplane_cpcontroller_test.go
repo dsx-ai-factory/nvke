@@ -179,7 +179,7 @@ func TestNodesNeedingRollout_TemplateVsLabelOnly(t *testing.T) {
 	currentSpec := nicoCPSpec("nke-1.34.2", "cfg", "1.34.2")
 	// Same replacing template as current, but a non-replacing (label-only) delta.
 	labelOnlySpec := currentSpec
-	labelOnlySpec.NodeLabels = []string{"role=cp"}
+	labelOnlySpec.NodeLabels = map[string]string{"role": "cp"}
 	// Replacing delta: different OS profile.
 	replacingSpec := staleCPSpec(t, currentSpec)
 

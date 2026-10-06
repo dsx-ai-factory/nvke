@@ -233,7 +233,7 @@ func seedCWEGofailDBTx(ctx context.Context, database db.Tx) error {
 		ControlPlane:         true,
 		DesiredCount:         1,
 		SystemReservedMemory: "16Gi",
-		NodeLabels:           []string{},
+		NodeLabels:           map[string]string{},
 		Conditions: db.NodePoolConditions{
 			Provisioned: db.NewCondition(true, "seeded"),
 		},

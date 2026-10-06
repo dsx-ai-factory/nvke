@@ -257,7 +257,12 @@ paths:
                   nodeNamePrefix: w
                   desiredNodeCount: 2
                   systemReservedMemory: 16Gi
-                  nodeLabels: [nvidia.com/gpu.present=true]
+                  nodeLabels:
+                    nvidia.com/gpu.present: "true"
+                  nodeTaints:
+                    - key: nvidia.com/dedicated
+                      value: gpu
+                      effect: NoSchedule
                   recycleBudget: 1
                   nico:
                     instanceTypeID: 0d2f4a6c-8e0b-4d2f-9a4c-6e8b0d2f4a6c
@@ -526,7 +531,12 @@ paths:
               desiredNodeCount: 4
               systemReservedMemory: 32Gi
               kubeReservedMemory: 4Gi
-              nodeLabels: [nvidia.com/gpu.product=B300]
+              nodeLabels:
+                nvidia.com/gpu.product: B300
+              nodeTaints:
+                - key: nvidia.com/dedicated
+                  value: team-b
+                  effect: NoSchedule
               description: Reserved for team-b training jobs
               recycleBudget: 1
               nico:
@@ -1048,10 +1058,10 @@ components:
           description: Memory reserved for system daemons. Nodes reserve 16Gi when omitted.
           x-go-type-skip-optional-pointer: true
         nodeLabels:
-          type: array
-          items:
+          type: object
+          additionalProperties:
             type: string
-          description: Labels applied to control-plane nodes, as key=value.
+          description: Labels applied to control-plane nodes, as a map of keys to values. Set at creation.
           x-go-type-skip-optional-pointer: true
         teleportEnabled:
           x-fern-ignore: true
@@ -1177,10 +1187,10 @@ components:
           description: Memory reserved for system daemons. Nodes reserve 16Gi when omitted.
           x-go-type-skip-optional-pointer: true
         nodeLabels:
-          type: array
-          items:
+          type: object
+          additionalProperties:
             type: string
-          description: Labels applied to control-plane nodes, as key=value.
+          description: Labels applied to control-plane nodes, as a map of keys to values. Set at creation.
           x-go-type-skip-optional-pointer: true
         teleportEnabled:
           x-fern-ignore: true
@@ -1219,11 +1229,6 @@ components:
         systemReservedMemory:
           type: string
           description: Memory reserved for system daemons.
-        nodeLabels:
-          type: array
-          items:
-            type: string
-          description: Replaces the existing labels.
         teleportEnabled:
           x-fern-ignore: true
           type: boolean
@@ -1465,6 +1470,34 @@ components:
         Generated names must fit within 63 characters (Kubernetes Node name limit).
         Maximum prefix length depends on cluster name length.
 
+    NodeTaint:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - effect
+      description: A Kubernetes taint applied to nodes in a pool.
+      properties:
+        key:
+          type: string
+          description: Taint key.
+          x-go-type-skip-optional-pointer: true
+        value:
+          type: string
+          description: Taint value. Empty is valid.
+          x-go-type-skip-optional-pointer: true
+        effect:
+          $ref: "#/components/schemas/NodeTaintEffect"
+          description: Taint effect.
+
+    NodeTaintEffect:
+      type: string
+      enum:
+        - NoSchedule
+        - PreferNoSchedule
+        - NoExecute
+      description: Kubernetes taint effect.
+
     NodePoolCreateConfig:
       type: object
       description: |
@@ -1513,46 +1546,52 @@ components:
           x-go-type-skip-optional-pointer: true
           x-order: 12
         nodeLabels:
+          type: object
+          additionalProperties:
+            type: string
+          description: Labels applied to the pool's nodes, as a map of keys to values. Set at creation.
+          x-order: 13
+        nodeTaints:
           type: array
           items:
-            type: string
-          description: Labels applied to the pool's nodes, as key=value. Set at creation.
-          x-order: 13
+            $ref: "#/components/schemas/NodeTaint"
+          description: Taints applied to the pool's nodes. Set at creation.
+          x-order: 14
         desiredNodeCount:
           type: integer
           minimum: 0
           description: The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster.
-          x-order: 14
+          x-order: 15
         description:
           type: string
           description: Free-text description.
-          x-order: 15
+          x-order: 16
         autoProvisionDisabled:
           type: boolean
           default: false
           description: Disables automatic provisioning for the pool.
-          x-order: 16
+          x-order: 17
         autoModeDisabled:
           type: boolean
           default: false
           description: Disables auto-mode (automatic node recycling).
-          x-order: 17
+          x-order: 18
         provisioningMonitorDisabled:
           type: boolean
           default: false
           description: When true, nodes stuck in provisioning past the timeout are not recycled automatically.
-          x-order: 18
+          x-order: 19
         recycleBudget:
           type: integer
           minimum: 0
           default: 0
           description: Maximum number of nodes recycled at once.
-          x-order: 19
+          x-order: 20
         teleportEnabled:
           x-fern-ignore: true
           type: boolean
           description: Whether Teleport SSH enrollment is enabled for nodes in this pool. When omitted, the server-side default for the site is applied based on pool role.
-          x-order: 20
+          x-order: 21
         nico:
           $ref: "#/components/schemas/NicoNodePoolProvider"
         infra:
@@ -1631,6 +1670,7 @@ components:
         - kubernetesVersion
         - controlPlane
         - nodeLabels
+        - nodeTaints
         - conditions
         - desiredNodeCount
         - autoProvisionDisabled
@@ -1676,11 +1716,17 @@ components:
           description: Whether the nodes in this pool are control plane nodes
           x-order: 15
         nodeLabels:
+          type: object
+          additionalProperties:
+            type: string
+          description: Labels applied to the pool's nodes, as a map of keys to values. Set at creation.
+          x-order: 16
+        nodeTaints:
           type: array
           items:
-            type: string
-          description: Labels applied to the pool's nodes, as key=value. Set at creation.
-          x-order: 16
+            $ref: "#/components/schemas/NodeTaint"
+          description: Taints applied to the pool's nodes. Set at creation.
+          x-order: 17
         conditions:
           allOf:
             - $ref: "#/components/schemas/NodePoolConditions"
@@ -1689,36 +1735,36 @@ components:
         description:
           type: string
           description: Free-text description.
-          x-order: 18
+          x-order: 19
         desiredNodeCount:
           type: integer
           minimum: 0
           description: Number of nodes.
-          x-order: 19
+          x-order: 20
         autoProvisionDisabled:
           type: boolean
           description: Disables automatic provisioning for the pool.
-          x-order: 20
+          x-order: 21
         currentNodeSetID:
           type: string
           format: uuid
           description: The active NodeSet.
           nullable: true
-          x-order: 21
+          x-order: 22
         autoModeDisabled:
           type: boolean
           description: Disables auto-mode (automatic node recycling).
-          x-order: 22
+          x-order: 23
         provisioningMonitorDisabled:
           type: boolean
           default: false
           description: When true, nodes stuck in provisioning past the timeout are not recycled automatically.
-          x-order: 23
+          x-order: 24
         recycleBudget:
           type: integer
           minimum: 0
           description: Maximum number of nodes recycled at once.
-          x-order: 24
+          x-order: 25
         maxSurge:
           type: integer
           minimum: 0
@@ -1726,13 +1772,13 @@ components:
             Nodes allowed above desiredNodeCount during a rollout. 0 means sequential: each
             node is torn down before its replacement is provisioned.
           default: 0
-          x-order: 25
+          x-order: 26
         teleportEnabled:
           x-fern-ignore: true
           type: boolean
           default: false
           description: Whether Teleport SSH enrollment is enabled for nodes in this pool.
-          x-order: 26
+          x-order: 27
         nico:
           allOf:
             - $ref: "#/components/schemas/NicoNodePoolProvider"

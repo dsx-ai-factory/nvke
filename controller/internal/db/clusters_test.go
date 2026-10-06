@@ -217,7 +217,7 @@ func TestControlPlaneConfigFromNodePool(t *testing.T) {
 		np := &db.NodePool{
 			ControlPlane:                true,
 			DesiredCount:                3,
-			NodeLabels:                  []string{"role=cp"},
+			NodeLabels:                  map[string]string{"role": "cp"},
 			SystemReservedMemory:        "8Gi",
 			KubeReservedMemory:          "250Mi",
 			TeleportEnabled:             true,
@@ -239,7 +239,7 @@ func TestControlPlaneConfigFromNodePool(t *testing.T) {
 		require.NotNil(t, cfg)
 		assert.Equal(t, 3, cfg.DesiredCount)
 		assert.Equal(t, "250Mi", cfg.KubeReservedMemory)
-		assert.Equal(t, []string{"role=cp"}, cfg.NodeLabels)
+		assert.Equal(t, map[string]string{"role": "cp"}, cfg.NodeLabels)
 		assert.True(t, cfg.TeleportEnabled)
 		assert.True(t, cfg.ProvisioningMonitorDisabled)
 		assert.Equal(t, "1.31.0", cfg.KubernetesVersion)
@@ -260,7 +260,7 @@ func TestControlPlaneConfigFromNodePool(t *testing.T) {
 		np := &db.NodePool{
 			ControlPlane:                true,
 			DesiredCount:                2,
-			NodeLabels:                  []string{"role=cp"},
+			NodeLabels:                  map[string]string{"role": "cp"},
 			SystemReservedMemory:        "8Gi",
 			KubeReservedMemory:          "250Mi",
 			TeleportEnabled:             true,
@@ -304,7 +304,7 @@ func TestMergeControlPlaneConfigFromNodePools(t *testing.T) {
 		DesiredCount:                3,
 		Name:                        "gpu-control-plane",
 		NodeNamePrefix:              "cp-",
-		NodeLabels:                  []string{"a=1"},
+		NodeLabels:                  map[string]string{"a": "1"},
 		TeleportEnabled:             false,
 		ProvisioningMonitorDisabled: true,
 		MaxSurge:                    1,
@@ -325,7 +325,7 @@ func TestMergeControlPlaneConfigFromNodePools(t *testing.T) {
 		DesiredCount:      2,
 		Name:              "cpu-control-plane",
 		NodeNamePrefix:    "cp2-",
-		NodeLabels:        []string{"b=2"},
+		NodeLabels:        map[string]string{"b": "2"},
 		TeleportEnabled:   true,
 		MaxSurge:          0,
 		KubernetesVersion: "1.31.0",
@@ -344,7 +344,7 @@ func TestMergeControlPlaneConfigFromNodePools(t *testing.T) {
 	cfg := db.MergeControlPlaneConfigFromNodePools([]db.NodePool{p2, p1})
 	require.NotNil(t, cfg)
 	assert.Equal(t, 5, cfg.DesiredCount)
-	assert.ElementsMatch(t, []string{"a=1", "b=2"}, cfg.NodeLabels)
+	assert.Equal(t, map[string]string{"a": "1", "b": "2"}, cfg.NodeLabels)
 	assert.True(t, cfg.TeleportEnabled)
 	assert.True(t, cfg.ProvisioningMonitorDisabled)
 	assert.Equal(t, 0, cfg.MaxSurge)
@@ -399,7 +399,7 @@ func TestMergeControlPlaneConfigFromNodePools_CAPIPools(t *testing.T) {
 		ControlPlane:      true,
 		DesiredCount:      3,
 		Name:              "capi-cp-a",
-		NodeLabels:        []string{"a=1"},
+		NodeLabels:        map[string]string{"a": "1"},
 		TeleportEnabled:   false,
 		KubernetesVersion: "1.31.0",
 		CreatedAt:         t1,
@@ -414,7 +414,7 @@ func TestMergeControlPlaneConfigFromNodePools_CAPIPools(t *testing.T) {
 		ControlPlane:      true,
 		DesiredCount:      2,
 		Name:              "capi-cp-b",
-		NodeLabels:        []string{"b=2"},
+		NodeLabels:        map[string]string{"b": "2"},
 		TeleportEnabled:   true,
 		KubernetesVersion: "1.31.0",
 		CreatedAt:         t2,
@@ -431,7 +431,7 @@ func TestMergeControlPlaneConfigFromNodePools_CAPIPools(t *testing.T) {
 
 	// Counts and labels aggregate across all pools.
 	assert.Equal(t, 5, cfg.DesiredCount)
-	assert.ElementsMatch(t, []string{"a=1", "b=2"}, cfg.NodeLabels)
+	assert.Equal(t, map[string]string{"a": "1", "b": "2"}, cfg.NodeLabels)
 	assert.True(t, cfg.TeleportEnabled)
 
 	// Typed Capi provider carries all aggregated and scalar fields.
@@ -486,7 +486,7 @@ func TestSyncClusterControlPlaneConfigFromCPNodePools_NoActiveCPPools(t *testing
 				NodeNamePrefix:       "cp",
 				SystemReservedMemory: "1Gi",
 				ControlPlane:         true,
-				NodeLabels:           []string{},
+				NodeLabels:           map[string]string{},
 				KubernetesVersion:    "1.34.2",
 				Conditions: db.NodePoolConditions{
 					Deleting: db.Condition{Status: db.ConditionStatusTrue},
@@ -573,7 +573,7 @@ func TestSyncClusterControlPlaneConfigFromCPNodePools_PreservesClusterOverrides(
 		NodeNamePrefix:       "cp",
 		SystemReservedMemory: "1Gi",
 		ControlPlane:         true,
-		NodeLabels:           []string{},
+		NodeLabels:           map[string]string{},
 		KubernetesVersion:    "1.34.2",
 		MaxSurge:             0,
 		Conditions: db.NodePoolConditions{

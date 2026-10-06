@@ -31,7 +31,7 @@ name: gpu-workers
 nodeNamePrefix: gpu
 desiredNodeCount: 2
 nodeLabels:
-  - role=gpu
+  role: gpu
 `, clusterID)
 
 	out, err := run(t, NewCreateCmd(clientFn), "-f", writeSpec(t, "pool.yaml", spec))
@@ -63,9 +63,9 @@ nodeLabels:
 	if body["desiredNodeCount"] != float64(2) {
 		t.Errorf("desiredNodeCount = %v, want 2", body["desiredNodeCount"])
 	}
-	labels, ok := body["nodeLabels"].([]any)
-	if !ok || len(labels) != 1 || labels[0] != "role=gpu" {
-		t.Errorf("nodeLabels = %v, want [role=gpu]", body["nodeLabels"])
+	labels, ok := body["nodeLabels"].(map[string]any)
+	if !ok || labels["role"] != "gpu" {
+		t.Errorf("nodeLabels = %v, want map[role:gpu]", body["nodeLabels"])
 	}
 	if _, present := body["controlPlane"]; present {
 		t.Errorf("controlPlane was sent though the spec omitted it: %v", body)

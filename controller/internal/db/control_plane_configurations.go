@@ -26,7 +26,7 @@ import (
 type ControlPlaneConfigSpec struct {
 	SystemReservedMemory        string                    `json:"system_reserved_memory,omitempty" bun:"-"`
 	KubeReservedMemory          string                    `json:"kube_reserved_memory,omitempty" bun:"-"`
-	NodeLabels                  []string                  `json:"node_labels,omitempty" bun:"-"`
+	NodeLabels                  map[string]string         `json:"node_labels,omitempty" bun:"-"`
 	TeleportEnabled             bool                      `json:"teleport_enabled,omitempty" bun:"-"`
 	ProvisioningMonitorDisabled bool                      `json:"provisioning_monitor_disabled,omitempty" bun:"-"`
 	KubernetesVersion           string                    `json:"kubernetes_version,omitempty" bun:"-"`
@@ -124,7 +124,7 @@ func (c ControlPlaneConfigSpec) Equal(other ControlPlaneConfigSpec) bool {
 
 func normalizeConfigSpec(cfg ControlPlaneConfigSpec) ControlPlaneConfigSpec {
 	out := cfg
-	out.NodeLabels = append([]string(nil), cfg.NodeLabels...)
+	out.NodeLabels = CloneStringMap(cfg.NodeLabels)
 	out.Nico = cloneNicoControlPlaneProvider(cfg.Nico)
 	out.Capi = cloneCAPIControlPlaneProvider(cfg.Capi)
 	return out

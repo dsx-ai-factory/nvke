@@ -114,7 +114,7 @@ func seedTeardownScenarioTx(ctx context.Context, tx db.Tx, scenario TeardownScen
 		ControlPlane:         true,
 		DesiredCount:         2,
 		SystemReservedMemory: "16Gi",
-		NodeLabels:           []string{},
+		NodeLabels:           map[string]string{},
 		Conditions: db.NodePoolConditions{
 			Provisioned: db.NewCondition(true, "seeded"),
 		},

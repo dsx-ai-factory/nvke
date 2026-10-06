@@ -791,7 +791,7 @@ func setupTestDB(t *testing.T, opts seedOpts) (db.DB, seedResult) {
 			Name:           "worker-pool",
 			NodeNamePrefix: "worker",
 			ControlPlane:   false,
-			NodeLabels:     []string{},
+			NodeLabels:     map[string]string{},
 		}
 		workerPool.SetNico(nicoProfiles)
 		_, err = database.CreateNodePool(ctx, &workerPool)
@@ -815,7 +815,7 @@ func setupTestDB(t *testing.T, opts seedOpts) (db.DB, seedResult) {
 		Name:           "cp-pool",
 		NodeNamePrefix: "cp",
 		ControlPlane:   true,
-		NodeLabels:     []string{},
+		NodeLabels:     map[string]string{},
 	}
 	cpPool.SetNico(nicoProfiles)
 	_, err = database.CreateNodePool(ctx, &cpPool)

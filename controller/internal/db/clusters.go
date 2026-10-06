@@ -158,13 +158,10 @@ func ControlPlaneConfigFromNodePool(np *NodePool) *ControlPlaneConfig {
 		return nil
 	}
 
-	labels := make([]string, len(np.NodeLabels))
-	copy(labels, np.NodeLabels)
-
 	cfg := &ControlPlaneConfig{
 		DesiredCount: np.DesiredCount,
 		ControlPlaneConfigSpec: ControlPlaneConfigSpec{
-			NodeLabels:                  labels,
+			NodeLabels:                  np.NodeLabels,
 			SystemReservedMemory:        np.SystemReservedMemory,
 			KubeReservedMemory:          np.KubeReservedMemory,
 			TeleportEnabled:             np.TeleportEnabled,
@@ -240,8 +237,7 @@ func MergeControlPlaneConfigFromNodePools(pools []NodePool) *ControlPlaneConfig 
 	var vpcPrefixes []uuid.UUID
 	keySeen := make(map[uuid.UUID]struct{})
 	var sshKeys []uuid.UUID
-	var labels []string
-	labelSeen := make(map[string]struct{})
+	labels := map[string]string{}
 	k8sVer := ""
 
 	for i := range sortedPools {
@@ -272,10 +268,9 @@ func MergeControlPlaneConfigFromNodePools(pools []NodePool) *ControlPlaneConfig 
 		subnets = appendUniqueUUIDs(subnets, subSeen, subnetIDs)
 		vpcPrefixes = appendUniqueUUIDs(vpcPrefixes, pfxSeen, vpcPrefixIDs)
 		sshKeys = appendUniqueUUIDs(sshKeys, keySeen, sshKeyGroupIDs)
-		for _, l := range p.NodeLabels {
-			if _, ok := labelSeen[l]; !ok {
-				labelSeen[l] = struct{}{}
-				labels = append(labels, l)
+		for key, value := range p.NodeLabels {
+			if _, ok := labels[key]; !ok {
+				labels[key] = value
 			}
 		}
 		if p.KubernetesVersion != "" {

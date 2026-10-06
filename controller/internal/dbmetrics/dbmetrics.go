@@ -6,6 +6,7 @@ package dbmetrics
 import (
 	"context"
 	"log/slog"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -502,7 +503,7 @@ func (c *Collector) emitNodePoolInfo(ch chan<- prometheus.Metric, ctx *clusterIn
 		nodePool.SystemReservedMemory,
 		nodePool.KubeReservedMemory,
 		strconv.FormatBool(nodePool.ControlPlane),
-		strings.Join(nodePool.NodeLabels, ","),
+		formatNodeLabels(nodePool.NodeLabels),
 		getNodePoolStatus(nodePool),
 		nodePool.CreatedAt.UTC().Format(time.RFC3339),
 		nodePool.UpdatedAt.UTC().Format(time.RFC3339),
@@ -594,6 +595,19 @@ func uuidSliceToString(ids []uuid.UUID) string {
 	parts := make([]string, 0, len(ids))
 	for _, id := range ids {
 		parts = append(parts, id.String())
+	}
+	return strings.Join(parts, ",")
+}
+
+func formatNodeLabels(labels map[string]string) string {
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+labels[key])
 	}
 	return strings.Join(parts, ",")
 }

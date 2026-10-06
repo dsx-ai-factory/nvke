@@ -193,7 +193,7 @@ func setupNodePreflightRequestTest(
 		Name:                 "worker",
 		NodeNamePrefix:       "w",
 		SystemReservedMemory: "1Gi",
-		NodeLabels:           []string{},
+		NodeLabels:           map[string]string{},
 		KubernetesVersion:    "1.34.0",
 		CurrentNodeSetID:     pointerTo(nodeSetID),
 	}

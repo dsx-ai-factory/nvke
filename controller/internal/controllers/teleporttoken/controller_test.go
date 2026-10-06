@@ -96,7 +96,7 @@ func setupTestEnv(ctx context.Context, t *testing.T) *testEnv {
 		ClusterID:            cluster.ID,
 		Name:                 "test-pool",
 		NodeNamePrefix:       "test",
-		NodeLabels:           []string{},
+		NodeLabels:           map[string]string{},
 		SystemReservedMemory: "16Gi",
 	}
 	nodePool.SetNico(db.NicoNodePoolProvider{
@@ -782,7 +782,7 @@ func TestCreateTokenForNode(t *testing.T) {
 			ClusterID:            uuid.New(), // Non-existent Cluster
 			Name:                 "orphan-pool",
 			NodeNamePrefix:       "test",
-			NodeLabels:           []string{},
+			NodeLabels:           map[string]string{},
 			SystemReservedMemory: "16Gi",
 		}
 		orphanPool.SetNico(db.NicoNodePoolProvider{

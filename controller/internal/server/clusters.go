@@ -419,6 +419,7 @@ func (s *clusterService) createInitialNodePools(ctx context.Context, tx db.Tx, c
 			SystemReservedMemory:        nodePoolConfig.SystemReservedMemory,
 			KubeReservedMemory:          nodePoolConfig.KubeReservedMemory,
 			NodeLabels:                  nodePoolConfig.NodeLabels,
+			NodeTaints:                  nodePoolConfig.NodeTaints,
 			ControlPlane:                nodePoolConfig.ControlPlane,
 			DesiredNodeCount:            nodePoolConfig.DesiredNodeCount,
 			Description:                 nodePoolConfig.Description,
@@ -824,7 +825,6 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 func hasClusterLevelControlPlaneUpdate(req *api.UpdateClusterControlPlaneConfig) bool {
 	if req.DesiredCount != nil ||
 		req.SystemReservedMemory != nil ||
-		req.NodeLabels != nil ||
 		req.TeleportEnabled != nil ||
 		req.Infra != nil {
 		return true
@@ -874,9 +874,6 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 
 	if req.SystemReservedMemory != nil {
 		spec.SystemReservedMemory = *req.SystemReservedMemory
-	}
-	if req.NodeLabels != nil {
-		spec.NodeLabels = append([]string(nil), *req.NodeLabels...)
 	}
 	if req.TeleportEnabled != nil {
 		spec.TeleportEnabled = *req.TeleportEnabled
@@ -992,7 +989,7 @@ func apiControlPlaneConfigFromDB(cfg db.ControlPlaneConfig) *api.ControlPlaneCon
 		MaxSurge:                    &maxSurge,
 		ProvisioningMonitorDisabled: &provisioningMonitorDisabled,
 		SystemReservedMemory:        cfg.SystemReservedMemory,
-		NodeLabels:                  append([]string(nil), cfg.NodeLabels...),
+		NodeLabels:                  cfg.NodeLabels,
 		TeleportEnabled:             &teleportEnabled,
 		Nico:                        apiNicoControlPlaneProviderFromDB(cfg.Nico),
 		Infra:                       apiInfraControlPlaneProviderFromDB(cfg.Capi),

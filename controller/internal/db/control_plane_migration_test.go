@@ -104,7 +104,7 @@ func importedControlPlanePool(clusterID uuid.UUID, desired int) db.NodePool {
 		NodeNamePrefix:       "cp",
 		SystemReservedMemory: "16Gi",
 		ControlPlane:         true,
-		NodeLabels:           []string{},
+		NodeLabels:           map[string]string{},
 		KubernetesVersion:    "1.34.2",
 		DesiredCount:         desired,
 		Conditions: db.NodePoolConditions{

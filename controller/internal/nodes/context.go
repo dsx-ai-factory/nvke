@@ -105,7 +105,7 @@ func ControlPlaneConfigNodeContext(cluster db.Cluster, node db.Node, snapshotCfg
 		Name:                        "control-plane-config",
 		NodeNamePrefix:              "cp",
 		ControlPlane:                true,
-		NodeLabels:                  append([]string(nil), snapshotCfg.NodeLabels...),
+		NodeLabels:                  db.CloneStringMap(snapshotCfg.NodeLabels),
 		KubernetesVersion:           snapshotCfg.KubernetesVersion,
 		MaxSurge:                    cluster.ControlPlaneConfig.MaxSurge,
 		SystemReservedMemory:        snapshotCfg.SystemReservedMemory,

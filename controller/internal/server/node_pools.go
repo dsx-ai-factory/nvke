@@ -720,6 +720,30 @@ func nonEmptyVpcPrefixIDs(req *api.UpdateNodePoolRequest) bool {
 	return req != nil && req.Nico != nil && req.Nico.VpcPrefixIDs != nil && len(req.Nico.VpcPrefixIDs) > 0
 }
 
+func dbNodeTaintsFromAPI(taints []api.NodeTaint) []db.NodeTaint {
+	out := make([]db.NodeTaint, 0, len(taints))
+	for _, taint := range taints {
+		out = append(out, db.NodeTaint{
+			Key:    taint.Key,
+			Value:  taint.Value,
+			Effect: string(taint.Effect),
+		})
+	}
+	return out
+}
+
+func apiNodeTaintsFromDB(taints []db.NodeTaint) []api.NodeTaint {
+	out := make([]api.NodeTaint, 0, len(taints))
+	for _, taint := range taints {
+		out = append(out, api.NodeTaint{
+			Key:    taint.Key,
+			Value:  taint.Value,
+			Effect: api.NodeTaintEffect(taint.Effect),
+		})
+	}
+	return out
+}
+
 // uuidSliceDedupe returns a copy of s with duplicate UUIDs removed (order preserved by first occurrence).
 func uuidSliceDedupe(s []uuid.UUID) []uuid.UUID {
 	seen := make(map[uuid.UUID]struct{})
@@ -753,6 +777,7 @@ func apiNodePoolFromDB(dbNodePool *db.NodePool) api.NodePool {
 		KubeReservedMemory:          kubeReservedMemory,
 		ControlPlane:                dbNodePool.ControlPlane,
 		NodeLabels:                  dbNodePool.NodeLabels,
+		NodeTaints:                  apiNodeTaintsFromDB(dbNodePool.NodeTaints),
 		DesiredNodeCount:            dbNodePool.DesiredCount,
 		AutoProvisionDisabled:       dbNodePool.AutoProvisionDisabled,
 		AutoModeDisabled:            dbNodePool.AutoModeDisabled,
@@ -834,9 +859,13 @@ func dbNodePoolFromAPI(
 	req *api.CreateNodePoolRequest,
 	kubernetesVersion string,
 ) (db.NodePool, error) {
-	nodeLabels := make([]string, 0)
+	nodeLabels := map[string]string{}
 	if req.NodeLabels != nil {
 		nodeLabels = *req.NodeLabels
+	}
+	nodeTaints := []db.NodeTaint{}
+	if req.NodeTaints != nil {
+		nodeTaints = dbNodeTaintsFromAPI(*req.NodeTaints)
 	}
 
 	nodePoolID := uuid.New()
@@ -865,6 +894,7 @@ func dbNodePoolFromAPI(
 		KubeReservedMemory:   req.KubeReservedMemory,
 		ControlPlane:         req.ControlPlane,
 		NodeLabels:           nodeLabels,
+		NodeTaints:           nodeTaints,
 		Conditions: db.NodePoolConditions{
 			Provisioning: db.NewCondition(true, "Starting provisioning"),
 			Provisioned:  db.NewCondition(false, "Not yet provisioned"),

@@ -63,7 +63,7 @@ func (te *collectorTestEnv) createNodePool(ctx context.Context, t *testing.T, cl
 		NodeNamePrefix:     "n",
 		ControlPlane:       false,
 		KubeReservedMemory: "250Mi",
-		NodeLabels:         []string{},
+		NodeLabels:         map[string]string{},
 		Nico: &db.NicoNodePoolProvider{
 			SubnetIDs:      []uuid.UUID{uuid.New()},
 			VpcPrefixIDs:   []uuid.UUID{uuid.New()},

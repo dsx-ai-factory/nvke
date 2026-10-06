@@ -723,6 +723,7 @@ func nodePoolRequest(clusterID uuid.UUID, pool api.NodePoolCreateConfig) api.Cre
 		KubeReservedMemory:          pool.KubeReservedMemory,
 		ControlPlane:                pool.ControlPlane,
 		NodeLabels:                  pool.NodeLabels,
+		NodeTaints:                  pool.NodeTaints,
 		DesiredNodeCount:            pool.DesiredNodeCount,
 		Infra:                       pool.Infra,
 		Description:                 pool.Description,

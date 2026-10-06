@@ -280,7 +280,7 @@ func controlPlaneConfigSpecFromCreateAPI(
 
 	spec := db.ControlPlaneConfigSpec{
 		SystemReservedMemory:        c.SystemReservedMemory,
-		NodeLabels:                  append([]string(nil), c.NodeLabels...),
+		NodeLabels:                  c.NodeLabels,
 		TeleportEnabled:             teleportEnabled,
 		ProvisioningMonitorDisabled: provisioningMonitorDisabled,
 		KubernetesVersion:           kubernetesVersion,

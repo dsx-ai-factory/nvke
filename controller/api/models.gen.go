@@ -41,6 +41,13 @@ const (
 	DiskSelectionStrategyCreateSmallest DiskSelectionStrategyCreate = "smallest"
 )
 
+// Defines values for NodeTaintEffect.
+const (
+	NodeTaintEffectNoExecute        NodeTaintEffect = "NoExecute"
+	NodeTaintEffectNoSchedule       NodeTaintEffect = "NoSchedule"
+	NodeTaintEffectPreferNoSchedule NodeTaintEffect = "PreferNoSchedule"
+)
+
 // Defines values for UpdateInProgressType.
 const (
 	UpdateInProgressTypeCpNodesRecycling UpdateInProgressType = "cp_nodes_recycling"
@@ -207,8 +214,8 @@ type ControlPlaneConfig struct {
 	// Nico NICo settings for control-plane nodes.
 	Nico *NicoControlPlaneProvider `json:"nico,omitempty"`
 
-	// NodeLabels Labels applied to control-plane nodes, as key=value.
-	NodeLabels []string `json:"nodeLabels,omitempty"`
+	// NodeLabels Labels applied to control-plane nodes, as a map of keys to values. Set at creation.
+	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not replaced automatically.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
@@ -359,8 +366,8 @@ type CreateClusterControlPlaneConfig struct {
 	// configProfile is optional, and exactly one of subnetIDs and vpcPrefixIDs.
 	Nico *NicoControlPlaneProviderCreate `json:"nico,omitempty"`
 
-	// NodeLabels Labels applied to control-plane nodes, as key=value.
-	NodeLabels []string `json:"nodeLabels,omitempty"`
+	// NodeLabels Labels applied to control-plane nodes, as a map of keys to values. Set at creation.
+	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not replaced automatically.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
@@ -443,8 +450,11 @@ type CreateNodePoolRequest struct {
 	// ControlPlane Whether the nodes in this pool should be added as Kubernetes control plane nodes
 	ControlPlane bool `json:"controlPlane,omitempty"`
 
-	// NodeLabels Labels applied to the pool's nodes, as key=value. Set at creation.
-	NodeLabels *[]string `json:"nodeLabels,omitempty"`
+	// NodeLabels Labels applied to the pool's nodes, as a map of keys to values. Set at creation.
+	NodeLabels *map[string]string `json:"nodeLabels,omitempty"`
+
+	// NodeTaints Taints applied to the pool's nodes. Set at creation.
+	NodeTaints *[]NodeTaint `json:"nodeTaints,omitempty"`
 
 	// DesiredNodeCount The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster.
 	DesiredNodeCount int `json:"desiredNodeCount"`
@@ -903,8 +913,11 @@ type NodePool struct {
 	// ControlPlane Whether the nodes in this pool are control plane nodes
 	ControlPlane bool `json:"controlPlane"`
 
-	// NodeLabels Labels applied to the pool's nodes, as key=value. Set at creation.
-	NodeLabels []string `json:"nodeLabels"`
+	// NodeLabels Labels applied to the pool's nodes, as a map of keys to values. Set at creation.
+	NodeLabels map[string]string `json:"nodeLabels"`
+
+	// NodeTaints Taints applied to the pool's nodes. Set at creation.
+	NodeTaints []NodeTaint `json:"nodeTaints"`
 
 	// Description Free-text description.
 	Description *string `json:"description,omitempty"`
@@ -974,8 +987,11 @@ type NodePoolCreateConfig struct {
 	// ControlPlane Whether the nodes in this pool should be added as Kubernetes control plane nodes
 	ControlPlane bool `json:"controlPlane,omitempty"`
 
-	// NodeLabels Labels applied to the pool's nodes, as key=value. Set at creation.
-	NodeLabels *[]string `json:"nodeLabels,omitempty"`
+	// NodeLabels Labels applied to the pool's nodes, as a map of keys to values. Set at creation.
+	NodeLabels *map[string]string `json:"nodeLabels,omitempty"`
+
+	// NodeTaints Taints applied to the pool's nodes. Set at creation.
+	NodeTaints *[]NodeTaint `json:"nodeTaints,omitempty"`
 
 	// DesiredNodeCount The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster.
 	DesiredNodeCount int `json:"desiredNodeCount"`
@@ -1042,6 +1058,21 @@ type NodeSet struct {
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
 }
 
+// NodeTaint A Kubernetes taint applied to nodes in a pool.
+type NodeTaint struct {
+	// Effect Kubernetes taint effect.
+	Effect NodeTaintEffect `json:"effect"`
+
+	// Key Taint key.
+	Key string `json:"key"`
+
+	// Value Taint value. Empty is valid.
+	Value string `json:"value,omitempty"`
+}
+
+// NodeTaintEffect Kubernetes taint effect.
+type NodeTaintEffect string
+
 // OSProfile An OS profile available to the management plane.
 type OSProfile struct {
 	// Name The name of the OS profile
@@ -1069,9 +1100,6 @@ type UpdateClusterControlPlaneConfig struct {
 	// Nico Each field has three states: omitted leaves the stored value, a value replaces
 	// it, and an empty value clears it. Clearing a required field is rejected.
 	Nico *NicoControlPlaneProviderUpdate `json:"nico,omitempty"`
-
-	// NodeLabels Replaces the existing labels.
-	NodeLabels *[]string `json:"nodeLabels,omitempty"`
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not replaced automatically.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`

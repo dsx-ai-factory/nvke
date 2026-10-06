@@ -317,7 +317,7 @@ func newNodePool(clusterID uuid.UUID, name string, controlPlane bool, opts ...no
 		Name:              name,
 		NodeNamePrefix:    "node",
 		ControlPlane:      controlPlane,
-		NodeLabels:        []string{},
+		NodeLabels:        map[string]string{},
 		KubernetesVersion: testKubernetesVersion,
 		Nico: &db.NicoNodePoolProvider{
 			SubnetIDs:      []uuid.UUID{uuid.New()},

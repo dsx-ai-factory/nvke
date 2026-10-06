@@ -245,7 +245,7 @@ func TestApplyUpdateNodePoolRequest_NestedNicoPatch(t *testing.T) {
 			Name:              "worker",
 			NodeNamePrefix:    "w",
 			KubernetesVersion: "1.31.0",
-			NodeLabels:        []string{},
+			NodeLabels:        map[string]string{},
 			Conditions:        db.NodePoolConditions{},
 		}
 		pool.SetNico(db.NicoNodePoolProvider{
@@ -312,7 +312,7 @@ func TestApiNodePoolFromDB_EmitsNestedWhenPayloadPresent(t *testing.T) {
 		Name:              "worker",
 		NodeNamePrefix:    "w",
 		KubernetesVersion: "1.31.0",
-		NodeLabels:        []string{},
+		NodeLabels:        map[string]string{},
 		Conditions:        db.NodePoolConditions{},
 		Nico: &db.NicoNodePoolProvider{
 			InstanceTypeID:        uuid.New(),
@@ -342,7 +342,7 @@ func TestNodePoolGetThenPatchNestedMutableOnly(t *testing.T) {
 		Name:              "worker",
 		NodeNamePrefix:    "w",
 		KubernetesVersion: "1.31.0",
-		NodeLabels:        []string{},
+		NodeLabels:        map[string]string{},
 		Conditions:        db.NodePoolConditions{},
 	}
 	pool.SetNico(db.NicoNodePoolProvider{
