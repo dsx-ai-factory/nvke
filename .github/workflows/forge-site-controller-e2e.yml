@@ -1018,7 +1018,7 @@ jobs:
           for raw in "${FORGE_JUMP_HOST}" "${FORGE_YTL_JUMP_HOST}"; do
             [ -n "${raw}" ] || continue
             host="$(printf '%s' "${raw}" | sed 's/[][\.*^$/]/\\&/g')"
-            for f in site-e2e.log site-e2e.junit.xml tenant-diagnostics.json; do
+            for f in site-e2e.log site-e2e.junit.xml tenant-diagnostics.json site-cluster-state.txt; do
               [ -f "${f}" ] || continue
               sed -i "s/${host}/<jump host>/g" "${f}"
             done
@@ -1032,6 +1032,13 @@ jobs:
       # site-diagnostics.tar.gz is what nkectl collected on the node when a
       # bootstrap failed. It only exists on a failure, and only the suite can
       # save it: the node is released minutes later and takes it with it.
+      #
+      # site-cluster-state.txt covers the gap that leaves. nkectl writes
+      # diagnostics when the bootstrap fails, so a run that bootstrapped and
+      # then never saw CWE answer gets none, and before this such a run
+      # recorded nothing beyond "did not become healthy within 10m0s". It
+      # carries the Service endpoints, so it says whether CWE was unready or
+      # merely unreachable.
       - name: Upload the run log
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -1042,6 +1049,7 @@ jobs:
             controller/test/e2e/site-e2e.junit.xml
             controller/test/e2e/site-diagnostics.tar.gz
             controller/test/e2e/tenant-diagnostics.json
+            controller/test/e2e/site-cluster-state.txt
             ${{ runner.temp }}/run-inputs.txt
             ${{ runner.temp }}/tbot.log
           if-no-files-found: warn

@@ -110,3 +110,16 @@ func redactions(secrets []string) [][]byte {
 	}
 	return needles
 }
+
+// redactBytes replaces every occurrence of each secret in a plain byte
+// stream, for output that is not an archive.
+//
+// Same substitution and same needles as redactArchive, including the base64
+// forms: a collector that runs kubectl captures Secrets encoded rather than
+// plain just as a diagnostics bundle does.
+func redactBytes(data []byte, secrets []string) []byte {
+	for _, needle := range redactions(secrets) {
+		data = bytes.ReplaceAll(data, needle, []byte(redactedMarker))
+	}
+	return data
+}

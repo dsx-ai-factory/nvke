@@ -178,6 +178,7 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			built, err = site.Bootstrap(ctx, node, session, candidate, opts)
 			if err != nil {
 				collectSiteDiagnostics(ctx, session, lane.placedSecrets()...)
+				collectSiteClusterState(ctx, session, lane.placedSecrets()...)
 			}
 			Expect(err).NotTo(HaveOccurred(), "should build the site controller")
 			GinkgoLogr.Info("site controller", "kubeconfig", built.Kubeconfig, "cweVersion", built.Version)
@@ -233,6 +234,7 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		// that evidence is released three lines down.
 		if failed {
 			collectSiteDiagnostics(detached, session, lane.placedSecrets()...)
+			collectSiteClusterState(detached, session, lane.placedSecrets()...)
 		}
 		if built.Kubeconfig != "" {
 			if err := sweepSiteTenants(detached, built.Kubeconfig); err != nil {
@@ -458,6 +460,39 @@ func collectSiteDiagnostics(ctx context.Context, session infra.Session, secrets 
 	}
 	siteDiagnosticsCollected = true
 	GinkgoLogr.Info("collected the node's diagnostics", "path", siteDiagnostics)
+}
+
+// siteClusterState is written beside siteDiagnostics, and is plain text
+// rather than a tarball so a reader can open it from the artifact listing.
+const siteClusterState = "site-cluster-state.txt"
+
+// siteClusterStateCollected is set once this run has written siteClusterState.
+var siteClusterStateCollected bool
+
+// collectSiteClusterState records what the site cluster says about CWE.
+//
+// Separate from collectSiteDiagnostics because the two cover different
+// failures and neither substitutes for the other: nkectl writes diagnostics
+// when the bootstrap fails, so a run that bootstrapped and then never saw CWE
+// answer gets ErrNoDiagnostics and, before this, kept nothing.
+//
+// Best effort and never fails the spec, for the same reason as the
+// diagnostics: the failure that prompted it is the finding.
+func collectSiteClusterState(ctx context.Context, session infra.Session, secrets ...string) {
+	if siteClusterStateCollected {
+		return
+	}
+	// Detached and short. The cluster is reached from the node, so this does
+	// not wait on anything the failing probe waits on, and a spec that died
+	// on its own timeout arrives here with a context already done.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
+	defer cancel()
+	if err := site.CollectClusterState(ctx, session, siteClusterState, secrets...); err != nil {
+		GinkgoLogr.Error(err, "could not collect the site cluster's state")
+		return
+	}
+	siteClusterStateCollected = true
+	GinkgoLogr.Info("collected the site cluster's state", "path", siteClusterState)
 }
 
 // nodeInputs is what cloud-init writes onto the node. The agent's arguments
