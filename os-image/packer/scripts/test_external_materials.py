@@ -413,6 +413,12 @@ class ComposeImageInputsTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("exactly one spire-agent_*.deb", result.stderr)
 
+    def test_rejects_spire_agent_in_another_binding(self):
+        write_package_archive(self.materials / "ovn", "spire-agent_2.0_all.deb")
+        result = self.run_compose(self.root / "ambiguous-spire.tar")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("exactly one spire-agent_*.deb across all bindings", result.stderr)
+
     def test_missing_files_and_unsafe_outputs(self):
         for relative in ("materials/ovn", "materials/agent", "source-files/nke-agent-spire.conf"):
             with self.subTest(relative=relative):

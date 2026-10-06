@@ -256,6 +256,8 @@ def main() -> None:
                 raise SystemExit("spire-agent binding must contain exactly one spire-agent_*.deb")
             for name in sorted(binding_names):
                 require_architecture(debs / name, args.architecture)
+        if len(list(debs.glob("spire-agent_*.deb"))) != 1:
+            raise SystemExit("image inputs must contain exactly one spire-agent_*.deb across all bindings")
         if len(list(debs.glob("nke-cni-calico-manifests-*.deb"))) > 1:
             raise SystemExit("calico inputs must contain at most one nke-cni-calico-manifests-*.deb")
 
