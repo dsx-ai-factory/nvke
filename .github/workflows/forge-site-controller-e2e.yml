@@ -232,9 +232,20 @@ jobs:
       KUBERNETES_VERSION: ${{ inputs.kubernetes-version || vars.SITE_E2E_KUBERNETES_VERSION }}
       CNI_OVN_VERSION: ${{ inputs.cni-ovn-version || vars.SITE_E2E_CNI_OVN_VERSION }}
       OS_IMAGE_BOOTLOADER_AMD64: ${{ inputs.os-image-bootloader-amd64 || vars.SITE_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
-      OS_IMAGE_AMD64: ${{ inputs.os-image-amd64 || vars.SITE_E2E_OS_IMAGE_AMD64 }}
+      # THROWAWAY BRANCH -- DO NOT MERGE. Both disks are pinned to the Ubuntu
+      # 24.04.5 flavor of os-image v0.1.0, in place of the 26.04.1 flavor the
+      # SITE_E2E_OS_IMAGE_<ARCH> variables name, to see whether the GB200
+      # tenant provisions on 24.04. That is the release the DSX CSC DPU stack
+      # installs host packages for, and the tenant has now timed out waiting
+      # to be provisioned on 26.04.1 twice (runs 37335733768, 37394133486).
+      #
+      # NODE_USER below is deliberately untouched: these are OSS os-image
+      # releases, which bake `ubuntu`, not the internal pipeline's dgxc-admin.
+      # The bootloaders are per-architecture, not per-Ubuntu-release, so they
+      # still come from their variables.
+      OS_IMAGE_AMD64: ${{ inputs.os-image-amd64 || 'https://d1veq6e8nuk2fy.cloudfront.net/nke-packages/os-image/releases/v0.1.0/amd64/nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2' }}
       OS_IMAGE_BOOTLOADER_ARM64: ${{ inputs.os-image-bootloader-arm64 || vars.SITE_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
-      OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 || vars.SITE_E2E_OS_IMAGE_ARM64 }}
+      OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 || 'https://d1veq6e8nuk2fy.cloudfront.net/nke-packages/os-image/releases/v0.1.0/arm64/nke-node-non-fde-ubuntu-24.04.5-arm64.qcow2' }}
       # The account the OS images bake. Empty is what the OSS os-image releases
       # use; an image from the internal pipeline bakes a different one, and a
       # mismatch fails as a publickey rejection after the provisioning wait
@@ -777,9 +788,12 @@ jobs:
           VAR_KUBERNETES_VERSION: ${{ vars.SITE_E2E_KUBERNETES_VERSION }}
           VAR_CNI_OVN_VERSION: ${{ vars.SITE_E2E_CNI_OVN_VERSION }}
           VAR_OS_IMAGE_BOOTLOADER_AMD64: ${{ vars.SITE_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
-          VAR_OS_IMAGE_AMD64: ${{ vars.SITE_E2E_OS_IMAGE_AMD64 }}
+          # Empty on this throwaway branch so the recorded source reads
+          # "workflow default" rather than naming a variable the run no longer
+          # reads. The value itself still prints, and it is the 24.04.5 URL.
+          VAR_OS_IMAGE_AMD64: ""
           VAR_OS_IMAGE_BOOTLOADER_ARM64: ${{ vars.SITE_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
-          VAR_OS_IMAGE_ARM64: ${{ vars.SITE_E2E_OS_IMAGE_ARM64 }}
+          VAR_OS_IMAGE_ARM64: ""
           VAR_NODE_USER: ${{ vars.SITE_E2E_NODE_USER }}
           VAR_ARCH: ${{ vars.SITE_E2E_ARCH }}
           VAR_GPU: ${{ vars.SITE_E2E_GPU }}
