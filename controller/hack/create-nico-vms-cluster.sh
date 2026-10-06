@@ -93,24 +93,17 @@ BODY=$(cat <<EOF
   "cniPlugin": "${CNI_PLUGIN}"${CNI_VERSION_JSON},
   "etcdEncrypted": ${ETCD_ENCRYPTED},
   "teleportEnabled": false,
+  "controlPlaneConfig": {
+    "desiredCount": ${CONTROL_PLANE_DESIRED_COUNT},
+    "systemReservedMemory": "${SYSTEM_RESERVED_MEMORY}",
+    "nico": {
+      "instanceTypePreference": ["${INSTANCE_TYPE_ID}"],
+      "vpcPrefixIDs": ["${VPC_PREFIX_ID}"],
+      "osProfile": "${OS_PROFILE}",
+      "configProfile": "${CP_CONFIG_PROFILE}"
+    }
+  },
   "nodePools": [
-    {
-      "name": "control-plane",
-      "nodeNamePrefix": "cp",
-      "nico": {
-        "vpcPrefixIDs": ["${VPC_PREFIX_ID}"],
-        "instanceTypeID": "${INSTANCE_TYPE_ID}",
-        "osProfile": "${OS_PROFILE}",
-        "configProfile": "${CP_CONFIG_PROFILE}"
-      },
-      "systemReservedMemory": "${SYSTEM_RESERVED_MEMORY}",
-      "controlPlane": true,
-      "desiredNodeCount": ${CONTROL_PLANE_DESIRED_COUNT},
-      "autoProvisionDisabled": false,
-      "autoModeDisabled": false,
-      "recycleBudget": 0,
-      "teleportEnabled": false
-    },
     {
       "name": "worker",
       "nodeNamePrefix": "w",
