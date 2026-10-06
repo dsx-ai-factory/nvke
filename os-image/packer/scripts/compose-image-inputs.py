@@ -187,7 +187,7 @@ def install_file(
 def require_architecture(package: pathlib.Path, architecture: str) -> None:
     result = subprocess.run(
         ["dpkg-deb", "-f", str(package), "Architecture"],
-        check=False, capture_output=True, text=True, timeout=30,
+        check=False, capture_output=True, text=True, errors="replace", timeout=30,
     )
     if result.returncode:
         raise SystemExit(f"cannot read Debian package architecture for {package.name}: {result.stderr.strip()}")

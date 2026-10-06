@@ -216,15 +216,17 @@ jobs:
             go.work.sum
             **/go.sum
 
-      # Once per run here rather than in each of the eight bare-metal builds,
-      # which only need the binary.
       - name: Install material-adapter test tools
         run: |
           sudo apt-get update
           sudo apt-get install -y dpkg-dev xorriso p7zip-full
 
+      # Once per run here rather than in each of the eight bare-metal builds,
+      # which only need the binary.
       - name: Test nke-os-image-check and the Packer scripts
         working-directory: os-image
+        env:
+          NKE_REQUIRE_REAL_TOOLS: "1"
         run: |
           set -euo pipefail
           make test

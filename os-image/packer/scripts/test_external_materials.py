@@ -35,6 +35,16 @@ def write_package_archive(path: Path, package_name: str) -> None:
         archive.addfile(member, io.BytesIO(payload))
 
 
+def require_real_tools(test, *tools):
+    missing = [tool for tool in tools if shutil.which(tool) is None]
+    if not missing:
+        return
+    message = f"real test tools are required: {', '.join(missing)}"
+    if os.environ.get("NKE_REQUIRE_REAL_TOOLS") == "1":
+        test.fail(message)
+    test.skipTest(message)
+
+
 class ComposeImageInputsTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -155,11 +165,8 @@ class ComposeImageInputsTest(unittest.TestCase):
         result = self.run_compose(self.root / "multiversion.tar")
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    @unittest.skipUnless(
-        shutil.which("dpkg-deb") and shutil.which("dpkg-scanpackages"),
-        "real Debian package tools are required",
-    )
     def test_real_index_covers_multiple_versions(self):
+        require_real_tools(self, "dpkg-deb", "dpkg-scanpackages")
         (self.tools / "dpkg-scanpackages").unlink()
         (self.tools / "dpkg-deb").unlink()
         for number, binding in enumerate(("agent", "calico", "kubeadm-distro", "ovn", "spire-agent")):
@@ -540,6 +547,25 @@ class ComposeImageInputsTest(unittest.TestCase):
                     self.assertFalse(output.exists())
                 self.assertFalse(list(self.root.glob(".image-inputs.*")))
 
+    def test_non_utf8_package_metadata_fails_without_traceback(self):
+        for status in (0, 7):
+            with self.subTest(status=status):
+                write_executable(self.tools / "dpkg-deb",
+                    f"#!/bin/sh\nprintf '\\377\\376'\nprintf '\\377\\376' >&2\nexit {status}\n")
+                result = self.run_compose(self.root / "invalid-metadata.tar")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertIn("architecture" if status == 0 else "cannot read Debian package", result.stderr)
+
+    def test_missing_real_tools_skip_locally_and_fail_when_required(self):
+        for required in ("0", "1"):
+            with self.subTest(required=required), \
+                    patch.dict(os.environ, {"NKE_REQUIRE_REAL_TOOLS": required}), \
+                    patch.object(shutil, "which", return_value=None):
+                expected = self.failureException if required == "1" else unittest.SkipTest
+                with self.assertRaisesRegex(expected, "real test tools are required: dpkg-deb"):
+                    require_real_tools(self, "dpkg-deb")
+
     def test_regular_descriptor_rejects_swapped_symlink_and_fifo(self):
         spec = importlib.util.spec_from_file_location("compose_image_inputs", SCRIPTS / "compose-image-inputs.py")
         module = importlib.util.module_from_spec(spec)
@@ -600,6 +626,7 @@ cat "$patched" >>"$output"
         return subprocess.run(
             [str(SCRIPTS / "patch-installer-iso.sh"), str(source), str(output)],
             env=environment,
+            cwd=self.root,
             check=False,
             capture_output=True,
             text=True,
@@ -610,6 +637,27 @@ cat "$patched" >>"$output"
         result = self.run_patch(self.source, output)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(output.read_bytes(), b"source-iso\nset timeout=300\nmenuentry fixture {}\n")
+
+    def test_make_iso_preparation_delegates_with_isolated_python_override(self):
+        calls = self.root / "python-calls"
+        python = self.tools / "selected-python"
+        write_executable(python, f"#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{calls}'\nexec '{sys.executable}' \"$@\"\n")
+        write_executable(self.tools / "python3", "#!/bin/sh\nexit 99\n")
+        (self.root / "shutil.py").write_text("raise RuntimeError('shadowed stdlib')\n", encoding="utf-8")
+        digest = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        write_executable(self.tools / "curl", f"#!/bin/sh\nprintf '{digest}  source.iso\\n'\n")
+        environment = os.environ.copy()
+        environment.update({"PATH": f"{self.tools}:{environment['PATH']}", "PYTHON": str(python),
+                            "PYTHONPATH": str(self.root), "ISO_URL": "https://example.invalid/source.iso",
+                            "ISO_CHECKSUM": "file:https://example.invalid/SHA256SUMS", "OUT_DIR": str(self.root)})
+        result = subprocess.run([str(SCRIPTS / "prepare-installer-iso.sh")], env=environment,
+                                cwd=self.root, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.root / "source.iso.patched.iso").read_bytes(),
+                         b"source-iso\nset timeout=300\nmenuentry fixture {}\n")
+        commands = calls.read_text().splitlines()
+        self.assertEqual(len(commands), 2)
+        self.assertTrue(all(command.startswith("-I - ") for command in commands), commands)
 
     def test_rejects_missing_or_multiple_grub_timeouts(self):
         for content, count in (("menuentry fixture {}\n", 0), ("set timeout=30\nset timeout=5\n", 2)):
@@ -686,11 +734,8 @@ cat "$patched" >>"$output"
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("source is not one regular file", result.stderr)
 
-    @unittest.skipUnless(
-        shutil.which("7z") and shutil.which("xorriso"),
-        "real ISO tools are required",
-    )
     def test_real_iso_grub_transform(self):
+        require_real_tools(self, "7z", "xorriso")
         (self.tools / "7z").unlink()
         (self.tools / "xorriso").unlink()
         source_tree = self.root / "iso-tree"

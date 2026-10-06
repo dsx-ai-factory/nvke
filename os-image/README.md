@@ -48,6 +48,14 @@ so all of the above are needed even for a first build — see
 package list on Ubuntu. `xorriso`/`7z` are for `prepare-installer-iso.sh`'s
 ISO patching (see its header comment for why).
 
+The ISO cache directory and cached source ISO must not be symlinks. Use a real
+cache directory on a larger disk rather than linking `iso-cache` to it. ISO
+preparation holds the cached source, a private snapshot, and the rewritten ISO,
+requiring approximately three times the source ISO's size in total disk space;
+an existing patched ISO adds to that peak until it is replaced. Legacy
+`.patched.iso.tmp` leftovers are not reused; the existing Make `clean` target
+removes them with the ISO cache and its other build outputs.
+
 From the repository root, bake and smoke-test with native KVM:
 
 ```bash

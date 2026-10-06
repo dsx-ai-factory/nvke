@@ -14,8 +14,9 @@ readonly source_iso="$1"
 readonly output_iso="$2"
 output_root="$(dirname "${output_iso}")"
 readonly output_root
+readonly python="${PYTHON:-python3}"
 
-for tool in 7z grep sed xorriso python3; do
+for tool in 7z grep sed xorriso "${python}"; do
   command -v "${tool}" >/dev/null 2>&1 || {
     echo "patch-installer-iso: ${tool} is required" >&2
     exit 1
@@ -47,7 +48,7 @@ trap 'exit 143' TERM
 
 # Snapshot through one no-follow descriptor so both ISO tools read the same
 # runner-owned bytes. The runner authenticates the input before this call.
-python3 - "${source_iso}" "${work}/source.iso" <<'PY'
+"${python}" -I - "${source_iso}" "${work}/source.iso" <<'PY'
 import os
 import shutil
 import stat
@@ -88,7 +89,7 @@ if [[ ! -s "${work}/installer.iso" || -L "${work}/installer.iso" ]]; then
 fi
 # os.replace rejects a directory swapped in at the final destination and is
 # atomic on this filesystem, unlike mv's implicit move-into-directory mode.
-python3 - "${work}/installer.iso" "${output_iso}" <<'PY'
+"${python}" -I - "${work}/installer.iso" "${output_iso}" <<'PY'
 import os
 import sys
 
