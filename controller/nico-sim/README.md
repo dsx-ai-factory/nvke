@@ -590,14 +590,14 @@ http://carbide-pxe.forge:18080/files/agent/nke-agent
 ```
 
 To try a local `nke-agent` build without rebuilding the full node image, build
-the agent and copy it into the file root. From the sibling `agent` repo:
+the agent and copy it into the file root. From the repository root:
 
 ```bash
 cd agent
 make build-amd64
 
-mkdir -p ../cloud-workflow-engine/nico-sim/var/files/agent
-cp bin/linux_amd64/nke-agent ../cloud-workflow-engine/nico-sim/var/files/agent/nke-agent
+mkdir -p ../controller/nico-sim/var/files/agent
+cp bin/linux_amd64/nke-agent ../controller/nico-sim/var/files/agent/nke-agent
 ```
 
 The cloud-init pickup command used by `nke-nico-vms-24.04-amd64-fde` is:
@@ -796,7 +796,7 @@ For one-shot nico-vms integration tests, sync just this tree and run on the remo
 
 ```bash
 ./scripts/sync-to-remote.sh [--ssh|--tsh] hostname
-# syncs to ~/dev/cloud-workflow-engine/nico-sim/ on the remote
+# syncs to ~/dev/nke/controller/nico-sim/ on the remote (override: NICO_SIM_REMOTE_DIR)
 ```
 
 ## Helper Scripts
@@ -914,7 +914,7 @@ The Tilt workflow runs nke-controller and nico-sim locally with hot-reload. The 
 Prerequisites: [Tilt](https://tilt.dev), a Kind cluster, Docker.
 
 ```bash
-# From the cloud-workflow-engine root:
+# From the controller/ directory:
 tilt up
 ```
 

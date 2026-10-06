@@ -10,6 +10,9 @@
 #   ./scripts/sync-to-remote.sh my-machine.example.com                    # auto-detect (tries ssh)
 #   ./scripts/sync-to-remote.sh --ssh my-machine.example.com              # force ssh
 #   ./scripts/sync-to-remote.sh --tsh nke-site-forge-az24-dev8-...  # force tsh
+#
+# Syncs to ~/dev/nke/controller/nico-sim/ on the remote; set NICO_SIM_REMOTE_DIR
+# to override.
 
 set -euo pipefail
 
@@ -38,7 +41,7 @@ if [ -z "$TRANSPORT" ]; then
   fi
 fi
 
-REMOTE_DIR="${NICO_SIM_REMOTE_DIR:-~/dev/nke/cloud-workflow-engine/nico-sim}/"
+REMOTE_DIR="${NICO_SIM_REMOTE_DIR:-~/dev/nke/controller/nico-sim}/"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 

@@ -40,6 +40,8 @@
 #
 # Sync:
 #   --skip-sync        Skip rsync step (useful when code is already up to date)
+#   NICO_SIM_REMOTE_DIR=<dir>  Remote nico-sim directory
+#                      (default: ~/dev/nke/controller/nico-sim)
 #
 # Examples:
 #   # Run all libvirt tests on SSH machine
@@ -138,7 +140,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-REMOTE_DIR="~/dev/cloud-workflow-engine/nico-sim"
+REMOTE_DIR="${NICO_SIM_REMOTE_DIR:-~/dev/nke/controller/nico-sim}"
 
 # --- Log file setup ---
 LOG_DIR="$REPO_ROOT/logs"
@@ -241,6 +243,9 @@ fi
 
 # Force module mode even if an earlier run left vendor/ on the remote host.
 # The remote host must be able to download public Go modules on a cold cache.
+# -mod=mod is rejected in workspace mode, and a full nke checkout on the remote
+# puts nico-sim under the repository go.work, so test nico-sim as its own module.
+REMOTE_CMD+=" && export GOWORK=off"
 TEST_CMD="go test -mod=mod -tags=integration -count=1 -timeout ${TIMEOUT} -v ./test/integration/libvirt"
 
 if [[ "$BATCH" == true ]]; then
