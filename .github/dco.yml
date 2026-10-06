@@ -8,13 +8,11 @@
 # `Signed-off-by:` trailer that the check looks for. The app reads only the
 # commits in a pull request, so it never applies retroactively to history.
 #
-# `members: false` relaxes the check for organization members. It is not a blanket
-# exemption: the app skips a commit only when the author is an org member **and**
-# GitHub reports the commit as verified-signed. An org member whose commit is
-# unsigned and unsigned-off still fails, with "Commit by organization member is
-# not verified". Delete this block to hold everyone to the sign-off.
+# Every commit from every contributor must be signed off, including NVIDIA
+# organization members. `members: true` removes the app's exemption for verified
+# org-member commits, matching CONTRIBUTING.md.
 require:
-  members: false
+  members: true
 
 # Let a contributor who forgot `-s` fix it with a follow-up commit instead of
 # rewriting their branch. The remediation commit has to use the app's exact
