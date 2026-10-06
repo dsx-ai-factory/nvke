@@ -65,9 +65,12 @@ Optional native tools exercise additional cases in
   The real Debian metadata test runs whenever `dpkg-deb` is available.
 - `NKE_TEST_PACKER=/path/to/packer` renders and decodes both autoinstall variants
   with capture enabled and disabled. This template test needs no plugins and
-  does not start QEMU. Hosted validation runs it after installing pinned Packer.
+  does not start QEMU. The advisory OS Image Artifact `validate-packer` job runs
+  it after installing pinned Packer.
 
-Also run `make -C os-image/packer validate-packer` for the required native HCL
-validation: the maintained script owns plugin initialization and the matrix of
-both architectures, variants and capture settings. Hosted validation runs the
-same target; the unit test suite does not duplicate its fixtures or matrix.
+Also run `make -C os-image/packer validate-packer` as a required local developer
+check: the maintained script owns plugin initialization and the matrix of both
+architectures, variants and capture settings. The advisory OS Image Artifact
+`validate-packer` job runs the same target. The required merge gate runs the
+source contract tests without Packer; it does not run this HCL matrix or YAML
+rendering. The unit test suite does not duplicate the matrix fixtures.

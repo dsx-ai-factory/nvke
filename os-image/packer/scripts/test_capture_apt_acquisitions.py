@@ -159,7 +159,7 @@ class CaptureAPTTest(unittest.TestCase):
             "module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); "
             "module.capture(sys.argv[1], sys.argv[2], 'amd64', {})"
         )
-        result = subprocess.run([sys.executable, "-c", script, str(self.captured), str(self.output)],
+        result = subprocess.run([sys.executable, "-B", "-c", script, str(self.captured), str(self.output)],
                                 capture_output=True, text=True, timeout=5)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("bounded regular file", result.stderr)
@@ -277,6 +277,19 @@ class CaptureAPTTest(unittest.TestCase):
         self.assertFalse(self.output.exists())
         self.assertFalse(list(self.root.glob(".apt-capture-*")))
 
+    def test_changed_package_size_is_rejected_before_export(self):
+        for name, replacement in (("grown", self.payload + b"extra"), ("truncated", self.payload[:-1])):
+            with self.subTest(name=name):
+                self.package.write_bytes(self.payload)
+                def change_after_hashing(path):
+                    path.write_bytes(replacement)
+                    return ["fixture", "1:2.0-1", "amd64"]
+                with patch.object(CAPTURE, "package_metadata", side_effect=change_after_hashing):
+                    with self.assertRaisesRegex(ValueError, "changed before export"):
+                        CAPTURE.capture(self.captured, self.output, "amd64", self.cache())
+                self.assertFalse(self.output.exists())
+                self.assertFalse(list(self.root.glob(".apt-capture-*")))
+
     def test_failed_publication_sync_removes_own_output(self):
         fsync = os.fsync
         def fail_directory_sync(descriptor):
@@ -364,7 +377,26 @@ class CaptureAPTTest(unittest.TestCase):
             self.assertIn(f'/{variant}/apt-acquisitions.tar', text)
             self.assertLess(text.index("configuration=$(apt-config dump) || exit 1"), provisioning)
             self.assertIn("*DPkg::Pre-Install-Pkgs::nke-capture*", text)
-            self.assertLess(text.index("test ! -e /var/lib/nke/apt-acquisitions"), provisioning)
+            self.assertLess(text.index("sudo test ! -e /var/lib/nke/apt-acquisitions"), provisioning)
+
+    def test_capture_cleanup_checks_existing_and_removed_directory_as_owner(self):
+        # The fixture owner represents the privileged guest process. Forward
+        # sudo locally, but require the source command to request that privilege.
+        for variant in ("non-fde", "fde"):
+            text = (SCRIPTS.parent / f"nke-node-{variant}.pkr.hcl").read_text()
+            command = json.loads(next(line.strip().removesuffix(",") for line in text.splitlines()
+                                      if "test ! -e /var/lib/nke/apt-acquisitions" in line))
+            self.assertEqual(command, "sudo test ! -e /var/lib/nke/apt-acquisitions")
+            command = command.replace("/var/lib/nke/apt-acquisitions", shlex.quote(str(self.captured)))
+            for exists in (True, False):
+                with self.subTest(variant=variant, exists=exists):
+                    if exists:
+                        self.captured.mkdir(exist_ok=True)
+                    else:
+                        shutil.rmtree(self.captured)
+                    result = subprocess.run(["bash", "-c", 'sudo() { "$@"; }; ' + command],
+                                            capture_output=True, text=True, timeout=5)
+                    self.assertEqual(result.returncode, 1 if exists else 0)
 
     def test_ci_validates_both_capture_settings(self):
         script = (SCRIPTS / "validate-packer-project.sh").read_text()

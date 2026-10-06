@@ -149,7 +149,7 @@ build {
       "sudo rm -f /var/tmp/capture-apt-acquisitions.py /var/tmp/nke-apt-acquisitions.tar /etc/apt/apt.conf.d/94curtin-config",
       "configuration=$(apt-config dump) || exit 1; case \"$configuration\" in *DPkg::Pre-Install-Pkgs::nke-capture*) echo 'APT capture hook remains after cleanup' >&2; exit 1;; esac",
       "sudo rm -rf /var/lib/nke/apt-acquisitions",
-      "test ! -e /var/lib/nke/apt-acquisitions",
+      "sudo test ! -e /var/lib/nke/apt-acquisitions",
     ]
   }
 
