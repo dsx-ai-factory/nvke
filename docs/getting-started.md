@@ -81,7 +81,7 @@ kind create cluster                       # CWE watches a cluster
 make -C controller run-local              # Postgres, Temporal, then CWE
 ```
 
-Swagger is on <http://localhost:8080/api/docs/>. Infrastructure credentials are
+Swagger is on [http://localhost:8080/api/docs/](http://localhost:8080/api/docs/). Infrastructure credentials are
 configured on the Cluster API provider rather than CWE.
 
 [first-cluster.md](first-cluster.md#api-only) covers this path in
