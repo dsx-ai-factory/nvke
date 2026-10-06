@@ -20,6 +20,7 @@ import (
 const (
 	defaultReadyTimeout = 10 * time.Minute
 	defaultPollInterval = 10 * time.Second
+	defaultProbeTimeout = 30 * time.Second
 )
 
 // Deployer installs the NKE stack onto a freshly bootstrapped cluster, over
@@ -58,6 +59,11 @@ type Options struct {
 
 	ReadyTimeout time.Duration
 	PollInterval time.Duration
+
+	// ProbeTimeout bounds a single Probe call. Without it an attempt that
+	// connects and then hangs spends the whole ReadyTimeout, so the poll
+	// never comes round again.
+	ProbeTimeout time.Duration
 }
 
 // Result is a bootstrapped, deployed site controller.
@@ -125,6 +131,9 @@ func (o Options) withDefaults() Options {
 	}
 	if o.PollInterval <= 0 {
 		o.PollInterval = defaultPollInterval
+	}
+	if o.ProbeTimeout <= 0 {
+		o.ProbeTimeout = defaultProbeTimeout
 	}
 	return o
 }

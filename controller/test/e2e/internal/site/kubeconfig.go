@@ -115,13 +115,22 @@ func currentCluster(cfg *clientcmdapi.Config) (*clientcmdapi.Cluster, error) {
 }
 
 // waitForCWE polls until CWE answers /healthz, then returns its version.
+//
+// Every attempt is bounded by ProbeTimeout rather than by the deadline of the
+// wait as a whole. Sharing that one deadline meant a request which connected
+// and then hung spent the entire ReadyTimeout inside a single attempt, so the
+// ticker below never fired and the loop polled once. Runs 37444155035 and
+// 37454470331 both failed that way with "context deadline exceeded" against
+// /healthz, on sites whose CWE answered in under 4ms once reached by hand:
+// the port-forward reaches the pod as soon as it listens, which is before its
+// database and Temporal checks pass.
 func waitForCWE(ctx context.Context, opts Options, kubeconfig string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, opts.ReadyTimeout)
 	defer cancel()
 	ticker := time.NewTicker(opts.PollInterval)
 	defer ticker.Stop()
 	for {
-		version, err := opts.Probe(ctx, kubeconfig)
+		version, err := probeOnce(ctx, opts, kubeconfig)
 		if err == nil {
 			return version, nil
 		}
@@ -131,6 +140,12 @@ func waitForCWE(ctx context.Context, opts Options, kubeconfig string) (string, e
 		case <-ticker.C:
 		}
 	}
+}
+
+func probeOnce(ctx context.Context, opts Options, kubeconfig string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, opts.ProbeTimeout)
+	defer cancel()
+	return opts.Probe(ctx, kubeconfig)
 }
 
 var errUnhealthy = errors.New("CWE unhealthy")

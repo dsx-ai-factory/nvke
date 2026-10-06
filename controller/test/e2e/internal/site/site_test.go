@@ -393,6 +393,32 @@ func TestBootstrapCWENeverHealthy(t *testing.T) {
 	}
 }
 
+// TestBootstrapCWEProbeHangs covers the attempt that connects and then never
+// answers, which is how a site looks while CWE listens but its database and
+// Temporal checks have not passed yet. The wait has to outlive that attempt
+// and come round again, or the site is called dead on the strength of one
+// request.
+func TestBootstrapCWEProbeHangs(t *testing.T) {
+	calls := 0
+	probe := func(ctx context.Context, _ string) (string, error) {
+		calls++
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	opts := testOptions(t, probe)
+	opts.ReadyTimeout = 200 * time.Millisecond
+	opts.ProbeTimeout = 20 * time.Millisecond
+
+	_, err := Bootstrap(context.Background(), testNode, newFakeSession(), testCandidate(t, &fakeDeployer{}), opts)
+	if !strings.Contains(err.Error(), "did not become healthy") {
+		t.Fatalf("err = %v", err)
+	}
+	if calls < 5 {
+		t.Errorf("probed %d times in %s with a %s attempt timeout, want the loop to keep polling",
+			calls, opts.ReadyTimeout, opts.ProbeTimeout)
+	}
+}
+
 func TestCandidateValidation(t *testing.T) {
 	for name, mutate := range map[string]func(*Candidate){
 		"site name":   func(c *Candidate) { c.SiteName = "Bad_Name" },
