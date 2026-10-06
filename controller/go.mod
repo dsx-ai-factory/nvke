@@ -25,7 +25,7 @@ require (
 	github.com/prometheus/client_model v0.6.3
 	github.com/spiffe/go-spiffe/v2 v2.8.2
 	github.com/spiffe/spire-api-sdk v1.15.3
-	github.com/spiffe/spire-controller-manager v0.8.0
+	github.com/spiffe/spire-controller-manager v0.7.0
 	github.com/stretchr/testify v1.12.1
 	github.com/swaggest/swgui v1.8.9
 	github.com/uber-go/tally/v4 v4.1.17
@@ -47,7 +47,7 @@ require (
 	go.uber.org/automaxprocs v1.6.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/sync v0.23.0
-	google.golang.org/grpc v1.84.0
+	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.37.1

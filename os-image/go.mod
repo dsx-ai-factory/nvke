@@ -6,12 +6,15 @@ require (
 	github.com/dsx-ai-factory/nke/agent v0.0.0-00010101000000-000000000000
 	github.com/spiffe/go-spiffe/v2 v2.8.2
 	github.com/stretchr/testify v1.12.1
-	google.golang.org/grpc v1.84.0
+	google.golang.org/grpc v1.83.2
 )
 
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.5 // indirect
+	go.opentelemetry.io/otel/metric v1.47.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.47.0 // indirect
+	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect

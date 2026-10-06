@@ -24,7 +24,7 @@ notices-check` verifies it is up to date.
 | `golang.org/x/sys/unix` | BSD-3-Clause | `golang.org/x/sys@v0.48.0` | https://cs.opensource.google/go/x/sys/+/v0.48.0:LICENSE |
 | `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.42.0` | https://cs.opensource.google/go/x/text/+/v0.42.0:LICENSE |
 | `google.golang.org/genproto/googleapis/rpc/status` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20260928230214-8a89bd6388cc` | https://github.com/googleapis/go-genproto/blob/8a89bd6388cc/googleapis/rpc/LICENSE |
-| `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.84.0` | https://github.com/grpc/grpc-go/blob/v1.84.0/LICENSE |
+| `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.83.2` | https://github.com/grpc/grpc-go/blob/v1.83.2/LICENSE |
 | `google.golang.org/protobuf` | BSD-3-Clause | `google.golang.org/protobuf@v1.36.12` | https://github.com/protocolbuffers/protobuf-go/blob/v1.36.12/LICENSE |
 
 ## Go Module License Texts
@@ -814,7 +814,7 @@ _Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20260928230214-
 
 ### google.golang.org/grpc
 
-_Apache-2.0 — google.golang.org/grpc@v1.84.0_
+_Apache-2.0 — google.golang.org/grpc@v1.83.2_
 
 #### LICENSE
 

@@ -98,7 +98,7 @@ notices-check` verifies it is up to date.
 | `github.com/spf13/pflag` | BSD-3-Clause | `github.com/spf13/pflag@v1.0.10` | https://github.com/spf13/pflag/blob/v1.0.10/LICENSE |
 | `github.com/spiffe/go-spiffe/v2` | Apache-2.0 | `github.com/spiffe/go-spiffe/v2@v2.8.2` | https://github.com/spiffe/go-spiffe/blob/v2.8.2/LICENSE |
 | `github.com/spiffe/spire-api-sdk/proto/spire/api` | Apache-2.0 | `github.com/spiffe/spire-api-sdk@v1.15.3` | https://github.com/spiffe/spire-api-sdk/blob/v1.15.3/LICENSE |
-| `github.com/spiffe/spire-controller-manager` | Apache-2.0 | `github.com/spiffe/spire-controller-manager@v0.8.0` | https://github.com/spiffe/spire-controller-manager/blob/v0.8.0/LICENSE |
+| `github.com/spiffe/spire-controller-manager` | Apache-2.0 | `github.com/spiffe/spire-controller-manager@v0.7.0` | https://github.com/spiffe/spire-controller-manager/blob/v0.7.0/LICENSE |
 | `github.com/stretchr/objx` | MIT | `github.com/stretchr/objx@v0.5.3` | https://github.com/stretchr/objx/blob/v0.5.3/LICENSE |
 | `github.com/stretchr/testify` | MIT | `github.com/stretchr/testify@v1.12.1` | https://github.com/stretchr/testify/blob/v1.12.1/LICENSE |
 | `github.com/stretchr/testify/internal/difflib` | BSD-3-Clause | `github.com/stretchr/testify@v1.12.1` | https://github.com/stretchr/testify/blob/v1.12.1/internal/difflib/LICENSE |
@@ -149,7 +149,7 @@ notices-check` verifies it is up to date.
 | `gomodules.xyz/jsonpatch/v2` | Apache-2.0 | `gomodules.xyz/jsonpatch/v2@v2.5.0` | https://github.com/gomodules/jsonpatch/blob/v2.5.0/LICENSE |
 | `google.golang.org/genproto/googleapis/api` | Apache-2.0 | `google.golang.org/genproto/googleapis/api@v0.0.0-20260928230214-8a89bd6388cc` | https://github.com/googleapis/go-genproto/blob/8a89bd6388cc/googleapis/api/LICENSE |
 | `google.golang.org/genproto/googleapis/rpc` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20260928230214-8a89bd6388cc` | https://github.com/googleapis/go-genproto/blob/8a89bd6388cc/googleapis/rpc/LICENSE |
-| `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.84.0` | https://github.com/grpc/grpc-go/blob/v1.84.0/LICENSE |
+| `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.83.2` | https://github.com/grpc/grpc-go/blob/v1.83.2/LICENSE |
 | `google.golang.org/protobuf` | BSD-3-Clause | `google.golang.org/protobuf@v1.36.12` | https://github.com/protocolbuffers/protobuf-go/blob/v1.36.12/LICENSE |
 | `gopkg.in/evanphx/json-patch.v4` | BSD-3-Clause | `gopkg.in/evanphx/json-patch.v4@v4.13.0` | https://github.com/evanphx/json-patch/blob/v4.13.0/LICENSE |
 | `gopkg.in/inf.v0` | BSD-3-Clause | `gopkg.in/inf.v0@v0.9.1` | https://github.com/go-inf/inf/blob/v0.9.1/LICENSE |
@@ -10110,7 +10110,7 @@ _Apache-2.0 — github.com/spiffe/spire-api-sdk@v1.15.3_
 
 ### github.com/spiffe/spire-controller-manager
 
-_Apache-2.0 — github.com/spiffe/spire-controller-manager@v0.8.0_
+_Apache-2.0 — github.com/spiffe/spire-controller-manager@v0.7.0_
 
 #### LICENSE
 
@@ -15457,7 +15457,7 @@ _Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20260928230214-
 
 ### google.golang.org/grpc
 
-_Apache-2.0 — google.golang.org/grpc@v1.84.0_
+_Apache-2.0 — google.golang.org/grpc@v1.83.2_
 
 #### LICENSE
 
