@@ -71,10 +71,10 @@ func ResolveNodeConfig(nodeSet db.NodeSet, nodePool db.NodePool) (NodeConfig, er
 	}, nil
 }
 
-// RenderInfraMachine builds the NicoMachine CWE constructs for a NICo-backed
+// renderInfraMachine builds the NicoMachine CWE constructs for a NICo-backed
 // node. profilesDir is the OS/config profiles directory on disk, used to
 // read the OS profile's iPXE script.
-func (*Client) RenderInfraMachine(profilesDir, namespace string, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) (client.Object, error) {
+func (*Client) renderInfraMachine(profilesDir, namespace string, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) (client.Object, error) {
 	config, err := ResolveNodeConfig(nodeSet, nodePool)
 	if err != nil {
 		return nil, err
@@ -120,7 +120,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 		return err
 	}
 
-	infraMachineObj, err := c.RenderInfraMachine(deps.ProfilesDir, deps.Namespace, node, nodeSet, nodePool, cluster)
+	infraMachineObj, err := c.renderInfraMachine(deps.ProfilesDir, deps.Namespace, node, nodeSet, nodePool, cluster)
 	if err != nil {
 		return err
 	}

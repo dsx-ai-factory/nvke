@@ -24,10 +24,10 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
-// RenderInfraMachine renders the caller-supplied CAPI infrastructure machine
+// renderInfraMachine renders the caller-supplied CAPI infrastructure machine
 // template for a node. profilesDir is unused here — only the NICo provider
 // reads from the profiles directory.
-func (*Client) RenderInfraMachine(_, namespace string, node db.Node, nodeSet db.NodeSet, _ db.NodePool, cluster db.Cluster) (client.Object, error) {
+func (*Client) renderInfraMachine(_, namespace string, node db.Node, nodeSet db.NodeSet, _ db.NodePool, cluster db.Cluster) (client.Object, error) {
 	capiNodeSetProvider, err := nodeSet.CAPIProvider()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read node set capi provider: %w", err)
@@ -61,7 +61,7 @@ func (*Client) RenderInfraMachine(_, namespace string, node db.Node, nodeSet db.
 // bootstrap secret, and applies the generic CAPI Machine pointing at the
 // infra object.
 func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDeps, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) error {
-	infraMachineObj, err := c.RenderInfraMachine(deps.ProfilesDir, deps.Namespace, node, nodeSet, nodePool, cluster)
+	infraMachineObj, err := c.renderInfraMachine(deps.ProfilesDir, deps.Namespace, node, nodeSet, nodePool, cluster)
 	if err != nil {
 		return fmt.Errorf("failed to render infra machine template: %w", err)
 	}

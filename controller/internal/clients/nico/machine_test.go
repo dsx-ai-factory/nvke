@@ -18,7 +18,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
-func TestClient_RenderInfraMachine(t *testing.T) {
+func TestClient_renderInfraMachine(t *testing.T) {
 	profilesDir := t.TempDir()
 	osProfileDir := filepath.Join(profilesDir, "osProfiles", "test-os")
 	require.NoError(t, os.MkdirAll(osProfileDir, 0o755))
@@ -51,7 +51,7 @@ func TestClient_RenderInfraMachine(t *testing.T) {
 	node := db.Node{ID: uuid.New(), Name: "worker-0"}
 
 	t.Run("builds a NicoMachine for the node", func(t *testing.T) {
-		obj, err := New().RenderInfraMachine(profilesDir, "nico-test-cluster", node, nodeSet, nodePool, cluster)
+		obj, err := New().renderInfraMachine(profilesDir, "nico-test-cluster", node, nodeSet, nodePool, cluster)
 		require.NoError(t, err)
 
 		nicoMachine, ok := obj.(*nicov1.NicoMachine)
@@ -65,7 +65,7 @@ func TestClient_RenderInfraMachine(t *testing.T) {
 	})
 
 	t.Run("missing provider payload errors", func(t *testing.T) {
-		_, err := New().RenderInfraMachine(profilesDir, "ns", db.Node{}, db.NodeSet{}, db.NodePool{}, db.Cluster{})
+		_, err := New().renderInfraMachine(profilesDir, "ns", db.Node{}, db.NodeSet{}, db.NodePool{}, db.Cluster{})
 		require.Error(t, err)
 		require.ErrorIs(t, err, db.ErrMissingProviderPayload)
 	})

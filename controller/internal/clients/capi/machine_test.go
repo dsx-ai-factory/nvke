@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package capi_test
+package capi
 
 import (
 	"encoding/json"
@@ -11,11 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/clients/capi"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
-func TestClient_RenderInfraMachine(t *testing.T) {
+func TestClient_renderInfraMachine(t *testing.T) {
 	t.Run("renders the caller-supplied template for the node", func(t *testing.T) {
 		template := json.RawMessage(`{
 			"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
@@ -33,7 +32,7 @@ func TestClient_RenderInfraMachine(t *testing.T) {
 		cluster := db.Cluster{ID: uuid.New(), Name: "test-cluster", ProviderType: db.ProviderTypeCAPI}
 		node := db.Node{Name: "worker-0"}
 
-		obj, err := capi.New().RenderInfraMachine("", "capi-test-cluster", node, nodeSet, db.NodePool{}, cluster)
+		obj, err := New().renderInfraMachine("", "capi-test-cluster", node, nodeSet, db.NodePool{}, cluster)
 		require.NoError(t, err)
 
 		assert.Equal(t, "worker-0", obj.GetName())
@@ -42,7 +41,7 @@ func TestClient_RenderInfraMachine(t *testing.T) {
 	})
 
 	t.Run("missing provider payload errors", func(t *testing.T) {
-		_, err := capi.New().RenderInfraMachine("", "ns", db.Node{}, db.NodeSet{}, db.NodePool{}, db.Cluster{})
+		_, err := New().renderInfraMachine("", "ns", db.Node{}, db.NodeSet{}, db.NodePool{}, db.Cluster{})
 		require.Error(t, err)
 		require.ErrorIs(t, err, db.ErrMissingProviderPayload)
 	})
@@ -51,7 +50,7 @@ func TestClient_RenderInfraMachine(t *testing.T) {
 		nodeSet := db.NodeSet{}
 		nodeSet.SetCapi(db.CAPINodePoolProvider{InfraMachineTemplate: json.RawMessage(`{`)})
 
-		_, err := capi.New().RenderInfraMachine("", "ns", db.Node{}, nodeSet, db.NodePool{}, db.Cluster{})
+		_, err := New().renderInfraMachine("", "ns", db.Node{}, nodeSet, db.NodePool{}, db.Cluster{})
 		require.Error(t, err)
 	})
 }

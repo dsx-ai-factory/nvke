@@ -36,8 +36,8 @@ type MachineMaterialization interface {
 
 // GetMachineMaterialization selects the MachineMaterialization
 // implementation for the cluster's provider type. Adding a provider means
-// adding a case here and a RenderInfraMachine method on its client package,
-// not a new switch arm at each call site.
+// adding a case here and an implementation in its own client package, not a
+// new switch arm at each call site.
 func GetMachineMaterialization(cluster db.Cluster) (MachineMaterialization, error) {
 	switch cluster.ProviderType {
 	case db.ProviderTypeCAPI:
