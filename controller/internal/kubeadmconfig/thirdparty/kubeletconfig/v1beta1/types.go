@@ -29,8 +29,8 @@ limitations under the License.
 // Local changes:
 //   - only the top-level KubeletConfiguration struct is copied locally
 //   - nested kubelet and component-base types remain imported from upstream modules
-//   - APIVersion, KubeletConfigurationKind and type aliases to the upstream package are added
-//   - doc comment spelling is normalised (behaviour to behavior)
+//   - APIVersion, Kind constant and upstream type aliases are added
+//   - doc comment spelling is normalised
 //   - top-level json tags are adjusted to use omitzero; map and slice fields
 //     also retain omitempty so empty collections are omitted from CWE-rendered
 //     YAML unless explicitly set

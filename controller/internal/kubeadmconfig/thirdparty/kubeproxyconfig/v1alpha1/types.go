@@ -29,8 +29,8 @@ limitations under the License.
 // Local changes:
 //   - only the top-level KubeProxyConfiguration struct is copied locally
 //   - nested kube-proxy and component-base types remain imported from upstream modules
-//   - APIVersion, KubeProxyConfigurationKind and type aliases to the upstream package are added
-//   - the upstream doc comment on KubeProxyConfiguration is omitted
+//   - APIVersion, Kind constant and upstream type aliases are added
+//   - the struct doc comment is omitted
 //   - top-level json tags are adjusted to use omitzero; map and slice fields
 //     also retain omitempty so empty collections are omitted from CWE-rendered
 //     YAML unless explicitly set

@@ -192,10 +192,8 @@ func readScript(profilesDir, name, file string) (string, error) {
 	return stripLicenseHeader(string(data)), nil
 }
 
-// stripLicenseHeader drops an SPDX comment header, and the blank line after it,
-// that follows a script's first line (#!ipxe or #cloud-config). The header is
-// license metadata, so adding one to a profile file must not change the spec
-// published from it.
+// stripLicenseHeader drops an SPDX header after a script's first line, so a
+// license header does not change the published spec.
 func stripLicenseHeader(script string) string {
 	lines := strings.SplitAfter(script, "\n")
 	i := 1

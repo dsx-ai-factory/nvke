@@ -27,8 +27,8 @@ limitations under the License.
 //	https://github.com/kubernetes/kubernetes/blob/v1.35.0/cmd/kubeadm/app/apis/bootstraptoken/v1/utils.go
 //
 // Local changes:
-//   - the BootstrapTokenString methods are reimplemented from utils.go without
-//     the k8s.io/kubernetes dependencies
+//   - BootstrapTokenString methods are reimplemented from utils.go without
+//     k8s.io/kubernetes
 package v1
 
 import (
