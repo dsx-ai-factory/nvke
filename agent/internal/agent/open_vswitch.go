@@ -35,6 +35,7 @@ const (
 	openVSwitchConvergenceDelay  = time.Second
 	openVSwitchDatapathTypeEnv   = "NKE_OVS_DATAPATH_TYPE"
 	openVSwitchNetdevDatapath    = "netdev"
+	openVSwitchUserspaceTSOKey   = "userspace-tso-enable"
 
 	operationTypeOpenVSwitchReconciliation = "open_vswitch_reconciliation"
 )
@@ -251,6 +252,9 @@ func (s *NodeAgentServer) reconcileOpenVSwitchDatapathOverride(
 	); err != nil {
 		return nil, true, fmt.Errorf("configure Open vSwitch %s datapath: %w", datapathType, err)
 	}
+	if err := s.ensureOpenVSwitchUserspaceTSO(); err != nil {
+		return nil, true, err
+	}
 	if _, err := s.runOpenVSwitchCommand(
 		"ovs-vsctl",
 		"--may-exist", "add-br", "br-ex", "--", "set", "bridge", "br-ex", "datapath_type="+datapathType,
@@ -266,6 +270,32 @@ func (s *NodeAgentServer) reconcileOpenVSwitchDatapathOverride(
 		UplinkInterface: defaultRoute.Device,
 		NetworkBackend:  pb.OpenVSwitchReconciliationResult_NETWORK_BACKEND_NETPLAN,
 	}, true, nil
+}
+
+// ensureOpenVSwitchUserspaceTSO lets the netdev datapath read the offload
+// metadata on veth pod ports. Without it, packets a pod sends with a partial
+// TCP or UDP checksum are forwarded unfinished and dropped by the receiver, so
+// pods cannot reach services or the node. ovs-vswitchd reads the setting only
+// at startup, so it is restarted when the value changes.
+func (s *NodeAgentServer) ensureOpenVSwitchUserspaceTSO() error {
+	output, err := s.runOpenVSwitchCommand(
+		"ovs-vsctl", "--if-exists", "get", "Open_vSwitch", ".", "other_config:"+openVSwitchUserspaceTSOKey,
+	)
+	if err != nil {
+		return fmt.Errorf("read Open vSwitch %s: %w", openVSwitchUserspaceTSOKey, err)
+	}
+	if strings.Trim(strings.TrimSpace(string(output)), `"`) == "true" {
+		return nil
+	}
+	if _, err := s.runOpenVSwitchCommand(
+		"ovs-vsctl", "set", "Open_vSwitch", ".", "other_config:"+openVSwitchUserspaceTSOKey+"=true",
+	); err != nil {
+		return fmt.Errorf("enable Open vSwitch %s: %w", openVSwitchUserspaceTSOKey, err)
+	}
+	if _, err := s.runOpenVSwitchCommand("systemctl", "restart", openVSwitchDaemonService); err != nil {
+		return fmt.Errorf("restart %s to apply %s: %w", openVSwitchDaemonService, openVSwitchUserspaceTSOKey, err)
+	}
+	return nil
 }
 
 func configuredOpenVSwitchResult(plan openVSwitchPlan) *pb.OpenVSwitchReconciliationResult {

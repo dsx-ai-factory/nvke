@@ -174,6 +174,9 @@ func TestOpenVSwitchNetdevDatapathKeepsManagementUplink(t *testing.T) {
 			output: []byte(`[{"dst":"default","gateway":"10.0.0.1","dev":"eth0"}]`),
 		}},
 		"ovs-vsctl set Open_vSwitch . external_ids:ovn-bridge-datapath-type=netdev":   {{}},
+		"ovs-vsctl --if-exists get Open_vSwitch . other_config:userspace-tso-enable":  {{}},
+		"ovs-vsctl set Open_vSwitch . other_config:userspace-tso-enable=true":         {{}},
+		"systemctl restart ovs-vswitchd":                                              {{}},
 		"ovs-vsctl --may-exist add-br br-ex -- set bridge br-ex datapath_type=netdev": {{}},
 	})
 	server := &NodeAgentServer{Runner: runner}
@@ -187,7 +190,57 @@ func TestOpenVSwitchNetdevDatapathKeepsManagementUplink(t *testing.T) {
 	assert.Equal(t, pb.OpenVSwitchReconciliationResult_NETWORK_BACKEND_NETPLAN, result.GetNetworkBackend())
 	assert.NotContains(t, runner.calls, "netplan apply")
 	assert.NotContains(t, runner.calls, "ovs-vsctl --may-exist add-br breth0")
+	assert.Contains(t, runner.calls, "ovs-vsctl set Open_vSwitch . other_config:userspace-tso-enable=true")
+	assert.Contains(t, runner.calls, "systemctl restart ovs-vswitchd")
 	assert.Contains(t, runner.calls, "ovs-vsctl --may-exist add-br br-ex -- set bridge br-ex datapath_type=netdev")
+}
+
+func TestOpenVSwitchUserspaceTSO(t *testing.T) {
+	const getTSO = "ovs-vsctl --if-exists get Open_vSwitch . other_config:userspace-tso-enable"
+	const setTSO = "ovs-vsctl set Open_vSwitch . other_config:userspace-tso-enable=true"
+	const restart = "systemctl restart ovs-vswitchd"
+	tests := map[string]struct {
+		responses   map[string][]openVSwitchCommandResult
+		wantCalls   []string
+		errorString string
+	}{
+		"already enabled leaves ovs-vswitchd running": {
+			responses: map[string][]openVSwitchCommandResult{getTSO: {{output: []byte("\"true\"\n")}}},
+			wantCalls: []string{getTSO},
+		},
+		"unset enables and restarts ovs-vswitchd": {
+			responses: map[string][]openVSwitchCommandResult{getTSO: {{}}, setTSO: {{}}, restart: {{}}},
+			wantCalls: []string{getTSO, setTSO, restart},
+		},
+		"disabled enables and restarts ovs-vswitchd": {
+			responses: map[string][]openVSwitchCommandResult{
+				getTSO: {{output: []byte("\"false\"\n")}}, setTSO: {{}}, restart: {{}},
+			},
+			wantCalls: []string{getTSO, setTSO, restart},
+		},
+		"restart failure is reported": {
+			responses: map[string][]openVSwitchCommandResult{
+				getTSO: {{}}, setTSO: {{}}, restart: {{err: errors.New("unit failed")}},
+			},
+			wantCalls:   []string{getTSO, setTSO, restart},
+			errorString: "restart ovs-vswitchd to apply userspace-tso-enable",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			runner := newOpenVSwitchTestRunner(t, test.responses)
+			server := &NodeAgentServer{Runner: runner}
+
+			err := server.ensureOpenVSwitchUserspaceTSO()
+
+			if test.errorString != "" {
+				require.ErrorContains(t, err, test.errorString)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, test.wantCalls, runner.calls)
+		})
+	}
 }
 
 func TestPrepareOpenVSwitchRejectsUnsupportedDatapath(t *testing.T) {
