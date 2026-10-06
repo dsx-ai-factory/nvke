@@ -20,7 +20,7 @@ intent:
     volume.
   characterizes:
     - POST p99 latency for CRD and CR creation
-    - DELETE p99 latency during teardown
+    - DELETE p99 latency of the namespace and CRDs during teardown
     - API Priority and Fairness rejections at the default inflight limits
     - etcd database growth against total bytes written
     - The cost of schema complexity, measured as simple against nested schemas
@@ -61,7 +61,8 @@ sizing:
     schema_complexity: [simple, simple, complex, simple, complex]
     # Client-side rate, per phase. XS ran the CRD pass at 10 rather than 20;
     # carried from the published run rather than normalised, so the XS-to-S
-    # comparison holds one more variable than the others.
+    # comparison holds one more variable than the others. cr_pass_qps is per
+    # CRD invocation; the invocations run in parallel.
     crd_pass_qps: [10, 20, 20, 20, 20]
     crd_pass_burst: [10, 20, 20, 20, 20]
     cr_pass_qps: 50

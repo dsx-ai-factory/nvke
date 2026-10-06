@@ -5,14 +5,15 @@
 # run for `kube-burner init`, or --start/--end for `kube-burner index`.
 # {{.elapsed}} is that window's length. Latencies are in milliseconds.
 #
-# delete_p99_ms is single-object DELETE. A namespace delete removes its custom
+# post_p99_ms is the CRD and custom-resource creates. delete_p99_ms is the
+# teardown's namespace and CRD DELETEs: the namespace removes its custom
 # resources by DELETECOLLECTION, which it does not include.
 
-- query: 1000 * histogram_quantile(0.99, sum(increase(apiserver_request_duration_seconds_bucket{job="apiserver", verb="POST", subresource!~"log|exec|portforward|attach|proxy"}[{{.elapsed}}])) by (le))
+- query: 1000 * histogram_quantile(0.99, sum(increase(apiserver_request_duration_seconds_bucket{job="apiserver", verb="POST", resource=~"customresourcedefinitions|testresources[0-9]+s"}[{{.elapsed}}])) by (le))
   metricName: post_p99_ms
   instant: true
 
-- query: 1000 * histogram_quantile(0.99, sum(increase(apiserver_request_duration_seconds_bucket{job="apiserver", verb="DELETE", subresource!~"log|exec|portforward|attach|proxy"}[{{.elapsed}}])) by (le))
+- query: 1000 * histogram_quantile(0.99, sum(increase(apiserver_request_duration_seconds_bucket{job="apiserver", verb="DELETE", resource=~"namespaces|customresourcedefinitions"}[{{.elapsed}}])) by (le))
   metricName: delete_p99_ms
   instant: true
 
@@ -26,10 +27,10 @@
 
 # kube-burner writes 0 for a quantile over no requests; these counts tell a
 # p99 of 0 apart from a window with no calls.
-- query: sum(increase(apiserver_request_total{job="apiserver", verb="POST"}[{{.elapsed}}]))
+- query: sum(increase(apiserver_request_total{job="apiserver", verb="POST", resource=~"customresourcedefinitions|testresources[0-9]+s"}[{{.elapsed}}]))
   metricName: post_count
   instant: true
-- query: sum(increase(apiserver_request_total{job="apiserver", verb="DELETE"}[{{.elapsed}}]))
+- query: sum(increase(apiserver_request_total{job="apiserver", verb="DELETE", resource=~"namespaces|customresourcedefinitions"}[{{.elapsed}}]))
   metricName: delete_count
   instant: true
 

@@ -51,7 +51,7 @@ Custom resource update churn and watch/list scalability were not tested.
 | Per-node disk | ~877 GiB |
 | APF inflight | 200 mutating / 400 read-only (default) |
 | Client rate, CRD pass | 20 qps / 20 burst (XS: 10 / 10) |
-| Client rate, CR pass | 50 qps / 50 burst |
+| Client rate, CR pass | 50 qps / 50 burst per CRD, CRDs in parallel |
 
 | Component | Version |
 |---|---|
@@ -88,10 +88,10 @@ Custom resource update churn and watch/list scalability were not tested.
 
 ## Observations
 
-**XS ran at half the client rate of the other sizes** — 10 qps against 20 — so
-an XS-to-S comparison holds one more variable than any other pair. It does not
-affect the simple-against-complex comparison, which is drawn between sizes that
-shared a rate.
+**XS ran its CRD pass at half the client rate of the other sizes** — 10 qps
+against 20 — so an XS-to-S comparison holds one more variable than any other
+pair. It does not affect the simple-against-complex comparison, which is drawn
+between sizes that shared a CRD-pass rate.
 
 **Schema complexity dominates POST latency.** M created 5,000 resources and
 reached 788 ms at p99; L created 100,000 and reached 19.9 ms. Twenty times the
@@ -109,8 +109,8 @@ against 50-100 elsewhere.
 default 200/400 inflight configuration was not the limit at any size tested.
 This says nothing about where the limit is — no size reached it.
 
-`peak_reqs_per_sec` reflects the load the run applied — 10-50 qps per pass, with
-CR passes in parallel across CRDs — not what the server would accept.
+`peak_reqs_per_sec` is bounded by the client rate limits — 10-20 qps for the
+CRD pass and 50 per CR invocation — not by what the server would accept.
 
 **etcd growth tracked bytes written, not object count**: +411 MB for 100,000
 simple resources, +82 MB for 10,000 complex ones — about 4.1 KB and 8.2 KB per

@@ -28,9 +28,9 @@ OpenAPI work that has nothing to do with how many workers exist.
 | L | 100 | 1000 | simple |
 | XL | 100 | 100 | complex |
 
-The CRD pass runs at 20 qps and burst (10 for XS), the CR pass at 50 —
-registering a CRD costs the API server far more than writing a resource under
-one, so the two are not driven at the same rate.
+The CRD pass runs at 20 qps and burst (10 for XS), the CR pass at 50 per CRD
+invocation — registering a CRD costs the API server far more than writing a
+resource under one, so the two are not driven at the same rate.
 
 The two schema classes are defined by the size of the stored resource, not by
 field names: **simple** targets roughly 2-3 KB, **complex** roughly 6-10 KB.
@@ -69,13 +69,16 @@ example with `kubectl wait --for condition=Established crd/<name>`. A custom res
 registering is rejected.
 
 **Teardown.** Not driven by kube-burner — the configs set `cleanup: false`, and
-deletion is `kubectl delete` of the namespace and then the CRDs. This is what
-`delete_p99_ms` measures, so a run that skips it produces no DELETE figure:
+deletion is `kubectl delete` of the namespace and then the CRDs:
 
 ```
 kubectl delete namespace <namespace>
 kubectl get crd -o name | grep <group> | xargs kubectl delete
 ```
+
+`delete_p99_ms` is those namespace and CRD DELETEs, so a run that skips teardown
+produces no DELETE figure. The namespace removes its custom resources by
+DELETECOLLECTION, which `delete_p99_ms` does not include.
 
 **Metrics.** `engine/metrics-profile.yaml` reads the API server's and etcd's
 metrics from Prometheus, one figure per window. Query two windows with
@@ -111,7 +114,8 @@ for a window with no matching calls.
 | [control-plane.json](../../../dashboards/1.34/control-plane.json) | Grafana dashboard, shared |
 
 No driver script or alerting rules ship with this scenario. The published run ran
-the CR passes in parallel across CRDs.
+the CR passes in parallel across CRDs. The 50 qps limit applies to each
+invocation, so the aggregate CR rate grows with the number running at once.
 
 ## Environment
 
@@ -165,5 +169,6 @@ server will admit, which is the condition this scenario exists to detect.
 linearly with the bytes written, and a departure from that is worth
 investigating even when latency is fine.
 
-Read the complex-schema sizes separately from the simple ones: at the same client
-rate, M reached 788 ms POST p99 on 5,000 resources and L 19.9 ms on 100,000.
+Read the complex-schema sizes separately from the simple ones: at the same
+per-invocation rate, M reached 788 ms POST p99 on 5,000 resources and L 19.9 ms
+on 100,000, with twice M's CRDs in parallel.
