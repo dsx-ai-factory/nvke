@@ -6,6 +6,8 @@ package nke
 import (
 	"strings"
 	"testing"
+
+	"github.com/dsx-ai-factory/nke/controller/api"
 )
 
 // Synthetic identifiers. Nothing here reaches Forge -- these are carried
@@ -182,6 +184,104 @@ func TestBuildNicoForgeRequestCarriesThePayloads(t *testing.T) {
 			t.Error("pool carries the container stub, not the Forge commands")
 		}
 	}
+}
+
+// TestBuildNicoForgeRequestRoutesEachRoleItsOwnPayload pins which role's
+// payload reaches which pool.
+//
+// Nothing else does. The two roles are routed by a bool, both branches return
+// the same type, and every other fixture here passes one payload for both
+// roles, so inverting the branch leaves every assertion in this package
+// passing. What it would do on hardware is boot a mixed-architecture tenant's
+// workers on the control plane's image, which never reports and looks exactly
+// like the machines failing to provision.
+//
+// Distinguishable payloads rather than real ones: what is under test is the
+// routing, and a marker is the only thing an assertion can follow end to end.
+func TestBuildNicoForgeRequestRoutesEachRoleItsOwnPayload(t *testing.T) {
+	marker := func(role string) NodePayloads {
+		return NodePayloads{
+			IPXEScript:         "#!ipxe\necho " + role + "\n",
+			PreKubeadmCommands: []string{"echo " + role},
+		}
+	}
+
+	req, err := BuildCreateRequest(ClusterSpec{
+		Name:              "forge",
+		Backend:           BackendNicoForge,
+		KubernetesVersion: "1.34.2",
+		CNIPlugin:         "ovn-kubernetes",
+		OrgID:             testOrgID,
+		SiteID:            testSiteID,
+		VpcID:             testVpcID,
+		NodePayloads:      &RolePayloads{ControlPlane: marker("control-plane"), Worker: marker("worker")},
+		ControlPlane: singlePoolControlPlane(NodePoolSpec{
+			Name: "cp", NodeNamePrefix: "cp", ControlPlane: true, DesiredNodeCount: 1,
+			InstanceTypeID: testInstanceTypeID,
+			SubnetIDs:      []string{testSubnetID},
+			SSHKeyGroupIDs: []string{testSSHKeyGroupID},
+		}),
+		Workers: []NodePoolSpec{{
+			Name: "workers", NodeNamePrefix: "worker", DesiredNodeCount: 1,
+			InstanceTypeID: testInstanceTypeID,
+			SubnetIDs:      []string{testSubnetID},
+			SSHKeyGroupIDs: []string{testSSHKeyGroupID},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("building request: %v", err)
+	}
+	if req.NodePools == nil || len(*req.NodePools) != 2 {
+		t.Fatalf("expected a control-plane pool and a worker pool, got %v", req.NodePools)
+	}
+
+	for _, pool := range *req.NodePools {
+		// ControlPlane is a plain bool on the pool, not a pointer.
+		want := "worker"
+		if pool.ControlPlane {
+			want = "control-plane"
+		}
+		other := "worker"
+		if want == "worker" {
+			other = "control-plane"
+		}
+
+		commands := strings.Join(pool.Infra.PreKubeadmCommands, "\n")
+		if !strings.Contains(commands, want) {
+			t.Errorf("pool %q carries pre-kubeadm commands %q, want the %s payload", pool.Name, commands, want)
+		}
+		if strings.Contains(commands, other) {
+			t.Errorf("pool %q carries the %s payload's pre-kubeadm commands: %q", pool.Name, other, commands)
+		}
+
+		script := ipxeScriptOf(t, pool)
+		if !strings.Contains(script, want) {
+			t.Errorf("pool %q carries iPXE script %q, want the %s payload", pool.Name, script, want)
+		}
+		if strings.Contains(script, other) {
+			t.Errorf("pool %q carries the %s payload's iPXE script: %q", pool.Name, other, script)
+		}
+	}
+}
+
+// ipxeScriptOf digs the script out of the pool's NicoMachineTemplate, which is
+// an untyped map because that is how CWE takes a CAPI manifest.
+func ipxeScriptOf(t *testing.T, pool api.NodePoolCreateConfig) string {
+	t.Helper()
+	spec, ok := pool.Infra.MachineTemplate[capiSpecKey].(map[string]any)
+	if !ok {
+		t.Fatalf("pool %q machine template has no %s", pool.Name, capiSpecKey)
+	}
+	template, ok := spec["template"].(map[string]any)
+	if !ok {
+		t.Fatalf("pool %q machine template has no template", pool.Name)
+	}
+	inner, ok := template[capiSpecKey].(map[string]any)
+	if !ok {
+		t.Fatalf("pool %q template has no %s", pool.Name, capiSpecKey)
+	}
+	script, _ := inner["ipxeScript"].(string)
+	return script
 }
 
 // nke_ControlPlane builds a single-pool control plane, keeping the table above
