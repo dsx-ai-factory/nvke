@@ -24,9 +24,19 @@ type Config struct {
 		CAPDNodeImage string `json:"capdNodeImage"` // default "cwe-capd-kindest-node:local"
 	} `json:"cluster"`
 	Lifecycle struct {
-		SkipDelete        bool   `json:"skipDelete"`
-		PreserveOnFailure bool   `json:"preserveOnFailure"`
-		ReuseCluster      string `json:"reuseCluster"` // non-empty -> skip create, verify this cluster
+		// SkipDelete keeps what a run created, pass or fail. On a lane that
+		// builds its own site it holds the site node too, since the tenants it
+		// keeps are Forge instances that site owns.
+		SkipDelete bool `json:"skipDelete"`
+
+		// PreserveOnFailure keeps a failed run's machines. A preserved site
+		// node can be logged into, because the provider writes this run's key
+		// to it. A preserved tenant node cannot: nothing puts a key there and
+		// the image locks the account, so the serial console, which carries
+		// cloud-init's output, is the only way in.
+		PreserveOnFailure bool `json:"preserveOnFailure"`
+
+		ReuseCluster string `json:"reuseCluster"` // non-empty -> skip create, verify this cluster
 	} `json:"lifecycle"`
 	// Node is what the machines an infrastructure provider creates are,
 	// rather than what is built on them. It is separate from Site because

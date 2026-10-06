@@ -214,9 +214,16 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		if session == nil {
 			return
 		}
-		if keepSite || (lane.cfg.Lifecycle.PreserveOnFailure && failed) {
+		// SkipDelete as well as the other two. It keeps the tenant and skips
+		// the nkectl sweep, and this node is what those tenants' instances
+		// hang off, so releasing it either deletes them through the sweep --
+		// silently undoing the flag -- or orphans them with no CWE left to
+		// release them. Whatever keeps a tenant has to keep its site.
+		if keepSite || lane.cfg.Lifecycle.SkipDelete || (lane.cfg.Lifecycle.PreserveOnFailure && failed) {
 			GinkgoLogr.Info("keeping the site controller", "name", node.Name, "ip", node.IP,
-				"jumpHost", lane.site.JumpHost, "kubeconfig", built.Kubeconfig)
+				"jumpHost", lane.site.JumpHost, "kubeconfig", built.Kubeconfig,
+				"reason", keepReason(keepSite, lane.cfg.Lifecycle.SkipDelete))
+			GinkgoLogr.Info("the Forge instance survives this run and must be released by hand", "name", node.Name)
 			return
 		}
 		detached := context.WithoutCancel(ctx)
@@ -374,6 +381,19 @@ func newSiteLane() (siteLane, error) {
 		capabilities: siteCapabilities, apiKey: apiKey, provider: provider,
 		tenantPassword: tenantPassword, dbPassword: dbPassword,
 	}, nil
+}
+
+// keepReason names which setting held the node, so the log says what to
+// change rather than only that something did.
+func keepReason(keepSite, skipDelete bool) string {
+	switch {
+	case keepSite:
+		return "-e2e.keep-site"
+	case skipDelete:
+		return "lifecycle.skipDelete"
+	default:
+		return "lifecycle.preserveOnFailure after a failure"
+	}
 }
 
 // sessionRelay tunnels a tenant's API server through the site node, which is
