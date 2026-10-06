@@ -47,6 +47,13 @@ func validateNodeReadinessPostCreate(test *tenantTest) {
 		}).WithContext(ctx).WithTimeout(2 * time.Minute).WithPolling(1 * time.Second).Should(Succeed())
 
 		test.log.Info("All desired tenant nodes are ready", "count", expectedNodeCount, "nodes", readyNodeNames)
+		// 45 minutes is a canary, not a budget. This spec took 844s, just
+		// over 14 minutes, in run 36691646226, the passing arm64 GB200 run,
+		// so a run that exceeds the cap is a 3x regression and the cap is the
+		// signal. Raising it to match Provision's 90 minutes buys longer
+		// failures and no information: the runs that hit this died at exactly
+		// 2700s, and when the cap was moved out of the way the run burned the
+		// full 90 minutes earlier in the chain instead.
 	}, Label("readiness"), SpecTimeout(45*time.Minute))
 }
 

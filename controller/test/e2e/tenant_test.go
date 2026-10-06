@@ -1020,6 +1020,23 @@ const tenantDiagnostics = "tenant-diagnostics.json"
 // finding, and losing the diagnostics must not replace it with a second, less
 // useful one.
 func (t *tenantTest) collectDiagnostics(ctx context.Context, clusterID openapi_types.UUID) {
+	// Named in the log as well as the artifact. Nothing else in the lane
+	// prints a tenant node name: the only path that does is the readiness
+	// assertion, which a provision timeout skips, so run 37394133486 produced
+	// a 1h51m log naming no node and the instance had to be found by querying
+	// Forge by hand.
+	if nodes, err := t.nke.ListClusterNodes(ctx, clusterID); err != nil {
+		t.log.Info("could not list the cluster's nodes", "error", err.Error())
+	} else {
+		for _, node := range nodes {
+			fields := []any{"node", node.Name, "controlPlane", node.ControlPlane}
+			if node.Nico != nil {
+				fields = append(fields, "instanceID", node.Nico.InstanceID, "machineID", node.Nico.MachineID)
+			}
+			t.log.Info("tenant node", fields...)
+		}
+	}
+
 	report := t.nke.CollectNodeDiagnostics(ctx, clusterID)
 	if err := os.WriteFile(tenantDiagnostics, report, 0o600); err != nil {
 		t.log.Error(err, "could not write the tenant diagnostics", "path", tenantDiagnostics)
