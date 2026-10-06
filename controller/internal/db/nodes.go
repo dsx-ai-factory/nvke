@@ -579,7 +579,7 @@ func (q *queriesImpl) ListNodesEligibleForRecycling(ctx context.Context, nodePoo
 		Where("ns.node_pool_id = ?", nodePoolID).
 		Where("ns.id != np.current_node_set_id").
 		Order("node.created_at ASC").
-		Limit(limit)
+		Limit(int64(limit))
 	query = whereNodeConditionStatus(query, "markedForRecycling", false)
 
 	err := query.Scan(ctx)

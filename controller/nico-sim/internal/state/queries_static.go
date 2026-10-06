@@ -84,8 +84,8 @@ func (s *Store) ListSites(ctx context.Context, orgID string, page Page) ([]SiteR
 		Model(&rows).
 		Where("tenant_id = ?", tenant.ID).
 		Order("id ASC").
-		Limit(page.Size).
-		Offset((page.Number - 1) * page.Size).
+		Limit(int64(page.Size)).
+		Offset(int64((page.Number - 1) * page.Size)).
 		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("failed to list sites: %w", err)
 	}
@@ -127,8 +127,8 @@ func (s *Store) ListVPCs(ctx context.Context, siteID string, page Page) ([]VPCRo
 		Model(&rows).
 		Where("site_id = ?", siteID).
 		Order("id ASC").
-		Limit(page.Size).
-		Offset((page.Number - 1) * page.Size).
+		Limit(int64(page.Size)).
+		Offset(int64((page.Number - 1) * page.Size)).
 		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("failed to list vpcs: %w", err)
 	}
@@ -142,8 +142,8 @@ func (s *Store) ListSubnets(ctx context.Context, siteID string, page Page) ([]Su
 		Model(&rows).
 		Where("site_id = ?", siteID).
 		Order("id ASC").
-		Limit(page.Size).
-		Offset((page.Number - 1) * page.Size).
+		Limit(int64(page.Size)).
+		Offset(int64((page.Number - 1) * page.Size)).
 		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("failed to list subnets: %w", err)
 	}
@@ -157,8 +157,8 @@ func (s *Store) ListVPCPrefixes(ctx context.Context, siteID string, page Page) (
 		Model(&rows).
 		Where("site_id = ?", siteID).
 		Order("id ASC").
-		Limit(page.Size).
-		Offset((page.Number - 1) * page.Size).
+		Limit(int64(page.Size)).
+		Offset(int64((page.Number - 1) * page.Size)).
 		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("failed to list vpc prefixes: %w", err)
 	}
@@ -203,8 +203,8 @@ func (s *Store) ListIPBlocks(ctx context.Context, siteID string, page Page) ([]I
 		Model(&rows).
 		Where("site_id = ?", siteID).
 		Order("id ASC").
-		Limit(page.Size).
-		Offset((page.Number - 1) * page.Size).
+		Limit(int64(page.Size)).
+		Offset(int64((page.Number - 1) * page.Size)).
 		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("failed to list ip blocks: %w", err)
 	}
@@ -218,8 +218,8 @@ func (s *Store) ListInfiniBandPartitions(ctx context.Context, siteID string, pag
 		Model(&rows).
 		Where("site_id = ?", siteID).
 		Order("id ASC").
-		Limit(page.Size).
-		Offset((page.Number - 1) * page.Size).
+		Limit(int64(page.Size)).
+		Offset(int64((page.Number - 1) * page.Size)).
 		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("failed to list infiniband partitions: %w", err)
 	}
@@ -393,8 +393,8 @@ func (s *Store) ListInstanceTypes(ctx context.Context, siteID string, page Page)
 		Model(&rows).
 		Where("site_id = ?", siteID).
 		Order("id ASC").
-		Limit(page.Size).
-		Offset((page.Number - 1) * page.Size).
+		Limit(int64(page.Size)).
+		Offset(int64((page.Number - 1) * page.Size)).
 		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("failed to list instance types: %w", err)
 	}

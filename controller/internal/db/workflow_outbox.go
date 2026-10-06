@@ -60,7 +60,7 @@ func (q *queriesImpl) ListUnprocessedWorkflowOutboxEntries(ctx context.Context, 
 		Model(&entries).
 		Where("processed_at IS NULL").
 		Order("created_at ASC").
-		Limit(limit).
+		Limit(int64(limit)).
 		For("UPDATE SKIP LOCKED").
 		Scan(ctx)
 	return entries, err

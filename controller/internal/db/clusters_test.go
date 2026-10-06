@@ -696,7 +696,7 @@ func TestCreateControlPlaneConfigRowIfChanged_NoOpWhenUnchanged(t *testing.T) {
 
 	count, err := bunDB.NewSelect().TableExpr("control_plane_configurations").Count(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, 1, count)
+	assert.Equal(t, int64(1), count)
 }
 
 func TestCreateControlPlaneConfigRowIfChanged_CreatesRowWhenDiskStrategyChanges(t *testing.T) {
@@ -742,5 +742,5 @@ func TestCreateControlPlaneConfigRowIfChanged_CreatesRowWhenDiskStrategyChanges(
 
 	count, err := bunDB.NewSelect().TableExpr("control_plane_configurations").Count(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, 2, count)
+	assert.Equal(t, int64(2), count)
 }

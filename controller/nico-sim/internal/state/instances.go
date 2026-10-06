@@ -106,8 +106,8 @@ func (s *Store) ListInstances(ctx context.Context, filter ListInstancesFilter, p
 	query := selectInstances(s.db, &instances).
 		Order("instance.created_at ASC").
 		Order("instance.id ASC").
-		Limit(page.Size).
-		Offset((page.Number - 1) * page.Size)
+		Limit(int64(page.Size)).
+		Offset(int64((page.Number - 1) * page.Size))
 	if filter.Backend != "" {
 		query = query.Where("instance.backend = ?", filter.Backend)
 	}
