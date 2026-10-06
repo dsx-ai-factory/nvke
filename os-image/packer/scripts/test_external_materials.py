@@ -314,13 +314,18 @@ class ComposeImageInputsTest(unittest.TestCase):
                         agent.write_bytes(changed)
                     return original_install(source, destination, mode, **options)
 
+                def write_index(command, **options):
+                    self.assertNotEqual(options["stdout"], subprocess.PIPE)
+                    self.assertEqual(options["timeout"], 300)
+                    options["stdout"].write(b"index\n")
+
                 with patch.object(module, "parse_args", return_value=arguments), \
                         patch.object(module.shutil, "which", return_value="fixture"), \
                         patch.object(module, "require_architecture"), \
                         patch.object(module, "MAX_PACKAGE_BYTES", package_limit), \
                         patch.object(module, "MAX_TOTAL_PACKAGE_BYTES", total_limit), \
                         patch.object(module, "install_file", side_effect=install_after_change), \
-                        patch.object(module.subprocess, "run", return_value=SimpleNamespace(stdout=b"index\n")) as index:
+                        patch.object(module.subprocess, "run", side_effect=write_index) as index:
                     if expected is not None:
                         with self.assertRaisesRegex(SystemExit, expected):
                             module.main()
@@ -331,6 +336,7 @@ class ComposeImageInputsTest(unittest.TestCase):
                         index.assert_called_once()
                         with tarfile.open(output) as archive:
                             self.assertEqual(archive.extractfile("nke-agent.deb").read(), changed)
+                            self.assertEqual(archive.extractfile("debs/Packages").read(), b"index\n")
                 self.assertFalse(list(self.root.glob(".image-inputs.*")))
 
     def test_install_file_bounds_each_chunk(self):
@@ -518,11 +524,21 @@ class ComposeImageInputsTest(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "dpkg-scanpackages is required"):
                 module.main()
         self.assertFalse(arguments.output.exists())
-        write_executable(self.tools / "dpkg-scanpackages", "#!/bin/sh\nexit 7\n")
-        result = self.run_compose(self.root / "failed-index.tar")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("dpkg-scanpackages failed with exit status 7", result.stderr)
-        self.assertNotIn("Traceback", result.stderr)
+        write_executable(self.tools / "dpkg-scanpackages", "#!/bin/sh\nprintf 'partial index\\n'\nexit 7\n")
+        for existing in (False, True):
+            with self.subTest(existing=existing):
+                output = self.root / "failed-index.tar"
+                if existing:
+                    output.write_bytes(b"prior output")
+                result = self.run_compose(output)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("dpkg-scanpackages failed with exit status 7", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                if existing:
+                    self.assertEqual(output.read_bytes(), b"prior output")
+                else:
+                    self.assertFalse(output.exists())
+                self.assertFalse(list(self.root.glob(".image-inputs.*")))
 
     def test_regular_descriptor_rejects_swapped_symlink_and_fifo(self):
         spec = importlib.util.spec_from_file_location("compose_image_inputs", SCRIPTS / "compose-image-inputs.py")

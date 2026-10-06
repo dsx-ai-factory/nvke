@@ -276,18 +276,18 @@ def main() -> None:
         environment = os.environ.copy()
         environment.update({"LC_ALL": "C", "LANG": "C", "TZ": "UTC"})
         try:
-            index = subprocess.run(
-                ["dpkg-scanpackages", "--multiversion", ".", "/dev/null"],
-                cwd=debs,
-                env=environment,
-                check=True,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                timeout=300,
-            ).stdout
+            with (debs / "Packages").open("xb") as index:
+                subprocess.run(
+                    ["dpkg-scanpackages", "--multiversion", ".", "/dev/null"],
+                    cwd=debs,
+                    env=environment,
+                    check=True,
+                    stdin=subprocess.DEVNULL,
+                    stdout=index,
+                    timeout=300,
+                )
         except subprocess.CalledProcessError as exc:
             raise SystemExit(f"dpkg-scanpackages failed with exit status {exc.returncode}") from exc
-        (debs / "Packages").write_bytes(index)
         (debs / "Packages").chmod(0o644)
 
         staged_output = temporary_root / "image-inputs.tar"
