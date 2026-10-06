@@ -27,7 +27,7 @@ export SPIFFE_ENABLED ?= false
 # CAPD / Kind Configuration
 export COLIMA_PROFILE ?= default
 export COLIMA_DOCKER_HOST ?= unix://$(HOME)/.colima/$(COLIMA_PROFILE)/docker.sock
-# Kept as cwe-capi: renaming forces every developer to recreate their kind cluster. NKX-17644.
+# Kept as cwe-capi until a follow-up rename: changing it forces every developer to recreate their kind cluster.
 export KIND_CLUSTER_NAME ?= cwe-capi
 export KIND_CLUSTER_CONFIG ?= hack/controller-capi-kind.yaml
 # The image `make registry-mirror` runs. The host daemon pulls it anonymously,

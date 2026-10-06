@@ -47,11 +47,30 @@ spire_cluster_static_entry_name() {
     echo "cwe-local-dev-${username}-${sanitized}"
 }
 
+# The controller's ServiceAccount, which is the last segment of its SPIFFE ID:
+# nke-controller where the cluster runs the controller under that name (Tilt,
+# greenfield sites), else cloud-workflow-engine. Only a confirmed absence falls
+# back to the legacy name.
+spire_controller_service_account() {
+    local found
+    found=$(kubectl get serviceaccount nke-controller -n nke-controller --ignore-not-found -o name 2>&1) || {
+        error "❌ Cannot look up serviceaccount nke-controller/nke-controller: ${found}"
+        return 1
+    }
+    if grep -qx "serviceaccount/nke-controller" <<<"${found}"; then
+        echo "nke-controller"
+    else
+        echo "cloud-workflow-engine"
+    fi
+}
+
 spire_apply_cluster_static_entry() {
     local trust_domain="$1"
 
     local entry_name=$(spire_cluster_static_entry_name)
-    local spiffe_id="spiffe://${trust_domain}/nke-service/cloud-workflow-engine"
+    local service_account
+    service_account=$(spire_controller_service_account) || return 1
+    local spiffe_id="spiffe://${trust_domain}/nke-service/${service_account}"
     local parent_id="spiffe://${trust_domain}/agent/local-dev/$(hostname)"
 
     local crd_yaml

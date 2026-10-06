@@ -60,8 +60,11 @@ necessary. `401` means it's on.
 
 If you want to see it from the deployment rather than infer it:
 
+Tilt runs NKE as Deployment `nke-controller` in namespace `nke-controller`. On a
+site that still runs it under the old name, use `cloud-workflow-engine` for both.
+
 ```bash
-kubectl -n cloud-workflow-engine get deploy cloud-workflow-engine \
+kubectl -n nke-controller get deploy nke-controller \
   -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="AUTH_CONFIG_PATH")].value}{"\n"}'
 ```
 
@@ -88,7 +91,7 @@ hack/nke-token.sh --audience
 Or from the ConfigMap directly:
 
 ```bash
-kubectl -n cloud-workflow-engine get configmap nke-auth-config \
+kubectl -n nke-controller get configmap nke-auth-config \
   -o jsonpath='{.data.auth\.yaml}' | grep audiences
 ```
 
@@ -196,7 +199,7 @@ NKE does no authorization beyond that. Every admitted caller can do everything.
 NKE logs its reasoning for every rejection. This is usually faster than guessing:
 
 ```bash
-kubectl -n cloud-workflow-engine logs deploy/cloud-workflow-engine | grep '"logger":"auth"'
+kubectl -n nke-controller logs deploy/nke-controller | grep '"logger":"auth"'
 ```
 
 ```json
@@ -264,7 +267,8 @@ all 4 checks passed
 
 `nkectl` is a caller of this API. After `nkectl config set-site --kubeconfig`,
 every CWE command mints the same identity this page uses (`nke-clients/nke-client`)
-with the audience from ConfigMap `cloud-workflow-engine/nke-auth-config`. There
+with the audience from ConfigMap `nke-auth-config`, read from namespace
+`nke-controller`, or from `cloud-workflow-engine` when that is absent. There
 is no `NKECTL_DEV_TOKEN` and no `hack/nke-token.sh` step.
 
 Those names are fixed in the CLI. A cluster-admin kubeconfig (Tilt's kind

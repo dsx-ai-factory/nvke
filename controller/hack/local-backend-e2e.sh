@@ -17,7 +17,7 @@ mkdir -p "${state_dir}"
 # share macOS's private /var/folders tree, so a default mktemp directory makes
 # packages created by the Linux OVN builder invisible to the host.
 tmp_dir="$(mktemp -d "${state_dir}/tmp.XXXXXX")"
-# Kept as cwe-capi: renaming forces every developer to recreate their kind cluster. NKX-17644.
+# Kept as cwe-capi until a follow-up rename: changing it forces every developer to recreate their kind cluster.
 kind_cluster_name="${KIND_CLUSTER_NAME:-cwe-capi}"
 dockerhub_mirror="${NKE_E2E_DOCKERHUB_MIRROR:-}"
 runner_name="cwe-capd-local-e2e-${$}"
