@@ -80,11 +80,30 @@ RUN set -eux; \
       python3 \
       python-is-python3 \
       python3-yaml \
+      openvswitch-switch \
+      netplan.io \
+      dbus \
       swtpm \
       swtpm-tools \
       tpm2-tools \
       xxd; \
     rm -rf /var/lib/apt/lists/*
+
+# Docker supplies the initial address, rather than a distro network manager.
+# Give the agent a netplan description of it, and restore its OVS bridge on
+# container restarts before SPIRE or the agent need the network.
+# Netplan needs a live udev daemon even with KIND's read-only sysfs. Netplan
+# tolerates the resulting device-trigger warning inside containers.
+COPY scripts/prepare-container-network /usr/local/sbin/prepare-container-network
+COPY scripts/nke-container-network.service /etc/systemd/system/nke-container-network.service
+COPY scripts/ovs-vswitchd-userspace.conf /etc/systemd/system/ovs-vswitchd.service.d/userspace.conf
+RUN set -eux; \
+    chmod 0755 /usr/local/sbin/prepare-container-network; \
+    mkdir -p /etc/systemd/system/systemd-udevd.service.d; \
+    printf '[Unit]\nConditionPathIsReadWrite=\n' > /etc/systemd/system/systemd-udevd.service.d/netplan-container.conf; \
+    SYSTEMD_OFFLINE=1 systemctl enable systemd-networkd.service; \
+    SYSTEMD_OFFLINE=1 systemctl disable systemd-networkd-wait-online.service; \
+    SYSTEMD_OFFLINE=1 systemctl enable nke-container-network.service
 
 # The DSX identity exchange fixture uses a local CA. The build helper supplies
 # its public certificate when that provider is enabled; other builds keep the
@@ -104,6 +123,11 @@ COPY scripts /tmp/capd-node-scripts
 RUN set -eux; \
     for deb in /tmp/capd-node-scripts/*.deb; do \
       [ -f "${deb}" ] || continue; \
+      if [ "$(basename "${deb}")" = cni-images.deb ]; then \
+        mkdir -p /usr/lib/nke/e2e; \
+        cp "${deb}" /usr/lib/nke/e2e/cni-images.deb; \
+        continue; \
+      fi; \
       package="$(dpkg-deb --field "${deb}" Package)"; \
       version="$(dpkg-deb --field "${deb}" Version)"; \
       dpkg -i "${deb}"; \
@@ -111,11 +135,17 @@ RUN set -eux; \
     done; \
     rm -rf /tmp/capd-node-scripts
 
+# Image postinst needs a running containerd. Install on first boot on every
+# node (including workers), using the canonical package import/checksum logic.
+COPY scripts/nke-container-cni-images.service /etc/systemd/system/nke-container-cni-images.service
+RUN SYSTEMD_OFFLINE=1 systemctl enable nke-container-cni-images.service
+
 # Docker build has no systemd as PID 1; agent-installer.sh still lays out units and binaries
 # but may exit non-zero when enabling services. Enable/disable is done in a final RUN
 # with SYSTEMD_OFFLINE=1 (see below). The build helper resolves the selected
 # bundle into the Docker context before this build starts.
 COPY agent.tgz /tmp/agent-src/
+COPY scripts/nke-agent-container-ovs.conf /tmp/nke-agent-container-ovs.conf
 RUN set -eux; \
     NODE_AGENT_DIR="agent_${NODE_AGENT_VERSION}_${NODE_AGENT_DIR_ARCH}"; \
     cd /tmp/agent-src; \
@@ -123,7 +153,10 @@ RUN set -eux; \
     cd "${NODE_AGENT_DIR}"; \
     ./agent-installer.sh || true; \
     test -f /etc/systemd/system/nke-agent.service; \
-    cd /tmp && rm -rf /tmp/agent-src
+    mkdir -p /etc/systemd/system/nke-agent.service.d; \
+    cp /tmp/nke-agent-container-ovs.conf \
+      /etc/systemd/system/nke-agent.service.d/container-ovs.conf; \
+    cd /tmp && rm -rf /tmp/agent-src /tmp/nke-agent-container-ovs.conf
 
 # Install the SPIRE agent bundle, including the TPM attestor plugin.
 COPY spire-agent.tgz /tmp/spire-agent-src/

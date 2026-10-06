@@ -35,11 +35,13 @@ source "qemu" "nke-fde" {
 
   http_content = {
     "/user-data" = templatefile("${local.project_root}/cidata/autoinstall-lvm.pkrtpl", {
-      ssh_public_key        = local.ssh_public_key
-      luks_enabled          = true
-      luks_passphrase       = var.luks_passphrase
-      nvidia_kernel_package = local.nvidia_kernel_package
-      serial_console        = local.serial_console
+      ssh_public_key            = local.ssh_public_key
+      luks_enabled              = true
+      luks_passphrase           = var.luks_passphrase
+      nvidia_kernel_package     = local.nvidia_kernel_package
+      serial_console            = local.serial_console
+      capture_apt_acquisitions  = var.capture_apt_acquisitions
+      apt_capture_configuration = file("${local.project_root}/cidata/apt-capture.conf")
     })
     "/meta-data" = "instance-id: nke-packer-fde\nlocal-hostname: nke-packer-fde\n"
   }
@@ -61,7 +63,7 @@ source "qemu" "nke-fde" {
   vm_name          = "nke-node.qcow2"
   output_directory = "${var.output_directory}/fde"
   headless         = true
-  memory           = 8192
+  memory           = var.guest_memory_mib
   cpus             = var.cpus
   net_device       = "virtio-net"
 }
@@ -115,6 +117,42 @@ build {
     # Run before provision.sh removes Packer's authorized SSH key.
     environment_vars = ["LUKS_PASSPHRASE=${var.luks_passphrase}"]
     script           = "${local.project_root}/scripts/configure-fde.sh"
+  }
+
+  # Export actual installer-acquired archives before provision.sh clears APT
+  # indexes and removes Packer's build SSH key. The caller owns this extra
+  # capture under output_directory; build logs are not a payload carrier.
+  provisioner "file" {
+    except      = var.capture_apt_acquisitions ? [] : ["qemu.nke-fde"]
+    source      = "${local.project_root}/scripts/capture-apt-acquisitions.py"
+    destination = "/var/tmp/capture-apt-acquisitions.py"
+  }
+
+  provisioner "shell" {
+    except = var.capture_apt_acquisitions ? [] : ["qemu.nke-fde"]
+    inline = [
+      "sudo systemctl mask --now apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service unattended-upgrades.service",
+      "sudo python3 /var/tmp/capture-apt-acquisitions.py --root /var/lib/nke/apt-acquisitions --output /var/tmp/nke-apt-acquisitions.tar --architecture ${var.architecture}",
+    ]
+  }
+
+  provisioner "file" {
+    except      = var.capture_apt_acquisitions ? [] : ["qemu.nke-fde"]
+    direction   = "download"
+    source      = "/var/tmp/nke-apt-acquisitions.tar"
+    destination = "${var.output_directory}/fde/apt-acquisitions.tar"
+  }
+
+  provisioner "shell" {
+    except = var.capture_apt_acquisitions ? [] : ["qemu.nke-fde"]
+    # Curtin owns apt.conf's supplied conf at 94curtin-config. This template
+    # supplies only the capture hook there; the separate proxy file is untouched.
+    inline = [
+      "sudo rm -f /var/tmp/capture-apt-acquisitions.py /var/tmp/nke-apt-acquisitions.tar /etc/apt/apt.conf.d/94curtin-config",
+      "configuration=$(apt-config dump) || exit 1; case \"$configuration\" in *DPkg::Pre-Install-Pkgs::nke-capture*) echo 'APT capture hook remains after cleanup' >&2; exit 1;; esac",
+      "sudo rm -rf /var/lib/nke/apt-acquisitions",
+      "sudo test ! -e /var/lib/nke/apt-acquisitions",
+    ]
   }
 
   provisioner "shell" {

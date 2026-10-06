@@ -46,11 +46,11 @@ there too. The watchdog sends its own telemetry to the backend.
 |---|---|
 | `watchdog` | Receives the other Collectors' own telemetry over OTLP at `nktp-watchdog-collector:4318` and forwards it to the backend. Scrapes the Operator. |
 | `gateway_logs`, `gateway_metrics`, `gateway_traces` | The OTLP entry points, one per signal, at `nktp-gateway-<signal>-collector:4317` (gRPC) and `:4318` (HTTP). Forward to the backend. Two replicas each by default, autoscaling up to 64. |
-| `daemonset` | One Collector per node. Reads pod logs under `/var/log/pods`, the node's systemd journal and its authentication and audit logs (see [Node logs](#node-logs)), scrapes the local kubelet and its cAdvisor endpoint, collects per-process metrics from `/proc`, scrapes the targets a node-local Target Allocator assigns from every monitor in the cluster, and forwards each signal to its gateway. Runs as root because of the host log mount. |
+| `daemonset` | One Collector per node. Reads pod logs under `/var/log/pods`, the node's systemd journal and its authentication and audit logs (see [Node logs](#node-logs)), scrapes the local kubelet and its cAdvisor endpoint, scrapes the targets a node-local Target Allocator assigns from every monitor in the cluster, and forwards each signal to its gateway. Runs as root because of the host log mount. |
 | `large_target_metrics` | A pool with its own Target Allocator for monitors labelled `nktp.nvidia.io/large-target: "true"`, which is how kube-state-metrics is scraped. Two replicas by default, autoscaling up to 16. |
 | `cluster_events` | Turns Kubernetes Events into logs. Two replicas by default: a Lease the chart creates in the release namespace elects the reader, and the other stands by. |
 | `kube-state-metrics` | A DaemonSet for node-local Pod metrics, one Deployment for Pods awaiting a node, and five Deployments for the other object types, grouped as workloads, networking, storage, configuration and cluster-scoped objects. RBAC is derived from the resource types. Each group can be sharded for larger clusters. |
-| `node-exporter` | The upstream DaemonSet on host network port 9100, with a ServiceMonitor the node Target Allocator picks up. The only source of node-level CPU, memory, filesystem and network metrics; the node Collector's host metrics receiver reports processes, not the node. |
+| `node-exporter` | The upstream DaemonSet on host network port 9100, with a ServiceMonitor the node Target Allocator picks up. The only source of node-level CPU, memory, filesystem and network metrics. |
 | `metrics-server` | The resource metrics API the autoscalers read. Off by default, because most clusters already have a provider; see [Bundled components](#bundled-components). |
 | `otel-lgtm` | Grafana, Loki, Tempo and Prometheus in one container, with the NKTP dashboards in [dashboards/default](dashboards/README.md). On by default for evaluation; see [The backend](#the-backend). |
 
@@ -61,22 +61,34 @@ development backend. Requests are per workload; a Collector's are set under
 
 | Workload | Pods | CPU request | Memory request |
 |---|---|---|---|
-| Node Collector | 3 | 300m | 768Mi |
-| Watchdog | 2 | 200m | 512Mi |
+| Node Collector | 3 | 3000m | 6Gi |
+| Watchdog | 2 | 1000m | 1Gi |
 | Gateways | 6 | 1200m | 3Gi |
-| Large-target pool | 2 | 1000m | 16Gi |
-| Cluster event reader | 2 | 400m | 1Gi |
+| Large-target pool | 2 | 4000m | 16Gi |
+| Cluster event reader | 2 | 2000m | 1Gi |
 | Target Allocators | 3 | 750m | 4Gi |
 | node-exporter | 3 | none set | none set |
 | kube-state-metrics | 9 | 900m | 1.1Gi |
 
 ## Prerequisites
 
+- Kubernetes 1.29 or later.
 - Helm 4. The repository pins the version in `make/tool-versions.mk`.
 - Network access to the chart repositories named in [Chart.yaml](Chart.yaml)
   when building dependencies.
+- Pull access to `docker.io`, `ghcr.io`, `quay.io` and `registry.k8s.io`, or
+  mirrors of them; see [Images](#images). The uninstall hook pulls
+  `rancher/kubectl` from `docker.io`.
 - A cluster that accepts the `opentelemetry.io/v1beta1` API. The chart installs
   the OpenTelemetry and Prometheus Operator CRDs by default.
+- Network paths between the components. The API server calls the Operator's
+  admission webhook on TCP 9443 of the node it runs on, which a firewall or a
+  managed cluster's security groups can block. Each node Collector scrapes its
+  kubelet on TCP 10250 and node-exporter on TCP 9100, and every Collector sends
+  OTLP to the gateways and the watchdog on other nodes.
+- The resource metrics API, `metrics.k8s.io`, which the gateway, watchdog and
+  large-target autoscalers read. The chart's metrics-server is off by default;
+  see [Bundled components](#bundled-components).
 - cert-manager. It issues the Operator's webhook certificate and the mTLS
   certificates between each Collector and its Target Allocator; see
   [Certificates](#certificates) to run without it.
@@ -94,9 +106,10 @@ Top-level keys in [values.yaml](values.yaml):
 
 | Key | What it sets |
 |---|---|
-| `global.imageRegistry` | A registry that replaces the registry of every image the chart and its dependencies pull, apart from two; see [Images](#images). |
+| `global.imageRegistry` | A registry that replaces the registry of every image the chart and its dependencies pull, apart from three; see [Images](#images). |
 | `otelcol_image` | The Collector image every workload uses unless it sets `<workload>.otelcol.image`, as `registry`, `repository` and `tag`. |
-| `watchdog`, `gateway_logs`, `gateway_metrics`, `gateway_traces`, `daemonset`, `large_target_metrics`, `cluster_events` | One block per Collector. `otelcol.config` is the Collector configuration, and `daemonset.kubelet` selects the kubelet endpoints the node Collector scrapes; `kubernetes` is the workload: replicas, resources, environment, Target Allocator, scheduling and, for every Collector but the node DaemonSet and the event reader, the `autoscaler` bounds. |
+| `targetallocator_image` | The Target Allocator image of the watchdog, the node Collector and the large-target pool, as `registry`, `repository` and `tag`. |
+| `watchdog`, `gateway_logs`, `gateway_metrics`, `gateway_traces`, `daemonset`, `large_target_metrics`, `cluster_events` | One block per Collector. `otelcol.config` is the Collector configuration, which the chart renders as written; `kubernetes` is the workload: replicas, resources, environment, Target Allocator, scheduling and, for every Collector but the node DaemonSet and the event reader, the `autoscaler` bounds. |
 | `kube-state-metrics` | `enabled`, the node DaemonSet, the central `deployments` with their `resource_types`, `shards` and `namespaces`, and the image. |
 | `otel-lgtm` | The development backend: `enabled`, `image`, `env`, `resources`, `nodeSelector`, `tolerations`, `extraVolumes` and `extraVolumeMounts`. |
 | `opentelemetry-kube-stack`, `node-exporter`, `metrics-server` | Values passed through to the bundled charts. |
@@ -104,10 +117,18 @@ Top-level keys in [values.yaml](values.yaml):
 ### Images
 
 Every image is set as `registry`, `repository` and `tag`. An empty `registry`
-pulls from the image's default registry. `global.imageRegistry` replaces the
-registry of every image at once, for a mirror. Two images do not read it: the
-metrics-server dependency's and the OpenTelemetry Operator's, which is nested in
-opentelemetry-kube-stack. Point those at the mirror through their own values:
+pulls from the image's default registry. A tag is a string: quote one that YAML
+would read as a number, such as `"1.0"`, or the chart fails to render.
+
+The Target Allocators run `targetallocator_image`, whose tag stays equal to the
+Operator's version. A workload's `kubernetes.targetAllocator.image`, a full
+image reference, overrides it for that workload.
+
+`global.imageRegistry` replaces the registry of every image at once, for a
+mirror. Three images do not read it: the metrics-server dependency's, the
+OpenTelemetry Operator's, which is nested in opentelemetry-kube-stack, and the
+kubectl image opentelemetry-kube-stack's uninstall hook runs. Point those at the
+mirror through their own values:
 
 ```yaml
 metrics-server:
@@ -118,27 +139,103 @@ opentelemetry-kube-stack:
     manager:
       image:
         repository: <mirror>/open-telemetry/opentelemetry-operator/opentelemetry-operator
+  cleanupJob:
+    image:
+      repository: <mirror>/rancher/kubectl
 ```
 
 ### Kubelet endpoints
 
-The node Collector scrapes its kubelet's `/metrics` and `/metrics/cadvisor`.
-cAdvisor applies kube-prometheus-stack's metric relabelings, which drop
+The node Collector scrapes its kubelet over HTTPS on the node IP, port 10250,
+with two jobs in the `prometheus/kubelet` receiver of `daemonset.otelcol.config`:
+`kubelet` for `/metrics` and `kubelet-cadvisor` for `/metrics/cadvisor`. The
+cAdvisor job's `metric_relabel_configs` are kube-prometheus-stack's, which drop
 always-zero, overlapping and host-network-interface series and cgroups with no
-Pod; `daemonset.kubelet.cadvisor.metricRelabelings` replaces them.
-`/metrics/probes` and `/metrics/resource` are off. Each endpoint is switched on
-or off independently:
+Pod.
+
+`scrape_configs` is a list, so a values file that changes it restates the whole
+list from [values.yaml](values.yaml). Remove `kubelet-cadvisor` to stop scraping
+cAdvisor. To scrape `/metrics/probes` or `/metrics/resource`, copy the `kubelet`
+job, give it its own `job_name`, and set the path in both `metrics_path` and the
+`replacement` of the `metrics_path` relabel rule.
+
+Kubelet serving certificates are not verified by default, because their CA and
+subject alternative names vary between distributions. To verify them, put the
+kubelet-serving CA in a ConfigMap in the release namespace under the key
+`ca.crt`, and mount it into the node Collector. `volumes` and `volumeMounts`
+replace the chart's lists, so restate its entries alongside the new one:
 
 ```yaml
 daemonset:
-  kubelet:
-    cadvisor:
-      enabled: false
-    probes:
-      enabled: true
-    resource:
-      enabled: true
+  kubernetes:
+    volumes:
+      # ...the chart's volumes...
+      - name: kubelet-serving-ca
+        configMap:
+          name: kubelet-serving-ca
+    volumeMounts:
+      # ...the chart's mounts...
+      - name: kubelet-serving-ca
+        mountPath: /etc/nktp/kubelet-serving-ca
+        readOnly: true
 ```
+
+Then set `tls_config` in each kubelet job:
+
+```yaml
+tls_config:
+  ca_file: /etc/nktp/kubelet-serving-ca/ca.crt
+  insecure_skip_verify: false
+```
+
+Each kubelet's certificate then has to cover the node IP the Collector
+connects to.
+
+### Process metrics
+
+The node Collector does not collect per-process metrics by default; node-exporter
+covers the node and cAdvisor each container. The host metrics receiver's
+`process` scraper adds CPU, memory and disk I/O for every process on the node,
+read from the host's `/proc`, which the chart mounts at `/hostfs/proc`. Give it
+a pipeline of its own, so the default `metrics` pipeline's `receivers` list
+stays the chart's:
+
+```yaml
+daemonset:
+  otelcol:
+    config:
+      receivers:
+        hostmetrics:
+          root_path: /hostfs
+          collection_interval: 1m
+          scrapers:
+            process:
+              resource_attributes:
+                process.command_line:
+                  enabled: false # Command lines can carry credentials.
+      service:
+        pipelines:
+          metrics/process:
+            receivers: [hostmetrics]
+            processors: [memory_limiter, resource/node]
+            exporters: [otlp_http/metrics]
+```
+
+Every process is a resource of its own, with several series each, so the volume
+grows with the processes on every node; the scraper's `include` and `exclude`
+filters on `process.executable.name` narrow it.
+
+CPU time and memory need nothing more. Executable paths and disk I/O of other
+processes need `SYS_PTRACE`, and of processes that do not run as root also
+`DAC_READ_SEARCH`, in `daemonset.kubernetes.securityContext.capabilities.add`
+alongside the chart's `SYS_CHROOT`; process owners need the node's `/etc/passwd`
+mounted at `/etc/passwd`. On AppArmor nodes the runtime's default profile can
+deny those reads even with `SYS_PTRACE`; `appArmorProfile: {type: Unconfined}`
+in the same `securityContext` lifts it. Both capabilities let a compromised
+Collector read the environment and memory of host processes, so grant only what
+you use. Without them the scraper logs an error on every collection for what it
+cannot read; `mute_process_exe_error`, `mute_process_io_error` and
+`mute_process_user_error` silence those, and the data stays missing.
 
 ### Node logs
 
@@ -364,6 +461,41 @@ gateway_traces:
 
 Credentials belong in a Secret referenced from the workload's `kubernetes.env`,
 read by the Collector through `${env:NAME}` substitution, never in values.
+
+For TLS to the backend, put the CA that signs the backend's certificate in a
+Secret in the release namespace, with a client certificate and key if the
+backend authenticates clients, mount it into each exporting Collector, and point
+its `otlp_http` exporter at the files. For each gateway, and the watchdog:
+
+```yaml
+gateway_logs:
+  kubernetes:
+    podSecurityContext:
+      fsGroup: 10001 # The Collector image's group, which may then read the 0440 files.
+    volumes:
+      - name: backend-tls
+        secret:
+          secretName: backend-tls # Keys ca.crt, tls.crt and tls.key.
+          defaultMode: 0440
+    volumeMounts:
+      - name: backend-tls
+        mountPath: /etc/nktp/backend-tls
+        readOnly: true
+  otelcol:
+    config:
+      exporters:
+        otlp_http:
+          endpoint: https://<backend>
+          tls:
+            ca_file: /etc/nktp/backend-tls/ca.crt
+            cert_file: /etc/nktp/backend-tls/tls.crt
+            key_file: /etc/nktp/backend-tls/tls.key
+            reload_interval: 1m
+```
+
+A backend that does not authenticate clients needs only `ca.crt` and `ca_file`.
+`volumes` and `volumeMounts` replace the chart's lists, so restate any entries
+the chart sets for that workload.
 
 ### Bundled components
 

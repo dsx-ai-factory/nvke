@@ -1,0 +1,67 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+---
+global:
+  gc: true
+  gcMetrics: false
+  deletionStrategy: gvr
+  measurements:
+    - name: podLatency
+      thresholds:
+        - conditionType: Ready
+          metric: P99
+          threshold: 1m0s
+    # serviceLatency is default-on here: this workload is specifically
+    # about pod→service→pod path setup. The curl pod's startupProbe is
+    # already gated on that path, so podLatency captures most of it,
+    # but serviceLatency gives a separate, direct measurement.
+    - name: serviceLatency
+      svcTimeout: 10s
+metricsEndpoints:
+  - endpoint: "{{.PROMETHEUS_URL}}"
+    metrics: [metrics.yml,metrics-report.yml]
+    alerts: [../../../../alerts/1.34/control-plane.yml]
+    skipTLSVerify: false
+    indexer:
+      type: local
+      metricsDirectory: collected-metrics
+
+
+
+jobs:
+  - name: node-density-cni
+    namespace: node-density-cni
+    jobIterations: 2060
+    qps: 20
+    burst: 20
+    cleanup: false
+    namespacedIterations: true
+    iterationsPerNamespace: 1000
+    churnConfig:
+      cycles: 0
+      duration: 0s
+      percent: 10
+      delay: 2m0s
+      mode: objects
+    podWait: false
+    waitWhenFinished: true
+    preLoadImages: true
+    namespaceLabels:
+      pod-security.kubernetes.io/enforce: privileged
+      pod-security.kubernetes.io/audit: privileged
+      pod-security.kubernetes.io/warn: privileged
+    objects:
+
+      - objectTemplate: webserver-deployment.yml
+        replicas: 1
+        inputVars:
+          nodeSelector: {"nodeSelectorTerms":[{"matchExpressions":[{"key":"node-role.kubernetes.io/worker","operator":"Exists"}]}]}
+
+      - objectTemplate: webserver-service.yml
+        replicas: 1
+
+      - objectTemplate: curl-deployment.yml
+        replicas: 1
+        inputVars:
+          nodeSelector: {"nodeSelectorTerms":[{"matchExpressions":[{"key":"node-role.kubernetes.io/worker","operator":"Exists"}]}]}

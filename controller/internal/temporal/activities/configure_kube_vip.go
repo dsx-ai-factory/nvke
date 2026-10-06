@@ -14,6 +14,7 @@ import (
 
 	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
 )
 
@@ -105,12 +106,16 @@ func (a *Activities) configureKubeVip(ctx context.Context, input ConfigureKubeVi
 		bgpPeerAS = fmdsBGPPeerAS
 		bgpPeerASN = 0
 		bgpPeerASNSource = nkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS
-	} else if nodePool.Nico != nil {
-		nicoNodePoolProvider, err := nodePool.NicoProvider()
+	} else {
+		kubeVIPConfig, err := clients.GetKubeVIPConfig(cluster)
 		if err != nil {
 			return ConfigureKubeVipResult{}, err
 		}
-		if len(nicoNodePoolProvider.VpcPrefixIDs) > 0 {
+		useFMDS, err := kubeVIPConfig.UsesFMDSBGPPeerASN(nodePool)
+		if err != nil {
+			return ConfigureKubeVipResult{}, err
+		}
+		if useFMDS {
 			bgpPeerAS = fmdsBGPPeerAS
 			bgpPeerASN = 0
 			bgpPeerASNSource = nkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS

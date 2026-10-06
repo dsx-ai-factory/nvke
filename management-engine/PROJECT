@@ -38,15 +38,6 @@ resources:
   version: v1
 - api:
     crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: nke.nvidia.com
-  group: internal
-  kind: NodePool
-  path: github.com/dsx-ai-factory/nke/management-engine/apis/v1
-  version: v1
-- api:
-    crdVersion: v1
   domain: nke.nvidia.com
   group: internal
   kind: NodePoolRelease

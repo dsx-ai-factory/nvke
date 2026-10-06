@@ -105,16 +105,6 @@ in-memory only, rather than `/var/log/journal`.
 [configuration](configuration.md#a-different-host-layout). Collection starts
 with new entries, so an idle node can take a while to show any.
 
-## Per-process metrics are sparse
-
-**Cause:** the node's AppArmor profile for containers denies `ptrace`, so the
-process scraper cannot read most of `/proc/<pid>` despite `SYS_PTRACE` and
-`DAC_READ_SEARCH`. The node's kernel log shows AppArmor `ptrace` denials for
-the Collector.
-
-**Status:** a known gap. A targeted AppArmor profile for the node Collector is
-the likely fix; until then, don't tune on per-process metrics.
-
 ## The autoscalers show no metrics
 
 **Cause:** nothing serves `metrics.k8s.io`, or two providers are fighting over

@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Packer Contract Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - os-image/**
+      - .github/workflows/os-image-artifact.yml
+      - .github/workflows/os-image-cache.yml
+      - .gitignore
+      - .github/workflows/packer-contracts.yml
+  workflow_call:
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: Packer Contract Tests-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    name: Packer contract tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test source-owned Packer and APT capture contracts
+        env:
+          NKE_TEST_APT_CONFIG: apt-config
+        run: make -C os-image/packer test

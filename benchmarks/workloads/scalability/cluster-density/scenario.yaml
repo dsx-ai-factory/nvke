@@ -1,0 +1,209 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Validated against ../../../schemas/scenario.schema.json.
+# The human-readable replication narrative is README.md in this directory.
+---
+slug: cluster-density
+workload: scalability
+description: >-
+  Publicly available kube-burner "cluster-density-v2" workload creating a mixed
+  set of namespaced objects per iteration, measuring pod-ready latency while the
+  control plane absorbs a sustained burst of object creation.
+
+intent:
+  goal: >-
+    Establish a repeatable measure of how long a pod takes to become Ready while
+    the control plane is absorbing a broad mix of object creations, so a reader
+    can judge whether their own cluster keeps pod startup responsive under a
+    realistic object mix rather than under pod creation alone. Note that this is
+    creation pressure, not churn: the engine's churn feature, which deletes and
+    recreates a proportion of namespaces mid-run, is disabled here.
+  characterizes:
+    - Pod-ready p99 latency under a mixed-object creation burst
+    - Pod scheduling latency during bulk creation
+    - Service-ready latency with five Services created per iteration
+    - API server and etcd CPU and memory headroom
+    - etcd disk write latency and database size
+    - API Priority and Fairness inflight headroom
+
+topology:
+  node_count: 47
+  node_type:
+    cpu: AMD EPYC 9004 series
+    cpu_cores: 128
+    memory_gib: 1007
+    arch: x86_64
+  roles:
+    control_plane: 3
+    worker: 42
+    monitoring: 2
+
+sizing:
+  derivation:
+    rule: >-
+      Iteration count is not derived from the cluster: it is supplied directly,
+      and each iteration creates a fixed set of objects including ten pods. Size
+      it from the pod budget instead. Compute the schedulable budget as the
+      number of workers multiplied by the kubelet max-pods setting, subtract the
+      pods already resident on those workers, and choose an iteration count whose
+      ten-pods-per-iteration total leaves headroom inside what remains. The
+      max-pods setting is the part to check rather than assume — it is a kubelet
+      configuration and need not be uniform across a cluster. Sizing past the budget does not fail loudly: the
+      excess pods stay Pending and the run reports scheduling backlog as though
+      it were density. The nodeSelector
+      inputVars set where pods land. Target the worker role: a selector that only
+      excludes control-plane nodes also admits monitoring nodes.
+    inputs:
+      - Schedulable worker count
+      - Kubelet max-pods setting on those workers
+      - Pods already resident on those workers
+      - Ten pods created per iteration
+      - The set of nodes the templates' node affinity admits
+  observed:
+    iterations: 378
+    pods_created: 3780
+    namespaces_created: 378
+    services_per_iteration: 5
+    secrets_per_iteration: 10
+    configmaps_per_iteration: 10
+    network_policies_per_iteration: 3
+    server_deployments_per_iteration: 3
+    server_deployment_replicas: 2
+    client_deployments_per_iteration: 2
+    client_deployment_replicas: 2
+    pods_per_iteration: 10
+    qps: 20
+    burst: 20
+    pod_ready_threshold_s: 120
+    max_pods_per_worker: 110
+    peak_pending_pods: 10
+    workers_targeted: 42
+    node_selector: node-role.kubernetes.io/worker
+
+stack:
+  kubernetes: 1.34.2
+  cni:
+    name: OVN-Kubernetes
+    version: "Helm chart 1.4.0, app 2026-02.0 (OVN core 25.09.1)"
+    build: vendor
+    dataplane: OVS 3.6.1
+  engine:
+    name: kube-burner
+    version: 2.5.0
+    build: upstream
+  container_runtime: containerd 1.7.28
+  node_os:
+    distro: Ubuntu 22.04.4 LTS
+    kernel: 5.15.0-113-generic
+  etcd: 3.6.5
+
+engine_config: engine/cluster-density-v2.yml
+
+metrics:
+  required:
+    - size
+    - scenario
+    - duration_s
+    - pod_ready_p50_ms
+    - pod_ready_p95_ms
+    - pod_ready_p99_ms
+    - pod_scheduled_p99_ms
+    - containers_ready_p99_ms
+    - svc_ready_p99_ms
+  workload_specific:
+    - iterations
+    - pods_created
+    - namespaces_created
+    - qps
+    - burst
+    - pod_ready_threshold_s
+    - max_apiserver_cpu_cores
+    - max_apiserver_memory_gib
+    - max_etcd_cpu_cores
+    - max_etcd_memory_mib
+    - max_readonly_inflight
+    - max_mutating_inflight
+    - etcd_db_in_use_mib
+    - etcd_wal_fsync_p99_ms
+    - etcd_backend_commit_p99_ms
+    - peak_pending_pods
+
+slo:
+  - metric: pod_ready_p99_ms
+    op: lte
+    value: 13000
+    unit: ms
+    severity: error
+    source: >-
+      Acceptance bar chosen for this scenario, not an upstream SLO. The engine
+      config also carries a 2 minute pod-ready p99 gate, evaluated once after the
+      run against the computed p99; it is not a per-pod timeout. Re-derive the
+      bar for a different cluster. Ready-condition timestamps are
+      second-granularity, so the gate resolves to about 1 s.
+  - metric: etcd_wal_fsync_p99_ms
+    op: lte
+    value: 10
+    unit: ms
+    severity: warning
+    source: >-
+      Conventional etcd health bar, carried as a supporting signal rather than a
+      verdict on the workload. On virtualized or shared storage it reports the
+      storage layer rather than a control-plane problem.
+  - metric: etcd_backend_commit_p99_ms
+    op: lte
+    value: 30
+    unit: ms
+    severity: warning
+    source: >-
+      Conventional etcd health bar, same caveat as WAL fsync: a supporting
+      signal, not a judgement on the workload.
+
+dashboard: ../../../dashboards/1.34/control-plane.json
+alerts: ../../../alerts/1.34/control-plane.yml
+
+prerequisites:
+  node_labels:
+    - node-role.kubernetes.io/worker
+  baseline_validation:
+    - Confirm every worker node is Ready and schedulable
+    - Confirm total node count and role split match the scenario topology
+    - Record the kubelet max-pods setting on each worker; it need not be uniform
+    - Confirm iterations x 10 pods fits the schedulable budget with headroom
+    - Set the node selector to the worker role and confirm the node count it
+      matches
+    - Confirm Prometheus is scraping the API servers
+    - Confirm no pre-existing objects carry the kube-burner job label for this
+      workload — garbage collection selects on that label alone, with no run
+      identifier, so it will delete objects belonging to another run
+
+upstream:
+  project: https://github.com/kube-burner/kube-burner
+  docs: https://kube-burner.github.io/kube-burner/
+  engine: kube-burner
+  engine_version: 2.5.0
+  config: engine/cluster-density-v2.yml
+  argv:
+    - "cd engine && PROMETHEUS_URL=<prometheus-url> kube-burner init --uuid=<run-uuid> --config=cluster-density-v2.yml"
+  notes: >-
+    Everything needed to run this ships in engine/ -- the resolved job
+    configuration, the object templates and both metrics profiles -- so the
+    kube-burner binary that upstream.project names is all a replication
+    requires. Eight object templates are carried. The workload this was adapted
+    from defines eleven; the other three are resource kinds that do not exist
+    on a stock Kubernetes cluster (an ImageStream, a Build and a Route), which
+    is why the per-iteration object counts in sizing.observed are lower than
+    that workload's. The server image also differs: images that bind [::] fail
+    on pods whose network namespace has IPv6 disabled, so it is replaced with
+    upstream nginx (alpine) listening on 0.0.0.0:80. The client image is an
+    unpinned :latest tag, as it ran; pin it to a digest before treating a
+    replication as a like-for-like comparison.
+    engine_config is the configuration as the engine rendered it at run time,
+    captured from the run rather than reconstructed, so every value in it is
+    the value that executed. Two fields are generalised: metricsDirectory,
+    which carried the run UUID, and the alerts entry, which carried an absolute
+    local path. The Prometheus endpoint comes from PROMETHEUS_URL. Run
+    from engine/: kube-burner resolves paths from its working directory.
+    jobIterations is this run's value: recompute it from sizing.derivation for
+    a different cluster rather than reusing it, and change the nodeSelector
+    inputVars alongside any change of node selector.

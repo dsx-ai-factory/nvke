@@ -21,6 +21,15 @@ global:
 otelcol_image:
   registry: "" # Empty pulls from the image's default registry (Docker Hub for this repository).
   repository: otel/opentelemetry-collector-k8s
+  tag: 0.162.0
+
+# Target Allocator image used by the watchdog, daemonset, and large_target_metrics
+# allocators. global.imageRegistry replaces registry. Keep the tag equal to the
+# Operator version from opentelemetry-kube-stack. A workload's
+# kubernetes.targetAllocator.image, as a full image string, overrides it.
+targetallocator_image:
+  registry: ghcr.io
+  repository: open-telemetry/opentelemetry-operator/target-allocator
   tag: 0.159.0
 
 # OTel workloads. Each workload uses the same structure:
@@ -78,14 +87,14 @@ watchdog:
       targetMemoryUtilization: 100
     resources:
       requests:
-        cpu: 100m
-        memory: 256Mi
-      limits:
         cpu: 500m
         memory: 512Mi
+      limits:
+        cpu: "4"
+        memory: 1Gi
     env:
       - name: GOMEMLIMIT
-        value: 448MiB # Soft Go runtime target. Leaves 64Mi nominal headroom below the container limit.
+        value: 768MiB # Soft Go runtime target. Leaves 256Mi nominal headroom below the container limit.
       - name: GOGC
         value: "50" # More frequent GC trades CPU for lower heap growth.
     podDisruptionBudget:
@@ -118,7 +127,7 @@ watchdog:
     # image:
     #   registry: ""
     #   repository: otel/opentelemetry-collector-k8s
-    #   tag: 0.159.0
+    #   tag: 0.162.0
     config:
       extensions:
         health_check:
@@ -156,8 +165,8 @@ watchdog:
       processors:
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
-          limit_percentage: 80 # Hard heap threshold, 409.6Mi. Leaves room below the container cap.
-          spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (281.6Mi).
+          limit_percentage: 80 # Hard heap threshold, 819.2Mi. Leaves room below the container cap.
+          spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (563.2Mi).
       exporters:
         otlp_http:
           endpoint: http://lgtm:4318
@@ -230,11 +239,11 @@ gateway_logs:
         cpu: 200m
         memory: 512Mi
       limits:
-        cpu: "1"
-        memory: 1Gi
+        cpu: "4"
+        memory: 8Gi
     env:
       - name: GOMEMLIMIT
-        value: 896MiB # Soft Go runtime target. Leaves 128Mi nominal headroom below the container limit.
+        value: 7GiB # Soft Go runtime target. Leaves 1Gi nominal headroom below the container limit.
       - name: GOGC
         value: "50" # More frequent GC trades CPU for lower heap growth.
     podDisruptionBudget:
@@ -267,7 +276,7 @@ gateway_logs:
     # image:
     #   registry: ""
     #   repository: otel/opentelemetry-collector-k8s
-    #   tag: 0.159.0
+    #   tag: 0.162.0
     config:
       extensions:
         health_check:
@@ -282,8 +291,8 @@ gateway_logs:
       processors:
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
-          limit_percentage: 80 # Hard heap threshold, 819.2Mi. Leaves room below the container cap.
-          spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (563.2Mi).
+          limit_percentage: 80 # Hard heap threshold, 6.4Gi. Leaves room below the container cap.
+          spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (4.4Gi).
       exporters:
         otlp_http:
           endpoint: http://lgtm:4318
@@ -348,11 +357,11 @@ gateway_metrics:
         cpu: 200m
         memory: 512Mi
       limits:
-        cpu: "1"
-        memory: 1Gi
+        cpu: "4"
+        memory: 8Gi
     env:
       - name: GOMEMLIMIT
-        value: 896MiB # Soft Go runtime target. Leaves 128Mi nominal headroom below the container limit.
+        value: 7GiB # Soft Go runtime target. Leaves 1Gi nominal headroom below the container limit.
       - name: GOGC
         value: "50" # More frequent GC trades CPU for lower heap growth.
     podDisruptionBudget:
@@ -385,7 +394,7 @@ gateway_metrics:
     # image:
     #   registry: ""
     #   repository: otel/opentelemetry-collector-k8s
-    #   tag: 0.159.0
+    #   tag: 0.162.0
     config:
       extensions:
         health_check:
@@ -400,8 +409,8 @@ gateway_metrics:
       processors:
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
-          limit_percentage: 80 # Hard heap threshold, 819.2Mi. Leaves room below the container cap.
-          spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (563.2Mi).
+          limit_percentage: 80 # Hard heap threshold, 6.4Gi. Leaves room below the container cap.
+          spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (4.4Gi).
       exporters:
         otlp_http:
           endpoint: http://lgtm:4318
@@ -466,11 +475,11 @@ gateway_traces:
         cpu: 200m
         memory: 512Mi
       limits:
-        cpu: "1"
-        memory: 1Gi
+        cpu: "4"
+        memory: 8Gi
     env:
       - name: GOMEMLIMIT
-        value: 896MiB # Soft Go runtime target. Leaves 128Mi nominal headroom below the container limit.
+        value: 7GiB # Soft Go runtime target. Leaves 1Gi nominal headroom below the container limit.
       - name: GOGC
         value: "50" # More frequent GC trades CPU for lower heap growth.
     podDisruptionBudget:
@@ -503,7 +512,7 @@ gateway_traces:
     # image:
     #   registry: ""
     #   repository: otel/opentelemetry-collector-k8s
-    #   tag: 0.159.0
+    #   tag: 0.162.0
     config:
       extensions:
         health_check:
@@ -518,8 +527,8 @@ gateway_traces:
       processors:
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
-          limit_percentage: 80 # Hard heap threshold, 819.2Mi. Leaves room below the container cap.
-          spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (563.2Mi).
+          limit_percentage: 80 # Hard heap threshold, 6.4Gi. Leaves room below the container cap.
+          spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (4.4Gi).
       exporters:
         otlp_http:
           endpoint: http://lgtm:4318
@@ -577,58 +586,6 @@ daemonset:
     # kubernetes.targetAllocator.prometheusCR.secretNamespaces.
     # No Roles or RoleBindings are created when the list is omitted or empty.
     create: true
-  kubelet:
-    cadvisor:
-      enabled: true # Also scrape /metrics/cadvisor from each local kubelet.
-      # metricRelabelings drops samples after scraping and replaces the defaults when overridden.
-      metricRelabelings:
-        # The below relabelings were copied from
-        # https://github.com/prometheus-community/helm-charts/blob/4713c624771a48e99f16dec9eb55ec8204f06830/charts/kube-prometheus-stack/values.yaml#L1952
-        # Drop less useful container CPU metrics.
-        - sourceLabels: [__name__]
-          action: drop
-          regex: container_cpu_(cfs_throttled_seconds_total|load_average_10s|system_seconds_total|user_seconds_total)
-        # Drop less useful container / always zero filesystem metrics.
-        - sourceLabels: [__name__]
-          action: drop
-          regex: container_fs_(io_current|io_time_seconds_total|io_time_weighted_seconds_total|reads_merged_total|sector_reads_total|sector_writes_total|writes_merged_total)
-        # Drop less useful / always zero container memory metrics.
-        - sourceLabels: [__name__]
-          action: drop
-          regex: container_memory_(mapped_file|swap)
-        # Drop less useful container process metrics.
-        - sourceLabels: [__name__]
-          action: drop
-          regex: container_(file_descriptors|tasks_state|threads_max)
-        # Drop container_memory_failures_total{scope="hierarchy"} metrics,
-        # we only need the container scope.
-        - sourceLabels: [__name__, scope]
-          action: drop
-          regex: container_memory_failures_total;hierarchy
-        # Drop container_network_... metrics that match various interfaces that
-        # correspond to CNI and similar interfaces. This avoids capturing network
-        # metrics for host network containers.
-        - sourceLabels: [__name__, interface]
-          action: drop
-          regex: container_network_.*;(cali|cilium|cni|lxc|nodelocaldns|tunl).*
-        # Drop container spec metrics that overlap with kube-state-metrics.
-        - sourceLabels: [__name__]
-          action: drop
-          regex: container_spec.*
-        # Drop cgroup metrics with no pod.
-        - sourceLabels: [id, pod]
-          action: drop
-          regex: .+;
-    probes:
-      enabled: false # Also scrape /metrics/probes from each local kubelet.
-    resource:
-      enabled: false # Also scrape /metrics/resource from each local kubelet.
-    tls:
-      ca:
-        # Set name to mount a ConfigMap containing the kubelet-serving CA and enable verification.
-        configMap:
-          name: ""
-          key: ca.crt
   kubernetes:
     mode: daemonset
     # Match KSM node coverage so targets on tainted nodes have a local Collector.
@@ -700,14 +657,14 @@ daemonset:
               values: ["true"]
     resources:
       requests:
-        cpu: 100m
-        memory: 256Mi
+        cpu: "1"
+        memory: 2Gi
       limits:
-        cpu: 500m
-        memory: 512Mi
+        cpu: "2"
+        memory: 4Gi
     env:
       - name: GOMEMLIMIT
-        value: 448MiB # Soft Go runtime target. Leaves 64Mi nominal headroom below the container limit.
+        value: 3276MiB # Soft Go runtime target at about 80% of the 4Gi container limit.
       - name: GOGC
         value: "50" # More frequent GC trades CPU for lower heap growth.
       - name: NODE_NAME
@@ -797,7 +754,7 @@ daemonset:
     # image:
     #   registry: ""
     #   repository: otel/opentelemetry-collector-k8s
-    #   tag: 0.159.0
+    #   tag: 0.162.0
     config:
       extensions:
         health_check:
@@ -932,19 +889,75 @@ daemonset:
                     replacement: https-metrics
                   - target_label: metrics_path
                     replacement: /metrics
-        hostmetrics:
-          root_path: /hostfs
-          collection_interval: 1m
-          scrapers:
-            process:
-              resource_attributes:
-                process.command_line:
-                  enabled: false # Do not export process arguments.
+              - job_name: kubelet-cadvisor
+                scrape_interval: 30s
+                scrape_timeout: 10s
+                scheme: https
+                metrics_path: /metrics/cadvisor
+                authorization:
+                  type: Bearer
+                  credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+                tls_config:
+                  insecure_skip_verify: true
+                static_configs:
+                  - targets: ["127.0.0.1:10250"] # Replaced with the node IP before scraping.
+                    labels:
+                      __tmp_kubelet_host: ${env:OTEL_K8S_NODE_IP}
+                relabel_configs:
+                  - source_labels: [__tmp_kubelet_host]
+                    regex: (.+:.*)
+                    target_label: __address__
+                    replacement: "[$$1]:10250"
+                  - source_labels: [__tmp_kubelet_host]
+                    regex: ([^:]+)
+                    target_label: __address__
+                    replacement: "$$1:10250"
+                  - target_label: node
+                    replacement: ${env:NODE_NAME}
+                  - target_label: endpoint
+                    replacement: https-metrics
+                  - target_label: metrics_path
+                    replacement: /metrics/cadvisor
+                # Copied from kube-prometheus-stack:
+                # https://github.com/prometheus-community/helm-charts/blob/4713c624771a48e99f16dec9eb55ec8204f06830/charts/kube-prometheus-stack/values.yaml#L1952
+                metric_relabel_configs:
+                  # Drop less useful container CPU metrics.
+                  - source_labels: [__name__]
+                    action: drop
+                    regex: container_cpu_(cfs_throttled_seconds_total|load_average_10s|system_seconds_total|user_seconds_total)
+                  # Drop less useful / always zero filesystem metrics.
+                  - source_labels: [__name__]
+                    action: drop
+                    regex: container_fs_(io_current|io_time_seconds_total|io_time_weighted_seconds_total|reads_merged_total|sector_reads_total|sector_writes_total|writes_merged_total)
+                  # Drop less useful / always zero container memory metrics.
+                  - source_labels: [__name__]
+                    action: drop
+                    regex: container_memory_(mapped_file|swap)
+                  # Drop less useful container process metrics.
+                  - source_labels: [__name__]
+                    action: drop
+                    regex: container_(file_descriptors|tasks_state|threads_max)
+                  # Keep only the container scope of container_memory_failures_total.
+                  - source_labels: [__name__, scope]
+                    action: drop
+                    regex: container_memory_failures_total;hierarchy
+                  # Drop network metrics for CNI and similar interfaces, which belong to host network containers.
+                  - source_labels: [__name__, interface]
+                    action: drop
+                    regex: container_network_.*;(cali|cilium|cni|lxc|nodelocaldns|tunl).*
+                  # Drop container spec metrics that overlap with kube-state-metrics.
+                  - source_labels: [__name__]
+                    action: drop
+                    regex: container_spec.*
+                  # Drop cgroup metrics with no pod.
+                  - source_labels: [id, pod]
+                    action: drop
+                    regex: .+;
       processors:
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
-          limit_percentage: 80 # Hard heap threshold, 409.6Mi. Leaves room below the container cap.
-          spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (281.6Mi).
+          limit_percentage: 80 # Hard heap threshold, 3.2Gi. Leaves room below the container cap.
+          spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (2.2Gi).
         resource/node:
           attributes:
             - key: k8s.node.name
@@ -972,7 +985,7 @@ daemonset:
           sending_queue:
             block_on_overflow: true
             sizer: bytes # Counts serialized bytes. Go heap use can be several times larger.
-            queue_size: 8388608 # Gateway queues each hold 8MiB, including in-flight payloads.
+            queue_size: 8388608 # Logs queue holds 8MiB, including in-flight payloads.
             num_consumers: 32 # Export concurrency. Idle worker slots hold no batch payload.
             batch:
               sizer: bytes # Batch sizes use serialized bytes, matching queue accounting.
@@ -986,7 +999,7 @@ daemonset:
           sending_queue:
             block_on_overflow: true
             sizer: bytes
-            queue_size: 8388608
+            queue_size: 33554432 # 32MiB to admit large scrapes before batching.
             num_consumers: 32
             batch:
               sizer: bytes
@@ -1064,7 +1077,7 @@ daemonset:
             processors: [memory_limiter, resource/node, transform/operator]
             exporters: [otlp_http/watchdog]
           metrics:
-            receivers: [prometheus, prometheus/kubelet, hostmetrics, otlp]
+            receivers: [prometheus, prometheus/kubelet, otlp]
             processors: [memory_limiter, resource/node]
             exporters: [otlp_http/metrics]
           traces:
@@ -1152,10 +1165,10 @@ large_target_metrics:
       targetMemoryUtilization: 100 # Scale at 8Gi working set. The limiter checks Go heap separately.
     resources:
       requests:
-        cpu: 500m
+        cpu: "2"
         memory: 8Gi # Reserve memory for parsing and retained scrape data.
       limits:
-        cpu: "2"
+        cpu: "4"
         memory: 16Gi # Allow headroom for overlapping scrapes and the exporter queue.
     env:
       - name: GOMEMLIMIT
@@ -1194,7 +1207,7 @@ large_target_metrics:
     # image:
     #   registry: ""
     #   repository: otel/opentelemetry-collector-k8s
-    #   tag: 0.159.0
+    #   tag: 0.162.0
     config:
       extensions:
         health_check:
@@ -1274,11 +1287,11 @@ cluster_events:
     replicas: 2 # One active reader and one standby. More replicas do not increase watch throughput.
     resources:
       requests:
-        cpu: 200m
+        cpu: "1"
         memory: 512Mi
       limits:
-        cpu: "1"
-        memory: 1Gi # The receiver lists Events at leadership start. Size for retained Event volume.
+        cpu: "4"
+        memory: 1Gi # Size for Event rate and the export queue. Startup no longer lists retained Events.
     env:
       - name: GOMEMLIMIT
         value: 896MiB # Soft Go runtime target. Leaves 128Mi nominal headroom below the container limit.
@@ -1318,7 +1331,7 @@ cluster_events:
     # image:
     #   registry: ""
     #   repository: otel/opentelemetry-collector-k8s
-    #   tag: 0.159.0
+    #   tag: 0.162.0
     config:
       extensions:
         health_check:

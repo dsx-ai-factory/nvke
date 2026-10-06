@@ -277,6 +277,7 @@ printf '%s\n' 'ssh-ed25519 generated-key generated' > "${key}.pub"
         ssh_key_files=None,
         generate_ssh_key=False,
         generated_key_state=None,
+        guest_memory_mib=None,
     ):
         workspace, source, tools, packer, events, artifacts = (
             self.create_image_build_fixture(
@@ -346,6 +347,8 @@ printf '%s\n' 'ssh-ed25519 generated-key generated' > "${key}.pub"
             variables.extend(f"{name}={value}" for name, value in material_inputs)
         if artifacts_override is not None:
             variables.append(f"ARTIFACTS={artifacts_override}")
+        if guest_memory_mib is not None:
+            variables.append(f"GUEST_MEMORY_MIB={guest_memory_mib}")
         if ssh_key_files is not None:
             private_key, public_key = ssh_key_files
             if private_key is not None:
@@ -707,6 +710,7 @@ exec "${REAL_MV:?}" "$@"
                 variant = "fde" if target == "os-image-fde" else "non-fde"
                 self.assertIn(f"-only={selector}", build)
                 self.assertIn(f"-var architecture={arch}", build)
+                self.assertIn("-var guest_memory_mib=8192", build)
                 self.assertIn(
                     f"-var material_manifest={artifacts.parent}/.packer-inputs/material-manifest.json",
                     build,
@@ -762,6 +766,17 @@ exec "${REAL_MV:?}" "$@"
                     materials["image-inputs"]["digest"],
                     "sha256:" + hashlib.sha256(archive.read_bytes()).hexdigest(),
                 )
+
+    def test_guest_memory_override_reaches_both_packer_builds(self):
+        for target in ("os-image-fde", "os-image-non-fde"):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as tmp:
+                result, events, _, _ = self.run_image_build(
+                    target, "arm64", Path(tmp), guest_memory_mib=16384
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                builds = [event for event in events if event.startswith("packer-args|build ")]
+                self.assertEqual(len(builds), 1)
+                self.assertIn("-var guest_memory_mib=16384", builds[0])
 
     def test_failed_artifact_staging_prevents_packer_build(self):
         cases = (
@@ -1386,6 +1401,7 @@ exec "${REAL_MV:?}" "$@"
         self.assertEqual(len(re.findall(r"skip_compaction\s*=\s*true", project)), 2)
         self.assertEqual(len(re.findall(r"disk_compression\s*=\s*false", project)), 2)
         self.assertEqual(len(re.findall(r"efi_drop_efivars\s*=\s*true", project)), 2)
+        self.assertEqual(len(re.findall(r"memory\s*=\s*var\.guest_memory_mib", project)), 2)
         self.assertNotIn('${path.root}/artifacts', project)
         self.assertNotIn('${path.root}/.ssh', project)
 

@@ -20,8 +20,7 @@ same checkout, into namespace `nktp`:
   CRDs (`ServiceMonitor`, `PodMonitor` and the rest).
 - **Collectors**, each an `OpenTelemetryCollector` the Operator runs:
   - one on every node, for pod logs, the systemd journal, host auth and audit
-    logs, the kubelet and cAdvisor, per-process metrics, and every monitor
-    scheduled to its node
+    logs, the kubelet and cAdvisor, and every monitor scheduled to its node
   - a gateway per signal (metrics, logs, traces), the OTLP entry points that
     export to the backend
   - a large-target pool for kube-state-metrics and the control-plane monitors

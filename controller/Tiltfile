@@ -518,16 +518,32 @@ helm_resource(
     port_forwards=[5432],
 )
 
-helm_repo(
-    "temporal",
-    "https://go.temporal.io/helm-charts",
+# Pull the chart with retries and install from the archive: the repo index
+# points at a GitHub release asset, and helm_repo cannot retry a 500 on it.
+TEMPORAL_CHART_DIR = ".local/charts"
+TEMPORAL_CHART_ARCHIVE = "%s/temporal-%s.tgz" % (TEMPORAL_CHART_DIR, CHART_VERSION_TEMPORAL)
+
+local_resource(
+    "temporal-chart",
+    cmd=["bash", "-c", """
+      set -euo pipefail
+      mkdir -p "%s"
+      for attempt in 1 2 3 4 5; do
+        if helm pull temporal --repo https://go.temporal.io/helm-charts --version "%s" --destination "%s"; then
+          exit 0
+        fi
+        echo "helm pull temporal %s failed (attempt ${attempt}/5), retrying in $((attempt * 10))s" >&2
+        sleep $((attempt * 10))
+      done
+      exit 1
+    """ % (TEMPORAL_CHART_DIR, CHART_VERSION_TEMPORAL, TEMPORAL_CHART_DIR, CHART_VERSION_TEMPORAL)],
     labels=["1-infra"],
-    resource_name="temporal-repo",
+    allow_parallel=True,
 )
 
 helm_resource(
     "temporal",
-    "temporal/temporal",
+    TEMPORAL_CHART_ARCHIVE,
     labels=["1-infra"],
     release_name="temporal",
     namespace=TEMPORAL_NAMESPACE,
@@ -541,7 +557,7 @@ helm_resource(
       "--wait",
       "--timeout", "15m",
     ],
-    resource_deps=["check-management-cluster", "temporal-repo", "postgres"],
+    resource_deps=["check-management-cluster", "temporal-chart", "postgres"],
     links=[
       ui_link(CWE_TEMPORAL_UI_PORT, "", "Temporal UI"),
     ],
@@ -1145,12 +1161,13 @@ if _cwe_profiles_image_enabled:
                 if [ "$(uname -s)" = "Darwin" ] && [ -z "${DOCKER_HOST:-}" ]; then
                   export DOCKER_HOST="${COLIMA_DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
                 fi
-                docker build --platform linux/%s --tag "$EXPECTED_REF" -f "%s" "%s"
+                retry() { "$@" || { echo "docker build failed, retrying once in 15s" >&2; sleep 15; "$@"; }; }; retry docker build --platform linux/%s --tag "$EXPECTED_REF" -f "%s" "%s"
                 """ % (_cwe_tilt_goarch, _cwe_profiles_dockerfile, _cwe_profiles_context),
             ],
             deps=[_cwe_profiles_dir, _cwe_profiles_runbooks_dir, _cwe_profiles_dockerfile],
         )
 
+# docker build runs through a one-shot retry: the mirror can 404 a layer it just resolved.
 _cwe_build_script = """
       set -euo pipefail
 
@@ -1165,7 +1182,7 @@ _cwe_build_script = """
       cp hack/Dockerfile.cwe.tilt "${tmp_dir}/Dockerfile"
       mkdir -p "${tmp_dir}/bin"
       cp bin/controller "${tmp_dir}/bin/controller"
-      docker build --platform linux/%s --tag "$EXPECTED_REF" "${tmp_dir}"
+      retry() { "$@" || { echo "docker build failed, retrying once in 15s" >&2; sleep 15; "$@"; }; }; retry docker build --platform linux/%s --tag "$EXPECTED_REF" "${tmp_dir}"
 """ % (_cwe_tilt_goarch, _cwe_tilt_goarch)
 
 if not _cwe_profiles_image_enabled:
@@ -1189,7 +1206,7 @@ if not _cwe_profiles_image_enabled:
       cp bin/controller "${tmp_dir}/bin/controller"
       mkdir -p "${tmp_dir}/profiles"
       cp -a "%s/." "${tmp_dir}/profiles/"
-      docker build --platform linux/%s --tag "$EXPECTED_REF" "${tmp_dir}"
+      retry() { "$@" || { echo "docker build failed, retrying once in 15s" >&2; sleep 15; "$@"; }; }; retry docker build --platform linux/%s --tag "$EXPECTED_REF" "${tmp_dir}"
 """ % (_cwe_tilt_goarch, _cwe_profiles_dir, _cwe_tilt_goarch)
 
 if not CWE_IMAGE and not _cwe_local_debug_active:

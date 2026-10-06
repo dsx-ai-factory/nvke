@@ -137,6 +137,9 @@ dhcp_leases() {
   dump "iptables -S" run_priv iptables -S
   dump "running QEMU processes" qemu_processes
   dump "running nico-sim / dnsmasq processes" nicovms_processes
+  # Tells a /dev/kvm mode reset from a libvirt fault after a failed define.
+  dump "/dev/kvm" ls -l /dev/kvm
+  dump "virsh domcapabilities --virttype kvm (${LIBVIRT_URI})" virsh -c "${LIBVIRT_URI}" domcapabilities --virttype kvm
   dump "virsh list --all (${LIBVIRT_URI})" virsh -c "${LIBVIRT_URI}" list --all
   dump "dnsmasq leases" dhcp_leases
 } 2>&1 | tee "${DIAG_FILE}"

@@ -11,6 +11,12 @@ variable "architecture" {
   }
 }
 
+variable "capture_apt_acquisitions" {
+  type        = bool
+  default     = false
+  description = "Retain autoinstall APT archives and export their metadata/byte capture in the variant output directory beside the image. This is not a full closure or authenticated acquisition receipt."
+}
+
 variable "material_manifest" {
   type        = string
   description = "Absolute path to the caller-authenticated material manifest. Materials are staged in its sibling materials directory."
@@ -147,6 +153,17 @@ variable "cpu_model" {
   type        = string
   default     = "host"
   description = "QEMU CPU model. Use host with KVM and max with TCG emulation."
+}
+
+variable "guest_memory_mib" {
+  type        = number
+  default     = 8192
+  description = "Guest memory in MiB. 1024 is a schema floor, not a supported installer sizing recommendation; the default is 8192."
+
+  validation {
+    condition     = var.guest_memory_mib >= 1024 && floor(var.guest_memory_mib) == var.guest_memory_mib
+    error_message = "The guest_memory_mib value must be an integer of at least 1024."
+  }
 }
 
 variable "cpus" {

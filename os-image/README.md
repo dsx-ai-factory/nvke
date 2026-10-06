@@ -32,6 +32,7 @@ Common prerequisites for image builds:
 | `curl` | any | via your package manager |
 | `qemu-system-x86_64` or `qemu-system-aarch64`, `qemu-img`, `cloud-localds`, `swtpm`, OVMF/AAVMF | any | via your package manager |
 | `xorriso`, `p7zip-full` (`7z`) | any | via your package manager |
+| `dpkg-dev` (`dpkg-deb`, `dpkg-scanpackages`) | any | via your package manager |
 
 Package-builder prerequisites depend on the selected mode:
 
@@ -46,6 +47,14 @@ so all of the above are needed even for a first build — see
 `.github/workflows/os-image-artifact.yml`'s install step for the exact
 package list on Ubuntu. `xorriso`/`7z` are for `prepare-installer-iso.sh`'s
 ISO patching (see its header comment for why).
+
+The ISO cache directory and cached source ISO must not be symlinks. Use a real
+cache directory on a larger disk rather than linking `iso-cache` to it. ISO
+preparation holds the cached source, a private snapshot, and the rewritten ISO,
+requiring approximately three times the source ISO's size in total disk space;
+an existing patched ISO adds to that peak until it is replaced. Legacy
+`.patched.iso.tmp` leftovers are not reused; the existing Make `clean` target
+removes them with the ISO cache and its other build outputs.
 
 From the repository root, bake and smoke-test with native KVM:
 
@@ -306,6 +315,68 @@ project also checks the `image-inputs` archive against its manifest digest
 before extracting it into transient host-side state and uploading the expanded
 contents. The archive itself is not copied into the guest disk.
 
+External runners can prepare the same input archive and patched installer from
+individually built component outputs, without invoking `fetch-artifacts.sh`:
+
+```bash
+packer/scripts/compose-image-inputs.py \
+  --architecture amd64 \
+  --materials-dir /run/nke-image/materials \
+  --source-files-dir files \
+  --output /run/nke-image/image-inputs.tar \
+  --source-date-epoch "$SOURCE_DATE_EPOCH"
+
+packer/scripts/patch-installer-iso.sh \
+  /run/nke-image/materials/ubuntu-installer.iso \
+  /run/nke-image/installer.iso
+```
+
+The `agent` binding is one bare `.deb` file. `calico`, `kubeadm-distro`, `ovn`,
+and `spire-agent` are uncompressed GNU/USTAR archives of flat regular `.deb`
+files, with filenames unique across all bindings. Only the optional root `.`
+directory entry is accepted; omit `Packages`, subdirectories, links, and PAX/GNU
+extended metadata headers. The package builders are `packages/cni-calico`,
+`packages/kubeadm-distro`, `packages/cni-ovn`, and `packages/spire-agent`.
+Run their `debs` targets and archive only the resulting `.deb` files with
+`tar --format=ustar -cf component.tar -C "$OUT_DIR" <package filenames>`.
+The composer regenerates `Packages` itself. The SPIRE binding must contain
+exactly one `spire-agent_*.deb`; Calico inputs may contain at most one
+`nke-cni-calico-manifests-*.deb`. Every package must declare the requested
+`--architecture` or `all`, checked with `dpkg-deb`.
+
+`--source-files-dir` supplies the checkout's image-owned provisioning files:
+`nke-agent-spire.conf`, `wait-spiffe-socket.sh`, `conntrack-tune.service`,
+`configure-conntrack.sh`, and `10-nke-conntrack-timeouts.conf`. All five are
+required, copied unchanged, and staged with the same modes as the Make build.
+
+The runner must authenticate these files before calling the composer and keep
+the authenticated bytes immutable until composition returns. The composer
+copies each component archive through a no-follow descriptor into a bounded,
+private snapshot before validating and staging its regular package members.
+This snapshot prevents caller writes between framing validation and parsing.
+The composer rejects unsafe entries and duplicate filenames. Each input archive
+is limited to 16,384 entries. Component archives may supply at most 16,384
+packages, plus one standalone agent package, for 16,385 packages total. The
+limits are 1 GiB per package and 7 GiB aggregate package bytes, including the
+standalone agent. It normalizes archive
+directory permissions independently of the host
+umask, and preserves all staged versions in the local APT index. The ISO patcher
+accepts a prepared local ISO and performs no acquisition. The runner must verify
+the source ISO against its authenticated upstream digest, for example Ubuntu's
+signed `SHA256SUMS`, before either ISO tool parses it. The patched ISO digest
+does not authenticate the upstream ISO. Both adapters leave
+the source tree unchanged and write under caller-selected output directories.
+`guest_memory_mib` controls Packer guest memory, with the existing 8192 MiB
+default. Its 1024 MiB validation floor is a schema constraint only; it does not
+claim the Ubuntu installer will complete at that memory size. Keep the default
+unless an alternative has passed image-bake and boot validation.
+Make callers can pass `GUEST_MEMORY_MIB` to set the same Packer input.
+
+The composer delegates archive parsing to Python's standard library. Its regular
+member budgets, strict end markers, and rejection of extended metadata do not
+authenticate input archives or replace the runner's
+resource isolation and material verification.
+
 The SSH files are caller-owned attempt state. The direct caller generates the
 pair before invoking Packer and supplies both absolute paths. Packer uses the
 private key while autoinstall injects the matching public key. Packer's generated
@@ -512,6 +583,15 @@ file, such as `60-conntrack.conf` or `99-local.conf`, overrides individual
 keys, higher or lower. `boot-smoke.sh` and
 `demo-fde.sh` run `packer/scripts/check-conntrack.sh` against each built
 image.
+
+## Optional APT acquisition capture
+
+Direct Packer callers can set `capture_apt_acquisitions=true` to download the
+actual APT package archives before final provisioning cleanup. See
+[the capture contract](docs/apt-acquisition-capture.md) for output paths, scope,
+limits and validation. Capture is disabled by default and does not by itself
+prove a complete acquisition closure or bind evidence to a build Run.
+The Make targets do not collect the capture; use direct Packer for this output.
 
 ## Checker
 

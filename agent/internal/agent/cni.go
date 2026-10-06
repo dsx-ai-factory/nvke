@@ -67,6 +67,17 @@ const (
 	cniPluginOVN    = "ovn"
 	cniPluginCalico = "calico"
 	cniPluginTigera = "tigera"
+
+	// OVN Helm overrides for OVS netdev nodes (CAPD and NICo containers).
+	// A dummy br-ex with no uplink and local gateway mode preserves Docker's
+	// management eth0 and its BGP connection. These keys are chart values:
+	// https://github.com/ovn-kubernetes/ovn-kubernetes/blob/v1.4.0/helm/ovn-kubernetes/values-single-node-zone.yaml
+	ovnDummyGatewayBridgeHelmValue = "global.dummyGatewayBridge"
+	ovnDummyGatewayBridgeEnabled   = "true"
+	ovnGatewayModeHelmValue        = "global.gatewayMode"
+	ovnLocalGatewayMode            = "local"
+	ovnGatewayOptsHelmValue        = "global.gatewayOpts"
+	ovnDummyGatewayOpts            = "--gateway-interface=br-ex --allow-no-uplink"
 )
 
 // checkHostOpenVSwitchReady verifies ovs-vsctl is installed (ovs-vsctl --version).
@@ -223,6 +234,31 @@ func ovnImageRepository(registry, upstreamRepo string) string {
 	return strings.TrimRight(registry, "/") + "/" + path
 }
 
+// ovnKubernetesCNIConfig keeps a userspace OVS node's physical management
+// interface out of the OVN gateway bridge. Without a dummy gateway bridge, OVN
+// adopts the Docker veth as its uplink even though a netdev datapath cannot use
+// it as a system port.
+func ovnKubernetesCNIConfig(cniConfig map[string]string, datapathType string) map[string]string {
+	if !strings.EqualFold(strings.TrimSpace(datapathType), openVSwitchNetdevDatapath) {
+		return cniConfig
+	}
+
+	config := make(map[string]string, len(cniConfig)+3)
+	for key, value := range cniConfig {
+		config[key] = value
+	}
+	if _, ok := config[ovnDummyGatewayBridgeHelmValue]; !ok {
+		config[ovnDummyGatewayBridgeHelmValue] = ovnDummyGatewayBridgeEnabled
+	}
+	if _, ok := config[ovnGatewayModeHelmValue]; !ok {
+		config[ovnGatewayModeHelmValue] = ovnLocalGatewayMode
+	}
+	if _, ok := config[ovnGatewayOptsHelmValue]; !ok {
+		config[ovnGatewayOptsHelmValue] = ovnDummyGatewayOpts
+	}
+	return config
+}
+
 // buildOvnKubernetesHelmInstallArgs returns argv for `helm upgrade --install` for an OVN chart
 // directory. imageRegistry is set before cniConfig so a per-request registry wins; upstreamRepo
 // is only read when one of them is set.
@@ -316,6 +352,7 @@ func (s *NodeAgentServer) runOvnKubernetesHelmInstallFromDir(chartDir, podNetwor
 			return fmt.Errorf("resolving the OVN image repository for the registry override: %w", err)
 		}
 	}
+	cniConfig = ovnKubernetesCNIConfig(cniConfig, os.Getenv(openVSwitchDatapathTypeEnv))
 	args := buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podNetworkCidr, serviceCidr, s.CniImageRegistry, upstreamRepo, cniConfig)
 	stdout, err := s.Runner.Run("helm", args, &nkeutils.CommandOptions{
 		Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
@@ -352,7 +389,8 @@ func (s *NodeAgentServer) installOvnK8sCNIPlugin(req *pb.InstallCNIPluginRequest
 		return err
 	}
 	ovnBundle.InstallFile = "install.sh"
-	ovnBundle.InstallCmd = []string{"/bin/bash", "-c", "./install.sh"} //nolint:goconst // bash argv fragment; naming each CLI flag reads worse than the literal
+	// The downloaded script may live on a noexec /tmp mount.
+	ovnBundle.InstallCmd = []string{"/bin/bash", ovnBundle.InstallFile}
 
 	requestID := generateRequestID()
 	bundleStatus := &Bundle{

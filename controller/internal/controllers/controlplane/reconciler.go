@@ -12,6 +12,7 @@ import (
 	temporalclient "go.temporal.io/sdk/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
@@ -24,6 +25,12 @@ type reconciler struct {
 	db                db.Tx
 	cweTemporalClient temporalclient.Client
 	k8sClient         ctrlclient.Client
+
+	// nodePoolUpgradeConfig resolves the NodePoolUpgradeConfig client for a
+	// cluster. Defaults to clients.GetNodePoolUpgradeConfig; tests override it
+	// with a stub so updateNodePoolKubeVersion's own error handling can be
+	// exercised without going through real NICo/CAPI resolution.
+	nodePoolUpgradeConfig func(db.Cluster) (clients.NodePoolUpgradeConfig, error)
 }
 
 func newReconciler(
@@ -34,11 +41,12 @@ func newReconciler(
 	k8sClient ctrlclient.Client,
 ) *reconciler {
 	return &reconciler{
-		cfg:               cfg,
-		logger:            logger,
-		db:                db,
-		cweTemporalClient: cweTemporalClient,
-		k8sClient:         k8sClient,
+		cfg:                   cfg,
+		logger:                logger,
+		db:                    db,
+		cweTemporalClient:     cweTemporalClient,
+		k8sClient:             k8sClient,
+		nodePoolUpgradeConfig: clients.GetNodePoolUpgradeConfig,
 	}
 }
 

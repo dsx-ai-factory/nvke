@@ -225,6 +225,11 @@ jobs:
           kind_version: ${{ steps.versions.outputs.kind_version }}
           kubectl_version: ${{ steps.versions.outputs.kubectl_version }}
 
+      - name: Install Debian packaging tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dpkg-dev
+
       - name: Show runner tools
         shell: bash
         run: |

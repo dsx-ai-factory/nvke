@@ -41,7 +41,8 @@ endif
 export PACKER_CACHE_DIR
 # FDE/non-FDE only: where the guest's serial console (boot + autoinstall
 # output) gets captured, for CI to upload as an artifact on failure -- no
-# VNC/monitor access there to inspect a stuck build interactively.
+# VNC/monitor access there to inspect a stuck build interactively. Packer's
+# debug log goes there too (PACKER_LOG): the only trace of a QEMU start failure.
 BUILD_LOGS  := $(CURDIR)/build-logs
 PACKER_BUILD_FDE := nke-node-fde.qemu.nke-fde
 PACKER_BUILD_NON_FDE := nke-node-non-fde.qemu.nke-non-fde
@@ -160,6 +161,7 @@ SSH_TIMEOUT ?= $(if $(filter kvm,$(ACCELERATOR)),30m,180m)
 # copying the squashfs at 2 h 15 m where run 34771011057 with 4 had reached
 # the postinstall packages at 2 h.
 CPUS ?= 4
+GUEST_MEMORY_MIB ?= 8192
 
 # FDE/non-FDE only: how long boot_command waits before typing into GRUB.
 # prepare-installer-iso.sh patches the ISO's own GRUB timeout to 300s, so
@@ -525,6 +527,7 @@ _os-image-fde: prepare-image-build
 	@if [ "$(ACCELERATOR)" = "tcg" ]; then \
 		echo "no usable /dev/kvm: building with software emulation, which is far slower"; \
 	fi
+	PACKER_LOG=1 PACKER_LOG_PATH="$(BUILD_LOGS)/packer-fde.log" \
 	PKR_VAR_luks_passphrase=$(LUKS_PASSPHRASE) \
 	$(PACKER_BUILD) \
 		-only=$(PACKER_BUILD_FDE) \
@@ -537,6 +540,7 @@ _os-image-fde: prepare-image-build
 		-var "accelerator=$(ACCELERATOR)" \
 		-var "cpu_model=$(CPU_MODEL)" \
 		-var "cpus=$(CPUS)" \
+		-var "guest_memory_mib=$(GUEST_MEMORY_MIB)" \
 		-var "ssh_timeout=$(SSH_TIMEOUT)" \
 		-var "boot_wait=$(BOOT_WAIT)" \
 		-var "root_fs_label=$(ROOT_FS_LABEL)" \
@@ -565,6 +569,7 @@ _os-image-non-fde: prepare-image-build
 	@if [ "$(ACCELERATOR)" = "tcg" ]; then \
 		echo "no usable /dev/kvm: building with software emulation, which is far slower"; \
 	fi
+	PACKER_LOG=1 PACKER_LOG_PATH="$(BUILD_LOGS)/packer-non-fde.log" \
 	$(PACKER_BUILD) \
 		-only=$(PACKER_BUILD_NON_FDE) \
 		-var "architecture=$(ARCH)" \
@@ -576,6 +581,7 @@ _os-image-non-fde: prepare-image-build
 		-var "accelerator=$(ACCELERATOR)" \
 		-var "cpu_model=$(CPU_MODEL)" \
 		-var "cpus=$(CPUS)" \
+		-var "guest_memory_mib=$(GUEST_MEMORY_MIB)" \
 		-var "ssh_timeout=$(SSH_TIMEOUT)" \
 		-var "boot_wait=$(BOOT_WAIT)" \
 		-var "root_fs_label=$(ROOT_FS_LABEL)" \

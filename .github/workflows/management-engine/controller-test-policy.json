@@ -1,7 +1,6 @@
 {
   "ginkgoSpecs": {
     "management-engine/controllers/nkecluster_controller_test.go": 7,
-    "management-engine/controllers/nodepool_controller_test.go": 7,
     "management-engine/controllers/suite_test.go": 0
   },
   "ordinaryGoTests": [

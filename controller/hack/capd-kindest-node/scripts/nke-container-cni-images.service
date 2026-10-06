@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[Unit]
+Description=Import packaged OVN images into the KIND node runtime
+ConditionPathExists=/usr/lib/nke/e2e/cni-images.deb
+Requires=containerd.service
+After=containerd.service
+Before=nke-agent.service spire-agent.service
+
+[Service]
+Type=oneshot
+# KIND ships containerd as a binary, without either Debian dependency provider.
+# Keep the canonical postinst; containerd.service above supplies the runtime.
+ExecStart=/usr/bin/dpkg --ignore-depends=containerd,nke-kubeadm-distro -i /usr/lib/nke/e2e/cni-images.deb
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

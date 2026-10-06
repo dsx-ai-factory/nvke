@@ -18,7 +18,6 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/temporal/workflows"
-	"github.com/dsx-ai-factory/nke/controller/internal/utils"
 )
 
 const (
@@ -300,68 +299,6 @@ func (r *reconciler) isControlPlaneUpgradeComplete(
 	return true
 }
 
-// resolveOSProfile finds the appropriate OSProfile for a given Kubernetes version.
-// It uses the metadata.yaml index to find the best profile matching the criteria from the current profile.
-// If currentProfileName is provided, it preserves architecture, variant, and ubuntu_version from it.
-// Otherwise, FindOSProfiles applies OSProfile defaults.
-func (r *reconciler) resolveOSProfile(k8sVersion, currentProfileName string) (string, error) {
-	// Load metadata index
-	metadataIdx, err := utils.LoadOSProfileMetadata(r.cfg.ProfilesDir)
-	if err != nil {
-		return "", fmt.Errorf("failed to load OSProfile metadata: %w", err)
-	}
-
-	// Get metadata from current profile to preserve architecture, variant, and ubuntu_version.
-	var architecture string
-	var variant string
-	var ubuntuVersion string
-
-	if currentProfileName != "" {
-		currentMeta, ok := metadataIdx.GetOSProfileMetadata(currentProfileName, true)
-		if !ok {
-			return "", fmt.Errorf("current OSProfile %q not found in metadata; cannot resolve target profile without architecture, variant, and ubuntu version (add profile to metadata or fix profile name)", currentProfileName)
-		}
-		architecture = currentMeta.Architecture
-		variant = currentMeta.Variant
-		ubuntuVersion = currentMeta.UbuntuVersion
-		r.logger.Info("Using metadata from current profile",
-			"currentProfile", currentProfileName,
-			"architecture", architecture,
-			"variant", variant,
-			"ubuntuVersion", ubuntuVersion)
-	}
-
-	// Find profiles matching the k8s version and metadata criteria.
-	profiles := metadataIdx.FindOSProfiles(k8sVersion, architecture, variant, ubuntuVersion)
-	if len(profiles) == 0 {
-		return "", fmt.Errorf("no OSProfile found for Kubernetes version %s (architecture: %s, variant: %s, ubuntuVersion: %s)",
-			k8sVersion, architecture, variant, ubuntuVersion)
-	}
-
-	// Pick the profile with the newest build date
-	var profileName string
-	var meta utils.Metadata
-	var newestDate string
-
-	for name, m := range profiles {
-		if profileName == "" || m.BuildDate > newestDate {
-			profileName = name
-			meta = m
-			newestDate = m.BuildDate
-		}
-	}
-
-	r.logger.Info("Resolved OSProfile",
-		"k8sVersion", k8sVersion,
-		"selectedOSProfile", profileName,
-		"architecture", meta.Architecture,
-		"variant", meta.Variant,
-		"ubuntuVersion", meta.UbuntuVersion,
-		"buildDate", meta.BuildDate)
-
-	return profileName, nil
-}
-
 // updateKubeadmConfigMap updates the kubeadm configmap in the tenant cluster.
 // Returns (completed, error) where completed indicates if the update is done.
 func (r *reconciler) updateKubeadmConfigMap(ctx context.Context, cluster db.Cluster) (bool, error) {
@@ -450,44 +387,13 @@ func (r *reconciler) updateNodePoolKubeVersion(
 		return fmt.Errorf("failed to get node pool: %w", err)
 	}
 
-	switch cluster.ProviderType {
-	case db.ProviderTypeNico:
-		nicoNodePoolProvider, err := np.NicoProvider()
-		if err != nil {
-			return err
-		}
-		osProfile := nicoNodePoolProvider.OSProfile
-
-		kubeVersionInjected, err := utils.IsKubernetesVersionInjected(r.cfg.ProfilesDir, osProfile)
-		if err != nil {
-			return fmt.Errorf("failed to get NodePool KubernetesVersion injection status for NodePool %s: %w", nodePool.ID, err)
-		}
-
-		// If the NodePool's OSProfile allows the KubernetesVersion to be injected at provisioning time, use the NodePool's KubernetesVersion.
-		// Else use the old OSProfile where KubernetesVersion was embedded into the OSProfile.
-		if kubeVersionInjected {
-			logger.Info("KubernetesVersion is injected at provisioning time in NodePool", "nodePoolKubernetesVersion", nodePool.KubernetesVersion)
-			np.KubernetesVersion = cluster.KubernetesVersion
-		} else {
-			logger.Info("KubernetesVersion is not injected at provisioning time in NodePool - resolving new OSProfile", "nodePoolKubernetesVersion", nodePool.KubernetesVersion)
-			// Pass current profile name to preserve architecture, variant, and os_version
-			newOSProfile, err := r.resolveOSProfile(cluster.KubernetesVersion, osProfile)
-			if err != nil {
-				return fmt.Errorf("failed to resolve OSProfile: %w", err)
-			}
-			logger.Info("KubernetesVersion embedded in OSProfile - Resolved new OSProfile", "newOSProfile", newOSProfile)
-			nicoNodePoolProvider.OSProfile = newOSProfile
-			np.SetNico(nicoNodePoolProvider)
-			np.KubernetesVersion = cluster.KubernetesVersion
-		}
-
-	case db.ProviderTypeCAPI:
-		// CAPI clusters do not use an OSProfile; drive upgrades via KubernetesVersion only.
-		logger.Info("CAPI cluster; updating KubernetesVersion only")
-		np.KubernetesVersion = cluster.KubernetesVersion
-
-	default:
-		return fmt.Errorf("unsupported provider type %q for NodePool KubernetesVersion upgrade", cluster.ProviderType)
+	upgradeConfig, err := r.nodePoolUpgradeConfig(cluster)
+	if err != nil {
+		return err
+	}
+	np, err = upgradeConfig.ResolveNodePoolUpgrade(r.cfg.ProfilesDir, np, cluster.KubernetesVersion, logger)
+	if err != nil {
+		return err
 	}
 
 	_, err = r.db.UpdateNodePool(ctx, &np)

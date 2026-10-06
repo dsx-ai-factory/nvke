@@ -12,7 +12,11 @@ source "${repo_root}/hack/backend-e2e-lib.sh"
 # worked when run from here. Do not make the caller know that.
 cd "${repo_root}"
 state_dir="${LOCAL_NKE_E2E_STATE_DIR:-${repo_root}/.local/backend-e2e}"
-tmp_dir="$(mktemp -d)"
+mkdir -p "${state_dir}"
+# Keep Docker bind-mounted build output under the repository. Colima does not
+# share macOS's private /var/folders tree, so a default mktemp directory makes
+# packages created by the Linux OVN builder invisible to the host.
+tmp_dir="$(mktemp -d "${state_dir}/tmp.XXXXXX")"
 kind_cluster_name="${KIND_CLUSTER_NAME:-cwe-capi}"
 dockerhub_mirror="${NKE_E2E_DOCKERHUB_MIRROR:-}"
 runner_name="cwe-capd-local-e2e-${$}"
@@ -146,8 +150,6 @@ log "SPIRE node attestation: ${CAPD_SPIRE_ATTESTATION_METHOD}"
 [[ -f "${NODE_AGENT_REPO_PATH}/Makefile" ]] || \
   fail "NODE_AGENT_REPO_PATH=${NODE_AGENT_REPO_PATH} does not look like an agent checkout"
 
-mkdir -p "${state_dir}"
-
 if curl --fail --silent --show-error --connect-timeout 1 --max-time 1 \
   http://localhost:10350/api/view >/dev/null 2>&1; then
   fail "another Tilt session is running on port 10350; stop it before running this script"
@@ -188,15 +190,18 @@ log "building the CAPD bundle from public sources"
 # tarballs are 22 MB of the 31 MB it collected, all of it re-downloadable.
 bundle_dir="${tmp_dir}/bundles"
 rm -rf "${bundle_dir}"
-BUNDLE_ARCH="${host_arch}" bash "${repo_root}/hack/ci/prepare-capd-bundles.sh" "${bundle_dir}"
+CNI_PLUGIN=ovn-kubernetes BUNDLE_ARCH="${host_arch}" bash "${repo_root}/hack/ci/prepare-capd-bundles.sh" "${bundle_dir}"
 
 export SPIRE_AGENT_BUNDLE_PATH="${bundle_dir}/spire-agent.tgz"
-CAPD_CNI_MANIFESTS_DEB_PATH="$(echo "${bundle_dir}"/nke-cni-calico-manifests-*_all.deb)"
-export CAPD_CNI_MANIFESTS_DEB_PATH
-[[ -f "${CAPD_CNI_MANIFESTS_DEB_PATH}" ]] \
-  || fail "prepare-capd-bundles.sh produced no Calico manifests package"
+CAPD_CNI_CHARTS_DEB_PATH="${bundle_dir}/nke-cni-ovn-charts-1.4.0_1.4.0_${host_arch}.deb"
+export CAPD_CNI_CHARTS_DEB_PATH
+export INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}"
+export CAPD_CNI_IMAGES_DEB_PATH="${bundle_dir}/nke-cni-ovn-images-1.4.0_1.4.0_${host_arch}.deb"
+export CAPD_HELM_DEB_PATH="${bundle_dir}/nke-e2e-helm.deb"
+[[ -f "${CAPD_CNI_CHARTS_DEB_PATH}" ]] \
+  || fail "prepare-capd-bundles.sh produced no OVN charts package"
 
-# With INSTALL_CNI_AFTER_INIT the agent reads CNI from the Calico manifests deb
+# With INSTALL_CNI_AFTER_INIT the agent reads CNI from the OVN charts deb
 # baked into the node image, so no bundle mirror is started and the node image
 # bakes in no bundle flags. That is the whole point: a green run this way proves
 # a node with no bundle source can still get CNI.

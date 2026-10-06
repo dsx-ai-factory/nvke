@@ -70,6 +70,9 @@ on:
       - "pull-request/[0-9]+"
     paths:
       - "os-image/**"
+      # Go tests under os-image/ never reach the image; the unit-test
+      # workflows cover them, and a bake is eight legs for half an hour.
+      - "!os-image/**/*_test.go"
       - .github/workflows/os-image-artifact.yml
   # Twice a day from main's HEAD, for what changes without an os-image/
   # commit: the agent baked from source and the apt packages. The e2e lanes
@@ -216,10 +219,17 @@ jobs:
             go.work.sum
             **/go.sum
 
+      - name: Install material-adapter test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev xorriso p7zip-full
+
       # Once per run here rather than in each of the eight bare-metal builds,
       # which only need the binary.
       - name: Test nke-os-image-check and the Packer scripts
         working-directory: os-image
+        env:
+          NKE_REQUIRE_REAL_TOOLS: "1"
         run: |
           set -euo pipefail
           make test
@@ -251,6 +261,12 @@ jobs:
           unzip -d "${tmp}" "${tmp}/${zip}" packer
           sudo install -m 0755 "${tmp}/packer" /usr/local/bin/packer
           packer version
+
+      - name: Render the autoinstall capture configurations
+        working-directory: os-image/packer/scripts
+        env:
+          NKE_TEST_PACKER: packer
+        run: python3 -B -m unittest test_capture_apt_acquisitions.CaptureAPTTest.test_real_packer_renders_autoinstall_capture_configuration
 
       - name: Validate the Packer directory project
         env:
@@ -341,7 +357,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up ORAS
-        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
         with:
           version: ${{ steps.versions.outputs.oras_version }}
 
@@ -807,7 +823,7 @@ jobs:
           echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)" >> "$GITHUB_OUTPUT"
 
       - name: Set up ORAS
-        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
         with:
           version: ${{ steps.versions.outputs.oras_version }}
 
@@ -887,7 +903,7 @@ jobs:
           echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)" >> "$GITHUB_OUTPUT"
 
       - name: Set up ORAS
-        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
         with:
           version: ${{ steps.versions.outputs.oras_version }}
 

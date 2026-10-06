@@ -36,8 +36,7 @@ nkeOIDCAuth:
     name: oidc-provider-upstream-ca
     key: ca.crt
 
-# The CAPD lane installs the CNI as part of cluster creation rather than after
-# init; the node-pool lane differs and overrides this.
+# The default container lane installs the legacy OVN bundle during init.
 cni:
   installAfterInit: false
 

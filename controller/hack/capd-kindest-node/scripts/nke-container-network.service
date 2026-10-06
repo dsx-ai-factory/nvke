@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[Unit]
+Description=Prepare Docker node networking for NKE
+Requires=ovs-vswitchd.service systemd-udevd.service dbus.socket
+Wants=systemd-networkd.service
+After=ovs-vswitchd.service systemd-networkd.service systemd-udevd.service dbus.socket
+Before=nke-agent.service spire-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/prepare-container-network
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

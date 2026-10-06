@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: webserver-{{.Replica}}-{{.Iteration}}
+spec:
+  template:
+    metadata:
+      labels:
+        name: webserver-{{.Replica}}-{{.Iteration}}
+        app: webserver
+    spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: webserver
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution: {{.nodeSelector|toJson}}
+      containers:
+      - name: webserver
+        image: docker.io/library/nginx:1.27-alpine
+        resources:
+          requests:
+            memory: "10Mi"
+            cpu: "10m"
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: false
+      restartPolicy: Always
+  replicas: 1
+  selector:
+    matchLabels:
+      name: webserver-{{.Replica}}-{{.Iteration}}
+  strategy:
+    type: RollingUpdate

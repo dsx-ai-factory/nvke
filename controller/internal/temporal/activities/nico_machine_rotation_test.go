@@ -603,10 +603,10 @@ func TestActivities_SeedControlPlaneInstanceType(t *testing.T) {
 			}
 			a := &Activities{db: mockDB}
 
-			createCtx := &capiMachineCreateContext{node: params.node, nodePool: nodePool}
-			require.NoError(t, a.seedControlPlaneInstanceType(context.Background(), createCtx))
+			updatedPool, err := a.seedControlPlaneInstanceType(context.Background(), params.node, nodePool)
+			require.NoError(t, err)
 
-			poolNico, err := createCtx.nodePool.NicoProvider()
+			poolNico, err := updatedPool.NicoProvider()
 			require.NoError(t, err)
 			assert.Equal(t, params.wantInstanceTypeID, poolNico.InstanceTypeID)
 			if !params.expectDBLookup {

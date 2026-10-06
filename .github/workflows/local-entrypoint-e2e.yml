@@ -34,6 +34,10 @@ on:
       - controller/Tiltfile
       - controller/hack/cwe-capi-kind.yaml
       - controller/hack/ci/prepare-capd-bundles.sh
+      - controller/hack/ci/prepare-ovn-assets.sh
+      - controller/hack/ci/assets/ovn-install.sh
+      - os-image/packages/cni-ovn/**
+      - os-image/packages/cni-common/**
       - .github/workflows/local-entrypoint-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml
   # Also twice a day, so a break the paths above filtered out, or one a flake
@@ -75,13 +79,8 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      # Listed rather than crossed: arm64 covers the default CNI path only, so
-      # the pool carries three legs and not four.
       matrix:
-        # CNI reaches a node two ways. false is what a developer running this
-        # script gets; true installs it after kubeadm init from a Debian package,
-        # with no bundle mirror and no bundle flags on the node image. Only this
-        # lane covers the second one, and only on amd64.
+        # Cover both CNI installation paths on amd64 and the in-init path on arm64.
         include:
           - arch: amd64
             runner: linux-amd64-cpu16
@@ -131,8 +130,11 @@ jobs:
           go-version-file: go.work
           cache: false
 
-      # Version pins come from make/versions.mk, the same source backend-e2e.yml
-      # reads, so the two lanes cannot install different tools.
+      - name: Install Debian packaging tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dpkg-dev
+
       # containerd's CRI plugin creates an inotify watcher for the CNI conf dir.
       # Without headroom it fails to load, and kubeadm then reports the CRI v1
       # API as Unimplemented. backend-e2e.yml raises the same two limits.
@@ -151,6 +153,8 @@ jobs:
           raise_minimum fs.inotify.max_user_instances 1024
           raise_minimum fs.inotify.max_user_watches 1048576
 
+      # Version pins come from make/versions.mk, the same source backend-e2e.yml
+      # reads, so the two lanes cannot install different tools.
       - name: Read pinned tool versions
         id: versions
         run: |

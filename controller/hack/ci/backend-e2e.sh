@@ -22,6 +22,8 @@ DOCKERHUB_MIRROR="${NKE_E2E_DOCKERHUB_MIRROR:-}"
 # Names the backend in this script's own output. Both lanes share the script, so
 # without it a NICo run reports itself as CAPD.
 BACKEND="${NKE_E2E_BACKEND:-capd}"
+# Keep the existing in-init default; focused lanes can select InstallCNI.
+export INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}"
 RUNNER_NAME="capd-e2e-runner-${RUN_ID}"
 # The runner image comes through the Docker Hub mirror when one is set, like
 # every other image this lane pulls on the host; the digest is the same there.
@@ -499,10 +501,12 @@ collect_diagnostics() {
         [[ -n "${node_name}" ]] || continue
         docker logs "${node_name}" >"${STATE_DIR}/nodes/${node_name}-console.log" 2>&1
         docker exec "${node_name}" systemctl status \
-          nke-agent spire-agent swtpm-local containerd kubelet --no-pager \
+          nke-agent spire-agent swtpm-local containerd kubelet \
+          ovsdb-server ovs-vswitchd nke-container-network nke-container-cni-images --no-pager \
           >"${STATE_DIR}/nodes/${node_name}-systemd.txt" 2>&1
         docker exec "${node_name}" journalctl --no-pager \
           -u nke-agent -u spire-agent -u swtpm-local -u containerd -u kubelet \
+          -u ovsdb-server -u ovs-vswitchd -u nke-container-network -u nke-container-cni-images \
           >"${STATE_DIR}/nodes/${node_name}-journal.log" 2>&1
         docker exec "${node_name}" crictl ps -a \
           >"${STATE_DIR}/nodes/${node_name}-crictl-ps.txt" 2>&1
@@ -774,11 +778,11 @@ NODE_AGENT_VERSION="${NODE_AGENT_VERSION#agent/}"
 printf '%s\n' "${NODE_AGENT_VERSION}" >"${STATE_DIR}/agent-version.txt"
 log "using agent source version ${NODE_AGENT_VERSION}"
 
-log "preparing verified SPIRE and local Calico bundles"
-BUNDLE_ARCH="${host_arch}" bash hack/ci/prepare-capd-bundles.sh "${BUNDLE_DIR}"
-CALICO_MANIFESTS_DEB="${BUNDLE_DIR}/nke-cni-calico-manifests-3.30.1_3.30.1_all.deb"
-[[ -f "${CALICO_MANIFESTS_DEB}" ]] || {
-  log "Calico manifests package was not produced: ${CALICO_MANIFESTS_DEB}" >&2
+log "preparing verified SPIRE and OVN-Kubernetes charts"
+CNI_PLUGIN=ovn-kubernetes BUNDLE_ARCH="${host_arch}" bash hack/ci/prepare-capd-bundles.sh "${BUNDLE_DIR}"
+OVN_CHARTS_DEB="${BUNDLE_DIR}/nke-cni-ovn-charts-1.4.0_1.4.0_${host_arch}.deb"
+[[ -f "${OVN_CHARTS_DEB}" ]] || {
+  log "OVN charts package was not produced: ${OVN_CHARTS_DEB}" >&2
   exit 1
 }
 
@@ -875,7 +879,9 @@ CAPD_NODE_AGENT_LOCAL_BUILD=true \
 NODE_AGENT_VERSION="${NODE_AGENT_VERSION}" \
 NODE_AGENT_REPO_PATH="${WORKSPACE_ROOT}/agent" \
 SPIRE_AGENT_BUNDLE_PATH="${BUNDLE_DIR}/spire-agent.tgz" \
-CAPD_CNI_MANIFESTS_DEB_PATH="${CALICO_MANIFESTS_DEB}" \
+CAPD_CNI_CHARTS_DEB_PATH="${OVN_CHARTS_DEB}" \
+CAPD_CNI_IMAGES_DEB_PATH="${BUNDLE_DIR}/nke-cni-ovn-images-1.4.0_1.4.0_${host_arch}.deb" \
+CAPD_HELM_DEB_PATH="${BUNDLE_DIR}/nke-e2e-helm.deb" \
 CAPD_SPIRE_ATTESTATION_METHOD="${CAPD_SPIRE_ATTESTATION_METHOD}" \
 BUNDLE_SERVER_URL="http://${BUNDLE_MIRROR_NAME}/" \
 INDEX_FILE_URL="http://${BUNDLE_MIRROR_NAME}/index.json" \

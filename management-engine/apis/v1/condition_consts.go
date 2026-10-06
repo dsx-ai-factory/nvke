@@ -3,10 +3,7 @@
 
 package v1
 
-const (
-	ControlPlaneReadyCondition = "ControlPlaneReady"
-	WorkersReadyCondition      = "WorkersReady"
-)
+const ControlPlaneReadyCondition = "ControlPlaneReady"
 
 const (
 	SyncedCondition   = "Synced"

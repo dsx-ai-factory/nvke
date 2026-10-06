@@ -8,26 +8,47 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// NKEClusterSpec describes tenant intent for a managed control plane.
+// NKEClusterSpec configures a cluster's control plane and node pools.
 // +kubebuilder:validation:XValidation:rule="has(self.authentication) == has(oldSelf.authentication) && (!has(self.authentication) || self.authentication == oldSelf.authentication)",message="authentication is only configurable at cluster creation"
+// +kubebuilder:validation:XValidation:rule="!has(self.nodePools) || self.nodePools.size() == 0 || has(self.network)",message="network is required when nodePools are configured"
 type NKEClusterSpec struct {
 	APIServerAccess APIServerAccess `json:"apiServerAccess"`
-	// Authentication configures additional tenant JWT issuers. The engine adds
-	// the platform issuer separately; omission does not disable platform identity.
+	// Authentication configures additional JWT issuers for cluster access.
+	// It can only be set when creating the cluster.
 	// +optional
-	Authentication    *ClusterAuthentication  `json:"authentication,omitempty"`
-	ClusterNetwork    ClusterNetwork          `json:"clusterNetwork"`
-	Release           ClusterReleaseSelection `json:"release"`
-	ControlPlaneClass ResourceName            `json:"controlPlaneClass"`
-	// AcceleratedRuntime selects a runtime bundle; name "none" requests opt-out,
-	// subject to operator policy. Omission leaves selection to engine policy.
+	Authentication *ClusterAuthentication `json:"authentication,omitempty"`
+	ClusterNetwork ClusterNetwork         `json:"clusterNetwork"`
+	Release        ReleaseSelection       `json:"release"`
+	// ControlPlaneClass names the class that determines control-plane sizing and configuration.
+	ControlPlaneClass ResourceName `json:"controlPlaneClass"`
+	// AcceleratedRuntime selects an accelerated runtime bundle; name "none" opts out.
 	// +optional
 	AcceleratedRuntime *AcceleratedRuntimeSelection `json:"acceleratedRuntime,omitempty"`
+	// Network selects the existing VPC shared by the node pools.
+	// +optional
+	Network *Network `json:"network,omitempty"`
+	// NodePools configures groups of nodes in the cluster. Omission requests
+	// a control plane without worker nodes. Names identify pools across updates.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=64
+	NodePools []NodePool `json:"nodePools,omitempty"`
 }
 
-// APIServerAccess describes the requested network access to the workload API.
+// Network identifies the existing VPC used by the node pools.
+type Network struct {
+	// VPCID is the ID of the VPC in which node pools are provisioned. The VPC must already exist.
+	// +kubebuilder:validation:Format=uuid
+	// +kubebuilder:validation:MaxLength=36
+	VPCID string `json:"vpcID"`
+}
+
+// APIServerAccess controls access to the cluster's Kubernetes API server from outside the VPC.
 type APIServerAccess struct {
+	// PublicAccessEnabled enables public access to the Kubernetes API server.
 	PublicAccessEnabled bool `json:"publicAccessEnabled"`
+	// PublicAccessCIDRs lists the source networks allowed to use public API server access.
 	// +optional
 	// +listType=map
 	// +listMapKey=cidr
@@ -37,9 +58,11 @@ type APIServerAccess struct {
 
 // PublicAccessCIDR is an allowed source network and optional description.
 type PublicAccessCIDR struct {
+	// CIDR is an IPv4 or IPv6 source network in CIDR notation.
 	// +kubebuilder:validation:MaxLength=49
 	// +kubebuilder:validation:XValidation:rule="isCIDR(self)",message="must be an IPv4 or IPv6 CIDR"
 	CIDR string `json:"cidr"`
+	// Description is an optional label for the source network.
 	// +optional
 	// +kubebuilder:validation:MaxLength=256
 	Description string `json:"description,omitempty"`
@@ -47,16 +70,18 @@ type PublicAccessCIDR struct {
 
 // ClusterNetwork describes the pod/service networks and cluster DNS domain.
 type ClusterNetwork struct {
-	Pods          NetworkRanges `json:"pods"`
-	Services      NetworkRanges `json:"services"`
-	ServiceDomain ResourceName  `json:"serviceDomain"`
+	// Pods specifies the address ranges used by pods.
+	Pods NetworkRanges `json:"pods"`
+	// Services specifies the address ranges used by cluster services.
+	Services NetworkRanges `json:"services"`
+	// ServiceDomain is the DNS domain used by cluster services.
+	ServiceDomain ResourceName `json:"serviceDomain"`
 }
 
 // NetworkRanges contains the CIDRs requested for a cluster network.
 type NetworkRanges struct {
-	// Order is significant: the first CIDR selects the default IP family. A
-	// second CIDR makes the network dual-stack, which Kubernetes accepts only
-	// as one range per family.
+	// CIDRBlocks contains one address range, or one IPv4 and one IPv6 range for dual-stack.
+	// The first range selects the default IP family.
 	// +listType=atomic
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=2
@@ -70,15 +95,16 @@ type NetworkRanges struct {
 // +kubebuilder:validation:XValidation:rule="isCIDR(self)",message="must be an IPv4 or IPv6 CIDR"
 type NetworkCIDR string
 
-// ClusterReleaseSelection selects the release channel used for the cluster.
-type ClusterReleaseSelection struct {
+// ReleaseSelection selects the release channel used for the control plane.
+type ReleaseSelection struct {
 	Channel ReleaseChannelReference `json:"channel"`
 }
 
-// ReleaseChannelReference identifies a channel and an optional preferred version.
-// Version may be a minor version or an exact release, as permitted by the channel.
+// ReleaseChannelReference selects a release channel and an optional version within it.
 type ReleaseChannelReference struct {
+	// Name identifies the release channel.
 	Name ResourceName `json:"name"`
+	// Version optionally selects a version within the release channel.
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=128
@@ -89,31 +115,39 @@ type ReleaseChannelReference struct {
 // +kubebuilder:validation:XValidation:rule="self.name == 'none' ? !has(self.version) : has(self.version)",message="version is required for a runtime release and must be omitted for none"
 type AcceleratedRuntimeSelection struct {
 	Name ResourceName `json:"name"`
+	// Version is an OCI tag; it need not be a semantic version.
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=128
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$`
 	Version string `json:"version,omitempty"`
 }
 
-// NKEClusterStatus reports observed state; only controllers write status.
+// NKEClusterStatus reports the observed state of the control plane and node pools.
 type NKEClusterStatus struct {
+	// ObservedGeneration identifies the cluster generation reflected in this status.
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Conditions use positive polarity for Ready and report the generation each
-	// observation describes. Absence means unknown, not false.
+	// Conditions report readiness and progress, with details in reason and message.
+	// A missing condition means its state is unknown.
 	// +optional
 	// +listType=map
 	// +listMapKey=type
 	// +kubebuilder:validation:MaxItems=32
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	// ResolvedRelease is the actual selected control-plane release, which can
-	// differ from the tenant's channel preference after an operator override.
+	// ResolvedRelease identifies the control-plane release selected for this cluster.
 	// +optional
 	ResolvedRelease *ReleaseReference `json:"resolvedRelease,omitempty"`
+	// NodePools reports the observed state of each pool, identified by its name in spec.nodePools.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=64
+	NodePools []NodePoolStatus `json:"nodePools,omitempty"`
 }
 
-// NKECluster is the internal representation of a managed workload control plane.
+// NKECluster manages a Kubernetes control plane and its node pools as one cluster.
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,path=nkeclusters,singular=nkecluster
 // +kubebuilder:storageversion
@@ -128,7 +162,7 @@ type NKECluster struct {
 	Status NKEClusterStatus `json:"status,omitempty,omitzero"`
 }
 
-// NKEClusterList is a list of internal managed clusters.
+// NKEClusterList is a list of managed Kubernetes clusters.
 // +kubebuilder:object:root=true
 type NKEClusterList struct {
 	metav1.TypeMeta `json:",inline"`

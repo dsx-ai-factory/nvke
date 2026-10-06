@@ -248,6 +248,15 @@ if [[ -c /dev/kvm ]]; then
   log "/dev/kvm re-opened after package install: $(ls -l /dev/kvm)"
 fi
 
+# Pin the mode: a later udev re-apply resets the node to 0660 and the next
+# `virsh define` fails the same way. Inert where udev is not running.
+if [[ -c /dev/kvm ]] && command -v udevadm >/dev/null 2>&1; then
+  printf 'KERNEL=="kvm", MODE="0666"\n' | sudo tee /etc/udev/rules.d/99-nke-kvm.rules >/dev/null
+  sudo udevadm control --reload 2>/dev/null || true
+  sudo udevadm trigger --name-match=kvm 2>/dev/null || true
+  log "/dev/kvm mode pinned by udev rule: $(ls -l /dev/kvm)"
+fi
+
 # GRO merges inbound segments into super-frames the tap cannot take, so guest
 # downloads crawl or stall: 1.6-5 MB/s against 62 with it off, and outright
 # timeouts where the uplink's MTU exceeds the bridge's. Every lane here bridges

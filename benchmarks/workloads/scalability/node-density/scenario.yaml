@@ -1,0 +1,202 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Validated against ../../../schemas/scenario.schema.json.
+# The human-readable replication narrative is README.md in this directory.
+---
+slug: node-density
+workload: scalability
+description: >-
+  Publicly available kube-burner "node-density" workload filling worker nodes to a
+  chosen pod density with one pause pod per iteration. The pods carry no Service,
+  no probe and no application, so the latency measured is the scheduler and kubelet
+  path, including CNI sandbox setup.
+
+intent:
+  goal: >-
+    Establish a floor for how long a pod takes to reach Ready at realistic node
+    density, with as little above the kubelet as possible. A pause container has
+    nothing to initialize and nothing to probe, so what remains is scheduling,
+    image admission from cache, sandbox creation and the kubelet reporting Ready.
+  characterizes:
+    - Pod-ready p99 with no readiness probe and no Service connectivity
+    - Pod scheduling latency at high per-node density
+    - Container start latency from a pre-pulled image
+    - API server and etcd CPU and memory headroom
+    - etcd disk write latency and database size
+    - API Priority and Fairness inflight headroom
+
+topology:
+  node_count: 47
+  node_type:
+    cpu: AMD EPYC 9004 series
+    cpu_cores: 128
+    memory_gib: 1007
+    arch: x86_64
+  roles:
+    control_plane: 3
+    worker: 42
+    monitoring: 2
+
+sizing:
+  derivation:
+    rule: >-
+      Iteration count is derived from the cluster rather than fixed: one pause pod
+      per iteration, targeting a chosen pods-per-node density across the
+      schedulable workers. Multiply the nodes matching the node selector by the
+      target pods-per-node, then subtract the pods already resident on those
+      nodes. One pod is created per iteration, so the iteration count and the
+      pod count are the same number. The subtraction is the part to get right: it
+      counts every pod already on those nodes with no phase or namespace filter,
+      so system DaemonSets count and so do completed pods not yet garbage
+      collected, and the same command therefore yields a different iteration count
+      on a busier cluster. The nodeSelector inputVar sets where pods land;
+      count the nodes it matches. A selector that only excludes control-plane
+      nodes also takes monitoring or infrastructure nodes. Keep pods-per-node below the kubelet max-pods setting with
+      a buffer for ephemeral pods arriving during the run.
+    inputs:
+      - Nodes matching the node selector
+      - Target pods per node
+      - Pods already resident on those nodes
+      - One pod created per iteration
+  observed:
+    pods_per_node: 105
+    nodes_targeted: 42
+    node_selector: node-role.kubernetes.io/worker
+    max_pods_per_worker: 110
+    existing_pods_at_derivation: 290
+    iterations: 4120
+    pods_created: 4120
+    pods_per_iteration: 1
+    container_image: registry.k8s.io/pause:3.1
+    iterations_per_namespace: 1000
+    namespaces_created: 5
+    qps: 20
+    burst: 20
+    pod_ready_threshold_s: 15
+    peak_pending_pods: 23
+
+stack:
+  kubernetes: 1.34.2
+  cni:
+    name: OVN-Kubernetes
+    version: "Helm chart 1.4.0, app 2026-02.0 (OVN core 25.09.1)"
+    build: vendor
+    dataplane: OVS 3.6.1
+  engine:
+    name: kube-burner
+    version: 2.5.0
+    build: upstream
+  container_runtime: containerd 1.7.28
+  node_os:
+    distro: Ubuntu 22.04.4 LTS
+    kernel: 5.15.0-113-generic
+  etcd: 3.6.5
+
+engine_config: engine/node-density.yml
+
+metrics:
+  required:
+    - size
+    - scenario
+    - duration_s
+    - pod_ready_p50_ms
+    - pod_ready_p95_ms
+    - pod_ready_p99_ms
+    - pod_scheduled_p99_ms
+    - containers_ready_p99_ms
+    - containers_started_p99_ms
+  workload_specific:
+    - pods_per_node
+    - nodes_targeted
+    - existing_pods_at_derivation
+    - iterations
+    - pods_created
+    - qps
+    - burst
+    - pod_ready_threshold_s
+    - max_apiserver_cpu_cores
+    - max_apiserver_memory_gib
+    - max_etcd_cpu_cores
+    - max_etcd_memory_mib
+    - max_readonly_inflight
+    - max_mutating_inflight
+    - etcd_db_in_use_mib
+    - etcd_wal_fsync_p99_ms
+    - etcd_backend_commit_p99_ms
+    - peak_pending_pods
+
+slo:
+  - metric: pod_ready_p99_ms
+    op: lte
+    value: 15000
+    unit: ms
+    severity: error
+    source: >-
+      The pod-ready p99 bar this scenario runs with, carried as
+      `threshold: 15s` in the engine config and evaluated once, after the run,
+      against the computed p99; it is not a per-pod timeout. Ready-condition
+      timestamps are second-granularity, so the gate resolves to about 1 s.
+  - metric: etcd_wal_fsync_p99_ms
+    op: lte
+    value: 10
+    unit: ms
+    severity: warning
+    source: >-
+      Conventional etcd health bar, carried as a supporting signal rather than a
+      verdict on the workload. On virtualized or shared storage it reports the
+      storage layer rather than a control-plane problem.
+  - metric: etcd_backend_commit_p99_ms
+    op: lte
+    value: 30
+    unit: ms
+    severity: warning
+    source: >-
+      Conventional etcd health bar, same caveat as WAL fsync: a supporting signal,
+      not a judgement on the workload.
+
+dashboard:
+  - ../../../dashboards/1.34/worker-nodes.json
+  - ../../../dashboards/1.34/control-plane.json
+alerts: ../../../alerts/1.34/control-plane.yml
+
+prerequisites:
+  node_labels:
+    - node-role.kubernetes.io/worker
+  baseline_validation:
+    - Confirm every targeted node is Ready and schedulable
+    - Record the kubelet max-pods setting on the targeted nodes
+    - Record the pod count already resident on the targeted nodes — it feeds the
+      derivation directly
+    - Set the node selector explicitly and confirm the node count it matches
+    - Compute the iteration count and set jobIterations to it
+    - Confirm Prometheus is scraping the API servers
+    - Confirm no pre-existing objects carry the kube-burner job label for this
+      workload — garbage collection selects on that label alone, with no run
+      identifier, so it will delete objects belonging to another run
+
+upstream:
+  project: https://github.com/kube-burner/kube-burner
+  docs: https://kube-burner.github.io/kube-burner/
+  engine: kube-burner
+  engine_version: 2.5.0
+  config: engine/node-density.yml
+  argv:
+    - "cd engine && PROMETHEUS_URL=<prometheus-url> kube-burner init --uuid=<run-uuid> --config=node-density.yml"
+  notes: >-
+    Everything needed to run this ships in engine/ -- the resolved job
+    configuration, the pause pod template and both metrics profiles -- so the
+    kube-burner binary that upstream.project names is all a replication
+    requires. Compared with the workload it was adapted from, the pod template
+    drops a toleration for Windows nodes, the job configuration drops a
+    profiling block and a platform-specific namespace label, and cleanup is
+    false for the reason prerequisites gives.
+    engine_config is the configuration as the engine rendered it at run time,
+    captured from the run rather than reconstructed, so every value in it is
+    the value that executed. Two fields are generalised: metricsDirectory,
+    which carried the run UUID, and the alerts entry, which carried an absolute
+    local path. The Prometheus endpoint comes from PROMETHEUS_URL. Run
+    from engine/: kube-burner resolves paths from its working directory.
+    jobIterations is this run's derived value: recompute it from
+    sizing.derivation for a different cluster rather than reusing it, and change
+    the nodeSelector inputVar alongside any change of node selector.

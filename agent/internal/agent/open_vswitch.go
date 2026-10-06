@@ -33,6 +33,8 @@ const (
 	openVSwitchDefaultMTU        = 1500
 	openVSwitchDefaultSettleTime = 2 * time.Second
 	openVSwitchConvergenceDelay  = time.Second
+	openVSwitchDatapathTypeEnv   = "NKE_OVS_DATAPATH_TYPE"
+	openVSwitchNetdevDatapath    = "netdev"
 
 	operationTypeOpenVSwitchReconciliation = "open_vswitch_reconciliation"
 )
@@ -184,6 +186,9 @@ func (s *NodeAgentServer) reconcileOpenVSwitchLocked(
 	if err := s.ensureOpenVSwitchService(); err != nil {
 		return nil, nil, err
 	}
+	if result, handled, err := s.reconcileOpenVSwitchDatapathOverride(ctx); handled {
+		return result, nil, err
+	}
 	defaultRoute, err := s.readOpenVSwitchDefaultRoute()
 	if err != nil {
 		return nil, nil, fmt.Errorf("discover default route: %w", err)
@@ -224,6 +229,43 @@ func (s *NodeAgentServer) reconcileOpenVSwitchLocked(
 		"networkBackend", plan.backend.String(),
 	)
 	return configuredOpenVSwitchResult(plan), &plan, nil
+}
+
+func (s *NodeAgentServer) reconcileOpenVSwitchDatapathOverride(
+	ctx context.Context,
+) (*pb.OpenVSwitchReconciliationResult, bool, error) {
+	datapathType := strings.TrimSpace(os.Getenv(openVSwitchDatapathTypeEnv))
+	if datapathType == "" {
+		return nil, false, nil
+	}
+	if datapathType != openVSwitchNetdevDatapath {
+		return nil, true, fmt.Errorf("unsupported Open vSwitch datapath type %q", datapathType)
+	}
+	defaultRoute, err := s.readOpenVSwitchDefaultRoute()
+	if err != nil {
+		return nil, true, fmt.Errorf("discover default route: %w", err)
+	}
+	if _, err := s.runOpenVSwitchCommand(
+		"ovs-vsctl",
+		"set", "Open_vSwitch", ".", "external_ids:ovn-bridge-datapath-type="+datapathType,
+	); err != nil {
+		return nil, true, fmt.Errorf("configure Open vSwitch %s datapath: %w", datapathType, err)
+	}
+	if _, err := s.runOpenVSwitchCommand(
+		"ovs-vsctl",
+		"--may-exist", "add-br", "br-ex", "--", "set", "bridge", "br-ex", "datapath_type="+datapathType,
+	); err != nil {
+		return nil, true, fmt.Errorf("configure dummy gateway bridge for Open vSwitch %s datapath: %w", datapathType, err)
+	}
+	slog.InfoContext(ctx, "configured Open vSwitch datapath without bridging the management uplink",
+		"datapathType", datapathType,
+		"uplink", defaultRoute.Device,
+	)
+	return &pb.OpenVSwitchReconciliationResult{
+		Outcome:         pb.OpenVSwitchReconciliationResult_OUTCOME_CONFIGURED,
+		UplinkInterface: defaultRoute.Device,
+		NetworkBackend:  pb.OpenVSwitchReconciliationResult_NETWORK_BACKEND_NETPLAN,
+	}, true, nil
 }
 
 func configuredOpenVSwitchResult(plan openVSwitchPlan) *pb.OpenVSwitchReconciliationResult {

@@ -90,4 +90,8 @@ printf 'TPM_PLUGIN_CHECKSUM=%s\n' "$(sha256sum "${spire_bundle}/bin/tpm_attestor
   >"${spire_bundle}/spire-agent.env"
 tar -czf "${OUTPUT_DIR}/spire-agent.tgz" -C "${TMP_DIR}" "${spire_bundle_name}"
 
-"$(dirname "${BASH_SOURCE[0]}")/prepare-calico-assets.sh" "${OUTPUT_DIR}"
+case "${CNI_PLUGIN:-calico}" in
+  ovn-kubernetes) bash "$(dirname "${BASH_SOURCE[0]}")/prepare-ovn-assets.sh" "${OUTPUT_DIR}" ;;
+  calico) "$(dirname "${BASH_SOURCE[0]}")/prepare-calico-assets.sh" "${OUTPUT_DIR}" ;;
+  *) printf 'unsupported CNI_PLUGIN: %s\n' "${CNI_PLUGIN}" >&2; exit 1 ;;
+esac

@@ -272,25 +272,25 @@ func (a *Activities) controlPlaneInstanceTypePreference(ctx context.Context, nod
 // not pre-fill/persist a type onto the node, so this seeds the first pinned
 // preference; Nico then owns availability and rotateNicoMachineInstanceType walks
 // the rest in place. No-op for nodes that already carry a type or that carry no
-// control-plane preference.
-func (a *Activities) seedControlPlaneInstanceType(ctx context.Context, createCtx *capiMachineCreateContext) error {
-	nicoNodePoolProvider, err := createCtx.nodePool.NicoProvider()
+// control-plane preference. Returns the node pool, updated if a type was seeded.
+func (a *Activities) seedControlPlaneInstanceType(ctx context.Context, node db.Node, nodePool db.NodePool) (db.NodePool, error) {
+	nicoNodePoolProvider, err := nodePool.NicoProvider()
 	if err != nil {
-		return err
+		return db.NodePool{}, err
 	}
 	if nicoNodePoolProvider.InstanceTypeID != uuid.Nil {
-		return nil
+		return nodePool, nil
 	}
-	preference, err := a.controlPlaneInstanceTypePreference(ctx, createCtx.node)
+	preference, err := a.controlPlaneInstanceTypePreference(ctx, node)
 	if err != nil {
-		return err
+		return db.NodePool{}, err
 	}
 	if len(preference) == 0 {
-		return nil
+		return nodePool, nil
 	}
 	nicoNodePoolProvider.InstanceTypeID = preference[0]
-	createCtx.nodePool.SetNico(nicoNodePoolProvider)
-	return nil
+	nodePool.SetNico(nicoNodePoolProvider)
+	return nodePool, nil
 }
 
 // nicoMachineProvisionedCondition returns the NicoMachine MachineProvisioned

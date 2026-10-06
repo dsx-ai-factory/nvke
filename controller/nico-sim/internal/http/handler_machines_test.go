@@ -13,6 +13,28 @@ import (
 	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 )
 
+// TestUnit_HandleListMachinesReturnsEmptyInventory verifies both API names return an empty machine inventory.
+func TestUnit_HandleListMachinesReturnsEmptyInventory(t *testing.T) {
+	store := newUnifiedTestStore(t)
+	handler := newDispatchHandler(t, store, &fakeContainerService{instances: map[string]nicosdk.Instance{}})
+	for _, apiName := range []string{"carbide", "forge"} {
+		t.Run(apiName, func(t *testing.T) {
+			path := "/v2/org/" + dispatchTestOrgID + "/" + apiName + "/machine?siteId=site-1&hasInstanceType=true&orderBy=ID_ASC&pageNumber=1&pageSize=100"
+			response := performJSONRequest(t, handler, nethttp.MethodGet, path, nil)
+			if response.Code != nethttp.StatusOK {
+				t.Fatalf("status = %d, want %d; body=%s", response.Code, nethttp.StatusOK, response.Body.String())
+			}
+			var machines []nicosdk.Machine
+			if err := json.Unmarshal(response.Body.Bytes(), &machines); err != nil {
+				t.Fatalf("decode machines: %v; body=%s", err, response.Body.String())
+			}
+			if len(machines) != 0 {
+				t.Fatalf("machine count = %d, want 0", len(machines))
+			}
+		})
+	}
+}
+
 func TestUnit_HandleGetMachine(t *testing.T) {
 	type parameters struct {
 		setup      func(*testing.T, nethttp.Handler, *fakeContainerService) string

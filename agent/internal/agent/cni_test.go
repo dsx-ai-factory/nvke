@@ -638,6 +638,47 @@ func TestOVNHelmArgsImageRegistry(t *testing.T) {
 	})
 }
 
+func TestOVNKubernetesCNIConfig(t *testing.T) {
+	t.Run("netdev selects a dummy gateway bridge without mutating the request", func(t *testing.T) {
+		request := map[string]string{"global.image.pullPolicy": "Never"}
+
+		config := ovnKubernetesCNIConfig(request, "netdev")
+
+		assert.Equal(t, ovnDummyGatewayBridgeEnabled, config[ovnDummyGatewayBridgeHelmValue])
+		assert.Equal(t, ovnLocalGatewayMode, config[ovnGatewayModeHelmValue])
+		assert.Equal(t, ovnDummyGatewayOpts, config[ovnGatewayOptsHelmValue])
+		assert.Equal(t, "Never", config["global.image.pullPolicy"])
+		assert.NotContains(t, request, ovnDummyGatewayBridgeHelmValue)
+		assert.NotContains(t, request, ovnGatewayModeHelmValue)
+		assert.NotContains(t, request, ovnGatewayOptsHelmValue)
+	})
+
+	t.Run("explicit gateway settings win", func(t *testing.T) {
+		request := map[string]string{
+			ovnDummyGatewayBridgeHelmValue: "false",
+			ovnGatewayModeHelmValue:        "shared",
+			ovnGatewayOptsHelmValue:        "--gateway-interface=custom0 --allow-no-uplink",
+		}
+
+		config := ovnKubernetesCNIConfig(request, "netdev")
+
+		assert.Equal(t, "false", config[ovnDummyGatewayBridgeHelmValue])
+		assert.Equal(t, "shared", config[ovnGatewayModeHelmValue])
+		assert.Equal(t, "--gateway-interface=custom0 --allow-no-uplink", config[ovnGatewayOptsHelmValue])
+	})
+
+	t.Run("system datapath preserves the request", func(t *testing.T) {
+		request := map[string]string{"global.image.pullPolicy": "Never"}
+
+		config := ovnKubernetesCNIConfig(request, "system")
+
+		assert.Equal(t, request, config)
+		assert.NotContains(t, config, ovnDummyGatewayBridgeHelmValue)
+		assert.NotContains(t, config, ovnGatewayModeHelmValue)
+		assert.NotContains(t, config, ovnGatewayOptsHelmValue)
+	})
+}
+
 // The upstream chart's defaults are values-single-node-zone.yaml (it ships no values.yaml today);
 // values-nke.yaml must come last so its pinned tag beats the "master" tag there, and a values.yaml
 // upstream might add later must not land between them and reset the subchart tags.

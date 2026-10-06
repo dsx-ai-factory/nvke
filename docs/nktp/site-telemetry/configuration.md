@@ -16,7 +16,6 @@ changes and why, and how a site overrides it.
 | **Control-plane monitors** (`kubeScheduler`, `kubeControllerManager`, `kubeProxy` off) | NKE binds the scheduler and controller manager to `127.0.0.1`, and OVN clusters run no kube-proxy. Left on, they would show as permanently down targets. The API server, etcd and CoreDNS monitors stay on and work. |
 | **metrics-server on** | Nothing else serves `metrics.k8s.io` on a site controller, and the Collector autoscalers read it. |
 | **Sizing** | One replica of everything, autoscalers starting at one, small requests and limits for every Collector and Target Allocator, and one kube-state-metrics Deployment for all object types instead of five. Sized for the smaller clusters a site controller runs on. |
-| **Process-scraper access** | `SYS_PTRACE`, `DAC_READ_SEARCH`, the host's `/etc/passwd`, `mute_process_user_error` and the `process.cgroup` attribute, so per-process metrics resolve executables, I/O and owners, and attribute container processes to their Pod. |
 
 ## Connecting a real backend
 
