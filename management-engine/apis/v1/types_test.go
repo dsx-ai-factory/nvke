@@ -6,7 +6,6 @@ package v1
 import (
 	"testing"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 )
@@ -34,7 +33,7 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 		{
 			resource: "nkeclusters", kind: "NKECluster",
 			object: &NKECluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "demo", Namespace: "org-demo"},
+				Name: "demo", Namespace: "org-demo",
 				Spec: NKEClusterSpec{
 					ClusterNetwork: ClusterNetwork{
 						Pods:          NetworkRanges{CIDRBlocks: []NetworkCIDR{"10.244.0.0/16"}},
@@ -62,7 +61,7 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 		{
 			resource: "machineimages", kind: "MachineImage",
 			object: &MachineImage{
-				ObjectMeta: metav1.ObjectMeta{Name: "nke-nico-vms-24.04-amd64-fde"},
+				Name: "nke-nico-vms-24.04-amd64-fde",
 				Spec: MachineImageSpec{
 					OperatingSystem: OperatingSystem{Family: "ubuntu", Version: "24.04"},
 					Architecture:    "amd64",
@@ -75,7 +74,7 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 		{
 			resource: "clusterreleases", kind: "ClusterRelease",
 			object: &ClusterRelease{
-				ObjectMeta: metav1.ObjectMeta{Name: "nke-nico-vms-24.04-amd64-fde"},
+				Name: "nke-nico-vms-24.04-amd64-fde",
 				Spec: ClusterReleaseSpec{
 					MachineImageRef: MachineImageReference{Name: "nke-nico-vms-24.04-amd64-fde"},
 					MachineInit:     testMachineInit(),
@@ -85,7 +84,7 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 		{
 			resource: "nodepoolreleases", kind: "NodePoolRelease",
 			object: &NodePoolRelease{
-				ObjectMeta: metav1.ObjectMeta{Name: "nke-nico-vms-24.04-amd64-fde"},
+				Name: "nke-nico-vms-24.04-amd64-fde",
 				Spec: NodePoolReleaseSpec{
 					MachineImageRef: MachineImageReference{Name: "nke-nico-vms-24.04-amd64-fde"},
 					MachineInit:     testMachineInit(),
