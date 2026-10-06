@@ -133,6 +133,10 @@ PRIVATE_MODULES :=
 LICENSE_DESTS := controller/licenses \
                  controller/deploy/charts/controller
 
+# Chart directories that ship the root LICENSE but keep a NOTICE of their own,
+# which `make licenses` must not overwrite.
+LICENSE_ONLY_DESTS := nktp/deploy/charts/nktp
+
 # Redistributed binaries with generated third-party attribution.
 NOTICE_MODULES := agent controller cli os-image
 
@@ -603,17 +607,21 @@ licenses: ## Copy LICENSE and NOTICE everywhere an artefact ships them from.
 	@for d in $(LICENSE_DESTS); do \
 		mkdir -p $$d && cp LICENSE NOTICE $$d/ || exit 1; \
 	done
+	@for d in $(LICENSE_ONLY_DESTS); do \
+		mkdir -p $$d && cp LICENSE $$d/ || exit 1; \
+	done
 	@echo "LICENSE and NOTICE copied to: $(LICENSE_DESTS)"
+	@echo "LICENSE copied to: $(LICENSE_ONLY_DESTS)"
 
 licenses-check: licenses ## Verify the shipped LICENSE and NOTICE copies match the root files. (run by the merge gate)
 	@# The image and the chart redistribute this work, so they carry its terms.
 	@# Both read from a copy inside their own build context, and a copy is a
 	@# thing that goes stale -- this is the assertion that it has not.
-	@git diff --exit-code -- $(LICENSE_DESTS) \
+	@git diff --exit-code -- $(LICENSE_DESTS) $(addsuffix /LICENSE,$(LICENSE_ONLY_DESTS)) \
 		|| { echo "ERROR: a shipped LICENSE/NOTICE copy is stale. Run 'make licenses' and commit the change."; exit 1; }
 	@# git diff says nothing about a path git is not tracking, so a newly added
 	@# destination would otherwise pass while shipping nothing.
-	@untracked=$$(git ls-files --others --exclude-standard -- $(LICENSE_DESTS)); \
+	@untracked=$$(git ls-files --others --exclude-standard -- $(LICENSE_DESTS) $(addsuffix /LICENSE,$(LICENSE_ONLY_DESTS))); \
 	 [ -z "$$untracked" ] \
 		|| { echo "ERROR: these shipped licence files are not tracked:"; printf '%s\n' "$$untracked" | sed 's/^/    /'; exit 1; }
 	@echo "Shipped LICENSE and NOTICE copies are current."
