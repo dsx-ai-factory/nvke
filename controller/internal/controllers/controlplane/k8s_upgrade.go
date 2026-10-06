@@ -15,7 +15,6 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/temporal/workflows"
@@ -388,7 +387,7 @@ func (r *reconciler) updateNodePoolKubeVersion(
 		return fmt.Errorf("failed to get node pool: %w", err)
 	}
 
-	upgradeConfig, err := clients.GetNodePoolUpgradeConfig(cluster)
+	upgradeConfig, err := r.nodePoolUpgradeConfig(cluster)
 	if err != nil {
 		return err
 	}
