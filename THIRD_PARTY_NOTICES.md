@@ -86,10 +86,11 @@ looks compliant.** The check in CI is what makes the difference.
 
 The generated notices cover Go modules only. These five files under
 `controller/internal/kubeadmconfig/thirdparty/` are copied from
-[kubernetes/kubernetes](https://github.com/kubernetes/kubernetes) at **v1.35.0**
-(commit `66452049f3d692768c39c797b21b793dce80314e`), modified, and keep their
+[kubernetes/kubernetes](https://github.com/kubernetes/kubernetes) at **v1.34.0**
+(commit `f28b4c9efbca5c5c0af716d9f2d5702667ee8a45`), modified, and keep their
 upstream copyright and license block. Kubernetes ships no `NOTICE` file at that
-revision.
+revision. The revision was not recorded when the files were copied; it is
+inferred, and the copies match v1.33 and v1.34.
 
 | Local file | Upstream file(s) | Upstream copyright |
 |---|---|---|
@@ -101,7 +102,7 @@ revision.
 
 License: Apache License, Version 2.0, the same terms as this repository's
 [LICENSE](LICENSE); the original is
-[v1.35.0/LICENSE](https://github.com/kubernetes/kubernetes/blob/v1.35.0/LICENSE).
+[v1.34.0/LICENSE](https://github.com/kubernetes/kubernetes/blob/v1.34.0/LICENSE).
 
 ## Embedded frontend libraries
 

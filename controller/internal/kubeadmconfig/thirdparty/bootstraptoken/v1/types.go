@@ -21,10 +21,10 @@ limitations under the License.
 
 // Package v1 contains local copies of upstream kubeadm bootstrap token types.
 //
-// Source (Kubernetes v1.35.0, commit 66452049f3d692768c39c797b21b793dce80314e):
+// Source (Kubernetes v1.34.0, commit f28b4c9efbca5c5c0af716d9f2d5702667ee8a45):
 //
-//	https://github.com/kubernetes/kubernetes/blob/v1.35.0/cmd/kubeadm/app/apis/bootstraptoken/v1/types.go
-//	https://github.com/kubernetes/kubernetes/blob/v1.35.0/cmd/kubeadm/app/apis/bootstraptoken/v1/utils.go
+//	https://github.com/kubernetes/kubernetes/blob/v1.34.0/cmd/kubeadm/app/apis/bootstraptoken/v1/types.go
+//	https://github.com/kubernetes/kubernetes/blob/v1.34.0/cmd/kubeadm/app/apis/bootstraptoken/v1/utils.go
 //
 // Local changes:
 //   - BootstrapTokenString methods are reimplemented from utils.go without

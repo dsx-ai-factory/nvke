@@ -24,9 +24,9 @@ limitations under the License.
 // Upstream external Kubernetes types are reused where practical; only the
 // pieces not locally available as dependencies remain copied here.
 //
-// Source (Kubernetes v1.35.0, commit 66452049f3d692768c39c797b21b793dce80314e):
+// Source (Kubernetes v1.34.0, commit f28b4c9efbca5c5c0af716d9f2d5702667ee8a45):
 //
-//	https://github.com/kubernetes/kubernetes/blob/v1.35.0/cmd/kubeadm/app/apis/kubeadm/v1beta3/types.go
+//	https://github.com/kubernetes/kubernetes/blob/v1.34.0/cmd/kubeadm/app/apis/kubeadm/v1beta3/types.go
 //
 // Local changes:
 //   - bootstraptoken/v1 is imported from the local copy
