@@ -1013,7 +1013,7 @@ jobs:
           for raw in "${FORGE_JUMP_HOST}" "${FORGE_YTL_JUMP_HOST}"; do
             [ -n "${raw}" ] || continue
             host="$(printf '%s' "${raw}" | sed 's/[][\.*^$/]/\\&/g')"
-            for f in site-e2e.log site-e2e.junit.xml; do
+            for f in site-e2e.log site-e2e.junit.xml tenant-diagnostics.json; do
               [ -f "${f}" ] || continue
               sed -i "s/${host}/<jump host>/g" "${f}"
             done
@@ -1036,6 +1036,7 @@ jobs:
             controller/test/e2e/site-e2e.log
             controller/test/e2e/site-e2e.junit.xml
             controller/test/e2e/site-diagnostics.tar.gz
+            controller/test/e2e/tenant-diagnostics.json
             ${{ runner.temp }}/run-inputs.txt
             ${{ runner.temp }}/tbot.log
           if-no-files-found: warn

@@ -5,6 +5,7 @@ package nke
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"time"
@@ -49,6 +50,61 @@ func (c *Client) AssertNodeConditions(
 		}
 	}
 	return nil
+}
+
+// CollectNodeDiagnostics is what a failed run has instead of a machine it can
+// log into: the cluster and every one of its nodes, conditions included, as
+// JSON.
+//
+// Separate from AssertNodeConditions because the two want opposite things. An
+// assertion stops at the first node that fails, which is right for deciding
+// pass or fail and wrong for a post-mortem: a pool reports one node and the
+// others go unrecorded. This stops at nothing.
+//
+// It also runs where the assertion cannot. When provisioning times out the
+// readiness spec never executes, which is the failure this lane actually hits,
+// so the only diagnostic it had was unreachable exactly when it was needed.
+//
+// Best effort throughout. It is called from a path that is already failing,
+// and a collector that fails the run it was trying to explain is worse than
+// one that returns what it managed to read.
+func (c *Client) CollectNodeDiagnostics(ctx context.Context, clusterID openapi_types.UUID) []byte {
+	report := struct {
+		ClusterID string         `json:"clusterID"`
+		Cluster   *api.Cluster   `json:"cluster,omitempty"`
+		NodePools []api.NodePool `json:"nodePools,omitempty"`
+		Nodes     []api.Node     `json:"nodes,omitempty"`
+		Errors    []string       `json:"errors,omitempty"`
+	}{ClusterID: clusterID.String()}
+
+	if cluster, err := c.GetCluster(ctx, clusterID); err != nil {
+		report.Errors = append(report.Errors, fmt.Sprintf("reading the cluster: %v", err))
+	} else {
+		report.Cluster = cluster
+	}
+
+	// The pools as well as the nodes: a pool short of its desired count is the
+	// case worth seeing, and a list of the nodes that exist cannot show the
+	// ones that do not.
+	if pools, err := c.ListNodePools(ctx, clusterID); err != nil {
+		report.Errors = append(report.Errors, fmt.Sprintf("listing the node pools: %v", err))
+	} else {
+		report.NodePools = pools
+	}
+
+	// Every node the cluster has, not the ones a caller expected: the
+	// difference is the finding.
+	if nodes, err := c.ListClusterNodes(ctx, clusterID); err != nil {
+		report.Errors = append(report.Errors, fmt.Sprintf("listing the nodes: %v", err))
+	} else {
+		report.Nodes = nodes
+	}
+
+	out, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return []byte(fmt.Sprintf("{\"clusterID\": %q, \"errors\": [%q]}", clusterID.String(), err.Error()))
+	}
+	return out
 }
 
 // ListExpectedNodes returns the cluster nodes that belong to expectedNodePools

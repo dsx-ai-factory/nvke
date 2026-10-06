@@ -996,10 +996,36 @@ func (t *tenantTest) initCluster(ctx context.Context, b testSpec) {
 	By("Waiting for the tenant cluster to be provisioned")
 	start := time.Now()
 	cluster, err = t.lifecycle.WaitForClusterReady(ctx, cluster.ID)
+	if err != nil {
+		// Here rather than in a post-create spec: when this wait expires the
+		// specs that would have reported anything never run, which is how a
+		// failed provision produced a log naming no node at all. Detached
+		// because the context that just expired is the one that failed.
+		t.collectDiagnostics(context.WithoutCancel(ctx), cluster.ID)
+	}
 	Expect(err).NotTo(HaveOccurred(), "should provision the cluster")
 	t.log.Info("Cluster provisioned", "name", cluster.Name, "duration", time.Since(start).Round(time.Second).String())
 
 	t.cluster = cluster
+}
+
+// tenantDiagnostics is written beside the run log, in the directory the suite
+// runs from, so CI picks it up with the rest of the run's record.
+const tenantDiagnostics = "tenant-diagnostics.json"
+
+// collectDiagnostics writes the cluster, its node pools and every node it has,
+// conditions included, for a run that is already failing.
+//
+// Best effort and never fails the spec: the failure that prompted it is the
+// finding, and losing the diagnostics must not replace it with a second, less
+// useful one.
+func (t *tenantTest) collectDiagnostics(ctx context.Context, clusterID openapi_types.UUID) {
+	report := t.nke.CollectNodeDiagnostics(ctx, clusterID)
+	if err := os.WriteFile(tenantDiagnostics, report, 0o600); err != nil {
+		t.log.Error(err, "could not write the tenant diagnostics", "path", tenantDiagnostics)
+		return
+	}
+	t.log.Info("collected the tenant's diagnostics", "path", tenantDiagnostics, "bytes", len(report))
 }
 
 // validateTenantAccessSecretGCPostDelete proves the tenant-access controller's
