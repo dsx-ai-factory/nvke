@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # initramfs-tools hook: force /etc/crypttab into the initramfs.
 # cryptroot normally puts it at /cryptroot/crypttab, but clevis reads
 # /etc/crypttab, so copy it there explicitly.

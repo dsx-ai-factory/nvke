@@ -25,6 +25,36 @@ const (
 	testUser   = "#cloud-config\nhostname: {{ .Hostname }}\n"
 )
 
+func TestStripLicenseHeader(t *testing.T) {
+	const header = "# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n# SPDX-License-Identifier: Apache-2.0\n"
+	tests := []struct {
+		name   string
+		script string
+		want   string
+	}{
+		{"header after shebang with blank line", "#!ipxe\n" + header + "\n# note\nboot\n", "#!ipxe\n# note\nboot\n"},
+		{"header after shebang without blank line", "#!ipxe\n" + header + "boot\n", "#!ipxe\nboot\n"},
+		{"header after cloud-config", "#cloud-config\n" + header + "\nhostname: x\n", "#cloud-config\nhostname: x\n"},
+		{"no header is unchanged", testIPXE, testIPXE},
+		{"ordinary comment is kept", "#!ipxe\n# SPDX is mentioned later\nboot\n", "#!ipxe\n# SPDX is mentioned later\nboot\n"},
+		{"single line is unchanged", "#!ipxe", "#!ipxe"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, stripLicenseHeader(tt.script))
+		})
+	}
+}
+
+func TestConvertIgnoresLicenseHeaderInScripts(t *testing.T) {
+	const header = "# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n# SPDX-License-Identifier: Apache-2.0\n\n"
+	plain := mustConvert(t, writeTree(t, activeMetadata(), "", map[string][2]string{activeName: {testIPXE, testUser}}))
+	headed := mustConvert(t, writeTree(t, activeMetadata(), "", map[string][2]string{
+		activeName: {"#!ipxe\n" + header + "boot\n", testUser},
+	}))
+	assert.Equal(t, plain, headed)
+}
+
 func TestConvertActiveProfile(t *testing.T) {
 	root := writeTree(t, activeMetadata(), "", map[string][2]string{
 		activeName: {testIPXE, testUser},

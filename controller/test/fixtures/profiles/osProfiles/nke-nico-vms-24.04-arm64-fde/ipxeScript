@@ -1,4 +1,7 @@
 #!ipxe
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # nico-sim boots the qcow2 directly and never chains an EFI, so this URL is
 # only here because the chain line's grammar needs it. Kept unreachable rather
 # than pointing at CloudFront, which nothing would fetch. Same value as

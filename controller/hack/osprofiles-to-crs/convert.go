@@ -189,7 +189,26 @@ func readScript(profilesDir, name, file string) (string, error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return "", fmt.Errorf("profile %q: %s is empty", name, file)
 	}
-	return string(data), nil
+	return stripLicenseHeader(string(data)), nil
+}
+
+// stripLicenseHeader drops an SPDX comment header, and the blank line after it,
+// that follows a script's first line (#!ipxe or #cloud-config). The header is
+// license metadata, so adding one to a profile file must not change the spec
+// published from it.
+func stripLicenseHeader(script string) string {
+	lines := strings.SplitAfter(script, "\n")
+	i := 1
+	for i < len(lines) && strings.HasPrefix(lines[i], "# SPDX-") {
+		i++
+	}
+	if i == 1 {
+		return script
+	}
+	if i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+		i++
+	}
+	return lines[0] + strings.Join(lines[i:], "")
 }
 
 func machineImageDoc(item listedProfile, ipxe string, gitops bool) *enginev1.MachineImage {

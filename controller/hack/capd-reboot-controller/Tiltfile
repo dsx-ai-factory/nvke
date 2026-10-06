@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 def _get_kind_cluster_name():
     kind_cluster_name = os.getenv("KIND_CLUSTER_NAME", "")
     if kind_cluster_name != "":

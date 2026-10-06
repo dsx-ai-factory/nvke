@@ -16,6 +16,9 @@ For each profile in `osProfiles/metadata.yaml` (and `deprecated.yaml`, if
 present) it reads the profile's `ipxeScript` and `userData.tmpl` and writes three
 manifests into a flat output directory, all named after the profile:
 
+A leading SPDX comment header in either file (after the first `#!ipxe` or
+`#cloud-config` line) is license metadata and is not copied into the manifests.
+
 - `<profile>-machineimage.yaml`
 - `<profile>-nodepoolrelease.yaml`
 - `<profile>-clusterrelease.yaml`

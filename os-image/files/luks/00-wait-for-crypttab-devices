@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # Wait for LUKS block devices from crypttab to appear before Clevis runs.
 # Clevis runs in local-top and needs the block device (e.g. /dev/nvme0n1p3 or
 # /dev/disk/by-uuid/<uuid>) to exist; on some systems NVMe/block appears after

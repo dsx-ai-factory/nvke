@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 #
 # initramfs-tools local-top script for LUKS command line unlock.
 # Unlocks LUKS using a luks.key= kernel parameter, for boot before TPM
