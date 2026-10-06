@@ -15,7 +15,7 @@ readonly output_iso="$2"
 output_root="$(dirname "${output_iso}")"
 readonly output_root
 
-for tool in 7z grep mv sed xorriso python3; do
+for tool in 7z grep sed xorriso python3; do
   command -v "${tool}" >/dev/null 2>&1 || {
     echo "patch-installer-iso: ${tool} is required" >&2
     exit 1

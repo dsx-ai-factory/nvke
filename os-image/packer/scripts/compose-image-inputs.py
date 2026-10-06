@@ -72,10 +72,14 @@ def validate_archive_framing(source, path: pathlib.Path) -> None:
     count = 0
     while True:
         header = source.read(tarfile.BLOCKSIZE)
+        if header.startswith((b"\x1f\x8b", b"\x28\xb5\x2f\xfd")):
+            raise SystemExit(f"package archive {path} must be an uncompressed tar archive")
         if header == zero:
             if source.read(tarfile.BLOCKSIZE) != zero:
                 raise SystemExit(f"package archive {path} lacks two end-of-archive zero blocks")
             while chunk := source.read(1 << 20):
+                if source.tell() > MAX_ARCHIVE_BYTES:
+                    raise SystemExit(f"package archive {path} exceeds its raw archive byte budget")
                 if any(chunk):
                     raise SystemExit(f"package archive {path} has data after end-of-archive")
             source.seek(0)
@@ -87,7 +91,9 @@ def validate_archive_framing(source, path: pathlib.Path) -> None:
         count += 1
         if count > MAX_ARCHIVE_MEMBERS:
             raise SystemExit(f"package archive {path} exceeds its member budget")
-        if not member.isreg() and not (member.isdir() and member.name in (".", "./")):
+        # isreg() also accepts GNU sparse records, which activate a separate
+        # metadata parser. Only ordinary file headers belong in this contract.
+        if member.type not in (tarfile.REGTYPE, tarfile.AREGTYPE) and not (member.isdir() and member.name in (".", "./")):
             raise SystemExit(f"package archive {path} has unsafe or unexpected member {member.name!r}")
         if member.size < 0 or member.size > MAX_PACKAGE_BYTES:
             raise SystemExit(f"package {member.name!r} exceeds its per-package size budget")

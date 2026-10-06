@@ -59,14 +59,14 @@ class ComposeImageInputsTest(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def run_compose(self, output: Path, umask: int = -1):
+    def run_compose(self, output: Path, umask: int = -1, architecture: str = "amd64"):
         environment = os.environ.copy()
         environment["PATH"] = f"{self.tools}:{environment['PATH']}"
         return subprocess.run(
             [
                 sys.executable,
                 str(SCRIPTS / "compose-image-inputs.py"),
-                "--architecture", "amd64",
+                "--architecture", architecture,
                 "--materials-dir",
                 str(self.materials),
                 "--source-files-dir",
@@ -204,6 +204,7 @@ class ComposeImageInputsTest(unittest.TestCase):
         spec.loader.exec_module(module)
         for limit, value, total, expected in (
             ("MAX_ARCHIVE_MEMBERS", 0, 0, "member budget"),
+            ("MAX_ARCHIVE_BYTES", 100, 0, "raw archive byte budget"),
             ("MAX_PACKAGES", 0, 0, "package count budget"),
             ("MAX_TOTAL_PACKAGE_BYTES", 1, 0, "total package byte budget"),
         ):
@@ -350,6 +351,7 @@ class ComposeImageInputsTest(unittest.TestCase):
             ("x\nPackage: evil\n.deb", tarfile.REGTYPE, 1),
             ("pax", tarfile.XHDTYPE, 200 << 20),
             ("longname", tarfile.GNUTYPE_LONGNAME, 200 << 20),
+            ("sparse.deb", tarfile.GNUTYPE_SPARSE, 1),
         ):
             with self.subTest(name=name, kind=kind):
                 member = tarfile.TarInfo(name)
@@ -370,16 +372,28 @@ class ComposeImageInputsTest(unittest.TestCase):
         path.write_bytes(gzip.compress(path.read_bytes()))
         result = self.run_compose(self.root / "gzip.tar")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("package archive", result.stderr)
+        self.assertIn("must be an uncompressed tar archive", result.stderr)
 
     def test_checks_package_architecture(self):
-        for architecture, status in (("amd64", 0), ("all", 0), ("arm64", 1)):
-            with self.subTest(architecture=architecture):
-                write_executable(self.tools / "dpkg-deb", f"#!/bin/sh\nprintf '{architecture}\\n'\n")
-                result = self.run_compose(self.root / "architecture.tar")
-                self.assertEqual(result.returncode, status, result.stderr)
-                if status:
-                    self.assertIn("has architecture 'arm64'", result.stderr)
+        for target in ("amd64", "arm64"):
+            for architecture in ("amd64", "all", "arm64"):
+                with self.subTest(target=target, architecture=architecture):
+                    write_executable(self.tools / "dpkg-deb", f"#!/bin/sh\nprintf '{architecture}\\n'\n")
+                    result = self.run_compose(self.root / "architecture.tar", architecture=target)
+                    status = 0 if architecture in (target, "all") else 1
+                    self.assertEqual(result.returncode, status, result.stderr)
+                    if status:
+                        self.assertIn(f"has architecture '{architecture}'", result.stderr)
+
+    def test_rejects_multiple_calico_manifest_packages(self):
+        with tarfile.open(self.materials / "calico", "w") as archive:
+            for name in ("nke-cni-calico-manifests-1.deb", "nke-cni-calico-manifests-2.deb"):
+                member = tarfile.TarInfo(name)
+                member.size = 1
+                archive.addfile(member, io.BytesIO(b"x"))
+        result = self.run_compose(self.root / "calico.tar")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("at most one nke-cni-calico-manifests-*.deb", result.stderr)
 
     def test_rejects_mixed_architecture_repository_package(self):
         write_executable(self.tools / "dpkg-deb", "#!/bin/sh\ncase \"$2\" in */ovn.deb) echo arm64;; *) echo all;; esac\n")
