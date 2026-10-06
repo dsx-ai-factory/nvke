@@ -25,22 +25,22 @@ import (
 )
 
 type Controller struct {
-	cfg               config.Config
-	db                *dbwrapper.DB
-	logger            *slog.Logger
-	cweTemporalClient workflowStarter
+	cfg                      config.Config
+	db                       *dbwrapper.DB
+	logger                   *slog.Logger
+	controllerTemporalClient workflowStarter
 }
 
 type workflowStarter interface {
 	ExecuteWorkflow(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error)
 }
 
-func NewController(cfg config.Config, logger *slog.Logger, dbInstance *dbwrapper.DB, cweTemporalClient workflowStarter) *Controller {
+func NewController(cfg config.Config, logger *slog.Logger, dbInstance *dbwrapper.DB, controllerTemporalClient workflowStarter) *Controller {
 	return &Controller{
-		cfg:               cfg,
-		db:                dbInstance,
-		logger:            logger,
-		cweTemporalClient: cweTemporalClient,
+		cfg:                      cfg,
+		db:                       dbInstance,
+		logger:                   logger,
+		controllerTemporalClient: controllerTemporalClient,
 	}
 }
 
@@ -72,7 +72,7 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 	}
 
 	workflowID := constants.RenewK8sCertsWorkflowPrefix + cluster.ID.String()
-	if _, err := c.cweTemporalClient.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+	if _, err := c.controllerTemporalClient.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		TaskQueue:                c.cfg.TemporalTaskQueue,
 		ID:                       workflowID,
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,

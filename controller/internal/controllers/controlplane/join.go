@@ -80,7 +80,7 @@ func (r *reconciler) reconcileControlPlaneJoins(ctx context.Context, cluster db.
 	if !r.cfg.UseControlPlaneControllerForControlPlane() {
 		return false, nil
 	}
-	if r.cweTemporalClient == nil {
+	if r.controllerTemporalClient == nil {
 		return false, nil
 	}
 	if cluster.Conditions.Provisioned.Status != db.ConditionStatusTrue {
@@ -153,7 +153,7 @@ func (r *reconciler) reconcileControlPlaneJoins(ctx context.Context, cluster db.
 			MaximumAttempts:    controlPlaneJoinMaxAttempts,
 		},
 	}
-	run, err := r.cweTemporalClient.ExecuteWorkflow(ctx, options, workflows.JoinNode, workflows.JoinNodeInput{
+	run, err := r.controllerTemporalClient.ExecuteWorkflow(ctx, options, workflows.JoinNode, workflows.JoinNodeInput{
 		NodeID: node.ID,
 	})
 	if err != nil {
@@ -180,7 +180,7 @@ func (r *reconciler) reconcileControlPlaneJoins(ctx context.Context, cluster db.
 // status is joinStatusExhausted.
 func (r *reconciler) joinWorkflowStatus(ctx context.Context, node db.Node) (joinStatus, time.Time, error) {
 	workflowID := constants.JoinNodeWorkflowPrefix + node.ID.String()
-	desc, err := r.cweTemporalClient.DescribeWorkflowExecution(ctx, workflowID, "")
+	desc, err := r.controllerTemporalClient.DescribeWorkflowExecution(ctx, workflowID, "")
 	if err != nil {
 		if isWorkflowNotFoundError(err) {
 			return joinStatusNotStarted, time.Time{}, nil

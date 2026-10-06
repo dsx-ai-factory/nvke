@@ -250,12 +250,12 @@ func (c *clientImpl) GetToken(ctx context.Context, name string) (*ProvisionToken
 		result = fromTeleportToken(teleportToken)
 
 		// Verify ownership - refuse to return tokens not managed by CWE
-		if !IsOwnedByCWE(result.Labels, c.managedByLabelValue) {
+		if !IsOwnedByController(result.Labels, c.managedByLabelValue) {
 			c.logger.Warn("attempted to access token not owned by CWE",
 				"name", name,
 				LabelManagedBy, result.Labels[LabelManagedBy],
 			)
-			return ErrNotOwnedByCWE
+			return ErrNotOwnedByController
 		}
 
 		c.logger.Debug("retrieved token", "name", name)
@@ -273,12 +273,12 @@ func (c *clientImpl) DeleteToken(ctx context.Context, name string) error {
 	}
 
 	// GetToken already verified ownership, but double-check
-	if !IsOwnedByCWE(token.Labels, c.managedByLabelValue) {
+	if !IsOwnedByController(token.Labels, c.managedByLabelValue) {
 		c.logger.Warn("attempted to delete token not owned by CWE",
 			"name", name,
 			LabelManagedBy, token.Labels[LabelManagedBy],
 		)
-		return ErrNotOwnedByCWE
+		return ErrNotOwnedByController
 	}
 
 	return c.withRetry(ctx, "DeleteToken", func() error {
@@ -313,7 +313,7 @@ func (c *clientImpl) ListTokens(ctx context.Context) ([]ProvisionToken, error) {
 		for _, tt := range teleportTokens {
 			totalCount++
 			token := fromTeleportToken(tt)
-			if IsOwnedByCWE(token.Labels, c.managedByLabelValue) {
+			if IsOwnedByController(token.Labels, c.managedByLabelValue) {
 				result = append(result, *token)
 			}
 		}

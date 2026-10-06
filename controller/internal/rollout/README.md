@@ -37,7 +37,7 @@ you can act on.
 |---|---|
 | `*.go` (this package) | Pure interfaces and value types — `Operation`, `Outcome`, `RolloutSpec`, `Result`, plus the preflight/guard/registry vocabulary. No Temporal or DB imports; this is the vocabulary. |
 | `temporal/` | The production executor. `temporal.Execute(...)` is the entry point, called from a workflow body. (Why Temporal matters for *error handling* is explained below — you don't need to understand Temporal to write an operation.) |
-| `adapters/cwe/` | Glue that makes CWE's `db.Cluster`/`db.Node` satisfy the interfaces here. `Loader` loads a cluster and its node inventory from postgres; the node adapters carry the agent endpoint. |
+| `adapters/controller/` | Glue that makes CWE's `db.Cluster`/`db.Node` satisfy the interfaces here. `Loader` loads a cluster and its node inventory from postgres; the node adapters carry the agent endpoint. |
 | `nodeagent/` | The SPIFFE-mTLS `Dialer` the adapters, preflights, and operations use to reach each node's agent. |
 | `preflights/` | The registered default preflights: agent-reachable and kube-API-healthy (cluster scope), agent-ready and agent-version (node scope). |
 | `guards/kubevip/` | The kube-vip drain/restore node guard. |

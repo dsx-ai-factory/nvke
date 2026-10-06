@@ -442,7 +442,7 @@ type TeleportConfig struct {
 
 	// ManagedByLabelValue is the value of the Teleport "managed-by" label this
 	// controller stamps on tokens it creates, and the value ownership checks
-	// (IsOwnedByCWE) compare incoming tokens against.
+	// (IsOwnedByController) compare incoming tokens against.
 	ManagedByLabelValue string `env:"MANAGED_BY_LABEL_VALUE" default:"nke-cloud-workflow-engine"`
 
 	// TokenNamePrefix prefixes the deterministic Teleport TPM join token name

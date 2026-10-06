@@ -36,13 +36,13 @@ func NewNodePoolNodeScheduler(
 	cfg config.Config,
 	logger *slog.Logger,
 	dbInstance *dbwrapper.DB,
-	cweTemporalClient nodescheduling.WorkflowStarter,
+	controllerTemporalClient nodescheduling.WorkflowStarter,
 ) *NodePoolNodeScheduler {
 	return &NodePoolNodeScheduler{
 		cfg:     cfg,
 		db:      dbInstance,
 		logger:  logger,
-		service: nodescheduling.NewService(cfg, logger, dbInstance, cweTemporalClient),
+		service: nodescheduling.NewService(cfg, logger, dbInstance, controllerTemporalClient),
 	}
 }
 

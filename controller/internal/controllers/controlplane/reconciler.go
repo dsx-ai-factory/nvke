@@ -20,11 +20,11 @@ import (
 // reconciler reconciles control planes.
 // It is responsible for ensuring the control plane is healthy and that the control plane nodes are up to date.
 type reconciler struct {
-	cfg               config.Config
-	logger            *slog.Logger
-	db                db.Tx
-	cweTemporalClient temporalclient.Client
-	k8sClient         ctrlclient.Client
+	cfg                      config.Config
+	logger                   *slog.Logger
+	db                       db.Tx
+	controllerTemporalClient temporalclient.Client
+	k8sClient                ctrlclient.Client
 
 	// nodePoolUpgradeConfig resolves the NodePoolUpgradeConfig client for a
 	// cluster. Defaults to clients.GetNodePoolUpgradeConfig; tests override it
@@ -37,16 +37,16 @@ func newReconciler(
 	cfg config.Config,
 	logger *slog.Logger,
 	db db.Tx,
-	cweTemporalClient temporalclient.Client,
+	controllerTemporalClient temporalclient.Client,
 	k8sClient ctrlclient.Client,
 ) *reconciler {
 	return &reconciler{
-		cfg:                   cfg,
-		logger:                logger,
-		db:                    db,
-		cweTemporalClient:     cweTemporalClient,
-		k8sClient:             k8sClient,
-		nodePoolUpgradeConfig: clients.GetNodePoolUpgradeConfig,
+		cfg:                      cfg,
+		logger:                   logger,
+		db:                       db,
+		controllerTemporalClient: controllerTemporalClient,
+		k8sClient:                k8sClient,
+		nodePoolUpgradeConfig:    clients.GetNodePoolUpgradeConfig,
 	}
 }
 

@@ -18,7 +18,7 @@ import (
 // column for one release.
 //
 // By the time this migration runs, no code path reads or writes
-// clusters.control_plane_config: cwedb.Cluster maps ControlPlaneConfig via
+// clusters.control_plane_config: controllerdb.Cluster maps ControlPlaneConfig via
 // bun:",embed" to configuration_id/cp_desired_count/cp_max_surge, all reads go
 // through control_plane_configurations, and newly created clusters only ever
 // populate configuration_id (never the legacy column, which held its '{}'

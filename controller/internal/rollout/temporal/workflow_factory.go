@@ -16,7 +16,7 @@ import (
 
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	adaptercwe "github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/cwe"
+	adaptercontroller "github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/controller"
 )
 
 // WorkflowConfig is the input to RegisterRolloutWorkflow. The factory
@@ -325,7 +325,7 @@ func LoadClusterForWorkflow(ctx workflow.Context, clusterID uuid.UUID) (rollout.
 	).Get(ctx, &resp); err != nil {
 		return nil, fmt.Errorf("load_cluster_for_rollout: %w", err)
 	}
-	return adaptercwe.NewCluster(resp.Cluster, resp.Nodes, resp.CPNodes, resp.NodeAgentPort), nil
+	return adaptercontroller.NewCluster(resp.Cluster, resp.Nodes, resp.CPNodes, resp.NodeAgentPort), nil
 }
 
 // ActivityLoadClusterForRollout loads a cluster's serializable inventory for
@@ -340,7 +340,7 @@ type LoadClusterForRolloutRequest struct {
 
 // LoadClusterForRolloutResponse carries serializable CWE inventory: the
 // cluster row, all of its nodes, and its control-plane subset. The workflow
-// rewraps it via adaptercwe.NewCluster. NodeAgentPort rides along so the
+// rewraps it via adaptercontroller.NewCluster. NodeAgentPort rides along so the
 // workflow — which must stay free of process globals for replay determinism —
 // can build each node's gRPC endpoint.
 type LoadClusterForRolloutResponse struct {
@@ -351,7 +351,7 @@ type LoadClusterForRolloutResponse struct {
 }
 
 // clusterDataLoader loads a cluster's serializable inventory. Satisfied by
-// adapters/cwe.Loader (LoadClusterData).
+// adapters/controller.Loader (LoadClusterData).
 type clusterDataLoader interface {
 	LoadClusterData(ctx context.Context, clusterID uuid.UUID) (db.Cluster, []db.Node, []db.Node, error)
 }
@@ -366,7 +366,7 @@ type ClusterLoaderActivity struct {
 }
 
 // NewClusterLoaderActivity builds the load activity over a clusterDataLoader
-// (the CWE adapters/cwe.Loader) and the agent port applied to every
+// (the CWE adapters/controller.Loader) and the agent port applied to every
 // node's endpoint.
 func NewClusterLoaderActivity(loader clusterDataLoader, nodeAgentPort string) *ClusterLoaderActivity {
 	return &ClusterLoaderActivity{loader: loader, nodeAgentPort: nodeAgentPort}

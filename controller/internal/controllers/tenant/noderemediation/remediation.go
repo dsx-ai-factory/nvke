@@ -24,19 +24,19 @@ type workflowStarter interface {
 }
 
 type nodeRemediator struct {
-	cfg               config.Config
-	logger            *slog.Logger
-	cweTemporalClient workflowStarter
+	cfg                      config.Config
+	logger                   *slog.Logger
+	controllerTemporalClient workflowStarter
 }
 
-func newNodeRemediator(cfg config.Config, logger *slog.Logger, cweTemporalClient workflowStarter) *nodeRemediator {
+func newNodeRemediator(cfg config.Config, logger *slog.Logger, controllerTemporalClient workflowStarter) *nodeRemediator {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &nodeRemediator{
-		cfg:               cfg,
-		logger:            logger,
-		cweTemporalClient: cweTemporalClient,
+		cfg:                      cfg,
+		logger:                   logger,
+		controllerTemporalClient: controllerTemporalClient,
 	}
 }
 
@@ -82,7 +82,7 @@ func (r *nodeRemediator) startTeardownNodeWorkflow(ctx context.Context, node db.
 		MachineHealthIssue:    machineHealthIssue,
 	}
 
-	run, err := r.cweTemporalClient.ExecuteWorkflow(ctx, options, workflows.TeardownNode, input)
+	run, err := r.controllerTemporalClient.ExecuteWorkflow(ctx, options, workflows.TeardownNode, input)
 	if err != nil {
 		return fmt.Errorf("failed to execute teardown node workflow for node %s: %w", node.ID, err)
 	}
@@ -115,7 +115,7 @@ func (r *nodeRemediator) startNodeRebootWorkflow(ctx context.Context, node db.No
 		SoftRebootEnabled: r.cfg.NodeRebootSoftRebootEnabled,
 	}
 
-	run, err := r.cweTemporalClient.ExecuteWorkflow(ctx, options, workflows.RebootNode, input)
+	run, err := r.controllerTemporalClient.ExecuteWorkflow(ctx, options, workflows.RebootNode, input)
 	if err != nil {
 		return fmt.Errorf("failed to execute reboot node workflow for node %s: %w", node.ID, err)
 	}

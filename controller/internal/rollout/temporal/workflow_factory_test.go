@@ -13,7 +13,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	cwepreflights "github.com/dsx-ai-factory/nke/controller/internal/rollout/preflights"
+	controllerpreflights "github.com/dsx-ai-factory/nke/controller/internal/rollout/preflights"
 )
 
 // minimalOp is the smallest possible Operation for factory tests.
@@ -166,15 +166,15 @@ func TestEffectiveSpecFn_DefaultsArePrependedWhenNotSuppressed(t *testing.T) {
 			NodePreflights:    consumerNode,
 		}),
 		// SuppressDefaultPreflights left as zero value (false) — defaults on.
-	}, cwepreflights.PrependDefaults)
+	}, controllerpreflights.PrependDefaults)
 	spec := specFn(fakeFactoryCluster{})
 
-	expectedCP := append([]rollout.ClusterPreflightRef{}, cwepreflights.DefaultClusterPreflights()...)
+	expectedCP := append([]rollout.ClusterPreflightRef{}, controllerpreflights.DefaultClusterPreflights()...)
 	expectedCP = append(expectedCP, consumerCP...)
 	assert.Equal(t, expectedCP, spec.ClusterPreflights,
 		"defaults must be PREPENDED so the safety floor runs first")
 
-	expectedNode := append([]rollout.NodePreflightRef{}, cwepreflights.DefaultNodePreflights()...)
+	expectedNode := append([]rollout.NodePreflightRef{}, controllerpreflights.DefaultNodePreflights()...)
 	expectedNode = append(expectedNode, consumerNode...)
 	assert.Equal(t, expectedNode, spec.NodePreflights,
 		"defaults must be PREPENDED so the safety floor runs first")
@@ -191,7 +191,7 @@ func TestEffectiveSpecFn_SuppressDefaultPreflights_LeavesSpecUntouched(t *testin
 			NodePreflights:    consumerNode,
 		}),
 		SuppressDefaultPreflights: true,
-	}, cwepreflights.PrependDefaults)
+	}, controllerpreflights.PrependDefaults)
 	spec := specFn(fakeFactoryCluster{})
 
 	assert.Equal(t, consumerCP, spec.ClusterPreflights,
@@ -204,11 +204,11 @@ func TestEffectiveSpecFn_DefaultsAreInstalledOnEmptySpec(t *testing.T) {
 	specFn := effectiveSpecFn(WorkflowConfig{
 		Impl: &minimalOp{name: "OpEmpty"},
 		Spec: Static(rollout.RolloutSpec{}), // no consumer preflights
-	}, cwepreflights.PrependDefaults)
+	}, controllerpreflights.PrependDefaults)
 	spec := specFn(fakeFactoryCluster{})
 
-	assert.Equal(t, cwepreflights.DefaultClusterPreflights(), spec.ClusterPreflights)
-	assert.Equal(t, cwepreflights.DefaultNodePreflights(), spec.NodePreflights)
+	assert.Equal(t, controllerpreflights.DefaultClusterPreflights(), spec.ClusterPreflights)
+	assert.Equal(t, controllerpreflights.DefaultNodePreflights(), spec.NodePreflights)
 }
 
 func TestEffectiveSpecFn_NoMutatorReturnsInnerUnchanged(t *testing.T) {
@@ -238,14 +238,14 @@ func TestWrapWithMutator_IsPureAcrossCalls(t *testing.T) {
 			NodePreflights:    []rollout.NodePreflightRef{{Name: "consumer.n"}},
 		}
 	}
-	wrapped := wrapWithMutator(inner, cwepreflights.PrependDefaults)
+	wrapped := wrapWithMutator(inner, controllerpreflights.PrependDefaults)
 
 	a := wrapped(fakeFactoryCluster{})
 	b := wrapped(fakeFactoryCluster{})
 	assert.Equal(t, a, b)
-	assert.Len(t, a.ClusterPreflights, len(cwepreflights.DefaultClusterPreflights())+1,
+	assert.Len(t, a.ClusterPreflights, len(controllerpreflights.DefaultClusterPreflights())+1,
 		"prepended defaults + consumer entry")
-	assert.Len(t, a.NodePreflights, len(cwepreflights.DefaultNodePreflights())+1,
+	assert.Len(t, a.NodePreflights, len(controllerpreflights.DefaultNodePreflights())+1,
 		"prepended defaults + consumer entry")
 }
 

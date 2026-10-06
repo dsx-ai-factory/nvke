@@ -33,7 +33,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/kube"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	rolloutcwe "github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/cwe"
+	rolloutcontroller "github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/controller"
 	rolloutkubevip "github.com/dsx-ai-factory/nke/controller/internal/rollout/guards/kubevip"
 	rolloutetcd "github.com/dsx-ai-factory/nke/controller/internal/rollout/operations/etcd"
 	rolloutoidc "github.com/dsx-ai-factory/nke/controller/internal/rollout/operations/oidc"
@@ -207,16 +207,16 @@ func NewWorker(
 	// Rollout subsystem. One Registry backs the activity-side dispatch used by
 	// custom workflows such as EnableEtcdEncryption.
 	rolloutRegistry := rollout.NewRegistry()
-	rolloutLoader := rolloutcwe.NewLoader(dbInstance, cfg)
-	rolloutResolver, err := rolloutcwe.NewDatabaseNodeResolver(dbInstance)
+	rolloutLoader := rolloutcontroller.NewLoader(dbInstance, cfg)
+	rolloutResolver, err := rolloutcontroller.NewDatabaseNodeResolver(dbInstance)
 	if err != nil {
 		return nil, fmt.Errorf("construct rollout node resolver: %w", err)
 	}
-	rolloutDialer, err := rolloutcwe.NewSPIFFEDialer(nodeAgentTransport, rolloutResolver)
+	rolloutDialer, err := rolloutcontroller.NewSPIFFEDialer(nodeAgentTransport, rolloutResolver)
 	if err != nil {
 		return nil, fmt.Errorf("construct rollout agent dialer: %w", err)
 	}
-	rolloutMethodChecker, err := rolloutcwe.NewMethodSupportChecker(nodeAgentTransport, rolloutResolver)
+	rolloutMethodChecker, err := rolloutcontroller.NewMethodSupportChecker(nodeAgentTransport, rolloutResolver)
 	if err != nil {
 		return nil, fmt.Errorf("construct rollout agent method-support checker: %w", err)
 	}

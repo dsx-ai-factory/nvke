@@ -4,7 +4,7 @@
 // Package preflights provides the reusable safety floor every CWE-driven
 // rollout operation should run before mutating a cluster. The checks are
 // agent-flavored — they reach the cluster over a nodeagent.Dialer
-// (the CWE binding is adapters/cwe.NewSPIFFEDialer) and run kubectl locally
+// (the CWE binding is adapters/controller.NewSPIFFEDialer) and run kubectl locally
 // on each CP rather than from the worker directly. They depend only on the
 // rollout core and the nodeagent transport contract, not on the CWE data
 // model.

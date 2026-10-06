@@ -59,8 +59,8 @@ func AdminKubeconfigSecretName(clusterName string) string {
 	return clusterName + "-admin-kubeconfig"
 }
 
-// IsCWEKubeconfigSecretName reports whether name is the CWE-consumed kubeconfig secret.
-func IsCWEKubeconfigSecretName(name string) bool {
+// IsControllerKubeconfigSecretName reports whether name is the CWE-consumed kubeconfig secret.
+func IsControllerKubeconfigSecretName(name string) bool {
 	return strings.HasSuffix(name, "-kubeconfig") && !strings.HasSuffix(name, "-admin-kubeconfig")
 }
 

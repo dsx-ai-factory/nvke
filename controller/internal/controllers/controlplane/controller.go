@@ -27,11 +27,11 @@ import (
 // Controller manages keyed control plane reconciliation for clusters.
 // It handles scale-up, remediation, Kubernetes upgrades, and deprecated-node cleanup.
 type Controller struct {
-	cfg               config.Config
-	db                *dbwrapper.DB
-	logger            *slog.Logger
-	cweTemporalClient client.Client
-	k8sClient         ctrlclient.Client
+	cfg                      config.Config
+	db                       *dbwrapper.DB
+	logger                   *slog.Logger
+	controllerTemporalClient client.Client
+	k8sClient                ctrlclient.Client
 }
 
 // NewController creates a new control plane Controller.
@@ -39,15 +39,15 @@ func NewController(
 	cfg config.Config,
 	logger *slog.Logger,
 	dbInstance *dbwrapper.DB,
-	cweTemporalClient client.Client,
+	controllerTemporalClient client.Client,
 	k8sClient ctrlclient.Client,
 ) *Controller {
 	return &Controller{
-		cfg:               cfg,
-		db:                dbInstance,
-		logger:            logger.With("controller", "control-plane"),
-		cweTemporalClient: cweTemporalClient,
-		k8sClient:         k8sClient,
+		cfg:                      cfg,
+		db:                       dbInstance,
+		logger:                   logger.With("controller", "control-plane"),
+		controllerTemporalClient: controllerTemporalClient,
+		k8sClient:                k8sClient,
 	}
 }
 
@@ -96,7 +96,7 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 			return nil
 		}
 
-		reconciler := newReconciler(c.cfg, c.logger, tx, c.cweTemporalClient, c.k8sClient)
+		reconciler := newReconciler(c.cfg, c.logger, tx, c.controllerTemporalClient, c.k8sClient)
 		return reconciler.reconcile(ctx, lockedCluster)
 	})
 	return reconcile.Result{}, err

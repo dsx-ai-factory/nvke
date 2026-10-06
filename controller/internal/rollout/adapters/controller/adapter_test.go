@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package cwe_test
+package controller_test
 
 import (
 	"testing"
@@ -11,12 +11,12 @@ import (
 
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/cwe"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/controller"
 )
 
 func TestNodeAdapter_RoleFromControlPlaneFlag(t *testing.T) {
-	cp := cwe.NewNode(db.Node{ID: uuid.New(), Name: "cp-0", ControlPlane: true}, "15005")
-	worker := cwe.NewNode(db.Node{ID: uuid.New(), Name: "worker-0", ControlPlane: false}, "15005")
+	cp := controller.NewNode(db.Node{ID: uuid.New(), Name: "cp-0", ControlPlane: true}, "15005")
+	worker := controller.NewNode(db.Node{ID: uuid.New(), Name: "worker-0", ControlPlane: false}, "15005")
 
 	assert.Equal(t, rollout.NodeRoleControlPlane, cp.Role())
 	assert.Equal(t, rollout.NodeRoleWorker, worker.Role())
@@ -24,7 +24,7 @@ func TestNodeAdapter_RoleFromControlPlaneFlag(t *testing.T) {
 
 func TestNodeAdapter_AgentEndpoint(t *testing.T) {
 	id := uuid.New()
-	n := cwe.NewNode(db.Node{ID: id, Name: "cp-0", IP: "10.0.0.10"}, "15005")
+	n := controller.NewNode(db.Node{ID: id, Name: "cp-0", IP: "10.0.0.10"}, "15005")
 
 	assert.Equal(t, id, n.ID())
 	assert.Equal(t, "cp-0", n.Name())
@@ -41,7 +41,7 @@ func TestClusterAdapter_MappingAndDeterministicOrder(t *testing.T) {
 	all := []db.Node{worker, cpB, cpA}
 	cps := []db.Node{cpB, cpA}
 
-	cluster := cwe.NewCluster(db.Cluster{
+	cluster := controller.NewCluster(db.Cluster{
 		ID:                clusterID,
 		Name:              "test",
 		KubernetesVersion: "v1.30.0",

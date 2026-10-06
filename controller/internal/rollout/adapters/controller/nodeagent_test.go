@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package cwe_test
+package controller_test
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/cwe"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/controller"
 	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
 )
 
@@ -22,7 +22,7 @@ func TestNewNodeResolver(t *testing.T) {
 	t.Parallel()
 
 	node := db.Node{ID: uuid.New(), Name: "cp-0", IP: "10.0.0.11"}
-	resolve := cwe.NewNodeResolver([]db.Node{node})
+	resolve := controller.NewNodeResolver([]db.Node{node})
 
 	got, err := resolve(context.Background(), node.ID)
 	require.NoError(t, err)
@@ -30,7 +30,7 @@ func TestNewNodeResolver(t *testing.T) {
 
 	_, err = resolve(context.Background(), uuid.New())
 	require.Error(t, err)
-	assert.ErrorIs(t, err, cwe.ErrNodeNotFound)
+	assert.ErrorIs(t, err, controller.ErrNodeNotFound)
 }
 
 func TestNewDatabaseNodeResolverUsesCurrentInventory(t *testing.T) {
@@ -40,7 +40,7 @@ func TestNewDatabaseNodeResolverUsesCurrentInventory(t *testing.T) {
 	database := &testutil.MockDB{}
 	database.On("GetNode", context.Background(), node.ID).Return(node, nil).Once()
 
-	resolve, err := cwe.NewDatabaseNodeResolver(database)
+	resolve, err := controller.NewDatabaseNodeResolver(database)
 	require.NoError(t, err)
 	got, err := resolve(context.Background(), node.ID)
 	require.NoError(t, err)
@@ -52,7 +52,7 @@ func TestNewDatabaseNodeResolverRejectsTypedNilDatabase(t *testing.T) {
 	t.Parallel()
 
 	var database *testutil.MockDB
-	resolve, err := cwe.NewDatabaseNodeResolver(database)
+	resolve, err := controller.NewDatabaseNodeResolver(database)
 	require.Error(t, err)
 	assert.Nil(t, resolve)
 	assert.Contains(t, err.Error(), "database must be non-nil")
@@ -64,7 +64,7 @@ func TestNewNodeResolverDistinguishesNodesWithSameIP(t *testing.T) {
 	ip := "10.0.0.11"
 	first := db.Node{ID: uuid.New(), Name: "cluster-a-cp-0", IP: ip}
 	second := db.Node{ID: uuid.New(), Name: "cluster-b-cp-0", IP: ip}
-	resolve := cwe.NewNodeResolver([]db.Node{first, second})
+	resolve := controller.NewNodeResolver([]db.Node{first, second})
 
 	got, err := resolve(context.Background(), second.ID)
 	require.NoError(t, err)
@@ -88,12 +88,12 @@ func newTestTransport(t *testing.T) *agent.Transport {
 func TestNewSPIFFEDialer_NilDependenciesFailClosed(t *testing.T) {
 	t.Parallel()
 
-	d, err := cwe.NewSPIFFEDialer(newTestTransport(t), nil)
+	d, err := controller.NewSPIFFEDialer(newTestTransport(t), nil)
 	assert.Nil(t, d)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "NewSPIFFEDialer")
 
-	d, err = cwe.NewSPIFFEDialer(nil, cwe.NewNodeResolver(nil))
+	d, err = controller.NewSPIFFEDialer(nil, controller.NewNodeResolver(nil))
 	assert.Nil(t, d)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "transport must be non-nil")
@@ -102,7 +102,7 @@ func TestNewSPIFFEDialer_NilDependenciesFailClosed(t *testing.T) {
 func TestNewSPIFFEDialer_ValidResolver(t *testing.T) {
 	t.Parallel()
 
-	d, err := cwe.NewSPIFFEDialer(newTestTransport(t), cwe.NewNodeResolver(nil))
+	d, err := controller.NewSPIFFEDialer(newTestTransport(t), controller.NewNodeResolver(nil))
 	require.NoError(t, err)
 	assert.NotNil(t, d)
 }
@@ -110,12 +110,12 @@ func TestNewSPIFFEDialer_ValidResolver(t *testing.T) {
 func TestNewMethodSupportChecker_NilDependenciesFailClosed(t *testing.T) {
 	t.Parallel()
 
-	c, err := cwe.NewMethodSupportChecker(newTestTransport(t), nil)
+	c, err := controller.NewMethodSupportChecker(newTestTransport(t), nil)
 	assert.Nil(t, c)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "NewMethodSupportChecker")
 
-	c, err = cwe.NewMethodSupportChecker(nil, cwe.NewNodeResolver(nil))
+	c, err = controller.NewMethodSupportChecker(nil, controller.NewNodeResolver(nil))
 	assert.Nil(t, c)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "transport must be non-nil")
@@ -124,7 +124,7 @@ func TestNewMethodSupportChecker_NilDependenciesFailClosed(t *testing.T) {
 func TestNewMethodSupportChecker_ValidResolver(t *testing.T) {
 	t.Parallel()
 
-	c, err := cwe.NewMethodSupportChecker(newTestTransport(t), cwe.NewNodeResolver(nil))
+	c, err := controller.NewMethodSupportChecker(newTestTransport(t), controller.NewNodeResolver(nil))
 	require.NoError(t, err)
 	assert.NotNil(t, c)
 }

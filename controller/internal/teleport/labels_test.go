@@ -72,7 +72,7 @@ func TestMergeLabels(t *testing.T) {
 	}
 }
 
-func TestIsOwnedByCWE(t *testing.T) {
+func TestIsOwnedByController(t *testing.T) {
 	tests := []struct {
 		name     string
 		labels   map[string]string
@@ -121,7 +121,7 @@ func TestIsOwnedByCWE(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := IsOwnedByCWE(tt.labels, testManagedByValue)
+			got := IsOwnedByController(tt.labels, testManagedByValue)
 			assert.Equal(t, tt.expected, got)
 		})
 	}

@@ -21,10 +21,10 @@ import (
 
 // Service owns shared node scheduling side effects.
 type Service struct {
-	cfg               config.Config
-	db                db.DB
-	logger            *slog.Logger
-	cweTemporalClient WorkflowStarter
+	cfg                      config.Config
+	db                       db.DB
+	logger                   *slog.Logger
+	controllerTemporalClient WorkflowStarter
 }
 
 // WorkflowStarter is the Temporal client behavior needed by node scheduling.
@@ -37,13 +37,13 @@ func NewService(
 	cfg config.Config,
 	logger *slog.Logger,
 	dbInstance db.DB,
-	cweTemporalClient WorkflowStarter,
+	controllerTemporalClient WorkflowStarter,
 ) *Service {
 	return &Service{
-		cfg:               cfg,
-		db:                dbInstance,
-		logger:            logger,
-		cweTemporalClient: cweTemporalClient,
+		cfg:                      cfg,
+		db:                       dbInstance,
+		logger:                   logger,
+		controllerTemporalClient: controllerTemporalClient,
 	}
 }
 
@@ -66,7 +66,7 @@ func (s *Service) startProvisionNodeWorkflow(ctx context.Context, pendingNode db
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
 		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 	}
-	if _, err := s.cweTemporalClient.ExecuteWorkflow(ctx, workflowOpts, workflows.ProvisionNode, workflows.ProvisionNodeInput{
+	if _, err := s.controllerTemporalClient.ExecuteWorkflow(ctx, workflowOpts, workflows.ProvisionNode, workflows.ProvisionNodeInput{
 		NodeID:                         pendingNode.ID,
 		RebootNodeWaitForUptimeTimeout: s.cfg.NodeRebootMaxTimeout,
 		// Control-plane nodes defer join to the control-plane controller, which

@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
-	cwedb "github.com/dsx-ai-factory/nke/controller/internal/db"
+	controllerdb "github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 //nolint:gochecknoinits // this is the typical way to register bun migrations
@@ -63,17 +63,17 @@ func init() {
 		}
 
 		for _, cluster := range clusters {
-			cfg, err := cwedb.LegacyControlPlaneConfigFromJSON(cluster.ControlPlaneConfig)
+			cfg, err := controllerdb.LegacyControlPlaneConfigFromJSON(cluster.ControlPlaneConfig)
 			if err != nil {
 				return fmt.Errorf("parse control_plane_config for cluster %s: %w", cluster.ID, err)
 			}
-			if cfg.Equal(cwedb.ControlPlaneConfig{}) {
+			if cfg.Equal(controllerdb.ControlPlaneConfig{}) {
 				continue
 			}
 
-			row := &cwedb.ControlPlaneConfiguration{
+			row := &controllerdb.ControlPlaneConfiguration{
 				ClusterID:    cluster.ID,
-				Config:       cwedb.ConfigSpecFromFull(cfg),
+				Config:       controllerdb.ConfigSpecFromFull(cfg),
 				ChangeReason: "migration from clusters.control_plane_config",
 			}
 			if _, err := db.NewInsert().Model(row).Exec(ctx); err != nil {
@@ -81,9 +81,9 @@ func init() {
 			}
 
 			_, err = db.NewUpdate().
-				Model(&cwedb.Cluster{
+				Model(&controllerdb.Cluster{
 					ID: cluster.ID,
-					ControlPlaneConfig: cwedb.ControlPlaneConfig{
+					ControlPlaneConfig: controllerdb.ControlPlaneConfig{
 						ConfigurationID: row.ID,
 						DesiredCount:    cfg.DesiredCount,
 						MaxSurge:        cfg.MaxSurge,
@@ -158,12 +158,12 @@ func init() {
 		}
 
 		for _, cluster := range clusters {
-			var row cwedb.ControlPlaneConfiguration
+			var row controllerdb.ControlPlaneConfiguration
 			if err := db.NewSelect().Model(&row).Where("id = ?", cluster.ConfigurationID).Scan(ctx); err != nil {
 				return fmt.Errorf("load configuration %s: %w", cluster.ConfigurationID, err)
 			}
-			cfg := cwedb.BuildControlPlaneConfig(cwedb.Cluster{
-				ControlPlaneConfig: cwedb.ControlPlaneConfig{
+			cfg := controllerdb.BuildControlPlaneConfig(controllerdb.Cluster{
+				ControlPlaneConfig: controllerdb.ControlPlaneConfig{
 					ConfigurationID: cluster.ConfigurationID,
 					DesiredCount:    cluster.CPDesiredCount,
 					MaxSurge:        cluster.CPMaxSurge,

@@ -307,7 +307,7 @@ func (r *reconciler) updateKubeadmConfigMap(ctx context.Context, cluster db.Clus
 		"kubernetesVersion", cluster.KubernetesVersion,
 	)
 
-	if r.cweTemporalClient == nil {
+	if r.controllerTemporalClient == nil {
 		return false, fmt.Errorf("CWE Temporal client not available")
 	}
 
@@ -315,7 +315,7 @@ func (r *reconciler) updateKubeadmConfigMap(ctx context.Context, cluster db.Clus
 	workflowID := fmt.Sprintf("%s%s-%s", constants.UpdateKubeadmCMWorkflowPrefix, cluster.ID, cluster.KubernetesVersion)
 
 	// Check if workflow is already running or completed
-	desc, err := r.cweTemporalClient.DescribeWorkflowExecution(ctx, workflowID, "")
+	desc, err := r.controllerTemporalClient.DescribeWorkflowExecution(ctx, workflowID, "")
 
 	if isWorkflowNotFoundError(err) {
 		if err := r.startUpdateKubeadmConfigMapWorkflow(ctx, cluster, workflowID, logger); err != nil {
@@ -444,8 +444,8 @@ func (r *reconciler) upgradeAddons(
 		return false, fmt.Errorf("no nodes found in any control plane NodePool")
 	}
 
-	// Require cweTemporalClient to be configured
-	if r.cweTemporalClient == nil {
+	// Require controllerTemporalClient to be configured
+	if r.controllerTemporalClient == nil {
 		return false, fmt.Errorf("CWE Temporal client not available")
 	}
 
@@ -456,7 +456,7 @@ func (r *reconciler) upgradeAddons(
 
 	// Check if workflow is already running or completed
 	// This returns the most recent execution for this workflow ID
-	desc, err := r.cweTemporalClient.DescribeWorkflowExecution(ctx, workflowID, "")
+	desc, err := r.controllerTemporalClient.DescribeWorkflowExecution(ctx, workflowID, "")
 
 	if isWorkflowNotFoundError(err) {
 		if err := r.startKubeadmAddOnUpgradeWorkflow(ctx, cluster, workflowID, logger); err != nil {
@@ -512,7 +512,7 @@ func (r *reconciler) startUpdateKubeadmConfigMapWorkflow(ctx context.Context, cl
 		WorkflowRunTimeout: 35 * time.Minute,
 	}
 
-	run, err := r.cweTemporalClient.ExecuteWorkflow(ctx, options, workflows.UpdateKubeadmConfigMap, workflows.UpdateKubeadmConfigMapInput{
+	run, err := r.controllerTemporalClient.ExecuteWorkflow(ctx, options, workflows.UpdateKubeadmConfigMap, workflows.UpdateKubeadmConfigMapInput{
 		ClusterID:         cluster.ID,
 		KubernetesVersion: cluster.KubernetesVersion,
 	})
@@ -543,7 +543,7 @@ func (r *reconciler) startKubeadmAddOnUpgradeWorkflow(ctx context.Context, clust
 		WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 	}
 
-	run, err := r.cweTemporalClient.ExecuteWorkflow(ctx, options, workflows.UpgradeControlPlaneAddons, workflows.UpgradeControlPlaneAddonsInput{
+	run, err := r.controllerTemporalClient.ExecuteWorkflow(ctx, options, workflows.UpgradeControlPlaneAddons, workflows.UpgradeControlPlaneAddonsInput{
 		ClusterID:         cluster.ID,
 		KubernetesVersion: cluster.KubernetesVersion,
 	})

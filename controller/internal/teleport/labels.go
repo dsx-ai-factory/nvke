@@ -37,7 +37,7 @@ func NodeRoleLabel(controlPlane bool) string {
 	return LabelNodeRoleWorker
 }
 
-var ErrNotOwnedByCWE = errors.New("token is not managed by this controller")
+var ErrNotOwnedByController = errors.New("token is not managed by this controller")
 
 // OwnershipLabels returns the standard ownership labels for tokens managed by
 // this controller, stamped with managedByValue (config.TeleportConfig.ManagedByLabelValue).
@@ -61,8 +61,8 @@ func MergeLabels(userLabels map[string]string, managedByValue string) map[string
 	return result
 }
 
-// IsOwnedByCWE checks if a token has the correct managed-by label.
-func IsOwnedByCWE(labels map[string]string, managedByValue string) bool {
+// IsOwnedByController checks if a token has the correct managed-by label.
+func IsOwnedByController(labels map[string]string, managedByValue string) bool {
 	return labels[LabelManagedBy] == managedByValue
 }
 

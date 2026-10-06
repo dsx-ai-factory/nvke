@@ -113,8 +113,8 @@ const (
 func TestKubeconfigSecretName(t *testing.T) {
 	assert.Equal(t, "prod-a-kubeconfig", KubeconfigSecretName("prod-a"))
 	assert.Equal(t, "prod-a-admin-kubeconfig", AdminKubeconfigSecretName("prod-a"))
-	assert.True(t, IsCWEKubeconfigSecretName("prod-a-kubeconfig"))
-	assert.False(t, IsCWEKubeconfigSecretName("prod-a-admin-kubeconfig"))
+	assert.True(t, IsControllerKubeconfigSecretName("prod-a-kubeconfig"))
+	assert.False(t, IsControllerKubeconfigSecretName("prod-a-admin-kubeconfig"))
 }
 
 func TestExtractCAFromKubeconfig(t *testing.T) {
@@ -1080,12 +1080,12 @@ func TestPublish_RefusesSPIREWithoutRBAC(t *testing.T) {
 	// must not leave operators without break-glass admin.conf.
 	assertAdminSecret(t, ctx, k8sClient, cluster, testAdminConf)
 
-	cweSecret := &corev1.Secret{}
-	cweErr := k8sClient.Get(ctx, types.NamespacedName{
+	controllerSecret := &corev1.Secret{}
+	controllerErr := k8sClient.Get(ctx, types.NamespacedName{
 		Name:      KubeconfigSecretName(cluster.Name),
 		Namespace: SecretsNamespace,
-	}, cweSecret)
-	assert.True(t, apierrors.IsNotFound(cweErr), "SPIRE kubeconfig must not publish without RBAC")
+	}, controllerSecret)
+	assert.True(t, apierrors.IsNotFound(controllerErr), "SPIRE kubeconfig must not publish without RBAC")
 }
 
 func kubeconfigWithParseableCA(t *testing.T) []byte {

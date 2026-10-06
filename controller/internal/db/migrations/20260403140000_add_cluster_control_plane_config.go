@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
-	cwedb "github.com/dsx-ai-factory/nke/controller/internal/db"
+	controllerdb "github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 //nolint:gochecknoinits // this is the typical way to register bun migrations
@@ -26,11 +26,11 @@ func init() {
 		}
 
 		// Pin the SELECT to the columns that existed on node_pools at the time of this migration.
-		// Bun would otherwise emit a SELECT for every column on the live cwedb.NodePool struct,
+		// Bun would otherwise emit a SELECT for every column on the live controllerdb.NodePool struct,
 		// which fails on databases that have not yet applied later migrations adding new columns.
 		// Developer Note: The normal pattern for this is to create a local Model struct that only includes the columns needed for the migration.
 		// But this change needed to be made after the migration merged as it was breaking future migrations.
-		var pools []cwedb.NodePool
+		var pools []controllerdb.NodePool
 		err = db.NewSelect().
 			Model(&pools).
 			Column(
@@ -75,20 +75,20 @@ func init() {
 			return fmt.Errorf("failed to list control plane node pools: %w", err)
 		}
 
-		byCluster := make(map[uuid.UUID][]cwedb.NodePool)
+		byCluster := make(map[uuid.UUID][]controllerdb.NodePool)
 		for i := range pools {
 			p := pools[i]
 			byCluster[p.ClusterID] = append(byCluster[p.ClusterID], p)
 		}
 
 		for clusterID, cPools := range byCluster {
-			cfg := cwedb.MergeControlPlaneConfigFromNodePools(cPools)
+			cfg := controllerdb.MergeControlPlaneConfigFromNodePools(cPools)
 			if cfg == nil {
 				continue
 			}
 
 			_, err = db.NewUpdate().
-				Model(&cwedb.Cluster{ID: clusterID, ControlPlaneConfig: *cfg}).
+				Model(&controllerdb.Cluster{ID: clusterID, ControlPlaneConfig: *cfg}).
 				Column("control_plane_config").
 				WherePK().
 				Exec(ctx)

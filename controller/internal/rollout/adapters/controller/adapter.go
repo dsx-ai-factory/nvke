@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package cwe adapts internal/db inventory so it satisfies rollout.Cluster
+// Package controller adapts internal/db inventory so it satisfies rollout.Cluster
 // and rollout.Node. It is the sole bridge from the rollout framework into
 // CWE's own cluster/node model, letting the ported engine drive rollouts on
 // CWE-managed clusters.
-package cwe
+package controller
 
 import (
 	"net"

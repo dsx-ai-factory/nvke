@@ -98,12 +98,12 @@ func (r *reconciler) reconcileRequestedDeletes(
 // etcd member removal succeeds when the member is absent -- so a second run
 // picks up wherever the first stopped.
 func (r *reconciler) restartFailedTeardown(ctx context.Context, node db.Node) (bool, error) {
-	if r.cweTemporalClient == nil {
+	if r.controllerTemporalClient == nil {
 		return false, nil
 	}
 
 	workflowID := constants.TeardownNodeWorkflowPrefix + node.ID.String()
-	desc, err := r.cweTemporalClient.DescribeWorkflowExecution(ctx, workflowID, "")
+	desc, err := r.controllerTemporalClient.DescribeWorkflowExecution(ctx, workflowID, "")
 	if err != nil {
 		if isWorkflowNotFoundError(err) {
 			// The outbox has not delivered the start yet. Leave it alone.
@@ -120,7 +120,7 @@ func (r *reconciler) restartFailedTeardown(ctx context.Context, node db.Node) (b
 		return false, err
 	}
 
-	run, err := r.cweTemporalClient.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+	run, err := r.controllerTemporalClient.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:                       workflowID,
 		TaskQueue:                r.cfg.TemporalTaskQueue,
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,

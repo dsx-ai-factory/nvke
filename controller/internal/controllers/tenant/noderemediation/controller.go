@@ -38,7 +38,7 @@ type Reconciler struct {
 }
 
 // NewRegistrar returns a tenant-manager registrar for Kubernetes Node remediation.
-func NewRegistrar(cfg config.Config, database *dbwrapper.DB, cweTemporalClient workflowStarter, logger *slog.Logger) tenant.Registrar {
+func NewRegistrar(cfg config.Config, database *dbwrapper.DB, controllerTemporalClient workflowStarter, logger *slog.Logger) tenant.Registrar {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -48,7 +48,7 @@ func NewRegistrar(cfg config.Config, database *dbwrapper.DB, cweTemporalClient w
 			clusterID:  clusterID,
 			db:         database,
 			client:     manager.GetClient(),
-			remediator: newNodeRemediator(cfg, logger.With("controller", "tenant-node-remediation", "clusterID", clusterID), cweTemporalClient),
+			remediator: newNodeRemediator(cfg, logger.With("controller", "tenant-node-remediation", "clusterID", clusterID), controllerTemporalClient),
 		}
 
 		return ctrl.NewControllerManagedBy(manager).

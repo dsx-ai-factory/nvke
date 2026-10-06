@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package cwe_test
+package controller_test
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
-	"github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/cwe"
+	"github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/controller"
 )
 
 // fakeDB is a minimal db.DB double for the Loader: only GetCluster and
@@ -70,7 +70,7 @@ func TestLoader_LoadCluster(t *testing.T) {
 		allNodes: []db.Node{worker, cp},
 	}
 
-	loader := cwe.NewLoader(fake, config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}})
+	loader := controller.NewLoader(fake, config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}})
 	cluster, err := loader.LoadCluster(context.Background(), clusterID)
 	require.NoError(t, err)
 
@@ -93,7 +93,7 @@ func TestLoader_LoadCluster(t *testing.T) {
 
 func TestLoader_LoadCluster_GetClusterError(t *testing.T) {
 	fake := &fakeDB{clusterErr: db.ErrNotFound}
-	loader := cwe.NewLoader(fake, config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}})
+	loader := controller.NewLoader(fake, config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}})
 
 	cluster, err := loader.LoadCluster(context.Background(), uuid.New())
 	require.Error(t, err)
@@ -104,7 +104,7 @@ func TestLoader_LoadCluster_GetClusterError(t *testing.T) {
 func TestLoader_LoadCluster_ListNodesError(t *testing.T) {
 	sentinel := errors.New("boom")
 	fake := &fakeDB{nodesErr: sentinel}
-	loader := cwe.NewLoader(fake, config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}})
+	loader := controller.NewLoader(fake, config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}})
 
 	cluster, err := loader.LoadCluster(context.Background(), uuid.New())
 	require.Error(t, err)

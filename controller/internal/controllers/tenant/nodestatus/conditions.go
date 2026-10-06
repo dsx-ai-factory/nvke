@@ -12,17 +12,17 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
-func applyKubernetesNodeHealth(cweNode *db.Node, kubeNode *corev1.Node) {
-	cweNode.Conditions.KubernetesReady = fromKubeCondition(cweNode.Conditions.KubernetesReady, kubeNode, string(corev1.NodeReady))
-	cweNode.Conditions.KubernetesUnschedulable = kubernetesUnschedulableCondition(cweNode.Conditions.KubernetesUnschedulable, kubeNode)
+func applyKubernetesNodeHealth(controllerNode *db.Node, kubeNode *corev1.Node) {
+	controllerNode.Conditions.KubernetesReady = fromKubeCondition(controllerNode.Conditions.KubernetesReady, kubeNode, string(corev1.NodeReady))
+	controllerNode.Conditions.KubernetesUnschedulable = kubernetesUnschedulableCondition(controllerNode.Conditions.KubernetesUnschedulable, kubeNode)
 
-	needsRecycle := fromKubeCondition(cweNode.Conditions.MarkedForRecycling, kubeNode, constants.NodeConditionTypeNeedsRecycle)
+	needsRecycle := fromKubeCondition(controllerNode.Conditions.MarkedForRecycling, kubeNode, constants.NodeConditionTypeNeedsRecycle)
 	if needsRecycle.Status == db.ConditionStatusTrue {
-		cweNode.Conditions.MarkedForRecycling = needsRecycle
+		controllerNode.Conditions.MarkedForRecycling = needsRecycle
 	}
-	needsRepair := fromKubeCondition(cweNode.Conditions.MarkedForRepair, kubeNode, constants.NodeConditionTypeNeedsRepair)
+	needsRepair := fromKubeCondition(controllerNode.Conditions.MarkedForRepair, kubeNode, constants.NodeConditionTypeNeedsRepair)
 	if needsRepair.Status == db.ConditionStatusTrue {
-		cweNode.Conditions.MarkedForRepair = needsRepair
+		controllerNode.Conditions.MarkedForRepair = needsRepair
 	}
 }
 
