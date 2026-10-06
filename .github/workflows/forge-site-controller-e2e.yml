@@ -248,8 +248,12 @@ jobs:
       # for SITE_ARCH.
       ARCH: ${{ inputs.arch || vars.SITE_E2E_ARCH }}
       GPU: ${{ inputs.gpu || vars.SITE_E2E_GPU }}
-      # A label cannot carry a boolean, so a PR run never keeps its node.
-      KEEP_SITE: ${{ inputs.keep-site || false }}
+      # A label cannot carry a boolean, so a labelled run takes this from the
+      # repository variable, as it does every other setting. Holding a Forge
+      # machine is expensive and the variable is easy to leave set, so the run
+      # warns when it is on and the value is meant to be cleared once whatever
+      # needed the machine has been read off it.
+      KEEP_SITE: ${{ inputs.keep-site || vars.SITE_E2E_KEEP_SITE || false }}
       # ghcr or nvcr. Only the runner pulls from it: every image it names is
       # staged onto the node as an archive. The node's own pull is CAPNICo,
       # which is published to GHCR alone, so the GHCR login below stays either
@@ -761,6 +765,7 @@ jobs:
           IN_ARCH: ${{ inputs.arch }}
           IN_GPU: ${{ inputs.gpu }}
           IN_KEEP_SITE: ${{ inputs.keep-site }}
+          VAR_KEEP_SITE: ${{ vars.SITE_E2E_KEEP_SITE }}
           IN_IMAGE_REGISTRY: ${{ inputs.image-registry }}
           VAR_IMAGE_REGISTRY: ${{ vars.SITE_E2E_IMAGE_REGISTRY }}
           VAR_NGC_ORG: ${{ vars.SITE_E2E_NGC_ORG }}
@@ -796,7 +801,7 @@ jobs:
           rows=(
             "stage|SITE_STAGE|IN_STAGE|VAR_STAGE|SITE_E2E_STAGE|WAS_STAGE|FORGE_E2E_STAGE"
             "controller version|SITE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|SITE_E2E_CONTROLLER_VERSION|WAS_CONTROLLER_VERSION|FORGE_E2E_CONTROLLER_VERSION"
-            "keep the node|KEEP_SITE|IN_KEEP_SITE||||"
+            "keep the node|KEEP_SITE|IN_KEEP_SITE|VAR_KEEP_SITE|SITE_E2E_KEEP_SITE||"
             "image registry|SITE_IMAGE_REGISTRY|IN_IMAGE_REGISTRY|VAR_IMAGE_REGISTRY|SITE_E2E_IMAGE_REGISTRY|WAS_IMAGE_REGISTRY|FORGE_E2E_IMAGE_REGISTRY"
             "NGC org|SITE_E2E_NGC_ORG||VAR_NGC_ORG|SITE_E2E_NGC_ORG|WAS_NGC_ORG|FORGE_E2E_NGC_ORG"
             "Teleport proxy|FORGE_TELEPORT_PROXY||VAR_TELEPORT_PROXY|FORGE_TELEPORT_PROXY||"
