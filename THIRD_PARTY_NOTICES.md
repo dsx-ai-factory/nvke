@@ -103,6 +103,14 @@ License: Apache License, Version 2.0, the same terms as this repository's
 [LICENSE](LICENSE); the original is
 [v1.35.0/LICENSE](https://github.com/kubernetes/kubernetes/blob/v1.35.0/LICENSE).
 
+## Embedded frontend libraries
+
+The nico-sim UI bundles xterm.js (with its fit and search addons), highlight.js
+and the Nord highlight.js theme under
+`controller/nico-sim/ui/vendor/`. Their component names, versions, origins,
+copyright notices and full license text are in
+[controller/nico-sim/ui/vendor/THIRD_PARTY_NOTICES.md](controller/nico-sim/ui/vendor/THIRD_PARTY_NOTICES.md).
+
 ## Scope of a generated file
 
 Each generated file lists every Go module reachable from that component's
