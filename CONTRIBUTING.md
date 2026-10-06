@@ -226,28 +226,35 @@ your branch, because the squash discards them.
 
 ### Sign your commits (DCO)
 
-Commits carry a `Signed-off-by:` trailer. Add one with `-s`:
+We require that all contributors "sign-off" on their commits. This certifies that
+the contribution is your original work, or you have rights to submit it under the
+same license, or a compatible license.
+
+Any contribution which contains commits that are not Signed-Off will not be
+accepted.
+
+To sign off on a commit, use the `--signoff` (or `-s`) option when committing
+your changes:
 
 ```bash
 git commit -s -m "fix(controller): handle an empty bundle list"
 ```
 
-That appends a line matching the name and email in your Git configuration:
+This appends the following to your commit message, matching the name and email in
+your Git configuration:
 
 ```
 Signed-off-by: Jane Developer <jane@example.com>
 ```
 
-The sign-off is your statement that you have the right to submit the work under
-this repository's license. It is the [Developer Certificate of
-Origin](https://developercertificate.org/) (DCO), the same mechanism the Linux
-kernel and Kubernetes use. Its full text is reproduced below.
-
-**Every commit from every contributor must be signed off, including NVIDIA
-organization members.** There is no exemption for verified or signed commits;
-a commit without a `Signed-off-by:` trailer fails the check.
+This applies to every contributor, including NVIDIA organization members. There
+is no exemption for verified or signed commits.
 
 #### Developer Certificate of Origin
+
+The sign-off is the [Developer Certificate of
+Origin](https://developercertificate.org/) (DCO), the same mechanism the Linux
+kernel and Kubernetes use. Its full text:
 
 ```text
 Developer Certificate of Origin
