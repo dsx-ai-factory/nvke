@@ -6,30 +6,22 @@
 # order listed. The list IS the order -- see
 # docs/site-bootstrap/deploy-repository.md, which this format follows.
 #
+# This is the executor every deploy path under deploy/ and controller/deploy/
+# is written for. deploy/nico is the customer path; the e2e lanes install
+# theirs with the same script. The helpers it needs are in lib/ beside it.
+#
 # A helm item is one chart installed as one release; the item order does the
 # sequencing. There are no enable flags and no phases, so nothing this script
 # emits can override what an item's values decided.
 #
 # Everything is a local path. These trees are consumed in place, so there is no
 # registry, no oras pull and no tarball to extract.
-#
-# TRANSITIONAL. This script stands in for nkectl, which is the intended owner of
-# NKE software stack installation. It is deleted -- together with
-# nke-sbom-items.py and render-template.py beside it -- once nkectl installs a
-# deploy path directly, from either a local directory or an OCI registry.
-# Tracked in https://github.com/dsx-ai-factory/nke/issues/873.
-#
-# Because it is going away, it deliberately carries no tests and no golden
-# files: those belong to the implementation that replaces it, not to the
-# stand-in.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ITEMS_PY="${SCRIPT_DIR}/nke-sbom-items.py"
-RENDER_PY="${SCRIPT_DIR}/render-template.py"
+ITEMS_PY="${SCRIPT_DIR}/lib/nke-deploy-items.py"
+RENDER_PY="${SCRIPT_DIR}/lib/render-template.py"
 
-SBOM=""
-TARGET=""
 DRY_RUN=""
 KUBECONFIG_PATH=""
 PHASE_TIMEOUT="${PHASE_TIMEOUT:-15m}"
@@ -41,14 +33,15 @@ VALUES_FOR=()
 DEPLOY_PATH=""
 
 log() { printf '\n=== %s\n' "$*" >&2; }
-die() { printf 'use-nke-sbom: %s\n' "$*" >&2; exit 1; }
+die() { printf 'nke-deploy: %s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat >&2 <<'USAGE'
-usage: use-nke-sbom.sh install --sbom DIR --target NAME [options] [-- helm args]
+usage: nke-deploy.sh install --deploy-path DIR [options] [-- helm args]
 
-  --sbom DIR          directory holding deploy paths, e.g. ./deploy
-  --target NAME       deploy path inside it, e.g. capd-e2e
+  --deploy-path DIR   the deploy path to install: a directory holding
+                      nke-deploy.yaml and one directory per item, e.g.
+                      deploy/nico or controller/deploy/capd-e2e
   --chart-override ITEM=PATH
                       where to find one item's chart, for a component this
                       repository does not publish. Repeatable.
@@ -241,10 +234,7 @@ not publish needs."
 }
 
 install() {
-  [[ -n "${SBOM}" ]] || die "--sbom is required"
-  [[ -n "${TARGET}" ]] || die "--target is required"
-
-  DEPLOY_PATH="${SBOM}/${TARGET}"
+  [[ -n "${DEPLOY_PATH}" ]] || die "--deploy-path is required"
   [[ -f "${DEPLOY_PATH}/nke-deploy.yaml" ]] \
     || die "no nke-deploy.yaml in ${DEPLOY_PATH}"
 
@@ -272,8 +262,7 @@ esac
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --sbom) SBOM="$2"; shift 2 ;;
-    --target) TARGET="$2"; shift 2 ;;
+    --deploy-path) DEPLOY_PATH="${2%/}"; shift 2 ;;
     --config) CONFIG="$2"; shift 2 ;;
     --chart-override) CHART_OVERRIDES+=("$2"); shift 2 ;;
     --values-for) VALUES_FOR+=("$2"); shift 2 ;;

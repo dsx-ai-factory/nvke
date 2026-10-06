@@ -75,7 +75,7 @@ func skipOffline(t *testing.T, chart string, err error) {
 // renderValues writes what Stack renders for sbomTarget into a directory.
 func renderValues(t *testing.T, assets string) string {
 	t.Helper()
-	overlay, err := os.ReadFile(filepath.Join(assets, "controller", "deploy", "nke-sbom", "spire", "overlay.yaml"))
+	overlay, err := os.ReadFile(filepath.Join(assets, "deploy", "nico", "spire", "overlay.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func runTool(t *testing.T, name string, args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
-// helmInstalls maps each release to the argv use-nke-sbom.sh would run for
+// helmInstalls maps each release to the argv nke-deploy.sh would run for
 // it, as the bash-quoted line --dry-run prints.
 func helmInstalls(t *testing.T, dryRun string) map[string]string {
 	t.Helper()
@@ -171,11 +171,8 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 	t.Setenv(controller.EnvNamespace, name)
 	t.Setenv(controller.EnvService, name)
 	values := renderValues(t, assets)
-	deploy := filepath.Join(assets, "controller", "deploy")
-
-	dryRun, err := runTool(t, "bash", filepath.Join(assets, "build", "use-nke-sbom.sh"), "install",
-		"--sbom", deploy,
-		"--target", "nke-sbom",
+	dryRun, err := runTool(t, "bash", filepath.Join(assets, "deploy", "nke-deploy.sh"), "install",
+		"--deploy-path", filepath.Join(assets, "deploy", "nico"),
 		"--config", filepath.Join(values, "bootstrap-config.json"),
 		"--values-for", "controller="+filepath.Join(values, "controller.yaml"),
 		"--values-for", "spire="+filepath.Join(values, "spire.yaml"),
@@ -183,7 +180,7 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 		"--values-for", "temporal="+filepath.Join(values, "temporal.yaml"),
 		"--dry-run")
 	if err != nil {
-		t.Fatalf("use-nke-sbom.sh --dry-run: %v\n%s", err, dryRun)
+		t.Fatalf("nke-deploy.sh --dry-run: %v\n%s", err, dryRun)
 	}
 	installs := helmInstalls(t, dryRun)
 	// A chart installed by path has to be among the exported assets, or the
@@ -348,9 +345,9 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 
 	t.Run("credential templates", func(t *testing.T) {
 		out := t.TempDir()
-		if _, err := runTool(t, "python3", filepath.Join(assets, "build", "render-template.py"),
+		if _, err := runTool(t, "python3", filepath.Join(assets, "deploy", "lib", "render-template.py"),
 			filepath.Join(values, "bootstrap-config.json"),
-			filepath.Join(deploy, "nke-sbom", "nke-base-config"), out); err != nil {
+			filepath.Join(assets, "deploy", "nico", "nke-base-config"), out); err != nil {
 			t.Fatal(err)
 		}
 		rendered := map[string]string{}

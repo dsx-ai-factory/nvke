@@ -20,11 +20,7 @@ understand turns a malformed artifact into a deploy that silently does less than
 it claims. phases reads one block out of a large hand-commented values.yaml, so
 it is strict only within that block.
 
-TRANSITIONAL. This parser stands in for nkectl, which is the intended owner of
-NKE software stack installation. It is deleted -- together with
-use-nke-sbom.sh and render-template.py beside it -- once nkectl installs a
-deploy path directly. Tracked in
-https://github.com/dsx-ai-factory/nke/issues/873.
+Used by deploy/nke-deploy.sh, which lives one directory up.
 """
 import re
 import sys
@@ -52,7 +48,7 @@ def unquote(pair):
 
 
 def die(msg):
-    sys.exit("nke-sbom-items: %s" % msg)
+    sys.exit("nke-deploy-items: %s" % msg)
 
 
 def significant(path):
@@ -123,5 +119,5 @@ def release(path):
 
 
 if len(sys.argv) != 3 or sys.argv[1] not in ("items", "release"):
-    sys.exit("usage: nke-sbom-items.py [items|release] <file>")
+    sys.exit("usage: nke-deploy-items.py [items|release] <file>")
 print("\n".join({"items": items, "release": release}[sys.argv[1]](sys.argv[2])))

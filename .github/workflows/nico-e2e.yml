@@ -38,6 +38,7 @@ on:
       # that defines the management plane triggers nothing, and the lane that
       # would have caught the break runs on some later, unrelated push.
       - "controller/deploy/**"
+      - "deploy/**"
       - .github/workflows/nico-e2e.yml
       - .github/workflows/backend-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml
@@ -51,7 +52,7 @@ on:
       use-nke-stack:
         description: >-
           Deploy the management plane from controller/deploy/capnico-e2e with
-          use-nke-sbom.sh. This is the default on every trigger, as on the CAPD
+          deploy/nke-deploy.sh. This is the default on every trigger, as on the CAPD
           lane; set false here to fall back to Tilt.
         required: false
         type: boolean

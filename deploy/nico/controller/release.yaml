@@ -11,7 +11,7 @@
 chart:
   name: nke-controller
   version: "0.0.0"
-  path: ../charts/controller
+  path: ../../controller/deploy/charts/controller
 release:
   name: nke-controller
   namespace: nke-controller

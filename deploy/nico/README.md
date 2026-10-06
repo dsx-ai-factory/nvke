@@ -1,6 +1,7 @@
-# nke-sbom
+# deploy/nico
 
-The deploy path for a NICo site controller on real hardware, with SPIRE.
+The deploy path for a NICo site controller on real hardware, with SPIRE. It is
+the customer deploy path; the e2e lanes under `controller/deploy/` are not.
 
 Not a reference implementation: the item list and its order are derived from a
 provisioning run that stood a site controller up on bare metal and had it
@@ -15,7 +16,7 @@ Four steps, three owners:
 |---|---|---|
 | 1. create and image the instance | **not NKE** -- the NICo API, iPXE and cloud-init | a booted host running `nke-agent` |
 | 2. `nkectl bootstrap site` | nkectl, on the instance | a **vanilla** Kubernetes cluster |
-| 3. this deploy path | `use-nke-sbom.sh`, on the node | the management plane |
+| 3. this deploy path | `deploy/nke-deploy.sh`, on the node | the management plane |
 | 4. `nkectl create cluster` | the site controller itself | tenant clusters |
 
 Step 2 leaves bare Kubernetes on purpose. `bootstrap site` stands up a
@@ -47,7 +48,7 @@ What the node needs, all present on the reference instance type:
 
 ## Before this runs
 
-`use-nke-sbom.sh` installs the items below and nothing else. Five things must
+`deploy/nke-deploy.sh` installs the items below and nothing else. Five things must
 already be true, all of them outside the deploy path:
 
 1. **The control plane is untainted.** A bootstrap cluster is all

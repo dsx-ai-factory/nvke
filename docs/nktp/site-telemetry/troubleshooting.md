@@ -45,7 +45,7 @@ empty value rather than labeling every signal with nothing.
 
 ## The nktp item fails building chart dependencies
 
-**Cause:** `build/use-nke-sbom.sh` runs `helm dependency build` for the chart
+**Cause:** `deploy/nke-deploy.sh` runs `helm dependency build` for the chart
 before installing it. That needs egress to `open-telemetry.github.io`,
 `prometheus-community.github.io` and `kubernetes-sigs.github.io`.
 
@@ -130,7 +130,7 @@ cumulative temporality is requested.
 `https://<site-ip>:30443/.well-known/openid-configuration` stops returning
 200 after someone upgraded the `spire` release by hand.
 
-**Cause:** the upgrade used an nke-sbom overlay with `--reuse-values`. The
+**Cause:** the upgrade used a `deploy/nico` overlay with `--reuse-values`. The
 overlay's `spiffe-oidc-discovery-provider.config.additionalDomains` list
 replaced the per-site one, which the deploy path had passed last with the
 site IP in it.

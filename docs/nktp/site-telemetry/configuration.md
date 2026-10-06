@@ -2,7 +2,7 @@
 
 The NKTP chart's defaults are for a multi-node cluster, and they know nothing
 about NKE. Everything a site controller needs differently is in
-[`controller/deploy/nke-sbom/nktp/values.yaml`](../../../controller/deploy/nke-sbom/nktp/values.yaml),
+[`deploy/nico/nktp/values.yaml`](../../../deploy/nico/nktp/values.yaml),
 which the `nktp` item applies over the chart. This page explains what it
 changes and why, and how a site overrides it.
 
@@ -66,7 +66,7 @@ two consequences:
 2. **Per-site values belong in the per-site file.** The same applies to every
    other item. The deploy path passes a site's own values, such as the site IP
    in SPIRE's OIDC `additionalDomains`, last, with `--values-for`. Never
-   upgrade a single release by hand with only an nke-sbom overlay and
+   upgrade a single release by hand with only a `deploy/nico` overlay and
    `--reuse-values`: the overlay's list replaces the per-site one. See
    [troubleshooting](troubleshooting.md#spire-oidc-discovery-rejects-requests-by-ip-after-a-hand-upgrade).
 

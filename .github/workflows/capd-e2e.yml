@@ -31,6 +31,7 @@ on:
       # that defines the management plane triggers nothing, and the lane that
       # would have caught the break runs on some later, unrelated push.
       - "controller/deploy/**"
+      - "deploy/**"
       - .github/workflows/capd-e2e.yml
       - .github/workflows/backend-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml

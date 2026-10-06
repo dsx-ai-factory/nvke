@@ -9,7 +9,7 @@
 # carries the version it was written against. The published chart is on an
 # internal registry that would need a login this path does not have. The
 # version below is only reported; the path decides what installs. The chart's
-# dependency archives are not committed, so use-nke-sbom.sh builds them from its
+# dependency archives are not committed, so nke-deploy.sh builds them from its
 # Chart.lock first.
 #
 # Early, straight after capnico: it installs the monitoring CRDs, and the
@@ -18,7 +18,7 @@
 chart:
   name: nktp
   version: "0.1.0-rc.2"
-  path: ../../../nktp/deploy/charts/nktp
+  path: ../../nktp/deploy/charts/nktp
 release:
   name: nktp
   namespace: nktp

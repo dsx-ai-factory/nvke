@@ -2,7 +2,7 @@
 
 NKTP, the NVIDIA Kubernetes Telemetry Pipeline, collects a site controller's
 metrics, logs and traces and exports them over OTLP. On a site controller it is
-installed by the nke-sbom deploy path, the same way as the rest of the
+installed by the `deploy/nico` deploy path, the same way as the rest of the
 management plane. There is nothing to install by hand.
 
 This guide covers what NKTP gives a site controller, what the deploy path needs
@@ -12,7 +12,7 @@ cover [configuration](configuration.md), [verification](verification.md) and
 
 ## What you get
 
-The `nktp` item in [`controller/deploy/nke-sbom`](../../../controller/deploy/nke-sbom/README.md)
+The `nktp` item in [`deploy/nico`](../../../deploy/nico/README.md)
 installs the [NKTP chart](../../../nktp/deploy/charts/nktp/README.md) from the
 same checkout, into namespace `nktp`:
 
@@ -64,7 +64,7 @@ The state of all their Pods still arrives through kube-state-metrics.
 
 The deploy path installs NKTP with the rest of the management plane, so its
 prerequisites are the path's own
-([Before this runs](../../../controller/deploy/nke-sbom/README.md#before-this-runs)),
+([Before this runs](../../../deploy/nico/README.md#before-this-runs)),
 plus:
 
 - **cert-manager.** `clusterctl init` installs it. It issues the Operator's
@@ -78,7 +78,7 @@ plus:
   ```
 - **Egress from the node running the install:**
   - to `open-telemetry.github.io`, `prometheus-community.github.io` and
-    `kubernetes-sigs.github.io`, because `build/use-nke-sbom.sh` builds the
+    `kubernetes-sigs.github.io`, because `deploy/nke-deploy.sh` builds the
     chart's dependencies from its `Chart.lock` before installing
   - to `docker.io`, `ghcr.io`, `quay.io` and `registry.k8s.io`, for the images
 - **Room on the nodes.** The site values size NKTP for the smaller clusters a
@@ -90,7 +90,7 @@ plus:
 Nothing else. The deploy path creates the `nktp` namespace with the
 `privileged` Pod Security level the node Collector needs, and every setting a
 site controller needs is in
-[`nktp/values.yaml`](../../../controller/deploy/nke-sbom/nktp/values.yaml).
+[`nktp/values.yaml`](../../../deploy/nico/nktp/values.yaml).
 
 ## Install order
 

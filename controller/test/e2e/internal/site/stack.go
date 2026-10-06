@@ -24,7 +24,8 @@ import (
 )
 
 const (
-	defaultSBOMTarget = "nke-sbom"
+	// defaultDeployPath is the customer deploy path, relative to the assets.
+	defaultDeployPath = "deploy/nico"
 
 	// defaultStorageClassManifest is rancher local-path, what the reference
 	// site used because its instance type has one NVMe with root on it.
@@ -165,9 +166,9 @@ type Tenant struct {
 // not from this suite, so the suite follows whatever deploy path the checkout
 // it stages carries.
 type Stack struct {
-	// Target is the deploy path under controller/deploy. Defaults to
-	// nke-sbom.
-	Target string
+	// DeployPath is the deploy path to install, relative to the assets.
+	// Defaults to deploy/nico.
+	DeployPath string
 
 	Controller Image
 	Profiles   Image
@@ -254,8 +255,7 @@ func (d Stack) Deploy(ctx context.Context, s infra.Session, t DeployTarget) erro
 		return err
 	}
 
-	sbomDir := path.Join(assetsDir, deployDir)
-	overlay, err := s.Fetch(ctx, path.Join(sbomDir, d.Target, releaseSpire, "overlay.yaml"))
+	overlay, err := s.Fetch(ctx, path.Join(assetsDir, d.DeployPath, releaseSpire, "overlay.yaml"))
 	if err != nil {
 		return fmt.Errorf("read the deploy path's SPIRE overlay: %w", err)
 	}
@@ -284,7 +284,7 @@ func (d Stack) Deploy(ctx context.Context, s infra.Session, t DeployTarget) erro
 		}
 	}
 
-	for _, step := range d.commands(t, sbomDir, valuesDir) {
+	for _, step := range d.commands(t, valuesDir) {
 		if out, err := s.Run(ctx, asRoot(step.cmd)); err != nil {
 			return fmt.Errorf("%s: %w\n%s", step.name, err, tail(out))
 		}
@@ -293,8 +293,8 @@ func (d Stack) Deploy(ctx context.Context, s infra.Session, t DeployTarget) erro
 }
 
 func (d Stack) withDefaults() Stack {
-	if d.Target == "" {
-		d.Target = defaultSBOMTarget
+	if d.DeployPath == "" {
+		d.DeployPath = defaultDeployPath
 	}
 	if d.StorageClassManifest == "" {
 		d.StorageClassManifest = defaultStorageClassManifest
@@ -306,9 +306,9 @@ func (d Stack) withDefaults() Stack {
 }
 
 const (
-	// controllerReleasePath is the HelmRelease the nke-sbom deploy path
+	// controllerReleasePath is the HelmRelease the deploy/nico deploy path
 	// installs CWE from, relative to the exported assets.
-	controllerReleasePath = deployDir + "/nke-sbom/controller/release.yaml"
+	controllerReleasePath = defaultDeployPath + "/controller/release.yaml"
 )
 
 // CheckControllerName fails when the deploy path installs CWE under a name the
@@ -420,7 +420,7 @@ type step struct {
 // commands are the install and what the deploy path's README says surrounds
 // it: untaint and clusterctl init and a default StorageClass before, the CAPI
 // SPIFFE patch after.
-func (d Stack) commands(t DeployTarget, sbomDir, valuesDir string) []step {
+func (d Stack) commands(t DeployTarget, valuesDir string) []step {
 	kc := shellQuote(t.Cluster.NodeKubeconfig)
 	env := "KUBECONFIG=" + kc + " "
 	values := func(release string) string {
@@ -432,9 +432,8 @@ func (d Stack) commands(t DeployTarget, sbomDir, valuesDir string) []step {
 		{"clusterctl init", env + "clusterctl init --wait-providers"},
 		{"default storage class", env + "kubectl apply -f " + shellQuote(d.StorageClassManifest) +
 			" && " + env + "kubectl patch storageclass " + shellQuote(d.StorageClassName) + " -p " + shellQuote(defaultClass)},
-		{"install " + d.Target, env + "bash " + shellQuote(path.Join(assetsDir, scriptsDir, "use-nke-sbom.sh")) + " install" +
-			" --sbom " + shellQuote(sbomDir) +
-			" --target " + shellQuote(d.Target) +
+		{"install " + d.DeployPath, env + "bash " + shellQuote(path.Join(assetsDir, scriptsDir, "nke-deploy.sh")) + " install" +
+			" --deploy-path " + shellQuote(path.Join(assetsDir, d.DeployPath)) +
 			" --config " + shellQuote(path.Join(valuesDir, "bootstrap-config.json")) +
 			" " + values(releaseController) +
 			" " + values(releaseSpire) +

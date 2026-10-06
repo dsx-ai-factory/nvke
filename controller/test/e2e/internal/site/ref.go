@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	// DeployPathRef is what the nke-sbom deploy path is staged from: the
+	// DeployPathRef is what the deploy/nico deploy path is staged from: the
 	// commit under test. It was pinned to the head of pull request 812 while
 	// the deploy path existed only there; 812 was squash-merged, so that
 	// commit is on no branch and a clone without `refs/pull/812/head` cannot
@@ -26,11 +26,12 @@ const (
 	// deployPathRef in site_controller_test.go.
 	DeployPathRef = "HEAD"
 
-	// scriptsDir holds the install script and its helpers, deployDir the
-	// deploy paths and the charts they install by relative path, hackDir
-	// the post-install script, and nktpChartDir the NKTP chart, which the
-	// nktp item installs by relative path from outside deployDir.
-	scriptsDir   = "build"
+	// scriptsDir holds the executor, its helpers and the customer deploy
+	// path deploy/nico; deployDir the e2e deploy paths and the charts every
+	// path installs by relative path; hackDir the post-install script; and
+	// nktpChartDir the NKTP chart, which the nktp item installs by relative
+	// path from outside both.
+	scriptsDir   = "deploy"
 	deployDir    = "controller/deploy"
 	hackDir      = "controller/hack"
 	nktpChartDir = "nktp/deploy/charts/nktp"

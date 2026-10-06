@@ -64,7 +64,7 @@ spire-agent:
       # Already the chart default at 0.30.1, restated so an upstream change of
       # heart cannot remove Kubernetes workload attestation silently.
       enabled: true
-      # Mirrors nke-sbom, which needs this because its control-plane nodes run
+      # Mirrors deploy/nico, which needs this because its control-plane nodes run
       # Kata and container-scoped selectors cannot resolve inside the VM. This
       # lane runs runc and would work either way, but attesting differently
       # from the path on real hardware means a ClusterSPIFFEID that depends on

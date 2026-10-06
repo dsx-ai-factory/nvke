@@ -8,7 +8,7 @@
 # rollout checks, the CAPI controller probes, the Ginkgo legs -- is unchanged and
 # unaware of which path deployed the stack.
 #
-# This script no longer applies anything. build/use-nke-sbom.sh walks
+# This script no longer applies anything. deploy/nke-deploy.sh walks
 # controller/deploy/capd-e2e/nke-deploy.yaml and installs its items in
 # order: the namespaces and OIDC CA chain, nke-auth-dev, the TPM pubhashes
 # ConfigMap, the two SPIRE NodePorts, the nke-spire-client probe scaffolding, the
@@ -47,11 +47,11 @@ NKE_CONTROLLER_IMAGE="${1:?usage: $0 <cwe-image>}"
 # published artifact; leave empty to build.
 if [[ -n "${NKE_E2E_STACK_CHART:-}" ]]; then
   echo "NKE_E2E_STACK_CHART is set but no longer used: there is no umbrella chart." >&2
-  echo "Each component is its own release, named in controller/deploy/${SBOM_TARGET:-capd-e2e}." >&2
+  echo "Each component is its own release, named in controller/deploy/${DEPLOY_TARGET:-capd-e2e}." >&2
   exit 1
 fi
-# A published chart's version has nowhere to go now: use-nke-sbom.sh resolves a
-# chart from a path, so helm needs no --version, and the SBOM's own release.yaml
+# A published chart's version has nowhere to go now: nke-deploy.sh resolves a
+# chart from a path, so helm needs no --version, and the item's own release.yaml
 # carries the version the artifact was cut with. Refuse rather than accept a
 # value and ignore it -- a silently dropped pin is how you end up testing a
 # different chart than the one you named.
@@ -66,8 +66,8 @@ fi
 STACK_DIR="${STACK_DIR:-/workspace/nke-stack}"
 # The generated deploy path this lane installs. The overlay is inside it, copied
 # beside each item, so it is no longer named separately here.
-SBOM_DIR="${SBOM_DIR:-${STACK_DIR}/controller/deploy}"
-SBOM_TARGET="${SBOM_TARGET:-capd-e2e}"
+DEPLOY_PATHS_DIR="${DEPLOY_PATHS_DIR:-${STACK_DIR}/controller/deploy}"
+DEPLOY_TARGET="${DEPLOY_TARGET:-capd-e2e}"
 
 log() { printf '\n=== %s\n' "$*" >&2; }
 
@@ -106,7 +106,7 @@ cwe_repository="${NKE_CONTROLLER_IMAGE%:*}"
 cwe_tag="${NKE_CONTROLLER_IMAGE##*:}"
 
 # Everything this script used to apply by hand is now an item of the capd-e2e
-# deploy path, applied by build/use-nke-sbom.sh in the order nke-deploy.yaml
+# deploy path, applied by deploy/nke-deploy.sh in the order nke-deploy.yaml
 # lists: the namespaces, the OIDC CA chain, nke-auth-dev, the TPM pubhashes
 # ConfigMap, the two SPIRE NodePorts, the nke-spire-client probe scaffolding, and
 # the two CAPD pieces -- the RBAC over dockerclusters/dockermachines without
@@ -199,9 +199,9 @@ KIND_GATEWAY_IP="$(docker network inspect kind \
 # Required, not optional: if the overlay stops declaring them this silently
 # drops three hostnames and the provider starts rejecting tenants by Host
 # header, which surfaces far from here.
-OIDC_OVERLAY="${SBOM_DIR}/${SBOM_TARGET}/spire/overlay.yaml"
+OIDC_OVERLAY="${DEPLOY_PATHS_DIR}/${DEPLOY_TARGET}/spire/overlay.yaml"
 if ! grep -q 'additionalDomains' "${OIDC_OVERLAY}"; then
-  echo "the ${SBOM_TARGET} overlay declares no additionalDomains." >&2
+  echo "the ${DEPLOY_TARGET} overlay declares no additionalDomains." >&2
   echo "This script appends MANAGEMENT_VIP and the kind gateway to that list; without it" >&2
   echo "the static hostnames would be dropped, because --set-json replaces the whole list." >&2
   exit 1
@@ -303,7 +303,7 @@ EXTRA=()
 #
 # The provider itself is not an item -- install-capnico.sh installs it before
 # this runs -- so nothing here names a chart for it.
-if [[ "${SBOM_TARGET}" == capnico-e2e ]]; then
+if [[ "${DEPLOY_TARGET}" == capnico-e2e ]]; then
   # Where CAPNICo reaches the NICo API. Empty NICO_ENDPOINT means the simulator,
   # matching controller/hack/nico-provider/Tiltfile: the host defaults to the
   # kind host address and the port is the simulator's. The other three are the
@@ -332,10 +332,9 @@ print(json.dumps({"Nico": {
   EXTRA+=(--config "${BOOTSTRAP_CONFIG}")
 fi
 
-log "installing ${SBOM_TARGET} from ${SBOM_DIR}"
-bash "${STACK_DIR}/build/use-nke-sbom.sh" install \
-  --sbom "${SBOM_DIR}" \
-  --target "${SBOM_TARGET}" \
+log "installing ${DEPLOY_TARGET} from ${DEPLOY_PATHS_DIR}"
+bash "${STACK_DIR}/deploy/nke-deploy.sh" install \
+  --deploy-path "${DEPLOY_PATHS_DIR}/${DEPLOY_TARGET}" \
   --values-for "controller=${VALUES_DIR}/controller.yaml" \
   --values-for "spire=${VALUES_DIR}/spire.yaml" \
   --values-for "postgresql=${VALUES_DIR}/postgresql.yaml" \

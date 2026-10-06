@@ -43,7 +43,7 @@ var stackCheckout = func() string {
 	if err != nil {
 		panic(err)
 	}
-	for _, rel := range []string{"build/use-nke-sbom.sh", "controller/deploy/nke-sbom/release.yaml"} {
+	for _, rel := range []string{"deploy/nke-deploy.sh", "deploy/nico/release.yaml"} {
 		path := filepath.Join(dir, rel)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			panic(err)
@@ -58,7 +58,7 @@ var stackCheckout = func() string {
 func testSBOM() Stack {
 	return Stack{
 		Assets:     stackCheckout,
-		AssetPaths: []string{"build", "controller/deploy"},
+		AssetPaths: []string{"deploy"},
 		Controller: Image{Repository: "nvcr.io/nke/cwe", Tag: "v1.2.3"},
 		Profiles:   Image{Repository: "nvcr.io/nke/profiles", Tag: "run-42"},
 		Provider:   NewNico("https://forge.example", "org", "tok"),
@@ -69,7 +69,7 @@ func testSBOM() Stack {
 }
 
 func overlayPath() string {
-	return path.Join(assetsDir, "controller", "deploy", "nke-sbom", "spire", "overlay.yaml")
+	return path.Join(assetsDir, "deploy", "nico", "spire", "overlay.yaml")
 }
 
 func sbomSession() *fakeSession {
@@ -224,7 +224,7 @@ func TestSBOMDeploy(t *testing.T) {
 		"node-role.kubernetes.io/control-plane-",
 		"clusterctl init",
 		"local-path-storage.yaml",
-		"use-nke-sbom.sh",
+		"nke-deploy.sh",
 		"apply-capi-spiffe-exec-auth.sh",
 	}
 	last := -1
@@ -241,10 +241,9 @@ func TestSBOMDeploy(t *testing.T) {
 	if final := s.runs[len(s.runs)-1]; !strings.Contains(final, valuesDir) || !strings.Contains(final, "rm -rf") {
 		t.Errorf("last command should remove the values directory, got %s", final)
 	}
-	install := s.cmd(t, "use-nke-sbom.sh")
+	install := s.cmd(t, "nke-deploy.sh")
 	for _, want := range []string{
-		"--sbom /var/lib/nke-e2e/assets/controller/deploy",
-		"--target nke-sbom",
+		"--deploy-path /var/lib/nke-e2e/assets/deploy/nico",
 		"--config",
 		"controller=/var/lib/nke-e2e/values/controller.yaml",
 		"temporal=/var/lib/nke-e2e/values/temporal.yaml",
@@ -264,13 +263,13 @@ func TestSBOMDeploy(t *testing.T) {
 func TestSBOMDeployCleansUpOnFailure(t *testing.T) {
 	s := sbomSession()
 	s.fail = func(cmd string) (string, error) {
-		if strings.Contains(cmd, "use-nke-sbom.sh") {
+		if strings.Contains(cmd, "nke-deploy.sh") {
 			return "helm: release temporal failed", errors.New("exit status 1")
 		}
 		return "", nil
 	}
 	err := testSBOM().Deploy(context.Background(), s, sbomTarget)
-	if err == nil || !strings.Contains(err.Error(), "install nke-sbom") || !strings.Contains(err.Error(), "release temporal failed") {
+	if err == nil || !strings.Contains(err.Error(), "install deploy/nico") || !strings.Contains(err.Error(), "release temporal failed") {
 		t.Fatalf("err = %v", err)
 	}
 	if s.ran("apply-capi-spiffe-exec-auth.sh") >= 0 {

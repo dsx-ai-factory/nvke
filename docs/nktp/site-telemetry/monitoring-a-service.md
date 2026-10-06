@@ -9,7 +9,7 @@ service's Helm chart, so the monitor is versioned, labeled and removed with
 the service it describes.
 
 Today, the Cloud Workflow Engine, Temporal and SPIRE do this, switched on by
-their nke-sbom overlays. cert-manager, NodeLocal DNSCache, OVN-Kubernetes and
+their `deploy/nico` overlays. cert-manager, NodeLocal DNSCache, OVN-Kubernetes and
 CAPNICo don't, so their metrics aren't collected until their owners add a
 monitor.
 
@@ -52,7 +52,7 @@ spec:
 
 **Ordering.** The monitoring CRDs come with NKTP. On a site controller, the
 `nktp` item installs them before every item that follows it in
-`controller/deploy/nke-sbom/nke-deploy.yaml`, so a chart installed later in
+`deploy/nico/nke-deploy.yaml`, so a chart installed later in
 the path can create its monitor. A component installed before NKTP, or outside
 the path (cert-manager and CAPI through `clusterctl init`, OVN and CoreDNS
 through bootstrap), has to add its monitor after NKTP is up.

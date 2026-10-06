@@ -164,7 +164,7 @@ jobs:
       # Deploy CWE flag-on for the cp-controller lane; the CI script forwards this
       # to the Tilt deploy and the e2e binary. `false` keeps the node-pool control
       # plane. Note this is the mode, not an override of CWE's default: CWE's own
-      # default is now true (#1054), and both the Tiltfile and deploy-sbom.sh only
+      # default is now true (#1054), and both the Tiltfile and deploy-stack.sh only
       # set the container env when the value is non-empty. An empty value would
       # therefore mean flag-on. The CI script resolves empty to false before any
       # use, so passing `''` here is safe -- but pass the mode you want.

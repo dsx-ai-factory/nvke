@@ -48,7 +48,7 @@ SITE_PROFILES_IMAGE ?= nke-e2e-profiles:local
 # before #850, which removed infra.spireAttestationMethod from the cluster
 # API. That pairing fails at "creating the site cluster" with
 #   400 Bad Request: infra.spireAttestationMethod is required
-# after forty minutes of setup -- see controller/deploy/nke-sbom/controller/
+# after forty minutes of setup -- see deploy/nico/controller/
 # overlay.yaml, which hit the same wall from the other direction.
 #
 # Set to 0 to qualify a published tag, once one is cut past #850.

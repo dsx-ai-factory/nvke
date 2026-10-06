@@ -345,14 +345,14 @@ func TestSiteValidation(t *testing.T) {
 
 func TestArchiveAssets(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "build", "use-nke-sbom.sh"), "script")
-	writeFile(t, filepath.Join(root, "build", "._use-nke-sbom.sh"), "appledouble")
-	writeFile(t, filepath.Join(root, "controller", "deploy", "nke-sbom", "release.yaml"), "items")
+	writeFile(t, filepath.Join(root, "deploy", "nke-deploy.sh"), "script")
+	writeFile(t, filepath.Join(root, "deploy", "._nke-deploy.sh"), "appledouble")
+	writeFile(t, filepath.Join(root, "deploy", "nico", "release.yaml"), "items")
 	writeFile(t, filepath.Join(root, "controller", "deploy", ".git", "HEAD"), "ref")
 	writeFile(t, filepath.Join(root, "controller", "deploy", ".DS_Store"), "junk")
 	writeFile(t, filepath.Join(root, "controller", "main.go"), "not staged")
 
-	data, err := archiveAssets(root, []string{"build", "controller/deploy"})
+	data, err := archiveAssets(root, []string{"deploy", "controller/deploy"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +378,7 @@ func TestArchiveAssets(t *testing.T) {
 		}
 	}
 	sort.Strings(files)
-	want := []string{"build/use-nke-sbom.sh", "controller/deploy/nke-sbom/release.yaml"}
+	want := []string{"deploy/nico/release.yaml", "deploy/nke-deploy.sh"}
 	if strings.Join(files, ",") != strings.Join(want, ",") {
 		t.Errorf("archived %v, want %v", files, want)
 	}
