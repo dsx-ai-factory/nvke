@@ -17,6 +17,7 @@ mkdir -p "${state_dir}"
 # share macOS's private /var/folders tree, so a default mktemp directory makes
 # packages created by the Linux OVN builder invisible to the host.
 tmp_dir="$(mktemp -d "${state_dir}/tmp.XXXXXX")"
+# Kept as cwe-capi: renaming forces every developer to recreate their kind cluster. NKX-17644.
 kind_cluster_name="${KIND_CLUSTER_NAME:-cwe-capi}"
 dockerhub_mirror="${NKE_E2E_DOCKERHUB_MIRROR:-}"
 runner_name="cwe-capd-local-e2e-${$}"
@@ -65,7 +66,7 @@ collect_diagnostics() {
     kubectl get events -A --sort-by=.lastTimestamp >"${state_dir}/management-events.txt" 2>&1
     kubectl get clusters,machines,kubeadmcontrolplanes,dockermachines -A -o yaml \
       >"${state_dir}/capi-resources.yaml" 2>&1
-    kubectl -n cloud-workflow-engine logs deployment/cloud-workflow-engine --all-containers --tail=-1 \
+    kubectl -n nke-controller logs deployment/nke-controller --all-containers --tail=-1 \
       >"${state_dir}/cwe.log" 2>&1
     kubectl -n capd-system logs deployment/capd-controller-manager --all-containers --tail=-1 \
       >"${state_dir}/capd-controller.log" 2>&1
@@ -178,7 +179,7 @@ else
 fi
 
 log "ensuring the Kind management cluster exists"
-kind_config_for_mirror "${repo_root}/hack/cwe-capi-kind.yaml" "${tmp_dir}/kind-config.yaml"
+kind_config_for_mirror "${repo_root}/hack/controller-capi-kind.yaml" "${tmp_dir}/kind-config.yaml"
 make -C "${repo_root}" kind-up KIND_CLUSTER_CONFIG="${tmp_dir}/kind-config.yaml"
 configure_kind_dockerhub_mirror "${kind_cluster_name}"
 kind get kubeconfig --name "${kind_cluster_name}" >"${host_kubeconfig}"
@@ -382,7 +383,7 @@ local_e2e_exec() {
     exchange_enabled=true
   fi
   docker exec \
-    -e "CWE_EXPECTED_VERSION=${cwe_expected_version}" \
+    -e "NKE_CONTROLLER_EXPECTED_VERSION=${cwe_expected_version}" \
     -e "NKE_E2E_DSX_IDENTITY_EXCHANGE=${exchange_enabled}" \
     -e "NKE_E2E_BUNDLE_SERVER_URL=${e2e_bundle_server_url}" \
     -e "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${cp_flag}" \
@@ -424,10 +425,10 @@ wait_for_zero_tenant_clusters() {
 redeploy_cwe() {
   local value="$1" got
   log "redeploying CWE with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
-  kubectl -n cloud-workflow-engine set env deployment/cloud-workflow-engine \
+  kubectl -n nke-controller set env deployment/nke-controller \
     "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
-  kubectl -n cloud-workflow-engine rollout status deployment/cloud-workflow-engine --timeout=5m
-  got="$(kubectl -n cloud-workflow-engine get deployment/cloud-workflow-engine \
+  kubectl -n nke-controller rollout status deployment/nke-controller --timeout=5m
+  got="$(kubectl -n nke-controller get deployment/nke-controller \
     -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER\")].value}")"
   [[ "${got}" == "${value}" ]] || \
     fail "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER must be ${value} after redeploy, got ${got:-<empty>}"

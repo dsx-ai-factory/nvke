@@ -31,7 +31,7 @@ CHART="${CHART:-nktp/deploy/charts/nktp}"
 VALUES="${VALUES:-nktp/hack/e2e-values.yaml}"
 # Pinned in make/tool-versions.mk: the version clusterctl init installs on a site.
 CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-$(make --no-print-directory print-CERT_MANAGER_VERSION)}"
-KIND_CONFIG="${KIND_CONFIG:-controller/hack/cwe-capi-kind.yaml}"
+KIND_CONFIG="${KIND_CONFIG:-controller/hack/controller-capi-kind.yaml}"
 KEEP_CLUSTER="${KEEP_CLUSTER:-0}"
 REUSE_CLUSTER="${REUSE_CLUSTER:-0}"
 # How long a signal gets to show up. Logs and traces are batched, so the first

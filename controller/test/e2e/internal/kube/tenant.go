@@ -41,7 +41,7 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 )
 
 const (
@@ -913,4 +913,4 @@ func discardAndClose(body io.ReadCloser) error {
 
 // controllerSPIFFEPath is the SPIFFE ID path the controller presents and the
 // tenant nke:cwe bindings name: its ServiceAccount under /nke-service/.
-func controllerSPIFFEPath() string { return "/nke-service/" + cwe.ServiceAccount() }
+func controllerSPIFFEPath() string { return "/nke-service/" + controller.ServiceAccount() }

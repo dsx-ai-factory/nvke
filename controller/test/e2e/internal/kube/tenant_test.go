@@ -35,6 +35,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/client-go/tools/remotecommand"
+
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 )
 
 func TestExpiringJWTSourceCachesAndRefreshesBeforeExpiry(t *testing.T) {
@@ -465,7 +467,7 @@ func TestTenantRESTConfigExchangesSPIREJWTCredentials(t *testing.T) {
 	if mintURL == nil {
 		t.Fatal("source JWT was not minted")
 	}
-	wantSourceID := "spiffe://test.nke.local/tenant/nke/service/cloud-workflow-engine/bm/cwe"
+	wantSourceID := "spiffe://test.nke.local/tenant/nke/service/" + controller.ServiceAccount() + "/bm/cwe"
 	if !slices.Contains(mintURL.Query()["command"], wantSourceID) {
 		t.Fatalf("source JWT mint command = %#v, want %q", mintURL.Query()["command"], wantSourceID)
 	}
@@ -694,7 +696,7 @@ func TestMintJWTSelectsReadyPodAndBuildsExpectedCommand(t *testing.T) {
 
 	wantCommand := []string{
 		"bin/spire-server", "jwt", "mint",
-		"-spiffeID", "spiffe://test.nke.local/nke-service/cloud-workflow-engine",
+		"-spiffeID", "spiffe://test.nke.local" + controllerSPIFFEPath(),
 		"-audience", "tenant-a",
 	}
 	if got := gotURL.Query()["command"]; !reflect.DeepEqual(got, wantCommand) {
@@ -715,11 +717,11 @@ func TestTrustDomainFromSPIREServerConfig(t *testing.T) {
 		wantErr string
 	}{
 		"trust domain": {
-			config: `{"server":{"trust_domain":"test.nke.local","admin_ids":["spiffe://ignored.nke.local/nke-service/cloud-workflow-engine"]}}`,
+			config: `{"server":{"trust_domain":"test.nke.local","admin_ids":["spiffe://ignored.nke.local/nke-service/nke-controller"]}}`,
 			want:   "test.nke.local",
 		},
 		"CWE admin ID fallback": {
-			config: `{"server":{"admin_ids":["spiffe://fallback.nke.local/nke-service/cloud-workflow-engine"]}}`,
+			config: `{"server":{"admin_ids":["spiffe://fallback.nke.local` + controllerSPIFFEPath() + `"]}}`,
 			want:   "fallback.nke.local",
 		},
 		"missing":   {config: `{"server":{}}`, wantErr: "neither trust_domain nor a CWE admin_id"},
@@ -754,7 +756,7 @@ func TestReadySPIREServerPodFailsWhenNoPodIsReady(t *testing.T) {
 
 func TestMintJWTIncludesExecutorStderr(t *testing.T) {
 	factory := newTestTenantClientFactory(t,
-		spireServerConfigMapObject(`{"server":{"admin_ids":["spiffe://test.nke.local/nke-service/cloud-workflow-engine"]}}`),
+		spireServerConfigMapObject(`{"server":{"admin_ids":["spiffe://test.nke.local`+controllerSPIFFEPath()+`"]}}`),
 		spireServerPod("spire-server-0", true, spireServerSelector()),
 	)
 	factory.newExecutor = func(string, *url.URL) (remotecommand.Executor, error) {

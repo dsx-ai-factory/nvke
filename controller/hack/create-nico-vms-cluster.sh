@@ -31,8 +31,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/control-plane-vip.sh"
 
-CWE_HTTP_PORT="${CWE_HTTP_PORT:-8080}"
-API_URL="${API_URL:-http://localhost:${CWE_HTTP_PORT}/api}"
+# CWE_HTTP_PORT is a deprecated alias for NKE_CONTROLLER_HTTP_PORT.
+NKE_CONTROLLER_HTTP_PORT="${NKE_CONTROLLER_HTTP_PORT:-${CWE_HTTP_PORT:-8080}}"
+API_URL="${API_URL:-http://localhost:${NKE_CONTROLLER_HTTP_PORT}/api}"
 CLUSTERS_API_URL="${API_URL%/}/clusters"
 
 # /api/* is authenticated. hack/nke-token.sh prints nothing when NKE is not, so

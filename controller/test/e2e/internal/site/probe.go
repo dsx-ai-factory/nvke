@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
 )
 
@@ -92,7 +92,7 @@ func probeCWE(ctx context.Context, kubeconfig string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	forwarder, err := kube.NewServiceForwarder(restConfig, cwe.Namespace(), cwe.Service(), cwe.Port())
+	forwarder, err := kube.NewServiceForwarder(restConfig, controller.Namespace(), controller.Service(), controller.Port())
 	if err != nil {
 		return "", err
 	}

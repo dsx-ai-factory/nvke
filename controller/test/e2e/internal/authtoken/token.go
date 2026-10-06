@@ -25,10 +25,10 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/yaml"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 )
 
-// Where the authentication configuration lives, in cwe.Namespace().
+// Where the authentication configuration lives, in controller.Namespace().
 const (
 	ConfigMapName = "nke-auth-config"
 	ConfigMapKey  = "auth.yaml"
@@ -102,7 +102,7 @@ func New(client kubernetes.Interface, opts Options) (*Source, error) {
 	}
 	if opts.Audience == "" {
 		return nil, fmt.Errorf("authtoken: an audience is required; it is read from the %s/%s ConfigMap or set with %s",
-			cwe.Namespace(), ConfigMapName, EnvAudience)
+			controller.Namespace(), ConfigMapName, EnvAudience)
 	}
 
 	if opts.TTL > 0 && opts.TTL < MinTTL {
@@ -184,7 +184,7 @@ func discover(ctx context.Context, client kubernetes.Interface) (*Source, bool, 
 // nke-auth-config ConfigMap; found is false, with a nil error, when it does not
 // exist. It stops at the bytes, and each caller decodes what it asserts on.
 func RawConfig(ctx context.Context, client kubernetes.Interface) ([]byte, bool, error) {
-	namespace := cwe.Namespace()
+	namespace := controller.Namespace()
 	cm, err := client.CoreV1().ConfigMaps(namespace).Get(ctx, ConfigMapName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return nil, false, nil
@@ -215,10 +215,10 @@ func AudienceFromCluster(ctx context.Context, client kubernetes.Interface) (stri
 		Audiences []string `json:"audiences"`
 	}
 	if err := yaml.Unmarshal(raw, &parsed); err != nil {
-		return "", false, fmt.Errorf("authtoken: parsing %s from ConfigMap %s/%s: %w", ConfigMapKey, cwe.Namespace(), ConfigMapName, err)
+		return "", false, fmt.Errorf("authtoken: parsing %s from ConfigMap %s/%s: %w", ConfigMapKey, controller.Namespace(), ConfigMapName, err)
 	}
 	if len(parsed.Audiences) == 0 || parsed.Audiences[0] == "" {
-		return "", false, fmt.Errorf("authtoken: ConfigMap %s/%s sets no top-level audiences", cwe.Namespace(), ConfigMapName)
+		return "", false, fmt.Errorf("authtoken: ConfigMap %s/%s sets no top-level audiences", controller.Namespace(), ConfigMapName)
 	}
 	return parsed.Audiences[0], true, nil
 }

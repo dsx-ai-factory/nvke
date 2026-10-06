@@ -19,7 +19,7 @@ import (
 
 	"github.com/dsx-ai-factory/nke/controller/api"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/authtoken"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
 )
 
@@ -80,7 +80,7 @@ func NewClient(ctx context.Context, restConfig *rest.Config, opts Options) (*Cli
 // than discovered. A nil tokens sends no Authorization header, which is both
 // the no-authentication deployment and the 401 case.
 func NewClientWithTokenSource(restConfig *rest.Config, opts Options, tokens TokenSource) (*Client, error) {
-	forwarder, err := kube.SharedServiceForwarder(restConfig, cwe.Namespace(), cwe.Service(), cwe.Port())
+	forwarder, err := kube.SharedServiceForwarder(restConfig, controller.Namespace(), controller.Service(), controller.Port())
 	if err != nil {
 		return nil, fmt.Errorf("building NKE port-forward: %w", err)
 	}

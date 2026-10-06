@@ -48,7 +48,7 @@ env:
     value: "false"
 
 # ---------------------------------------------------------------------------
-# Moved here from controller/hack/tilt-cwe-chart-values.yaml, which the lane
+# Moved here from controller/hack/tilt-controller-chart-values.yaml, which the lane
 # used to read off disk and pass as a second --values file. It is static
 # configuration -- the same on every run -- so it belongs in the overlay: a
 # deploy path that does not carry it under-describes the deployment, and a
@@ -107,7 +107,7 @@ readinessProbe:
 
 appDb:
   url: postgres-postgresql.postgres.svc.cluster.local:5432
-  dbName: cloud-workflow
+  dbName: nke-controller
   postgresUser: postgres
   # postgresPassword is supplied by the Tiltfile from CNPG_SUPERUSER_PASSWORD —
   # do not hardcode it here.
@@ -119,6 +119,9 @@ secrets:
 temporal:
   host: temporal-frontend.temporal.svc.cluster.local
   port: 7233
+  cloudWorkflow:
+    namespace: nke-controller
+    queue: nke-controller-tasks
 
 profiles:
   path: /profiles
@@ -141,3 +144,13 @@ spiffe:
     className: spire-mgmt-spire
     tpmPubhashesConfigMapName: tpm-pubhashes
     serverPort: "30440"
+
+# The greenfield site profile, which the chart's legacy defaults do not carry.
+identity:
+  fieldManagerName: nke-controller
+  fieldManagerRebootMachineName: nke-controller-reboot-machine
+  fieldManagerMachineHealthIssueName: nke-controller-machine-health-issue
+  managedByLabelValue: nke-controller
+teleport:
+  managedByLabelValue: nke-controller
+  tokenNamePrefix: nke-controller-

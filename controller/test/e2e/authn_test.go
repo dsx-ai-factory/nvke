@@ -26,7 +26,7 @@ import (
 
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/authtoken"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 )
@@ -51,13 +51,13 @@ var _ = Describe("NKE API authentication", Label("authn"), func() {
 		if !found {
 			authnAbsentf(
 				"authentication is OFF: ConfigMap %s/%s does not exist, so this NKE is configured to authenticate nobody and there is no audience to mint against",
-				cwe.Namespace(), authtoken.ConfigMapName,
+				controller.Namespace(), authtoken.ConfigMapName,
 			)
 		}
 		if mode == authnModeDisabled {
 			authnAbsentf(
 				"authentication is OFF: %s is not set on Deployment %s/%s, so the authentication middleware is not in the request chain even though ConfigMap %s carries an audience",
-				authnConfigPathEnv, cwe.Namespace(), cwe.Deployment(), authtoken.ConfigMapName,
+				authnConfigPathEnv, controller.Namespace(), controller.Deployment(), authtoken.ConfigMapName,
 			)
 		}
 	})
@@ -69,7 +69,7 @@ var _ = Describe("NKE API authentication", Label("authn"), func() {
 		if mode == authnModePermissive {
 			Skip(fmt.Sprintf(
 				"authentication is PERMISSIVE: %s=true on Deployment %s/%s, so a rejected request is counted and then served, and 200 is the correct answer to this case",
-				authnPermissiveEnv, cwe.Namespace(), cwe.Deployment(),
+				authnPermissiveEnv, controller.Namespace(), controller.Deployment(),
 			))
 		}
 	}
@@ -219,14 +219,14 @@ const authnTimeout = 60 * time.Second
 // ConfigMap ref reads empty for PERMISSIVE_MODE and so reports enforcing, the
 // safe direction; nothing shipped sources it that way.
 func detectAuthnEnforcement(ctx context.Context, clientset kubernetes.Interface) (string, error) {
-	deployment, err := clientset.AppsV1().Deployments(cwe.Namespace()).Get(ctx, cwe.Deployment(), metav1.GetOptions{})
+	deployment, err := clientset.AppsV1().Deployments(controller.Namespace()).Get(ctx, controller.Deployment(), metav1.GetOptions{})
 	if err != nil {
-		return "", fmt.Errorf("getting Deployment %s/%s: %w", cwe.Namespace(), cwe.Deployment(), err)
+		return "", fmt.Errorf("getting Deployment %s/%s: %w", controller.Namespace(), controller.Deployment(), err)
 	}
 
 	container := cweContainer(deployment)
 	if container == nil {
-		return "", fmt.Errorf("deployment %s/%s has no container named %s", cwe.Namespace(), cwe.Deployment(), cwe.Deployment())
+		return "", fmt.Errorf("deployment %s/%s has no container named %s", controller.Namespace(), controller.Deployment(), controller.Deployment())
 	}
 
 	if _, found := containerEnvValue(container, authnConfigPathEnv); !found {
@@ -242,7 +242,7 @@ func detectAuthnEnforcement(ctx context.Context, clientset kubernetes.Interface)
 // read a sidecar's PERMISSIVE_MODE as NKE's.
 func cweContainer(deployment *appsv1.Deployment) *corev1.Container {
 	for i := range deployment.Spec.Template.Spec.Containers {
-		if deployment.Spec.Template.Spec.Containers[i].Name == cwe.Deployment() {
+		if deployment.Spec.Template.Spec.Containers[i].Name == controller.Deployment() {
 			return &deployment.Spec.Template.Spec.Containers[i]
 		}
 	}
@@ -333,7 +333,7 @@ func parseAuthnRequired(raw string) (bool, error) {
 // to arrive exactly as written rather than as the generated client builds it.
 func authnForwarder(restConfig *rest.Config) *kube.ServiceForwarder {
 	GinkgoHelper()
-	forwarder, err := kube.SharedServiceForwarder(restConfig, cwe.Namespace(), cwe.Service(), cwe.Port())
+	forwarder, err := kube.SharedServiceForwarder(restConfig, controller.Namespace(), controller.Service(), controller.Port())
 	Expect(err).NotTo(HaveOccurred(), "build port-forward client")
 	return forwarder
 }
@@ -401,11 +401,11 @@ func expectNoTokenEcho(body []byte, token string) {
 func TestDetectAuthnEnforcement(t *testing.T) {
 	deployment := func(env ...corev1.EnvVar) *appsv1.Deployment {
 		return &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Namespace: cwe.Namespace(), Name: cwe.Deployment()},
+			ObjectMeta: metav1.ObjectMeta{Namespace: controller.Namespace(), Name: controller.Deployment()},
 			Spec: appsv1.DeploymentSpec{
 				Template: corev1.PodTemplateSpec{
 					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{{Name: cwe.Deployment(), Env: env}},
+						Containers: []corev1.Container{{Name: controller.Deployment(), Env: env}},
 					},
 				},
 			},
@@ -477,7 +477,7 @@ func TestDetectAuthnEnforcement(t *testing.T) {
 	t.Run("a sidecar's environment is not NKE's", func(t *testing.T) {
 		// A sidecar's AUTH_CONFIG_PATH is not NKE's.
 		sidecarOnly := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Namespace: cwe.Namespace(), Name: cwe.Deployment()},
+			ObjectMeta: metav1.ObjectMeta{Namespace: controller.Namespace(), Name: controller.Deployment()},
 			Spec: appsv1.DeploymentSpec{
 				Template: corev1.PodTemplateSpec{
 					Spec: corev1.PodSpec{Containers: []corev1.Container{{

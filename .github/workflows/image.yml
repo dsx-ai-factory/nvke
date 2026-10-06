@@ -105,7 +105,7 @@ jobs:
           check agent/Dockerfile.nke-builder             agent
 
           # These three are checked but never built: capd-kindest-node and
-          # cwe.tilt need inputs CI does not have, and Dockerfile.proto is
+          # controller.tilt need inputs CI does not have, and Dockerfile.proto is
           # developer tooling.
           check controller/hack/capd-kindest-node/Dockerfile      controller/hack/capd-kindest-node
           check agent/internal-scripts/docker/Dockerfile.proto    agent/internal-scripts/docker
@@ -117,11 +117,11 @@ jobs:
           # capd-kindest-node derives that local one from in the first place.
           check cli/e2e/bootstrap/substrate/node/Dockerfile       cli/e2e/bootstrap/substrate/node \
                 --build-arg BASE_IMAGE=kindest/node:v1.34.8
-          # Tiltfile builds cwe.tilt from a temporary directory holding bin/,
+          # Tiltfile builds controller.tilt from a temporary directory holding bin/,
           # profiles/ and ui/, so its real context does not exist in the tree.
           # Using controller/ instead fails on CopyIgnoredFile, because
           # controller/.dockerignore excludes **/bin.
-          check controller/hack/Dockerfile.cwe.tilt               controller/hack
+          check controller/hack/Dockerfile.controller.tilt        controller/hack
 
           # The profiles fixture is the one non-shipped image whose context IS
           # in the tree, so it is built for real below rather than only parsed.
@@ -288,7 +288,7 @@ jobs:
           sarif_file: ${{ steps.image-scan.outputs.sarif }}
           category: grype-image
 
-# Not built here: controller/hack/Dockerfile.cwe.tilt — it only copies a
+# Not built here: controller/hack/Dockerfile.controller.tilt — it only copies a
 # prebuilt binary, so it has nothing to verify without a preceding build.
 #
 # Nothing is pushed here. Publishing to nvcr.io lives in the per-component

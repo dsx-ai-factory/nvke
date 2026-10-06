@@ -4,6 +4,7 @@
 package e2e
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -22,7 +23,7 @@ import (
 )
 
 // errOSProfileMetadataUnavailable is returned when fleet OS profile metadata
-// cannot be located (sibling nke-site-deploy / CWE_PROFILES_DIR / PROFILES_DIR).
+// cannot be located (sibling nke-site-deploy / NKE_CONTROLLER_PROFILES_DIR / PROFILES_DIR).
 var errOSProfileMetadataUnavailable = errors.New("OS profile fleet metadata unavailable")
 
 func isOSProfileMetadataUnavailable(err error) bool {
@@ -227,15 +228,16 @@ func loadActiveOSProfileMetadata() (osProfileMetadataIndex, error) {
 }
 
 // resolveOSProfileMetadataPath finds fleet OS profile metadata (moved to
-// nke-site-deploy). Order: CWE_PROFILES_DIR, PROFILES_DIR, sibling
-// nke-site-deploy checkout, in-repo mirror.
+// nke-site-deploy). Order: NKE_CONTROLLER_PROFILES_DIR (the deprecated
+// CWE_PROFILES_DIR still works), PROFILES_DIR, sibling nke-site-deploy
+// checkout, in-repo mirror.
 //
 // The mirror is last so a real checkout always wins. It is a separate tree from
 // test/fixtures/profiles, which holds synthetic entries that are not OS profiles
 // and would otherwise turn into matrix specs.
 func resolveOSProfileMetadataPath() (string, error) {
 	candidates := make([]string, 0, 4)
-	if dir := os.Getenv("CWE_PROFILES_DIR"); dir != "" {
+	if dir := cmp.Or(os.Getenv("NKE_CONTROLLER_PROFILES_DIR"), os.Getenv("CWE_PROFILES_DIR")); dir != "" {
 		candidates = append(candidates, filepath.Join(dir, "osProfiles", "metadata.yaml"))
 	}
 	if dir := os.Getenv("PROFILES_DIR"); dir != "" {
@@ -259,7 +261,7 @@ func resolveOSProfileMetadataPath() (string, error) {
 		}
 		missing = append(missing, path)
 	}
-	return "", fmt.Errorf("%w (set CWE_PROFILES_DIR to nke-site-deploy/cwe-profiles/profiles); tried: %s", errOSProfileMetadataUnavailable, strings.Join(missing, ", "))
+	return "", fmt.Errorf("%w (set NKE_CONTROLLER_PROFILES_DIR to nke-site-deploy/cwe-profiles/profiles); tried: %s", errOSProfileMetadataUnavailable, strings.Join(missing, ", "))
 }
 
 func TestNicoVMSOSProfileMatrix(t *testing.T) {

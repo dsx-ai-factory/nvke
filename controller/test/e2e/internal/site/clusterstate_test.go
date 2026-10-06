@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 )
 
 // The collector's whole value is that it separates "CWE is not ready" from
@@ -107,7 +107,7 @@ func TestClusterStateSurvivesANewlineEatingTransport(t *testing.T) {
 }
 
 // The collector has to read the namespace CWE is deployed into, which on a
-// site cluster is cwe.Namespace(). Run 37582097398 dumped every namespace and
+// site cluster is controller.Namespace(). Run 37582097398 dumped every namespace and
 // found CWE running there, and found nke-controller empty.
 //
 // nke-controller is where nkectl's own bootstrap cluster puts it
@@ -116,16 +116,22 @@ func TestClusterStateSurvivesANewlineEatingTransport(t *testing.T) {
 // resources found" for every section -- indistinguishable, in the artifact,
 // from a cluster with nothing running, which is how run 37582097398 was read
 // at first.
+//
+// The suite's own default is nke-controller, so the test configures the
+// legacy name a site like that one runs under: only then does reading
+// nke-controller mean the collector ignored the configuration.
 func TestClusterStateReadsTheNamespaceCWEIsDeployedInto(t *testing.T) {
+	t.Setenv(controller.EnvNamespace, "cloud-workflow-engine")
+	t.Setenv(controller.EnvService, "cloud-workflow-engine")
 	script := clusterStateScript()
-	if !strings.Contains(script, "-n "+shellQuote(cwe.Namespace())) {
-		t.Errorf("the script does not read namespace %s:\n%s", cwe.Namespace(), script)
+	if !strings.Contains(script, "-n "+shellQuote(controller.Namespace())) {
+		t.Errorf("the script does not read namespace %s:\n%s", controller.Namespace(), script)
 	}
 	if strings.Contains(script, "nke-controller") {
 		t.Errorf("the script reads nke-controller, which is the bootstrap cluster's namespace and empty on a site:\n%s", script)
 	}
-	if !strings.Contains(script, "app.kubernetes.io/name="+cwe.Service()) {
-		t.Errorf("the controller log selector does not name %s:\n%s", cwe.Service(), script)
+	if !strings.Contains(script, "app.kubernetes.io/name="+controller.Service()) {
+		t.Errorf("the controller log selector does not name %s:\n%s", controller.Service(), script)
 	}
 }
 

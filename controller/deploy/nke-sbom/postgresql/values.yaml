@@ -30,11 +30,11 @@ primary:
       memory: 512Mi
     requests:
       memory: 256Mi
-  # The databases CWE and Temporal expect to exist. Nothing else creates them.
+  # The databases the controller and Temporal expect to exist. Nothing else creates them.
   initdb:
     scripts:
       init-cwe.sql: |
-        CREATE DATABASE "cloud-workflow";
+        CREATE DATABASE "nke-controller";
       init-temporal.sql: |
         CREATE DATABASE temporal;
         CREATE DATABASE temporal_visibility;

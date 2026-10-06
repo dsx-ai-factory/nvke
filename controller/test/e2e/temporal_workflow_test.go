@@ -59,8 +59,8 @@ func runTemporalWorkflow(
 	operator.Args = []string{
 		"workflow", "execute",
 		"--address", envOrDefault("E2E_TEMPORAL_ADDRESS", "temporal-frontend."+temporalNamespace+".svc.cluster.local:7233"),
-		"--namespace", envOrDefault("E2E_TEMPORAL_NAMESPACE", "cloud-workflow-engine"),
-		"--task-queue", envOrDefault("E2E_TEMPORAL_TASK_QUEUE", "cloud-workflow-engine-tasks"),
+		"--namespace", envOrDefault("E2E_TEMPORAL_NAMESPACE", "nke-controller"),
+		"--task-queue", envOrDefault("E2E_TEMPORAL_TASK_QUEUE", "nke-controller-tasks"),
 		"--type", workflowType,
 		"--workflow-id", workflowID,
 		"--execution-timeout", timeout.String(),

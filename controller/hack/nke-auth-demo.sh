@@ -37,16 +37,17 @@ Scaffolding lives in deploy/k8s/nke-auth-dev.yaml (namespaces, service accounts,
 token-minter RBAC, nke-auth-config). The chart mounts the config and binds the
 JWKS read permission.
 
-Environment: KUBE_CONTEXT, CWE_NAMESPACE, NKE_DEPLOYMENT, CWE_HTTP_PORT,
+Environment: KUBE_CONTEXT, NKE_CONTROLLER_NAMESPACE, NKE_DEPLOYMENT, NKE_CONTROLLER_HTTP_PORT,
 NKE_HTTP_URL, NKE_METRICS_PORT, NKE_METRICS_LOCAL_PORT, PROBE_PATH, TOKEN_TTL.
 EOF
 }
 
 KUBE_CONTEXT="${KUBE_CONTEXT:-kind-cwe-capi}"
-CWE_NAMESPACE="${CWE_NAMESPACE:-cloud-workflow-engine}"
+# CWE_NAMESPACE and CWE_HTTP_PORT are deprecated aliases for one release.
+NKE_CONTROLLER_NAMESPACE="${NKE_CONTROLLER_NAMESPACE:-${CWE_NAMESPACE:-}}"
 NKE_DEPLOYMENT="${NKE_DEPLOYMENT:-}"
-CWE_HTTP_PORT="${CWE_HTTP_PORT:-8080}"
-NKE_HTTP_URL="${NKE_HTTP_URL:-http://127.0.0.1:${CWE_HTTP_PORT}}"
+NKE_CONTROLLER_HTTP_PORT="${NKE_CONTROLLER_HTTP_PORT:-${CWE_HTTP_PORT:-8080}}"
+NKE_HTTP_URL="${NKE_HTTP_URL:-http://127.0.0.1:${NKE_CONTROLLER_HTTP_PORT}}"
 # Metrics are a separate listener (METRICS_LISTEN_ADDRESS, chart default
 # 0.0.0.0:9090) that neither the Service nor Tilt publishes, so this script
 # forwards that port itself.
@@ -58,7 +59,7 @@ TOKEN_TTL="${TOKEN_TTL:-10m}"
 # Exported because nke-token.sh runs as a child process and reads them from the
 # environment. Without this it would use the kubeconfig's current context while
 # this script targets KUBE_CONTEXT.
-export KUBE_CONTEXT CWE_NAMESPACE NKE_DEPLOYMENT
+export KUBE_CONTEXT NKE_CONTROLLER_NAMESPACE NKE_DEPLOYMENT
 
 ADMITTED_NS="nke-clients"
 ADMITTED_SA="nke-client"
@@ -90,8 +91,20 @@ need() { command -v "$1" >/dev/null 2>&1 || die "$1 not found on PATH"; }
 need kubectl
 need curl
 
-"${KUBECTL[@]}" get ns "${CWE_NAMESPACE}" >/dev/null 2>&1 \
-  || die "namespace ${CWE_NAMESPACE} not found in context ${KUBE_CONTEXT}"
+if [[ -z "${NKE_CONTROLLER_NAMESPACE}" ]]; then
+  # Same order nkectl uses: the greenfield namespace if it holds the auth
+  # ConfigMap, else the legacy one. Only a confirmed absence falls back.
+  found="$(
+    "${KUBECTL[@]}" get configmap nke-auth-config -n nke-controller \
+      --ignore-not-found -o name 2>&1
+  )" || die "cannot look up configmap nke-controller/nke-auth-config: ${found}"
+  NKE_CONTROLLER_NAMESPACE="cloud-workflow-engine"
+  grep -qx "configmap/nke-auth-config" <<<"${found}" && NKE_CONTROLLER_NAMESPACE="nke-controller"
+  export NKE_CONTROLLER_NAMESPACE
+fi
+
+"${KUBECTL[@]}" get ns "${NKE_CONTROLLER_NAMESPACE}" >/dev/null 2>&1 \
+  || die "namespace ${NKE_CONTROLLER_NAMESPACE} not found in context ${KUBE_CONTEXT}"
 
 # --- scaffolding preflight ------------------------------------------------
 
@@ -100,8 +113,8 @@ missing=()
   || missing+=("serviceaccount ${ADMITTED_NS}/${ADMITTED_SA}")
 "${KUBECTL[@]}" get sa "${OUTSIDER_SA}" -n "${OUTSIDER_NS}" >/dev/null 2>&1 \
   || missing+=("serviceaccount ${OUTSIDER_NS}/${OUTSIDER_SA}")
-"${KUBECTL[@]}" get configmap nke-auth-config -n "${CWE_NAMESPACE}" >/dev/null 2>&1 \
-  || missing+=("configmap ${CWE_NAMESPACE}/nke-auth-config")
+"${KUBECTL[@]}" get configmap nke-auth-config -n "${NKE_CONTROLLER_NAMESPACE}" >/dev/null 2>&1 \
+  || missing+=("configmap ${NKE_CONTROLLER_NAMESPACE}/nke-auth-config")
 if [[ ${#missing[@]} -gt 0 ]]; then
   printf 'FATAL: missing scaffolding:\n' >&2
   printf '  - %s\n' "${missing[@]}" >&2
@@ -111,11 +124,11 @@ fi
 
 # nke-token.sh picks nke-controller or cloud-workflow-engine when unset.
 NKE_DEPLOYMENT="$("${SCRIPT_DIR}/nke-token.sh" --deployment)"
-[[ -n "${NKE_DEPLOYMENT}" ]] || die "could not resolve NKE's Deployment in ${CWE_NAMESPACE}"
+[[ -n "${NKE_DEPLOYMENT}" ]] || die "could not resolve NKE's Deployment in ${NKE_CONTROLLER_NAMESPACE}"
 
 # The audience comes from the live deployment, via nke-token.sh.
 AUDIENCE="$("${SCRIPT_DIR}/nke-token.sh" --audience)"
-[[ -n "${AUDIENCE}" ]] || die "could not read the audience from configmap ${CWE_NAMESPACE}/nke-auth-config"
+[[ -n "${AUDIENCE}" ]] || die "could not read the audience from configmap ${NKE_CONTROLLER_NAMESPACE}/nke-auth-config"
 
 # --- mode detection -------------------------------------------------------
 
@@ -123,7 +136,7 @@ if [[ -z "${MODE}" ]]; then
   # By container name, not index: a sidecar can sort first, and its environment
   # would report the wrong mode.
   container_env() {
-    "${KUBECTL[@]}" get deploy "${NKE_DEPLOYMENT}" -n "${CWE_NAMESPACE}" \
+    "${KUBECTL[@]}" get deploy "${NKE_DEPLOYMENT}" -n "${NKE_CONTROLLER_NAMESPACE}" \
       -o jsonpath="{.spec.template.spec.containers[?(@.name=='${NKE_DEPLOYMENT}')].env[?(@.name=='$1')].value}" 2>/dev/null
   }
   auth_path="$(container_env AUTH_CONFIG_PATH)"
@@ -171,8 +184,8 @@ wait_for_port() {
 # Reuse Tilt's forward on 8080 when it is already up (Tiltfile port_forwards).
 if ! curl -s -o /dev/null --max-time 2 "${NKE_HTTP_URL}/api/version"; then
   echo "no listener on ${NKE_HTTP_URL}, starting a port-forward"
-  "${KUBECTL[@]}" -n "${CWE_NAMESPACE}" port-forward \
-    "deploy/${NKE_DEPLOYMENT}" "${CWE_HTTP_PORT}:8080" >/dev/null 2>&1 &
+  "${KUBECTL[@]}" -n "${NKE_CONTROLLER_NAMESPACE}" port-forward \
+    "deploy/${NKE_DEPLOYMENT}" "${NKE_CONTROLLER_HTTP_PORT}:8080" >/dev/null 2>&1 &
   PF_PIDS+=("$!")
   wait_for_port "${NKE_HTTP_URL}/api/version" \
     || die "could not reach NKE on ${NKE_HTTP_URL}"
@@ -180,7 +193,7 @@ fi
 
 METRICS_URL="http://127.0.0.1:${NKE_METRICS_LOCAL_PORT}/metrics"
 metrics_available=0
-"${KUBECTL[@]}" -n "${CWE_NAMESPACE}" port-forward \
+"${KUBECTL[@]}" -n "${NKE_CONTROLLER_NAMESPACE}" port-forward \
   "deploy/${NKE_DEPLOYMENT}" "${NKE_METRICS_LOCAL_PORT}:${NKE_METRICS_PORT}" >/dev/null 2>&1 &
 PF_PIDS+=("$!")
 if wait_for_port "${METRICS_URL}"; then

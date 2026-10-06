@@ -152,10 +152,10 @@ def register(ctx):
         k8s_yaml(read_file(os.path.join(ctx.main_dir, "hack/node-agent-external-mtls/controller-client-certificate.yaml")))
         k8s_resource(
             objects=[
-                "dsx-controller-client-bootstrap:issuer:cloud-workflow-engine",
-                "dsx-controller-client-ca:certificate:cloud-workflow-engine",
-                "dsx-controller-client-ca:issuer:cloud-workflow-engine",
-                "dsx-controller-client:certificate:cloud-workflow-engine",
+                "dsx-controller-client-bootstrap:issuer:nke-controller",
+                "dsx-controller-client-ca:certificate:nke-controller",
+                "dsx-controller-client-ca:issuer:nke-controller",
+                "dsx-controller-client:certificate:nke-controller",
             ],
             new_name="dsx-controller-client-certificate",
             labels=["1-infra"],
@@ -166,9 +166,9 @@ def register(ctx):
             labels=["1-infra"],
             cmd=["bash", "-c", """
               set -euo pipefail
-              kubectl --context kind-%s -n cloud-workflow-engine wait \
+              kubectl --context kind-%s -n nke-controller wait \
                 --for=condition=Ready certificate/dsx-controller-client --timeout=180s
-              kubectl --context kind-%s -n cloud-workflow-engine get secret dsx-controller-client -o json |
+              kubectl --context kind-%s -n nke-controller get secret dsx-controller-client -o json |
                 jq -e '.data["tls.crt"] and .data["tls.key"] and .data["ca.crt"]' >/dev/null
             """ % (ctx.kind_cluster_name, ctx.kind_cluster_name)],
             resource_deps=["dsx-controller-client-certificate"],

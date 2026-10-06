@@ -4,17 +4,19 @@
 package e2e
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
 )
 
@@ -27,20 +29,48 @@ type healthConfig struct {
 }
 
 func loadHealthConfig() (healthConfig, error) {
-	timeout, err := time.ParseDuration(envOrDefault("CWE_HEALTH_TIMEOUT", "60s"))
+	timeout, err := time.ParseDuration(envOrDefaultLegacy("NKE_CONTROLLER_HEALTH_TIMEOUT", "CWE_HEALTH_TIMEOUT", "60s"))
 	if err != nil {
-		return healthConfig{}, fmt.Errorf("parsing CWE_HEALTH_TIMEOUT: %w", err)
+		return healthConfig{}, fmt.Errorf("parsing NKE_CONTROLLER_HEALTH_TIMEOUT: %w", err)
 	}
 
-	// Where NKE is, from internal/cwe, which reads the same CWE_NAMESPACE /
-	// CWE_SERVICE / CWE_SERVICE_PORT everything else looking for NKE reads.
+	// Where the controller is, from internal/controller, which reads the same
+	// NKE_CONTROLLER_NAMESPACE / NKE_CONTROLLER_SERVICE / NKE_CONTROLLER_SERVICE_PORT
+	// everything else looking for the controller reads.
 	return healthConfig{
-		Namespace:       cwe.Namespace(),
-		Service:         cwe.Service(),
-		ServicePort:     cwe.Port(),
-		ExpectedVersion: envOrDefault("CWE_EXPECTED_VERSION", ""),
+		Namespace:       controller.Namespace(),
+		Service:         controller.Service(),
+		ServicePort:     controller.Port(),
+		ExpectedVersion: envOrDefaultLegacy("NKE_CONTROLLER_EXPECTED_VERSION", "CWE_EXPECTED_VERSION", ""),
 		Timeout:         timeout,
 	}, nil
+}
+
+// envOrDefaultLegacy reads key, then legacyKey (deprecated spelling of key,
+// still honored), then def. An empty value counts as unset, so an empty key
+// does not hide a set legacyKey.
+func envOrDefaultLegacy(key, legacyKey, def string) string {
+	return cmp.Or(os.Getenv(key), os.Getenv(legacyKey), def)
+}
+
+func TestUnit_EnvOrDefaultLegacy(t *testing.T) {
+	const key, legacyKey = "NKE_E2E_TEST_NEW", "NKE_E2E_TEST_OLD"
+	for _, tc := range []struct {
+		name, value, legacy, want string
+	}{
+		{name: "default when neither is set", want: "def"},
+		{name: "legacy name when only it is set", legacy: "old", want: "old"},
+		{name: "new name wins over legacy", value: "new", legacy: "old", want: "new"},
+		{name: "empty new name does not hide legacy", value: "", legacy: "old", want: "old"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(key, tc.value)
+			t.Setenv(legacyKey, tc.legacy)
+			if got := envOrDefaultLegacy(key, legacyKey, "def"); got != tc.want {
+				t.Errorf("envOrDefaultLegacy = %q, want %q", got, tc.want)
+			}
+		})
+	}
 }
 
 func envOrDefault(key, def string) string {
@@ -98,7 +128,7 @@ var _ = Describe("CWE management-plane health", Label("health"), func() {
 		defer cancel()
 
 		if hc.ExpectedVersion == "" {
-			Skip("CWE_EXPECTED_VERSION is not set")
+			Skip("NKE_CONTROLLER_EXPECTED_VERSION is not set")
 		}
 
 		statusCode, body, err := forwarder.Get(tctx, "/api/version")

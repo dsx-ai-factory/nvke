@@ -1,8 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-fullnameOverride: cloud-workflow-engine
-namespaceOverride: cloud-workflow-engine
+fullnameOverride: nke-controller
+namespaceOverride: nke-controller
+nameOverride: nke-controller
+
+serviceAccount:
+  name: nke-controller
 
 nkeSystemNamespace:
   create: false
@@ -38,7 +42,7 @@ readinessProbe:
 
 appDb:
   url: postgres-postgresql.postgres.svc.cluster.local:5432
-  dbName: cloud-workflow
+  dbName: nke-controller
   postgresUser: postgres
   # postgresPassword is supplied by the Tiltfile from CNPG_SUPERUSER_PASSWORD —
   # do not hardcode it here.
@@ -50,6 +54,19 @@ secrets:
 temporal:
   host: temporal-frontend.temporal.svc.cluster.local
   port: 7233
+  cloudWorkflow:
+    namespace: nke-controller
+    queue: nke-controller-tasks
+
+identity:
+  fieldManagerName: nke-controller
+  fieldManagerRebootMachineName: nke-controller-reboot-machine
+  fieldManagerMachineHealthIssueName: nke-controller-machine-health-issue
+  managedByLabelValue: nke-controller
+
+teleport:
+  managedByLabelValue: nke-controller
+  tokenNamePrefix: nke-controller-
 
 profiles:
   path: /profiles

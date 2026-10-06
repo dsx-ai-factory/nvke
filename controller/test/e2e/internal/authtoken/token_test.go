@@ -23,7 +23,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 )
 
 // fakeClock crosses the refresh boundary without sleeping through a lifetime.
@@ -380,7 +380,7 @@ func TestAudienceFromCluster(t *testing.T) {
 			objects := []runtime.Object{}
 			if !tc.absent {
 				objects = append(objects, &corev1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{Name: ConfigMapName, Namespace: cwe.Namespace()},
+					ObjectMeta: metav1.ObjectMeta{Name: ConfigMapName, Namespace: controller.Namespace()},
 					Data:       tc.data,
 				})
 			}

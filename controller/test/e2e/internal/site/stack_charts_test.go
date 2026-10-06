@@ -17,7 +17,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 )
 
 // These tests run what Stack renders through the deploy path's own scripts and
@@ -168,8 +168,8 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading the deploy path's controller name: %v", err)
 	}
-	t.Setenv(cwe.EnvNamespace, name)
-	t.Setenv(cwe.EnvService, name)
+	t.Setenv(controller.EnvNamespace, name)
+	t.Setenv(controller.EnvService, name)
 	values := renderValues(t, assets)
 	deploy := filepath.Join(assets, "controller", "deploy")
 
@@ -196,10 +196,10 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 		}
 	}
 	for release, file := range map[string]string{
-		"controller": "controller.yaml",
-		"spire":      "spire.yaml",
-		"postgres":   "postgresql.yaml",
-		"temporal":   "temporal.yaml",
+		"nke-controller": "controller.yaml",
+		"spire":          "spire.yaml",
+		"postgres":       "postgresql.yaml",
+		"temporal":       "temporal.yaml",
 	} {
 		install, ok := installs[release]
 		if !ok {
@@ -212,7 +212,7 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 	}
 
 	t.Run("controller chart", func(t *testing.T) {
-		install, ok := installs["controller"]
+		install, ok := installs["nke-controller"]
 		if !ok {
 			t.Skip("no controller install")
 		}
@@ -246,10 +246,21 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 		for name, want := range map[string]string{
 			"NODE_AGENT_PORT":          nodeAgentPort,
 			"SPIRE_SERVER_API_ADDRESS": spireServerAPIAddress,
+			// The greenfield profile, not the chart's legacy defaults.
+			"TEMPORAL_NAMESPACE":                controllerName(),
+			"TEMPORAL_TASK_QUEUE":               controllerName() + "-tasks",
+			"FIELD_MANAGER_NAME":                controllerName(),
+			"FIELD_MANAGER_REBOOT_MACHINE_NAME": controllerName() + "-reboot-machine",
+			"MANAGED_BY_LABEL_VALUE":            controllerName(),
+			"TELEPORT_MANAGED_BY_LABEL_VALUE":   controllerName(),
+			"TELEPORT_TOKEN_NAME_PREFIX":        controllerName() + "-",
 		} {
 			if env[name] != want {
 				t.Errorf("CWE env %s = %v, want %s", name, env[name], want)
 			}
+		}
+		if got, _ := env["DB_CONNECTION_STRING"].(string); !strings.Contains(got, "/"+controllerName()+"?") {
+			t.Errorf("DB_CONNECTION_STRING = %v, want database %s", got, controllerName())
 		}
 
 		for _, want := range []string{
@@ -308,6 +319,9 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 		if got := dig(t, secret, "data", "postgres-password"); got != wantDBSecret {
 			t.Errorf("postgres-password = %v, want %s: the chart generated one of its own, so nothing "+
 				"connecting as postgres holds what the other releases were given", got, wantDBSecret)
+		}
+		if want := `CREATE DATABASE "` + controllerName() + `"`; !strings.Contains(manifest, want) {
+			t.Errorf("postgres chart does not render %s: nothing creates the controller's database", want)
 		}
 	})
 

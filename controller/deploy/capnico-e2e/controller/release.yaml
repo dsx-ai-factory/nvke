@@ -13,7 +13,7 @@ chart:
   version: "0.0.0"
   path: ../charts/controller
 release:
-  name: controller
+  name: nke-controller
   namespace: nke-controller
 values:
   - values.yaml

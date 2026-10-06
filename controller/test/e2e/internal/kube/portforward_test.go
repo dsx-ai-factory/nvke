@@ -339,11 +339,11 @@ func cweForwarder(t *testing.T) (*fake.Clientset, *resolvingStarter, *ServiceFor
 	clientset := fake.NewClientset(cweService(), readyCWEPod("cwe-old"))
 	starter := &resolvingStarter{inner: &podForwardStarter{
 		clientset: clientset,
-		namespace: "cloud-workflow-engine",
-		service:   "cloud-workflow-engine",
+		namespace: "nke-controller",
+		service:   "nke-controller",
 		port:      "8080",
 	}}
-	forwarder := newTestForwarder(starter, "http://cloud-workflow-engine.cloud-workflow-engine.svc:8080")
+	forwarder := newTestForwarder(starter, "http://nke-controller.nke-controller.svc:8080")
 	t.Cleanup(forwarder.Close)
 	return clientset, starter, forwarder
 }
@@ -351,12 +351,12 @@ func cweForwarder(t *testing.T) (*fake.Clientset, *resolvingStarter, *ServiceFor
 func readyCWEPod(name string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "cloud-workflow-engine",
+			Namespace: "nke-controller",
 			Name:      name,
-			Labels:    map[string]string{nameLabel: "cloud-workflow-engine"},
+			Labels:    map[string]string{nameLabel: "nke-controller"},
 		},
 		Spec: corev1.PodSpec{Containers: []corev1.Container{{
-			Name:  "cloud-workflow-engine",
+			Name:  "nke-controller",
 			Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}},
 		}}},
 		Status: corev1.PodStatus{
@@ -368,9 +368,9 @@ func readyCWEPod(name string) *corev1.Pod {
 
 func cweService() *corev1.Service {
 	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "cloud-workflow-engine", Name: "cloud-workflow-engine"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "nke-controller", Name: "nke-controller"},
 		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{nameLabel: "cloud-workflow-engine"},
+			Selector: map[string]string{nameLabel: "nke-controller"},
 			Ports: []corev1.ServicePort{
 				{Name: "http", Port: 8080, TargetPort: intstr.FromString("http")},
 			},
@@ -389,7 +389,7 @@ func TestServiceForwarderRedialResolvesTheReplacementPod(t *testing.T) {
 		t.Fatalf("first request landed on pod %q, want cwe-old", pod)
 	}
 
-	pods := clientset.CoreV1().Pods("cloud-workflow-engine")
+	pods := clientset.CoreV1().Pods("nke-controller")
 	if err := pods.Delete(t.Context(), "cwe-old", metav1.DeleteOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +429,7 @@ func requestPod(t *testing.T, forwarder *ServiceForwarder) string {
 
 func TestSelectServicePort(t *testing.T) {
 	service := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "cloud-workflow-engine", Name: "cloud-workflow-engine"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "nke-controller", Name: "nke-controller"},
 		Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{
 			{Name: "http", Port: 8080, TargetPort: intstr.FromString("http")},
 			{Name: "metrics", Port: 9090, TargetPort: intstr.FromString("metrics")},
@@ -466,7 +466,7 @@ func TestSelectServicePort(t *testing.T) {
 
 func TestResolveTargetPort(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "cloud-workflow-engine", Name: "cwe-0"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "nke-controller", Name: "cwe-0"},
 		Spec: corev1.PodSpec{Containers: []corev1.Container{{
 			Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}},
 		}}},
@@ -538,18 +538,18 @@ func TestServiceBaseURL(t *testing.T) {
 		{
 			name: "a numeric port is kept, so the Host header names it",
 			port: "8080",
-			want: "http://cloud-workflow-engine.cloud-workflow-engine.svc:8080",
+			want: "http://nke-controller.nke-controller.svc:8080",
 		},
 		{
 			name: "a named port is dropped, because a name is not a URL port",
 			port: "metrics",
-			want: "http://cloud-workflow-engine.cloud-workflow-engine.svc",
+			want: "http://nke-controller.nke-controller.svc",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := serviceBaseURL("cloud-workflow-engine", "cloud-workflow-engine", tt.port)
+			got := serviceBaseURL("nke-controller", "nke-controller", tt.port)
 			if got != tt.want {
 				t.Fatalf("serviceBaseURL = %q, want %q", got, tt.want)
 			}

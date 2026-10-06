@@ -22,13 +22,13 @@ bundled development backend. The validation confirms that:
 ## Environment
 
 A single-node Kind cluster built from the same configuration and node image the
-controller's end-to-end lane uses, `controller/hack/cwe-capi-kind.yaml`. Docker
+controller's end-to-end lane uses, `controller/hack/controller-capi-kind.yaml`. Docker
 Desktop or Colima, `kind`, `kubectl` and `helm` are all that is needed. The
 cluster gets its own kubeconfig so nothing else on the machine is touched.
 
 ```console
 kind create cluster --name nktp-validation \
-  --config controller/hack/cwe-capi-kind.yaml \
+  --config controller/hack/controller-capi-kind.yaml \
   --kubeconfig ./nktp-validation.kubeconfig
 export KUBECONFIG=$PWD/nktp-validation.kubeconfig
 ```
@@ -116,19 +116,21 @@ these settings on top:
 ```yaml
 serviceMonitor:
   enabled: true
+  name: nke-controller-metrics
 metrics:
   networkPolicy:
     enabled: true
     additionalNamespaces: [nktp]
 tracing:
   enabled: true
+  serviceName: nke-controller
   endpoint: nktp-gateway-traces-collector.nktp.svc.cluster.local:4317
   insecure: true
 ```
 
-With those in place, `up{job="cloud-workflow-engine"}` reaches 1 in Prometheus,
-`{k8s_namespace_name="cloud-workflow-engine"}` returns lines in Loki once the
-controller logs something, and `cloud-workflow-engine` appears among Tempo's
+With those in place, `up{job="nke-controller"}` reaches 1 in Prometheus,
+`{k8s_namespace_name="nke-controller"}` returns lines in Loki once the
+controller logs something, and `nke-controller` appears among Tempo's
 service names after any API request.
 
 ## Tearing down

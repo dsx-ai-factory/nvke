@@ -4,6 +4,7 @@
 package activities
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -177,10 +178,11 @@ func TestConfigProfileRunbookReferencesArePackaged(t *testing.T) {
 }
 
 // profilesDirForTest resolves fleet profiles and their sibling runbooks.
-// Order: CWE_PROFILES_DIR, sibling checkout, in-repo fixtures.
+// Order: NKE_CONTROLLER_PROFILES_DIR (the deprecated CWE_PROFILES_DIR still
+// works), sibling checkout, in-repo fixtures.
 func profilesDirForTest(t *testing.T) string {
 	t.Helper()
-	if dir := os.Getenv("CWE_PROFILES_DIR"); dir != "" {
+	if dir := cmp.Or(os.Getenv("NKE_CONTROLLER_PROFILES_DIR"), os.Getenv("CWE_PROFILES_DIR")); dir != "" {
 		return dir
 	}
 	sibling := filepath.Join(repoRoot(t), "..", "nke-site-deploy", "cwe-profiles", "0.1.0", "profiles")
@@ -192,7 +194,7 @@ func profilesDirForTest(t *testing.T) string {
 	if _, err := os.Stat(fixture); err == nil {
 		return fixture
 	}
-	t.Skip("production profiles moved to nke-site-deploy; set CWE_PROFILES_DIR to run")
+	t.Skip("production profiles moved to nke-site-deploy; set NKE_CONTROLLER_PROFILES_DIR to run")
 	return ""
 }
 

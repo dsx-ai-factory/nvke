@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra"
 )
 
@@ -73,14 +73,14 @@ func CollectClusterState(ctx context.Context, s infra.Session, dest string, secr
 // deleted. A script with no newlines in it has nothing to lose that way. Run
 // 37582097398 collected all nine sections with it in place.
 //
-// cwe.Namespace() and not the nke-controller that nkectl's bootstrap cluster
-// uses: run 37582097398 found CWE running in cwe.Namespace() on the site
+// controller.Namespace() and not the nke-controller that nkectl's bootstrap cluster
+// uses: run 37582097398 found CWE running in controller.Namespace() on the site
 // cluster and nothing at all in nke-controller. The two deploy paths do not
 // agree on where CWE goes, and this one follows the site.
 func clusterStateScript() string {
 	kubectl := "kubectl --kubeconfig " + shellQuote(kubeconfigPath)
-	inNamespace := kubectl + " -n " + shellQuote(cwe.Namespace())
-	selector := "app.kubernetes.io/name=" + cwe.Service()
+	inNamespace := kubectl + " -n " + shellQuote(controller.Namespace())
+	selector := "app.kubernetes.io/name=" + controller.Service()
 
 	sections := []struct{ title, cmd string }{
 		// First, because it is what tells a not-ready workload apart from

@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nke/controller/api"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
 )
 
@@ -124,7 +125,7 @@ func validateEtcdEncryptionKeyRotation(test *tenantTest) {
 func validateEtcdEncryptionPostDelete(test *tenantTest) {
 	It("removes the CWE etcd encryption key secret during cleanup", func(ctx context.Context) {
 		key := client.ObjectKey{
-			Namespace: envOrDefault("CWE_NAMESPACE", "cloud-workflow-engine"),
+			Namespace: controller.Namespace(),
 			Name:      "etcd-encryption-key-" + test.cluster.ID.String(),
 		}
 		secret := &corev1.Secret{}
@@ -161,7 +162,7 @@ func readEtcdEncryptionKeyState(
 ) (etcdEncryptionKeyState, error) {
 	var secret corev1.Secret
 	if err := c.Get(ctx, client.ObjectKey{
-		Namespace: envOrDefault("CWE_NAMESPACE", "cloud-workflow-engine"),
+		Namespace: controller.Namespace(),
 		Name:      etcdEncryptionKeySecretPrefix + clusterID,
 	}, &secret); err != nil {
 		return etcdEncryptionKeyState{}, fmt.Errorf("getting etcd encryption key secret: %w", err)
@@ -277,8 +278,8 @@ func runEtcdEncryptionKeyRotation(ctx context.Context, c client.Client, clusterI
 		{Name: "E2E_CLUSTER_ID", Value: clusterID},
 		{Name: "E2E_WORKFLOW_ID", Value: workflowID},
 		{Name: "E2E_TEMPORAL_ADDRESS", Value: envOrDefault("E2E_TEMPORAL_ADDRESS", "temporal-frontend."+temporalNamespace+".svc.cluster.local:7233")},
-		{Name: "E2E_TEMPORAL_NAMESPACE", Value: envOrDefault("E2E_TEMPORAL_NAMESPACE", "cloud-workflow-engine")},
-		{Name: "E2E_TEMPORAL_TASK_QUEUE", Value: envOrDefault("E2E_TEMPORAL_TASK_QUEUE", "cloud-workflow-engine-tasks")},
+		{Name: "E2E_TEMPORAL_NAMESPACE", Value: envOrDefault("E2E_TEMPORAL_NAMESPACE", "nke-controller")},
+		{Name: "E2E_TEMPORAL_TASK_QUEUE", Value: envOrDefault("E2E_TEMPORAL_TASK_QUEUE", "nke-controller-tasks")},
 	}...)
 
 	if _, _, err := kube.RunPod(ctx, c, pod, adminToolsContainer, 15*time.Minute); err != nil {

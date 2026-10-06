@@ -138,13 +138,14 @@ if "capd" in _provider_names or "nico" in _provider_names or "nico-vm" in _provi
 if not _supported_infra_providers:
     _supported_infra_providers.append("nico")
 
-CWE_NAMESPACE = "cloud-workflow-engine"
+CONTROLLER_NAMESPACE = "nke-controller"
 TEMPORAL_NAMESPACE = "temporal"
 POSTGRES_NAMESPACE = "postgres"
 SPIRE_NAMESPACE = "spire-server"
-CWE_LOCAL_DEBUG_MARKER = ".tilt-cwe-debug-local"
-CWE_HTTP_PORT = os.getenv("CWE_HTTP_PORT", "8080")
-CWE_TEMPORAL_UI_PORT = os.getenv("CWE_TEMPORAL_UI_PORT", "8081")
+CONTROLLER_LOCAL_DEBUG_MARKER = ".tilt-cwe-debug-local"
+# CWE_HTTP_PORT and CWE_TEMPORAL_UI_PORT are deprecated aliases for one release.
+CONTROLLER_HTTP_PORT = os.getenv("NKE_CONTROLLER_HTTP_PORT", "") or os.getenv("CWE_HTTP_PORT", "") or "8080"
+CONTROLLER_TEMPORAL_UI_PORT = os.getenv("NKE_CONTROLLER_TEMPORAL_UI_PORT", "") or os.getenv("CWE_TEMPORAL_UI_PORT", "") or "8081"
 
 # Tilt UI links open in the browser of whoever views the Tilt UI. When Tilt runs
 # on a remote host accessed via forwarded ports (e.g. Mutagen forwards a target
@@ -177,9 +178,9 @@ KIND_CLUSTER_NAME_VALUE = get_kind_cluster_name()
 EXPECTED_K8S_CONTEXT = "kind-%s" % KIND_CLUSTER_NAME_VALUE
 SPIRE_TRUST_DOMAIN = "%s.nke.local" % KIND_CLUSTER_NAME_VALUE
 NKE_OIDC_ISSUER_URL = "https://nke.site-controller.internal"
-SPIRE_CWE_ADMIN_PATH = "/nke-service/cloud-workflow-engine"
+SPIRE_CONTROLLER_ADMIN_PATH = "/nke-service/nke-controller"
 if DSX_IDENTITY_EXCHANGE_ENABLED:
-    SPIRE_CWE_ADMIN_PATH = "/tenant/nke/service/cloud-workflow-engine/bm/cwe"
+    SPIRE_CONTROLLER_ADMIN_PATH = "/tenant/nke/service/nke-controller/bm/cwe"
 
 # sha256 of /app/tpm_attestor_server inside ghcr.io/spiffe/spire-tpm-plugin-tpm-attestor-server:v1.9.0,
 # selected by host arch (kind pulls the Linux variant matching the host CPU). Override via env var
@@ -464,6 +465,10 @@ _preflight_script += """
         echo "helm is required in PATH" >&2
         exit 1
       }
+      if helm status cwe -n cloud-workflow-engine >/dev/null 2>&1; then
+        echo "This cluster runs the controller as Helm release cwe in namespace cloud-workflow-engine. Tilt now installs it as nke-controller in nke-controller and cannot take over the old install. Recreate the cluster: make kind-down, then make capd-up." >&2
+        exit 1
+      fi
 """
 if not CWE_IMAGE:
     _preflight_script += """
@@ -559,16 +564,16 @@ helm_resource(
     ],
     resource_deps=["check-management-cluster", "temporal-chart", "postgres"],
     links=[
-      ui_link(CWE_TEMPORAL_UI_PORT, "", "Temporal UI"),
+      ui_link(CONTROLLER_TEMPORAL_UI_PORT, "", "Temporal UI"),
     ],
 )
 
 local_resource(
     "port-forward-temporal-ui",
     labels=["1-infra"],
-    serve_cmd="while true; do kubectl -n " + TEMPORAL_NAMESPACE + " port-forward svc/temporal-web " + CWE_TEMPORAL_UI_PORT + ":8080 || true; sleep 2; done",
+    serve_cmd="while true; do kubectl -n " + TEMPORAL_NAMESPACE + " port-forward svc/temporal-web " + CONTROLLER_TEMPORAL_UI_PORT + ":8080 || true; sleep 2; done",
     resource_deps=["temporal"],
-    readiness_probe=probe(exec=exec_action(["nc", "-z", "localhost", CWE_TEMPORAL_UI_PORT]), period_secs=5, failure_threshold=2),
+    readiness_probe=probe(exec=exec_action(["nc", "-z", "localhost", CONTROLLER_TEMPORAL_UI_PORT]), period_secs=5, failure_threshold=2),
     allow_parallel=True,
 )
 
@@ -766,7 +771,7 @@ helm_resource(
       "--set-string", "global.spire.clusterName=%s" % KIND_CLUSTER_NAME_VALUE,
       "--set-string", "global.spire.trustDomain=%s" % SPIRE_TRUST_DOMAIN,
       "--set-string", "global.spire.jwtIssuer=%s" % NKE_OIDC_ISSUER_URL,
-      "--set-string", "spire-server.adminIDs[0]=spiffe://%s%s" % (SPIRE_TRUST_DOMAIN, SPIRE_CWE_ADMIN_PATH),
+      "--set-string", "spire-server.adminIDs[0]=spiffe://%s%s" % (SPIRE_TRUST_DOMAIN, SPIRE_CONTROLLER_ADMIN_PATH),
       "--set-string", "spire-server.nodeAttestor.tpmDirect.checksum=%s" % SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM,
       "--set-string", "spiffe-oidc-discovery-provider.config.jwksUri=https://%s:30443/keys" % _kind_site_controller_vip,
     ] + _spire_set_string_flags + _all_spire_chart_flags + [
@@ -853,7 +858,7 @@ k8s_resource(
     new_name="nke-auth-dev",
     labels=["1-infra"],
     objects=[
-        "cloud-workflow-engine:namespace",
+        "nke-controller:namespace",
         "nke-clients:namespace",
         "nke-outsiders:namespace",
         "nke-client:serviceaccount:nke-clients",
@@ -863,7 +868,7 @@ k8s_resource(
         "nke-client-token-minter:rolebinding:nke-clients",
         "nke-outsider-token-minter:role:nke-outsiders",
         "nke-outsider-token-minter:rolebinding:nke-outsiders",
-        "nke-auth-config:configmap:cloud-workflow-engine",
+        "nke-auth-config:configmap:nke-controller",
     ],
     resource_deps=["check-management-cluster"],
     pod_readiness="ignore",
@@ -1053,7 +1058,7 @@ _cwe_spire_attestation_method = os.getenv(
 _cwe_chart_flags = [
     "--create-namespace",
     "--set", "cni.installAfterInit=%s" % ("true" if _cwe_install_cni_after_init == "true" else "false"),
-    "--values", "hack/tilt-cwe-chart-values.yaml",
+    "--values", "hack/tilt-controller-chart-values.yaml",
     "--set-string", "appDb.postgresPassword=%s" % _postgres_superuser_password,
     "--set", "apiAuth.enabled=%s" % ("true" if _cwe_auth_enabled else "false"),
     "--set", "apiAuth.permissive=%s" % ("true" if _cwe_permissive_mode else "false"),
@@ -1092,7 +1097,7 @@ if CWE_IMAGE:
             "--set-string", "image.tag=latest",
         ]
 
-_cwe_local_debug_active = os.path.exists(CWE_LOCAL_DEBUG_MARKER)
+_cwe_local_debug_active = os.path.exists(CONTROLLER_LOCAL_DEBUG_MARKER)
 _cwe_tilt_goarch = local_arch()
 _cwe_resource_deps = ["postgres", "temporal", "spire-nke-services-spiffe-id", "spire-tpm-pubhashes", "nke-system-namespace", "nke-auth-dev"] + _all_cwe_resource_deps
 if _cwe_oidc_enabled:
@@ -1119,25 +1124,26 @@ _cwe_compile_script = """
 # a plain `tilt up` failed for anyone without that checkout, even though a
 # working profiles tree was one directory away.
 #
-# Point CWE_PROFILES_DIR at nke-site-deploy/cwe-profiles/profiles to exercise
+# Point NKE_CONTROLLER_PROFILES_DIR at nke-site-deploy/cwe-profiles/profiles to exercise
 # the fleet profiles.
-_cwe_profiles_dir = os.getenv("CWE_PROFILES_DIR", _tilt_env.get("CWE_PROFILES_DIR", "")).strip()
+# CWE_PROFILES_DIR and CWE_PROFILES_PRELOADED are deprecated aliases for one release.
+_cwe_profiles_dir = (os.getenv("NKE_CONTROLLER_PROFILES_DIR", "") or os.getenv("CWE_PROFILES_DIR", "") or _tilt_env.get("NKE_CONTROLLER_PROFILES_DIR", "") or _tilt_env.get("CWE_PROFILES_DIR", "")).strip()
 if _cwe_profiles_dir == "":
     _cwe_profiles_dir = os.path.abspath(os.path.join(config.main_dir, "test", "fixtures", "profiles"))
 elif not _cwe_profiles_dir.startswith("/"):
     _cwe_profiles_dir = os.path.abspath(os.path.join(config.main_dir, _cwe_profiles_dir))
-_cwe_profiles_preloaded = os.getenv("CWE_PROFILES_PRELOADED", "false") == "true"
+_cwe_profiles_preloaded = (os.getenv("NKE_CONTROLLER_PROFILES_PRELOADED", "") or os.getenv("CWE_PROFILES_PRELOADED", "")) == "true"
 # Starlark's os.path has exists/join but not isdir.
 if not _cwe_profiles_preloaded and not _cwe_profiles_dir:
-    fail("CWE_PROFILES_DIR must point to an external profiles directory")
+    fail("NKE_CONTROLLER_PROFILES_DIR must point to an external profiles directory")
 if not _cwe_profiles_preloaded and not os.path.exists(_cwe_profiles_dir):
-    fail("CWE profiles not found at %s. Set CWE_PROFILES_DIR to a profiles tree; the in-repo fixture is controller/test/fixtures/profiles and the fleet profiles live in nke-site-deploy." % _cwe_profiles_dir)
+    fail("CWE profiles not found at %s. Set NKE_CONTROLLER_PROFILES_DIR to a profiles tree; the in-repo fixture is controller/test/fixtures/profiles and the fleet profiles live in nke-site-deploy." % _cwe_profiles_dir)
 
 _cwe_profiles_context = os.path.dirname(_cwe_profiles_dir)
 _cwe_profiles_dockerfile = os.path.join(_cwe_profiles_context, "Dockerfile")
 _cwe_profiles_runbooks_dir = os.path.join(_cwe_profiles_context, "runbooks")
 
-# Match hack/tilt-cwe-chart-values.yaml: when profiles.image is on, skip baking
+# Match hack/tilt-controller-chart-values.yaml: when profiles.image is on, skip baking
 # profiles into the Tilt CWE image and skip live_update sync into the read-only mount.
 _cwe_profiles_image_enabled = True
 
@@ -1178,7 +1184,7 @@ _cwe_build_script = """
       CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
       tmp_dir="$(mktemp -d)"
       trap 'rm -rf "${tmp_dir}"' EXIT
-      cp hack/Dockerfile.cwe.tilt "${tmp_dir}/Dockerfile"
+      cp hack/Dockerfile.controller.tilt "${tmp_dir}/Dockerfile"
       mkdir -p "${tmp_dir}/bin"
       cp bin/controller "${tmp_dir}/bin/controller"
       retry() { "$@" || { echo "docker build failed, retrying once in 15s" >&2; sleep 15; "$@"; }; }; retry docker build --platform linux/%s --tag "$EXPECTED_REF" "${tmp_dir}"
@@ -1196,7 +1202,7 @@ if not _cwe_profiles_image_enabled:
       CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
       tmp_dir="$(mktemp -d)"
       trap 'rm -rf "${tmp_dir}"' EXIT
-      cp hack/Dockerfile.cwe.tilt "${tmp_dir}/Dockerfile"
+      cp hack/Dockerfile.controller.tilt "${tmp_dir}/Dockerfile"
       # Bake profiles into the image when profiles.image materialize is off.
       awk '1; /^RUN mkdir -p [/]profiles$/ {print "COPY ./profiles /profiles"}' \
         "${tmp_dir}/Dockerfile" > "${tmp_dir}/Dockerfile.new"
@@ -1231,23 +1237,23 @@ helm_resource(
     "cwe",
     chart="deploy/charts/controller",
     labels=["3-cwe"],
-    release_name="cwe",
-    namespace=CWE_NAMESPACE,
+    release_name="nke-controller",
+    namespace=CONTROLLER_NAMESPACE,
     image_deps=_cwe_image_deps,
     image_keys=_cwe_image_keys,
     deps=[
       ".env.tilt",
       ".env.tilt.example",
-      "hack/tilt-cwe-chart-values.yaml",
+      "hack/tilt-controller-chart-values.yaml",
       "deploy/charts/controller",
     ],
     flags=_cwe_chart_flags,
     resource_deps=_cwe_resource_deps,
-    port_forwards=[CWE_HTTP_PORT + ":8080"],
+    port_forwards=[CONTROLLER_HTTP_PORT + ":8080"],
     links=[
-      ui_link(CWE_HTTP_PORT, "/api/docs", "Swagger Docs"),
-      ui_link(CWE_HTTP_PORT, "/metrics", "Metrics"),
-      ui_link(CWE_TEMPORAL_UI_PORT, "/namespaces/cloud-workflow-engine/workflows", "Temporal UI"),
+      ui_link(CONTROLLER_HTTP_PORT, "/api/docs", "Swagger Docs"),
+      ui_link(CONTROLLER_HTTP_PORT, "/metrics", "Metrics"),
+      ui_link(CONTROLLER_TEMPORAL_UI_PORT, "/namespaces/nke-controller/workflows", "Temporal UI"),
     ],
 )
 
@@ -1256,12 +1262,12 @@ if not CWE_IMAGE and not _cwe_local_debug_active:
     # materialize initContainer (read-only on the app container). Do not
     # live_update sync into that mount.
     _cwe_live_update = [
-      fall_back_on(["hack/Dockerfile.cwe.tilt", "go.mod", "go.sum", "Makefile", "Makefile.dev"]),
+      fall_back_on(["hack/Dockerfile.controller.tilt", "go.mod", "go.sum", "Makefile", "Makefile.dev"]),
       sync("bin/controller", "/usr/local/bin/controller"),
     ]
     _cwe_build_deps = [
       "bin",
-      "hack/Dockerfile.cwe.tilt",
+      "hack/Dockerfile.controller.tilt",
       "Makefile",
       "Makefile.dev",
       "go.mod",
@@ -1294,7 +1300,7 @@ cmd_button(
       WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}" \
       ETCD_ENCRYPTED="${ETCD_ENCRYPTED:-false}" \
       ./hack/create-capd-cluster.sh
-    """ % CWE_HTTP_PORT],
+    """ % CONTROLLER_HTTP_PORT],
     resource="cwe",
     icon_name="add_box",
     text="Create sample CAPD cluster",
@@ -1311,8 +1317,8 @@ cmd_button(
     "3-restart-cwe",
     argv=["bash", "-c", """
       set -euo pipefail
-      kubectl -n """ + CWE_NAMESPACE + """ rollout restart deployment/cloud-workflow-engine
-      kubectl -n """ + CWE_NAMESPACE + """ rollout status deployment/cloud-workflow-engine --timeout=180s
+      kubectl -n """ + CONTROLLER_NAMESPACE + """ rollout restart deployment/nke-controller
+      kubectl -n """ + CONTROLLER_NAMESPACE + """ rollout status deployment/nke-controller --timeout=180s
     """],
     resource="cwe",
     icon_name="restart_alt",

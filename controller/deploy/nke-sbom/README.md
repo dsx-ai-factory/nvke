@@ -47,7 +47,7 @@ What the node needs, all present on the reference instance type:
 
 ## Before this runs
 
-`use-nke-sbom.sh` installs the items below and nothing else. Three things must
+`use-nke-sbom.sh` installs the items below and nothing else. Five things must
 already be true, all of them outside the deploy path:
 
 1. **The control plane is untainted.** A bootstrap cluster is all
@@ -78,6 +78,13 @@ already be true, all of them outside the deploy path:
 4. **A default StorageClass exists.** A bare site ships none and every PVC sits
    Pending. The reference site used rancher local-path because its instance type has a single
    NVMe with root on it; a site with real storage should use that instead.
+5. **The cluster has no install from an earlier revision of this path.** This
+   path installs the controller as release `nke-controller`, with database
+   `nke-controller` and Temporal namespace `nke-controller`. Earlier revisions
+   used release `controller`, database `cloud-workflow` and the chart's
+   Temporal names. Helm cannot take over the old release's objects, and
+   Postgres runs its `initdb` scripts only on an empty volume. Nothing
+   migrates the old database: install on a fresh cluster.
 
 ## After this runs
 

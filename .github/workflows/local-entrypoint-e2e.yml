@@ -32,7 +32,7 @@ on:
       # through these, so a change to any of them changes what this lane runs.
       - controller/Makefile.dev
       - controller/Tiltfile
-      - controller/hack/cwe-capi-kind.yaml
+      - controller/hack/controller-capi-kind.yaml
       - controller/hack/ci/prepare-capd-bundles.sh
       - controller/hack/ci/prepare-ovn-assets.sh
       - controller/hack/ci/assets/ovn-install.sh

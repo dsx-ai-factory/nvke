@@ -17,6 +17,7 @@ RUN_ID="${NKE_E2E_RUN_ID:-${GITHUB_RUN_ID:-local-$$}}"
 RUN_ID="${RUN_ID//[^a-zA-Z0-9_.-]/-}"
 RUN_ID="${RUN_ID:0:64}"
 STATE_DIR="${NKE_E2E_STATE_DIR:-${CONTROLLER_ROOT}/.local/backend-e2e/${RUN_ID}}"
+# Kept as cwe-capi: renaming forces every developer to recreate their kind cluster. NKX-17644.
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-cwe-capi}"
 DOCKERHUB_MIRROR="${NKE_E2E_DOCKERHUB_MIRROR:-}"
 # Names the backend in this script's own output. Both lanes share the script, so
@@ -93,7 +94,7 @@ STATE_VOLUME_OWNED=false
 BUNDLE_VOLUME_OWNED=false
 CAPD_NODE_IMAGE_OWNED=false
 STATE_MONITOR_PID=""
-CWE_LOG_PID=""
+CONTROLLER_LOG_PID=""
 
 if [[ "${RUNNER_DOCKER_HOST}" == "unix:///var/run/docker.sock" ]]; then
   [[ -S /var/run/docker.sock ]] || {
@@ -152,15 +153,11 @@ else
 fi
 
 # The controller's namespace, and the name of its Deployment, Service and
-# container. The deploy paths install it as nke-controller; Tilt keeps
-# cloud-workflow-engine. The e2e suite and the nkectl smoke are pointed at it.
-if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
-  CONTROLLER_NAME=nke-controller
-else
-  CONTROLLER_NAME=cloud-workflow-engine
-fi
-NKECTL_SMOKE_CWE_NAMESPACE="${CONTROLLER_NAME}"
-NKECTL_SMOKE_CWE_SERVICE="${CONTROLLER_NAME}"
+# container. Tilt and the deploy paths both install it as nke-controller. The
+# e2e suite and the nkectl smoke are pointed at it.
+CONTROLLER_NAME=nke-controller
+NKECTL_SMOKE_CONTROLLER_NAMESPACE="${CONTROLLER_NAME}"
+NKECTL_SMOKE_CONTROLLER_SERVICE="${CONTROLLER_NAME}"
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -376,14 +373,14 @@ start_cwe_log_follower() {
       sleep 5
     done
   ) >"${STATE_DIR}/cwe-follow.log" 2>&1 &
-  CWE_LOG_PID=$!
+  CONTROLLER_LOG_PID=$!
 }
 
 stop_state_monitor() {
-  if [[ -n "${CWE_LOG_PID}" ]]; then
-    kill "${CWE_LOG_PID}" >/dev/null 2>&1 || true
-    wait "${CWE_LOG_PID}" >/dev/null 2>&1 || true
-    CWE_LOG_PID=""
+  if [[ -n "${CONTROLLER_LOG_PID}" ]]; then
+    kill "${CONTROLLER_LOG_PID}" >/dev/null 2>&1 || true
+    wait "${CONTROLLER_LOG_PID}" >/dev/null 2>&1 || true
+    CONTROLLER_LOG_PID=""
   fi
   if [[ -z "${STATE_MONITOR_PID}" ]]; then
     return
@@ -401,7 +398,7 @@ stop_state_monitor() {
 # exit code rather than aborting, so the caller decides what a failure means.
 # Exec adapter for the shared leg runner: CI runs the suite inside its runner
 # container, with two env vars the local path has no equivalent for.
-# CWE_EXPECTED_VERSION turns the third health spec from a self-skip into a real
+# NKE_CONTROLLER_EXPECTED_VERSION turns the third health spec from a self-skip into a real
 # assertion, so a stale image fails here rather than passing quietly.
 ci_e2e_exec() {
   local cp_flag="$1"; shift
@@ -410,10 +407,10 @@ ci_e2e_exec() {
     e2e_bundle_server_url=""
   fi
   runner_exec env \
-    "CWE_EXPECTED_VERSION=${CWE_BUILD_VERSION}" \
-    "CWE_PROFILES_DIR=${NKE_E2E_PROFILES_DIR}" \
-    "CWE_NAMESPACE=${CONTROLLER_NAME}" \
-    "CWE_SERVICE=${CONTROLLER_NAME}" \
+    "NKE_CONTROLLER_EXPECTED_VERSION=${NKE_CONTROLLER_BUILD_VERSION}" \
+    "NKE_CONTROLLER_PROFILES_DIR=${NKE_E2E_PROFILES_DIR}" \
+    "NKE_CONTROLLER_NAMESPACE=${CONTROLLER_NAME}" \
+    "NKE_CONTROLLER_SERVICE=${CONTROLLER_NAME}" \
     "NKE_E2E_DSX_IDENTITY_EXCHANGE=${DSX_IDENTITY_EXCHANGE_ENABLED}" \
     "NKE_E2E_BUNDLE_SERVER_URL=${e2e_bundle_server_url}" \
     "E2E_BGP_CONTAINER_NAME=${BGP_CONTAINER_NAME}" \
@@ -723,9 +720,10 @@ esac
 
 git_sha="$(git -C "${WORKSPACE_ROOT}" rev-parse HEAD)"
 git_short_sha="$(git -C "${WORKSPACE_ROOT}" rev-parse --short=12 HEAD)"
-CWE_IMAGE="${CWE_IMAGE:-cwe-e2e:${git_short_sha}}"
-CWE_BUILD_VERSION="${CWE_BUILD_VERSION:-e2e-${git_short_sha}}"
-CWE_PROFILES_TILT_IMAGE="docker.local/cwe-profiles:tilt"
+# CWE_IMAGE and CWE_BUILD_VERSION are the deprecated names for these two.
+NKE_CONTROLLER_IMAGE="${NKE_CONTROLLER_IMAGE:-${CWE_IMAGE:-cwe-e2e:${git_short_sha}}}"
+NKE_CONTROLLER_BUILD_VERSION="${NKE_CONTROLLER_BUILD_VERSION:-${CWE_BUILD_VERSION:-e2e-${git_short_sha}}}"
+NKE_CONTROLLER_PROFILES_TILT_IMAGE="docker.local/cwe-profiles:tilt"
 # Matches the ref the manifest names; Tilt builds the same tag via custom_build.
 CAPD_REBOOT_IMAGE="ko.local/capd-reboot-controller"
 DSX_IDENTITY_EXCHANGE_IMAGE=""
@@ -738,23 +736,23 @@ docker build \
   --platform "linux/${host_arch}" \
   --file test/fixtures/Dockerfile \
   "${profiles_build_args[@]}" \
-  --tag "${CWE_PROFILES_TILT_IMAGE}" \
+  --tag "${NKE_CONTROLLER_PROFILES_TILT_IMAGE}" \
   test/fixtures
-printf '%s\n' "${CWE_PROFILES_TILT_IMAGE}" >"${STATE_DIR}/cwe-profiles-image-ref.txt"
-docker image inspect "${CWE_PROFILES_TILT_IMAGE}" >"${STATE_DIR}/cwe-profiles-image.json"
+printf '%s\n' "${NKE_CONTROLLER_PROFILES_TILT_IMAGE}" >"${STATE_DIR}/cwe-profiles-image-ref.txt"
+docker image inspect "${NKE_CONTROLLER_PROFILES_TILT_IMAGE}" >"${STATE_DIR}/cwe-profiles-image.json"
 
-log "building controller image ${CWE_IMAGE} for the ${host_arch} CAPD runner"
+log "building controller image ${NKE_CONTROLLER_IMAGE} for the ${host_arch} CAPD runner"
 mapfile -t cwe_build_args < <(dockerhub_build_args "${CONTROLLER_ROOT}/Dockerfile")
 DOCKER_BUILDKIT=1 docker build \
   --platform "linux/${host_arch}" \
   --file "${CONTROLLER_ROOT}/Dockerfile" \
-  --build-arg "BUILD_VERSION=${CWE_BUILD_VERSION}" \
+  --build-arg "BUILD_VERSION=${NKE_CONTROLLER_BUILD_VERSION}" \
   --build-arg "GIT_VERSION=${git_sha}" \
   "${cwe_build_args[@]}" \
-  --tag "${CWE_IMAGE}" \
+  --tag "${NKE_CONTROLLER_IMAGE}" \
   "${WORKSPACE_ROOT}"
-printf '%s\n' "${CWE_IMAGE}" >"${STATE_DIR}/cwe-image-ref.txt"
-docker image inspect "${CWE_IMAGE}" >"${STATE_DIR}/cwe-image.json"
+printf '%s\n' "${NKE_CONTROLLER_IMAGE}" >"${STATE_DIR}/cwe-image-ref.txt"
+docker image inspect "${NKE_CONTROLLER_IMAGE}" >"${STATE_DIR}/cwe-image.json"
 
 if [[ "${DSX_IDENTITY_EXCHANGE_ENABLED}" == "true" ]]; then
   DSX_IDENTITY_EXCHANGE_IMAGE="dsx-identity-exchange-e2e:${git_short_sha}"
@@ -894,14 +892,14 @@ docker image inspect "${CAPD_NODE_IMAGE}" >"${STATE_DIR}/capd-node-image.json"
 
 log "creating Kind management cluster ${KIND_CLUSTER_NAME}"
 KIND_CLUSTER_OWNED=true
-kind_config_for_mirror hack/cwe-capi-kind.yaml "${STATE_DIR}/kind-config.yaml"
+kind_config_for_mirror hack/controller-capi-kind.yaml "${STATE_DIR}/kind-config.yaml"
 kind create cluster \
   --name "${KIND_CLUSTER_NAME}" \
   --config "${STATE_DIR}/kind-config.yaml" \
   --wait 5m
 configure_kind_dockerhub_mirror "${KIND_CLUSTER_NAME}"
-kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_IMAGE}"
-kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_PROFILES_TILT_IMAGE}"
+kind load docker-image --name "${KIND_CLUSTER_NAME}" "${NKE_CONTROLLER_IMAGE}"
+kind load docker-image --name "${KIND_CLUSTER_NAME}" "${NKE_CONTROLLER_PROFILES_TILT_IMAGE}"
 
 # The suite finds SPIRE's ConfigMap and pods from the release name. Its own
 # default is "spire", which is what both paths now install: Tilt installs SPIRE
@@ -1108,7 +1106,7 @@ fi
 # A lane with a real nke-site-deploy checkout can point this at that instead.
 : "${NKE_E2E_PROFILES_DIR:=/workspace/cloud-workflow-engine/test/fixtures/fleet-profiles}"
 e2e_write_tilt_config "${TMP_DIR}/tilt_config.json" \
-  "${NKE_E2E_PROVIDERS}" "${CWE_IMAGE}" "${management_vip}" "${BGP_CONTAINER_NAME}" \
+  "${NKE_E2E_PROVIDERS}" "${NKE_CONTROLLER_IMAGE}" "${management_vip}" "${BGP_CONTAINER_NAME}" \
   "${DSX_IDENTITY_EXCHANGE_IMAGE}"
 if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
   jq '.nico_vms_observability = false | .nico_sim_backends = ["container"]' "${TMP_DIR}/tilt_config.json" \
@@ -1200,10 +1198,10 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
   fi
   # VERSION is passed in because the runner holds a tar of the working tree, not
   # a clone: `git describe` inside it finds no repository, so build-local cannot
-  # derive one. It is NOT CWE_BUILD_VERSION -- that is an image tag
+  # derive one. It is NOT NKE_CONTROLLER_BUILD_VERSION -- that is an image tag
   # (e2e-<sha>), and a chart version has to be semver. The commit is carried in
   # the prerelease field instead. The controller image tag is set separately
-  # from CWE_IMAGE, so the two need not match.
+  # from NKE_CONTROLLER_IMAGE, so the two need not match.
   runner_exec env \
     SBOM_TARGET="${SBOM_TARGET}" \
     NICO_SIM_ENDPOINT_HOST="${runner_kind_ip}" \
@@ -1222,7 +1220,7 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
     SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM="${SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM:-}" \
     NKE_E2E_STACK_CHART="${NKE_E2E_STACK_CHART}" \
     NKE_E2E_STACK_VERSION="${NKE_E2E_STACK_VERSION:-}" \
-    bash /usr/local/bin/deploy-sbom.sh "${CWE_IMAGE}"
+    bash /usr/local/bin/deploy-sbom.sh "${NKE_CONTROLLER_IMAGE}"
 
   log "injecting SPIRE exec-auth plugin into CAPI/CAPD controllers"
   runner_exec bash /workspace/cloud-workflow-engine/hack/apply-capi-spiffe-exec-auth.sh
@@ -1241,7 +1239,7 @@ if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
 fi
 "${tilt_exec}" env \
   KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
-  CWE_PROFILES_PRELOADED=true \
+  NKE_CONTROLLER_PROFILES_PRELOADED=true \
   TENANT_ACCESS_ENABLED=true \
   NKE_OIDC_AUTH_ENABLED=true \
   DGXC_TENANT_USER=capd-e2e \
@@ -1249,7 +1247,7 @@ fi
   CNPG_SUPERUSER_PASSWORD=example-password \
   CNPG_CLOUD_PASSWORD=example-password \
   CNPG_TEMPORAL_PASSWORD=example-password \
-  CWE_PROFILES_DIR=/workspace/cloud-workflow-engine/test/fixtures/profiles \
+  NKE_CONTROLLER_PROFILES_DIR=/workspace/cloud-workflow-engine/test/fixtures/profiles \
   CAPNICO_SOURCE_DIR="${CAPNICO_SOURCE_CONTAINER_DIR}" \
   CAPD_KINDEST_NODE_IMAGE="${CAPD_NODE_IMAGE}" \
   CAPD_KINDEST_NODE_IMAGE_PREBUILT=true \

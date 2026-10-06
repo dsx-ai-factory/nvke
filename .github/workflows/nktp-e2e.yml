@@ -37,7 +37,7 @@ on:
       - "pull-request/[0-9]+"
     paths:
       - 'nktp/**'
-      - 'controller/hack/cwe-capi-kind.yaml'
+      - 'controller/hack/controller-capi-kind.yaml'
       - 'make/tool-versions.mk'
       - '.github/actions/setup-kind/**'
       - '.github/workflows/nktp-e2e.yml'

@@ -1,6 +1,6 @@
 # Profiles fixture
 
-The profiles tree the CWE E2E lanes deploy (`CWE_PROFILES_DIR`), built into the
+The profiles tree the CWE E2E lanes deploy (`NKE_CONTROLLER_PROFILES_DIR`; the deprecated `CWE_PROFILES_DIR` still works), built into the
 `cwe-profiles` image by the `Dockerfile` one directory up. The fleet profiles
 live in `nke-site-deploy/cwe-profiles`; this tree is a fixture for tests.
 

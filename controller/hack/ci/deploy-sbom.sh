@@ -41,7 +41,7 @@ set -euo pipefail
 # controller/deploy/charts/controller/templates would run this suite
 # green against the old templates. capd-e2e.yml triggers on controller/**, which
 # includes exactly those files.
-CWE_IMAGE="${1:?usage: $0 <cwe-image>}"
+NKE_CONTROLLER_IMAGE="${1:?usage: $0 <cwe-image>}"
 : "${NODE_AGENT_SPIRE_ATTESTATION_METHOD:?NODE_AGENT_SPIRE_ATTESTATION_METHOD is required}"
 # Optional, from the workflow inputs of the same name. Set together to install a
 # published artifact; leave empty to build.
@@ -102,8 +102,8 @@ TPM_CHECKSUM="$(resolve_tpm_checksum)"
 # repointed at that local tag. This only works because the controller chart is
 # a subchart with live values -- a pre-rendered bundle would have baked the
 # image string in and ignored the override.
-cwe_repository="${CWE_IMAGE%:*}"
-cwe_tag="${CWE_IMAGE##*:}"
+cwe_repository="${NKE_CONTROLLER_IMAGE%:*}"
+cwe_tag="${NKE_CONTROLLER_IMAGE##*:}"
 
 # Everything this script used to apply by hand is now an item of the capd-e2e
 # deploy path, applied by build/use-nke-sbom.sh in the order nke-deploy.yaml
@@ -141,7 +141,7 @@ TRUST_DOMAIN="${KIND_CLUSTER_NAME}.nke.local"
 #
 # Passed as JSON for the same reason Tilt uses --set-json: a list of
 # name/value objects does not survive --set's index syntax legibly.
-cwe_env_json() {
+controller_env_json() {
   SPIRE_SERVER_API_ADDRESS="spire-server.spire-server.svc.cluster.local:443" \
   MANAGEMENT_VIP="${MANAGEMENT_VIP}" python3 -c '
 import json, os
@@ -177,12 +177,12 @@ for name in ("DGXC_TENANT_USER", "DGXC_TENANT_PASSWORD", "CNPG_SUPERUSER_PASSWOR
 print(json.dumps(env))
 '
 }
-CWE_ENV_JSON="$(cwe_env_json)"
+NKE_CONTROLLER_ENV_JSON="$(controller_env_json)"
 
 # The SPIFFE identity the controller presents: its ServiceAccount, nke-controller
 # in every deploy path, under the nke-service ClusterSPIFFEID in the deploy
 # path's spire values.
-SPIRE_CWE_ADMIN_PATH="/nke-service/nke-controller"
+SPIRE_CONTROLLER_ADMIN_PATH="/nke-service/nke-controller"
 
 # The kind bridge gateway, alongside the VIP. Tenants' kube-apiservers fetch the
 # OIDC discovery URL by IP, and the provider rejects any request whose Host
@@ -252,7 +252,7 @@ spiffe:
     serverAddress: "${MANAGEMENT_VIP}"
 nodeAgent:
   spireAttestationMethod: "${NODE_AGENT_SPIRE_ATTESTATION_METHOD}"
-env: ${CWE_ENV_JSON}
+env: ${NKE_CONTROLLER_ENV_JSON}
 EOF
 
 cat >"${VALUES_DIR}/spire.yaml" <<EOF
@@ -265,7 +265,7 @@ global:
     clusterName: "${KIND_CLUSTER_NAME}"
 spire-server:
   adminIDs:
-    - "spiffe://${TRUST_DOMAIN}${SPIRE_CWE_ADMIN_PATH}"
+    - "spiffe://${TRUST_DOMAIN}${SPIRE_CONTROLLER_ADMIN_PATH}"
   nodeAttestor:
     tpmDirect:
       checksum: "${TPM_CHECKSUM}"

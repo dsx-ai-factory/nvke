@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Values for controller/deploy/charts/controller on the ephemeral
-# bootstrap Kind cluster. Adapted from controller/hack/tilt-cwe-chart-values.yaml
+# bootstrap Kind cluster. Adapted from controller/hack/tilt-controller-chart-values.yaml
 # (the chart's own local-dev override), trimmed to what this single-purpose
 # ephemeral deployment needs. SPIFFE is enabled at runtime after the SPIRE
 # umbrella chart installs its server, agent, CSI driver, and controller

@@ -52,7 +52,7 @@ If your feature requires a specific cluster configuration (e.g., custom node poo
 ## How the tests reach NKE
 
 Every NKE call travels over a port-forward to a pod backing the
-`cloud-workflow-engine` Service, built by `internal/kube.ServiceForwarder`. It
+`nke-controller` Service, built by `internal/kube.ServiceForwarder`. It
 runs over the API server's own `pods/portforward` subresource, so it needs
 nothing the previous Service-proxy transport did: no ingress, no NodePort, no
 direct pod or Service IP reachability.
@@ -110,7 +110,7 @@ cd test/e2e
 go run github.com/onsi/ginkgo/v2/ginkgo@v2.27.2 run -v --label-filter=health .
 ```
 
-Only `CWE_EXPECTED_VERSION` and `CWE_HEALTH_TIMEOUT` are specific to the health
+Only `NKE_CONTROLLER_EXPECTED_VERSION` and `NKE_CONTROLLER_HEALTH_TIMEOUT` are specific to the health
 specs; the first four apply everywhere. The `NKE_E2E_*` group configures the
 credential `nke.NewClient` discovers and presents on every ordinary NKE call,
 not the authentication specs, which build their own token per case.
@@ -118,13 +118,13 @@ not the authentication specs, which build their own token per case.
 | Variable | Description | Default |
 | --- | --- | --- |
 | `KUBECONFIG` | Kubeconfig used to reach the management cluster (clientcmd default loading rules). | Unset (falls back to in-cluster configuration) |
-| `CWE_NAMESPACE` | Namespace containing CWE. | `cloud-workflow-engine` |
-| `CWE_SERVICE` | NKE Service whose backing pod is port-forwarded to; also the name of its Deployment, container and ServiceAccount. | `cloud-workflow-engine` |
-| `CWE_SERVICE_PORT` | NKE Service port, by name or number; the pod-side port is resolved from its `targetPort`. | `8080` |
-| `CWE_EXPECTED_VERSION` | Required CWE version; when unset, the version spec is skipped. | Unset |
-| `CWE_HEALTH_TIMEOUT` | Per-spec context timeout. | `60s` |
+| `NKE_CONTROLLER_NAMESPACE` | Namespace containing the controller. The old name `CWE_NAMESPACE` is deprecated and still read when this is unset. | `nke-controller` |
+| `NKE_CONTROLLER_SERVICE` | Controller Service whose backing pod is port-forwarded to; also the name of its Deployment, container and ServiceAccount. The old name `CWE_SERVICE` is deprecated and still read when this is unset. | `nke-controller` |
+| `NKE_CONTROLLER_SERVICE_PORT` | Controller Service port, by name or number; the pod-side port is resolved from its `targetPort`. The old name `CWE_SERVICE_PORT` is deprecated and still read when this is unset. | `8080` |
+| `NKE_CONTROLLER_EXPECTED_VERSION` | Required controller version; when unset, the version spec is skipped. The old name `CWE_EXPECTED_VERSION` is deprecated and still read when this is unset. | Unset |
+| `NKE_CONTROLLER_HEALTH_TIMEOUT` | Per-spec context timeout. The old name `CWE_HEALTH_TIMEOUT` is deprecated and still read when this is unset. | `60s` |
 | `NKE_E2E_AUTH_DISABLE` | Turns the token source off, so the suite sends no `Authorization` header. Against an enforcing NKE every spec then fails with 401. | Unset |
-| `NKE_E2E_AUDIENCE` | Overrides the audience the suite mints for. Normally discovered from the `nke-auth-config` ConfigMap in `CWE_NAMESPACE`. | Discovered |
+| `NKE_E2E_AUDIENCE` | Overrides the audience the suite mints for. Normally discovered from the `nke-auth-config` ConfigMap in `NKE_CONTROLLER_NAMESPACE`. | Discovered |
 | `NKE_E2E_TOKEN_NAMESPACE` | Namespace of the service account the suite presents. | `nke-clients` |
 | `NKE_E2E_TOKEN_SERVICE_ACCOUNT` | Service account the suite presents. Point this pair at `nke-outsiders`/`nke-outsider` for the 403 case. | `nke-client` |
 | `NKE_E2E_TOKEN_TTL` | Minted token lifetime. The apiserver rejects anything under 10m. | `15m` |
@@ -233,7 +233,8 @@ wait for both nodes to become Ready in CWE, and delete the cluster. The matrix
 reads active profile names, architectures, and Kubernetes versions from fleet
 OS profile metadata, which is maintained outside this repository. Resolution order:
 
-1. `$CWE_PROFILES_DIR/osProfiles/metadata.yaml`
+1. `$NKE_CONTROLLER_PROFILES_DIR/osProfiles/metadata.yaml` (the deprecated
+   `$CWE_PROFILES_DIR` is read when this is unset)
 2. `$PROFILES_DIR/osProfiles/metadata.yaml`
 3. sibling `../nke-site-deploy/cwe-profiles/profiles/osProfiles/metadata.yaml`
    (an NVIDIA-internal fleet repository; external contributors use the
@@ -263,7 +264,7 @@ When adding an OS profile:
 
 1. Add its directory and active metadata entry to the fleet profiles
    directory (for NVIDIA maintainers, the internal fleet repository; otherwise
-   the directory `$CWE_PROFILES_DIR` points at).
+   the directory `$NKE_CONTROLLER_PROFILES_DIR` points at).
 2. For a tenant profile, no separate e2e list update is required; the matrix
    includes it automatically on a runner of its architecture.
 3. If nico-vms cannot support it, add it to

@@ -19,7 +19,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/authtoken"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 )
@@ -50,13 +50,13 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 		if !found {
 			authnAbsentf(
 				"authentication is OFF: ConfigMap %s/%s does not exist, so there is no audience to mint against and nothing to count",
-				cwe.Namespace(), authtoken.ConfigMapName,
+				controller.Namespace(), authtoken.ConfigMapName,
 			)
 		}
 		if mode == authnModeDisabled {
 			authnAbsentf(
 				"authentication is OFF: %s is not set on Deployment %s/%s, so there is no middleware to put into permissive mode",
-				authnConfigPathEnv, cwe.Namespace(), cwe.Deployment(),
+				authnConfigPathEnv, controller.Namespace(), controller.Deployment(),
 			)
 		}
 
@@ -67,7 +67,7 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 		defer rolloutCancel()
 		previous, err := nke.SetPermissiveMode(rolloutCtx, runtimeClient, "true")
 		Expect(err).NotTo(HaveOccurred(), "put Deployment %s/%s into permissive mode",
-			cwe.Namespace(), cwe.Deployment())
+			controller.Namespace(), controller.Deployment())
 
 		DeferCleanup(func(ctx SpecContext) {
 			restoreCtx, restoreCancel := context.WithTimeout(ctx, permissiveRolloutTimeout)
@@ -91,13 +91,13 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 		// The metrics listener is a second server on a second port, reachable
 		// only because the Service publishes `metrics` alongside `http`. The
 		// probe makes a missing port say so rather than read as a dead NKE.
-		metrics, err = kube.SharedServiceForwarder(restConfig, cwe.Namespace(), cwe.Service(), nkeControllerMetricsPort)
+		metrics, err = kube.SharedServiceForwarder(restConfig, controller.Namespace(), controller.Service(), nkeControllerMetricsPort)
 		Expect(err).NotTo(HaveOccurred(), "build a port-forward to the metrics listener")
 
 		_, _, err = metrics.Get(tctx, metricsPath)
 		Expect(err).NotTo(HaveOccurred(),
 			"could not reach %s on the %q port of Service %s/%s; the chart publishes it from .Values.metrics.port and a Service without it makes the permissive counter unassertable",
-			metricsPath, nkeControllerMetricsPort, cwe.Namespace(), cwe.Service())
+			metricsPath, nkeControllerMetricsPort, controller.Namespace(), controller.Service())
 	})
 
 	It("serves the three rejection cases and counts them as would_reject", func(ctx SpecContext) {

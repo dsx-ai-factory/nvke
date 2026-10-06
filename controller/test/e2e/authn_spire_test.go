@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/authtoken"
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
 )
 
@@ -56,7 +56,7 @@ var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", 
 		if mode == authnModeDisabled {
 			authnAbsentf(
 				"authentication is OFF on Deployment %s/%s: %s is not set, so the middleware is not in the request chain and no SVID could be rejected",
-				cwe.Namespace(), cwe.Deployment(), authnConfigPathEnv,
+				controller.Namespace(), controller.Deployment(), authnConfigPathEnv,
 			)
 		}
 		if mode != authnModeEnforcing {
@@ -64,7 +64,7 @@ var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", 
 			// pass against an NKE that never heard of SPIRE.
 			Skip(fmt.Sprintf(
 				"authentication is %s on Deployment %s/%s: a SPIRE acceptance that is not allowed to reject proves nothing",
-				mode, cwe.Namespace(), cwe.Deployment(),
+				mode, controller.Namespace(), controller.Deployment(),
 			))
 		}
 
@@ -74,7 +74,7 @@ var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", 
 		if !found {
 			Skip(fmt.Sprintf(
 				"ConfigMap %s/%s configures no issuer named %q, so this NKE trusts no SPIRE and there is nothing to accept",
-				cwe.Namespace(), authtoken.ConfigMapName, spireIssuerName,
+				controller.Namespace(), authtoken.ConfigMapName, spireIssuerName,
 			))
 		}
 
@@ -232,14 +232,14 @@ func parseSpireAdmission(raw []byte) (spireAdmission, bool, error) {
 }
 
 func cweContainerImage(ctx context.Context, clientset kubernetes.Interface) (string, error) {
-	deployment, err := clientset.AppsV1().Deployments(cwe.Namespace()).
-		Get(ctx, cwe.Deployment(), metav1.GetOptions{})
+	deployment, err := clientset.AppsV1().Deployments(controller.Namespace()).
+		Get(ctx, controller.Deployment(), metav1.GetOptions{})
 	if err != nil {
-		return "", fmt.Errorf("getting Deployment %s/%s: %w", cwe.Namespace(), cwe.Deployment(), err)
+		return "", fmt.Errorf("getting Deployment %s/%s: %w", controller.Namespace(), controller.Deployment(), err)
 	}
 	container := cweContainer(deployment)
 	if container == nil {
-		return "", fmt.Errorf("deployment %s/%s has no container named %s", cwe.Namespace(), cwe.Deployment(), cwe.Deployment())
+		return "", fmt.Errorf("deployment %s/%s has no container named %s", controller.Namespace(), controller.Deployment(), controller.Deployment())
 	}
 	return container.Image, nil
 }
@@ -272,7 +272,7 @@ func spireProbePod(image string, admission spireAdmission) *corev1.Pod {
 				Env: []corev1.EnvVar{
 					{Name: "NKE_AUDIENCE", Value: admission.Audience},
 					{Name: "NKE_WRONG_AUDIENCE", Value: authnWrongAudience},
-					{Name: "NKE_URL", Value: fmt.Sprintf("http://%s.%s.svc:%s", cwe.Service(), cwe.Namespace(), cwe.Port())},
+					{Name: "NKE_URL", Value: fmt.Sprintf("http://%s.%s.svc:%s", controller.Service(), controller.Namespace(), controller.Port())},
 				},
 				// The report is the termination message; the fallback covers a
 				// container that dies before writing one.
@@ -419,14 +419,14 @@ func TestParseProbeReport(t *testing.T) {
 // TestCweContainerImage pins the lookup the probe pod's image comes from.
 func TestCweContainerImage(t *testing.T) {
 	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Namespace: cwe.Namespace(), Name: cwe.Deployment()},
+		ObjectMeta: metav1.ObjectMeta{Namespace: controller.Namespace(), Name: controller.Deployment()},
 		Spec: appsv1.DeploymentSpec{
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						// A sidecar can come first; the lookup is by name.
 						{Name: "sidecar", Image: "docker.local/other:tilt"},
-						{Name: cwe.Deployment(), Image: "docker.local/cwe:tilt"},
+						{Name: controller.Deployment(), Image: "docker.local/cwe:tilt"},
 					},
 				},
 			},

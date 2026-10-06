@@ -15,7 +15,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
 )
 
@@ -25,7 +25,7 @@ func validateOpenVSwitchPostCreate(test *tenantTest) {
 	It("configures Open vSwitch through the typed node-agent RPC", func(ctx context.Context) {
 		restConfig, err := kube.RESTConfig(test.mgmt.Kubeconfig, test.mgmt.Context)
 		Expect(err).NotTo(HaveOccurred(), "read management-cluster kubeconfig")
-		metrics, err := kube.SharedServiceForwarder(restConfig, cwe.Namespace(), cwe.Service(), nkeControllerMetricsPort)
+		metrics, err := kube.SharedServiceForwarder(restConfig, controller.Namespace(), controller.Service(), nkeControllerMetricsPort)
 		Expect(err).NotTo(HaveOccurred(), "build a port-forward to NKE controller metrics")
 		expectedNodes := clusterNodeCount(test.spec)
 

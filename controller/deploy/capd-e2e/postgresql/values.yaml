@@ -24,3 +24,11 @@ fullnameOverride: postgres-postgresql
 auth:
   username: postgres
   database: postgres
+
+# The chart creates its default databases on first start; this renames the
+# controller's. The script key stays init-cwe.sql so it replaces the default
+# rather than adding a second script.
+initdb:
+  scripts:
+    init-cwe.sql: |
+      CREATE DATABASE "nke-controller";

@@ -246,12 +246,12 @@ def register(ctx):
             "SPIFFE_ENABLED": "true",
         })
 
-    cwe_http_port = os.getenv("CWE_HTTP_PORT", "8080")
+    cwe_http_port = os.getenv("NKE_CONTROLLER_HTTP_PORT", "") or os.getenv("CWE_HTTP_PORT", "") or "8080"
     cmd_button(
         "5-create-sample-local-nico-cluster",
         argv=["bash", "-c", """
           set -euo pipefail
-          CWE_HTTP_PORT="%s" \
+          NKE_CONTROLLER_HTTP_PORT="%s" \
           CLUSTER_NAME="${CLUSTER_NAME:-nico-local}" \
           KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}" \
           CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}" \

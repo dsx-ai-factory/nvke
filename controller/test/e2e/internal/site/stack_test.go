@@ -16,7 +16,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 )
 
 const spireOverlay = `
@@ -108,7 +108,7 @@ func TestSBOMRender(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	controller := decode(t, files["controller.yaml"])
+	controllerValues := decode(t, files["controller.yaml"])
 	for keys, want := range map[string]string{
 		"image.repository":                 "nvcr.io/nke/cwe",
 		"image.tag":                        "v1.2.3",
@@ -120,11 +120,11 @@ func TestSBOMRender(t *testing.T) {
 		"profiles.image.repository":        "nvcr.io/nke/profiles",
 		"profiles.image.tag":               "run-42",
 	} {
-		if got := dig(t, controller, strings.Split(keys, ".")...); got != want {
+		if got := dig(t, controllerValues, strings.Split(keys, ".")...); got != want {
 			t.Errorf("controller %s = %v, want %s", keys, got, want)
 		}
 	}
-	env := mustJSON(t, controller["env"])
+	env := mustJSON(t, controllerValues["env"])
 	for _, want := range []string{
 		`{"name":"NODE_AGENT_PORT","value":"15005"}`,
 		`{"name":"SPIRE_SERVER_API_ADDRESS","value":"spire-server.spire-server.svc.cluster.local:443"}`,
@@ -143,7 +143,7 @@ func TestSBOMRender(t *testing.T) {
 	// the reason spireAdminPath gives: the deploy path chooses it and this
 	// file does not. TestSBOMAdminIDFollowsTheControllerName covers the
 	// following itself.
-	wantAdminIDs := fmt.Sprintf(`["spiffe://e2e-site.nke.local/nke-service/%s"]`, cwe.Service())
+	wantAdminIDs := fmt.Sprintf(`["spiffe://e2e-site.nke.local/nke-service/%s"]`, controller.Service())
 	if got := mustJSON(t, dig(t, spire, "spire-server", "adminIDs")); got != wantAdminIDs {
 		t.Errorf("adminIDs = %s, want %s", got, wantAdminIDs)
 	}

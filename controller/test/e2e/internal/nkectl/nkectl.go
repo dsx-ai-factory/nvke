@@ -28,7 +28,7 @@ import (
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 )
 
@@ -319,10 +319,10 @@ func (r *Runner) startForward(ctx context.Context) error {
 	// to use, flattened by flattenToContext when the caller asked for it.
 	args := []string{
 		"--kubeconfig", r.kubeconfig,
-		"-n", cwe.Namespace(),
-		"port-forward", "svc/" + cwe.Service(),
+		"-n", controller.Namespace(),
+		"port-forward", "svc/" + controller.Service(),
 		"--address", "127.0.0.1",
-		":" + cwe.Port(),
+		":" + controller.Port(),
 	}
 
 	// #nosec G204 -- the kubeconfig path is the suite's and the rest is built
@@ -358,7 +358,7 @@ func (r *Runner) startForward(ctx context.Context) error {
 	r.forward = cmd
 	r.forwardDone = done
 	r.baseURL = fmt.Sprintf("http://127.0.0.1:%s", port)
-	r.logf("nkectl e2e: port-forward to %s/%s ready at %s", cwe.Namespace(), cwe.Service(), r.baseURL)
+	r.logf("nkectl e2e: port-forward to %s/%s ready at %s", controller.Namespace(), controller.Service(), r.baseURL)
 	return nil
 }
 

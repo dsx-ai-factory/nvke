@@ -13,7 +13,7 @@ spec:
     - key: kubernetes.io/metadata.name
       operator: In
       values:
-      - cloud-workflow-engine
+      - nke-controller
       - capi-system
       - capi-kubeadm-control-plane-system
       - capi-kubeadm-bootstrap-system

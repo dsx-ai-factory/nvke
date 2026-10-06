@@ -23,10 +23,10 @@
 # with its own container name, which hid that until nico-vms tried to docker
 # exec into the Actions runner's hostname.
 
-# The CWE service the suite deploys.
-NKECTL_SMOKE_CWE_NAMESPACE=cloud-workflow-engine
-NKECTL_SMOKE_CWE_SERVICE=cloud-workflow-engine
-NKECTL_SMOKE_CWE_PORT=8080
+# The controller service the suite deploys.
+NKECTL_SMOKE_CONTROLLER_NAMESPACE=nke-controller
+NKECTL_SMOKE_CONTROLLER_SERVICE=nke-controller
+NKECTL_SMOKE_CONTROLLER_PORT=8080
 # A name no lane creates. Used by every negative assertion, so a rename here
 # cannot leave one of them silently matching a real object.
 NKECTL_SMOKE_ABSENT=nkectl-smoke-absent
@@ -125,15 +125,15 @@ nkectl_smoke() {
   local no_auth_config out rc
 
   # Only the runner lanes need this. A host lane already has CWE on
-  # localhost:${NKECTL_SMOKE_CWE_PORT}, forwarded by Tilt for the whole run.
+  # localhost:${NKECTL_SMOKE_CONTROLLER_PORT}, forwarded by Tilt for the whole run.
   if [[ -n "${NKECTL_SMOKE_RUNNER:-}" ]]; then
     docker exec -d -e KUBECONFIG="${NKECTL_SMOKE_KUBECONFIG}" "${NKECTL_SMOKE_RUNNER}" \
-      kubectl -n "${NKECTL_SMOKE_CWE_NAMESPACE}" port-forward \
-      "svc/${NKECTL_SMOKE_CWE_SERVICE}" "${NKECTL_SMOKE_CWE_PORT}:${NKECTL_SMOKE_CWE_PORT}"
+      kubectl -n "${NKECTL_SMOKE_CONTROLLER_NAMESPACE}" port-forward \
+      "svc/${NKECTL_SMOKE_CONTROLLER_SERVICE}" "${NKECTL_SMOKE_CONTROLLER_PORT}:${NKECTL_SMOKE_CONTROLLER_PORT}"
   fi
 
   nkectl_exec config set-site --name e2e \
-    --url "http://127.0.0.1:${NKECTL_SMOKE_CWE_PORT}" \
+    --url "http://127.0.0.1:${NKECTL_SMOKE_CONTROLLER_PORT}" \
     --kubeconfig "${NKECTL_SMOKE_KUBECONFIG}" >/dev/null
 
   # A separate site with no kubeconfig exercises the no-credential path. The
@@ -142,7 +142,7 @@ nkectl_smoke() {
   cat >"${no_auth_config}" <<EOF
 sites:
   e2e:
-    url: http://127.0.0.1:${NKECTL_SMOKE_CWE_PORT}
+    url: http://127.0.0.1:${NKECTL_SMOKE_CONTROLLER_PORT}
     kubeconfig: ""
 current-site: e2e
 EOF

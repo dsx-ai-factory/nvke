@@ -19,7 +19,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra"
 )
 
@@ -330,12 +330,12 @@ func CheckControllerName(assets string) error {
 	if err != nil {
 		return err
 	}
-	if deployed == cwe.Namespace() && deployed == cwe.Service() {
+	if deployed == controller.Namespace() && deployed == controller.Service() {
 		return nil
 	}
 	return fmt.Errorf(
 		"the deploy path installs CWE as %q but the suite looks for %s/%s: set %s and %s to %q, or qualify a controller whose deploy path matches",
-		deployed, cwe.Namespace(), cwe.Service(), cwe.EnvNamespace, cwe.EnvService, deployed,
+		deployed, controller.Namespace(), controller.Service(), controller.EnvNamespace, controller.EnvService, deployed,
 	)
 }
 
@@ -370,7 +370,7 @@ func controllerNameFromDeployPath(assets string) (string, error) {
 // was renamed installs cloud-workflow-engine, one cut after installs
 // nke-controller. The lane says which by setting CWE_NAMESPACE and
 // CWE_SERVICE, and CheckControllerName fails the run when the two disagree.
-func controllerName() string { return cwe.Service() }
+func controllerName() string { return controller.Service() }
 
 // spireAdminPath is CWE's SPIFFE ID below the trust domain. A name that does
 // not match what the deploy path installed leaves CWE denied every

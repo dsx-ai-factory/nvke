@@ -9,15 +9,15 @@ CAPD_CWE_RBAC_RESOURCE = "capd-cwe-rbac"
 
 def register(ctx):
     _cwe_resource_deps = []
-    _capd_cwe_rbac_manifest = os.path.join(ctx.provider_dir, "cwe-rbac.yaml")
+    _capd_cwe_rbac_manifest = os.path.join(ctx.provider_dir, "controller-rbac.yaml")
 
     k8s_yaml(_capd_cwe_rbac_manifest)
     k8s_resource(
         new_name=CAPD_CWE_RBAC_RESOURCE,
         labels=["5-capd"],
         objects=[
-            "cloud-workflow-engine-capd:clusterrole",
-            "cloud-workflow-engine-capd:clusterrolebinding",
+            "nke-controller-capd:clusterrole",
+            "nke-controller-capd:clusterrolebinding",
         ],
         resource_deps=["check-management-cluster"],
         pod_readiness="ignore",

@@ -38,8 +38,8 @@ func TestUnit_ExchangeSubject(t *testing.T) {
 	tests := map[string]parameters{
 		"bare metal CWE": {
 			region: "capd",
-			input:  "spiffe://capd.nke.local/tenant/nke/service/cloud-workflow-engine/bm/cwe",
-			want:   "spiffe://nke.capd.cloud-workflow-engine.nvid.id/bm/cwe",
+			input:  "spiffe://capd.nke.local/tenant/nke/service/nke-controller/bm/cwe",
+			want:   "spiffe://nke.capd.nke-controller.nvid.id/bm/cwe",
 		},
 		"DPU suffix is preserved": {
 			region: "capd",
@@ -69,7 +69,7 @@ func TestUnit_ExchangeSubjectRejectsUnsupportedSource(t *testing.T) {
 		wantErr string
 	}
 	tests := map[string]parameters{
-		"unrelated workload": {path: "/nke-service/cloud-workflow-engine", wantErr: "invalid local SPIFFE identity path"},
+		"unrelated workload": {path: "/nke-service/nke-controller", wantErr: "invalid local SPIFFE identity path"},
 		"legacy node agent":  {path: "/host/45f59791-87df-4e85-9430-e565166ad020", wantErr: "invalid local SPIFFE identity path"},
 	}
 	for name, params := range tests {
@@ -86,12 +86,12 @@ func TestTokenExchangeRewritesAndResignsValidatedSVID(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0).UTC()
 	expiry := now.Add(10 * time.Minute)
 	server := newTestServer(t, staticValidator{token: validatedToken{
-		ID:       spiffeid.RequireFromString("spiffe://capd.nke.local/tenant/nke/service/cloud-workflow-engine/bm/cwe"),
+		ID:       spiffeid.RequireFromString("spiffe://capd.nke.local/tenant/nke/service/nke-controller/bm/cwe"),
 		Audience: []string{"tenant-a"},
 		Expiry:   expiry,
 		Claims: map[string]any{
 			"iss":                  "https://local-spire.invalid",
-			"sub":                  "spiffe://capd.nke.local/tenant/nke/service/cloud-workflow-engine/bm/cwe",
+			"sub":                  "spiffe://capd.nke.local/tenant/nke/service/nke-controller/bm/cwe",
 			"aud":                  "tenant-a",
 			"exp":                  expiry.Unix(),
 			"iat":                  now.Add(-time.Minute).Unix(),
@@ -123,7 +123,7 @@ func TestTokenExchangeRewritesAndResignsValidatedSVID(t *testing.T) {
 	var claims map[string]any
 	require.NoError(t, parsed.Claims(server.publicKey.Key, &claims))
 	require.Equal(t, "https://capd.dsx.nvid.id", claims["iss"])
-	require.Equal(t, "spiffe://nke.capd.cloud-workflow-engine.nvid.id/bm/cwe", claims["sub"])
+	require.Equal(t, "spiffe://nke.capd.nke-controller.nvid.id/bm/cwe", claims["sub"])
 	require.Equal(t, "tenant-a", claims["aud"])
 	require.Equal(t, "source-token", claims["jti"])
 	require.NotContains(t, claims, "private_source_claim")

@@ -53,6 +53,7 @@ set -uo pipefail
 
 log() { printf '[teardown-ci-host] %s\n' "$*"; }
 
+# Kept as cwebr0: renaming leaves the old bridge behind on existing nico-vms hosts. NKX-17644.
 BRIDGE_NAME="${NICO_VMS_BRIDGE_NAME:-cwebr0}"
 BRIDGE_CIDR="${NICO_VMS_BRIDGE_CIDR:-172.30.0.0/24}"
 DHCP_HOSTS_DIR="${NICO_VMS_DHCP_HOSTS_DIR:-/var/lib/nico-vms/dhcp-hosts}"

@@ -9,9 +9,9 @@ import (
 )
 
 func TestBuildPodWaitsForExpectedUsername(t *testing.T) {
-	const expectedUsername = "spiffe://test.nke.local/nke-service/cloud-workflow-engine"
+	const expectedUsername = "spiffe://test.nke.local/nke-service/nke-controller"
 	pod := buildPod(
-		Identity{Namespace: "cloud-workflow-engine", ServiceAccount: "cloud-workflow-engine"},
+		Identity{Namespace: "nke-controller", ServiceAccount: "nke-controller"},
 		"tenant-cluster",
 		expectedUsername,
 		[]Check{{Verb: "list", Resource: "nodes"}},
@@ -41,12 +41,12 @@ func TestBuildPodWaitsForExpectedUsername(t *testing.T) {
 func TestBuildPodMountsOptionalExchangeCA(t *testing.T) {
 	pod := buildPod(
 		Identity{
-			Namespace:         "cloud-workflow-engine",
-			ServiceAccount:    "cloud-workflow-engine",
+			Namespace:         "nke-controller",
+			ServiceAccount:    "nke-controller",
 			CABundleConfigMap: "dsx-identity-exchange-ca",
 		},
 		"tenant-cluster",
-		"spiffe://nke.capd.cloud-workflow-engine.nvid.id/bm/cwe",
+		"spiffe://nke.capd.nke-controller.nvid.id/bm/cwe",
 		nil,
 	)
 

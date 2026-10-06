@@ -13,7 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/nke"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/tenantauth"
 )
@@ -24,9 +24,9 @@ var (
 )
 
 const (
-	dsxIdentityExchangeEnv = "NKE_E2E_DSX_IDENTITY_EXCHANGE"
-	dsxExchangeCAConfigMap = "dsx-identity-exchange-ca"
-	dsxExchangeCWEUser     = "spiffe://nke.capd.cloud-workflow-engine.nvid.id/bm/cwe"
+	dsxIdentityExchangeEnv    = "NKE_E2E_DSX_IDENTITY_EXCHANGE"
+	dsxExchangeCAConfigMap    = "dsx-identity-exchange-ca"
+	dsxExchangeControllerUser = "spiffe://nke.capd.nke-controller.nvid.id/bm/cwe"
 )
 
 func validateOIDCPostCreate(test *tenantTest) {
@@ -43,8 +43,8 @@ func validateOIDCPostCreate(test *tenantTest) {
 			return tenantauth.AssertKubeconfigAndTrustBundle(ctx, test.k8sClient, test.cluster.Name)
 		}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
-		cweIdentity := tenantauth.Identity{Namespace: cwe.Namespace(), ServiceAccount: cwe.ServiceAccount()}
-		cweUser := "spiffe://" + test.trustDomain + "/nke-service/" + cwe.ServiceAccount()
+		controllerIdentity := tenantauth.Identity{Namespace: controller.Namespace(), ServiceAccount: controller.ServiceAccount()}
+		controllerUser := "spiffe://" + test.trustDomain + "/nke-service/" + controller.ServiceAccount()
 		if os.Getenv(dsxIdentityExchangeEnv) == "true" {
 			By("Asserting the published kubeconfig selects the HTTPS token exchange")
 			exchangeEndpoint := expectSucceed(tenantauth.KubeconfigExecEnv(
@@ -54,12 +54,12 @@ func validateOIDCPostCreate(test *tenantTest) {
 			Expect(parsedEndpoint.Scheme).To(Equal("https"))
 			Expect(parsedEndpoint.Path).To(Equal("/v1/exchange"))
 
-			cweIdentity.CABundleConfigMap = dsxExchangeCAConfigMap
-			cweUser = dsxExchangeCWEUser
+			controllerIdentity.CABundleConfigMap = dsxExchangeCAConfigMap
+			controllerUser = dsxExchangeControllerUser
 		}
 
-		By("Verifying the cwe identity authenticates and has the required node permissions")
-		verifyIdentity(ctx, test, cweIdentity, cweUser)
+		By("Verifying the controller identity authenticates and has the required node permissions")
+		verifyIdentity(ctx, test, controllerIdentity, controllerUser)
 
 		if os.Getenv(dsxIdentityExchangeEnv) == "true" {
 			controllers := []struct {

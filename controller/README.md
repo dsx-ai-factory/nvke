@@ -402,7 +402,7 @@ tsh login
 kubectl -n cloud-workflow-engine port-forward svc/cloud-workflow-engine 18080:8080
 
 # Create the Forge NICo cluster
-CWE_HTTP_PORT=18080 ./hack/create-forge-nico-cluster.sh
+NKE_CONTROLLER_HTTP_PORT=18080 ./hack/create-forge-nico-cluster.sh
 ```
 
 ### Cleanup
@@ -854,7 +854,9 @@ Use this when you want to set breakpoints and step through CWE code while the re
 
 ```bash
 export TEMPORAL_HOST_PORT=localhost:7233
-export DB_CONNECTION_STRING="postgres://postgres:postgres@localhost:5432/cloud-workflow?sslmode=disable"
+export TEMPORAL_NAMESPACE=nke-controller
+export TEMPORAL_TASK_QUEUE=nke-controller-tasks
+export DB_CONNECTION_STRING="postgres://postgres:postgres@localhost:5432/nke-controller?sslmode=disable"
 export DB_MAX_OPEN_CONNECTIONS=12
 ```
 
