@@ -74,8 +74,9 @@ def repository_uris(cache, name, version, architecture, digest, size):
         # Never include a complete URI in errors: it may contain credentials.
         try:
             parsed = urlsplit(uri)
-        except ValueError as error:
-            raise ValueError(f"captured package {subject} has unsafe repository metadata locations: malformed URI") from error
+        except ValueError:
+            # urllib's original error may include the malformed hostname.
+            raise ValueError(f"captured package {subject} has unsafe repository metadata locations: malformed URI") from None
         reason = None
         if parsed.scheme not in ("http", "https"):
             reason = f"unsupported scheme {parsed.scheme!r}"

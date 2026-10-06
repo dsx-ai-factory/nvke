@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import traceback
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -91,6 +92,7 @@ class CaptureAPTTest(unittest.TestCase):
             ("missing host", ["https:///package.deb"], "missing hostname"),
             ("whitespace", ["https://example.invalid/package .deb"], "whitespace"),
             ("malformed", ["https://[malformed/package.deb"], "malformed URI"),
+            ("malformed secret", ["https://[secret:token]/package.deb"], "malformed URI"),
         ):
             with self.subTest(name=name):
                 with self.assertRaisesRegex(ValueError, "unsafe repository metadata locations") as raised:
@@ -99,6 +101,8 @@ class CaptureAPTTest(unittest.TestCase):
                 self.assertIn(reason, str(raised.exception))
                 self.assertNotIn("secret", str(raised.exception))
                 self.assertNotIn("token", str(raised.exception))
+                diagnostic = "".join(traceback.format_exception(raised.exception))
+                self.assertNotIn("secret:token", diagnostic)
                 self.assertFalse(self.output.exists())
 
     def test_repository_location_count_has_distinct_error(self):
