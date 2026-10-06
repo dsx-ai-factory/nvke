@@ -95,6 +95,8 @@ def validate_archive_framing(source, path: pathlib.Path) -> None:
         # metadata parser. Only ordinary file headers belong in this contract.
         if member.type not in (tarfile.REGTYPE, tarfile.AREGTYPE) and not (member.isdir() and member.name in (".", "./")):
             raise SystemExit(f"package archive {path} has unsafe or unexpected member {member.name!r}")
+        if member.isdir() and member.size != 0:
+            raise SystemExit(f"package archive {path} root directory must have zero size")
         if member.size < 0 or member.size > MAX_PACKAGE_BYTES:
             raise SystemExit(f"package {member.name!r} exceeds its per-package size budget")
         padded_size = (member.size + tarfile.BLOCKSIZE - 1) // tarfile.BLOCKSIZE * tarfile.BLOCKSIZE
@@ -110,9 +112,21 @@ def stage_archive_debs(
 ) -> int:
     """Stream bounded regular members into a private stage, never extract paths."""
     try:
-        with open_regular(path, "package archive") as content:
-            validate_archive_framing(content, path)
-            archive = tarfile.open(fileobj=content, mode="r:")
+        with open_regular(path, "package archive") as source, \
+                tempfile.TemporaryFile(dir=destination.parent) as snapshot:
+            if os.fstat(source.fileno()).st_size > MAX_ARCHIVE_BYTES:
+                raise SystemExit(f"package archive {path} exceeds its raw archive byte budget")
+            copied = 0
+            while chunk := source.read(1 << 20):
+                copied += len(chunk)
+                if copied > MAX_ARCHIVE_BYTES:
+                    raise SystemExit(f"package archive {path} exceeds its raw archive byte budget")
+                snapshot.write(chunk)
+            snapshot.seek(0)
+            # Neither path replacement nor in-place input writes can change
+            # these private bytes between the two stdlib validation passes.
+            validate_archive_framing(snapshot, path)
+            archive = tarfile.open(fileobj=snapshot, mode="r:")
             with archive:
                 return _stage_archive_debs(archive, path, destination, names, total_bytes)
     except tarfile.TarError as exc:

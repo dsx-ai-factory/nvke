@@ -341,6 +341,50 @@ class ComposeImageInputsTest(unittest.TestCase):
                 self.assertIn("package archive", result.stderr)
                 self.assertEqual(output.read_bytes(), b"prior output")
 
+    def test_rejects_root_directory_with_payload(self):
+        with tarfile.open(self.materials / "ovn", "w") as archive:
+            first = tarfile.TarInfo("first.deb")
+            first.size = 1
+            archive.addfile(first, io.BytesIO(b"x"))
+            root = tarfile.TarInfo(".")
+            root.type = tarfile.DIRTYPE
+            root.size = 512
+            archive.addfile(root, io.BytesIO(b"x" * 512))
+            last = tarfile.TarInfo("last.deb")
+            last.size = 1
+            archive.addfile(last, io.BytesIO(b"x"))
+        result = self.run_compose(self.root / "root-directory.tar")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("root directory must have zero size", result.stderr)
+
+    def test_archive_snapshot_survives_in_place_source_mutation(self):
+        spec = importlib.util.spec_from_file_location("compose_image_inputs", SCRIPTS / "compose-image-inputs.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        path = self.materials / "ovn"
+        with tarfile.open(path, "w") as archive:
+            for name in ("first.deb", "last.deb"):
+                member = tarfile.TarInfo(name)
+                member.size = 1
+                archive.addfile(member, io.BytesIO(b"x"))
+        original_validation = module.validate_archive_framing
+
+        def mutate_after_validation(content, original_path):
+            original_validation(content, original_path)
+            with original_path.open("r+b") as writable:
+                writable.seek(1024)
+                writable.write(b"invalid" + bytes(505) + bytes(1024))
+                writable.truncate()
+
+        stage = self.root / "snapshot-stage"
+        stage.mkdir()
+        names = set()
+        with patch.object(module, "validate_archive_framing", side_effect=mutate_after_validation):
+            total = module.stage_archive_debs(path, stage, names, 0)
+        self.assertEqual(total, 2)
+        self.assertEqual(names, {"first.deb", "last.deb"})
+        self.assertEqual({entry.name for entry in stage.iterdir()}, names)
+
     def test_rejects_unsupported_members_and_names(self):
         for name, kind, size in (
             ("nested/ovn.deb", tarfile.REGTYPE, 1),
@@ -573,6 +617,28 @@ cat "$patched" >>"$output"
         result = self.run_patch(self.source, output)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(list(output.iterdir()), [])
+
+    def test_snapshot_survives_source_change_before_successful_publication(self):
+        seven_zip_input = self.root / "seven-zip-input"
+        xorriso_input = self.root / "xorriso-input"
+        write_executable(self.tools / "7z", "#!/bin/sh\nset -eu\n"
+            "for argument in \"$@\"; do case \"$argument\" in "
+            "-o*) output=${argument#-o};; "
+            f"*.iso) printf '%s' \"$argument\" > '{seven_zip_input}';; esac; done\n"
+            "printf 'set timeout=30\\nmenuentry fixture {}\\n' >\"$output/grub.cfg\"\n")
+        write_executable(self.tools / "xorriso", "#!/bin/sh\nset -eu\n"
+            "while [ \"$#\" -gt 0 ]; do case \"$1\" in -indev) input=$2; shift 2;; "
+            "-outdev) output=$2; shift 2;; *) shift;; esac; done\n"
+            f"printf '%s' \"$input\" > '{xorriso_input}'\n"
+            f"printf 'changed source' > '{self.source}'\n"
+            "cp \"$input\" \"$output\"\n")
+        output = self.root / "snapshot.iso"
+        result = self.run_patch(self.source, output)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(output.read_bytes(), b"source-iso\n")
+        self.assertEqual(self.source.read_bytes(), b"changed source")
+        self.assertEqual(seven_zip_input.read_text(), xorriso_input.read_text())
+        self.assertNotEqual(seven_zip_input.read_text(), str(self.source))
 
     def test_rejects_source_symlink(self):
         source_link = self.root / "source-link.iso"

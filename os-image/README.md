@@ -336,11 +336,15 @@ exactly one `spire-agent_*.deb`; Calico inputs may contain at most one
 `nke-cni-calico-manifests-*.deb`. Every package must declare the requested
 `--architecture` or `all`, checked with `dpkg-deb`.
 
-The runner must authenticate these files before calling the composer.
-It streams regular package members into a private stage,
-rejects unsafe entries and duplicate filenames, and bounds input archives to
-16384 entries each, 16384 packages overall, 1 GiB per package and 7 GiB total
-package bytes. It normalizes archive directory permissions independently of the host
+The runner must authenticate these files before calling the composer and keep
+the authenticated bytes immutable until composition returns. The composer
+copies each component archive through a no-follow descriptor into a bounded,
+private snapshot before validating and staging its regular package members.
+This snapshot prevents caller writes between framing validation and parsing.
+The composer rejects unsafe entries and duplicate filenames, and bounds input archives to
+16384 entries each, 16384 packages across component archives plus the standalone
+agent, 1 GiB per package and 7 GiB total package bytes. It normalizes archive
+directory permissions independently of the host
 umask, and preserves all staged versions in the local APT index. The ISO patcher
 accepts a prepared local ISO and performs no acquisition. The runner must verify
 the source ISO against its authenticated upstream digest, for example Ubuntu's
