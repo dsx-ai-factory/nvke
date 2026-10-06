@@ -88,9 +88,13 @@ func executionOutcome(err error) string {
 }
 
 func logOutcome(logger log.Logger, message string, fields []any, err error, outcome string) {
-	if err != nil && outcome != "continued_as_new" {
+	switch {
+	case err == nil || outcome == "continued_as_new":
+		logger.Info(message, fields...)
+	case outcome == "canceled":
+		// A worker shutdown or a user canceling is not a failure to alert on.
+		logger.Warn(message, append(fields, "error", err)...)
+	default:
 		logger.Error(message, append(fields, "error", err)...)
-		return
 	}
-	logger.Info(message, fields...)
 }

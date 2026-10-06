@@ -71,7 +71,7 @@ func TestRequestCompletedLogCarriesEventAndOutcome(t *testing.T) {
 	require.GreaterOrEqual(t, response.Code, 400)
 	record := completedRecord(t, records)
 	require.Equal(t, "http.completed", record["event"])
-	require.Equal(t, "failed", record["outcome"])
+	require.Equal(t, "rejected", record["outcome"], "a 4xx is rejected, not failed")
 	require.EqualValues(t, response.Code, record["status"])
 	require.Empty(t, response.Header().Get("X-Trace-ID"), "no trace ID without tracing")
 	require.NotContains(t, record, "trace_id")

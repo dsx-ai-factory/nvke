@@ -289,6 +289,12 @@ func assertLogs(t *testing.T, data []byte, traceID, scenario string) {
 		if record["trace_id"] != traceID {
 			continue
 		}
+		// LogHandler adds trace_id and span_id, and NormalizeLogAttr renames the Temporal
+		// SDK's own TraceID and SpanID fields to the same keys; JSON parsers disagree on
+		// duplicate keys, so a line must never carry both.
+		for _, key := range []string{"trace_id", "span_id"} {
+			require.Equal(t, 1, bytes.Count(line, []byte(`"`+key+`":`)), "duplicate %s in %s", key, line)
+		}
 		if event, ok := record["event"].(string); ok {
 			events[event+":"+fmt.Sprint(record["outcome"])]++
 		}

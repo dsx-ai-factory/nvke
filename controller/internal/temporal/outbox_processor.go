@@ -110,42 +110,44 @@ func (p *OutboxProcessor) processBatch(ctx context.Context) error {
 
 		// Process each entry
 		for _, entry := range entries {
-			// Each entry belongs to a different request, so restore its trace context here.
-			entryCtx := otelx.Restore(ctx, entry.TraceContext)
-			if err := p.processEntry(entryCtx, entry); err != nil {
-				p.logger.ErrorContext(entryCtx, "Failed to process workflow outbox entry",
-					"error", err,
-					"id", entry.ID.String(),
-					"workflowType", entry.WorkflowType)
-				// Continue processing other entries even if one fails
-				continue
-			}
-
-			// Mark the entry as processed within the transaction
-			if err := tx.MarkWorkflowOutboxEntryProcessed(entryCtx, entry.ID); err != nil {
-				p.logger.ErrorContext(entryCtx, "Failed to mark workflow outbox entry as processed",
-					"error", err,
-					"id", entry.ID.String())
-				// Continue processing other entries even if marking one as processed fails
-				continue
-			}
+			// A failure on one entry is logged and does not stop the rest of the batch.
+			p.dispatchEntry(ctx, tx, entry)
 		}
 
 		return nil
 	})
 }
 
-// processEntry processes a single outbox entry by starting the appropriate workflow.
-// ctx must already carry the entry's restored trace context.
-func (p *OutboxProcessor) processEntry(ctx context.Context, entry db.WorkflowOutbox) error {
+// dispatchEntry starts the entry's workflow and then marks the entry processed in
+// the transaction. Both steps, and their logs and SQL, run under one outbox.dispatch
+// span that continues the trace of the request that wrote the entry. An entry whose
+// workflow fails to start is left unprocessed so the next poll retries it.
+func (p *OutboxProcessor) dispatchEntry(ctx context.Context, tx db.Tx, entry db.WorkflowOutbox) {
+	// Each entry belongs to a different request, so restore its trace context here.
+	ctx = otelx.Restore(ctx, entry.TraceContext)
 	ctx, span := otel.Tracer("cwe.outbox").Start(ctx, "outbox.dispatch", trace.WithAttributes(attribute.String("workflow_id", entry.WorkflowID)))
 	defer span.End()
-	err := p.startWorkflow(ctx, entry)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+
+	if err := p.startWorkflow(ctx, entry); err != nil {
+		recordSpanError(span, err)
+		p.logger.ErrorContext(ctx, "Failed to process workflow outbox entry",
+			"error", err,
+			"id", entry.ID.String(),
+			"workflowType", entry.WorkflowType)
+		return
 	}
-	return err
+
+	if err := tx.MarkWorkflowOutboxEntryProcessed(ctx, entry.ID); err != nil {
+		recordSpanError(span, err)
+		p.logger.ErrorContext(ctx, "Failed to mark workflow outbox entry as processed",
+			"error", err,
+			"id", entry.ID.String())
+	}
+}
+
+func recordSpanError(span trace.Span, err error) {
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
 }
 
 func (p *OutboxProcessor) startWorkflow(ctx context.Context, entry db.WorkflowOutbox) error {

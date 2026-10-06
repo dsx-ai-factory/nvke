@@ -141,3 +141,33 @@ func TestOutcomeInterceptorLogsWorkflowAndActivityOutcomes(t *testing.T) {
 		})
 	}
 }
+
+func TestLogOutcomeLevel(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     error
+		outcome string
+		want    string
+	}{
+		{"success", nil, "succeeded", "INFO"},
+		{"continue as new", errors.New("continue as new"), "continued_as_new", "INFO"},
+		{"canceled is not an error-level event", context.Canceled, "canceled", "WARN"},
+		{"timed out", context.DeadlineExceeded, "timed_out", "ERROR"},
+		{"failed", errors.New("boom"), "failed", "ERROR"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			logger := log.NewStructuredLogger(slog.New(slog.NewJSONHandler(&buf, nil)))
+
+			logOutcome(logger, "returned", []any{"outcome", tt.outcome}, tt.err, tt.outcome)
+
+			var record map[string]any
+			require.NoError(t, json.Unmarshal(buf.Bytes(), &record))
+			require.Equal(t, tt.want, record["level"])
+			if tt.err != nil && tt.outcome != "continued_as_new" {
+				require.Contains(t, record, "error")
+			}
+		})
+	}
+}

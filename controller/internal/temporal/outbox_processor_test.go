@@ -91,11 +91,11 @@ func newOutboxEntry(t *testing.T, tracer trace.Tracer, workflowID string, withTr
 	return entry, span.SpanContext()
 }
 
-func runOutboxBatch(t *testing.T, entries []db.WorkflowOutbox, starter *fakeWorkflowStarter) *testutil.MockTx {
+func runOutboxBatch(t *testing.T, entries []db.WorkflowOutbox, starter *fakeWorkflowStarter, markErr ...error) *testutil.MockTx {
 	t.Helper()
 	tx := &testutil.MockTx{}
 	tx.On("ListUnprocessedWorkflowOutboxEntries", mock.Anything, 10).Return(entries, nil)
-	tx.On("MarkWorkflowOutboxEntryProcessed", mock.Anything, mock.Anything).Return(nil)
+	tx.On("MarkWorkflowOutboxEntryProcessed", mock.Anything, mock.Anything).Return(append(markErr, nil)[0])
 	database := &testutil.MockDB{MockTx: tx}
 	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 	processor := NewOutboxProcessor(config.Config{OutboxBatchSize: 10}, slog.New(slog.DiscardHandler), database, starter)
@@ -148,6 +148,15 @@ func TestOutboxEachEntryContinuesItsOwnTrace(t *testing.T) {
 	require.Len(t, dispatch, 2)
 	require.Equal(t, firstRequest.SpanID(), dispatch[firstRequest.TraceID()].Parent().SpanID(), "dispatch is a child of the request span")
 	require.Equal(t, secondRequest.SpanID(), dispatch[secondRequest.TraceID()].Parent().SpanID())
+
+	// The mark-processed write runs under the dispatch span, not the request span.
+	for _, tc := range []struct {
+		entry   db.WorkflowOutbox
+		request trace.SpanContext
+	}{{first, firstRequest}, {second, secondRequest}} {
+		marked := trace.SpanContextFromContext(markedContext(t, tx, tc.entry.ID))
+		require.Equal(t, dispatch[tc.request.TraceID()].SpanContext().SpanID(), marked.SpanID(), "%s is marked under its dispatch span", tc.entry.WorkflowID)
+	}
 }
 
 func TestOutboxEntryWithoutTraceContextStillDispatches(t *testing.T) {
@@ -198,4 +207,20 @@ func TestOutboxAlreadyStartedWorkflowIsMarkedProcessed(t *testing.T) {
 	tx := runOutboxBatch(t, []db.WorkflowOutbox{entry}, starter)
 
 	tx.AssertCalled(t, "MarkWorkflowOutboxEntryProcessed", mock.Anything, entry.ID)
+}
+
+func TestOutboxMarkFailureIsRecordedOnDispatchSpan(t *testing.T) {
+	recorder, tracer := installRecordingTracer(t)
+	entry, _ := newOutboxEntry(t, tracer, "wf-mark", true)
+	starter := newStarter()
+
+	runOutboxBatch(t, []db.WorkflowOutbox{entry}, starter, errors.New("write failed"))
+
+	for _, span := range recorder.Ended() {
+		if span.Name() == "outbox.dispatch" {
+			require.Equal(t, codes.Error, span.Status().Code)
+			return
+		}
+	}
+	require.Fail(t, "no outbox.dispatch span recorded")
 }
