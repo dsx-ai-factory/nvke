@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0
 {{- if not (kindIs "map" .Values.daemonset.otelcol.config) -}}
 {{- fail "daemonset.otelcol.config must be a native Collector YAML map" -}}
 {{- end -}}
-{{- $workload := deepCopy .Values.daemonset.kubernetes -}}
+{{- $workload := include "nktp.withSidecar" (dict "name" "daemonset" "values" .Values.daemonset "root" $ "env" (dict "NODE_NAME" "spec.nodeName")) | fromYaml -}}
 {{- $env := $workload.env | default list -}}
 {{- range $name, $field := dict "NODE_NAME" "spec.nodeName" "OTEL_K8S_NODE_IP" "status.hostIP" "POD_NAMESPACE" "metadata.namespace" -}}
   {{- $found := false -}}

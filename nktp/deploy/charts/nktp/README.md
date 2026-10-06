@@ -38,9 +38,11 @@ are listed on the repository's GitHub Releases, as `nktp/vX.Y.Z` tags.
 
 Every Collector below is an `OpenTelemetryCollector` resource that the bundled
 Operator turns into a workload. Each one sends its own metrics, logs and traces
-to the watchdog, and so does each Target Allocator its metrics, over OTLP. The
-node Collectors send the Target Allocators' and the Operator's container logs
-there too. The watchdog sends its own telemetry to the backend.
+through a sidecar in its Pod to the watchdog, and each Target Allocator sends
+its metrics to the watchdog directly, over OTLP. The node Collectors send the
+Target Allocators' and the Operator's container logs there too. The watchdog's
+own telemetry goes through its sidecar to the backend; see
+[Self-telemetry sidecars](#self-telemetry-sidecars).
 
 | Values key | Role |
 |---|---|
@@ -56,7 +58,8 @@ there too. The watchdog sends its own telemetry to the backend.
 
 Footprint with default values on three nodes, before the Operator and the
 development backend. Requests are per workload; a Collector's are set under
-`<workload>.kubernetes.resources` and its Target Allocator's under
+`<workload>.kubernetes.resources`, its sidecar's under
+`<workload>.sidecar.kubernetes.resources` and its Target Allocator's under
 `<workload>.kubernetes.targetAllocator.resources`.
 
 | Workload | Pods | CPU request | Memory request |
@@ -67,6 +70,7 @@ development backend. Requests are per workload; a Collector's are set under
 | Large-target pool | 2 | 4000m | 16Gi |
 | Cluster event reader | 2 | 2000m | 1Gi |
 | Target Allocators | 3 | 750m | 4Gi |
+| Collector sidecars | in the Pods above | 230m | 736Mi |
 | node-exporter | 3 | none set | none set |
 | kube-state-metrics | 9 | 900m | 1.1Gi |
 
@@ -109,7 +113,7 @@ Top-level keys in [values.yaml](values.yaml):
 | `global.imageRegistry` | A registry that replaces the registry of every image the chart and its dependencies pull, apart from three; see [Images](#images). |
 | `otelcol_image` | The Collector image every workload uses unless it sets `<workload>.otelcol.image`, as `registry`, `repository` and `tag`. |
 | `targetallocator_image` | The Target Allocator image of the watchdog, the node Collector and the large-target pool, as `registry`, `repository` and `tag`. |
-| `watchdog`, `gateway_logs`, `gateway_metrics`, `gateway_traces`, `daemonset`, `large_target_metrics`, `cluster_events` | One block per Collector. `otelcol.config` is the Collector configuration, which the chart renders as written; `kubernetes` is the workload: replicas, resources, environment, Target Allocator, scheduling and, for every Collector but the node DaemonSet and the event reader, the `autoscaler` bounds. |
+| `watchdog`, `gateway_logs`, `gateway_metrics`, `gateway_traces`, `daemonset`, `large_target_metrics`, `cluster_events` | One block per Collector. `otelcol.config` is the Collector configuration, which the chart renders as written; `kubernetes` is the workload: replicas, resources, environment, Target Allocator, scheduling and, for every Collector but the node DaemonSet and the event reader, the `autoscaler` bounds. `sidecar` is the Collector's self-telemetry sidecar, with its own `otelcol` and `kubernetes`; see [Self-telemetry sidecars](#self-telemetry-sidecars). |
 | `kube-state-metrics` | `enabled`, the node DaemonSet, the central `deployments` with their `resource_types`, `shards` and `namespaces`, and the image. |
 | `otel-lgtm` | The development backend: `enabled`, `image`, `env`, `resources`, `nodeSelector`, `tolerations`, `extraVolumes` and `extraVolumeMounts`. |
 | `opentelemetry-kube-stack`, `node-exporter`, `metrics-server` | Values passed through to the bundled charts. |
@@ -364,12 +368,36 @@ namespaces whose monitor authors are trusted. The namespaces must already
 exist. The list is empty by default, which creates nothing;
 `daemonset.rbac.create: false` leaves the grants to you.
 
+### Self-telemetry sidecars
+
+Every Collector Pod runs a second Collector, `otc-sidecar`, as a native sidecar:
+an init container with `restartPolicy: Always`, which starts before the main
+Collector and stops after it. The main Collector starts once the sidecar is
+ready and sends its own metrics, logs and traces to it at `127.0.0.1:4319`. The
+sidecar queues each signal and retries for up to 30 minutes, where the
+Collector's telemetry SDK alone drops data after about a minute. It keeps only
+traces with an error span or a span longer than 1s, and exports to the
+watchdog; the watchdog's sidecar exports to the backend. Its own metrics and
+logs go through the same queues, and it emits no traces.
+
+`<workload>.sidecar.otelcol.config` is the sidecar's complete Collector
+configuration, rendered as written, and `<workload>.sidecar.kubernetes` its
+container's resources, environment, probes and security context. The chart sets
+the container's name, image, arguments and restart policy itself; the image is
+`sidecar.otelcol.image` or else `otelcol_image`. It adds `POD_NAME`, and on the
+node Collector `NODE_NAME`, when the `env` list leaves them out. The Operator
+cannot inject this sidecar: it skips any Pod with a container named
+`otc-container`, the name it gives every Collector's main container.
+
+The watchdog's and the gateways' sidecars request 20m and 64Mi, with limits of
+200m and 256Mi and a 16MiB queue per signal. The others request 10m and 32Mi,
+with limits of 100m and 128Mi and 4MiB queues.
+
 ### The backend
 
 Every exporter ships pointed at the bundled development backend at
 `http://lgtm:4318` in the release namespace: the `otlp_http` exporter of the
-watchdog and of each gateway, and the three `service.telemetry` exporters in
-the watchdog block. Grafana is on port 3000 of the `lgtm` Service in the release
+watchdog, of the watchdog's sidecar and of each gateway. Grafana is on port 3000 of the `lgtm` Service in the release
 namespace, with anonymous admin access, and Prometheus on port 9090. That
 backend keeps its data in memory, has no authentication and does not scale, so
 it is for evaluation only.
@@ -416,29 +444,12 @@ watchdog:
       exporters:
         otlp_http:
           endpoint: https://<backend>
-      service:
-        telemetry:
-          metrics:
-            readers:
-              - periodic:
-                  exporter:
-                    otlp:
-                      protocol: http/protobuf
-                      endpoint: https://<backend>
-          logs:
-            processors:
-              - batch:
-                  exporter:
-                    otlp:
-                      protocol: http/protobuf
-                      endpoint: https://<backend>
-          traces:
-            processors:
-              - batch:
-                  exporter:
-                    otlp:
-                      protocol: http/protobuf
-                      endpoint: https://<backend>
+  sidecar:
+    otelcol:
+      config:
+        exporters:
+          otlp_http:
+            endpoint: https://<backend>
 gateway_logs:
   otelcol:
     config:
@@ -458,6 +469,9 @@ gateway_traces:
         otlp_http:
           endpoint: https://<backend>
 ```
+
+The Collectors' `service.telemetry` endpoints stay at `127.0.0.1:4319`, their
+sidecars.
 
 Credentials belong in a Secret referenced from the workload's `kubernetes.env`,
 read by the Collector through `${env:NAME}` substitution, never in values.
@@ -495,7 +509,9 @@ gateway_logs:
 
 A backend that does not authenticate clients needs only `ca.crt` and `ca_file`.
 `volumes` and `volumeMounts` replace the chart's lists, so restate any entries
-the chart sets for that workload.
+the chart sets for that workload. The watchdog's sidecar shares the watchdog's
+Pod and its volume: add the same mount under `watchdog.sidecar.kubernetes.volumeMounts`
+and the same `tls` block to `watchdog.sidecar.otelcol.config.exporters.otlp_http`.
 
 ### Bundled components
 

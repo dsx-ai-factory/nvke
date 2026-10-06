@@ -194,22 +194,23 @@ watchdog:
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://lgtm:4318
+                      endpoint: http://127.0.0.1:4319
           logs:
             processors:
               - batch:
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://lgtm:4318
+                      endpoint: http://127.0.0.1:4319
           traces:
             level: basic
             processors:
               - batch:
+                  schedule_delay: 1000 # Milliseconds. Keeps spans of one trace close together for tail sampling.
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://lgtm:4318
+                      endpoint: http://127.0.0.1:4319
         pipelines:
           metrics:
             receivers: [otlp, prometheus]
@@ -223,6 +224,129 @@ watchdog:
             receivers: [otlp]
             processors: [memory_limiter]
             exporters: [otlp_http]
+  # Native sidecar for this workload's own telemetry. It buffers through outages,
+  # keeps only error and slow traces, and exports to http://lgtm:4318.
+  sidecar:
+    kubernetes:
+      resources:
+        requests:
+          cpu: 20m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: GOMEMLIMIT
+          value: 192MiB # Soft Go runtime target at 75% of the container limit.
+      startupProbe: # The main Collector starts after this succeeds.
+        httpGet:
+          path: /
+          port: 13134
+        periodSeconds: 1
+        failureThreshold: 30
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 13134
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+    otelcol:
+      # Set a custom image for this sidecar only.
+      # image:
+      #   registry: ""
+      #   repository: otel/opentelemetry-collector-k8s
+      #   tag: 0.162.0
+      config:
+        extensions:
+          health_check:
+            endpoint: 0.0.0.0:13134 # Kubelet probes use the Pod IP.
+        receivers:
+          otlp:
+            protocols:
+              http:
+                endpoint: 127.0.0.1:4319 # Reachable only from containers in this Pod.
+                keepalive:
+                  idle_timeout: 5m # Longer than the 60s metric interval, so a reused connection is not closed mid-request.
+        processors:
+          memory_limiter:
+            check_interval: 500ms
+            limit_percentage: 80 # Hard heap threshold, 204.8Mi.
+            spike_limit_percentage: 25 # Soft refusal at 55% (140.8Mi).
+          tail_sampling:
+            decision_wait: 5s # Covers the 1s SDK flush interval with margin.
+            num_traces: 5000 # Bounds traces held in memory. The oldest are dropped first.
+            decision_cache:
+              sampled_cache_size: 50000 # Late spans of a kept trace are also kept.
+            policies:
+              - name: errors
+                type: status_code
+                status_code:
+                  status_codes: [ERROR]
+              - name: slow # Any single span longer than 1s. Trace duration includes up to 1s of export batching.
+                type: ottl_condition
+                ottl_condition:
+                  error_mode: ignore
+                  span:
+                    - end_time_unix_nano - start_time_unix_nano > 1000000000
+        exporters:
+          otlp_http:
+            endpoint: http://lgtm:4318
+            retry_on_failure:
+              max_elapsed_time: 30m
+            sending_queue:
+              block_on_overflow: false # The SDK cannot wait or retry, so blocking would only move the loss out of view.
+              sizer: bytes
+              queue_size: 16777216 # 16MiB for each of the 3 signal queues, 48MiB in total. When full, the sidecar refuses new data.
+              num_consumers: 2
+              batch:
+                sizer: bytes
+                min_size: 65536
+                max_size: 262144
+                flush_timeout: 1s
+        service:
+          extensions: [health_check]
+          telemetry:
+            resource:
+              service.name: nktp-watchdog-sidecar
+              service.instance.id: ${env:POD_NAME}
+            # Own metrics and logs go through this sidecar's own buffer.
+            metrics:
+              readers:
+                - periodic:
+                    exporter:
+                      otlp:
+                        protocol: http/protobuf
+                        endpoint: http://127.0.0.1:4319
+            logs:
+              processors:
+                - batch:
+                    exporter:
+                      otlp:
+                        protocol: http/protobuf
+                        endpoint: http://127.0.0.1:4319
+            traces:
+              level: none # Export failures already show in this sidecar's metrics and logs.
+          pipelines:
+            metrics:
+              receivers: [otlp]
+              processors: [memory_limiter]
+              exporters: [otlp_http]
+            logs:
+              receivers: [otlp]
+              processors: [memory_limiter]
+              exporters: [otlp_http]
+            traces:
+              receivers: [otlp]
+              processors: [memory_limiter, tail_sampling]
+              exporters: [otlp_http]
 
 # Log gateway. Exports all logs from the cluster.
 gateway_logs:
@@ -320,27 +444,151 @@ gateway_logs:
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
           logs:
             processors:
               - batch:
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
           traces:
             level: basic
             processors:
               - batch:
+                  schedule_delay: 1000 # Milliseconds. Keeps spans of one trace close together for tail sampling.
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
         pipelines:
           logs:
             receivers: [otlp]
             processors: [memory_limiter]
             exporters: [otlp_http]
+  # Native sidecar for this workload's own telemetry. It buffers through outages,
+  # keeps only error and slow traces, and exports to http://nktp-watchdog-collector:4318.
+  sidecar:
+    kubernetes:
+      resources:
+        requests:
+          cpu: 20m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: GOMEMLIMIT
+          value: 192MiB # Soft Go runtime target at 75% of the container limit.
+      startupProbe: # The main Collector starts after this succeeds.
+        httpGet:
+          path: /
+          port: 13134
+        periodSeconds: 1
+        failureThreshold: 30
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 13134
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+    otelcol:
+      # Set a custom image for this sidecar only.
+      # image:
+      #   registry: ""
+      #   repository: otel/opentelemetry-collector-k8s
+      #   tag: 0.162.0
+      config:
+        extensions:
+          health_check:
+            endpoint: 0.0.0.0:13134 # Kubelet probes use the Pod IP.
+        receivers:
+          otlp:
+            protocols:
+              http:
+                endpoint: 127.0.0.1:4319 # Reachable only from containers in this Pod.
+                keepalive:
+                  idle_timeout: 5m # Longer than the 60s metric interval, so a reused connection is not closed mid-request.
+        processors:
+          memory_limiter:
+            check_interval: 500ms
+            limit_percentage: 80 # Hard heap threshold, 204.8Mi.
+            spike_limit_percentage: 25 # Soft refusal at 55% (140.8Mi).
+          tail_sampling:
+            decision_wait: 5s # Covers the 1s SDK flush interval with margin.
+            num_traces: 5000 # Bounds traces held in memory. The oldest are dropped first.
+            decision_cache:
+              sampled_cache_size: 50000 # Late spans of a kept trace are also kept.
+            policies:
+              - name: errors
+                type: status_code
+                status_code:
+                  status_codes: [ERROR]
+              - name: slow # Any single span longer than 1s. Trace duration includes up to 1s of export batching.
+                type: ottl_condition
+                ottl_condition:
+                  error_mode: ignore
+                  span:
+                    - end_time_unix_nano - start_time_unix_nano > 1000000000
+        exporters:
+          otlp_http:
+            endpoint: http://nktp-watchdog-collector:4318
+            retry_on_failure:
+              max_elapsed_time: 30m
+            sending_queue:
+              block_on_overflow: false # The SDK cannot wait or retry, so blocking would only move the loss out of view.
+              sizer: bytes
+              queue_size: 16777216 # 16MiB for each of the 3 signal queues, 48MiB in total. When full, the sidecar refuses new data.
+              num_consumers: 2
+              batch:
+                sizer: bytes
+                min_size: 65536
+                max_size: 262144
+                flush_timeout: 1s
+        service:
+          extensions: [health_check]
+          telemetry:
+            resource:
+              service.name: nktp-gateway-logs-sidecar
+              service.instance.id: ${env:POD_NAME}
+            # Own metrics and logs go through this sidecar's own buffer.
+            metrics:
+              readers:
+                - periodic:
+                    exporter:
+                      otlp:
+                        protocol: http/protobuf
+                        endpoint: http://127.0.0.1:4319
+            logs:
+              processors:
+                - batch:
+                    exporter:
+                      otlp:
+                        protocol: http/protobuf
+                        endpoint: http://127.0.0.1:4319
+            traces:
+              level: none # Export failures already show in this sidecar's metrics and logs.
+          pipelines:
+            metrics:
+              receivers: [otlp]
+              processors: [memory_limiter]
+              exporters: [otlp_http]
+            logs:
+              receivers: [otlp]
+              processors: [memory_limiter]
+              exporters: [otlp_http]
+            traces:
+              receivers: [otlp]
+              processors: [memory_limiter, tail_sampling]
+              exporters: [otlp_http]
 
 # Metric gateway. Exports all metrics from the cluster.
 gateway_metrics:
@@ -438,27 +686,151 @@ gateway_metrics:
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
           logs:
             processors:
               - batch:
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
           traces:
             level: basic
             processors:
               - batch:
+                  schedule_delay: 1000 # Milliseconds. Keeps spans of one trace close together for tail sampling.
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
         pipelines:
           metrics:
             receivers: [otlp]
             processors: [memory_limiter]
             exporters: [otlp_http]
+  # Native sidecar for this workload's own telemetry. It buffers through outages,
+  # keeps only error and slow traces, and exports to http://nktp-watchdog-collector:4318.
+  sidecar:
+    kubernetes:
+      resources:
+        requests:
+          cpu: 20m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: GOMEMLIMIT
+          value: 192MiB # Soft Go runtime target at 75% of the container limit.
+      startupProbe: # The main Collector starts after this succeeds.
+        httpGet:
+          path: /
+          port: 13134
+        periodSeconds: 1
+        failureThreshold: 30
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 13134
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+    otelcol:
+      # Set a custom image for this sidecar only.
+      # image:
+      #   registry: ""
+      #   repository: otel/opentelemetry-collector-k8s
+      #   tag: 0.162.0
+      config:
+        extensions:
+          health_check:
+            endpoint: 0.0.0.0:13134 # Kubelet probes use the Pod IP.
+        receivers:
+          otlp:
+            protocols:
+              http:
+                endpoint: 127.0.0.1:4319 # Reachable only from containers in this Pod.
+                keepalive:
+                  idle_timeout: 5m # Longer than the 60s metric interval, so a reused connection is not closed mid-request.
+        processors:
+          memory_limiter:
+            check_interval: 500ms
+            limit_percentage: 80 # Hard heap threshold, 204.8Mi.
+            spike_limit_percentage: 25 # Soft refusal at 55% (140.8Mi).
+          tail_sampling:
+            decision_wait: 5s # Covers the 1s SDK flush interval with margin.
+            num_traces: 5000 # Bounds traces held in memory. The oldest are dropped first.
+            decision_cache:
+              sampled_cache_size: 50000 # Late spans of a kept trace are also kept.
+            policies:
+              - name: errors
+                type: status_code
+                status_code:
+                  status_codes: [ERROR]
+              - name: slow # Any single span longer than 1s. Trace duration includes up to 1s of export batching.
+                type: ottl_condition
+                ottl_condition:
+                  error_mode: ignore
+                  span:
+                    - end_time_unix_nano - start_time_unix_nano > 1000000000
+        exporters:
+          otlp_http:
+            endpoint: http://nktp-watchdog-collector:4318
+            retry_on_failure:
+              max_elapsed_time: 30m
+            sending_queue:
+              block_on_overflow: false # The SDK cannot wait or retry, so blocking would only move the loss out of view.
+              sizer: bytes
+              queue_size: 16777216 # 16MiB for each of the 3 signal queues, 48MiB in total. When full, the sidecar refuses new data.
+              num_consumers: 2
+              batch:
+                sizer: bytes
+                min_size: 65536
+                max_size: 262144
+                flush_timeout: 1s
+        service:
+          extensions: [health_check]
+          telemetry:
+            resource:
+              service.name: nktp-gateway-metrics-sidecar
+              service.instance.id: ${env:POD_NAME}
+            # Own metrics and logs go through this sidecar's own buffer.
+            metrics:
+              readers:
+                - periodic:
+                    exporter:
+                      otlp:
+                        protocol: http/protobuf
+                        endpoint: http://127.0.0.1:4319
+            logs:
+              processors:
+                - batch:
+                    exporter:
+                      otlp:
+                        protocol: http/protobuf
+                        endpoint: http://127.0.0.1:4319
+            traces:
+              level: none # Export failures already show in this sidecar's metrics and logs.
+          pipelines:
+            metrics:
+              receivers: [otlp]
+              processors: [memory_limiter]
+              exporters: [otlp_http]
+            logs:
+              receivers: [otlp]
+              processors: [memory_limiter]
+              exporters: [otlp_http]
+            traces:
+              receivers: [otlp]
+              processors: [memory_limiter, tail_sampling]
+              exporters: [otlp_http]
 
 # Trace gateway. Exports all traces from the cluster.
 gateway_traces:
@@ -556,27 +928,151 @@ gateway_traces:
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
           logs:
             processors:
               - batch:
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
           traces:
             level: basic
             processors:
               - batch:
+                  schedule_delay: 1000 # Milliseconds. Keeps spans of one trace close together for tail sampling.
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
         pipelines:
           traces:
             receivers: [otlp]
             processors: [memory_limiter]
             exporters: [otlp_http]
+  # Native sidecar for this workload's own telemetry. It buffers through outages,
+  # keeps only error and slow traces, and exports to http://nktp-watchdog-collector:4318.
+  sidecar:
+    kubernetes:
+      resources:
+        requests:
+          cpu: 20m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: GOMEMLIMIT
+          value: 192MiB # Soft Go runtime target at 75% of the container limit.
+      startupProbe: # The main Collector starts after this succeeds.
+        httpGet:
+          path: /
+          port: 13134
+        periodSeconds: 1
+        failureThreshold: 30
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 13134
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+    otelcol:
+      # Set a custom image for this sidecar only.
+      # image:
+      #   registry: ""
+      #   repository: otel/opentelemetry-collector-k8s
+      #   tag: 0.162.0
+      config:
+        extensions:
+          health_check:
+            endpoint: 0.0.0.0:13134 # Kubelet probes use the Pod IP.
+        receivers:
+          otlp:
+            protocols:
+              http:
+                endpoint: 127.0.0.1:4319 # Reachable only from containers in this Pod.
+                keepalive:
+                  idle_timeout: 5m # Longer than the 60s metric interval, so a reused connection is not closed mid-request.
+        processors:
+          memory_limiter:
+            check_interval: 500ms
+            limit_percentage: 80 # Hard heap threshold, 204.8Mi.
+            spike_limit_percentage: 25 # Soft refusal at 55% (140.8Mi).
+          tail_sampling:
+            decision_wait: 5s # Covers the 1s SDK flush interval with margin.
+            num_traces: 5000 # Bounds traces held in memory. The oldest are dropped first.
+            decision_cache:
+              sampled_cache_size: 50000 # Late spans of a kept trace are also kept.
+            policies:
+              - name: errors
+                type: status_code
+                status_code:
+                  status_codes: [ERROR]
+              - name: slow # Any single span longer than 1s. Trace duration includes up to 1s of export batching.
+                type: ottl_condition
+                ottl_condition:
+                  error_mode: ignore
+                  span:
+                    - end_time_unix_nano - start_time_unix_nano > 1000000000
+        exporters:
+          otlp_http:
+            endpoint: http://nktp-watchdog-collector:4318
+            retry_on_failure:
+              max_elapsed_time: 30m
+            sending_queue:
+              block_on_overflow: false # The SDK cannot wait or retry, so blocking would only move the loss out of view.
+              sizer: bytes
+              queue_size: 16777216 # 16MiB for each of the 3 signal queues, 48MiB in total. When full, the sidecar refuses new data.
+              num_consumers: 2
+              batch:
+                sizer: bytes
+                min_size: 65536
+                max_size: 262144
+                flush_timeout: 1s
+        service:
+          extensions: [health_check]
+          telemetry:
+            resource:
+              service.name: nktp-gateway-traces-sidecar
+              service.instance.id: ${env:POD_NAME}
+            # Own metrics and logs go through this sidecar's own buffer.
+            metrics:
+              readers:
+                - periodic:
+                    exporter:
+                      otlp:
+                        protocol: http/protobuf
+                        endpoint: http://127.0.0.1:4319
+            logs:
+              processors:
+                - batch:
+                    exporter:
+                      otlp:
+                        protocol: http/protobuf
+                        endpoint: http://127.0.0.1:4319
+            traces:
+              level: none # Export failures already show in this sidecar's metrics and logs.
+          pipelines:
+            metrics:
+              receivers: [otlp]
+              processors: [memory_limiter]
+              exporters: [otlp_http]
+            logs:
+              receivers: [otlp]
+              processors: [memory_limiter]
+              exporters: [otlp_http]
+            traces:
+              receivers: [otlp]
+              processors: [memory_limiter, tail_sampling]
+              exporters: [otlp_http]
 
 # Node-level collector. Collects local telemetry and forwards received OTLP signals.
 daemonset:
@@ -1047,22 +1543,23 @@ daemonset:
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
           logs:
             processors:
               - batch:
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
           traces:
             level: basic
             processors:
               - batch:
+                  schedule_delay: 1000 # Milliseconds. Keeps spans of one trace close together for tail sampling.
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
         pipelines:
           logs:
             receivers: [filelog, journald, otlp, filelog/host-auth, filelog/host-audit, filelog/kube-api-audit]
@@ -1084,6 +1581,134 @@ daemonset:
             receivers: [otlp]
             processors: [memory_limiter, resource/node]
             exporters: [otlp_http/traces]
+  # Native sidecar for this workload's own telemetry. It buffers through outages,
+  # keeps only error and slow traces, and exports to http://nktp-watchdog-collector:4318.
+  sidecar:
+    kubernetes:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+      env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: GOMEMLIMIT
+          value: 96MiB # Soft Go runtime target at 75% of the container limit.
+      startupProbe: # The main Collector starts after this succeeds.
+        httpGet:
+          path: /
+          port: 13134
+        periodSeconds: 1
+        failureThreshold: 30
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 13134
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+    otelcol:
+      # Set a custom image for this sidecar only.
+      # image:
+      #   registry: ""
+      #   repository: otel/opentelemetry-collector-k8s
+      #   tag: 0.162.0
+      config:
+        extensions:
+          health_check:
+            endpoint: 0.0.0.0:13134 # Kubelet probes use the Pod IP.
+        receivers:
+          otlp:
+            protocols:
+              http:
+                endpoint: 127.0.0.1:4319 # Reachable only from containers in this Pod.
+                keepalive:
+                  idle_timeout: 5m # Longer than the 60s metric interval, so a reused connection is not closed mid-request.
+        processors:
+          memory_limiter:
+            check_interval: 500ms
+            limit_percentage: 80 # Hard heap threshold, 102.4Mi.
+            spike_limit_percentage: 25 # Soft refusal at 55% (70.4Mi).
+          tail_sampling:
+            decision_wait: 5s # Covers the 1s SDK flush interval with margin.
+            num_traces: 1000 # Bounds traces held in memory. The oldest are dropped first.
+            decision_cache:
+              sampled_cache_size: 10000 # Late spans of a kept trace are also kept.
+            policies:
+              - name: errors
+                type: status_code
+                status_code:
+                  status_codes: [ERROR]
+              - name: slow # Any single span longer than 1s. Trace duration includes up to 1s of export batching.
+                type: ottl_condition
+                ottl_condition:
+                  error_mode: ignore
+                  span:
+                    - end_time_unix_nano - start_time_unix_nano > 1000000000
+        exporters:
+          otlp_http:
+            endpoint: http://nktp-watchdog-collector:4318
+            retry_on_failure:
+              max_elapsed_time: 30m
+            sending_queue:
+              block_on_overflow: false # The SDK cannot wait or retry, so blocking would only move the loss out of view.
+              sizer: bytes
+              queue_size: 4194304 # 4MiB for each of the 3 signal queues, 12MiB in total. When full, the sidecar refuses new data.
+              num_consumers: 2
+              batch:
+                sizer: bytes
+                min_size: 65536
+                max_size: 262144
+                flush_timeout: 1s
+        service:
+          extensions: [health_check]
+          telemetry:
+            resource:
+              service.name: nktp-daemonset-sidecar
+              service.instance.id: ${env:POD_NAME}
+              k8s.node.name: ${env:NODE_NAME}
+            # Own metrics and logs go through this sidecar's own buffer.
+            metrics:
+              readers:
+                - periodic:
+                    exporter:
+                      otlp:
+                        protocol: http/protobuf
+                        endpoint: http://127.0.0.1:4319
+            logs:
+              processors:
+                - batch:
+                    exporter:
+                      otlp:
+                        protocol: http/protobuf
+                        endpoint: http://127.0.0.1:4319
+            traces:
+              level: none # Export failures already show in this sidecar's metrics and logs.
+          pipelines:
+            metrics:
+              receivers: [otlp]
+              processors: [memory_limiter]
+              exporters: [otlp_http]
+            logs:
+              receivers: [otlp]
+              processors: [memory_limiter]
+              exporters: [otlp_http]
+            traces:
+              receivers: [otlp]
+              processors: [memory_limiter, tail_sampling]
+              exporters: [otlp_http]
 
 # Scrapes monitoring CRs labeled nktp.nvidia.io/large-target: "true".
 large_target_metrics:
@@ -1258,27 +1883,151 @@ large_target_metrics:
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
           logs:
             processors:
               - batch:
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
           traces:
             level: basic
             processors:
               - batch:
+                  schedule_delay: 1000 # Milliseconds. Keeps spans of one trace close together for tail sampling.
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
         pipelines:
           metrics:
             receivers: [prometheus]
             processors: [memory_limiter]
             exporters: [otlp_http]
+  # Native sidecar for this workload's own telemetry. It buffers through outages,
+  # keeps only error and slow traces, and exports to http://nktp-watchdog-collector:4318.
+  sidecar:
+    kubernetes:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+      env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: GOMEMLIMIT
+          value: 96MiB # Soft Go runtime target at 75% of the container limit.
+      startupProbe: # The main Collector starts after this succeeds.
+        httpGet:
+          path: /
+          port: 13134
+        periodSeconds: 1
+        failureThreshold: 30
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 13134
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+    otelcol:
+      # Set a custom image for this sidecar only.
+      # image:
+      #   registry: ""
+      #   repository: otel/opentelemetry-collector-k8s
+      #   tag: 0.162.0
+      config:
+        extensions:
+          health_check:
+            endpoint: 0.0.0.0:13134 # Kubelet probes use the Pod IP.
+        receivers:
+          otlp:
+            protocols:
+              http:
+                endpoint: 127.0.0.1:4319 # Reachable only from containers in this Pod.
+                keepalive:
+                  idle_timeout: 5m # Longer than the 60s metric interval, so a reused connection is not closed mid-request.
+        processors:
+          memory_limiter:
+            check_interval: 500ms
+            limit_percentage: 80 # Hard heap threshold, 102.4Mi.
+            spike_limit_percentage: 25 # Soft refusal at 55% (70.4Mi).
+          tail_sampling:
+            decision_wait: 5s # Covers the 1s SDK flush interval with margin.
+            num_traces: 1000 # Bounds traces held in memory. The oldest are dropped first.
+            decision_cache:
+              sampled_cache_size: 10000 # Late spans of a kept trace are also kept.
+            policies:
+              - name: errors
+                type: status_code
+                status_code:
+                  status_codes: [ERROR]
+              - name: slow # Any single span longer than 1s. Trace duration includes up to 1s of export batching.
+                type: ottl_condition
+                ottl_condition:
+                  error_mode: ignore
+                  span:
+                    - end_time_unix_nano - start_time_unix_nano > 1000000000
+        exporters:
+          otlp_http:
+            endpoint: http://nktp-watchdog-collector:4318
+            retry_on_failure:
+              max_elapsed_time: 30m
+            sending_queue:
+              block_on_overflow: false # The SDK cannot wait or retry, so blocking would only move the loss out of view.
+              sizer: bytes
+              queue_size: 4194304 # 4MiB for each of the 3 signal queues, 12MiB in total. When full, the sidecar refuses new data.
+              num_consumers: 2
+              batch:
+                sizer: bytes
+                min_size: 65536
+                max_size: 262144
+                flush_timeout: 1s
+        service:
+          extensions: [health_check]
+          telemetry:
+            resource:
+              service.name: nktp-large-target-metrics-sidecar
+              service.instance.id: ${env:POD_NAME}
+            # Own metrics and logs go through this sidecar's own buffer.
+            metrics:
+              readers:
+                - periodic:
+                    exporter:
+                      otlp:
+                        protocol: http/protobuf
+                        endpoint: http://127.0.0.1:4319
+            logs:
+              processors:
+                - batch:
+                    exporter:
+                      otlp:
+                        protocol: http/protobuf
+                        endpoint: http://127.0.0.1:4319
+            traces:
+              level: none # Export failures already show in this sidecar's metrics and logs.
+          pipelines:
+            metrics:
+              receivers: [otlp]
+              processors: [memory_limiter]
+              exporters: [otlp_http]
+            logs:
+              receivers: [otlp]
+              processors: [memory_limiter]
+              exporters: [otlp_http]
+            traces:
+              receivers: [otlp]
+              processors: [memory_limiter, tail_sampling]
+              exporters: [otlp_http]
 
 # Cluster event reader. One elected replica watches Kubernetes Events.
 cluster_events:
@@ -1377,27 +2126,151 @@ cluster_events:
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
           logs:
             processors:
               - batch:
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
           traces:
             level: basic
             processors:
               - batch:
+                  schedule_delay: 1000 # Milliseconds. Keeps spans of one trace close together for tail sampling.
                   exporter:
                     otlp:
                       protocol: http/protobuf
-                      endpoint: http://nktp-watchdog-collector:4318
+                      endpoint: http://127.0.0.1:4319
         pipelines:
           logs:
             receivers: [k8s_events]
             processors: [memory_limiter]
             exporters: [otlp_http]
+  # Native sidecar for this workload's own telemetry. It buffers through outages,
+  # keeps only error and slow traces, and exports to http://nktp-watchdog-collector:4318.
+  sidecar:
+    kubernetes:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+      env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: GOMEMLIMIT
+          value: 96MiB # Soft Go runtime target at 75% of the container limit.
+      startupProbe: # The main Collector starts after this succeeds.
+        httpGet:
+          path: /
+          port: 13134
+        periodSeconds: 1
+        failureThreshold: 30
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 13134
+      securityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+    otelcol:
+      # Set a custom image for this sidecar only.
+      # image:
+      #   registry: ""
+      #   repository: otel/opentelemetry-collector-k8s
+      #   tag: 0.162.0
+      config:
+        extensions:
+          health_check:
+            endpoint: 0.0.0.0:13134 # Kubelet probes use the Pod IP.
+        receivers:
+          otlp:
+            protocols:
+              http:
+                endpoint: 127.0.0.1:4319 # Reachable only from containers in this Pod.
+                keepalive:
+                  idle_timeout: 5m # Longer than the 60s metric interval, so a reused connection is not closed mid-request.
+        processors:
+          memory_limiter:
+            check_interval: 500ms
+            limit_percentage: 80 # Hard heap threshold, 102.4Mi.
+            spike_limit_percentage: 25 # Soft refusal at 55% (70.4Mi).
+          tail_sampling:
+            decision_wait: 5s # Covers the 1s SDK flush interval with margin.
+            num_traces: 1000 # Bounds traces held in memory. The oldest are dropped first.
+            decision_cache:
+              sampled_cache_size: 10000 # Late spans of a kept trace are also kept.
+            policies:
+              - name: errors
+                type: status_code
+                status_code:
+                  status_codes: [ERROR]
+              - name: slow # Any single span longer than 1s. Trace duration includes up to 1s of export batching.
+                type: ottl_condition
+                ottl_condition:
+                  error_mode: ignore
+                  span:
+                    - end_time_unix_nano - start_time_unix_nano > 1000000000
+        exporters:
+          otlp_http:
+            endpoint: http://nktp-watchdog-collector:4318
+            retry_on_failure:
+              max_elapsed_time: 30m
+            sending_queue:
+              block_on_overflow: false # The SDK cannot wait or retry, so blocking would only move the loss out of view.
+              sizer: bytes
+              queue_size: 4194304 # 4MiB for each of the 3 signal queues, 12MiB in total. When full, the sidecar refuses new data.
+              num_consumers: 2
+              batch:
+                sizer: bytes
+                min_size: 65536
+                max_size: 262144
+                flush_timeout: 1s
+        service:
+          extensions: [health_check]
+          telemetry:
+            resource:
+              service.name: nktp-cluster-events-sidecar
+              service.instance.id: ${env:POD_NAME}
+            # Own metrics and logs go through this sidecar's own buffer.
+            metrics:
+              readers:
+                - periodic:
+                    exporter:
+                      otlp:
+                        protocol: http/protobuf
+                        endpoint: http://127.0.0.1:4319
+            logs:
+              processors:
+                - batch:
+                    exporter:
+                      otlp:
+                        protocol: http/protobuf
+                        endpoint: http://127.0.0.1:4319
+            traces:
+              level: none # Export failures already show in this sidecar's metrics and logs.
+          pipelines:
+            metrics:
+              receivers: [otlp]
+              processors: [memory_limiter]
+              exporters: [otlp_http]
+            logs:
+              receivers: [otlp]
+              processors: [memory_limiter]
+              exporters: [otlp_http]
+            traces:
+              receivers: [otlp]
+              processors: [memory_limiter, tail_sampling]
+              exporters: [otlp_http]
 
 # Default in-cluster backend. MUST be disabled for production use.
 otel-lgtm:

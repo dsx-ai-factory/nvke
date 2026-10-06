@@ -15,7 +15,7 @@ bundled development backend. The validation confirms that:
   discovers and scrapes the ServiceMonitors and PodMonitors in the cluster;
 - kube-state-metrics object state reaches the backend through the large-target pool;
 - pod logs and Kubernetes events reach Loki;
-- the Collectors' own traces reach Tempo;
+- every Collector's sidecar delivers the Collector's own telemetry;
 - every Collector exports with zero send failures;
 - metrics-server serves `metrics.k8s.io` and the autoscalers report utilization.
 
@@ -85,13 +85,15 @@ kubectl -n nktp port-forward deploy/lgtm 3000:3000 9090:9090 3100:3100 3200:3200
 | Object-state metrics | Prometheus: `count(kube_pod_info) > 0 and count(kube_deployment_status_replicas_available) > 0` |
 | Pod logs | Loki: `sum by (k8s_namespace_name) (count_over_time({k8s_namespace_name=~"kube-system\|nktp"}[15m]))` |
 | Kubernetes events | Loki: `sum(count_over_time({service_name="unknown_service"} \| k8s_event_reason=~".+" [15m]))` |
-| Traces | Tempo: `{ resource.service.name =~ "nktp-.*" }` |
+| Collector sidecars | Prometheus: `count(count by (service_name) ({__name__=~"otelcol_process_uptime.*", service_name=~"nktp-.*-sidecar"}))` |
 | Autoscaler metrics | `kubectl -n nktp get hpa -o json \| jq -e '[.items[] \| select((.status.currentMetrics // []) \| length == 0)] \| length == 0'` |
 | Collector errors | `kubectl -n nktp logs -l app.kubernetes.io/component=opentelemetry-collector --since=10m \| grep -c $'\terror\t'` |
 
 The scrape-target query returns one row per job, each at 1. The export-failure
-query returns nothing when healthy. The object-state, log, event and trace queries
-return a result when the signal is arriving. The autoscaler command exits 0 when
+query returns nothing when healthy. The object-state, log and event queries
+return a result when the signal is arriving, and the sidecar query returns 7, one
+per Collector. The sidecars keep only error and slow traces, so Tempo can be
+empty on a healthy cluster. The autoscaler command exits 0 when
 every HPA has current metrics. The Collector error count should be 0 once start-up
 is over.
 

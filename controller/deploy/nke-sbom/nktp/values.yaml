@@ -115,6 +115,22 @@ watchdog:
         telemetry:
           resource:
             k8s.cluster.name: "${env:K8S_CLUSTER_NAME}"
+  # The watchdog's sidecar exports the watchdog's telemetry straight to the
+  # backend, so its own telemetry needs the name too.
+  sidecar:
+    kubernetes:
+      env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef: {fieldPath: metadata.name}
+        - {name: GOMEMLIMIT, value: 192MiB}
+        - *cluster-name-env
+    otelcol:
+      config:
+        service:
+          telemetry:
+            resource:
+              k8s.cluster.name: "${env:K8S_CLUSTER_NAME}"
 
 gateway_logs:
   kubernetes:

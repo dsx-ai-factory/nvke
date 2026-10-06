@@ -217,15 +217,12 @@ retry_until "node journal logs reach Loki" \
 retry_until "Kubernetes events reach Loki" \
   logql_nonempty 'sum(count_over_time({service_name="unknown_service"} | k8s_event_reason=~".+" [15m]))'
 
-# The Collectors' own traces reach Tempo.
-tempo_has_traces() {
-  local n
-  n=$(curl -fsS --get 'http://127.0.0.1:3200/api/search' \
-        --data-urlencode 'q={ resource.service.name =~ "nktp-.*" }' 2>/dev/null |
-        jq -r '.traces | length' 2>/dev/null) || return 1
-  [ "${n:-0}" -gt 0 ]
-}
-retry_until "Collector traces reach Tempo" tempo_has_traces
+# Every Collector's sidecar delivers its own telemetry: the watchdog's to the
+# backend, the other six through the watchdog. The sidecars keep only error and
+# slow traces, so a healthy cluster can send Tempo none; their metrics are the
+# signal that always flows.
+retry_until "all seven Collector sidecars report" \
+  promql_nonempty 'count(count by (service_name) ({__name__=~"otelcol_process_uptime.*", service_name=~"nktp-.*-sidecar"})) == 7'
 
 # metrics-server serves metrics.k8s.io, so the autoscalers can read utilisation.
 # An HPA with no currentMetrics means the API is there but empty.
