@@ -25,6 +25,11 @@ version="$1"
 arch="$2"
 dir="$3"
 
+# The two shapes release.yml publishes a cli/<version> tag in.
+if [[ ! "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+	echo "version '${version}' is neither vX.Y.Z nor vX.Y.Z-rc.N, so no cli/ release carries it" >&2
+	exit 1
+fi
 case "${arch}" in
 amd64 | arm64) ;;
 *)

@@ -61,6 +61,9 @@ SITE_CONTROLLER_BUILD ?= 1
 # SITE_NKECTL.
 SITE_CLI_BUILD ?= 1
 SITE_CLI_VERSION ?=
+# Read by the recipe from the environment, never expanded into it: a value
+# carrying a quote would otherwise end the argument and run as shell.
+export SITE_CLI_VERSION
 ifeq ($(SITE_CLI_BUILD),1)
 SITE_NKECTL = $(REPO_ROOT)/cli/dist/nkectl-linux-$(SITE_ARCH)
 else
@@ -93,8 +96,8 @@ site-inputs: ## Build the nkectl and image archives the site lane stages. Needs 
 ifeq ($(SITE_CLI_BUILD),1)
 	$(MAKE) -C "$(REPO_ROOT)/cli" build-cross NKECTL_PLATFORMS=linux/$(SITE_ARCH)
 else
-	@test -n "$(SITE_CLI_VERSION)" || { echo "SITE_CLI_BUILD=0 stages a published nkectl and needs SITE_CLI_VERSION, e.g. v0.1.0" >&2; exit 1; }
-	"$(CURDIR)/hack/fetch-nkectl.sh" "$(SITE_CLI_VERSION)" "$(SITE_ARCH)" "$(dir $(SITE_NKECTL))"
+	@test -n "$${SITE_CLI_VERSION}" || { echo "SITE_CLI_BUILD=0 stages a published nkectl and needs SITE_CLI_VERSION, e.g. v0.1.0" >&2; exit 1; }
+	"$(CURDIR)/hack/fetch-nkectl.sh" "$${SITE_CLI_VERSION}" "$(SITE_ARCH)" "$(dir $(SITE_NKECTL))"
 endif
 ifeq ($(SITE_CONTROLLER_BUILD),1)
 	@test "$(SITE_ARCH)" = amd64 || { echo "SITE_CONTROLLER_BUILD=1 builds linux/amd64 only (docker build --load takes one platform); set SITE_CONTROLLER_BUILD=0 for $(SITE_ARCH)" >&2; exit 1; }
