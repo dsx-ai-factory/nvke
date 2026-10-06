@@ -363,7 +363,7 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 		}
 	}
 
-	dbCniPlugin := db.CniPlugin(req.CniPlugin)
+	dbCniPlugin := db.EffectiveCNIPlugin(db.CniPlugin(req.CniPlugin))
 	if !slices.Contains(db.ListCNIPlugins(), dbCniPlugin) {
 		return fmt.Errorf("invalid CNI plugin: %s, valid plugins: %v", req.CniPlugin, db.ListCNIPlugins())
 	}
@@ -1201,7 +1201,7 @@ func DBClusterFromAPI(req *api.CreateClusterRequest) (db.Cluster, error) {
 	if req.CniVersion != nil {
 		cniVersion = strings.TrimSpace(*req.CniVersion)
 	}
-	cniPlugin := db.CniPlugin(req.CniPlugin)
+	cniPlugin := db.EffectiveCNIPlugin(db.CniPlugin(req.CniPlugin))
 	controlPlaneVIP := strings.TrimSpace(req.ControlPlaneVIP)
 
 	cluster := db.Cluster{

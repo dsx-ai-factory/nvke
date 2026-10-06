@@ -13,6 +13,8 @@ CLUSTERS_API_URL="${API_URL%/}/clusters"
 
 CLUSTER_NAME="${CLUSTER_NAME:-nico-local}"
 KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}"
+# CNI defaults to ovn-kubernetes. Set CNI_PLUGIN=calico to use Calico instead.
+CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}"
 CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}"
 WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-0}"
 
@@ -35,7 +37,7 @@ BODY=$(cat <<EOF
 {
   "name": "${CLUSTER_NAME}",
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
-  "cniPlugin": "calico",
+  "cniPlugin": "${CNI_PLUGIN}",
   "etcdEncrypted": false,
   "infra": {
     "cluster": {

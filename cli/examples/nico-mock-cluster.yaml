@@ -20,7 +20,7 @@
 
 name: my-cluster
 controlPlaneKubernetesVersion: 1.34.2
-cniPlugin: calico
+cniPlugin: ovn-kubernetes
 etcdEncrypted: false
 
 # Advertised by the bgp-containers provider. A kubelet is pointed at this, so it

@@ -158,16 +158,22 @@ test-e2e-bootstrap: build
 # invoked by e2e/bootstrap/run.sh (via `make -C`).
 CAPD_KINDEST_NODE_IMAGE ?= cwe-capd-kindest-node:local
 CAPD_CNI_MANIFESTS_DEB_PATH ?=
+CAPD_CNI_CHARTS_DEB_PATH ?=
+CAPD_CNI_IMAGES_DEB_PATH ?=
+CAPD_HELM_DEB_PATH ?=
 
 # Builds nke-agent from this checkout's own agent/ module rather than
 # downloading a published bundle. The image gets no bundle server. The E2E
-# supplies a local Calico manifests package for CWE's post-init CNI path. A
-# no-op once the image exists locally.
+# supplies local OVN chart, image, and Helm packages for CWE's post-init CNI
+# path. A no-op once the image exists locally.
 ensure-capd-image:
 	@nerdctl image inspect $(CAPD_KINDEST_NODE_IMAGE) >/dev/null 2>&1 || \
 	  CONTAINER_CLI=nerdctl \
 	  CAPD_NODE_AGENT_LOCAL_BUILD=true NODE_AGENT_REPO_PATH=$(CURDIR)/../agent \
 	  CAPD_CNI_MANIFESTS_DEB_PATH="$(CAPD_CNI_MANIFESTS_DEB_PATH)" \
+	  CAPD_CNI_CHARTS_DEB_PATH="$(CAPD_CNI_CHARTS_DEB_PATH)" \
+	  CAPD_CNI_IMAGES_DEB_PATH="$(CAPD_CNI_IMAGES_DEB_PATH)" \
+	  CAPD_HELM_DEB_PATH="$(CAPD_HELM_DEB_PATH)" \
 	  CAPD_KINDEST_NODE_IMAGE=$(CAPD_KINDEST_NODE_IMAGE) \
 	  bash ../controller/hack/capd-kindest-node/build-image.sh
 

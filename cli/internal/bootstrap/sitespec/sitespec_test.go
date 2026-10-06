@@ -98,6 +98,9 @@ func TestSetDefaultsNeverInjectsAPIKey(t *testing.T) {
 	if inv.Cluster.NodeAgentPort != DefaultNodeAgentPort {
 		t.Errorf("SetDefaults NodeAgentPort = %q, want %q", inv.Cluster.NodeAgentPort, DefaultNodeAgentPort)
 	}
+	if inv.Cluster.CniName != DefaultCNIName {
+		t.Errorf("SetDefaults CniName = %q, want %q", inv.Cluster.CniName, DefaultCNIName)
+	}
 }
 
 // The literal is spelled out because comparing DefaultNodeAgentPort with itself

@@ -30,6 +30,8 @@ CONTROL_PLANE_VIP="${CONTROL_PLANE_VIP:-}"
 DEFAULT_VIP_RANGE="${DEFAULT_VIP_RANGE:-172.31.1.0/24}"
 FIRST_CONTROL_PLANE_VIP="${FIRST_CONTROL_PLANE_VIP:-172.31.1.1}"
 KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}"
+# CNI defaults to ovn-kubernetes. Set CNI_PLUGIN=calico to use Calico instead.
+CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}"
 CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-3}"
 WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}"
 ETCD_ENCRYPTED="${ETCD_ENCRYPTED:-false}"
@@ -76,7 +78,7 @@ BODY=$(cat <<EOF
 {
   "name": "${CLUSTER_NAME}",
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
-  "cniPlugin": "calico",
+  "cniPlugin": "${CNI_PLUGIN}",
   "etcdEncrypted": ${ETCD_ENCRYPTED}${CONTROL_PLANE_VIP_FIELD},
   "infra": {
     "cluster": {

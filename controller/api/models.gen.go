@@ -381,8 +381,8 @@ type CreateClusterRequest struct {
 	// ControlPlaneKubernetesVersion Kubernetes version for the cluster, as X.Y.Z with no leading "v".
 	ControlPlaneKubernetesVersion string `json:"controlPlaneKubernetesVersion"`
 
-	// CniPlugin CNI plugin. Supported values are calico and ovn-kubernetes.
-	CniPlugin CreateClusterRequestCniPlugin `json:"cniPlugin"`
+	// CniPlugin CNI plugin. Defaults to ovn-kubernetes when omitted. calico is an explicit override.
+	CniPlugin CreateClusterRequestCniPlugin `json:"cniPlugin,omitempty"`
 
 	// CniVersion CNI version, as X.Y.Z. Defaults to 3.30.1 for calico or 1.4.0 for ovn-kubernetes.
 	CniVersion *string `json:"cniVersion,omitempty"`
@@ -423,7 +423,7 @@ type CreateClusterRequest struct {
 	NodePools *[]NodePoolCreateConfig `json:"nodePools,omitempty"`
 }
 
-// CreateClusterRequestCniPlugin CNI plugin. Supported values are calico and ovn-kubernetes.
+// CreateClusterRequestCniPlugin CNI plugin. Defaults to ovn-kubernetes when omitted. calico is an explicit override.
 type CreateClusterRequestCniPlugin string
 
 // CreateNodePoolRequest defines model for CreateNodePoolRequest.

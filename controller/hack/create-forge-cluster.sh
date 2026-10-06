@@ -28,6 +28,8 @@ MOCK_SSH_KEY_GROUP_ID="${MOCK_SSH_KEY_GROUP_ID:-00000000-0000-0000-0000-00000000
 MOCK_INSTANCE_TYPE_ID="${MOCK_INSTANCE_TYPE_ID:-00000000-0000-0000-0000-000000000005}"
 
 KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}"
+# CNI defaults to ovn-kubernetes. Set CNI_PLUGIN=calico to use Calico instead.
+CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}"
 CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}"
 WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-0}"
 OS_PROFILE="${OS_PROFILE:-nke-local-dev-kindest-arm64}"
@@ -43,7 +45,7 @@ BODY=$(cat <<EOF
     "vpcID": "${MOCK_VPC_ID}"
   },
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
-  "cniPlugin": "calico",
+  "cniPlugin": "${CNI_PLUGIN}",
   "etcdEncrypted": false,
   "teleportEnabled": false,
   "nodePools": [

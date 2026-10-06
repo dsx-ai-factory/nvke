@@ -476,14 +476,14 @@ func TestInstallCNIPluginSelection(t *testing.T) {
 			expectedPlugin: "calico",
 		},
 		{
-			name:           "empty defaults to calico",
+			name:           "empty defaults to ovn",
 			cniPluginName:  "",
-			expectedPlugin: "calico",
+			expectedPlugin: "ovn",
 		},
 		{
-			name:           "unknown defaults to calico",
+			name:           "unknown defaults to ovn",
 			cniPluginName:  "unknown",
-			expectedPlugin: "calico",
+			expectedPlugin: "ovn",
 		},
 	}
 
@@ -499,7 +499,7 @@ func TestInstallCNIPluginSelection(t *testing.T) {
 			case "tigera", "calico":
 				expected = "calico"
 			default:
-				expected = "calico"
+				expected = "ovn"
 			}
 			assert.Equal(t, tc.expectedPlugin, expected)
 		})

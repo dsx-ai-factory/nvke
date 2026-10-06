@@ -54,7 +54,7 @@ dockerhub_image() {
   printf '%s' "${mirror:+${mirror}/library/}${image}"
 }
 
-# The bundle the node agent installs Calico from. hack/ci/prepare-capd-bundles.sh
+# The bundle the node agent installs CNI from. hack/ci/prepare-capd-bundles.sh
 # builds it from checksum-verified public sources, and the node image carries no
 # bundle server of its own, so this is the only source a run has. Serving it from
 # a volume rather than a host path keeps this working where the Docker daemon

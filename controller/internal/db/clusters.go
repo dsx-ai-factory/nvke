@@ -445,6 +445,14 @@ func DefaultCNIVersion(plugin CniPlugin) (string, bool) {
 	}
 }
 
+// EffectiveCNIPlugin returns plugin, or ovn-kubernetes when plugin is empty.
+func EffectiveCNIPlugin(plugin CniPlugin) CniPlugin {
+	if strings.TrimSpace(string(plugin)) == "" {
+		return CNIOvnKubernetes
+	}
+	return plugin
+}
+
 func EffectiveCNIVersion(plugin CniPlugin, version string) string {
 	if version = strings.TrimSpace(version); version != "" {
 		return version

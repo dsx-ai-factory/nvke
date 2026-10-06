@@ -929,7 +929,6 @@ components:
       required:
         - name
         - controlPlaneKubernetesVersion
-        - cniPlugin
         - etcdEncrypted
       # A cluster picks its provider at creation, so exactly one provider payload is
       # required. Rejecting "both or neither" leaves exactly one.
@@ -966,7 +965,8 @@ components:
           type: string
           enum: [calico, ovn-kubernetes]
           example: "ovn-kubernetes"
-          description: CNI plugin. Supported values are calico and ovn-kubernetes.
+          description: CNI plugin. Defaults to ovn-kubernetes when omitted. calico is an explicit override.
+          x-go-type-skip-optional-pointer: true
           x-order: 6
         cniVersion:
           type: string

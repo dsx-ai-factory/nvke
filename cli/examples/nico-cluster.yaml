@@ -24,7 +24,7 @@
 
 name: my-cluster
 controlPlaneKubernetesVersion: 1.34.2
-cniPlugin: calico
+cniPlugin: ovn-kubernetes
 etcdEncrypted: false
 
 # Required because this example creates three control-plane nodes. Replace it

@@ -231,6 +231,13 @@ func TestDbClusterFromAPI_CNIVersion(t *testing.T) {
 			assert.Equal(t, tt.want, cluster.CniVersion)
 		})
 	}
+
+	t.Run("omitted plugin defaults to ovn", func(t *testing.T) {
+		cluster, err := DBClusterFromAPI(baseReq("", nil))
+		require.NoError(t, err)
+		assert.Equal(t, db.CNIOvnKubernetes, cluster.CniPlugin)
+		assert.Equal(t, db.DefaultOvnKubernetesCNIVersion, cluster.CniVersion)
+	})
 }
 
 func TestAPIClusterFromDB_CNIVersionDefaultsOldRows(t *testing.T) {

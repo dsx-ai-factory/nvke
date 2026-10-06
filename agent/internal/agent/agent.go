@@ -1111,14 +1111,17 @@ func (s *NodeAgentServer) InstallCNI(
 func resolveCNIPluginVersion(req *pb.InstallCNIPluginRequest) string {
 	switch req.GetPluginName() {
 	case cniPluginOVN:
-		return req.GetPluginVersion()
+		if v := req.GetPluginVersion(); v != "" {
+			return v
+		}
+		return defaultOvnCniChartStream
 	case cniPluginTigera, cniPluginCalico:
 		if v := req.GetPluginVersion(); v != "" {
 			return v
 		}
 		return DefaultTigeraVersion.String()
 	default:
-		return DefaultTigeraVersion.String()
+		return defaultOvnCniChartStream
 	}
 }
 
@@ -1136,11 +1139,14 @@ func installCNIPluginRequestFromKubeadmInit(req *pb.KubeadmInitRequest) *pb.Inst
 	switch req.GetCniPluginName() {
 	case cniPluginOVN:
 		cniReq.PluginVersion = req.GetOvnVersion()
+		if cniReq.PluginVersion == "" {
+			cniReq.PluginVersion = defaultOvnCniChartStream
+		}
 	case cniPluginTigera, cniPluginCalico:
 		cniReq.PluginVersion = req.GetTigeraVersion()
 	default:
-		cniReq.PluginName = cniPluginCalico
-		cniReq.PluginVersion = DefaultTigeraVersion.String()
+		cniReq.PluginName = cniPluginOVN
+		cniReq.PluginVersion = defaultOvnCniChartStream
 	}
 	return cniReq
 }
@@ -1162,8 +1168,12 @@ func (s *NodeAgentServer) installCNIPlugin(req *pb.InstallCNIPluginRequest) erro
 		}
 		return s.installCalico(version, req.GetTigeraOperatorManifest(), req.GetTigeraCustomResourceManifest())
 	default:
-		slog.Info("unknown or no CniPlugin specified, will install default calico/tigera version", "version", nkeutils.VersionString(DefaultTigeraVersion))
-		return s.installCalico(DefaultTigeraVersion, "", "")
+		slog.Info("unknown or no CniPlugin specified, will install default ovn-kubernetes", "version", defaultOvnCniChartStream)
+		if req.GetPluginVersion() == "" {
+			req.PluginVersion = defaultOvnCniChartStream
+		}
+		req.PluginName = cniPluginOVN
+		return s.installOvnK8sCNIPlugin(req)
 	}
 }
 

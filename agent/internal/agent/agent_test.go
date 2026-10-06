@@ -427,13 +427,13 @@ func TestProcessKubeadmInit(t *testing.T) {
 }
 
 func TestInstallCNIPluginRequestFromKubeadmInit(t *testing.T) {
-	t.Run("defaults to calico with default version", func(t *testing.T) {
+	t.Run("defaults to ovn with default version", func(t *testing.T) {
 		out := installCNIPluginRequestFromKubeadmInit(&pb.KubeadmInitRequest{
 			PodNetworkCidr: "10.0.0.0/16",
 			ServiceCidr:    "10.96.0.0/12",
 		})
-		assert.Equal(t, "calico", out.GetPluginName())
-		assert.Equal(t, DefaultTigeraVersion.String(), out.GetPluginVersion())
+		assert.Equal(t, "ovn", out.GetPluginName())
+		assert.Equal(t, defaultOvnCniChartStream, out.GetPluginVersion())
 		assert.Equal(t, "10.0.0.0/16", out.GetPodNetworkCidr())
 		assert.Equal(t, "10.96.0.0/12", out.GetServiceCidr())
 	})

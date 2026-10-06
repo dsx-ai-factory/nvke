@@ -6,7 +6,7 @@
     "vpcID": "00000000-0000-4000-8000-000000000002"
   },
   "controlPlaneKubernetesVersion": "1.31.9",
-  "cniPlugin": "calico",
+  "cniPlugin": "ovn-kubernetes",
   "etcdEncrypted": true,
   "nodePools": [
     {

@@ -38,6 +38,10 @@ const (
 	// site spec does not set cluster.nodeAgentPort.
 	DefaultNodeAgentPort = "15005"
 
+	// DefaultCNIName is the CNI installed when cluster.cniName is omitted.
+	// calico remains valid when set explicitly.
+	DefaultCNIName = "ovn-kubernetes"
+
 	// DefaultEtcdEncryption is what cluster.etcdEncryption means when the site
 	// spec leaves it unset.
 	DefaultEtcdEncryption = true
@@ -127,10 +131,11 @@ type Cluster struct {
 	Nodes []Node `yaml:"nodes"`
 	// K8sVersion is the Kubernetes version to install, e.g. "1.32.0".
 	K8sVersion string `yaml:"k8sVersion"`
-	// CniName selects the CNI plugin; see SupportedCNIs.
+	// CniName selects the CNI plugin; see SupportedCNIs. Empty means DefaultCNIName.
 	CniName string `yaml:"cniName"`
-	// CniVersion is an optional CNI plugin version (e.g. "3.31.4" for Calico).
-	// Empty lets the node-agent use its compiled-in default.
+	// CniVersion is an optional CNI plugin version (for example "1.4.0" for
+	// ovn-kubernetes or "3.30.1" for calico). Empty lets the node-agent use its
+	// compiled-in default.
 	CniVersion string `yaml:"cniVersion"`
 	// ControlPlaneVIP is an IPv4 API endpoint advertised by kube-vip over BGP.
 	// It may be empty only for a single-node control plane, which then uses the
@@ -347,6 +352,9 @@ func parseNodesEnv(s string) ([]map[string]string, error) {
 func (inv *SiteSpec) SetDefaults() {
 	if inv.Cluster.NodeAgentPort == "" {
 		inv.Cluster.NodeAgentPort = DefaultNodeAgentPort
+	}
+	if inv.Cluster.CniName == "" {
+		inv.Cluster.CniName = DefaultCNIName
 	}
 	if inv.Cluster.EtcdEncryption == nil {
 		enabled := DefaultEtcdEncryption
