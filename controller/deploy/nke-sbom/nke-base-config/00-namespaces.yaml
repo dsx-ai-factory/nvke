@@ -25,8 +25,8 @@ kind: Namespace
 metadata:
   name: nktp
   labels:
-    # The node Collector runs as root with SYS_PTRACE and DAC_READ_SEARCH and
-    # mounts /var/log/pods, /proc and /etc/passwd from the host.
+    # The node Collector runs as root with SYS_CHROOT and mounts /var/log/pods,
+    # /proc, /var/log and the node's journalctl from the host.
     pod-security.kubernetes.io/enforce: privileged
 ---
 apiVersion: v1

@@ -586,58 +586,6 @@ daemonset:
     # kubernetes.targetAllocator.prometheusCR.secretNamespaces.
     # No Roles or RoleBindings are created when the list is omitted or empty.
     create: true
-  kubelet:
-    cadvisor:
-      enabled: true # Also scrape /metrics/cadvisor from each local kubelet.
-      # metricRelabelings drops samples after scraping and replaces the defaults when overridden.
-      metricRelabelings:
-        # The below relabelings were copied from
-        # https://github.com/prometheus-community/helm-charts/blob/4713c624771a48e99f16dec9eb55ec8204f06830/charts/kube-prometheus-stack/values.yaml#L1952
-        # Drop less useful container CPU metrics.
-        - sourceLabels: [__name__]
-          action: drop
-          regex: container_cpu_(cfs_throttled_seconds_total|load_average_10s|system_seconds_total|user_seconds_total)
-        # Drop less useful container / always zero filesystem metrics.
-        - sourceLabels: [__name__]
-          action: drop
-          regex: container_fs_(io_current|io_time_seconds_total|io_time_weighted_seconds_total|reads_merged_total|sector_reads_total|sector_writes_total|writes_merged_total)
-        # Drop less useful / always zero container memory metrics.
-        - sourceLabels: [__name__]
-          action: drop
-          regex: container_memory_(mapped_file|swap)
-        # Drop less useful container process metrics.
-        - sourceLabels: [__name__]
-          action: drop
-          regex: container_(file_descriptors|tasks_state|threads_max)
-        # Drop container_memory_failures_total{scope="hierarchy"} metrics,
-        # we only need the container scope.
-        - sourceLabels: [__name__, scope]
-          action: drop
-          regex: container_memory_failures_total;hierarchy
-        # Drop container_network_... metrics that match various interfaces that
-        # correspond to CNI and similar interfaces. This avoids capturing network
-        # metrics for host network containers.
-        - sourceLabels: [__name__, interface]
-          action: drop
-          regex: container_network_.*;(cali|cilium|cni|lxc|nodelocaldns|tunl).*
-        # Drop container spec metrics that overlap with kube-state-metrics.
-        - sourceLabels: [__name__]
-          action: drop
-          regex: container_spec.*
-        # Drop cgroup metrics with no pod.
-        - sourceLabels: [id, pod]
-          action: drop
-          regex: .+;
-    probes:
-      enabled: false # Also scrape /metrics/probes from each local kubelet.
-    resource:
-      enabled: false # Also scrape /metrics/resource from each local kubelet.
-    tls:
-      ca:
-        # Set name to mount a ConfigMap containing the kubelet-serving CA and enable verification.
-        configMap:
-          name: ""
-          key: ca.crt
   kubernetes:
     mode: daemonset
     # Match KSM node coverage so targets on tainted nodes have a local Collector.
@@ -941,14 +889,70 @@ daemonset:
                     replacement: https-metrics
                   - target_label: metrics_path
                     replacement: /metrics
-        hostmetrics:
-          root_path: /hostfs
-          collection_interval: 1m
-          scrapers:
-            process:
-              resource_attributes:
-                process.command_line:
-                  enabled: false # Do not export process arguments.
+              - job_name: kubelet-cadvisor
+                scrape_interval: 30s
+                scrape_timeout: 10s
+                scheme: https
+                metrics_path: /metrics/cadvisor
+                authorization:
+                  type: Bearer
+                  credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+                tls_config:
+                  insecure_skip_verify: true
+                static_configs:
+                  - targets: ["127.0.0.1:10250"] # Replaced with the node IP before scraping.
+                    labels:
+                      __tmp_kubelet_host: ${env:OTEL_K8S_NODE_IP}
+                relabel_configs:
+                  - source_labels: [__tmp_kubelet_host]
+                    regex: (.+:.*)
+                    target_label: __address__
+                    replacement: "[$$1]:10250"
+                  - source_labels: [__tmp_kubelet_host]
+                    regex: ([^:]+)
+                    target_label: __address__
+                    replacement: "$$1:10250"
+                  - target_label: node
+                    replacement: ${env:NODE_NAME}
+                  - target_label: endpoint
+                    replacement: https-metrics
+                  - target_label: metrics_path
+                    replacement: /metrics/cadvisor
+                # Copied from kube-prometheus-stack:
+                # https://github.com/prometheus-community/helm-charts/blob/4713c624771a48e99f16dec9eb55ec8204f06830/charts/kube-prometheus-stack/values.yaml#L1952
+                metric_relabel_configs:
+                  # Drop less useful container CPU metrics.
+                  - source_labels: [__name__]
+                    action: drop
+                    regex: container_cpu_(cfs_throttled_seconds_total|load_average_10s|system_seconds_total|user_seconds_total)
+                  # Drop less useful / always zero filesystem metrics.
+                  - source_labels: [__name__]
+                    action: drop
+                    regex: container_fs_(io_current|io_time_seconds_total|io_time_weighted_seconds_total|reads_merged_total|sector_reads_total|sector_writes_total|writes_merged_total)
+                  # Drop less useful / always zero container memory metrics.
+                  - source_labels: [__name__]
+                    action: drop
+                    regex: container_memory_(mapped_file|swap)
+                  # Drop less useful container process metrics.
+                  - source_labels: [__name__]
+                    action: drop
+                    regex: container_(file_descriptors|tasks_state|threads_max)
+                  # Keep only the container scope of container_memory_failures_total.
+                  - source_labels: [__name__, scope]
+                    action: drop
+                    regex: container_memory_failures_total;hierarchy
+                  # Drop network metrics for CNI and similar interfaces, which belong to host network containers.
+                  - source_labels: [__name__, interface]
+                    action: drop
+                    regex: container_network_.*;(cali|cilium|cni|lxc|nodelocaldns|tunl).*
+                  # Drop container spec metrics that overlap with kube-state-metrics.
+                  - source_labels: [__name__]
+                    action: drop
+                    regex: container_spec.*
+                  # Drop cgroup metrics with no pod.
+                  - source_labels: [id, pod]
+                    action: drop
+                    regex: .+;
       processors:
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
@@ -1073,7 +1077,7 @@ daemonset:
             processors: [memory_limiter, resource/node, transform/operator]
             exporters: [otlp_http/watchdog]
           metrics:
-            receivers: [prometheus, prometheus/kubelet, hostmetrics, otlp]
+            receivers: [prometheus, prometheus/kubelet, otlp]
             processors: [memory_limiter, resource/node]
             exporters: [otlp_http/metrics]
           traces:
