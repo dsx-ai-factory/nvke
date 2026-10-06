@@ -60,10 +60,13 @@ Run the ordinary source contract suite with `make -C os-image/packer test`.
 Optional native tools exercise additional cases in
 `test_capture_apt_acquisitions.py`:
 
-- `NKE_TEST_APT_CONFIG=apt-config` validates the hook with native APT; CI sets it.
+- `NKE_TEST_APT_CONFIG=apt-config` validates the hook with native APT and checks
+  retention of repeated archive filenames; CI sets it.
   The real Debian metadata test runs whenever `dpkg-deb` is available.
 - `NKE_TEST_PACKER=/path/to/packer` renders both autoinstall variants and validates
   both architectures with capture enabled and disabled. Run
   `make -C os-image/packer init-packer` first to supply the plugin closure. The
   tests do not initialize plugins or start QEMU. CI's `validate-packer` target
   also validates both capture settings for both architectures and variants.
+  Hosted validation runs the template/YAML rendering test after installing the
+  pinned Packer binary.

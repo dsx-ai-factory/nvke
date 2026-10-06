@@ -259,6 +259,12 @@ jobs:
           sudo install -m 0755 "${tmp}/packer" /usr/local/bin/packer
           packer version
 
+      - name: Render the autoinstall capture configurations
+        working-directory: os-image/packer/scripts
+        env:
+          NKE_TEST_PACKER: packer
+        run: python3 -B -m unittest test_capture_apt_acquisitions.CaptureAPTTest.test_real_packer_renders_autoinstall_capture_configuration
+
       - name: Validate the Packer directory project
         env:
           PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}

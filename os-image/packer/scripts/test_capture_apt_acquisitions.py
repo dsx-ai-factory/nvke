@@ -9,6 +9,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import stat
 import subprocess
@@ -327,11 +328,34 @@ class CaptureAPTTest(unittest.TestCase):
         configuration = (SCRIPTS.parent / "cidata" / "apt-capture.conf").read_text()
         expected = next(line for line in configuration.splitlines() if line.startswith("DPkg::Pre-Install-Pkgs::nke-capture "))
         self.assertIn(expected, result.stdout.splitlines())
-        # GNU xargs, not the shell, interprets the C-style newline delimiter.
-        delimiter = subprocess.run(["xargs", "-r", "-d", r"\n", "printf", "<%s>"],
-                                   input="one path\ntwo path\n", check=True,
-                                   capture_output=True, text=True, timeout=30)
-        self.assertEqual(delimiter.stdout, "<one path><two path>")
+
+    @unittest.skipUnless(os.environ.get("NKE_TEST_APT_CONFIG"), "native APT is opt-in")
+    def test_native_apt_hook_retains_repeated_archive_names(self):
+        # APT owns decoding its configuration. Have bash read apt-config's
+        # shell output; redirect only the fixed retention directory to a fixture.
+        configuration = subprocess.run([
+            os.environ["NKE_TEST_APT_CONFIG"], "-c", str(SCRIPTS.parent / "cidata" / "apt-capture.conf"),
+            "shell", "NKE_CAPTURE", "DPkg::Pre-Install-Pkgs::nke-capture",
+        ], check=True, capture_output=True, text=True, timeout=30)
+        decoded = subprocess.run(["bash", "-c", configuration.stdout + '\nprintf "%s" "$NKE_CAPTURE"'],
+                                 check=True, capture_output=True, text=True, timeout=30).stdout
+        self.assertIn("/var/lib/nke/apt-acquisitions/packages", decoded)
+        destination = self.root / "retained archive bytes"
+        command = decoded.replace("/var/lib/nke/apt-acquisitions/packages", shlex.quote(str(destination)))
+        paths = []
+        payloads = (b"first retained archive bytes", b"second retained archive bytes")
+        for number, payload in enumerate(payloads):
+            directory = self.root / f"input archives {number}"
+            directory.mkdir()
+            package = directory / "fixture.deb"
+            package.write_bytes(payload)
+            paths.append(package)
+        subprocess.run(["bash", "-c", command], input="".join(f"{path}\n" for path in paths),
+                       check=True, capture_output=True, text=True, timeout=30)
+        retained = sorted(destination.iterdir())
+        self.assertEqual([path.name for path in retained], ["fixture.deb", "fixture.deb.~1~"])
+        self.assertCountEqual([path.read_bytes() for path in retained], payloads)
+        self.assertEqual([path.read_bytes() for path in paths], list(payloads))
 
     def test_both_packer_variants_export_before_ssh_key_cleanup(self):
         for variant, selector in (("non-fde", "qemu.nke-non-fde"), ("fde", "qemu.nke-fde")):
@@ -356,6 +380,17 @@ class CaptureAPTTest(unittest.TestCase):
         script = (SCRIPTS / "validate-packer-project.sh").read_text()
         self.assertIn("for capture in false true; do", script)
         self.assertIn('-var "capture_apt_acquisitions=${capture}"', script)
+
+    def test_ci_renders_capture_configuration_with_installed_packer(self):
+        workflow = (SCRIPTS.parents[2] / ".github" / "workflows" / "os-image-artifact.yml").read_text()
+        validation = workflow.split("  validate-packer:", 1)[1].split("  publish:", 1)[0]
+        render = validation.index("- name: Render the autoinstall capture configurations")
+        self.assertLess(validation.index("- name: Install pinned Packer"), render)
+        self.assertLess(render, validation.index("- name: Validate the Packer directory project"))
+        rendering = validation[render:].split("- name: Validate the Packer directory project", 1)[0]
+        self.assertIn("working-directory: os-image/packer/scripts", rendering)
+        self.assertIn("NKE_TEST_PACKER: packer", rendering)
+        self.assertIn("test_capture_apt_acquisitions.CaptureAPTTest.test_real_packer_renders_autoinstall_capture_configuration", rendering)
 
     def test_hook_cleanup_rejects_live_hook_and_apt_config_failure(self):
         for variant in ("non-fde", "fde"):
