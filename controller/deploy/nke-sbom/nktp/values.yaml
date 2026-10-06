@@ -84,6 +84,9 @@ watchdog:
     replicas: 1
     autoscaler:
       minReplicas: 1
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: 500m, memory: 512Mi}
     targetAllocator:
       resources:
         requests: {cpu: 100m, memory: 256Mi}
@@ -314,6 +317,10 @@ daemonset:
       - {name: host-passwd, hostPath: {path: /etc/passwd, type: File}}
   otelcol:
     config:
+      exporters:
+        otlp_http/metrics:
+          sending_queue:
+            queue_size: 8388608 # 8MiB serialized.
       receivers:
         # NKE's kubeadm configuration writes the API server's audit log here
         # (defaultAuditLogPath in controller/internal/kubeadmconfig), not at

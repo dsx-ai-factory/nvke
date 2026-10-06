@@ -61,11 +61,11 @@ development backend. Requests are per workload; a Collector's are set under
 
 | Workload | Pods | CPU request | Memory request |
 |---|---|---|---|
-| Node Collector | 3 | 300m | 768Mi |
-| Watchdog | 2 | 200m | 512Mi |
+| Node Collector | 3 | 3000m | 6Gi |
+| Watchdog | 2 | 1000m | 1Gi |
 | Gateways | 6 | 1200m | 3Gi |
-| Large-target pool | 2 | 1000m | 16Gi |
-| Cluster event reader | 2 | 400m | 1Gi |
+| Large-target pool | 2 | 4000m | 16Gi |
+| Cluster event reader | 2 | 2000m | 1Gi |
 | Target Allocators | 3 | 750m | 4Gi |
 | node-exporter | 3 | none set | none set |
 | kube-state-metrics | 9 | 900m | 1.1Gi |
