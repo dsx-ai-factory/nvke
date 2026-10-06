@@ -215,14 +215,17 @@ jobs:
           # anything outside this set, so this is belt and braces -- but it
           # means a future edit that loosens the guard still cannot commit an
           # arbitrary file by accident.
+          # No `vendor` here. The root vendor tree is gitignored and built only
+          # for offline remote tests, Guard 2 above does not permit it either,
+          # and naming an absent path makes `git add` exit 128 under `set -e` --
+          # which is how every bump since this job landed died.
           git add -- \
             ':(glob)**/go.mod' ':(glob)**/go.sum' \
             go.work go.work.sum \
-            vendor \
             agent/THIRD_PARTY_NOTICES.md \
             controller/THIRD_PARTY_NOTICES.md \
             cli/THIRD_PARTY_NOTICES.md \
             os-image/THIRD_PARTY_NOTICES.md
 
-          git commit -m "build: regenerate workspace, vendor and notices for this bump"
+          git commit -m "build: regenerate workspace and notices for this bump"
           git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${HEAD_REF}"
