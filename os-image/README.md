@@ -591,6 +591,7 @@ actual APT package archives before final provisioning cleanup. See
 [the capture contract](docs/apt-acquisition-capture.md) for output paths, scope,
 limits and validation. Capture is disabled by default and does not by itself
 prove a complete acquisition closure or bind evidence to a build Run.
+The Make targets do not collect the capture; use direct Packer for this output.
 
 ## Checker
 

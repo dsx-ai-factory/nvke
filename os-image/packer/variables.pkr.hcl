@@ -14,7 +14,7 @@ variable "architecture" {
 variable "capture_apt_acquisitions" {
   type        = bool
   default     = false
-  description = "Retain autoinstall APT archives and export their metadata/byte capture beside the image. This is not a full closure or authenticated acquisition receipt."
+  description = "Retain autoinstall APT archives and export their metadata/byte capture in the variant output directory beside the image. This is not a full closure or authenticated acquisition receipt."
 }
 
 variable "material_manifest" {

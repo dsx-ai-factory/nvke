@@ -41,10 +41,13 @@ def package_metadata(path):
     """Read Debian metadata with the owning dpkg tool, not a local parser."""
     # dpkg validates Debian package syntax. This is fixed-output transport,
     # not a second implementation of the Debian control-file grammar.
-    output = subprocess.run(
-        ["dpkg-deb", "--show", "--showformat=${Package}\t${Version}\t${Architecture}\n", str(path)],
-        check=True, text=True, capture_output=True, timeout=30,
-    ).stdout
+    try:
+        output = subprocess.run(
+            ["dpkg-deb", "--show", "--showformat=${Package}\t${Version}\t${Architecture}\n", str(path)],
+            check=True, text=True, capture_output=True, timeout=30,
+        ).stdout
+    except subprocess.CalledProcessError as error:
+        raise ValueError(f"dpkg-deb could not read captured package: {error.stderr.strip()}") from error
     fields = output.rstrip("\n").split("\t")
     if len(fields) != 3 or any(not field or any(character.isspace() for character in field) for field in fields):
         raise ValueError("dpkg-deb returned invalid package metadata")
@@ -54,21 +57,38 @@ def package_metadata(path):
 def repository_uris(cache, name, version, architecture, digest, size):
     """Select exact source-reported package locations without claiming origin."""
     key = name if architecture == "all" else f"{name}:{architecture}"
+    subject = f"{name}={version}:{architecture}"
     if key not in cache:
-        raise ValueError(f"captured package {name} is absent from repository metadata")
+        raise ValueError(f"captured package {subject} is absent from repository metadata")
     candidates = [item for item in cache[key].versions
                   if item.version == version and item.architecture == architecture
-                  and item.sha256 == digest and item.size == size]
+                  # Installed-only versions have no repository locations and
+                  # python3-apt can raise SystemError when reading their hash.
+                  and item.uris and item.sha256 == digest and item.size == size]
     locations = sorted({uri for item in candidates for uri in item.uris})
-    if not locations or len(locations) > 32:
-        raise ValueError(f"captured package {name} has no exact repository digest/size match")
+    if not locations:
+        raise ValueError(f"captured package {subject} has no exact repository digest/size match")
+    if len(locations) > 32:
+        raise ValueError(f"captured package {subject} exceeds the 32 repository location limit")
     for uri in locations:
-        parsed = urlsplit(uri)
-        if (parsed.scheme not in ("http", "https") or not parsed.hostname or
-                parsed.username is not None or parsed.password is not None or
-                parsed.query or parsed.fragment or "?" in uri or
-                any(character.isspace() for character in uri)):
-            raise ValueError(f"captured package {name} has unsafe repository metadata locations")
+        # Never include a complete URI in errors: it may contain credentials.
+        try:
+            parsed = urlsplit(uri)
+        except ValueError as error:
+            raise ValueError(f"captured package {subject} has unsafe repository metadata locations: malformed URI") from error
+        reason = None
+        if parsed.scheme not in ("http", "https"):
+            reason = f"unsupported scheme {parsed.scheme!r}"
+        elif not parsed.hostname:
+            reason = "missing hostname"
+        elif parsed.username is not None or parsed.password is not None:
+            reason = "embedded credentials"
+        elif parsed.query or parsed.fragment or "?" in uri:
+            reason = "query or fragment"
+        elif any(character.isspace() for character in uri):
+            reason = "whitespace"
+        if reason:
+            raise ValueError(f"captured package {subject} has unsafe repository metadata locations: {reason}")
     return locations
 
 
@@ -90,11 +110,15 @@ def capture(root, output, architecture, cache):
     sources = {}
     total = 0
     for path in files:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-        with os.fdopen(descriptor, "rb") as package:
-            info = os.fstat(package.fileno())
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            info = os.fstat(descriptor)
             if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= MAX_PACKAGE_BYTES:
                 raise ValueError("captured package is not a bounded regular file")
+        except BaseException:
+            os.close(descriptor)
+            raise
+        with os.fdopen(descriptor, "rb") as package:
             total += info.st_size
             if total > MAX_TOTAL_BYTES:
                 raise ValueError("captured package closure exceeds its byte budget")
@@ -126,7 +150,14 @@ def capture(root, output, architecture, cache):
                 info.mode, info.size = 0o444, len(raw)
                 archive.addfile(info, io.BytesIO(raw))
                 for entry in entries:
-                    package_descriptor = os.open(sources[entry["digest"].removeprefix("sha256:")], os.O_RDONLY | os.O_NOFOLLOW)
+                    package_descriptor = os.open(sources[entry["digest"].removeprefix("sha256:")], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                    try:
+                        package_info = os.fstat(package_descriptor)
+                        if not stat.S_ISREG(package_info.st_mode) or package_info.st_size != entry["size"]:
+                            raise ValueError("captured package changed before export")
+                    except BaseException:
+                        os.close(package_descriptor)
+                        raise
                     with os.fdopen(package_descriptor, "rb") as package:
                         info = tarfile.TarInfo(entry["path"])
                         info.mode, info.size = 0o444, entry["size"]

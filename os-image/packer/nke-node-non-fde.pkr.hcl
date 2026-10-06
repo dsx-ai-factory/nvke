@@ -128,21 +128,29 @@ build {
 
   provisioner "shell" {
     except = var.capture_apt_acquisitions ? [] : ["qemu.nke-non-fde"]
-    inline = ["sudo python3 /var/tmp/capture-apt-acquisitions.py --root /var/lib/nke/apt-acquisitions --output /var/tmp/nke-apt-acquisitions.tar --architecture ${var.architecture}"]
+    inline = [
+      "sudo systemctl mask --now apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service unattended-upgrades.service",
+      "sudo python3 /var/tmp/capture-apt-acquisitions.py --root /var/lib/nke/apt-acquisitions --output /var/tmp/nke-apt-acquisitions.tar --architecture ${var.architecture}",
+    ]
   }
 
   provisioner "file" {
     except      = var.capture_apt_acquisitions ? [] : ["qemu.nke-non-fde"]
     direction   = "download"
     source      = "/var/tmp/nke-apt-acquisitions.tar"
-    destination = "${var.output_directory}/non-fde-apt-acquisitions.tar"
+    destination = "${var.output_directory}/non-fde/apt-acquisitions.tar"
   }
 
   provisioner "shell" {
     except = var.capture_apt_acquisitions ? [] : ["qemu.nke-non-fde"]
     # Curtin owns apt.conf's supplied conf at 94curtin-config. This template
     # supplies only the capture hook there; the separate proxy file is untouched.
-    inline = ["sudo rm -f /var/tmp/capture-apt-acquisitions.py /var/tmp/nke-apt-acquisitions.tar /etc/apt/apt.conf.d/94curtin-config", "sudo rm -rf /var/lib/nke/apt-acquisitions"]
+    inline = [
+      "sudo rm -f /var/tmp/capture-apt-acquisitions.py /var/tmp/nke-apt-acquisitions.tar /etc/apt/apt.conf.d/94curtin-config",
+      "configuration=$(apt-config dump) || exit 1; case \"$configuration\" in *DPkg::Pre-Install-Pkgs::nke-capture*) echo 'APT capture hook remains after cleanup' >&2; exit 1;; esac",
+      "sudo rm -rf /var/lib/nke/apt-acquisitions",
+      "test ! -e /var/lib/nke/apt-acquisitions",
+    ]
   }
 
   provisioner "shell" {

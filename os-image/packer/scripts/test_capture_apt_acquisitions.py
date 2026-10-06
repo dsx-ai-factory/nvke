@@ -9,7 +9,10 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
+import stat
 import subprocess
+import sys
 import tarfile
 import tempfile
 from types import SimpleNamespace
@@ -51,6 +54,7 @@ class CaptureAPTTest(unittest.TestCase):
             with self.subTest(architecture=architecture):
                 self.capture(architecture)
                 first = self.output.read_bytes()
+                self.assertEqual(stat.S_IMODE(self.output.stat().st_mode), 0o644)
                 with tarfile.open(self.output) as archive:
                     self.assertEqual(archive.getnames(), ["manifest.json", f"packages/{self.digest}.deb"])
                     metadata = json.load(archive.extractfile("manifest.json"))
@@ -67,9 +71,6 @@ class CaptureAPTTest(unittest.TestCase):
             ("digest mismatch", {"sha256": "0" * 64}),
             ("size mismatch", {"size": 1}),
             ("version mismatch", {"version": "unrelated"}),
-            ("URI credentials", {"uris": ["https://secret:token@example.invalid/package.deb"]}),
-            ("URI query", {"uris": ["https://example.invalid/package.deb?token=secret"]}),
-            ("URI mixed sources", {"uris": ["https://archive.example.invalid/package.deb", "file:/installer/package.deb"]}),
             ("missing URI", {"uris": []}),
         ):
             with self.subTest(name=name):
@@ -77,6 +78,115 @@ class CaptureAPTTest(unittest.TestCase):
                     self.capture(cache=self.cache(**changes))
                 self.assertFalse(self.output.exists())
                 self.assertFalse(list(self.root.glob(".apt-capture-*")))
+
+    def test_unsafe_repository_uris_fail_with_safe_diagnostics(self):
+        for name, uris, reason in (
+            ("credentials", ["https://secret:token@example.invalid/package.deb"], "embedded credentials"),
+            ("query", ["https://example.invalid/package.deb?token=secret"], "query or fragment"),
+            ("fragment", ["https://example.invalid/package.deb#fragment"], "query or fragment"),
+            ("mixed", ["https://example.invalid/package.deb", "file:/installer/package.deb"], "unsupported scheme"),
+            ("file host", ["file://host/package.deb"], "unsupported scheme 'file'"),
+            ("CD", ["cdrom:[Ubuntu]/package.deb"], "unsupported scheme 'cdrom'"),
+            ("FTP", ["ftp://example.invalid/package.deb"], "unsupported scheme 'ftp'"),
+            ("missing host", ["https:///package.deb"], "missing hostname"),
+            ("whitespace", ["https://example.invalid/package .deb"], "whitespace"),
+            ("malformed", ["https://[malformed/package.deb"], "malformed URI"),
+        ):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "unsafe repository metadata locations") as raised:
+                    self.capture(cache=self.cache(uris=uris))
+                self.assertIn("fixture=1:2.0-1:amd64", str(raised.exception))
+                self.assertIn(reason, str(raised.exception))
+                self.assertNotIn("secret", str(raised.exception))
+                self.assertNotIn("token", str(raised.exception))
+                self.assertFalse(self.output.exists())
+
+    def test_repository_location_count_has_distinct_error(self):
+        uris = [f"https://mirror{number}.example.invalid/package.deb" for number in range(33)]
+        with self.assertRaisesRegex(ValueError, "exceeds the 32 repository location limit"):
+            self.capture(cache=self.cache(uris=uris))
+        self.assertFalse(self.output.exists())
+
+    def test_installed_only_version_does_not_read_unavailable_hash(self):
+        class InstalledVersion:
+            version, architecture, uris = "1:2.0-1", "amd64", []
+
+            @property
+            def sha256(self):
+                raise SystemError("installed-only version has no archive hash")
+
+        cache = {"fixture:amd64": SimpleNamespace(versions=[InstalledVersion()])}
+        with self.assertRaisesRegex(ValueError, "no exact repository digest/size match"):
+            self.capture(cache=cache)
+        self.assertFalse(self.output.exists())
+
+    def test_dpkg_error_preserves_tool_diagnostic(self):
+        failure = subprocess.CalledProcessError(2, "dpkg-deb", stderr="not a Debian format archive\n")
+        with patch.object(CAPTURE.subprocess, "run", side_effect=failure):
+            with self.assertRaisesRegex(ValueError, "dpkg-deb could not read captured package: not a Debian format archive"):
+                CAPTURE.package_metadata(self.package)
+
+    def test_wrong_package_architecture(self):
+        with patch.object(CAPTURE, "package_metadata", return_value=["fixture", "1:2.0-1", "arm64"]):
+            with self.assertRaisesRegex(ValueError, "wrong architecture"):
+                CAPTURE.capture(self.captured, self.output, "amd64", self.cache())
+        self.assertFalse(self.output.exists())
+
+    def test_nonregular_and_zero_size_packages(self):
+        self.package.unlink()
+        self.package.mkdir()
+        with self.assertRaisesRegex(ValueError, "bounded regular file"):
+            self.capture()
+        self.package.rmdir()
+        self.package.touch()
+        with self.assertRaisesRegex(ValueError, "bounded regular file"):
+            self.capture()
+        self.assertFalse(self.output.exists())
+
+    def test_fifo_package_fails_without_waiting_for_writer(self):
+        self.package.unlink()
+        os.mkfifo(self.package)
+        # Isolate the call so a blocking open is a timed test failure rather
+        # than a hung test runner. Metadata must not be reached for a FIFO.
+        script = (
+            "import importlib.util, sys; "
+            f"spec=importlib.util.spec_from_file_location('capture_apt', {str(SCRIPTS / 'capture-apt-acquisitions.py')!r}); "
+            "module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); "
+            "module.capture(sys.argv[1], sys.argv[2], 'amd64', {})"
+        )
+        result = subprocess.run([sys.executable, "-c", script, str(self.captured), str(self.output)],
+                                capture_output=True, text=True, timeout=5)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("bounded regular file", result.stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_symlinked_capture_roots_are_rejected(self):
+        alias = self.root / "alias"
+        alias.symlink_to(self.captured, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "capture root must not be a symbolic link"):
+            CAPTURE.capture(alias, self.output, "amd64", self.cache())
+        self.package.unlink()
+        (self.captured / "packages").rmdir()
+        (self.captured / "packages").symlink_to(self.root, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "capture root must not be a symbolic link"):
+            self.capture()
+        self.assertFalse(self.output.exists())
+
+    def test_manifest_budget_rejects_before_publication(self):
+        with patch.object(CAPTURE.json, "dumps", return_value="x" * ((8 << 20) + 1)):
+            with self.assertRaisesRegex(ValueError, "capture manifest exceeds its byte budget"):
+                self.capture()
+        self.assertFalse(self.output.exists())
+        self.assertFalse(list(self.root.glob(".apt-capture-*")))
+
+    def test_main_uses_guest_apt_cache_and_explicit_arguments(self):
+        cache = self.cache()
+        with patch.dict(sys.modules, {"apt": SimpleNamespace(Cache=lambda: cache)}), patch.object(
+            CAPTURE, "capture"
+        ) as captured, patch.object(sys, "argv", ["capture", "--root", str(self.captured),
+                                                "--output", str(self.output), "--architecture", "arm64"]):
+            CAPTURE.main()
+        captured.assert_called_once_with(self.captured, self.output, "arm64", cache)
 
     def test_malformed_dpkg_metadata_produces_no_output(self):
         for name, output in (
@@ -164,12 +274,8 @@ class CaptureAPTTest(unittest.TestCase):
 
     def test_failed_publication_sync_removes_own_output(self):
         fsync = os.fsync
-        calls = 0
-
         def fail_directory_sync(descriptor):
-            nonlocal calls
-            calls += 1
-            if calls == 2:
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode):
                 raise OSError("injected publication directory sync failure")
             return fsync(descriptor)
 
@@ -196,7 +302,7 @@ class CaptureAPTTest(unittest.TestCase):
         with tarfile.open(self.output) as archive:
             self.assertEqual(archive.extractfile(f"packages/{self.digest}.deb").read(), self.payload)
 
-    @unittest.skipUnless(os.environ.get("NKE_TEST_APT_CONFIG"), "native APT is opt-in")
+    @unittest.skipUnless(shutil.which("dpkg-deb"), "native dpkg-deb is unavailable")
     def test_native_dpkg_reads_real_package_metadata(self):
         package_root = self.root / "fixture"
         (package_root / "DEBIAN").mkdir(parents=True)
@@ -226,16 +332,41 @@ class CaptureAPTTest(unittest.TestCase):
     def test_both_packer_variants_export_before_ssh_key_cleanup(self):
         for variant, selector in (("non-fde", "qemu.nke-non-fde"), ("fde", "qemu.nke-fde")):
             text = (SCRIPTS.parent / f"nke-node-{variant}.pkr.hcl").read_text()
-            gates = [" ".join(line.split()) for line in text.splitlines() if line.strip().startswith("except ")]
-            self.assertEqual(gates, [f'except = var.capture_apt_acquisitions ? [] : ["{selector}"]'] * 4)
-            self.assertIn('direction   = "download"', text)
-            download = text.index('direction   = "download"')
+            text = " ".join(text.split())
+            self.assertEqual(text.count(f'except = var.capture_apt_acquisitions ? [] : ["{selector}"]'), 4)
+            self.assertIn('direction = "download"', text)
+            download = text.index('direction = "download"')
+            self.assertLess(text.index('sudo systemctl mask --now apt-daily.timer'),
+                            text.index('sudo python3 /var/tmp/capture-apt-acquisitions.py'))
             self.assertLess(text.index('sudo python3 /var/tmp/capture-apt-acquisitions.py'), download)
             provisioning = text.index('/scripts/provision.sh')
             for cleanup in ("/etc/apt/apt.conf.d/94curtin-config", "sudo rm -rf /var/lib/nke/apt-acquisitions"):
                 self.assertLess(download, text.index(cleanup))
                 self.assertLess(text.index(cleanup), provisioning)
-            self.assertIn(f'/{variant}-apt-acquisitions.tar', text)
+            self.assertIn(f'/{variant}/apt-acquisitions.tar', text)
+            self.assertLess(text.index("configuration=$(apt-config dump) || exit 1"), provisioning)
+            self.assertIn("*DPkg::Pre-Install-Pkgs::nke-capture*", text)
+            self.assertLess(text.index("test ! -e /var/lib/nke/apt-acquisitions"), provisioning)
+
+    def test_ci_validates_both_capture_settings(self):
+        script = (SCRIPTS / "validate-packer-project.sh").read_text()
+        self.assertIn("for capture in false true; do", script)
+        self.assertIn('-var "capture_apt_acquisitions=${capture}"', script)
+
+    def test_hook_cleanup_rejects_live_hook_and_apt_config_failure(self):
+        for variant in ("non-fde", "fde"):
+            text = (SCRIPTS.parent / f"nke-node-{variant}.pkr.hcl").read_text()
+            command = json.loads(next(line.strip().removesuffix(",") for line in text.splitlines()
+                                      if "configuration=$(apt-config dump)" in line))
+            for dump, status, accepted in (("APT::Architecture amd64;", 0, True),
+                                           ("DPkg::Pre-Install-Pkgs::nke-capture hook;", 0, False),
+                                           ("", 1, False)):
+                with self.subTest(variant=variant, dump=dump, status=status):
+                    result = subprocess.run([
+                        "bash", "-c", 'apt-config() { printf "%s" "$APT_DUMP"; return "$APT_STATUS"; }; ' + command,
+                    ], env={**os.environ, "APT_DUMP": dump, "APT_STATUS": str(status)},
+                        check=False, capture_output=True, text=True, timeout=5)
+                    self.assertEqual(result.returncode == 0, accepted)
 
     @unittest.skipUnless(os.environ.get("NKE_TEST_PACKER"), "real Packer is opt-in")
     def test_real_packer_renders_autoinstall_capture_configuration(self):

@@ -35,15 +35,18 @@ for architecture in amd64 arm64; do
   for selector in \
     nke-node-fde.qemu.nke-fde \
     nke-node-non-fde.qemu.nke-non-fde; do
-    "${packer_bin}" validate \
-      -only="${selector}" \
-      -var "architecture=${architecture}" \
-      -var "material_manifest=${fixture}/material-manifest.json" \
-      -var "output_directory=${fixture}/output" \
-      -var "build_log_directory=${fixture}/logs" \
-      -var "ssh_private_key_file=${work}/id_ed25519" \
-      -var "ssh_public_key_file=${work}/id_ed25519.pub" \
-      "${project_root}"
+    for capture in false true; do
+      "${packer_bin}" validate \
+        -only="${selector}" \
+        -var "capture_apt_acquisitions=${capture}" \
+        -var "architecture=${architecture}" \
+        -var "material_manifest=${fixture}/material-manifest.json" \
+        -var "output_directory=${fixture}/output" \
+        -var "build_log_directory=${fixture}/logs" \
+        -var "ssh_private_key_file=${work}/id_ed25519" \
+        -var "ssh_public_key_file=${work}/id_ed25519.pub" \
+        "${project_root}"
+    done
   done
 done
 

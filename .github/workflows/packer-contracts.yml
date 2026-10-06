@@ -9,6 +9,7 @@ on:
     paths:
       - os-image/**
       - .github/workflows/os-image-artifact.yml
+      - .github/workflows/os-image-cache.yml
       - .gitignore
       - .github/workflows/packer-contracts.yml
   workflow_call:
