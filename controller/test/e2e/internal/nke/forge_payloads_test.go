@@ -509,6 +509,31 @@ func TestBuildForgeNodePayloadsLuksKeyFollowsTheArch(t *testing.T) {
 	}
 }
 
+// The image builds nke-agent from this checkout's agent/ source at bake time,
+// so the installed agent is the build under qualification. Installing the apt
+// repository's unpinned nke-agent over it would swap that for whichever build
+// the suite currently holds, and the run would still report the baked version.
+//
+// Asserted rather than left to dpkg. A bake version sorts above a release tag
+// today, so apt declines the swap, which makes the bug invisible until the
+// repository publishes something that sorts higher.
+func TestBuildForgeNodePayloadsDoesNotInstallNkeAgent(t *testing.T) {
+	payloads, err := BuildForgeNodePayloads(completeForgeInputs())
+	if err != nil {
+		t.Fatalf("building payloads: %v", err)
+	}
+	for _, command := range payloads.PreKubeadmCommands {
+		if !strings.Contains(command, "apt-get install") {
+			continue
+		}
+		for _, field := range strings.Fields(command) {
+			if field == "nke-agent" {
+				t.Errorf("the node's own nke-agent should be left alone, got:\n%s", command)
+			}
+		}
+	}
+}
+
 // The NKE OS image pre-installs spire-agent and owns its units, its first-boot
 // renderer and its TPM plugin checksum. Installing the apt repository's build
 // over that swaps an image-owned package for a generic one, so the pre-kubeadm
