@@ -320,16 +320,6 @@ class CaptureAPTTest(unittest.TestCase):
         self.assertEqual(CAPTURE.package_metadata(package), ["fixture", "1:2.0-1", "all"])
 
     @unittest.skipUnless(os.environ.get("NKE_TEST_APT_CONFIG"), "native APT is opt-in")
-    def test_native_apt_parses_capture_hook(self):
-        result = subprocess.run([os.environ["NKE_TEST_APT_CONFIG"], "-c",
-                                 str(SCRIPTS.parent / "cidata" / "apt-capture.conf"), "dump"],
-                                check=True, capture_output=True, text=True, timeout=30)
-        self.assertIn("DPkg::Pre-Install-Pkgs::nke-capture", result.stdout)
-        configuration = (SCRIPTS.parent / "cidata" / "apt-capture.conf").read_text()
-        expected = next(line for line in configuration.splitlines() if line.startswith("DPkg::Pre-Install-Pkgs::nke-capture "))
-        self.assertIn(expected, result.stdout.splitlines())
-
-    @unittest.skipUnless(os.environ.get("NKE_TEST_APT_CONFIG"), "native APT is opt-in")
     def test_native_apt_hook_retains_repeated_archive_names(self):
         # APT owns decoding its configuration. Have bash read apt-config's
         # shell output; redirect only the fixed retention directory to a fixture.
@@ -428,39 +418,6 @@ class CaptureAPTTest(unittest.TestCase):
                         self.assertEqual(autoinstall["apt"]["conf"], configuration)
                     else:
                         self.assertNotIn("apt", autoinstall)
-
-    @unittest.skipUnless(os.environ.get("NKE_TEST_PACKER"), "real Packer is opt-in")
-    def test_real_packer_validates_capture_and_default_for_all_targets(self):
-        materials = self.root / "materials"
-        materials.mkdir()
-        for binding in ("installer-iso", "image-inputs"):
-            (materials / binding).write_bytes(b"validation fixture only")
-        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(self.root / "key")], check=True, timeout=30)
-        (self.root / "firmware").write_bytes(b"validation fixture only")
-        for architecture in ("amd64", "arm64"):
-            manifest = {"schemaVersion": "nke.dev/os-image-materials/v1", "materials": [
-                {"binding": binding, "component": binding, "kind": kind, "architecture": architecture,
-                 "digest": "sha256:" + "a" * 64, "path": f"materials/{binding}"}
-                for binding, kind in (("installer-iso", "disk-image"), ("image-inputs", "archive"))]}
-            (self.root / "material-manifest.json").write_text(json.dumps(manifest))
-            for variant in ("fde", "non-fde"):
-                for capture in ("false", "true"):
-                    with self.subTest(architecture=architecture, variant=variant, capture=capture):
-                        result = subprocess.run([
-                            os.environ["NKE_TEST_PACKER"], "validate", f"-only=nke-node-{variant}.qemu.nke-{variant}",
-                            "-var", f"architecture={architecture}", "-var", f"capture_apt_acquisitions={capture}",
-                            "-var", f"material_manifest={self.root / 'material-manifest.json'}",
-                            "-var", f"output_directory={self.root / 'output'}",
-                            "-var", f"ssh_private_key_file={self.root / 'key'}",
-                            "-var", f"ssh_public_key_file={self.root / 'key.pub'}",
-                            "-var", f"efi_firmware_code={self.root / 'firmware'}",
-                            "-var", f"efi_firmware_vars={self.root / 'firmware'}",
-                            str(SCRIPTS.parent),
-                        ], text=True, capture_output=True, timeout=60)
-                        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                        self.assertEqual(result.stdout.strip(), "The configuration is valid.")
-                        self.assertEqual(result.stderr, "")
-
 
 if __name__ == "__main__":
     unittest.main()

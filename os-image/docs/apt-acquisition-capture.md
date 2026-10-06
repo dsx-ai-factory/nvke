@@ -63,10 +63,11 @@ Optional native tools exercise additional cases in
 - `NKE_TEST_APT_CONFIG=apt-config` validates the hook with native APT and checks
   retention of repeated archive filenames; CI sets it.
   The real Debian metadata test runs whenever `dpkg-deb` is available.
-- `NKE_TEST_PACKER=/path/to/packer` renders both autoinstall variants and validates
-  both architectures with capture enabled and disabled. Run
-  `make -C os-image/packer init-packer` first to supply the plugin closure. The
-  tests do not initialize plugins or start QEMU. CI's `validate-packer` target
-  also validates both capture settings for both architectures and variants.
-  Hosted validation runs the template/YAML rendering test after installing the
-  pinned Packer binary.
+- `NKE_TEST_PACKER=/path/to/packer` renders and decodes both autoinstall variants
+  with capture enabled and disabled. This template test needs no plugins and
+  does not start QEMU. Hosted validation runs it after installing pinned Packer.
+
+Also run `make -C os-image/packer validate-packer` for the required native HCL
+validation: the maintained script owns plugin initialization and the matrix of
+both architectures, variants and capture settings. Hosted validation runs the
+same target; the unit test suite does not duplicate its fixtures or matrix.
