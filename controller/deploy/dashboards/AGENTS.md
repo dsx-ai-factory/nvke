@@ -12,7 +12,7 @@ Operators: import steps and a short description of each file are in [README.md](
 |---|---|---|
 | `nke-site-controller-health-reference.json` | Site-controller workload and node health | kube-state-metrics; optional apiserver/etcd, CNPG |
 | `nke-provisioning-duration-reference.json` | Node provision/teardown duration and outcomes | controller `/metrics` (`nke_controller_*`) |
-| `nke-cluster-upgrade-overview-reference.json` | GPU-cluster upgrade progress | kube-state-metrics; optional controller inventory metrics |
+| `nke-cluster-upgrade-overview-reference.json` | Kubernetes cluster upgrade progress | kube-state-metrics; optional NKE controller inventory metrics |
 
 Each dashboard has a **Requirements and scope** markdown panel. Keep that panel truthful when you change queries.
 

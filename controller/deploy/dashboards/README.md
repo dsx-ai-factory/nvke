@@ -36,7 +36,7 @@ with "Dashboard refresh interval is too low".
 |---|---|---|
 | [`nke-site-controller-health-reference.json`](nke-site-controller-health-reference.json) | Reference - NKE Site Controller Health | Glance board for the site controller: NKE, SPIRE, Temporal, cert-manager, and node Ready. Optional collapsed rows for apiserver/etcd and PostgreSQL/CNPG. |
 | [`nke-provisioning-duration-reference.json`](nke-provisioning-duration-reference.json) | Reference - NKE Provisioning Duration | Node provision/teardown duration, success vs give-up rate, and in-progress nodes from controller `/metrics`. |
-| [`nke-cluster-upgrade-overview-reference.json`](nke-cluster-upgrade-overview-reference.json) | Reference - NKE Cluster Upgrade Overview | Upgrade progress for GPU clusters: kubelet, control plane, and OS profile. Applies only to GPU clusters. |
+| [`nke-cluster-upgrade-overview-reference.json`](nke-cluster-upgrade-overview-reference.json) | Reference - NKE Cluster Upgrade Overview | Kubernetes cluster upgrade progress: kubelet versions from kube-state-metrics, plus control-plane and OS-profile panels when NKE controller inventory metrics are available. |
 
 For sites running CloudNativePG, use its
 [official Grafana dashboard](https://github.com/cloudnative-pg/grafana-dashboards/blob/main/charts/cluster/grafana-dashboard.json).
