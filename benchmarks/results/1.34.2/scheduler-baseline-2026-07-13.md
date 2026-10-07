@@ -13,8 +13,8 @@ authors: [NVIDIA NKE Scale Team]
 
 An 80-cell matrix — scheduler `kube-api-qps` [50, 100, 200, 500] × workload
 submission QPS [50, 100, 200, 500] × [100, 500, 1000, 2500, 5000] simulated
-nodes — shows that **through 1,000 nodes, scheduler throughput is set by its
-`kube-api-qps`**: every cell where it met the workload rate showed at most 1 s
+nodes — shows that **through 1,000 nodes, the scheduler kept pace whenever its
+`kube-api-qps` met the workload rate**: every such cell showed at most 1 s
 PodScheduled P99, and every cell where it fell short queued.
 
 At 2,500 and 5,000 nodes that no longer holds in every cell: several queued
@@ -58,12 +58,12 @@ labelled with the reason:
 
 `kube-api-qps` here means the scheduler's client QPS, however it was set.
 
-**Throughput is not tabulated per cell.** Statements about it on this page
-are read from PodScheduled P99: a cell with no queue wait placed pods as fast
-as they were submitted. On that reading, through 1,000 nodes it followed the
-lower of the scheduler's `kube-api-qps` and the workload QPS; at larger tiers
-the PodScheduled table shows where it fell short. The derived chart below is
-computed from the algorithm-latency table on this page.
+**Throughput is not tabulated per cell.** This page reads only PodScheduled
+P99: a cell with no queue wait placed pods as fast as they were submitted, and
+a cell that queued fell short of the workload rate. Through 1,000 nodes, cells
+queued exactly when `kube-api-qps` was below the workload QPS; at larger tiers
+the PodScheduled table shows where they queued regardless. The derived chart
+below is computed from the algorithm-latency table on this page.
 
 ## Environment
 
@@ -249,8 +249,8 @@ is unreliable.
 
 ### Throughput: what bounds it
 
-Through 1,000 nodes, throughput held at the lower of the scheduler's
-`kube-api-qps` and the workload QPS. At 2,500 and 5,000 nodes, several cells
+Through 1,000 nodes, a cell queued exactly when the scheduler's
+`kube-api-qps` was below the workload QPS. At 2,500 and 5,000 nodes, several cells
 with an adequate rate limit still queued — see the PodScheduled table.
 
 The chart below is **derived from the algorithm-latency table above**, not
@@ -301,12 +301,12 @@ produce queueing; the first two exceed it for that reason, the third does not.
 
 ## Observations
 
-### Through 1,000 nodes, throughput is a client-side rate limit
+### Through 1,000 nodes, queueing follows the client-side rate limit
 
-Through 1,000 nodes the ceiling is flat: cells that met the workload rate
-showed at most 1 s PodScheduled P99 and cells short of it queued, whatever the node count. That
-is the signature of a configured rate limit rather than a resource
-constraint. At 2,500 and 5,000 nodes it no longer holds in every cell. For a
+Through 1,000 nodes, whether a cell queued depends only on the rate limit:
+cells that met the workload rate showed at most 1 s PodScheduled P99 and cells
+short of it queued, whatever the node count. That is the signature of a
+configured rate limit rather than a resource constraint. At 2,500 and 5,000 nodes it no longer holds in every cell. For a
 tenant cluster, set `kube-api-qps` to the expected steady-state pod creation
 rate.
 
