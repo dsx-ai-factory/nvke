@@ -334,7 +334,8 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		// diagnostics cannot eat the deletion's budget.
 		if err != nil && !handedOver {
 			diagnosticsCtx, cancelDiagnostics := context.WithTimeout(
-				context.WithoutCancel(ctx), cleanupTimeout)
+				context.WithoutCancel(ctx), cleanupTimeout,
+			)
 			dir := opts.diagnosticsDir
 			logger.Info("bootstrap failed; collecting cluster diagnostics", "dir", dir)
 			controllerdeploy.New(opts.cweRunner, logger).
@@ -354,7 +355,8 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		}
 		logger.Info("tearing down bootstrap kind cluster", "cluster", cluster.Name)
 		deleteCtx, cancelDelete := context.WithTimeout(
-			context.WithoutCancel(ctx), cleanupTimeout)
+			context.WithoutCancel(ctx), cleanupTimeout,
+		)
 		defer cancelDelete()
 		if deleteErr := engine.Delete(deleteCtx, cluster.Name); deleteErr != nil {
 			logger.Error("failed to tear down bootstrap kind cluster",
