@@ -225,7 +225,7 @@ env:
 # in-cluster port while leaving nothing reachable from the node. That is the
 # mistake this file made on its first run -- a live site's release shows
 # service.port: 30080, but it reaches CWE through the separate NodePort
-# Service nkectl's bootstrap applies (cwe-nodeport.yaml), not through that.
+# Service nkectl's bootstrap applies (controller-nodeport.yaml), not through that.
 #
 # nodePort renders a SECOND Service beside the ClusterIP one, which is the
 # chart's supported way to publish the API without a cluster route -- for the

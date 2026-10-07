@@ -41,7 +41,7 @@ type NodePoolRef struct {
 
 // nodePoolNotFoundIn reports whether out carries the CLI's not-found error for
 // this exact pool. `get`, `patch` and `delete` all phrase it identically
-// (cli/internal/cwe/nodepools/get.go notFoundError, and
+// (cli/internal/controller/nodepools/get.go notFoundError, and
 // cli/internal/clients/nodepools.go FindNodePoolByName), and
 // WaitForNodePoolDeleted reads not-found as success, so the whole sentence has
 // to match rather than a bare "not found".

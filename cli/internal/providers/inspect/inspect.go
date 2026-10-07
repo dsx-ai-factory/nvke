@@ -33,8 +33,8 @@ const defaultTimeout = 30 * time.Second
 // Runner executes a command and returns its combined output. It is the seam
 // that lets tests assert on the kubectl invocations rather than run them.
 //
-// The signature matches cwedeploy.CommandRunner, so cwedeploy.ExecCommandRunner
-// satisfies it without this package importing cwedeploy.
+// The signature matches controllerdeploy.CommandRunner, so controllerdeploy.ExecCommandRunner
+// satisfies it without this package importing controllerdeploy.
 type Runner interface {
 	Run(ctx context.Context, name string, args ...string) (output string, err error)
 }

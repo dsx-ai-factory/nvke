@@ -153,14 +153,14 @@ repository list. Everything it names is public, so a bootstrap needs no
 registry credential.
 
 Everything static about the deployment lives in
-[`internal/bootstrap/cwedeploy/manifests/spire-values.yaml`](internal/bootstrap/cwedeploy/manifests/spire-values.yaml).
+[`internal/bootstrap/controllerdeploy/manifests/spire-values.yaml`](internal/bootstrap/controllerdeploy/manifests/spire-values.yaml).
 `nkectl` sets only what it cannot know ahead of time: the trust domain and
 cluster name, CWE's admin identity, the CA to chain to, and the TPM thumbprints
 allowed to attest.
 
 Two of the values it sets have to agree with CWE and are wrong by default on
 both sides, so both halves are set from one constant in
-[`internal/bootstrap/cwedeploy/cwedeploy.go`](internal/bootstrap/cwedeploy/cwedeploy.go):
+[`internal/bootstrap/controllerdeploy/controllerdeploy.go`](internal/bootstrap/controllerdeploy/controllerdeploy.go):
 
 - **the controller-manager class.** CWE stamps its `ClusterStaticEntry` objects
   with its configured class and the SPIRE controller manager only acts on

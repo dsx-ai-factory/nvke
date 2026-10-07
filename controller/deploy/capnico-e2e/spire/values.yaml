@@ -102,7 +102,7 @@ spire-server:
     # image. The webhook still validates once it is up; it just no longer
     # blocks admission while it is starting.
     #
-    # cli/internal/bootstrap/cwedeploy/manifests/spire-values.yaml sets the same thing
+    # cli/internal/bootstrap/controllerdeploy/manifests/spire-values.yaml sets the same thing
     # for the same reason.
     validatingWebhookConfiguration:
       failurePolicy: Ignore

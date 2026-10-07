@@ -26,14 +26,14 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/cwedeploy"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/controllerdeploy"
 	bootstrapengine "github.com/dsx-ai-factory/nke/cli/internal/bootstrap/engine"
 	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/manifest"
 	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitespec"
 	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 
-// fakeCWERunner is a scripted cwedeploy.CommandRunner: every helm call
+// fakeCWERunner is a scripted controllerdeploy.CommandRunner: every helm call
 // succeeds, and every `kubectl get --raw .../readyz` call reports healthy
 // immediately, so runBootstrapSite's CWE deploy step can be exercised
 // without a real helm binary, kubectl binary or cluster.
@@ -54,7 +54,7 @@ func (fakeCWERunner) Run(_ context.Context, name string, args ...string) (string
 		return `{"status":"ok","checks":{"database":"ok","temporal":"ok"}}`, nil
 	}
 	if name == "kubectl" && strings.Contains(joined, "capi-controller-manager") {
-		// CAPI is not installed yet, so cwedeploy runs clusterctl.
+		// CAPI is not installed yet, so controllerdeploy runs clusterctl.
 		return "Error from server (NotFound)", errors.New("exit status 1")
 	}
 	return "", nil
@@ -1049,10 +1049,10 @@ func (r missingEtcdKeyRunner) Run(ctx context.Context, name string, args ...stri
 	return r.fakeCWERunner.Run(ctx, name, args...)
 }
 
-// recordingCWERunner records every cwedeploy command so a test can assert one
+// recordingCWERunner records every controllerdeploy command so a test can assert one
 // was never issued.
 type recordingCWERunner struct {
-	next  cwedeploy.CommandRunner
+	next  controllerdeploy.CommandRunner
 	calls []string
 }
 

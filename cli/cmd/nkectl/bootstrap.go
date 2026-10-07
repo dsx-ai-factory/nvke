@@ -22,7 +22,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/cwedeploy"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/controllerdeploy"
 	// Aliased: this file has a local variable named engine.
 	bootstrapengine "github.com/dsx-ai-factory/nke/cli/internal/bootstrap/engine"
 	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/etcdkey"
@@ -82,7 +82,7 @@ type bootstrapSiteOptions struct {
 	kubeconfigOut string
 
 	// kubeconfigTimeout bounds the wait for tenant-access to publish the
-	// finished cluster's kubeconfig Secret. Zero uses cwedeploy's default.
+	// finished cluster's kubeconfig Secret. Zero uses controllerdeploy's default.
 	kubeconfigTimeout time.Duration
 
 	// encryptionKeyOut is where the finished cluster's etcd encryption key is
@@ -96,10 +96,10 @@ type bootstrapSiteOptions struct {
 	// without a real kind binary or container runtime.
 	bootstrapRunner bootstrapengine.CommandRunner
 
-	// cweRunner overrides the CommandRunner cwedeploy uses (helm/kubectl).
+	// cweRunner overrides the CommandRunner controllerdeploy uses (helm/kubectl).
 	// Nil in production; tests set it to a fake for the same reason as
 	// bootstrapRunner above.
-	cweRunner cwedeploy.CommandRunner
+	cweRunner controllerdeploy.CommandRunner
 
 	// dumpSpireEntries overrides the SPIRE bootstrap-resource export. Nil uses
 	// a Kubernetes client built from the bootstrap kubeconfig; tests replace it
@@ -269,8 +269,8 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	})
 	if len(cweCfg.TPMEKFingerprints) > 0 {
 		cfg.ExtraPortMappings = append(cfg.ExtraPortMappings, bootstrapengine.PortMapping{
-			ContainerPort: cwedeploy.SPIREServerNodePort,
-			HostPort:      cwedeploy.SPIREServerNodePort,
+			ContainerPort: controllerdeploy.SPIREServerNodePort,
+			HostPort:      controllerdeploy.SPIREServerNodePort,
 		})
 	}
 
@@ -326,7 +326,7 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 		if err != nil && !handedOver {
 			dir := opts.diagnosticsDir
 			logger.Info("bootstrap failed; collecting cluster diagnostics", "dir", dir)
-			cwedeploy.New(opts.cweRunner, logger).
+			controllerdeploy.New(opts.cweRunner, logger).
 				DumpDiagnostics(ctx, cluster.KubeconfigPath, dir)
 		}
 
@@ -585,14 +585,14 @@ func saveEtcdEncryptionKey(
 			clusterName:    clusterName,
 			keyPath:        path,
 			kubeconfigPath: kubeconfigPath,
-			recover:        cwedeploy.EtcdEncryptionKeyCommand(bootstrapCluster.KubeconfigPath, clusterID, path),
+			recover:        controllerdeploy.EtcdEncryptionKeyCommand(bootstrapCluster.KubeconfigPath, clusterID, path),
 			err:            err,
 		}
 	}
 
 	readCtx, cancel := context.WithTimeout(ctx, etcdKeyReadTimeout)
 	defer cancel()
-	data, err := cwedeploy.New(opts.cweRunner, logger).
+	data, err := controllerdeploy.New(opts.cweRunner, logger).
 		EtcdEncryptionKey(readCtx, bootstrapCluster.KubeconfigPath, clusterID)
 	if err != nil {
 		return fail(err)
@@ -648,7 +648,7 @@ func writeTenantKubeconfig(
 ) (string, error) {
 	path := siteKubeconfigPath(clusterName, opts)
 
-	kubeconfig, err := cwedeploy.New(opts.cweRunner, logger).
+	kubeconfig, err := controllerdeploy.New(opts.cweRunner, logger).
 		TenantKubeconfig(ctx, bootstrapCluster.KubeconfigPath, clusterName, opts.kubeconfigTimeout)
 	if err != nil {
 		return "", fmt.Errorf("reading the kubeconfig of cluster %q: %w", clusterName, err)
@@ -771,8 +771,8 @@ func envOrDefault(key, fallback string) string {
 //
 // clusterName is the ephemeral cluster's name, which is settled before the
 // cluster is created; SPIRE is told it, and it seeds the default trust domain.
-func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS bool, controllerImage, provisionedImage string) (cwedeploy.Config, error) {
-	cfg := cwedeploy.DefaultConfig()
+func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS bool, controllerImage, provisionedImage string) (controllerdeploy.Config, error) {
+	cfg := controllerdeploy.DefaultConfig()
 	// Flag, then variable, then the manifest default.
 	if controllerImage != "" {
 		cfg.CWEImage = controllerImage
@@ -842,8 +842,8 @@ func deployAndWaitForCWE(
 	ctx context.Context,
 	engine *bootstrapengine.Engine,
 	cluster *bootstrapengine.Cluster,
-	cweCfg cwedeploy.Config,
-	cweRunner cwedeploy.CommandRunner,
+	cweCfg controllerdeploy.Config,
+	cweRunner controllerdeploy.CommandRunner,
 	logger *slog.Logger,
 ) error {
 	for _, image := range []string{cweCfg.CWEImage, cweCfg.ProvisionedProviderImage} {
@@ -852,7 +852,7 @@ func deployAndWaitForCWE(
 		}
 	}
 
-	cwe := cwedeploy.New(cweRunner, logger)
+	cwe := controllerdeploy.New(cweRunner, logger)
 	logger.Info("deploying cwe onto bootstrap kind cluster", "cluster", cluster.Name, "image", cweCfg.CWEImage)
 	if err := cwe.Deploy(ctx, cluster.KubeconfigPath, cweCfg); err != nil {
 		return fmt.Errorf("deploying cwe: %w", err)

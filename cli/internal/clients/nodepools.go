@@ -15,7 +15,7 @@ import (
 
 // ListNodePools returns the node pools matching params. A nil params lists
 // every node pool on the site controller.
-func (c *CWEClient) ListNodePools(ctx context.Context, params *api.ListNodePoolsParams) ([]api.NodePool, error) {
+func (c *ControllerClient) ListNodePools(ctx context.Context, params *api.ListNodePoolsParams) ([]api.NodePool, error) {
 	resp, err := c.raw.ListNodePoolsWithResponse(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("listing node pools: %w", err)
@@ -32,7 +32,7 @@ func (c *CWEClient) ListNodePools(ctx context.Context, params *api.ListNodePools
 // CreateNodePool creates a node pool on the cluster the request's clusterID
 // names and returns the created pool. Provisioning the nodes happens
 // asynchronously.
-func (c *CWEClient) CreateNodePool(
+func (c *ControllerClient) CreateNodePool(
 	ctx context.Context,
 	req api.CreateNodePoolJSONRequestBody,
 ) (*api.NodePool, error) {
@@ -58,7 +58,7 @@ func (c *CWEClient) CreateNodePool(
 // changed; the rest keep their stored values. The work the update implies,
 // such as provisioning or tearing down nodes after a desired-count change,
 // happens asynchronously.
-func (c *CWEClient) PatchNodePool(
+func (c *ControllerClient) PatchNodePool(
 	ctx context.Context,
 	id openapi_types.UUID,
 	body []byte,
@@ -79,7 +79,7 @@ func (c *CWEClient) PatchNodePool(
 // DeleteNodePool deletes the node pool with the given UUID. The delete is
 // asynchronous: CWE queues teardown of the pool's nodes and returns before
 // they are drained.
-func (c *CWEClient) DeleteNodePool(ctx context.Context, id openapi_types.UUID) error {
+func (c *ControllerClient) DeleteNodePool(ctx context.Context, id openapi_types.UUID) error {
 	resp, err := c.raw.DeleteNodePoolWithResponse(ctx, id)
 	if err != nil {
 		return fmt.Errorf("deleting node pool: %w", err)
@@ -94,7 +94,7 @@ func (c *CWEClient) DeleteNodePool(ctx context.Context, id openapi_types.UUID) e
 // NodePool record. Returns an error if the cluster holds no node pool with
 // that name, or if several of them do, which would make name-based targeting
 // ambiguous.
-func (c *CWEClient) FindNodePoolByName(ctx context.Context, clusterName, name string) (*api.NodePool, error) {
+func (c *ControllerClient) FindNodePoolByName(ctx context.Context, clusterName, name string) (*api.NodePool, error) {
 	pools, err := c.ListNodePools(ctx, &api.ListNodePoolsParams{
 		ClusterName: &clusterName,
 		Name:        &name,

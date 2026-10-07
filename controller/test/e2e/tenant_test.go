@@ -446,7 +446,7 @@ func nicoForgeTenant() testSpec {
 			// Not nkectl, despite it forcing the same flag on: that one
 			// reaches only the ephemeral Kind bootstrap CWE, which builds the
 			// site cluster. The tenant is created against the site's CWE,
-			// which cwedeploy never touches.
+			// which controllerdeploy never touches.
 			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
 			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},

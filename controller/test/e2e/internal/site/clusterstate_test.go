@@ -111,7 +111,7 @@ func TestClusterStateSurvivesANewlineEatingTransport(t *testing.T) {
 // found CWE running there, and found nke-controller empty.
 //
 // nke-controller is where nkectl's own bootstrap cluster puts it
-// (cli/internal/bootstrap/cwedeploy), so it is the plausible wrong answer, and
+// (cli/internal/bootstrap/controllerdeploy), so it is the plausible wrong answer, and
 // the one a reader reaches for. A collector pointed at it answers "No
 // resources found" for every section -- indistinguishable, in the artifact,
 // from a cluster with nothing running, which is how run 37582097398 was read

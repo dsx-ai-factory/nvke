@@ -6,10 +6,10 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/cwedeploy"
+	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/controllerdeploy"
 	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/manifest"
-	"github.com/dsx-ai-factory/nke/cli/internal/cwe/clusters"
-	"github.com/dsx-ai-factory/nke/cli/internal/cwe/nodepools"
+	"github.com/dsx-ai-factory/nke/cli/internal/controller/clusters"
+	"github.com/dsx-ai-factory/nke/cli/internal/controller/nodepools"
 	"github.com/dsx-ai-factory/nke/cli/internal/mgmtcluster"
 	mgmtcommand "github.com/dsx-ai-factory/nke/cli/internal/mgmtcluster/command"
 	operatorcmd "github.com/dsx-ai-factory/nke/cli/internal/operator/command"
@@ -24,7 +24,7 @@ func newGetCmd() *cobra.Command {
 	cmd.AddCommand(clusters.NewGetCmd(loadClient))
 	cmd.AddCommand(nodepools.NewGetCmd(loadClient))
 	cmd.AddCommand(operatorcmd.NewGetCmds(loadOperator)...)
-	cmd.AddCommand(providercmd.NewGetCmd(loadSite, cwedeploy.ExecCommandRunner{}))
+	cmd.AddCommand(providercmd.NewGetCmd(loadSite, controllerdeploy.ExecCommandRunner{}))
 	cmd.AddCommand(mgmtcommand.NewGetKubeconfigCmd(loadSite, newMgmtClient))
 	cmd.AddCommand(newGetBootstrapManifestCmd())
 	return cmd

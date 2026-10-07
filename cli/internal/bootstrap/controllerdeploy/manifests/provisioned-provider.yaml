@@ -1,0 +1,832 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# GENERATED FILE -- do not edit. Regenerate with `make -C cli provider-manifest`.
+#
+# `kubectl kustomize cluster-api-provider-provisioned/config/default`, rendered
+# here so nkectl installs the provider of the commit it was built from without
+# a checkout. The source of truth is that kustomize base, whose CRDs and RBAC
+# are themselves controller-gen output; edit the provider, regenerate there,
+# then regenerate this.
+#
+# image.repository is the placeholder controllerdeploy rewrites to the image the
+# bootstrap was told to run.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: provisioned-system
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-provisioned
+    cluster.x-k8s.io/v1beta2: v1alpha1
+  name: provisionedclusters.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: ProvisionedCluster
+    listKind: ProvisionedClusterList
+    plural: provisionedclusters
+    shortNames:
+    - pc
+    singular: provisionedcluster
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.initialization.provisioned
+      name: Provisioned
+      type: boolean
+    - description: Hosts that no machine holds
+      jsonPath: .status.availableHosts
+      name: Hosts
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ProvisionedCluster is the Schema for the provisionedclusters
+          API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              ProvisionedClusterSpec defines the desired state of ProvisionedCluster.
+
+              The spec holds no control plane endpoint. CWE owns the control plane VIP
+              through the controlPlaneVIP field of its own cluster API, and CWE configures
+              kube-vip on each control plane node.
+            properties:
+              hosts:
+                description: |-
+                  Hosts is the inventory. The provider gives one host to each machine.
+
+                  Treat the inventory as fixed after the cluster is created. Size it for
+                  the cluster that you want.
+                items:
+                  description: |-
+                    ProvisionedHost describes one host that already exists on the network.
+                    The host is on, the operating system is installed, and the network already
+                    assigned its IP address. No controller creates or changes the host.
+                  properties:
+                    hostname:
+                      description: |-
+                        Hostname is the DNS hostname of the host. It must be unique in the cluster.
+                        It does not become the Kubernetes Node name: CWE generates the Node name
+                        and passes it to kubeadm.
+                      maxLength: 253
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                      type: string
+                    ipAddress:
+                      description: |-
+                        IPAddress is the IP address that the network already assigned to this
+                        host. The provider uses its canonical form in the provider ID and copies
+                        it to the status of the machine that holds the host. CWE uses it to reach
+                        the node agent.
+                      maxLength: 45
+                      minLength: 1
+                      type: string
+                    labels:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        Labels select this host. A machine that sets spec.hostSelector only uses
+                        a host whose labels contain every entry of that selector.
+                      type: object
+                    tpmEkPubHash:
+                      description: |-
+                        TPMEKPubHash is the SHA-256 hash that identifies this host's TPM
+                        endorsement public key. When set, the provider connects the owning CAPI
+                        Machine to the TPM-attested SPIRE agent on this host.
+                      pattern: ^[0-9a-f]{64}$
+                      type: string
+                  required:
+                  - hostname
+                  - ipAddress
+                  type: object
+                minItems: 1
+                type: array
+            required:
+            - hosts
+            type: object
+          status:
+            description: |-
+              ProvisionedClusterStatus defines the observed state of
+              ProvisionedCluster.
+            properties:
+              allocatedHosts:
+                description: |-
+                  AllocatedHosts reports which machine holds each host.
+
+                  The provider computes this list from the ProvisionedMachine objects on
+                  every reconcile. It exists for operators. No controller reads it, and the
+                  provider never uses it to decide an allocation.
+                items:
+                  description: HostAllocation reports one host that a machine holds.
+                  properties:
+                    hostName:
+                      description: HostName is the name of the host in the inventory.
+                      type: string
+                    machineName:
+                      description: MachineName is the name of the ProvisionedMachine
+                        that holds the host.
+                      type: string
+                  required:
+                  - hostName
+                  - machineName
+                  type: object
+                type: array
+              availableHosts:
+                description: |-
+                  AvailableHosts is the count of hosts that no machine holds.
+
+                  Deliberately not omitempty: an exhausted inventory reports 0, and dropping
+                  the field would make "no host is free" look identical to "the provider has
+                  not reported yet" — which is exactly the moment an operator needs to tell
+                  them apart.
+                format: int32
+                type: integer
+              conditions:
+                description: Conditions describes the current state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              initialization:
+                description: Initialization reports the state that the Cluster API
+                  contract requires.
+                minProperties: 1
+                properties:
+                  provisioned:
+                    description: |-
+                      Provisioned is true when the inventory is valid. The core Cluster API
+                      machine controller waits for this field before it acts on any machine of
+                      the cluster.
+                    type: boolean
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-provisioned
+  name: provisionedhostclaims.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: ProvisionedHostClaim
+    listKind: ProvisionedHostClaimList
+    plural: provisionedhostclaims
+    shortNames:
+    - phc
+    singular: provisionedhostclaim
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.ipAddress
+      name: IPAddress
+      type: string
+    - jsonPath: .spec.clusterName
+      name: Cluster
+      type: string
+    - jsonPath: .spec.machineName
+      name: Machine
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ProvisionedHostClaim locks one IP address across every cluster.
+
+          It is cluster-scoped on purpose. A physical machine is a singleton, but each
+          cluster carries its own inventory in its own namespace, so a namespaced lock
+          could not see across the boundary — which is exactly the case it exists to
+          stop. Creating the object is the mutual exclusion: two claimants race, and the
+          API server rejects the second with AlreadyExists.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              ProvisionedHostClaimSpec records who holds one IP address.
+
+              The object's existence is the lock. The spec identifies its exact holder so
+              a blocked claimant can determine whether that machine still exists.
+            properties:
+              clusterName:
+                description: ClusterName is the cluster whose inventory listed the
+                  host.
+                minLength: 1
+                type: string
+              hostName:
+                description: |-
+                  HostName is the name the inventory gave the host, for operators. Two
+                  clusters may well call the same machine different things, which is the
+                  whole reason the lock keys on the IP address instead.
+                type: string
+              ipAddress:
+                description: IPAddress is the canonical address being locked.
+                minLength: 1
+                type: string
+              machineName:
+                minLength: 1
+                type: string
+              machineNamespace:
+                description: |-
+                  MachineNamespace, MachineName, and MachineUID identify the exact
+                  ProvisionedMachine that holds the claim. The UID prevents a new machine
+                  with the same namespace and name from inheriting an old claim.
+                minLength: 1
+                type: string
+              machineUID:
+                minLength: 1
+                type: string
+            required:
+            - clusterName
+            - ipAddress
+            - machineName
+            - machineNamespace
+            - machineUID
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-provisioned
+    cluster.x-k8s.io/v1beta2: v1alpha1
+  name: provisionedmachines.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: ProvisionedMachine
+    listKind: ProvisionedMachineList
+    plural: provisionedmachines
+    shortNames:
+    - pm
+    singular: provisionedmachine
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.initialization.provisioned
+      name: Provisioned
+      type: boolean
+    - jsonPath: .status.hostName
+      name: Host
+      type: string
+    - jsonPath: .spec.providerID
+      name: ProviderID
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ProvisionedMachine is the Schema for the provisionedmachines
+          API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ProvisionedMachineSpec defines the desired state of ProvisionedMachine.
+            properties:
+              hostSelector:
+                additionalProperties:
+                  type: string
+                description: |-
+                  HostSelector limits which hosts this machine can use. The provider only
+                  uses a host whose labels contain every entry of this selector.
+                type: object
+              providerID:
+                description: |-
+                  ProviderID binds this machine to one host of the inventory. The provider
+                  sets it once, in the form provisioned://<cluster-name>/<ip-address>.
+                  The provider never changes it and never clears it.
+
+                  This field is the record of the allocation. The provider derives the set
+                  of used hosts from the providerID of every machine of the cluster, so the
+                  binding survives a restart of the provider and needs no lease.
+                maxLength: 512
+                minLength: 1
+                type: string
+            type: object
+            x-kubernetes-validations:
+            - message: providerID is immutable once set
+              rule: '!has(oldSelf.providerID) || (has(self.providerID) && self.providerID
+                == oldSelf.providerID)'
+          status:
+            description: |-
+              ProvisionedMachineStatus defines the observed state of
+              ProvisionedMachine.
+            properties:
+              addresses:
+                description: |-
+                  Addresses contain the hostname and internal IP address from the inventory.
+                  Cluster API copies them to the Machine, and CWE reads the internal IP to
+                  find the node agent.
+                items:
+                  description: MachineAddress contains information for the node's
+                    address.
+                  properties:
+                    address:
+                      description: address is the machine address.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                    type:
+                      description: type is the machine address type, one of Hostname,
+                        ExternalIP, InternalIP, ExternalDNS or InternalDNS.
+                      enum:
+                      - Hostname
+                      - ExternalIP
+                      - InternalIP
+                      - ExternalDNS
+                      - InternalDNS
+                      type: string
+                  required:
+                  - address
+                  - type
+                  type: object
+                type: array
+              conditions:
+                description: Conditions describes the current state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              hostName:
+                description: HostName is the hostname of the host that this machine
+                  holds.
+                type: string
+              initialization:
+                description: Initialization reports the state that the Cluster API
+                  contract requires.
+                minProperties: 1
+                properties:
+                  provisioned:
+                    description: |-
+                      Provisioned is true when the machine holds a host. Nothing is created, so
+                      the machine is provisioned as soon as the binding exists.
+                    type: boolean
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-provisioned
+    cluster.x-k8s.io/v1beta2: v1alpha1
+  name: provisionedmachinetemplates.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: ProvisionedMachineTemplate
+    listKind: ProvisionedMachineTemplateList
+    plural: provisionedmachinetemplates
+    shortNames:
+    - pmt
+    singular: provisionedmachinetemplate
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ProvisionedMachineTemplate is the Schema for the
+          provisionedmachinetemplates API.
+
+          A caller sends this kind as the infra.machineTemplate of a node pool or of
+          the cluster control plane configuration. The template usually carries an
+          empty spec, because the provider creates nothing: every input it needs is in
+          the inventory of the ProvisionedCluster.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              ProvisionedMachineTemplateSpec defines the desired state of
+              ProvisionedMachineTemplate.
+            properties:
+              template:
+                description: Template is the machine to render.
+                properties:
+                  metadata:
+                    description: |-
+                      ObjectMeta is copied to the rendered machine. Only labels and annotations
+                      are used.
+                    type: object
+                  spec:
+                    description: Spec is the spec of the rendered ProvisionedMachine.
+                    properties:
+                      hostSelector:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          HostSelector limits which hosts this machine can use. The provider only
+                          uses a host whose labels contain every entry of this selector.
+                        type: object
+                      providerID:
+                        description: |-
+                          ProviderID binds this machine to one host of the inventory. The provider
+                          sets it once, in the form provisioned://<cluster-name>/<ip-address>.
+                          The provider never changes it and never clears it.
+
+                          This field is the record of the allocation. The provider derives the set
+                          of used hosts from the providerID of every machine of the cluster, so the
+                          binding survives a restart of the provider and needs no lease.
+                        maxLength: 512
+                        minLength: 1
+                        type: string
+                    type: object
+                    x-kubernetes-validations:
+                    - message: providerID is immutable once set
+                      rule: '!has(oldSelf.providerID) || (has(self.providerID) &&
+                        self.providerID == oldSelf.providerID)'
+                required:
+                - spec
+                type: object
+            required:
+            - template
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: provisioned-controller-manager
+  namespace: provisioned-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: provisioned-leader-election
+  namespace: provisioned-system
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: provisioned-controller-manager
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+- apiGroups:
+  - cluster.x-k8s.io
+  resources:
+  - clusters
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cluster.x-k8s.io
+  resources:
+  - machines
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - provisionedclusters
+  - provisionedmachines
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - provisionedclusters/status
+  - provisionedmachines/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - provisionedhostclaims
+  verbs:
+  - create
+  - get
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: provisioned-leader-election
+  namespace: provisioned-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: provisioned-leader-election
+subjects:
+- kind: ServiceAccount
+  name: provisioned-controller-manager
+  namespace: provisioned-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: provisioned-controller-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: provisioned-controller-manager
+subjects:
+- kind: ServiceAccount
+  name: provisioned-controller-manager
+  namespace: provisioned-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: cluster-api-provider-provisioned
+    cluster.x-k8s.io/provider: infrastructure-provisioned
+  name: provisioned-controller-manager
+  namespace: provisioned-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cluster-api-provider-provisioned
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cluster-api-provider-provisioned
+        cluster.x-k8s.io/provider: infrastructure-provisioned
+    spec:
+      containers:
+      - args:
+        - --leader-elect
+        image: docker.io/library/cluster-api-provider-provisioned:latest
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: probes
+        name: manager
+        ports:
+        - containerPort: 8080
+          name: metrics
+        - containerPort: 8081
+          name: probes
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: probes
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 20m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      securityContext:
+        runAsNonRoot: true
+      serviceAccountName: provisioned-controller-manager
+      terminationGracePeriodSeconds: 10

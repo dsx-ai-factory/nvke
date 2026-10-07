@@ -69,7 +69,7 @@ jobs:
             # The CLI hack/ci/nkectl-smoke.sh exercises against a live CWE. Keep
             # in step with what the smoke asserts on; capd-e2e.yml mirrors it as
             # push globs. The rest of cli/ cannot break against CWE, and skips.
-            cwe_facing='^cli/(cmd/|internal/(clients|clusterstate|cwe|providers|bootstrap/sitecluster|util)/)'
+            cwe_facing='^cli/(cmd/|internal/(clients|clusterstate|controller|providers|bootstrap/sitecluster|util)/)'
             e2e_unrelated='(^|/)docs/|^cli/|^cluster-api-provider-provisioned/'
 
             if [[ -n "$changed_files" ]] && ! grep -qEv "$e2e_unrelated" <<< "$changed_files"; then

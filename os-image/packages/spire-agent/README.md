@@ -103,7 +103,7 @@ this repository:
 - `controller/Tiltfile` — the `tpm_attestor_server` image digest
 - `controller/hack/ci/prepare-capd-bundles.sh`
 - `cli/internal/bootstrap/manifest/bootstrap-manifest.yaml` — the `tpm-attestor` image
-- `cli/internal/bootstrap/cwedeploy/cwedeploy.go` — the tpm-direct plugin checksums the bootstrap enforces
+- `cli/internal/bootstrap/controllerdeploy/controllerdeploy.go` — the tpm-direct plugin checksums the bootstrap enforces
 - `cli/e2e/bootstrap/substrate/image.go` — `get_tpm_pubhash` for the e2e substrate
 
 The agent and server halves of the attestor must move together. Bump them in

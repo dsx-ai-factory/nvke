@@ -40,7 +40,7 @@ on:
       - "cli/cmd/**"
       - "cli/internal/clients/**"
       - "cli/internal/clusterstate/**"
-      - "cli/internal/cwe/**"
+      - "cli/internal/controller/**"
       - "cli/internal/providers/**"
       - "cli/internal/bootstrap/sitecluster/**"
       - "cli/internal/util/**"

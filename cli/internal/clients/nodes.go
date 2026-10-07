@@ -17,7 +17,7 @@ import (
 // Control-plane only, because the callers that need node-level detail are
 // waiting on the control plane: a worker's state says nothing about whether
 // the cluster can be left to run on its own.
-func (c *CWEClient) ListControlPlaneNodes(
+func (c *ControllerClient) ListControlPlaneNodes(
 	ctx context.Context,
 	clusterID openapi_types.UUID,
 ) ([]api.Node, error) {

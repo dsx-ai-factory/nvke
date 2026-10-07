@@ -33,7 +33,7 @@ export KIND_CLUSTER_CONFIG ?= hack/cwe-capi-kind.yaml
 # so CI points it at the Docker Hub mirror.
 REGISTRY_MIRROR_IMAGE ?= registry:2
 # The pin lives in make/tool-versions.mk, so `nkectl bootstrap site` (which
-# runs clusterctl too, see cli/internal/bootstrap/cwedeploy) and this dev loop cannot
+# runs clusterctl too, see cli/internal/bootstrap/controllerdeploy) and this dev loop cannot
 # install different CAPI versions.
 include $(CURDIR)/../make/tool-versions.mk
 export CAPI_CORE_VERSION ?= $(CAPI_VERSION)

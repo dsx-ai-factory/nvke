@@ -53,7 +53,7 @@ func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
 // non-API commands work without a configured site. If --site was passed, it
 // overrides the active site for this invocation only, without touching the
 // config file.
-func loadClient() (*clients.CWEClient, error) {
+func loadClient() (*clients.ControllerClient, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("loading config: %w", err)

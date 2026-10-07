@@ -15,7 +15,7 @@ import (
 
 // ListClusters returns the clusters matching params. A nil params lists every
 // cluster on the site controller.
-func (c *CWEClient) ListClusters(ctx context.Context, params *api.ListClustersParams) ([]api.Cluster, error) {
+func (c *ControllerClient) ListClusters(ctx context.Context, params *api.ListClustersParams) ([]api.Cluster, error) {
 	resp, err := c.raw.ListClustersWithResponse(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("listing clusters: %w", err)
@@ -31,7 +31,7 @@ func (c *CWEClient) ListClusters(ctx context.Context, params *api.ListClustersPa
 
 // CreateCluster submits a cluster creation request and returns the created cluster.
 // The cluster will be in a provisioning state immediately after creation.
-func (c *CWEClient) CreateCluster(ctx context.Context, req api.CreateClusterJSONRequestBody) (*api.Cluster, error) {
+func (c *ControllerClient) CreateCluster(ctx context.Context, req api.CreateClusterJSONRequestBody) (*api.Cluster, error) {
 	resp, err := c.raw.CreateClusterWithResponse(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("creating cluster: %w", err)
@@ -46,7 +46,7 @@ func (c *CWEClient) CreateCluster(ctx context.Context, req api.CreateClusterJSON
 }
 
 // GetCluster returns a single cluster by UUID.
-func (c *CWEClient) GetCluster(ctx context.Context, id openapi_types.UUID) (*api.Cluster, error) {
+func (c *ControllerClient) GetCluster(ctx context.Context, id openapi_types.UUID) (*api.Cluster, error) {
 	resp, err := c.raw.GetClusterWithResponse(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("getting cluster: %w", err)
@@ -63,7 +63,7 @@ func (c *CWEClient) GetCluster(ctx context.Context, id openapi_types.UUID) (*api
 // PatchCluster PATCHes the cluster identified by id with body, a JSON
 // document matching UpdateClusterRequest, and returns the cluster as it now
 // stands.
-func (c *CWEClient) PatchCluster(ctx context.Context, id openapi_types.UUID, body []byte) (*api.Cluster, error) {
+func (c *ControllerClient) PatchCluster(ctx context.Context, id openapi_types.UUID, body []byte) (*api.Cluster, error) {
 	resp, err := c.raw.UpdateClusterWithBodyWithResponse(ctx, id, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("patching cluster: %w", err)
@@ -78,7 +78,7 @@ func (c *CWEClient) PatchCluster(ctx context.Context, id openapi_types.UUID, bod
 }
 
 // DeleteCluster deletes a cluster by UUID. Deletion is async.
-func (c *CWEClient) DeleteCluster(ctx context.Context, id openapi_types.UUID) error {
+func (c *ControllerClient) DeleteCluster(ctx context.Context, id openapi_types.UUID) error {
 	resp, err := c.raw.DeleteClusterWithResponse(ctx, id)
 	if err != nil {
 		return fmt.Errorf("deleting cluster: %w", err)
@@ -95,7 +95,7 @@ func (c *CWEClient) DeleteCluster(ctx context.Context, id openapi_types.UUID) er
 // The duplicate check is unreachable in practice: the DB enforces a global unique
 // index on cluster name (migration 20250407125309_name_uniqueness.go, index
 // clusters_name_unique), so the API rejects duplicate names at creation time.
-func (c *CWEClient) FindClusterByName(ctx context.Context, name string) (*api.Cluster, error) {
+func (c *ControllerClient) FindClusterByName(ctx context.Context, name string) (*api.Cluster, error) {
 	clusters, err := c.ListClusters(ctx, &api.ListClustersParams{Name: &name})
 	if err != nil {
 		return nil, fmt.Errorf("finding cluster: %w", err)

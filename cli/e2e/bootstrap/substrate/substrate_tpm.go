@@ -25,9 +25,9 @@ const (
 	// nodeTrustBundlePath is where the bootstrap CA lands in the node image.
 	nodeTrustBundlePath = "/etc/spire-agent/bootstrap-ca.crt"
 
-	// DefaultSpireServerPort is the node port cwedeploy's external-service
+	// DefaultSpireServerPort is the node port controllerdeploy's external-service
 	// manifest publishes SPIRE on
-	// (internal/bootstrap/cwedeploy/manifests/spire-server-nodeport.yaml). It is fixed
+	// (internal/bootstrap/controllerdeploy/manifests/spire-server-nodeport.yaml). It is fixed
 	// rather than allocated because the agents are configured with it before
 	// the cluster exists, so the two have to agree — and this is the other
 	// half of that pair.

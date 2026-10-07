@@ -20,7 +20,7 @@ import (
 
 // pollInterval is how often WaitProvisioned asks CWE where it has got to. A
 // var, not a const, so tests can shrink it rather than paying real wall-clock
-// time for a retry loop — the same shape cwedeploy's waitReadyPollInterval uses.
+// time for a retry loop — the same shape controllerdeploy's waitReadyPollInterval uses.
 var pollInterval = 10 * time.Second
 
 // DefaultWaitTimeout bounds a wait whose caller supplied no budget of its own.
@@ -28,7 +28,7 @@ const DefaultWaitTimeout = 30 * time.Minute
 
 // ClusterAPI is the part of the CWE client this package needs.
 //
-// An interface rather than *clients.CWEClient so the create-and-wait flow can
+// An interface rather than *clients.ControllerClient so the create-and-wait flow can
 // be tested against a fake that returns a scripted sequence of conditions,
 // which is the only way to exercise the paths that matter here: a cluster that
 // takes several polls to come up, one that starts deleting underneath us, and
