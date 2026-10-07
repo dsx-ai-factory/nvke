@@ -47,10 +47,10 @@ sizing:
       namespace with a fixed small/medium mix of deployments, statefulsets
       and jobs whose per-namespace replica counts are set by PODS_PER_NODE
       and the stateful-set-per-namespace overrides. To size this scenario to
-      a different cluster, recompute NODES_PER_NAMESPACE from your total node
-      count and target namespace count, and confirm PODS_PER_NODE stays under
-      your kubelet's configured max-pods so the peak pod count is actually
-      schedulable. Below 100 schedulable, untainted nodes ClusterLoader2 skips
+      a different cluster, recompute NODES_PER_NAMESPACE from your
+      schedulable, untainted node count and target namespace count, and
+      confirm PODS_PER_NODE stays under your kubelet's configured max-pods so
+      the peak pod count is actually schedulable. Below 100 schedulable, untainted nodes ClusterLoader2 skips
       its scheduler-throughput phase and its 5 s pod-startup check.
     inputs:
       - Schedulable, untainted node count
@@ -146,17 +146,6 @@ slo:
     unit: s
     severity: error
     source: "SIG-Scalability SLOs: https://github.com/kubernetes/community/blob/main/sig-scalability/slos/slos.md"
-  - metric: scheduler_throughput_pods_per_s
-    op: gte
-    value: 15
-    unit: pods/s
-    severity: error
-    source: >-
-      CL2_SCHEDULER_THROUGHPUT_THRESHOLD, checked in ClusterLoader2's separate
-      scheduler-throughput phase, which runs only on clusters of 100 or more
-      schedulable, untainted nodes. Not evaluated in the published run. The result's
-      scheduler_throughput_pods_per_s is from the load phase, which
-      ClusterLoader2 does not gate.
 
 dashboard: ../../../dashboards/1.34/control-plane.json
 alerts: ../../../alerts/1.34/control-plane.yml

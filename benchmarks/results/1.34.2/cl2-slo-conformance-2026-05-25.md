@@ -28,6 +28,8 @@ node count.
 
 ## Scope of this publication
 
+- The run predates the ClusterLoader2 commit the scenario pins (2026-08-24),
+  which is the commit `engine/overrides.yaml` was checked against.
 - The object counts above are as recorded. On this topology the scenario's
   `engine/overrides.yaml` produces 448 small deployments.
 - The 20 and 40 QPS levels were set outside `engine/overrides.yaml`, and the

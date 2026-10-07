@@ -126,15 +126,15 @@ Below 100 schedulable, untainted nodes, `junit.xml` does not include the 5 s
 pod-startup or scheduler-throughput checks. Judge `pod_startup_p99_s` against
 `slo` from the `CreatePhasePodStartupLatency` summary in `--report-dir`.
 
-Three of the scenario's five `slo` entries have a `severity: error` rule:
+Three of the scenario's four `slo` entries have a `severity: error` rule:
 
 - `post_p99_ms` and `delete_p99_ms` share one rule, the SIG mutating-API SLO.
 - `get_p99_ms` has a resource-scope rule at 1 s. A separate rule holds
   namespace- and cluster-scoped LISTs to their 30 s bar; it tracks no `slo`
   entry.
 
-`pod_startup_p99_s` and `scheduler_throughput_pods_per_s` have no rule; both
-come from ClusterLoader2's own measurements.
+`pod_startup_p99_s` has no rule; it comes from ClusterLoader2's own
+measurement.
 
 The `severity: warning` rules — 429s, etcd disk latency, etcd leader changes,
 control-plane liveness — do not judge the run; they explain a violation when
@@ -231,10 +231,10 @@ version; read against an upstream build with care.
 ## How to replicate
 
 1. Provision a cluster matching `topology`, or apply `sizing.derivation` to
-   your own hardware: recompute `NODES_PER_NAMESPACE` from your total node
-   count and target namespace count, and confirm `PODS_PER_NODE` stays under
-   your worker kubelet's max-pods setting so the peak pod count is
-   schedulable.
+   your own hardware: recompute `NODES_PER_NAMESPACE` from your schedulable,
+   untainted node count and target namespace count, and confirm
+   `PODS_PER_NODE` stays under your worker kubelet's max-pods setting so the
+   peak pod count is schedulable.
 2. Run the `prerequisites.baseline_validation` steps.
 3. Check out `kubernetes/perf-tests` at
    `14525e2e2e08a236a2adb6f4f39740c586ed45fe`.
@@ -245,16 +245,20 @@ Run on an otherwise idle cluster.
 
 ## How to judge the result
 
-The scenario's `slo` block is the pass/fail contract. All five entries are
-`severity: error`. Four are latency bars, where lower is better;
-`scheduler_throughput_pods_per_s` is a floor, where higher is better.
+The scenario's `slo` block is the pass/fail contract. All four entries are
+`severity: error` latency bars, where lower is better.
 
 | Metric | Gate | Source |
 |---|---|---|
 | `post_p99_ms`, `delete_p99_ms` | ≤ 1000 ms | [SIG-Scalability mutating-API SLO](https://github.com/kubernetes/community/blob/main/sig-scalability/slos/slos.md) |
 | `get_p99_ms` | ≤ 1000 ms | [SIG-Scalability read-only-API SLO](https://github.com/kubernetes/community/blob/main/sig-scalability/slos/slos.md), resource scope (the tighter of the two official bars — this scenario does not split GET latency by scope) |
 | `pod_startup_p99_s` | ≤ 5 s | [SIG-Scalability pod-startup SLO](https://github.com/kubernetes/community/blob/main/sig-scalability/slos/slos.md) |
-| `scheduler_throughput_pods_per_s` | **≥** 15 pods/s | `CL2_SCHEDULER_THROUGHPUT_THRESHOLD`. Judged only in ClusterLoader2's scheduler-throughput phase, which runs on clusters of 100 or more schedulable, untainted nodes; on smaller clusters it is not evaluated. The result's value for this metric is from the load phase. |
+
+**Scheduler throughput is a supporting metric, not an `slo` entry.**
+ClusterLoader2 gates it against `CL2_SCHEDULER_THROUGHPUT_THRESHOLD` only in
+its scheduler-throughput phase, which runs on clusters of 100 or more
+schedulable, untainted nodes. `scheduler_throughput_pods_per_s` is from the
+load phase, which ClusterLoader2 does not gate.
 
 **Zero APF 429 rejections is a supporting observation, not an `slo` entry.**
 No per-size metric key carries it in this scenario's metrics contract, so it
