@@ -43,7 +43,7 @@ METRICS: scheduler-metrics.yml
 ALERTS: ../../../../alerts/1.34/scheduler.yml
 METRICS_DIRECTORY: collected-metrics
 PROM_TOKEN: ""
-PROM_SKIP_TLS_VERIFY: true
+PROM_SKIP_TLS_VERIFY: false
 
 # Garbage collection is off because the config tears its own objects down at a
 # controlled rate. See scheduler-baseline.yml.

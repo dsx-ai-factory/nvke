@@ -58,7 +58,9 @@ labelled with the reason:
 
 `kube-api-qps` here means the scheduler's client QPS, however it was set.
 
-**Throughput is not tabulated per cell.** Through 1,000 nodes it followed the
+**Throughput is not tabulated per cell.** Statements about it on this page
+are read from PodScheduled P99: a cell with no queue wait placed pods as fast
+as they were submitted. On that reading, through 1,000 nodes it followed the
 lower of the scheduler's `kube-api-qps` and the workload QPS; at larger tiers
 the PodScheduled table shows where it fell short. The derived chart below is
 computed from the algorithm-latency table on this page.
@@ -293,10 +295,9 @@ scheduler's ceiling — the queue behaviour the matrix exists to characterize,
 not a scheduler fault. The third is *not* explained by rate mismatch and is
 discussed in Observations.
 
-The gate is set at kube-burner's configured 10 m threshold, which is
-deliberately loose for exactly this reason. Read these three cells as evidence
-of what happens when a scheduler is under-provisioned for its workload rate,
-not as a failed run.
+All three cells fail the gate. The gate is set at kube-burner's configured
+10 m threshold, which is deliberately loose because the matrix sets out to
+produce queueing; the first two exceed it for that reason, the third does not.
 
 ## Observations
 
