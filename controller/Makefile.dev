@@ -660,13 +660,16 @@ capd-image: $(CAPD_IMAGE_DEPS) ## Build the custom CAPD node image for DockerMac
 					*) echo "unsupported docker server arch: $$server_arch" >&2; exit 1 ;; \
 				esac; \
 				ovn_charts="$(CURDIR)/.local/cni/nke-cni-ovn-charts-1.4.0_1.4.0_$${bundle_arch}.deb"; \
+				ovn_images="$(CURDIR)/.local/cni/nke-cni-ovn-images-1.4.0_1.4.0_$${bundle_arch}.deb"; \
+				ovn_helm="$(CURDIR)/.local/cni/nke-e2e-helm.deb"; \
 				if [ -z "$${CAPD_CNI_CHARTS_DEB_PATH:-}" ]; then \
-					if [ ! -f "$$ovn_charts" ] || [ ./hack/ci/prepare-ovn-assets.sh -nt "$$ovn_charts" ]; then \
+					if [ ! -f "$$ovn_charts" ] || [ ! -f "$$ovn_images" ] || [ ! -f "$$ovn_helm" ] || \
+					   [ ./hack/ci/prepare-ovn-assets.sh -nt "$$ovn_charts" ]; then \
 						$(kind-docker-host) BUNDLE_ARCH="$$bundle_arch" bash ./hack/ci/prepare-ovn-assets.sh "$(CURDIR)/.local/cni"; \
 					fi; \
 					CAPD_CNI_CHARTS_DEB_PATH="$$ovn_charts"; \
-					CAPD_CNI_IMAGES_DEB_PATH="$(CURDIR)/.local/cni/nke-cni-ovn-images-1.4.0_1.4.0_$${bundle_arch}.deb"; \
-					CAPD_HELM_DEB_PATH="$(CURDIR)/.local/cni/nke-e2e-helm.deb"; \
+					CAPD_CNI_IMAGES_DEB_PATH="$$ovn_images"; \
+					CAPD_HELM_DEB_PATH="$$ovn_helm"; \
 				fi; \
 				test -f "$${CAPD_CNI_CHARTS_DEB_PATH}" || { echo "missing OVN charts package: $${CAPD_CNI_CHARTS_DEB_PATH}" >&2; exit 1; }; \
 				;; \
