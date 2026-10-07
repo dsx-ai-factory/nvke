@@ -1488,7 +1488,6 @@ components:
           x-go-type-skip-optional-pointer: true
         effect:
           $ref: "#/components/schemas/NodeTaintEffect"
-          description: Taint effect.
 
     NodeTaintEffect:
       type: string
