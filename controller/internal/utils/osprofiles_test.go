@@ -73,6 +73,8 @@ func TestLoadOSProfileMetadata(t *testing.T) {
 	require.True(t, ok)
 }
 
+// TestFindOSProfiles verifies exact matching by Kubernetes version, architecture,
+// variant, and Ubuntu version, including that empty criteria do not use defaults.
 func TestFindOSProfiles(t *testing.T) {
 	idx := &MetadataIndex{
 		Profiles: map[string]Metadata{
