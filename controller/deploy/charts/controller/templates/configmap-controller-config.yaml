@@ -50,7 +50,7 @@ data:
     installCNIAfterInit: {{ .Values.cni.installAfterInit }}
     nicoControllersEnabled: {{ include "controller.controllerConfig.orGoDefault" (list .Values.controllers.nico.enabled true) }}
     profilesDir: {{ .Values.profiles.path | default "./profiles" | quote }}
-    runbooksDir: {{ if .Values.profiles.image.enabled }}{{ printf "%s/runbooks" .Values.profiles.path | quote }}{{ else }}""{{ end }}
+    runbooksDir: {{ include "controller.runbooksDir" . | quote }}
     tenantAccessEnabled: {{ .Values.tenantAccess.enabled }}
     nodeAgent:
       spireAttestationMethod: {{ .Values.nodeAgent.spireAttestationMethod | quote }}

@@ -365,6 +365,11 @@ type Config struct {
 	// Validate() does not check it: unset is the valid default.
 	AuthConfigPath string `env:"AUTH_CONFIG_PATH"`
 
+	// ControllerConfigPath is the mounted nke-controller-config file, loaded and
+	// validated at startup. Unset runs without it, which is what a host-local run
+	// gets; a set path that does not load is a startup failure.
+	ControllerConfigPath string `env:"CONTROLLER_CONFIG_PATH"`
+
 	// PermissiveMode evaluates and logs authentication and admission decisions
 	// without enforcing them, so no request is rejected. No effect when
 	// AuthConfigPath is unset.

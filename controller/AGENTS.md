@@ -202,6 +202,7 @@ Key configuration (see `internal/config/config.go` for full list):
 | `SPIFFE_ENDPOINT_SOCKET` | (optional) | SPIRE agent socket path for SPIFFE identity (e.g., `unix:///tmp/spire-agent/agent.sock`) |
 | `AUTH_CONFIG_PATH` | (unset) | API authentication config file. Unset disables authentication entirely, which is what a host-local `go run` gets. Set but unreadable is a startup failure, never "disabled". |
 | `PERMISSIVE_MODE` | `false` | Only read when `AUTH_CONFIG_PATH` is set. `true` evaluates, logs and counts every request, then serves it anyway — nothing is rejected. |
+| `CONTROLLER_CONFIG_PATH` | (unset) | The mounted `nke-controller-config` file, loaded and validated at startup. The chart always sets it; unset runs without the file, which is what a host-local `go run` gets. Set but missing or invalid is a startup failure. |
 
 ## Local Development
 

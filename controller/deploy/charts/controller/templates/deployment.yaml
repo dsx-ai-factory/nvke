@@ -30,6 +30,7 @@
 {{- fail "spiffe.enabled must be true when nodeAgent.spireAttestationMethod is dsxImds" }}
 {{- end }}
 {{- include "controller.apiAuth.validate" . }}
+{{- include "controller.controllerConfig.validateEnv" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -50,6 +51,9 @@ metadata:
   {{- end }}
   {{- if and .Values.apiAuth.enabled (not (hasKey (default dict .Values.deploymentAnnotations) "configmap.reloader.stakater.com/reload")) }}
   {{- $reloadConfigMaps = append $reloadConfigMaps .Values.apiAuth.configMap.name }}
+  {{- end }}
+  {{- if not (hasKey (default dict .Values.deploymentAnnotations) "configmap.reloader.stakater.com/reload") }}
+  {{- $reloadConfigMaps = append $reloadConfigMaps (include "controller.controllerConfig.name" .) }}
   {{- end }}
   {{- if or .Values.deploymentAnnotations $reloadSecrets $reloadConfigMaps }}
   annotations:
@@ -180,6 +184,9 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            - name: nke-controller-config
+              mountPath: {{ include "controller.controllerConfig.mountPath" . | quote }}
+              readOnly: true
             {{- if .Values.nodeAgent.externalMTLS.enabled }}
             - name: node-agent-client-tls
               mountPath: /etc/nke/node-agent-client-tls
@@ -338,9 +345,9 @@ spec:
               value: {{ .Values.profiles.path | quote }}
             - name: NICO_CONTROLLERS_ENABLED
               value: {{ .Values.controllers.nico.enabled | quote }}
-            {{- if .Values.profiles.image.enabled }}
+            {{- with include "controller.runbooksDir" . }}
             - name: RUNBOOKS_DIR
-              value: {{ printf "%s/runbooks" .Values.profiles.path | quote }}
+              value: {{ . | quote }}
             {{- end }}
             # SPIFFE/SPIRE config
             - name: SPIFFE_ENABLED
@@ -437,6 +444,8 @@ spec:
                   key: CNPG_TEMPORAL_PASSWORD
                   optional: false
             {{- end }}
+            - name: CONTROLLER_CONFIG_PATH
+              value: {{ printf "%s/%s" (include "controller.controllerConfig.mountPath" .) (include "controller.controllerConfig.file" .) | quote }}
             {{- if .Values.apiAuth.enabled }}
             # Omitted when disabled, never set empty: NKE reads an empty value as
             # unset, so the deployment would look configured and authenticate nobody.
@@ -450,6 +459,10 @@ spec:
               value: {{ .value | quote }}
             {{- end }}
       volumes:
+        # Not optional, like nke-auth-config below.
+        - name: nke-controller-config
+          configMap:
+            name: {{ include "controller.controllerConfig.name" . }}
         {{- if .Values.nodeAgent.externalMTLS.enabled }}
         - name: node-agent-client-tls
           secret:

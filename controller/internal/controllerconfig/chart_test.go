@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
@@ -35,10 +37,12 @@ const renderedChartDirEnv = "NKE_RENDERED_CHART_DIR"
 
 // TestRenderedChart checks the chart's nke-controller-config against the
 // controller, once per rendered value set: the document loads, defines every
-// key, and resolves each migrated key to the value the controller derives from
-// the same render's environment variables today. Ordinary test runs skip it.
+// key, resolves each migrated key to the value the controller derives from the
+// same render's environment variables today, and is mounted where
+// CONTROLLER_CONFIG_PATH points. Ordinary test runs skip it.
 func TestRenderedChart(t *testing.T) {
 	t.Parallel()
+	migrated := loadMigrated(t)
 
 	dir := os.Getenv(renderedChartDirEnv)
 	if dir == "" {
@@ -55,7 +59,8 @@ func TestRenderedChart(t *testing.T) {
 
 			raw, err := os.ReadFile(render)
 			require.NoError(t, err)
-			document, environment := splitRender(t, raw)
+			document, environment, deployment := splitRender(t, raw)
+			checkMounted(t, deployment, environment)
 
 			fromFile, err := controllerconfig.Load(writeConfig(t, document))
 			require.NoError(t, err, "the rendered config.yaml does not load")
@@ -87,14 +92,16 @@ func TestRenderedChart(t *testing.T) {
 	}
 }
 
-// splitRender returns the nke-controller-config document and the controller
-// container's literal environment variables from one `helm template` output.
-// Variables set through valueFrom are left out: none of them migrate.
-func splitRender(t *testing.T, raw []byte) (string, map[string]string) {
+// splitRender returns the nke-controller-config document, the controller
+// container's literal environment variables, and the controller Deployment from
+// one `helm template` output. Variables set through valueFrom are left out:
+// none of them migrate.
+func splitRender(t *testing.T, raw []byte) (string, map[string]string, *appsv1.Deployment) {
 	t.Helper()
 
 	var document string
 	var environment map[string]string
+	var controller *appsv1.Deployment
 	reader := utilyaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(raw)))
 	for {
 		manifest, err := reader.Read()
@@ -125,11 +132,43 @@ func splitRender(t *testing.T, raw []byte) (string, map[string]string) {
 					environment[variable.Name] = variable.Value
 				}
 			}
+			controller = &deployment
 		}
 	}
 	require.NotEmpty(t, document, "the render has no nke-controller-config")
 	require.NotNil(t, environment, "the render has no controller Deployment")
-	return document, environment
+	return document, environment, controller
+}
+
+// checkMounted requires the Deployment to mount nke-controller-config, read-only
+// and not optional, at the path CONTROLLER_CONFIG_PATH names, and Reloader to
+// restart the controller when it changes.
+func checkMounted(t *testing.T, deployment *appsv1.Deployment, environment map[string]string) {
+	t.Helper()
+
+	var volume string
+	for _, v := range deployment.Spec.Template.Spec.Volumes {
+		if v.ConfigMap != nil && v.ConfigMap.Name == "nke-controller-config" {
+			require.Empty(t, volume, "more than one volume mounts nke-controller-config")
+			require.False(t, ptr.Deref(v.ConfigMap.Optional, false), "the nke-controller-config volume is optional")
+			volume = v.Name
+		}
+	}
+	require.NotEmpty(t, volume, "no volume mounts nke-controller-config")
+
+	var mountPath string
+	for _, m := range deployment.Spec.Template.Spec.Containers[0].VolumeMounts {
+		if m.Name == volume {
+			require.Empty(t, mountPath, "the controller mounts nke-controller-config more than once")
+			require.True(t, m.ReadOnly, "nke-controller-config is mounted writable")
+			mountPath = m.MountPath
+		}
+	}
+	require.NotEmpty(t, mountPath, "the controller does not mount nke-controller-config")
+	require.Equal(t, path.Join(mountPath, "config.yaml"), environment["CONTROLLER_CONFIG_PATH"])
+
+	watched := strings.Split(deployment.Annotations["configmap.reloader.stakater.com/reload"], ",")
+	require.Contains(t, watched, "nke-controller-config", "Reloader does not watch nke-controller-config")
 }
 
 // documentKeys returns every dotted key path the YAML document sets, at every

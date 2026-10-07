@@ -100,13 +100,57 @@ create a way for the mount and the path to disagree.
 auth.yaml
 {{- end }}
 
-{{/* The nke-controller-config ConfigMap and its file key. */}}
+{{/*
+The nke-controller-config ConfigMap, its file key, and where it is mounted.
+CONTROLLER_CONFIG_PATH is the mount and the file joined, so none are values.
+*/}}
 {{- define "controller.controllerConfig.name" -}}
 nke-controller-config
 {{- end }}
 
 {{- define "controller.controllerConfig.file" -}}
 config.yaml
+{{- end }}
+
+{{- define "controller.controllerConfig.mountPath" -}}
+/etc/nke/controller-config
+{{- end }}
+
+{{/*
+Refuse an env entry for a variable nke-controller-config also carries: the file
+would hold the chart value while the environment held the override, and the
+controller validates the file at startup. files/controller-config-env.yaml lists
+those variables, each with the config.yaml key that replaces it.
+CONTROLLER_CONFIG_PATH is refused too: a second entry could point the controller
+at another file, or at none.
+*/}}
+{{- define "controller.controllerConfig.validateEnv" -}}
+{{- $carried := .Files.Get "files/controller-config-env.yaml" | fromYaml }}
+{{- if or (not $carried) (hasKey $carried "Error") }}
+{{- fail "files/controller-config-env.yaml is missing or does not parse" }}
+{{- end }}
+{{- range .Values.env }}
+{{- $name := toString .name }}
+{{- if eq $name "CONTROLLER_CONFIG_PATH" }}
+{{- fail "env sets CONTROLLER_CONFIG_PATH, which the chart sets to the mounted nke-controller-config file" }}
+{{- end }}
+{{- if hasKey $carried $name }}
+{{- fail (printf "env sets %s, which nke-controller-config carries as %s; set it through its chart value instead" $name (get $carried $name)) }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+RUNBOOKS_DIR, and runbooksDir in nke-controller-config: profiles.runbooksPath
+when set, else the runbooks/ directory the profiles image provides, else empty,
+which leaves the controller its own default of PROFILES_DIR/runbooks.
+*/}}
+{{- define "controller.runbooksDir" -}}
+{{- if .Values.profiles.runbooksPath -}}
+{{- .Values.profiles.runbooksPath -}}
+{{- else if .Values.profiles.image.enabled -}}
+{{- printf "%s/runbooks" .Values.profiles.path -}}
+{{- end -}}
 {{- end }}
 
 {{/*

@@ -211,6 +211,40 @@ fi
 [[ "${refusal}" == *"oidc.providers has 6 entries"* ]] || { echo "six oidc.providers failed for another reason: ${refusal}" >&2; exit 1; }
 printf '  oidc.providers render as given, and more than five are refused\n'
 
+# A separate hooks directory, with and without the profiles image.
+render runbooks-path --set-string profiles.runbooksPath=/opt/nke/hooks
+render runbooks-path-with-profiles-image \
+  --set profiles.image.enabled=true \
+  --set-string profiles.image.tag=test \
+  --set-string profiles.path=/opt/nke/profiles \
+  --set-string profiles.runbooksPath=/opt/nke/hooks
+
+# env stays open to what nke-controller-config does not carry, such as what
+# Tilt and nkectl bootstrap pass, and refuses what it does.
+render env-passthrough \
+  --set-string 'env[0].name=LOG_LEVEL' --set-string 'env[0].value=debug' \
+  --set-string 'env[1].name=PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER' --set-string 'env[1].value=true' \
+  --set-string 'env[2].name=NODE_AGENT_PORT' --set-string 'env[2].value=50051'
+if refusal="$(helm template cwe "${CHART}" \
+  --set nkeOIDCAuth.enabled=true --set spiffe.enabled=true --set-string spiffe.trustDomain=example.test \
+  --set-string 'env[0].name=NKE_OIDC_AUTH_ISSUER_URL' --set-string 'env[0].value=https://oidc.example.test' 2>&1)"; then
+  echo "env set NKE_OIDC_AUTH_ISSUER_URL and rendered; the chart must refuse a variable nke-controller-config carries" >&2
+  exit 1
+fi
+[[ "${refusal}" == *"env sets NKE_OIDC_AUTH_ISSUER_URL, which nke-controller-config carries as oidc.managementOIDCAuth.issuerURL"* ]] ||
+  { echo "env override of NKE_OIDC_AUTH_ISSUER_URL failed for another reason: ${refusal}" >&2; exit 1; }
+if refusal="$(helm template cwe "${CHART}" --set-string 'env[0].name=CONTROLLER_CONFIG_PATH' --set-string 'env[0].value=' 2>&1)"; then
+  echo "env set CONTROLLER_CONFIG_PATH and rendered; the chart must refuse it" >&2
+  exit 1
+fi
+[[ "${refusal}" == *"env sets CONTROLLER_CONFIG_PATH"* ]] ||
+  { echo "env override of CONTROLLER_CONFIG_PATH failed for another reason: ${refusal}" >&2; exit 1; }
+printf '  env overrides of nke-controller-config settings and its path are refused\n'
+
+# The values files the Tilt and nkectl bootstrap deployments install with.
+render tilt -f "${controller}/hack/tilt-controller-chart-values.yaml"
+render nkectl-bootstrap -f "${controller}/../cli/internal/bootstrap/controllerdeploy/manifests/controller-values.yaml"
+
 printf '  rendered %s value sets\n' "$(find "${renders}" -name '*.yaml' | wc -l | tr -d ' ')"
 cd "${controller}"
 

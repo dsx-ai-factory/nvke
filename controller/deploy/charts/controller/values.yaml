@@ -309,7 +309,8 @@ resources: {}
 # -- Comma-separated API provider blocks accepted by mutating cluster and node-pool requests. The chart defaults deployed CWE to Nico only; set to "nico,infra" only for deployments that should accept generic CAPI-backed provider payloads.
 supportedInfraProviders: "nico"
 
-# -- Additional environment variables to inject into the CWE container.
+# -- Additional environment variables to inject into the CWE container. A
+# variable nke-controller-config carries is refused; set its chart value instead.
 env: []
 # - name: EXAMPLE
 #   value: example
@@ -551,6 +552,9 @@ profiles:
   # profiles content image into an emptyDir mounted at this path.
   # -- Directory mounted/read as PROFILES_DIR
   path: ""
+  # -- Directory read as RUNBOOKS_DIR for config-profile hook scripts. Empty
+  # uses the runbooks/ directory under path.
+  runbooksPath: ""
   image:
     # Materialize fleet profiles from an external OCI content image. Prefer
     # digest pins so Deployment rolls on profile changes.

@@ -95,6 +95,7 @@ A Helm chart to deploy the NKE controller service
 | profiles.image.repository | string | `"nvcr.io/j7sbcjl3qgta/cwe-profiles"` | Repository, including registry, for the fleet profiles content image (not the nke-controller image above). Override to pull it from a different registry (e.g. a private mirror); pair any change with a matching `imagePullSecrets` entry. |
 | profiles.image.tag | string | `""` | Tag for the profiles content image (used when digest is empty) |
 | profiles.path | string | `""` | Directory mounted/read as PROFILES_DIR |
+| profiles.runbooksPath | string | `""` | Directory read as RUNBOOKS_DIR for config-profile hook scripts. Empty uses the runbooks/ directory under path. |
 | readinessProbe | string | `nil` |  |
 | replicaCount | int | `1` |  |
 | resources | object | `{}` |  |

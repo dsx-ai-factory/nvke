@@ -25,6 +25,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nke/controller/internal/auth"
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nke/controller/internal/controllers/automode"
 	"github.com/dsx-ai-factory/nke/controller/internal/controllers/capi"
 	"github.com/dsx-ai-factory/nke/controller/internal/controllers/certrenewal"
@@ -121,6 +122,17 @@ func main() {
 
 	// Before the SPIFFE wait and the migrations: a bad configuration should cost a
 	// restart, not a migrated schema.
+	if cfg.ControllerConfigPath == "" {
+		logger.Info("CONTROLLER_CONFIG_PATH is unset; running without nke-controller-config")
+	} else {
+		controllerCfg, err := controllerconfig.Load(cfg.ControllerConfigPath)
+		if err != nil {
+			logger.Error("Failed to load nke-controller-config", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("Loaded nke-controller-config", "path", cfg.ControllerConfigPath, "oidcProviders", len(controllerCfg.OIDC.Providers))
+	}
+
 	authenticator, err := auth.Setup(ctx, auth.Options{
 		ConfigPath: cfg.AuthConfigPath,
 		Permissive: cfg.PermissiveMode,

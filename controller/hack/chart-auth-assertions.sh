@@ -133,7 +133,7 @@ absent "renders no ConfigMap of its own"      '^# Source: .*/templates/configmap
 want   "still mounts the named one"           'name: nke-auth-config'                "${out}"
 # auth.Load runs once at startup, so a configuration edit that does not restart
 # the pods does nothing at all. Reloader is what restarts them, here and below.
-want   "Reloader watches it"                  'configmap.reloader.stakater.com/reload: "nke-auth-config"' "${out}"
+want   "Reloader watches it"                  'configmap.reloader.stakater.com/reload: "nke-auth-config,nke-controller-config"' "${out}"
 
 echo "configMap.create=true renders the configuration:"
 out="$(render -f "${values}")"
@@ -150,21 +150,21 @@ want   "the nested admit rule keeps its name" '^        - name: forge-console'  
 want   "and its namespace"                    '^          namespace: cloud-workflow-engine' "${out}"
 # Rendering the ConfigMap does not change how it gets applied: Reloader watches
 # it either way, so there is one mechanism to reason about rather than two.
-want   "Reloader watches it here too"         'configmap.reloader.stakater.com/reload: "nke-auth-config"' "${out}"
+want   "Reloader watches it here too"         'configmap.reloader.stakater.com/reload: "nke-auth-config,nke-controller-config"' "${out}"
 
 echo "the Reloader annotation names whatever configMap.name says:"
 out="$(render --set apiAuth.enabled=true --set apiAuth.configMap.name=my-auth)"
-want   "the named ConfigMap is the watched one" 'configmap.reloader.stakater.com/reload: "my-auth"' "${out}"
+want   "the named ConfigMap is the watched one" 'configmap.reloader.stakater.com/reload: "my-auth,nke-controller-config"' "${out}"
 
-echo "nothing is watched while authentication is off:"
+echo "only nke-controller-config is watched while authentication is off:"
 out="$(render)"
-absent "no ConfigMap reload annotation"       'configmap.reloader.stakater.com/reload' "${out}"
+want   "no auth ConfigMap in the reload annotation" 'configmap.reloader.stakater.com/reload: "nke-controller-config"' "${out}"
 
 echo "an operator override of the reload annotation is left alone:"
 out="$(render --set apiAuth.enabled=true \
   --set 'deploymentAnnotations.configmap\.reloader\.stakater\.com/reload=theirs')"
 want   "theirs wins"                          'configmap.reloader.stakater.com/reload: theirs' "${out}"
-absent "and the chart does not add its own"   'configmap.reloader.stakater.com/reload: "nke-auth-config"' "${out}"
+absent "and the chart does not add its own"   'configmap.reloader.stakater.com/reload: ".*nke-' "${out}"
 
 echo "config and configMap.create must agree:"
 wantfail "config without create is refused"    'apiAuth\.config is set but would not be rendered' \

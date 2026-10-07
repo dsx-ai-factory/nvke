@@ -1,0 +1,75 @@
+# Every environment variable the chart sets whose setting nke-controller-config
+# carries, mapped to its config.yaml key. The chart refuses an env entry that
+# names one (templates/_helpers.tpl), and the drift tests in
+# internal/controllerconfig check this list against config.Config,
+# controllerconfig.Config and deployment.yaml.
+FIELD_MANAGER_NAME: fieldManager.name
+FIELD_MANAGER_REBOOT_MACHINE_NAME: fieldManager.rebootMachineName
+FIELD_MANAGER_MACHINE_HEALTH_ISSUE_NAME: fieldManager.machineHealthIssueName
+MANAGED_BY_LABEL_VALUE: managedByLabelValue
+METRICS_LISTEN_ADDRESS: metricsListenAddress
+SUPPORTED_INFRA_PROVIDERS: supportedInfraProviders
+
+OTEL_TRACING_ENABLED: tracing.enabled
+OTEL_EXPORTER_OTLP_ENDPOINT: tracing.endpoint
+OTEL_EXPORTER_OTLP_INSECURE: tracing.insecure
+OTEL_SERVICE_NAME: tracing.serviceName
+
+CERT_RENEWAL_CONTROLLER_ENABLED: certRenewal.controllerEnabled
+CERT_RENEWAL_INTERVAL: certRenewal.interval
+CERT_RENEWAL_THRESHOLD_DAYS: certRenewal.thresholdDays
+
+KUBEADM_IMAGE_REPOSITORY: kubeadmImageRepository
+CNI_IMAGE_REGISTRY: cniImageRegistry
+INSTALL_CNI_AFTER_INIT: installCNIAfterInit
+NICO_CONTROLLERS_ENABLED: nicoControllersEnabled
+PROFILES_DIR: profilesDir
+RUNBOOKS_DIR: runbooksDir
+TENANT_ACCESS_ENABLED: tenantAccessEnabled
+
+NODE_AGENT_SPIRE_ATTESTATION_METHOD: nodeAgent.spireAttestationMethod
+NODE_AGENT_DSX_IMDS_ENDPOINT: nodeAgent.dsxImds.endpoint
+NODE_AGENT_DSX_IMDS_PLUGIN_CHECKSUM: nodeAgent.dsxImds.pluginChecksum
+NODE_AGENT_DSX_IMDS_OPERATOR_TENANT: nodeAgent.dsxImds.operatorTenant
+NODE_AGENT_TLS_JWT_ENABLED: nodeAgent.tlsJWT.enabled
+NODE_AGENT_TLS_JWT_ISSUER: nodeAgent.tlsJWT.issuer
+NODE_AGENT_TLS_JWT_JWKS_URI: nodeAgent.tlsJWT.jwksURI
+NODE_AGENT_TLS_JWT_ALGORITHMS: nodeAgent.tlsJWT.algorithms
+NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN: nodeAgent.tlsJWT.subjectTrustDomain
+NODE_AGENT_TLS_JWT_DSX_IDENTITY_EXCHANGE_URL: nodeAgent.tlsJWT.dsxIdentityExchangeURL
+NODE_AGENT_TLS_JWT_SUBJECT_TENANT: nodeAgent.tlsJWT.subjectTenant
+NODE_AGENT_TLS_JWT_SUBJECT_SERVICE: nodeAgent.tlsJWT.subjectService
+NODE_AGENT_EXTERNAL_MTLS_ENABLED: nodeAgent.externalMTLSEnabled
+
+NKE_OIDC_AUTH_ENABLED: oidc.managementOIDCAuth.enabled
+NKE_OIDC_AUTH_ISSUER_URL: oidc.managementOIDCAuth.issuerURL
+NKE_OIDC_AUTH_DISCOVERY_URL: oidc.managementOIDCAuth.discoveryURL
+NKE_OIDC_AUTH_CA_BUNDLE_SECRET_NAMESPACE: oidc.managementOIDCAuth.caBundleSecretRef.namespace
+NKE_OIDC_AUTH_CA_BUNDLE_SECRET_NAME: oidc.managementOIDCAuth.caBundleSecretRef.name
+NKE_OIDC_AUTH_CA_BUNDLE_SECRET_KEY: oidc.managementOIDCAuth.caBundleSecretRef.key
+
+TEMPORAL_HOST_PORT: temporal.hostPort
+TEMPORAL_NAMESPACE: temporal.namespace
+TEMPORAL_TASK_QUEUE: temporal.taskQueue
+TEMPORAL_MTLS_CA_CERT: temporal.tls.caCert
+TEMPORAL_MTLS_CLIENT_CERT: temporal.tls.clientCert
+TEMPORAL_MTLS_CLIENT_KEY: temporal.tls.clientKey
+TEMPORAL_MTLS_SERVER_NAME: temporal.tls.serverName
+
+SPIFFE_ENABLED: spire.spiffeEnabled
+SPIFFE_ENDPOINT_SOCKET: spire.spiffeEndpointSocket
+SPIFFE_JWT_EXCHANGE_ENDPOINT: spire.spiffeJWTExchangeEndpoint
+SPIRE_SERVER_NAMESPACE: spire.serverNamespace
+SPIRE_CLASS_NAME: spire.className
+SPIRE_TPM_PUBHASHES_CONFIG_MAP_NAME: spire.tpmPubhashesConfigMapName
+SPIRE_SERVER_PORT: spire.serverPort
+SPIRE_JOIN_TOKEN_TTL: spire.joinTokenTTL
+
+TELEPORT_ENABLED: teleport.enabled
+TELEPORT_IDENTITY_FILE: teleport.identityFile
+TELEPORT_PROXY_ADDRESS: teleport.proxyAddress
+TELEPORT_ENVIRONMENT: teleport.environment
+TELEPORT_MANAGED_BY_LABEL_VALUE: teleport.managedByLabelValue
+TELEPORT_TOKEN_NAME_PREFIX: teleport.tokenNamePrefix
+
+PERMISSIVE_MODE: permissiveMode
