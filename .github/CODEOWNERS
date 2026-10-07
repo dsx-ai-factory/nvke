@@ -72,7 +72,7 @@ docs/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris @jedimt
 # Ensure the tests remain high quality
 /.github/workflows/management-engine/controller-test-policy.json @Jay-Madden @stephliu-nv @pwittrock
 /.github/workflows/management-engine-controller-test-policy.yml @Jay-Madden @stephliu-nv @pwittrock
-/management-engine/ @dsx-ai-factory/nke-team-management-engine @Jay-Madden @stephliu-nv @pwittrock
+/management-engine/ @dsx-ai-factory/nke-management-engine-write @Jay-Madden @stephliu-nv @pwittrock
 
 # SECURITY.md, GOVERNANCE.md, MAINTAINERS.md, CODE_OF_CONDUCT.md and LICENSE are
 # area/docs, covered by `/*.md` and `/LICENSE` above.
