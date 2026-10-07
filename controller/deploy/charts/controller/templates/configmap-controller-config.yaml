@@ -12,6 +12,11 @@
 {{- $tlsJwt := .Values.nodeAgent.tlsJwt }}
 {{- $mtls := .Values.temporal.mtls }}
 {{- $teleport := .Values.teleport }}
+{{- $oidcProviders := (.Values.oidc | default dict).providers | default list }}
+{{- /* controllerconfig.MaxOIDCProviders; refused here too so helm reports it. */}}
+{{- if gt (len $oidcProviders) 5 }}
+{{- fail (printf "oidc.providers has %d entries; at most 5 are allowed" (len $oidcProviders)) }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -72,8 +77,12 @@ data:
           namespace: {{ .Values.nkeOIDCAuth.caBundleSecret.namespace | quote }}
           name: {{ .Values.nkeOIDCAuth.caBundleSecret.name | quote }}
           key: {{ .Values.nkeOIDCAuth.caBundleSecret.key | quote }}
-      {{- /* Empty until fleet-wide providers have a value an operator can set. */}}
+      {{- with $oidcProviders }}
+      providers:
+        {{- toYaml . | nindent 8 }}
+      {{- else }}
       providers: []
+      {{- end }}
     temporal:
       hostPort: {{ printf "%v:%v" .Values.temporal.host .Values.temporal.port | quote }}
       namespace: {{ .Values.temporal.cloudWorkflow.namespace | default "cloud-workflow-engine" | quote }}

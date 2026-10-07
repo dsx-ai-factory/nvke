@@ -11,14 +11,19 @@ set -euo pipefail
 controller="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHART="${CHART:-"${controller}/deploy/charts/controller"}"
 [[ -d "${CHART}" ]] || { echo "chart not found at ${CHART}" >&2; exit 2; }
+# Absolute, since the script later changes into the controller module.
+CHART="$(cd "${CHART}" && pwd)"
 
+# Values files live apart from the renders, every one of which the test loads.
+values="$(mktemp -d)"
 if [[ -n "${RENDERS_DIR:-}" ]]; then
   mkdir -p "${RENDERS_DIR}"
   # Absolute, since go test reads it after the cd into the controller module.
   renders="$(cd "${RENDERS_DIR}" && pwd)"
+  trap 'rm -rf "${values}"' EXIT
 else
   renders="$(mktemp -d)"
-  trap 'rm -rf "${renders}"' EXIT
+  trap 'rm -rf "${renders}" "${values}"' EXIT
 fi
 
 render() {
@@ -139,7 +144,75 @@ render explicit-false-and-zero \
   --set scheduledMaintenance.certRenewal.thresholdDays=0 \
   --set controllers.nico.enabled=false
 
+# oidc.providers with only the required fields, with every field, and at the cap.
+cat > "${values}/oidc-providers-required.yaml" <<'YAML'
+oidc:
+  providers:
+    - name: corp
+      issuerURL: https://login.example.test
+      audiences: [nke]
+      usernameClaim: sub
+      usernamePrefix: ""
+      caBundle: |
+        -----BEGIN CERTIFICATE-----
+        MIIBexample
+        -----END CERTIFICATE-----
+YAML
+cat > "${values}/oidc-providers-full.yaml" <<'YAML'
+oidc:
+  providers:
+    - name: corp
+      issuerURL: https://login.example.test
+      audiences: [nke, kubectl]
+      usernameClaim: email
+      usernamePrefix: "corp:"
+      groupsClaim: groups
+      groupsPrefix: "corp:"
+      requiredClaims:
+        hd: example.test
+        tenant: "1"
+      caBundle: |
+        -----BEGIN CERTIFICATE-----
+        MIIBexample
+        -----END CERTIFICATE-----
+        -----BEGIN CERTIFICATE-----
+        MIIBintermediate
+        -----END CERTIFICATE-----
+    - name: partner
+      issuerURL: https://idp.partner.example.test/realms/nke
+      audiences: [nke]
+      usernameClaim: preferred_username
+      usernamePrefix: "partner:"
+      caBundle: "-----BEGIN CERTIFICATE-----\nMIIBpartner\n-----END CERTIFICATE-----"
+YAML
+providers() {
+  printf 'oidc:\n  providers:\n'
+  for ((i = 1; i <= $1; i++)); do
+    printf '    - {name: p%d, issuerURL: "https://p%d.example.test", audiences: [nke], usernameClaim: sub, usernamePrefix: "p%d:", caBundle: pem}\n' "${i}" "${i}" "${i}"
+  done
+}
+providers 5 > "${values}/oidc-providers-at-cap.yaml"
+providers 6 > "${values}/oidc-providers-over-cap.yaml"
+for name in oidc-providers-required oidc-providers-full oidc-providers-at-cap; do
+  render "${name}" -f "${values}/${name}.yaml"
+done
+
+# The providers reach config.yaml as given, down to the CA bundle's newlines.
+for name in oidc-providers-required oidc-providers-full oidc-providers-at-cap; do
+  want="$(yq -o=json -I=0 '.oidc.providers | sort_keys(..)' "${values}/${name}.yaml")"
+  got="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "nke-controller-config") | .data["config.yaml"]' "${renders}/${name}.yaml" |
+    yq -o=json -I=0 '.oidc.providers | sort_keys(..)')"
+  [[ "${got}" == "${want}" ]] || { echo "${name}: config.yaml has oidc.providers ${got}, values gave ${want}" >&2; exit 1; }
+done
+if refusal="$(helm template cwe "${CHART}" -f "${values}/oidc-providers-over-cap.yaml" 2>&1)"; then
+  echo "six oidc.providers rendered; the chart must refuse more than five" >&2
+  exit 1
+fi
+[[ "${refusal}" == *"oidc.providers has 6 entries"* ]] || { echo "six oidc.providers failed for another reason: ${refusal}" >&2; exit 1; }
+printf '  oidc.providers render as given, and more than five are refused\n'
+
 printf '  rendered %s value sets\n' "$(find "${renders}" -name '*.yaml' | wc -l | tr -d ' ')"
 cd "${controller}"
+
 # shellcheck disable=SC2086 # GO_TEST_FLAGS is a list of flags.
 NKE_RENDERED_CHART_DIR="${renders}" go test ./internal/controllerconfig/ -run '^TestRenderedChart$' -count=1 ${GO_TEST_FLAGS:-}

@@ -84,6 +84,7 @@ A Helm chart to deploy the NKE controller service
 | nodeAgent.tlsJwt.subjectTenant | string | `""` | Tenant segment in the canonical local SPIFFE ID exchanged by DSX Identity. |
 | nodeAgent.tlsJwt.subjectTrustDomain | string | `""` | Exact SPIFFE trust domain accepted in node-agent JWT subjects. |
 | nodeSelector | object | `{}` |  |
+| oidc.providers | list | `[]` | Fleet-wide OIDC providers that clusters trust alongside nkeOIDCAuth; a cluster keeps the list it was created with. Not yet applied to clusters. At most five, each with name, issuerURL, audiences, usernameClaim, usernamePrefix and caBundle (inline PEM), and optionally groupsClaim, groupsPrefix and requiredClaims (claim name to required value). |
 | podAnnotations | object | `{}` |  |
 | podLabels.app | string | `"cloud-workflow-engine"` |  |
 | podLabels.project | string | `"nke"` |  |

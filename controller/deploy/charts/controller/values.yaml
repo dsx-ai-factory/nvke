@@ -404,6 +404,25 @@ nkeOIDCAuth:
     # -- Key in the Secret containing the OIDC CA bundle.
     key: ""
 
+oidc:
+  # -- Fleet-wide OIDC providers that clusters trust alongside nkeOIDCAuth; a
+  # cluster keeps the list it was created with. Not yet applied to clusters.
+  # At most five, each with name, issuerURL, audiences, usernameClaim,
+  # usernamePrefix and caBundle (inline PEM), and optionally groupsClaim,
+  # groupsPrefix and requiredClaims (claim name to required value). For example:
+  #   - name: corp
+  #     issuerURL: https://login.example.com
+  #     audiences: [nke]
+  #     usernameClaim: email
+  #     usernamePrefix: "corp:"
+  #     groupsClaim: groups
+  #     groupsPrefix: "corp:"
+  #     caBundle: |
+  #       -----BEGIN CERTIFICATE-----
+  #       ...
+  #       -----END CERTIFICATE-----
+  providers: []
+
 # NKE API authentication. The chart always mounts the configuration ConfigMap,
 # and creates it too when apiAuth.configMap.create is set. See the README for
 # the schema.

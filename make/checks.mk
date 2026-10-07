@@ -148,6 +148,7 @@ chart-identity-check: ## Assert the chart still renders the deployed identities 
 chart-controller-config-check: ## Assert nke-controller-config loads and matches the controller's environment.
 	@$(call require_tool,helm,$(HELM_VERSION))
 	@$(call require_command,go)
+	@$(call require_command,yq)
 	@CHART="$(CHART)" ./controller/hack/chart-controller-config-assertions.sh
 
 chart-check: lint-chart chart-rbac-check chart-package-check chart-identity-check chart-controller-config-check ## Run every chart check enforced by CI.
