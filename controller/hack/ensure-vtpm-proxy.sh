@@ -115,7 +115,11 @@ case "$(uname -s)" in
       die "this script loads ${VTPM_MODULE} on the Linux kernel that runs Docker.$(prepare_hint)"
     fi
     command -v colima >/dev/null 2>&1 || die "colima is not installed.$(prepare_hint)"
-    if colima ssh -- test -c "${VTPMX_DEVICE}" && colima ssh -- test -r "${VTPMX_SYSFS}"; then
+    # Same default as colima-start.sh. ssh without --profile checks "default"
+    # even when the VM was prepared under another COLIMA_PROFILE.
+    colima_profile="${COLIMA_PROFILE:-default}"
+    if colima ssh --profile "${colima_profile}" -- test -c "${VTPMX_DEVICE}" \
+      && colima ssh --profile "${colima_profile}" -- test -r "${VTPMX_SYSFS}"; then
       info "Colima VM has ${VTPMX_DEVICE}"
       exit 0
     fi
