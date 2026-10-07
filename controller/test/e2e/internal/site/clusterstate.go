@@ -63,6 +63,18 @@ func CollectClusterState(ctx context.Context, s infra.Session, dest string, secr
 // `|| true` on every command rather than `set -e`: the interesting case is
 // the one where some of these fail, and the first failure must not stop the
 // rest. A cluster with no CWE Deployment still has events worth reading.
+//
+// One line, separated by `;` rather than newlines, because the newlines do
+// not reach the node: run 37561084841 collected `echo` and the first kubectl
+// invocation concatenated into a single word, and nothing else, which is what
+// a shell does when the separators arrive as backslash continuations and are
+// deleted. A script with no newlines in it has nothing to lose that way. Run
+// 37582097398 collected all nine sections with it in place.
+//
+// cwe.Namespace() and not the nke-controller that nkectl's bootstrap cluster
+// uses: run 37582097398 found CWE running in cwe.Namespace() on the site
+// cluster and nothing at all in nke-controller. The two deploy paths do not
+// agree on where CWE goes, and this one follows the site.
 func clusterStateScript() string {
 	kubectl := "kubectl --kubeconfig " + shellQuote(kubeconfigPath)
 	inNamespace := kubectl + " -n " + shellQuote(cwe.Namespace())
@@ -86,10 +98,12 @@ func clusterStateScript() string {
 		{"workloads, all namespaces", kubectl + " get pods -A -o wide"},
 	}
 
-	var sb strings.Builder
+	var stanzas []string
 	for _, s := range sections {
-		sb.WriteString("echo " + shellQuote(sectionMarker+s.title) + "\n")
-		sb.WriteString(s.cmd + " 2>&1 || true\n")
+		stanzas = append(stanzas,
+			"echo "+shellQuote(sectionMarker+s.title),
+			s.cmd+" 2>&1 || true",
+		)
 	}
-	return sb.String()
+	return strings.Join(stanzas, "; ")
 }

@@ -7,9 +7,12 @@ import (
 	"context"
 	"encoding/base64"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
 )
 
 // The collector's whole value is that it separates "CWE is not ready" from
@@ -43,13 +46,86 @@ func TestClusterStateOnlyReads(t *testing.T) {
 // being collected.
 func TestClusterStateToleratesEachCommand(t *testing.T) {
 	script := clusterStateScript()
-	for _, line := range strings.Split(strings.TrimSpace(script), "\n") {
-		if strings.HasPrefix(line, "echo ") {
+	stanzas := strings.FieldsFunc(script, func(r rune) bool { return r == ';' || r == '\n' })
+	for _, stanza := range stanzas {
+		stanza = strings.TrimSpace(stanza)
+		if stanza == "" || strings.HasPrefix(stanza, "echo ") {
 			continue
 		}
-		if !strings.HasSuffix(line, "|| true") {
-			t.Errorf("command is not tolerated, so a failure before it hides the rest: %s", line)
+		if !strings.HasSuffix(stanza, "|| true") {
+			t.Errorf("command is not tolerated, so a failure before it hides the rest: %s", stanza)
 		}
+	}
+}
+
+// The script has to reach the node's shell as one command, because something
+// on the way there eats newlines.
+//
+// Run 37561084841 collected one truncated line for all nine sections:
+//
+//	===== service and endpointskubectl --kubeconfig ... -o wide
+//
+// which is what a shell prints when the newlines arrive as backslash
+// continuations and are deleted: `echo` swallows the first kubectl invocation
+// as its arguments, and `|| trueecho` short-circuits every section after it.
+// Rebuilding that transformation over the real script reproduces the artifact
+// byte for byte. Quoting survived, so sudo's argument joining is a suspect
+// rather than a proven cause -- which is the reason this asserts the script
+// survives the transformation rather than asserting what performs it.
+func TestClusterStateSurvivesANewlineEatingTransport(t *testing.T) {
+	stub := t.TempDir()
+	if err := os.WriteFile(filepath.Join(stub, "kubectl"),
+		[]byte("#!/bin/sh\necho \"RAN $*\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Every newline escaped, then removed, exactly as a line continuation.
+	var collapsed strings.Builder
+	for _, line := range strings.Split(clusterStateScript(), "\n") {
+		collapsed.WriteString(line)
+	}
+
+	cmd := exec.Command("/bin/sh", "-c", collapsed.String())
+	cmd.Env = append(os.Environ(), "PATH="+stub+":"+os.Getenv("PATH"))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("running the collapsed script: %v\n%s", err, out)
+	}
+
+	for _, section := range []string{
+		"service and endpoints", "pods", "deployments", "pod detail", "events",
+		"controller logs", "controller logs, previous", "nodes",
+		"workloads, all namespaces",
+	} {
+		if !strings.Contains(string(out), sectionMarker+section+"\n") {
+			t.Errorf("section %q did not survive; the node sees:\n%s", section, out)
+		}
+	}
+	if got := strings.Count(string(out), "RAN "); got != 9 {
+		t.Errorf("%d of 9 commands ran; the node sees:\n%s", got, out)
+	}
+}
+
+// The collector has to read the namespace CWE is deployed into, which on a
+// site cluster is cwe.Namespace(). Run 37582097398 dumped every namespace and
+// found CWE running there, and found nke-controller empty.
+//
+// nke-controller is where nkectl's own bootstrap cluster puts it
+// (cli/internal/bootstrap/cwedeploy), so it is the plausible wrong answer, and
+// the one a reader reaches for. A collector pointed at it answers "No
+// resources found" for every section -- indistinguishable, in the artifact,
+// from a cluster with nothing running, which is how run 37582097398 was read
+// at first.
+func TestClusterStateReadsTheNamespaceCWEIsDeployedInto(t *testing.T) {
+	script := clusterStateScript()
+	if !strings.Contains(script, "-n "+shellQuote(cwe.Namespace())) {
+		t.Errorf("the script does not read namespace %s:\n%s", cwe.Namespace(), script)
+	}
+	if strings.Contains(script, "nke-controller") {
+		t.Errorf("the script reads nke-controller, which is the bootstrap cluster's namespace and empty on a site:\n%s", script)
+	}
+	if !strings.Contains(script, "app.kubernetes.io/name="+cwe.Service()) {
+		t.Errorf("the controller log selector does not name %s:\n%s", cwe.Service(), script)
 	}
 }
 
