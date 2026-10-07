@@ -141,6 +141,21 @@ EOF
 
 echo "Creating nico-vms cluster '${CLUSTER_NAME}' (cp=${CONTROL_PLANE_DESIRED_COUNT}, worker=${WORKER_DESIRED_COUNT}, cni=${CNI_PLUGIN}${CNI_VERSION:+/${CNI_VERSION}}, controlPlaneVIP=${CONTROL_PLANE_VIP})" >&2
 
-curl "${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"}" -sS --max-time "${CURL_MAX_TIME:-30}" "${CLUSTERS_API_URL}" \
-  -H "Content-Type: application/json" \
-  --data-raw "${BODY}" | jq
+# curl without --fail exits 0 on HTTP 400 and 401, and --fail hides the body.
+# Keep the body visible, then fail the script from the status.
+create_response="$(
+  curl "${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"}" -sS --max-time "${CURL_MAX_TIME:-30}" \
+    -w '\n%{http_code}' \
+    "${CLUSTERS_API_URL}" \
+    -H "Content-Type: application/json" \
+    --data-raw "${BODY}"
+)"
+create_status="${create_response##*$'\n'}"
+create_body="${create_response%$'\n'*}"
+if ! printf '%s\n' "${create_body}" | jq; then
+  printf '%s\n' "${create_body}"
+fi
+if [[ ! "${create_status}" =~ ^2[0-9][0-9]$ ]]; then
+  echo "create-nico-vms-cluster: create failed with HTTP ${create_status}" >&2
+  exit 1
+fi
