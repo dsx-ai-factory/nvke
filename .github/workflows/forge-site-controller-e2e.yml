@@ -146,21 +146,25 @@ on:
 permissions: {}
 
 concurrency:
-  # One at a time per site, and never cancelled. Two concurrent runs against
-  # one site would exhaust it -- az61 reserves three CPU machines and a run
-  # takes two -- and cancelling one mid-flight leaks its instance, because
-  # teardown is the suite's and the runner dies with the job.
+  # Per branch, not per site. The group used to be the shape a run asked for,
+  # on the reasoning that two runs against one site would exhaust it. That
+  # modelled the wrong resource: a run takes two CPU machines, the site node
+  # and the tenant control plane, and one GPU machine for the worker. ytl has
+  # 14 GB200 and 6 CPU, so the ceiling is three concurrent runs and it is set
+  # by the CPU count, while the old key serialised on the GPU shape that was
+  # never scarce.
   #
-  # Not keyed on ref: the constraint is hardware, which every branch shares.
-  # Keyed on the capabilities instead, because those choose the site and are
-  # the only thing here that knows which one: the resolution itself happens in
-  # the suite, against environments/forge.yaml, long after this is evaluated.
-  # That makes this a proxy rather than the real key. Two runs asking for
-  # different capabilities that happen to resolve to the same site would run
-  # concurrently and could exhaust it. Today nothing does -- gb200 is ytl and
-  # everything else is az61 -- but declaring a second GPU shape at an existing
-  # site would break that, and the fix then is an explicit site input.
-  group: Forge site controller e2e ${{ inputs.arch || vars.SITE_E2E_ARCH || 'amd64' }} ${{ inputs.gpu || vars.SITE_E2E_GPU }}
+  # GitHub concurrency is a mutex rather than a semaphore, so it cannot
+  # express "at most three". Keying on the ref lets separate branches run
+  # together, which is the case that kept costing hours, and still stops a
+  # branch racing itself. Watch the CPU count rather than trusting this: a
+  # fourth concurrent run would exhaust the site and every run in flight
+  # would fail at provisioning.
+  #
+  # Never cancelled, unchanged and for the original reason: cancelling one
+  # mid-flight leaks its instance, because teardown is the suite's and the
+  # runner dies with the job.
+  group: Forge site controller e2e ${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
