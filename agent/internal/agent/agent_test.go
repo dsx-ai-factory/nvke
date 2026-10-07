@@ -1726,10 +1726,6 @@ func TestExecuteKubeadmInitWithoutConfigRemovesStaleInitConfig(t *testing.T) {
 	}
 }
 
-// fileMode returns a pointer to m, so a table case can distinguish "create
-// this file with this mode" from "do not create it at all".
-func fileMode(m os.FileMode) *os.FileMode { return &m }
-
 func TestHardenKubeletFileModes(t *testing.T) {
 	// writeAt creates rel under root with mode, making parents as needed.
 	writeAt := func(t *testing.T, root, rel string, mode os.FileMode) string {
@@ -1742,28 +1738,51 @@ func TestHardenKubeletFileModes(t *testing.T) {
 		return path
 	}
 
+	const (
+		etcDropIn    = "/etc/systemd/system/kubelet.service.d/10-kubeadm.conf"
+		libUnit      = "/lib/systemd/system/kubelet.service"
+		libDropIn    = "/lib/systemd/system/kubelet.service.d/10-kubeadm.conf"
+		usrLibUnit   = "/usr/lib/systemd/system/kubelet.service"
+		usrLibDropIn = "/usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf"
+	)
+
 	tests := []struct {
-		name    string
-		dropIn  *os.FileMode
-		config  *os.FileMode
-		wantErr bool
+		name  string
+		files map[string]os.FileMode
 	}{
-		{name: "tightens both when kubeadm left them 0644", dropIn: fileMode(0o644), config: fileMode(0o644)},
-		{name: "idempotent when both already 0600", dropIn: fileMode(0o600), config: fileMode(0o600)},
-		{name: "tightens the config alone on a worker-shaped tree", config: fileMode(0o644)},
+		{
+			name:  "tightens the vendor unit kube-bench checks on a kubeadm-distro node",
+			files: map[string]os.FileMode{libUnit: 0o644, libDropIn: 0o644, kubeletConfigPath: 0o644},
+		},
+		{
+			name:  "tightens the vendor unit on an upstream pkgs.k8s.io layout under /usr/lib",
+			files: map[string]os.FileMode{usrLibUnit: 0o644, usrLibDropIn: 0o644, kubeletConfigPath: 0o644},
+		},
+		{
+			name:  "tightens a drop-in under /etc when a node carries one",
+			files: map[string]os.FileMode{etcDropIn: 0o644, libUnit: 0o644, kubeletConfigPath: 0o644},
+		},
+		{
+			name:  "idempotent when everything is already 0600",
+			files: map[string]os.FileMode{libUnit: 0o600, libDropIn: 0o600, kubeletConfigPath: 0o600},
+		},
+		{
+			name:  "tightens the config alone when no unit is present",
+			files: map[string]os.FileMode{kubeletConfigPath: 0o644},
+		},
 		{name: "no files yet, before init or join, is not an error"},
-		{name: "tightens a mode looser than 0644", dropIn: fileMode(0o666), config: fileMode(0o640)},
+		{
+			name:  "tightens a mode looser than 0644",
+			files: map[string]os.FileMode{libUnit: 0o666, kubeletConfigPath: 0o640},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tmp := t.TempDir()
-			paths := make([]string, 0, 2)
-			if tt.dropIn != nil {
-				paths = append(paths, writeAt(t, tmp, kubeletKubeadmDropInPath, *tt.dropIn))
-			}
-			if tt.config != nil {
-				paths = append(paths, writeAt(t, tmp, kubeletConfigPath, *tt.config))
+			paths := make([]string, 0, len(tt.files))
+			for rel, mode := range tt.files {
+				paths = append(paths, writeAt(t, tmp, rel, mode))
 			}
 
 			server := &NodeAgentServer{RootPath: tmp}
@@ -1786,6 +1805,18 @@ func TestHardenKubeletFileModes(t *testing.T) {
 			}
 		})
 	}
+
+	// Every path kube-bench can resolve "the kubelet service file" to must be
+	// one this hardens, or CIS 4.1.1 can land on a file nothing tightens.
+	t.Run("covers every kube-bench candidate for the kubelet service file", func(t *testing.T) {
+		for _, candidate := range []string{
+			"/etc/systemd/system/kubelet.service.d/10-kubeadm.conf",
+			"/etc/systemd/system/kubelet.service",
+			"/lib/systemd/system/kubelet.service",
+		} {
+			assert.Contains(t, kubeletServiceFilePaths, candidate)
+		}
+	})
 
 	t.Run("reports the error when a file cannot be chmodded", func(t *testing.T) {
 		if os.Geteuid() == 0 {

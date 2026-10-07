@@ -77,12 +77,9 @@ const (
 	maxScriptLogOutputBytes = 4096
 	kubeletConfigPath       = "/var/lib/kubelet/config.yaml"
 
-	// kubeletKubeadmDropInPath is the systemd drop-in kubeadm writes for the
-	// kubelet. It is what CIS 4.1.1 calls "the kubelet service file".
-	kubeletKubeadmDropInPath = "/etc/systemd/system/kubelet.service.d/10-kubeadm.conf"
-
 	// kubeletHardenedFileMode is the mode CIS 4.1.1 and 4.1.9 require on the
-	// two files above. kubeadm writes both 0644, which leaves them world
+	// kubelet's systemd unit files and on kubeletConfigPath. Packages install the
+	// units 0644 and kubeadm writes the config 0644, which leaves them world
 	// readable.
 	kubeletHardenedFileMode = 0o600
 
@@ -102,6 +99,27 @@ const (
 
 	localDevEnvVar = "NKE_LOCAL_DEV"
 )
+
+// kubeletServiceFilePaths are the places a kubelet systemd unit or its kubeadm
+// drop-in can live. CIS 4.1.1 checks "the kubelet service file", and kube-bench
+// resolves that to the first of its candidates that exists, in this order:
+// /etc/systemd/system/kubelet.service.d/10-kubeadm.conf,
+// /etc/systemd/system/kubelet.service, /lib/systemd/system/kubelet.service.
+//
+// Neither the kubeadm-distro package nor the upstream pkgs.k8s.io packages
+// install anything under /etc. The package installs both files under /lib, the
+// upstream packages under /usr/lib, and on a merged-/usr system those are the
+// same directory. So on a packaged node the file kube-bench checks is the vendor
+// unit, not the drop-in. Hardening every location that exists covers whichever
+// one a node's layout makes it land on.
+var kubeletServiceFilePaths = []string{
+	"/etc/systemd/system/kubelet.service.d/10-kubeadm.conf",
+	"/etc/systemd/system/kubelet.service",
+	"/lib/systemd/system/kubelet.service",
+	"/lib/systemd/system/kubelet.service.d/10-kubeadm.conf",
+	"/usr/lib/systemd/system/kubelet.service",
+	"/usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf",
+}
 
 // isLocalDev reports whether the agent is running under the local development
 // harness, where some kubeadm SystemVerification checks cannot succeed.
@@ -931,15 +949,20 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 	slog.Info("kubeadm init process completed successfully")
 }
 
-// hardenKubeletFileModes tightens the kubelet's kubeadm-written service drop-in
-// and config file to 0600 (CIS 4.1.1 and 4.1.9). kubeadm creates both 0644 and
-// offers no configuration for their permissions, so the only way to hold them
-// at 0600 is to re-apply after kubeadm has run.
+// hardenKubeletFileModes tightens the kubelet's systemd unit files and its
+// config file to 0600 (CIS 4.1.1 and 4.1.9). The units come from a package and
+// the config from kubeadm, both at 0644, and kubeadm offers no configuration
+// for the mode of either, so the only way to hold them at 0600 is to re-apply.
+//
+// The kubeadm-distro package ships its units 0600 already, so on an NKE image
+// this only has work to do on config.yaml. The units are still listed for nodes
+// built from other packages, such as the upstream pkgs.k8s.io ones.
 //
 // Called from four places: agent startup, straight after a successful kubeadm
 // init, and after each of the two disableKubeletSelfRegistration calls on the
-// init and join paths. kubeadm recreates both files on init, on join and on
-// upgrade, so a one-shot chmod during initial provisioning would silently drift
+// init and join paths. kubeadm rewrites config.yaml on init, on join and on
+// upgrade, and a package upgrade reinstalls the units at the package's own
+// mode, so a one-shot chmod during initial provisioning would silently drift
 // back to 0644; the startup call is what corrects that drift on an existing
 // node.
 //
@@ -947,13 +970,13 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 // incidental: that function rewrites config.yaml with mode 0644, so hardening
 // has to follow it rather than precede it or the mode is immediately undone.
 //
-// A missing file is not an error. The drop-in exists on any kubeadm-managed
-// node, but this runs on startup before init or join on a fresh node too, and
-// "not there yet" is the expected state then rather than a failure.
+// A missing file is not an error. A node carries only the unit locations its
+// packages use, and on a fresh node this runs at startup before init or join,
+// when config.yaml is not there yet either.
 func (s *NodeAgentServer) hardenKubeletFileModes() error {
 	var errs []error
 
-	for _, rel := range []string{kubeletKubeadmDropInPath, kubeletConfigPath} {
+	for _, rel := range append(slices.Clone(kubeletServiceFilePaths), kubeletConfigPath) {
 		path := filepath.Join(s.RootPath, rel)
 
 		info, err := os.Stat(path)

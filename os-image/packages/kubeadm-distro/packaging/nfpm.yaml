@@ -161,12 +161,19 @@ contents:
 
   # systemd: the vendor kubelet unit plus the kubeadm drop-in, same split as
   # the upstream kubelet and kubeadm packages, plus containerd's own unit.
+  #
+  # The two kubelet files ship 0600 rather than the upstream 0644, for CIS
+  # 4.1.1. kube-bench checks the first of its candidate paths that exists, and
+  # with nothing under /etc that is /lib/systemd/system/kubelet.service. The
+  # drop-in gets the same mode so neither file is world readable. systemd reads
+  # units as root, so 0600 changes nothing for it. These are not conffiles, so
+  # an upgrade reinstalls them at this mode.
   - src: "systemd/kubelet.service"
     dst: "/lib/systemd/system/kubelet.service"
-    file_info: { mode: 0644 }
+    file_info: { mode: 0600 }
   - src: "systemd/10-kubeadm.conf"
     dst: "/lib/systemd/system/kubelet.service.d/10-kubeadm.conf"
-    file_info: { mode: 0644 }
+    file_info: { mode: 0600 }
   - src: "systemd/containerd.service"
     dst: "/lib/systemd/system/containerd.service"
     file_info: { mode: 0644 }

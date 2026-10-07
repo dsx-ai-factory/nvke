@@ -290,6 +290,19 @@ func TestBuildDeb(t *testing.T) {
 		line := findListingLine(t, contents, want)
 		assert.Truef(t, strings.HasPrefix(line, "-rwxr-xr-x"), "expected 0755 for %s, got %q", want, line)
 	}
+
+	// CIS 4.1.1 and 4.1.2: kube-bench resolves "the kubelet service file" to
+	// /lib/systemd/system/kubelet.service on a node built from this package, and
+	// requires it 0600 or tighter and owned root:root. The drop-in is held to the
+	// same mode.
+	for _, want := range []string{
+		"/lib/systemd/system/kubelet.service",
+		"/lib/systemd/system/kubelet.service.d/10-kubeadm.conf",
+	} {
+		line := findListingLine(t, contents, want)
+		assert.Truef(t, strings.HasPrefix(line, "-rw-------"), "expected 0600 for %s, got %q", want, line)
+		assert.Containsf(t, line, " root/root ", "expected root:root for %s, got %q", want, line)
+	}
 }
 
 // findListingLine returns the single `dpkg-deb -c` line for path (dpkg-deb
