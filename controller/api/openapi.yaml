@@ -1550,12 +1550,14 @@ components:
           additionalProperties:
             type: string
           description: Labels applied to the pool's nodes, as a map of keys to values. Set at creation.
+          x-go-type-skip-optional-pointer: true
           x-order: 13
         nodeTaints:
           type: array
           items:
             $ref: "#/components/schemas/NodeTaint"
           description: Taints applied to the pool's nodes. Set at creation.
+          x-go-type-skip-optional-pointer: true
           x-order: 14
         desiredNodeCount:
           type: integer

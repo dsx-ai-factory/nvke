@@ -451,10 +451,10 @@ type CreateNodePoolRequest struct {
 	ControlPlane bool `json:"controlPlane,omitempty"`
 
 	// NodeLabels Labels applied to the pool's nodes, as a map of keys to values. Set at creation.
-	NodeLabels *map[string]string `json:"nodeLabels,omitempty"`
+	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
 
 	// NodeTaints Taints applied to the pool's nodes. Set at creation.
-	NodeTaints *[]NodeTaint `json:"nodeTaints,omitempty"`
+	NodeTaints []NodeTaint `json:"nodeTaints,omitempty"`
 
 	// DesiredNodeCount The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster.
 	DesiredNodeCount int `json:"desiredNodeCount"`
@@ -988,10 +988,10 @@ type NodePoolCreateConfig struct {
 	ControlPlane bool `json:"controlPlane,omitempty"`
 
 	// NodeLabels Labels applied to the pool's nodes, as a map of keys to values. Set at creation.
-	NodeLabels *map[string]string `json:"nodeLabels,omitempty"`
+	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
 
 	// NodeTaints Taints applied to the pool's nodes. Set at creation.
-	NodeTaints *[]NodeTaint `json:"nodeTaints,omitempty"`
+	NodeTaints []NodeTaint `json:"nodeTaints,omitempty"`
 
 	// DesiredNodeCount The desired number of nodes in the pool. For control-plane pools, aggregate capacity above 1 requires controlPlaneVIP on the cluster.
 	DesiredNodeCount int `json:"desiredNodeCount"`

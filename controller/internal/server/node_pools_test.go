@@ -277,7 +277,7 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 						OSProfile:                "ubuntu",
 						ConfigProfile:            "default",
 					},
-					NodeLabels:       &map[string]string{"label1": "value1", "label2": "value2"},
+					NodeLabels:       map[string]string{"label1": "value1", "label2": "value2"},
 					DesiredNodeCount: 3,
 				}
 			}(),
@@ -347,7 +347,7 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 				Name:             "test-pool",
 				NodeNamePrefix:   "test-pool-prefix",
 				Nico:             testNicoNodePoolProvider(),
-				NodeLabels:       &map[string]string{"label1": "value1", "label2": "value2"},
+				NodeLabels:       map[string]string{"label1": "value1", "label2": "value2"},
 				DesiredNodeCount: 3,
 			},
 			setupMockCalls: func(tx *mockTx) {
@@ -406,7 +406,7 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 					OSProfile:      "ubuntu",
 					ConfigProfile:  "default",
 				},
-				NodeLabels:       &map[string]string{"label1": "value1", "label2": "value2"},
+				NodeLabels:       map[string]string{"label1": "value1", "label2": "value2"},
 				DesiredNodeCount: 3,
 			},
 			setupMockCalls: func(tx *mockTx) {

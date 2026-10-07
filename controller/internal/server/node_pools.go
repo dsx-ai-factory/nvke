@@ -861,11 +861,11 @@ func dbNodePoolFromAPI(
 ) (db.NodePool, error) {
 	nodeLabels := map[string]string{}
 	if req.NodeLabels != nil {
-		nodeLabels = *req.NodeLabels
+		nodeLabels = req.NodeLabels
 	}
 	nodeTaints := []db.NodeTaint{}
 	if req.NodeTaints != nil {
-		nodeTaints = dbNodeTaintsFromAPI(*req.NodeTaints)
+		nodeTaints = dbNodeTaintsFromAPI(req.NodeTaints)
 	}
 
 	nodePoolID := uuid.New()
