@@ -49,10 +49,20 @@ func TestStripLicenseHeader(t *testing.T) {
 func TestConvertIgnoresLicenseHeaderInScripts(t *testing.T) {
 	const header = "# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n# SPDX-License-Identifier: Apache-2.0\n\n"
 	plain := mustConvert(t, writeTree(t, activeMetadata(), "", map[string][2]string{activeName: {testIPXE, testUser}}))
-	headed := mustConvert(t, writeTree(t, activeMetadata(), "", map[string][2]string{
-		activeName: {"#!ipxe\n" + header + "boot\n", testUser},
-	}))
-	assert.Equal(t, plain, headed)
+	tests := []struct {
+		name     string
+		ipxe     string
+		userData string
+	}{
+		{"header in ipxeScript", "#!ipxe\n" + header + "boot\n", testUser},
+		{"header in userData.tmpl", testIPXE, "#cloud-config\n" + header + "hostname: {{ .Hostname }}\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			headed := mustConvert(t, writeTree(t, activeMetadata(), "", map[string][2]string{activeName: {tt.ipxe, tt.userData}}))
+			assert.Equal(t, plain, headed)
+		})
+	}
 }
 
 func TestConvertActiveProfile(t *testing.T) {

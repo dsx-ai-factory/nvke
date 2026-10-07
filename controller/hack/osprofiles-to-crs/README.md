@@ -16,11 +16,11 @@ For each profile in `osProfiles/metadata.yaml` (and `deprecated.yaml`, if
 present) it reads the profile's `ipxeScript` and `userData.tmpl` and writes three
 manifests into a flat output directory, all named after the profile:
 
-An SPDX header after the first line of either file is not copied into the manifests.
-
 - `<profile>-machineimage.yaml`
 - `<profile>-nodepoolrelease.yaml`
 - `<profile>-clusterrelease.yaml`
+
+An SPDX header after the first line of either file is not copied into the manifests.
 
 Because the names are the profile names, the `osProfile` values that clusters
 and node pools already store keep resolving.

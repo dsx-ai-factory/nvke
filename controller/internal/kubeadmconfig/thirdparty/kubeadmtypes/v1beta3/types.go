@@ -22,7 +22,8 @@ limitations under the License.
 // Upstream external Kubernetes types are reused where practical; only the
 // pieces not locally available as dependencies remain copied here.
 //
-// Source (Kubernetes v1.34.0, commit f28b4c9efbca5c5c0af716d9f2d5702667ee8a45):
+// Source (matches Kubernetes v1.34.0, commit f28b4c9efbca5c5c0af716d9f2d5702667ee8a45;
+// the original revision is unknown, see THIRD_PARTY_NOTICES.md):
 //
 //	https://github.com/kubernetes/kubernetes/blob/v1.34.0/cmd/kubeadm/app/apis/kubeadm/v1beta3/types.go
 //

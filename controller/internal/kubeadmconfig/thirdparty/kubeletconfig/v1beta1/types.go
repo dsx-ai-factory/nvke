@@ -20,7 +20,8 @@ limitations under the License.
 // Package v1beta1 contains a local copy of the upstream
 // k8s.io/kubelet/config/v1beta1 KubeletConfiguration top-level struct.
 //
-// Source (Kubernetes v1.34.0, commit f28b4c9efbca5c5c0af716d9f2d5702667ee8a45):
+// Source (matches Kubernetes v1.34.0, commit f28b4c9efbca5c5c0af716d9f2d5702667ee8a45;
+// the original revision is unknown, see THIRD_PARTY_NOTICES.md):
 //
 //	https://github.com/kubernetes/kubernetes/blob/v1.34.0/staging/src/k8s.io/kubelet/config/v1beta1/types.go
 //

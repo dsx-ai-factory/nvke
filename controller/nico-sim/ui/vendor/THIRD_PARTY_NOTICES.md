@@ -3,7 +3,7 @@
 The nico-sim UI loads the libraries below from this directory. They are
 unmodified copies of upstream releases, distributed through
 [jsDelivr](https://www.jsdelivr.com/), and carry no NVIDIA copyright.
-Versions come from the banner in each file.
+Versions come from the banner in each file, except the Nord theme, which has none.
 
 | Component | Version | Files | Origin | License |
 |---|---|---|---|---|
@@ -11,7 +11,7 @@ Versions come from the banner in each file.
 | xterm.js fit addon (`@xterm/addon-fit`) | 0.10.0 | `xterm/addon-fit.min.js` | https://github.com/xtermjs/xterm.js | MIT |
 | xterm.js search addon (`@xterm/addon-search`) | 0.15.0 | `xterm/addon-search.min.js` | https://github.com/xtermjs/xterm.js | MIT |
 | highlight.js | 11.11.1 | `highlightjs/highlight.min.js`, `highlightjs/languages/shell.min.js`, `highlightjs/languages/yaml.min.js` | https://github.com/highlightjs/highlight.js | BSD-3-Clause |
-| Nord highlight.js theme | 0.1.0 | `highlightjs/styles/nord.min.css` | https://github.com/arcticicestudio/nord-highlightjs | MIT |
+| Nord highlight.js theme | 0.1.0 | `highlightjs/styles/nord.min.css` | https://github.com/arcticicestudio/nord-highlightjs, bundled in highlight.js 11.11.1 | MIT |
 
 No upstream `NOTICE` file exists for any of these components.
 
@@ -36,6 +36,10 @@ Copyright (c) 2017, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 ```
 
 ## Nord highlight.js theme
+
+`nord.min.css` has no version banner. It is identical to the file in the
+highlight.js 11.11.1 CDN release ([highlightjs/cdn-release](https://github.com/highlightjs/cdn-release)),
+and the upstream `nord.css` records version 0.1.0.
 
 ```text
 Copyright (c) 2017-present Arctic Ice Studio <development@arcticicestudio.com>
