@@ -25,7 +25,7 @@
       }
     ]
   },
-  "description": "Reference dashboard for Kubernetes kubelet, control-plane, and OS-profile upgrade progress. This dashboard is only applicable to a GPU cluster. Requires k8s_cluster_name on kube-state-metrics series. Control-plane upgrade status and OS profile require NKE controller inventory metrics (nke_controller_*). Not deployed by nke-stack.",
+  "description": "Reference dashboard for Kubernetes kubelet, control-plane, and OS-profile upgrade progress. Requires k8s_cluster_name on kube-state-metrics series. Control-plane upgrade status and OS profile require NKE controller inventory metrics (nke_controller_*). Not deployed by nke-stack.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
