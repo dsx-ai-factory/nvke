@@ -25,10 +25,11 @@ limitations under the License.
 // The greenfield path renders InitConfiguration/JoinConfiguration in v1beta3,
 // which is why only ClusterConfiguration is needed here.
 //
-// Source (matches Kubernetes v1.34.0, commit f28b4c9efbca5c5c0af716d9f2d5702667ee8a45;
-// the original revision is unknown, see THIRD_PARTY_NOTICES.md):
+// Source (Kubernetes v1.34.0, commit f28b4c9efbca5c5c0af716d9f2d5702667ee8a45):
 //
 //	https://github.com/kubernetes/kubernetes/blob/v1.34.0/cmd/kubeadm/app/apis/kubeadm/v1beta4/types.go
+//
+// The revision is inferred; see THIRD_PARTY_NOTICES.md.
 //
 // Local changes:
 //   - only the ClusterConfiguration subtree is copied
