@@ -1,0 +1,211 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Validated against ../../../schemas/scenario.schema.json.
+# The human-readable replication narrative is README.md in this directory.
+---
+slug: scheduler-baseline
+workload: scheduler
+
+description: >-
+  kube-scheduler throughput and latency characterization across a
+  three-dimensional matrix -- scheduler kube-api-qps by workload submission
+  QPS by simulated node count -- driven by upstream kube-burner against KWOK
+  fake nodes.
+
+intent:
+  goal: >-
+    Establish a capacity model for kube-scheduler rather than a point
+    measurement: show what determines its throughput ceiling, and how far
+    scheduling latency moves as cluster size grows, so a reader can pick a
+    kube-api-qps setting for their own expected pod creation rate instead of
+    inheriting a default.
+  characterizes:
+    - Scheduler throughput ceiling as a function of kube-api-qps
+    - Algorithm phase (filter + score) P99 latency against node count
+    - Total scheduling attempt P99 latency, and where the binding queue saturates it
+    - End-to-end PodScheduled P99 latency when workload rate exceeds the scheduler ceiling
+    - Scheduler CPU and RSS growth across node count and submission rate
+
+# The real cluster. The 100-5,000 node tiers this scenario sweeps are KWOK
+# fake nodes running ON this cluster -- see stack.simulator and
+# sizing.observed.kwok_node_tiers. They are not additional machines.
+topology:
+  node_count: 47
+  node_type:
+    cpu: AMD EPYC 9004 series
+    cpu_cores: 128
+    memory_gib: 1007
+    arch: x86_64
+  roles:
+    control_plane: 3
+    worker: 42
+    monitoring: 2
+
+sizing:
+  derivation:
+    rule: >-
+      Three independent axes, swept as a full cross product. (1) Simulated
+      cluster size: create N KWOK nodes, each advertising PODS_PER_NODE
+      scheduler-slot units, and submit N * PODS_PER_NODE pause pods -- a fixed
+      1:10 node-to-pod ratio. Because the nodes are simulated, N is bounded by
+      the API server and the KWOK controller rather than by hardware, so this
+      axis scales on almost any cluster. (2) Workload submission rate:
+      kube-burner QPS, with BURST held equal to QPS so submission is flat
+      rather than bursty. (3) Scheduler API-client rate: kube-scheduler's
+      client QPS and burst, also held equal, applied to the cluster between
+      cells and NOT settable from the engine config. To size
+      this to a different cluster, keep the 1:10 ratio and the burst-equals-QPS
+      rule, and choose node tiers your API server can sustain; the QPS axes
+      transfer unchanged, since what they bound is a client-side rate limit
+      rather than anything about the hardware.
+    inputs:
+      - Simulated node count per tier
+      - Pods per simulated node
+      - Workload submission QPS (burst held equal)
+      - Scheduler client QPS (burst held equal)
+      - API server and KWOK controller capacity for the largest node tier
+  observed:
+    kwok_node_tiers: [100, 500, 1000, 2500, 5000]
+    scheduler_kube_api_qps: [50, 100, 200, 500]
+    workload_qps: [50, 100, 200, 500]
+    cells_total: 80
+    pods_per_node: 10
+    node_to_pod_ratio: "1:10"
+    pods_per_tier: [1000, 5000, 10000, 25000, 50000]
+    burst_equals_qps: true
+    kwok_node_cpu_cores: 8
+    kwok_node_memory: 32Gi
+    kwok_node_max_pods: 110
+    container_image: registry.k8s.io/pause:3.10
+    pod_scheduled_threshold: 10m
+
+stack:
+  kubernetes: 1.34.2
+  cni:
+    name: OVN-Kubernetes
+    version: "1.2.0 (OVN core 25.09.1)"
+    build: vendor
+    dataplane: OVS 3.6.1
+  engine:
+    name: kube-burner
+    version: v2.7.0
+    build: upstream
+  simulator:
+    name: KWOK
+    version: not pinned -- any release providing the kwok.x-k8s.io/node annotation
+    simulates: >-
+      All 100-5,000 nodes the matrix sweeps. Every pod scheduled in this
+      scenario was placed on a fake node that reports Ready and accepts
+      bindings without a kubelet or container runtime behind it. The 42 real
+      worker nodes in topology carried the control plane and the load
+      generator, not the scheduled pods.
+    project: https://github.com/kubernetes-sigs/kwok
+  container_runtime: containerd 1.7.28
+  node_os:
+    distro: Ubuntu 22.04.4 LTS
+    kernel: 5.15.0-113-generic
+  etcd: 3.6.5
+
+engine_config: engine/scheduler-baseline.yml
+
+metrics:
+  required:
+    - size
+    - scenario
+    - kwok_nodes
+    - scheduler_kube_api_qps
+    - workload_qps
+    - algorithm_p99_ms
+    - attempt_p99_ms
+    - pod_scheduled_p99_s
+  workload_specific:
+    - scheduler_error_attempts_per_s
+    - observed_throughput_pods_per_s
+    - peak_scheduler_cpu_percent
+    - scheduler_rss_growth_gb
+    - binding_saturated
+    - prometheus_scrapes
+
+# Kubernetes publishes no upstream SLO for scheduler throughput or scheduling
+# latency -- SIG-Scalability defines bars for API request latency and pod
+# startup, not for the scheduler's own phases. The entries below are therefore
+# of two kinds, and the difference is stated in each `source`: two correctness
+# gates that hold regardless of hardware, and one latency bar derived from the
+# ceiling this result itself establishes. README.md, "How to judge the result",
+# explains why there is no throughput floor here.
+slo:
+  - metric: pod_scheduled_p99_s
+    op: lte
+    value: 600
+    unit: s
+    severity: error
+    source: >-
+      kube-burner's own podLatency PodScheduled P99 threshold, set to 10m in
+      engine/defaults.yaml; kube-burner fails the run when it is exceeded. It is deliberately loose: cells where the workload rate exceeds the
+      scheduler's ceiling build a binding queue and are EXPECTED to show large
+      PodScheduled latency -- that behaviour is the finding, not a failure. The
+      bar exists to catch a run that never converged at all.
+  - metric: scheduler_error_attempts_per_s
+    op: lte
+    value: 0
+    unit: attempts/s
+    severity: error
+    source: >-
+      Correctness, not performance: a scheduling attempt returning `error` is
+      never an expected outcome at any rate or cluster size. Tracked by the
+      matching rule in alerts/1.34/scheduler.yml and collected as
+      schedulerErrorAttempts by engine/scheduler-metrics.yml. Attempts
+      returning `unschedulable` are excluded -- those are an expected
+      transient.
+  - metric: algorithm_p99_ms
+    op: lte
+    value: 20
+    unit: ms
+    severity: warning
+    applies_to: ["kwok_nodes <= 5000"]
+    source: >-
+      Derived from this result's own ceiling model rather than from any
+      upstream SLO: across all 80 cells the algorithm phase peaked at 19.1 ms,
+      at the largest node tier and the highest rate on both axes. A run
+      breaching 20 ms at or below 5,000 nodes is therefore doing something this
+      characterization did not see, which is worth investigating -- but it is
+      not a violated contract, hence `warning`. The bound scales with node
+      count, not with QPS in isolation, so it should be re-derived rather than
+      carried across to a materially larger cluster.
+
+dashboard: ../../../dashboards/1.34/scheduler.json
+alerts: ../../../alerts/1.34/scheduler.yml
+
+prerequisites:
+  namespaces:
+    - kube-system
+  baseline_validation:
+    - Confirm the KWOK controller Deployment is present and Ready before any cell
+    - Confirm no node-local DaemonSet tolerates the KWOK taint or targets the fake-node labels, since one that does will consume the pod budget the scenario measures
+    - Confirm the API server sustains the node-creation rate for the largest tier you intend to run
+    - Confirm every fake node reports Ready before pods are submitted, and stays Ready for the run -- at 2,500 nodes and above this needs KWOK's controller lease and status update rate tuned, or nodes flip Ready/NotReady mid-run and inflate the unschedulable queue
+    - Confirm Prometheus is scraping kube-scheduler, and that a run at your shortest tier produces more than three scrapes -- below that, CPU and RSS figures are not meaningful
+    - Confirm the scheduler's client QPS and burst are actually the values the cell intends, by reading them back off the running scheduler rather than off the manifest you applied
+
+upstream:
+  project: https://github.com/kube-burner/kube-burner
+  docs: https://kube-burner.github.io/kube-burner/
+  engine: kube-burner
+  engine_version: v2.7.0
+  config: engine/scheduler-baseline.yml
+  argv:
+    - "cd engine && PROMETHEUS_URL=<prometheus-url> NODE_COUNT=<nodes> QPS=<qps> BURST=<qps> kube-burner init -c scheduler-baseline.yml --user-data defaults.yaml --uuid=<run-uuid>"
+  notes: >-
+    One invocation runs ONE cell of the matrix. The published result is 80
+    invocations. NODE_COUNT, QPS and BURST are set per cell in the
+    environment; defaults.yaml must not set them, because user-data takes
+    precedence over the environment. The scheduler's client QPS and burst are
+    kube-scheduler settings, not anything kube-burner controls -- change them
+    on the cluster and let the scheduler restart before the next cell. KWOK
+    and its stage-fast stage policy must be installed first; without a stage
+    policy fake nodes never report Ready. KWOK is a separate upstream project
+    and this scenario does not vendor its manifests.
+    At 2,500 nodes and above, KWOK's controller needs its lease and status
+    update rate tuned or fake nodes flip Ready/NotReady mid-run -- see
+    README.md.

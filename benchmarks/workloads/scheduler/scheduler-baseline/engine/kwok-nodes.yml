@@ -1,0 +1,53 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+---
+# A run-scoped KWOK fake node.
+#
+# The synthetic scheduler-slot extended resource makes the requested
+# pods-per-node density deterministic without depending on how many DaemonSets
+# happen to be installed on the target cluster. Rename the resource's domain
+# prefix to one you control; `example.com` is a placeholder.
+apiVersion: v1
+kind: Node
+metadata:
+  name: {{.nodeNamePrefix}}-{{.Iteration}}
+  annotations:
+    kwok.x-k8s.io/node: fake
+  labels:
+    kubernetes.io/arch: amd64
+    kubernetes.io/hostname: {{.nodeNamePrefix}}-{{.Iteration}}
+    # kubernetes.io/os is deliberately omitted so node-local DaemonSets do not
+    # target the fake node. Add whatever additional labels exclude your own
+    # CNI's per-node DaemonSet -- a DaemonSet that lands here consumes the pod
+    # budget the scenario is trying to measure.
+    type: kwok
+    benchmark: scheduler-baseline
+    workload: scheduler-baseline
+spec:
+  taints:
+    - key: kwok.x-k8s.io/node
+      value: fake
+      effect: NoSchedule
+status:
+  allocatable:
+    cpu: "{{.nodeCPU}}"
+    memory: "{{.nodeMemory}}"
+    pods: "{{.nodeMaxPods}}"
+    example.com/scheduler-slot: "{{.schedulerSlots}}"
+  capacity:
+    cpu: "{{.nodeCPU}}"
+    memory: "{{.nodeMemory}}"
+    pods: "{{.nodeMaxPods}}"
+    example.com/scheduler-slot: "{{.schedulerSlots}}"
+  nodeInfo:
+    architecture: amd64
+    bootID: ""
+    containerRuntimeVersion: kwok
+    kernelVersion: ""
+    kubeProxyVersion: kwok
+    kubeletVersion: kwok
+    machineID: ""
+    operatingSystem: linux
+    osImage: ""
+    systemUUID: ""

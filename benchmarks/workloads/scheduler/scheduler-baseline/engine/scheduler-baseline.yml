@@ -1,0 +1,133 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+---
+# kube-burner configuration for one cell of the scheduler-baseline matrix.
+#
+# One cell = one (NODE_COUNT, QPS) pair at one scheduler client-QPS setting.
+# The scheduler's own API-client rate is NOT set here -- it is a kube-scheduler
+# setting, applied to the cluster before the run. See README.md, "How to
+# replicate".
+#
+# Templated values come from defaults.yaml (--user-data) and, for NODE_COUNT,
+# QPS, BURST and PROMETHEUS_URL, from the environment. User-data takes
+# precedence over the environment.
+#
+# kube-burner renders this whole file as a Go template, comments included, so
+# every templated name used anywhere here -- even in a comment -- must be
+# defined in one of the two or rendering fails before the run starts.
+#
+# The job order is: create fake nodes, submit pods, then tear both down. The
+# teardown jobs are part of the measurement contract, not cleanup convenience:
+# deleting 50,000 pods via namespace garbage collection issues an unbounded
+# burst that perturbs the next cell in a sweep.
+global:
+  gc: {{.GC}}
+  measurements:
+    - name: podLatency
+      thresholds:
+        - conditionType: PodScheduled
+          metric: P99
+          threshold: {{.POD_SCHEDULED_THRESHOLD}}
+
+metricsEndpoints:
+  - endpoint: "{{.PROMETHEUS_URL}}"
+    token: {{.PROM_TOKEN}}
+    skipTLSVerify: {{.PROM_SKIP_TLS_VERIFY}}
+    metrics: [{{.METRICS}}]
+    alerts: [{{.ALERTS}}]
+    indexer:
+      type: local
+      metricsDirectory: {{.METRICS_DIRECTORY}}
+
+jobs:
+  # Create run-scoped KWOK nodes, then wait for them to report Ready.
+  # kube-burner has no built-in readiness check for Node, so waitOptions
+  # supplies one. The jobPause is load-bearing: the KWOK controller stages
+  # node leases and status updates, and submitting pods before it has settled
+  # inflates the unschedulable queue with nodes that are still flipping
+  # ready/not-ready.
+  - name: create-kwok-nodes
+    jobIterations: {{.NODE_COUNT}}
+    qps: {{.NODE_CREATE_QPS}}
+    burst: {{.NODE_CREATE_BURST}}
+    skipIndexing: true
+    namespacedIterations: false
+    maxWaitTimeout: {{.NODE_READY_TIMEOUT}}
+    waitWhenFinished: true
+    jobPause: {{.NODE_READY_WAIT}}
+    objects:
+      - objectTemplate: kwok-nodes.yml
+        replicas: 1
+        waitOptions:
+          customStatusPaths:
+            - key: '(.conditions[] | select(.type == "Ready")).status'
+              value: "True"
+        inputVars:
+          nodeNamePrefix: kwok-baseline
+          nodeCPU: "{{.NODE_CPU}}"
+          nodeMemory: "{{.NODE_MEMORY}}"
+          nodeMaxPods: "{{.NODE_MAX_PODS}}"
+          schedulerSlots: "{{.PODS_PER_NODE}}"
+
+  # Submit NODE_COUNT * PODS_PER_NODE pause pods at the cell's workload QPS.
+  # podWait is false on purpose -- waiting per pod would rate-limit submission
+  # and measure the wait rather than the scheduler.
+  - name: scheduler-baseline
+    namespace: scheduler-baseline
+    namespaceLabels:
+      pod-security.kubernetes.io/enforce: privileged
+      pod-security.kubernetes.io/audit: privileged
+      pod-security.kubernetes.io/warn: privileged
+    jobIterations: {{ mul .NODE_COUNT .PODS_PER_NODE }}
+    qps: {{.QPS}}
+    burst: {{.BURST}}
+    namespacedIterations: false
+    podWait: false
+    waitWhenFinished: true
+    maxWaitTimeout: {{.MAX_WAIT_TIMEOUT}}
+    jobPause: {{.METRICS_SETTLE_WAIT}}
+    preLoadImages: false
+    cleanup: false
+    objects:
+      - objectTemplate: pod.yml
+        replicas: 1
+        inputVars:
+          containerImage: "{{.CONTAINER_IMAGE}}"
+
+  # Delete this run's pods at the same rate they were created.
+  - name: teardown-pods
+    jobType: delete
+    qps: {{.QPS}}
+    burst: {{.BURST}}
+    skipIndexing: true
+    waitForDeletion: true
+    objects:
+      - kind: Pod
+        apiVersion: v1
+        labelSelector:
+          kube-burner.io/uuid: "{{.UUID}}"
+
+  - name: teardown-namespace
+    jobType: delete
+    qps: {{.QPS}}
+    burst: {{.BURST}}
+    skipIndexing: true
+    waitForDeletion: true
+    objects:
+      - kind: Namespace
+        apiVersion: v1
+        labelSelector:
+          kube-burner.io/uuid: "{{.UUID}}"
+
+  - name: teardown-kwok-nodes
+    jobType: delete
+    qps: {{.NODE_CREATE_QPS}}
+    burst: {{.NODE_CREATE_BURST}}
+    skipIndexing: true
+    waitForDeletion: true
+    objects:
+      - kind: Node
+        apiVersion: v1
+        labelSelector:
+          kube-burner.io/uuid: "{{.UUID}}"

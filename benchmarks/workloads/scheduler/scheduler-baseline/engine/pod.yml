@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+---
+# The unit of scheduling work: a naked pause pod, tolerating the KWOK taint and
+# pinned to this run's fake nodes by the uuid label kube-burner stamps on them.
+#
+# Nothing here runs. KWOK reports the pod Running without a container ever
+# starting, so what is measured is the scheduler's decision path, not kubelet
+# or the container runtime.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sched-baseline-{{.Iteration}}
+  labels:
+    benchmark: scheduler-baseline
+    workload: scheduler-baseline
+spec:
+  terminationGracePeriodSeconds: 0
+  nodeSelector:
+    type: kwok
+    kube-burner.io/uuid: "{{.UUID}}"
+  tolerations:
+    - key: kwok.x-k8s.io/node
+      operator: Equal
+      value: fake
+      effect: NoSchedule
+  containers:
+    - name: pause
+      image: "{{.containerImage}}"
+      imagePullPolicy: IfNotPresent
+      resources:
+        # The scheduler-slot request is what enforces pods-per-node: each node
+        # advertises exactly PODS_PER_NODE slots and each pod claims one. cpu
+        # and memory are set low enough not to bind first. Keep this prefix in
+        # step with kwok-nodes.yml.
+        limits:
+          example.com/scheduler-slot: "1"
+        requests:
+          cpu: 10m
+          memory: 16Mi
+          example.com/scheduler-slot: "1"

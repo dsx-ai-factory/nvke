@@ -1,0 +1,56 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# kube-burner metrics profile for scheduler-baseline.
+#
+# Referenced by scheduler-baseline.yml as METRICS. kube-burner evaluates each
+# query against the Prometheus named in metricsEndpoints and writes the series
+# to the run's metrics directory.
+#
+# The two figures the published result is built on come from different places
+# and should not be conflated:
+#
+#   - Algorithm P99 and attempt P99 below are Prometheus histograms, scraped.
+#   - PodScheduled P99 is kube-burner's own podLatency measurement, timed off
+#     the pod watch stream. It is the authoritative end-to-end number, and it
+#     is the one to read when the attempt histogram saturates its top bucket.
+
+# Scheduler throughput and latency.
+- query: sum(irate(scheduler_schedule_attempts_total{result="scheduled"}[30s]))
+  metricName: schedulerThroughput30s
+
+# Scheduling attempts returning `error`, as a counter read at the start and
+# end of the job; the difference is the count for the run. The series does not
+# exist until the first error, hence `or vector(0)`.
+- query: sum(scheduler_schedule_attempts_total{result="error"}) or vector(0)
+  metricName: schedulerErrorAttempts
+  instant: true
+  captureStart: true
+
+- query: histogram_quantile(0.99, sum(rate(scheduler_scheduling_attempt_duration_seconds_bucket[2m])) by (le))
+  metricName: 99thSchedulerAttemptLatency
+
+- query: histogram_quantile(0.50, sum(rate(scheduler_scheduling_attempt_duration_seconds_bucket[2m])) by (le))
+  metricName: 50thSchedulerAttemptLatency
+
+- query: histogram_quantile(0.99, sum(rate(scheduler_scheduling_algorithm_duration_seconds_bucket[2m])) by (le))
+  metricName: 99thSchedulerAlgorithmLatency
+
+- query: histogram_quantile(0.50, sum(rate(scheduler_scheduling_algorithm_duration_seconds_bucket[2m])) by (le))
+  metricName: 50thSchedulerAlgorithmLatency
+
+# Queue behaviour. A backoff or unschedulable queue that never drains is how a
+# cell that outran the scheduler shows up.
+- query: sum(scheduler_pending_pods) by (queue)
+  metricName: schedulerPendingPods
+
+- query: sum(irate(scheduler_queue_incoming_pods_total[30s])) by (event)
+  metricName: schedulerQueueIngressRate
+
+# Scheduler process resources, leader pod. The pod regex covers a scheduler run
+# as a static pod and as a Deployment; adjust it to how yours is deployed.
+- query: sum(irate(container_cpu_usage_seconds_total{name!="",container!~"POD|",namespace="kube-system",pod=~"kube-scheduler.*"}[2m]) * 100) by (container, pod)
+  metricName: schedulerCPU
+
+- query: sum(container_memory_rss{name!="",container!~"POD|",namespace="kube-system",pod=~"kube-scheduler.*"}) by (container, pod)
+  metricName: schedulerMemory
