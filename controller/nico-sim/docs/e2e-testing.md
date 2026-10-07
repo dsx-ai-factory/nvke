@@ -88,17 +88,19 @@ The steps below are the one-shot path for nico-vms integration tests only.
 
 ### One-time setup
 
-The remote needs a checkout of the nke repository at `~/dev/nke`, not only
+The setup script does not clone the repository, so clone it on the remote
+first, at `~/dev/nke`. The tests need the whole repository, not only
 `nico-sim/`: `TestBGPECMPFlow` reads the control-plane runbooks from
-`controller/internal/runbook/scripts`. The sync steps below copy only
-`nico-sim/` over that checkout. A `NICO_SIM_REMOTE_DIR` override must also
-point at the `nico-sim/` directory of a full checkout.
+`controller/internal/runbook/scripts`. Later syncs copy only `nico-sim/` over
+this clone. A `NICO_SIM_REMOTE_DIR` override must also point at the
+`nico-sim/` directory of a full clone.
 
-SSH into the remote and run the setup script as your own user. It calls `sudo`
-for the privileged steps and writes the sudoers rule for the user who runs it:
+Then run the setup script as your own user. It calls `sudo` for the privileged
+steps and writes the sudoers rule for the user who runs it:
 
 ```bash
 ssh my-machine.example.com
+git clone https://github.com/dsx-ai-factory/nke.git ~/dev/nke   # skip if already cloned
 bash ~/dev/nke/controller/nico-sim/scripts/setup-linux.sh
 ```
 
