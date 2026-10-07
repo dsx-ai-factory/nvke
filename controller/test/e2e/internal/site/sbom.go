@@ -210,9 +210,11 @@ func (d SBOM) withDefaults() SBOM {
 	return d
 }
 
-// controllerReleasePath is the HelmRelease the nke-sbom deploy path installs
-// CWE from, relative to the exported assets.
-const controllerReleasePath = deployDir + "/nke-sbom/controller/release.yaml"
+const (
+	// controllerReleasePath is the HelmRelease the nke-sbom deploy path
+	// installs CWE from, relative to the exported assets.
+	controllerReleasePath = deployDir + "/nke-sbom/controller/release.yaml"
+)
 
 // CheckControllerName fails when the deploy path installs CWE under a name the
 // suite is not configured to look for.
@@ -238,7 +240,8 @@ func CheckControllerName(assets string) error {
 	}
 	return fmt.Errorf(
 		"the deploy path installs CWE as %q but the suite looks for %s/%s: set %s and %s to %q, or qualify a controller whose deploy path matches",
-		deployed, cwe.Namespace(), cwe.Service(), cwe.EnvNamespace, cwe.EnvService, deployed)
+		deployed, cwe.Namespace(), cwe.Service(), cwe.EnvNamespace, cwe.EnvService, deployed,
+	)
 }
 
 // controllerNameFromDeployPath is the name a set of exported assets installs

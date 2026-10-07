@@ -545,8 +545,8 @@ func (l siteLane) candidate(node infra.Node) (site.Candidate, site.Options, erro
 	// Before a machine is taken: the deploy path chooses the name CWE is
 	// installed under, the lane chooses the name the suite looks for, and
 	// nothing else makes the two agree.
-	if err := site.CheckControllerName(assets); err != nil {
-		return site.Candidate{}, site.Options{}, err
+	if nameErr := site.CheckControllerName(assets); nameErr != nil {
+		return site.Candidate{}, site.Options{}, nameErr
 	}
 
 	c := site.Candidate{

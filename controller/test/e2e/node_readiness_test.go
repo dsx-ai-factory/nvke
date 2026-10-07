@@ -33,12 +33,13 @@ func validateNodeReadinessPostCreate(test *tenantTest) {
 		// provision succeeds, so the collector on that path never fires.
 		//
 		// Detached because a spec that timed out arrives here with its
-		// context already cancelled, which is exactly when this matters.
-		DeferCleanup(func(ctx SpecContext) {
+		// context already canceled, which is exactly when this matters.
+		detached := context.WithoutCancel(ctx)
+		DeferCleanup(func() {
 			if !CurrentSpecReport().Failed() || test.cluster == nil {
 				return
 			}
-			test.collectDiagnostics(context.WithoutCancel(ctx), test.cluster.ID)
+			test.collectDiagnostics(detached, test.cluster.ID)
 		})
 
 		By("Asserting CWE reports KubernetesReady for every desired node")

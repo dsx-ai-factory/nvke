@@ -85,7 +85,7 @@ func TestClusterStateSurvivesANewlineEatingTransport(t *testing.T) {
 		collapsed.WriteString(line)
 	}
 
-	cmd := exec.Command("/bin/sh", "-c", collapsed.String())
+	cmd := exec.CommandContext(t.Context(), "/bin/sh", "-c", collapsed.String())
 	cmd.Env = append(os.Environ(), "PATH="+stub+":"+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {

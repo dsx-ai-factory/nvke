@@ -15,7 +15,9 @@ import (
 
 // sectionMarker prefixes each command's output so the sections stay legible
 // when the file is read whole, which is how it is read.
-const sectionMarker = "===== "
+const (
+	sectionMarker = "===== "
+)
 
 // CollectClusterState asks the site cluster what it makes of CWE, and writes
 // the answer to dest.
@@ -98,7 +100,7 @@ func clusterStateScript() string {
 		{"workloads, all namespaces", kubectl + " get pods -A -o wide"},
 	}
 
-	var stanzas []string
+	stanzas := make([]string, 0, 2*len(sections))
 	for _, s := range sections {
 		stanzas = append(stanzas,
 			"echo "+shellQuote(sectionMarker+s.title),
