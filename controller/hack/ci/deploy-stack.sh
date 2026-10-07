@@ -31,7 +31,7 @@
 #
 # Layout inside the runner:
 #   /workspace/cloud-workflow-engine   the CONTROLLER directory (tar --transform)
-#   /workspace/nke-stack               build/ + generated/, copied in
+#   /workspace/nke-stack               deploy/ and controller/deploy/, copied in
 set -euo pipefail
 
 #
@@ -314,7 +314,7 @@ if [[ "${DEPLOY_TARGET}" == capnico-e2e ]]; then
   : "${nico_endpoint:?NICO_ENDPOINT or NICO_SIM_ENDPOINT_HOST is required: the kind gateway could not be read}"
 
   # The BootstrapConfig the template item renders against. JSON because
-  # build/render-template.py takes JSON -- PyYAML is not guaranteed here.
+  # deploy/lib/render-template.py takes JSON -- PyYAML is not guaranteed here.
   BOOTSTRAP_CONFIG="${VALUES_DIR}/bootstrap-config.json"
   NICO_ENDPOINT="${nico_endpoint}" \
   NICO_ORG_ID="${NICO_ORG_ID:-novxwn552ssc}" \

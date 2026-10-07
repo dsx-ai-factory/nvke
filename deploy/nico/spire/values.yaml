@@ -89,7 +89,7 @@ spire-server:
   # PLACEHOLDER TRUST DOMAIN -- override this together with
   # global.spire.trustDomain, in the same --values-for file. They must agree:
   # an adminID whose trust domain is not the server's matches nothing, and CWE
-  # silently has no admin access to SPIRE. deploy-sbom.sh sets both from one
+  # silently has no admin access to SPIRE. deploy-stack.sh sets both from one
   # TRUST_DOMAIN for the e2e lanes; a hand-written site values file can set one
   # and forget the other, which is why this says example.org rather than
   # something that looks plausible.

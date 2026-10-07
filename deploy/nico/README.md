@@ -115,7 +115,7 @@ That run's install script does none of this, because it had
 ## Per-site values
 
 Every item's committed values are site-independent. What varies comes in
-through `--values-for`, exactly as `controller/hack/ci/deploy-sbom.sh` does it
+through `--values-for`, exactly as `controller/hack/ci/deploy-stack.sh` does it
 for the e2e lanes -- that script is the reference for these derivations.
 
 | value | e2e derivation | on a NICo site |

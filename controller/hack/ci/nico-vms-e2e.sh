@@ -369,7 +369,7 @@ export TILT_DISABLE_ANALYTICS=1
 export INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-true}"
 # Resolve the control-plane mode to a concrete value here. CWE now defaults
 # control-plane-controller provisioning on (#1054), and both the Tiltfile and
-# deploy-sbom.sh only set the container env when this is non-empty, so an unset
+# deploy-stack.sh only set the container env when this is non-empty, so an unset
 # flag would deploy CWE flag-on. The nico-vms specs still describe the control
 # plane as a control-plane node pool, which a flag-on CWE rejects at create
 # ("control-plane node pools are not allowed ..."). Deploy flag-off so those

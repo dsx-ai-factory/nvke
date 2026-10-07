@@ -9,7 +9,7 @@
 #
 # Stated here, not just in components/spire.yaml, so the deploy path describes
 # its own deployment: the chart is not part of the generated tree, so a reader
-# of capnico-e2e/ alone could not otherwise see them. deploy-sbom.sh reads this
+# of capnico-e2e/ alone could not otherwise see them. deploy-stack.sh reads this
 # list and appends MANAGEMENT_VIP and the kind bridge gateway, because a values
 # file replaces a list rather than appending to it.
 spiffe-oidc-discovery-provider:

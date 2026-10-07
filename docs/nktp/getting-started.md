@@ -5,7 +5,7 @@ traces and exports them over OTLP. This guide installs it, connects it to a
 backend, and covers the settings that most often differ from one cluster to the
 next. The [chart README](../../nktp/deploy/charts/nktp/README.md) summarizes what the chart
 deploys, and the [topology](architecture/topology.md) links the page that covers
-each component and its values. On an NKE site controller, `nke-sbom` deploys
+each component and its values. On an NKE site controller, `deploy/nico` deploys
 NKTP for you; see [Telemetry on a site controller](site-telemetry/getting-started.md).
 
 ## Before you install
