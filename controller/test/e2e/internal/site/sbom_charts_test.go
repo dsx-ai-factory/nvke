@@ -16,6 +16,8 @@ import (
 	"testing"
 
 	"sigs.k8s.io/yaml"
+
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
 )
 
 // These tests run what SBOM renders through the deploy path's own scripts and
@@ -158,6 +160,16 @@ func find(t *testing.T, docs []map[string]any, kind, name string) map[string]any
 
 func TestSBOMAgainstDeployPath(t *testing.T) {
 	assets := deployPath(t)
+	// This renders the deploy path in the checkout, so it asserts the name
+	// that deploy path installs, not whatever a lane is configured for. The
+	// two are the same thing read from the same file, which is the point of
+	// controllerNameFromDeployPath.
+	name, err := controllerNameFromDeployPath(assets)
+	if err != nil {
+		t.Fatalf("reading the deploy path's controller name: %v", err)
+	}
+	t.Setenv(cwe.EnvNamespace, name)
+	t.Setenv(cwe.EnvService, name)
 	values := renderValues(t, assets)
 	deploy := filepath.Join(assets, "controller", "deploy")
 
@@ -210,12 +222,12 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 		}
 		docs := documents(t, manifest)
 
-		svc := find(t, docs, "Service", controllerName)
-		if ns := dig(t, svc, "metadata", "namespace"); ns != controllerName {
-			t.Errorf("CWE Service namespace = %v, want %s: the health probe would miss it", ns, controllerName)
+		svc := find(t, docs, "Service", controllerName())
+		if ns := dig(t, svc, "metadata", "namespace"); ns != controllerName() {
+			t.Errorf("CWE Service namespace = %v, want %s: the health probe would miss it", ns, controllerName())
 		}
 
-		deployment := find(t, docs, "Deployment", controllerName)
+		deployment := find(t, docs, "Deployment", controllerName())
 		containers, _ := dig(t, deployment, "spec", "template", "spec", "containers").([]any)
 		if len(containers) == 0 {
 			t.Fatal("CWE Deployment has no containers")
@@ -268,7 +280,7 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 			"10.0.0.5",
 			"https://10.0.0.5:30443/keys",
 			mustChecksum(t, "arm64"),
-			"spiffe://e2e-site.nke.local/nke-service/nke-controller",
+			"spiffe://e2e-site.nke.local" + spireAdminPath(),
 		} {
 			if !strings.Contains(manifest, want) {
 				t.Errorf("SPIRE chart does not render %s", want)

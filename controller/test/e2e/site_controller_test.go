@@ -542,6 +542,13 @@ func (l siteLane) candidate(node infra.Node) (site.Candidate, site.Options, erro
 	}
 	DeferCleanup(func() { _ = os.RemoveAll(assets) })
 
+	// Before a machine is taken: the deploy path chooses the name CWE is
+	// installed under, the lane chooses the name the suite looks for, and
+	// nothing else makes the two agree.
+	if err := site.CheckControllerName(assets); err != nil {
+		return site.Candidate{}, site.Options{}, err
+	}
+
 	c := site.Candidate{
 		SiteName:   l.name,
 		Nkectl:     inRepo(repo, nkectl),

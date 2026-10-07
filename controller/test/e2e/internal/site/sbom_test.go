@@ -7,11 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path"
 	"strings"
 	"testing"
 
 	"sigs.k8s.io/yaml"
+
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
 )
 
 const spireOverlay = `
@@ -113,8 +116,13 @@ func TestSBOMRender(t *testing.T) {
 	if got := dig(t, spire, "spire-server", "nodeAttestor", "tpmDirect", "checksum"); got != mustChecksum(t, "arm64") {
 		t.Errorf("TPM checksum = %v", got)
 	}
-	if got := mustJSON(t, dig(t, spire, "spire-server", "adminIDs")); got != `["spiffe://e2e-site.nke.local/nke-service/nke-controller"]` {
-		t.Errorf("adminIDs = %s", got)
+	// Follows the name CWE is installed under rather than asserting one, for
+	// the reason spireAdminPath gives: the deploy path chooses it and this
+	// file does not. TestSBOMAdminIDFollowsTheControllerName covers the
+	// following itself.
+	wantAdminIDs := fmt.Sprintf(`["spiffe://e2e-site.nke.local/nke-service/%s"]`, cwe.Service())
+	if got := mustJSON(t, dig(t, spire, "spire-server", "adminIDs")); got != wantAdminIDs {
+		t.Errorf("adminIDs = %s, want %s", got, wantAdminIDs)
 	}
 	if got := mustJSON(t, dig(t, spire, "spiffe-oidc-discovery-provider", "config", "additionalDomains")); got !=
 		`["nke.site-controller.internal","localhost","127.0.0.1","10.0.0.5"]` {

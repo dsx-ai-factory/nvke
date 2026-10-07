@@ -83,6 +83,10 @@ on:
         description: "OVN CNI version under qualification, e.g. 1.4.0. It selects the nke-cni-ovn-images and -charts packages."
         type: string
         required: false
+      cwe-name:
+        description: "Name CWE is installed under, e.g. cloud-workflow-engine. The deploy path decides it and it changed partway through the releases, so it moves with controller-version. Empty leaves the suite on its default, and the run fails early if that disagrees with the deploy path."
+        type: string
+        required: false
       os-image-bootloader-amd64:
         description: HTTPS URL of the amd64 qcow-imager EFI. Must be plain HTTPS -- iPXE cannot pull an OCI artifact.
         type: string
@@ -221,6 +225,23 @@ jobs:
       # NKECTL_CWE_IMAGE the bootstrap runs, and the tag the SBOM deploys --
       # reads this one value, which is what keeps them the same image.
       SITE_CONTROLLER_VERSION: ${{ inputs.controller-version || vars.SITE_E2E_CONTROLLER_VERSION || vars.FORGE_E2E_CONTROLLER_VERSION }}
+      # The name CWE is installed under, which the deploy path decides and the
+      # suite has to be told. The deploy path is exported from
+      # SITE_CONTROLLER_VERSION, and CWE was renamed partway through the
+      # releases: one cut before installs cloud-workflow-engine, one cut after
+      # installs nke-controller. So these two move with that version, and
+      # nothing but care keeps them in step.
+      #
+      # Empty leaves the suite on its own default, which is the older name and
+      # what a developer running by hand against a released deploy path gets.
+      # Either way site.CheckControllerName reads the name out of the exported
+      # deploy path before a machine is taken and fails the run when it does
+      # not match, so a stale value here costs a minute rather than an hour.
+      # One input for two variables: the deploy path names the namespace and
+      # the Service alike in every release, so splitting them here would be two
+      # knobs that have to be equal.
+      CWE_NAMESPACE: ${{ inputs.cwe-name || vars.CWE_NAMESPACE }}
+      CWE_SERVICE: ${{ inputs.cwe-name || vars.CWE_SERVICE }}
       # One pair per architecture. A run boots as many as its shapes need: a
       # GB200 tenant is arm64 workers behind a control plane of whatever
       # `arch` asked for, so it needs both pairs, while a single-architecture

@@ -10,12 +10,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"sigs.k8s.io/yaml"
 
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/cwe"
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra"
 )
 
@@ -26,11 +29,6 @@ const (
 	// site used because its instance type has one NVMe with root on it.
 	defaultStorageClassManifest = "https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.31/deploy/local-path-storage.yaml"
 	defaultStorageClassName     = "local-path"
-
-	// controllerName is the controller's namespace, Service and ServiceAccount
-	// in every deploy path, and so the last segment of its SPIFFE ID.
-	controllerName = "nke-controller"
-	spireAdminPath = "/nke-service/" + controllerName
 
 	// oidcPort is the OIDC discovery provider's NodePort.
 	oidcPort = 30443
@@ -212,6 +210,75 @@ func (d SBOM) withDefaults() SBOM {
 	return d
 }
 
+// controllerReleasePath is the HelmRelease the nke-sbom deploy path installs
+// CWE from, relative to the exported assets.
+const controllerReleasePath = deployDir + "/nke-sbom/controller/release.yaml"
+
+// CheckControllerName fails when the deploy path installs CWE under a name the
+// suite is not configured to look for.
+//
+// These are two different owners of one string. The deploy path is exported
+// from the controller version under test, so a release cut before CWE was
+// renamed installs cloud-workflow-engine and one cut after installs
+// nke-controller. What the suite looks for comes from CWE_NAMESPACE and
+// CWE_SERVICE, which the lane sets. Nothing makes the two move together.
+//
+// They disagreed once already, and the symptom was expensive: the readiness
+// probe opened a port-forward onto a Service that did not exist, the forwarder
+// retried the NotFound rather than reporting it, and the run spent ten minutes
+// reporting that CWE would not come up while CWE was healthy in the namespace
+// beside it. Checked here, on the runner, before any machine is taken.
+func CheckControllerName(assets string) error {
+	deployed, err := controllerNameFromDeployPath(assets)
+	if err != nil {
+		return err
+	}
+	if deployed == cwe.Namespace() && deployed == cwe.Service() {
+		return nil
+	}
+	return fmt.Errorf(
+		"the deploy path installs CWE as %q but the suite looks for %s/%s: set %s and %s to %q, or qualify a controller whose deploy path matches",
+		deployed, cwe.Namespace(), cwe.Service(), cwe.EnvNamespace, cwe.EnvService, deployed)
+}
+
+// controllerNameFromDeployPath is the name a set of exported assets installs
+// CWE under, read from the HelmRelease rather than assumed.
+func controllerNameFromDeployPath(assets string) (string, error) {
+	raw, err := os.ReadFile(filepath.Join(assets, controllerReleasePath))
+	if err != nil {
+		return "", fmt.Errorf("reading the deploy path's controller release: %w", err)
+	}
+
+	var release struct {
+		Release struct {
+			Namespace string `json:"namespace"`
+		} `json:"release"`
+	}
+	if err := yaml.Unmarshal(raw, &release); err != nil {
+		return "", fmt.Errorf("parsing %s: %w", controllerReleasePath, err)
+	}
+	if release.Release.Namespace == "" {
+		return "", fmt.Errorf("%s names no release namespace, so the name CWE is installed under cannot be read", controllerReleasePath)
+	}
+	return release.Release.Namespace, nil
+}
+
+// controllerName is the namespace, Service and ServiceAccount CWE is installed
+// under, and so the last segment of its SPIFFE ID.
+//
+// Read from the cwe package rather than written out here, because this file
+// does not get to choose it. The deploy path does, and the deploy path is
+// exported from the controller version under test: a release cut before CWE
+// was renamed installs cloud-workflow-engine, one cut after installs
+// nke-controller. The lane says which by setting CWE_NAMESPACE and
+// CWE_SERVICE, and CheckControllerName fails the run when the two disagree.
+func controllerName() string { return cwe.Service() }
+
+// spireAdminPath is CWE's SPIFFE ID below the trust domain. A name that does
+// not match what the deploy path installed leaves CWE denied every
+// authorization check, which reads as an RBAC fault rather than a naming one.
+func spireAdminPath() string { return "/nke-service/" + controllerName() }
+
 func (d SBOM) validate() error {
 	var problems []string
 	if !d.Controller.valid() {
@@ -308,7 +375,7 @@ func (d SBOM) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, er
 		valuesFile(releaseSpire): map[string]any{
 			"global": map[string]any{"spire": map[string]any{"trustDomain": t.TrustDomain, "clusterName": t.SiteName}},
 			"spire-server": map[string]any{
-				"adminIDs":     []string{"spiffe://" + t.TrustDomain + spireAdminPath},
+				"adminIDs":     []string{"spiffe://" + t.TrustDomain + spireAdminPath()},
 				"nodeAttestor": map[string]any{"tpmDirect": map[string]any{"checksum": checksum}},
 			},
 			"spiffe-oidc-discovery-provider": map[string]any{
