@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# ClusterLoader2 --testoverrides file for cl2-slo-conformance, used with the
+# upstream testing/load/config.yaml. Keys checked against the commit pinned in
+# ../scenario.yaml.
+NODES_PER_NAMESPACE: 3
+PODS_PER_NODE: 110
+SMALL_STATEFUL_SETS_PER_NAMESPACE: 0
+MEDIUM_STATEFUL_SETS_PER_NAMESPACE: 0
+CL2_SCHEDULER_THROUGHPUT_THRESHOLD: 15
+CL2_SCHEDULER_THROUGHPUT_PODS_PER_DEPLOYMENT: 80
+CL2_DISABLE_DAEMONSETS: true
+CL2_PROMETHEUS_PVC_ENABLED: false

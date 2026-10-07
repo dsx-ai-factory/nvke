@@ -1,0 +1,188 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Validated against ../../../schemas/scenario.schema.json.
+# The human-readable replication narrative is README.md in this directory.
+---
+slug: cl2-slo-conformance
+workload: scalability
+description: >-
+  Upstream ClusterLoader2 "load" profile driving a mixed deployment and job
+  workload against a control plane, judged against the three SIG-Scalability
+  SLOs.
+
+intent:
+  goal: >-
+    Establish a repeatable control-plane SLO conformance baseline using
+    upstream ClusterLoader2: API request latency, pod startup latency,
+    scheduler throughput and control-plane resource headroom under a mixed,
+    production-representative object-churn workload, so a reader can judge
+    whether their own cluster has headroom for growth.
+  characterizes:
+    - Mutating API (POST/DELETE) request p99 latency under sustained churn
+    - Read-only API (GET) request p99 latency
+    - Pod startup p99 latency during bulk scheduling
+    - Scheduler throughput (pods/s) under mixed-workload placement
+    - Control-plane CPU and memory headroom
+    - In-cluster network and DNS lookup latency
+    - etcd DB growth over the run
+
+topology:
+  node_count: 47
+  node_type:
+    cpu: AMD EPYC 9004 series
+    cpu_cores: 128
+    memory_gib: 1007
+    arch: x86_64
+  roles:
+    control_plane: 3
+    worker: 42
+    monitoring: 2
+
+sizing:
+  derivation:
+    rule: >-
+      ClusterLoader2's load config computes namespace count as
+      floor(schedulable_untainted_node_count / NODES_PER_NAMESPACE), then fills each
+      namespace with a fixed small/medium mix of deployments, statefulsets
+      and jobs whose per-namespace replica counts are set by PODS_PER_NODE
+      and the stateful-set-per-namespace overrides. To size this scenario to
+      a different cluster, recompute NODES_PER_NAMESPACE from your total node
+      count and target namespace count, and confirm PODS_PER_NODE stays under
+      your kubelet's configured max-pods so the peak pod count is actually
+      schedulable. Below 100 schedulable, untainted nodes ClusterLoader2 skips
+      its scheduler-throughput phase and its 5 s pod-startup check.
+    inputs:
+      - Schedulable, untainted node count
+      - Target namespace count
+      - Worker kubelet max-pods-per-node budget
+  observed:
+    nodes_per_namespace: 3
+    pods_per_node: 110
+    namespace_count: 14
+    small_stateful_sets_per_namespace: 0
+    medium_stateful_sets_per_namespace: 0
+    small_deployments_total: 448
+    small_deployment_replicas: 5
+    medium_deployments_total: 14
+    medium_deployment_replicas: 30
+    small_jobs_total: 14
+    small_job_completions: 15
+    medium_jobs_total: 14
+    medium_job_completions: 90
+    scheduler_throughput_threshold_pods_per_s: 15
+    scheduler_throughput_pods_per_deployment: 80
+    daemonsets_enabled: false
+
+stack:
+  kubernetes: 1.34.2
+  cni:
+    name: OVN-Kubernetes
+    version: "1.2.0 (OVN core 25.09.1)"
+    build: vendor
+    dataplane: OVS 3.6.1
+  engine:
+    name: ClusterLoader2
+    version: 14525e2e2e08a236a2adb6f4f39740c586ed45fe
+    build: upstream
+  container_runtime: containerd 1.7.28
+  node_os:
+    distro: Ubuntu 22.04.4 LTS
+    kernel: 5.15.0-113-generic
+  etcd: 3.6.5
+
+engine_config: engine/overrides.yaml
+
+metrics:
+  required:
+    - size
+    - scenario
+    - duration_s
+    - post_p99_ms
+    - get_p99_ms
+    - delete_p99_ms
+    - pod_startup_p99_s
+    - incluster_latency_p99_ms
+    - dns_lookup_p99_ms
+    - peak_apiserver_reqs_per_sec
+    - scheduler_throughput_pods_per_s
+  workload_specific:
+    - qps
+    - max_apiserver_cpu_cores
+    - max_apiserver_memory_gib
+    - etcd_size_increase_mb
+
+slo:
+  - metric: post_p99_ms
+    op: lte
+    value: 1000
+    unit: ms
+    severity: error
+    applies_to: [mutating]
+    source: "SIG-Scalability SLOs: https://github.com/kubernetes/community/blob/main/sig-scalability/slos/slos.md"
+  - metric: delete_p99_ms
+    op: lte
+    value: 1000
+    unit: ms
+    severity: error
+    applies_to: [mutating]
+    source: "SIG-Scalability SLOs: https://github.com/kubernetes/community/blob/main/sig-scalability/slos/slos.md"
+  - metric: get_p99_ms
+    op: lte
+    value: 1000
+    unit: ms
+    severity: error
+    applies_to: [read-only, resource-scope]
+    source: >-
+      SIG-Scalability SLOs
+      (https://github.com/kubernetes/community/blob/main/sig-scalability/slos/slos.md).
+      The official bar is scope-dependent -- 1s for single-resource GETs, 30s
+      for namespace- or cluster-scoped LIST calls. This scenario's
+      get_p99_ms is not split by scope, so it is judged against the tighter
+      resource-scope bar.
+  - metric: pod_startup_p99_s
+    op: lte
+    value: 5
+    unit: s
+    severity: error
+    source: "SIG-Scalability SLOs: https://github.com/kubernetes/community/blob/main/sig-scalability/slos/slos.md"
+  - metric: scheduler_throughput_pods_per_s
+    op: gte
+    value: 15
+    unit: pods/s
+    severity: error
+    source: >-
+      CL2_SCHEDULER_THROUGHPUT_THRESHOLD, checked in ClusterLoader2's separate
+      scheduler-throughput phase, which runs only on clusters of 100 or more
+      schedulable, untainted nodes. Not evaluated in the published run. The result's
+      scheduler_throughput_pods_per_s is from the load phase, which
+      ClusterLoader2 does not gate.
+
+dashboard: ../../../dashboards/1.34/control-plane.json
+alerts: ../../../alerts/1.34/control-plane.yml
+
+prerequisites:
+  node_labels:
+    - node-role.kubernetes.io/worker
+  baseline_validation:
+    - Confirm every worker node is Ready and schedulable
+    - Confirm total node count and role split match the scenario topology
+    - Confirm the worker kubelet max-pods setting is at least PODS_PER_NODE
+    - Confirm Prometheus is scraping the API servers from the monitoring nodes, on whichever port the API server is exposed on for your cluster
+    - Confirm engine/overrides.yaml matches the run you intend, not a stale copy
+
+upstream:
+  project: https://github.com/kubernetes/perf-tests
+  docs: https://github.com/kubernetes/perf-tests/blob/master/clusterloader2/README.md
+  engine: ClusterLoader2
+  engine_version: 14525e2e2e08a236a2adb6f4f39740c586ed45fe
+  config: engine/overrides.yaml
+  argv:
+    - "cd <perf-tests>/clusterloader2 && go run cmd/clusterloader.go --provider=<cloud-provider> --kubeconfig=<path/to/kubeconfig> --testconfig=testing/load/config.yaml --testoverrides=<scenario-dir>/engine/overrides.yaml --enable-prometheus-server=true --prometheus-apiserver-scrape-port=<apiserver-port> --report-dir=<report-dir>"
+  notes: >-
+    ClusterLoader2 is a subdirectory of kubernetes/perf-tests with no
+    releases, so engine_version is a commit. --testconfig is the upstream load
+    config at that commit, not vendored; engine/overrides.yaml is the only file
+    this scenario owns. --enable-prometheus-server makes ClusterLoader2 deploy
+    the Prometheus its API-latency, network and DNS measurements query; without
+    it they are skipped. Its scrape port defaults to 443.
