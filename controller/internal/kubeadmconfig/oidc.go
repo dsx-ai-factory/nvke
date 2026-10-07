@@ -37,14 +37,6 @@ const (
 	// joining node holds any credential, so it is necessarily anonymous.
 	clusterInfoPath = "/api/v1/namespaces/kube-public/configmaps/cluster-info"
 
-	operatorUsernameValidationExpression = "!user.username.startsWith('system:')" +
-		" && !user.username.startsWith('kubeadm:')" +
-		" && !user.username.startsWith('nke:')" +
-		" && !user.username.startsWith('nvidia:')"
-	operatorGroupsValidationExpression = "user.groups.all(group, !group.startsWith('system:')" +
-		" && !group.startsWith('kubeadm:')" +
-		" && !group.startsWith('nke:')" +
-		" && !group.startsWith('nvidia:'))"
 	operatorUsernameValidationMessage = "username uses a reserved prefix"
 	operatorGroupsValidationMessage   = "groups use a reserved prefix"
 )
@@ -298,13 +290,21 @@ func BuildOperatorJWTAuthenticator(
 }
 
 func injectReservedNamespaceValidation(authenticator *apiserverv1.JWTAuthenticator, policy OperatorJWTPolicy) error {
+	reserved := controllerconfig.ReservedIdentityPrefixes()
+	usernameChecks := make([]string, 0, len(reserved))
+	groupChecks := make([]string, 0, len(reserved))
+	for _, prefix := range reserved {
+		quoted := strconv.Quote(prefix)
+		usernameChecks = append(usernameChecks, fmt.Sprintf("!user.username.startsWith(%s)", quoted))
+		groupChecks = append(groupChecks, fmt.Sprintf("!group.startsWith(%s)", quoted))
+	}
 	rules := []apiserverv1.UserValidationRule{
 		{
-			Expression: operatorUsernameValidationExpression,
+			Expression: strings.Join(usernameChecks, " && "),
 			Message:    operatorUsernameValidationMessage,
 		},
 		{
-			Expression: operatorGroupsValidationExpression,
+			Expression: fmt.Sprintf("user.groups.all(group, %s)", strings.Join(groupChecks, " && ")),
 			Message:    operatorGroupsValidationMessage,
 		},
 	}

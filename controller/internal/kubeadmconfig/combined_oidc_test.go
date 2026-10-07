@@ -372,7 +372,7 @@ func cloneCombinedTestProviders(providers []controllerconfig.OIDCProvider) []con
 
 func assertCombinedFixedPrefixRules(t *testing.T, authenticator OIDCProvider) {
 	t.Helper()
-	for _, prefix := range []string{"system:", "kubeadm:", "nke:", "nvidia:"} {
+	for _, prefix := range controllerconfig.ReservedIdentityPrefixes() {
 		assertUserValidation(t, authenticator.UserValidationRules, mappedOperatorIdentity{username: prefix + "controller"}, false)
 		assertUserValidation(t, authenticator.UserValidationRules, mappedOperatorIdentity{
 			username: "alice",

@@ -106,7 +106,7 @@ func TestBuildOperatorJWTAuthenticatorOptionalGroupsAndEmptyPrefixes(t *testing.
 }
 
 func TestOperatorJWTAuthenticatorReservedIdentityRules(t *testing.T) {
-	prefixes := []string{"system:", "kubeadm:", "nke:", "nvidia:"}
+	prefixes := controllerconfig.ReservedIdentityPrefixes()
 	usernameCases := []struct {
 		name          string
 		mappingPrefix func(string) string
@@ -262,7 +262,7 @@ func TestOperatorJWTAuthenticatorSPIFFEPolicy(t *testing.T) {
 			})
 		}
 
-		for _, prefix := range []string{"system:", "kubeadm:", "nke:", "nvidia:"} {
+		for _, prefix := range controllerconfig.ReservedIdentityPrefixes() {
 			t.Run("fixed prefix "+prefix, func(t *testing.T) {
 				assertUserValidation(t, authenticator.UserValidationRules, mappedOperatorIdentity{username: prefix + "controller"}, false)
 				assertUserValidation(t, authenticator.UserValidationRules, mappedOperatorIdentity{

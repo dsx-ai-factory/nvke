@@ -492,6 +492,9 @@ func (o *OIDCConfig) validate() error {
 		if strings.TrimSpace(p.UsernameClaim) == "" {
 			return fmt.Errorf("providers[%d] (%s): usernameClaim is required and must not be empty", i, name)
 		}
+		if err := validateIdentityPrefixes(p); err != nil {
+			return fmt.Errorf("providers[%d] (%s): %w", i, name, err)
+		}
 		if len(p.Audiences) == 0 {
 			return fmt.Errorf("providers[%d] (%s): audiences is required and must not be empty", i, name)
 		}
@@ -502,6 +505,29 @@ func (o *OIDCConfig) validate() error {
 		}
 		if strings.TrimSpace(p.CABundle) == "" {
 			return fmt.Errorf("providers[%d] (%s): caBundle is required and must not be empty", i, name)
+		}
+	}
+	return nil
+}
+
+// ReservedIdentityPrefixes returns the username and group namespaces that
+// Kubernetes, kubeadm, NKE and NVIDIA own. kube-apiserver rejects any identity
+// a fleet-wide provider maps into one, and Validate refuses a provider whose
+// own prefix already lies inside one, since every login through it would fail.
+func ReservedIdentityPrefixes() []string {
+	return []string{"system:", "kubeadm:", "nke:", "nvidia:"}
+}
+
+// validateIdentityPrefixes refuses a usernamePrefix or groupsPrefix inside a
+// reserved namespace. A prefix that only begins one, such as "sys", is left to
+// kube-apiserver, which checks the mapped value.
+func validateIdentityPrefixes(p OIDCProvider) error {
+	for _, reserved := range ReservedIdentityPrefixes() {
+		if strings.HasPrefix(p.UsernamePrefix, reserved) {
+			return fmt.Errorf("usernamePrefix %q is inside the reserved %q namespace", p.UsernamePrefix, reserved)
+		}
+		if strings.HasPrefix(p.GroupsPrefix, reserved) {
+			return fmt.Errorf("groupsPrefix %q is inside the reserved %q namespace", p.GroupsPrefix, reserved)
 		}
 	}
 	return nil

@@ -591,6 +591,79 @@ func TestValidateNodeAgentTLSJWT(t *testing.T) {
 	}
 }
 
+// The reserved namespaces are a security boundary: removing one should fail a
+// test rather than quietly widen what an operator provider can claim.
+func TestReservedIdentityPrefixes(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, []string{"system:", "kubeadm:", "nke:", "nvidia:"}, controllerconfig.ReservedIdentityPrefixes())
+}
+
+func TestValidateOIDCReservedPrefixes(t *testing.T) {
+	t.Parallel()
+
+	provider := func(field, prefix string) string {
+		return minimalConfig + fmt.Sprintf(`
+oidc:
+  providers:
+    - name: corp
+      issuerURL: https://login.example.com
+      audiences: ["nke"]
+      usernameClaim: sub
+      groupsClaim: groups
+      caBundle: pem
+      %s: %q
+`, field, prefix)
+	}
+
+	type testCase struct {
+		name    string
+		field   string
+		prefix  string
+		wantErr string
+	}
+	fields := []string{"usernamePrefix", "groupsPrefix"}
+	reservedPrefixes := controllerconfig.ReservedIdentityPrefixes()
+	allowedPrefixes := []string{"", "corp:", "sys", "System:", "nke-team:", "nvidia"}
+	tests := make([]testCase, 0, len(fields)*(2*len(reservedPrefixes)+len(allowedPrefixes)))
+	for _, reserved := range reservedPrefixes {
+		for _, field := range fields {
+			tests = append(tests,
+				testCase{
+					name:    field + " is " + reserved,
+					field:   field,
+					prefix:  reserved,
+					wantErr: fmt.Sprintf(`providers[0] (corp): %s %q is inside the reserved %q namespace`, field, reserved, reserved),
+				},
+				testCase{
+					name:    field + " is inside " + reserved,
+					field:   field,
+					prefix:  reserved + "team:",
+					wantErr: fmt.Sprintf(`%s %q is inside the reserved %q namespace`, field, reserved+"team:", reserved),
+				},
+			)
+		}
+	}
+	for _, allowed := range allowedPrefixes {
+		for _, field := range fields {
+			tests = append(tests, testCase{name: fmt.Sprintf("%s %q is allowed", field, allowed), field: field, prefix: allowed})
+		}
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := controllerconfig.Load(writeConfig(t, provider(tt.field, tt.prefix)))
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
 func TestValidateOIDC(t *testing.T) {
 	t.Parallel()
 
