@@ -1146,7 +1146,10 @@ func installCNIPluginRequestFromKubeadmInit(req *pb.KubeadmInitRequest) *pb.Inst
 		cniReq.PluginVersion = req.GetTigeraVersion()
 	default:
 		cniReq.PluginName = cniPluginOVN
-		cniReq.PluginVersion = defaultOvnCniChartStream
+		cniReq.PluginVersion = req.GetOvnVersion()
+		if cniReq.PluginVersion == "" {
+			cniReq.PluginVersion = defaultOvnCniChartStream
+		}
 	}
 	return cniReq
 }

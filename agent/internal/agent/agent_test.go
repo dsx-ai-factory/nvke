@@ -445,6 +445,13 @@ func TestInstallCNIPluginRequestFromKubeadmInit(t *testing.T) {
 		assert.Equal(t, "ovn", out.GetPluginName())
 		assert.Equal(t, "1.2.3", out.GetPluginVersion())
 	})
+	t.Run("empty plugin keeps an explicit ovn version", func(t *testing.T) {
+		out := installCNIPluginRequestFromKubeadmInit(&pb.KubeadmInitRequest{
+			OvnVersion: "1.2.3",
+		})
+		assert.Equal(t, "ovn", out.GetPluginName())
+		assert.Equal(t, "1.2.3", out.GetPluginVersion())
+	})
 	t.Run("tigera uses tigera_version", func(t *testing.T) {
 		out := installCNIPluginRequestFromKubeadmInit(&pb.KubeadmInitRequest{
 			CniPluginName: "tigera",
