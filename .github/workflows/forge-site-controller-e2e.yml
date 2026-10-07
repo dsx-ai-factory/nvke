@@ -315,10 +315,6 @@ jobs:
       # interpolates this, so the paths keep the shape
       # e2e-config-example.yaml documents even though the prefix differs.
       SITE_INPUTS: ${{ github.workspace }}/.site-inputs
-      # The node's architecture, for nkectl and every image archive that
-      # site-inputs stages. arm64 also needs a published controller-version:
-      # building the CWE here produces amd64 only.
-      SITE_ARCH: amd64
       # The proxy for the auth step. It also exports TELEPORT_PROXY and
       # TELEPORT_IDENTITY_FILE for tsh, which is how the dialer is configured
       # -- config.go leaves teleportIdentityFile empty and tsh reads the
@@ -470,47 +466,6 @@ jobs:
           } >> "${GITHUB_ENV}"
           echo "building the CWE from ${version}"
 
-      # A named version stages the nkectl that release shipped rather than
-      # one built here, so a candidate can pair a published CLI with a
-      # published CWE. site-inputs does the download and the checks
-      # (hack/fetch-nkectl.sh); this step only decides which, and names the
-      # binary the config points at. The path is the Makefile's SITE_NKECTL.
-      # It does look the release up, so a mistyped version fails here rather
-      # than after the Teleport and registry logins.
-      - name: Resolve the nkectl version
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -Eeuo pipefail
-          if [ -z "${CLI_VERSION}" ]; then
-            version="$(git rev-parse --short=12 HEAD)"
-            {
-              echo "SITE_CLI_BUILD=1"
-              echo "CLI_VERSION=${version}"
-              echo "SITE_NKECTL=cli/dist/nkectl-linux-${SITE_ARCH}"
-            } >> "${GITHUB_ENV}"
-            echo "building nkectl from ${version}"
-            exit 0
-          fi
-          # The two shapes release.yml publishes a cli/<version> tag in. Also
-          # what keeps the value inert in the URL below and in site-inputs.
-          if [[ ! "${CLI_VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
-            echo "::error::cli-version '${CLI_VERSION}' is neither vX.Y.Z nor vX.Y.Z-rc.N"
-            exit 1
-          fi
-          if ! curl -fsS -o /dev/null --retry 3 -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/releases/tags/cli/${CLI_VERSION}"; then
-            echo "::error::no published cli/${CLI_VERSION} release"
-            exit 1
-          fi
-          {
-            echo "SITE_CLI_BUILD=0"
-            echo "SITE_NKECTL=${SITE_INPUTS}/nkectl/nkectl-linux-${SITE_ARCH}"
-          } >> "${GITHUB_ENV}"
-          echo "staging the published nkectl ${CLI_VERSION}"
-
       # Two checks that each cost a second and each save a run: the ref the
       # join token will see, and the three values a pull_request event does
       # not supply. Both fail here rather than after a machine exists.
@@ -572,7 +527,7 @@ jobs:
               ;;
           esac
           echo "SITE_IMAGES=${images}" >> "${GITHUB_ENV}"
-          echo "stage=${SITE_STAGE} controller=${SITE_CONTROLLER_VERSION} cli=${CLI_VERSION} images=${images}"
+          echo "stage=${SITE_STAGE} controller=${SITE_CONTROLLER_VERSION} images=${images}"
 
       # nkectl is a client of the CWE it bootstraps, so the two have to agree
       # on the cluster API. By default both are built from this checkout,
@@ -669,6 +624,47 @@ jobs:
             echo "component version: ${pair}"
           done
           echo "OS_IMAGE_VERSIONS=${versions#,}" >> "${GITHUB_ENV}"
+
+      # A named version stages the nkectl that release shipped rather than
+      # one built here, so a candidate can pair a published CLI with a
+      # published CWE. site-inputs does the download and the checks
+      # (hack/fetch-nkectl.sh); this step only decides which, and names the
+      # binary the config points at. The path is the Makefile's SITE_NKECTL.
+      # It does look the release up, so a mistyped version fails here rather
+      # than after the Teleport and registry logins.
+      - name: Resolve the nkectl version
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "${CLI_VERSION}" ]; then
+            version="$(git rev-parse --short=12 HEAD)"
+            {
+              echo "SITE_CLI_BUILD=1"
+              echo "CLI_VERSION=${version}"
+              echo "SITE_NKECTL=cli/dist/nkectl-linux-${SITE_ARCH}"
+            } >> "${GITHUB_ENV}"
+            echo "building nkectl from ${version}"
+            exit 0
+          fi
+          # The two shapes release.yml publishes a cli/<version> tag in. Also
+          # what keeps the value inert in the URL below and in site-inputs.
+          if [[ ! "${CLI_VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+            echo "::error::cli-version '${CLI_VERSION}' is neither vX.Y.Z nor vX.Y.Z-rc.N"
+            exit 1
+          fi
+          if ! curl -fsS -o /dev/null --retry 3 -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/releases/tags/cli/${CLI_VERSION}"; then
+            echo "::error::no published cli/${CLI_VERSION} release"
+            exit 1
+          fi
+          {
+            echo "SITE_CLI_BUILD=0"
+            echo "SITE_NKECTL=${SITE_INPUTS}/nkectl/nkectl-linux-${SITE_ARCH}"
+          } >> "${GITHUB_ENV}"
+          echo "staging the published nkectl ${CLI_VERSION}"
 
       # No stored identity: tbot joins with the repository's OIDC token
       # against a join token named by FORGE_TELEPORT_JOIN_TOKEN, whose bot
@@ -783,7 +779,6 @@ jobs:
         run: |
           set -Eeuo pipefail
           make -C controller/test/e2e site-inputs \
-            SITE_ARCH="${SITE_ARCH}" \
             SITE_CONTROLLER_VERSION="${SITE_CONTROLLER_VERSION}" \
             SITE_CONTROLLER_BUILD="${SITE_CONTROLLER_BUILD}" \
             SITE_ARCH="${SITE_ARCH}" \
