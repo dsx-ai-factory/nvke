@@ -208,8 +208,10 @@ Machine may use the worker-only domain. The quorum-safe scale-down and
 unreachable-node delete validations check that placement stays balanced and the
 replacement refills the deleted Machine's domain. A second, provisioning-only
 `cp-controller` row advertises just a worker-only domain and checks that its
-control-plane Machine has no requested domain. The full CAPD backend E2E job
-runs both rows in its controller-managed leg.
+control-plane Machine has no requested domain. The provisioning-only `no-vip`
+`cp-controller` row advertises the same domains as the main row and checks its
+single Machine's placement. The full CAPD backend E2E job runs all three rows in
+its controller-managed leg.
 
 These CAPD controller fixtures reject `lifecycle.reuseCluster`: each row needs
 its own advertised domain set. Each placement poll snapshots all running

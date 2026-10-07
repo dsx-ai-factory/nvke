@@ -174,7 +174,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		},
 	}),
 	Entry("CAPD control-plane controller without kube-vip", Ordered, ContinueOnFailure, Label("capd", "cp-controller", "no-vip"), testSpec{
-		buildSpec: capdSpec,
+		buildSpec: capdControlPlaneControllerSpec,
 		shape: clusterShape{
 			controlPlaneConfig:     &nke.ControlPlaneConfigSpec{DesiredCount: 1},
 			withoutControlPlaneVIP: true,
