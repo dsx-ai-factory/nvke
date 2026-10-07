@@ -512,27 +512,29 @@ func TestRotateNicoMachineInstanceType(t *testing.T) {
 		wantErrorContains  []string
 	}
 
+	controlPlaneConfigID := uuid.New()
+
 	tests := map[string]parameters{
 		"rotates NicoMachine spec to next preferred instance type": {
-			node:               db.Node{ID: uuid.New(), ControlPlane: true, Nico: &db.NicoNodeProvider{InstanceTypeID: firstInstanceTypeID}},
+			node:               db.Node{ID: uuid.New(), ControlPlane: true, ControlPlaneConfigurationID: controlPlaneConfigID, Nico: &db.NicoNodeProvider{InstanceTypeID: firstInstanceTypeID}},
 			instanceTypeID:     firstInstanceTypeID.String(),
 			preference:         []uuid.UUID{firstInstanceTypeID, secondInstanceTypeID, thirdInstanceTypeID},
 			wantInstanceTypeID: secondInstanceTypeID.String(),
 		},
 		"wraps back to the most preferred type when the list is exhausted": {
-			node:               db.Node{ID: uuid.New(), ControlPlane: true, Nico: &db.NicoNodeProvider{InstanceTypeID: firstInstanceTypeID}},
+			node:               db.Node{ID: uuid.New(), ControlPlane: true, ControlPlaneConfigurationID: controlPlaneConfigID, Nico: &db.NicoNodeProvider{InstanceTypeID: firstInstanceTypeID}},
 			instanceTypeID:     secondInstanceTypeID.String(),
 			preference:         []uuid.UUID{firstInstanceTypeID, secondInstanceTypeID},
 			wantInstanceTypeID: firstInstanceTypeID.String(),
 		},
 		"retries the same type in place for a single-entry preference": {
-			node:               db.Node{ID: uuid.New(), ControlPlane: true, Nico: &db.NicoNodeProvider{InstanceTypeID: firstInstanceTypeID}},
+			node:               db.Node{ID: uuid.New(), ControlPlane: true, ControlPlaneConfigurationID: controlPlaneConfigID, Nico: &db.NicoNodeProvider{InstanceTypeID: firstInstanceTypeID}},
 			instanceTypeID:     firstInstanceTypeID.String(),
 			preference:         []uuid.UUID{firstInstanceTypeID},
 			wantInstanceTypeID: firstInstanceTypeID.String(),
 		},
 		"errors when current instance type is not in preference": {
-			node:               db.Node{ID: uuid.New(), ControlPlane: true, Nico: &db.NicoNodeProvider{InstanceTypeID: firstInstanceTypeID}},
+			node:               db.Node{ID: uuid.New(), ControlPlane: true, ControlPlaneConfigurationID: controlPlaneConfigID, Nico: &db.NicoNodeProvider{InstanceTypeID: firstInstanceTypeID}},
 			instanceTypeID:     missingInstanceTypeID.String(),
 			preference:         []uuid.UUID{firstInstanceTypeID, secondInstanceTypeID},
 			wantInstanceTypeID: missingInstanceTypeID.String(),
@@ -559,12 +561,14 @@ func TestRotateNicoMachineInstanceType(t *testing.T) {
 
 			deps := shared.MachineAdvanceDeps{
 				K8sClient: k8sClient,
-				ControlPlaneInstanceTypePreference: func(context.Context, db.Node) ([]uuid.UUID, error) {
-					return params.preference, nil
+				ControlPlaneConfigSnapshot: func(context.Context, db.Node) (db.ControlPlaneConfigSpec, error) {
+					spec := db.ControlPlaneConfigSpec{}
+					spec.SetNico(db.NicoControlPlaneProvider{InstanceTypePreference: params.preference})
+					return spec, nil
 				},
 			}
 
-			err := rotateNicoMachineInstanceType(context.Background(), deps, params.node, testCAPINicoMachine())
+			_, err := rotateNicoMachineInstanceType(context.Background(), deps, params.node, testCAPINicoMachine())
 			for _, errMessage := range params.wantErrorContains {
 				require.ErrorContains(t, err, errMessage)
 			}
@@ -591,12 +595,42 @@ func TestClient_TryAdvanceStuckMachine_NoOpWithoutFailure(t *testing.T) {
 	k8sClient := newNicoMachineRotationClient(t, nicoMachine)
 	deps := shared.MachineAdvanceDeps{
 		K8sClient: k8sClient,
-		ControlPlaneInstanceTypePreference: func(context.Context, db.Node) ([]uuid.UUID, error) {
-			return nil, nil
+		ControlPlaneConfigSnapshot: func(context.Context, db.Node) (db.ControlPlaneConfigSpec, error) {
+			return db.ControlPlaneConfigSpec{}, nil
 		},
 	}
 
 	advanced, err := New().TryAdvanceStuckMachine(context.Background(), deps, db.Node{}, db.NodeSet{}, testCAPINicoMachine())
+	require.NoError(t, err)
+	assert.False(t, advanced)
+}
+
+// TestClient_TryAdvanceStuckMachine_ReturnsFalseWhenInstanceTypeRotationNoOps
+// guards against TryAdvanceStuckMachine reporting "advanced" just because
+// instance-type rotation was eligible, when rotateNicoMachineInstanceType
+// itself made no change (here: a single-entry preference that wraps back to
+// the current type).
+func TestClient_TryAdvanceStuckMachine_ReturnsFalseWhenInstanceTypeRotationNoOps(t *testing.T) {
+	instanceTypeID := uuid.New()
+	nicoMachine := testNicoMachineForRotation(nicoMachineRotationParameters{
+		InstanceTypeID:     instanceTypeID.String(),
+		Reason:             nicov1.InstanceTypeUnavailableReason,
+		Generation:         1,
+		ObservedGeneration: 1,
+		Message:            "instance type has no available capacity",
+	})
+	k8sClient := newNicoMachineRotationClient(t, nicoMachine)
+	node := db.Node{ID: uuid.New(), ControlPlane: true, ControlPlaneConfigurationID: uuid.New()}
+	deps := shared.MachineAdvanceDeps{
+		K8sClient: k8sClient,
+		ControlPlaneConfigSnapshot: func(context.Context, db.Node) (db.ControlPlaneConfigSpec, error) {
+			spec := db.ControlPlaneConfigSpec{}
+			spec.SetNico(db.NicoControlPlaneProvider{InstanceTypePreference: []uuid.UUID{instanceTypeID}})
+			return spec, nil
+		},
+	}
+
+	advanced, err := New().TryAdvanceStuckMachine(context.Background(), deps, node, db.NodeSet{}, testCAPINicoMachine())
 	require.NoError(t, err)
 	assert.False(t, advanced)
 }

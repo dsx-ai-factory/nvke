@@ -248,8 +248,8 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 			return "", clientErr
 		}
 		advanceDeps := shared.MachineAdvanceDeps{
-			K8sClient:                          a.k8sClient,
-			ControlPlaneInstanceTypePreference: a.controlPlaneInstanceTypePreference,
+			K8sClient:                  a.k8sClient,
+			ControlPlaneConfigSnapshot: a.controlPlaneConfigSnapshot,
 		}
 		if _, err := machineClient.TryAdvanceStuckMachine(ctx, advanceDeps, node, nodeSet, machine); err != nil {
 			return "", err

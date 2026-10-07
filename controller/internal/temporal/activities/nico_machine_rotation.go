@@ -12,6 +12,18 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
+// controlPlaneConfigSnapshot fetches the control-plane-config snapshot pinned
+// to node.ControlPlaneConfigurationID. Interpreting the snapshot's contents
+// is the caller's job; this is just the DB-backed fetch only Activities can
+// perform.
+func (a *Activities) controlPlaneConfigSnapshot(ctx context.Context, node db.Node) (db.ControlPlaneConfigSpec, error) {
+	row, err := a.db.GetControlPlaneConfiguration(ctx, node.ControlPlaneConfigurationID)
+	if err != nil {
+		return db.ControlPlaneConfigSpec{}, fmt.Errorf("failed to get control plane configuration %s: %w", node.ControlPlaneConfigurationID, err)
+	}
+	return row.Config, nil
+}
+
 // controlPlaneInstanceTypePreference returns the ordered instance type preference
 // the node is pinned to. Only control plane nodes provisioned from a control plane
 // configuration snapshot carry one; everything else returns an empty list so the
@@ -20,11 +32,11 @@ func (a *Activities) controlPlaneInstanceTypePreference(ctx context.Context, nod
 	if !node.ControlPlane || node.ControlPlaneConfigurationID == uuid.Nil {
 		return nil, nil
 	}
-	row, err := a.db.GetControlPlaneConfiguration(ctx, node.ControlPlaneConfigurationID)
+	snapshot, err := a.controlPlaneConfigSnapshot(ctx, node)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get control plane configuration %s: %w", node.ControlPlaneConfigurationID, err)
+		return nil, err
 	}
-	nico, err := row.Config.NicoProvider()
+	nico, err := snapshot.NicoProvider()
 	if err != nil {
 		return nil, err
 	}

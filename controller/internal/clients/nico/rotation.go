@@ -43,20 +43,17 @@ func (*Client) TryAdvanceStuckMachine(ctx context.Context, deps shared.MachineAd
 		return false, err
 	}
 	if shouldRotateType {
-		if err := rotateNicoMachineInstanceType(ctx, deps, node, machine); err != nil {
+		advanced, err := rotateNicoMachineInstanceType(ctx, deps, node, machine)
+		if err != nil {
 			return false, err
 		}
-		return true, nil
+		return advanced, nil
 	}
 
 	return false, nil
 }
 
 func shouldRotateNicoMachineNetworkCandidate(ctx context.Context, k8sClient client.Client, machine *clusterv1.Machine) (bool, error) {
-	if machine.Spec.InfrastructureRef.APIGroup != nicov1.GroupVersion.Group || machine.Spec.InfrastructureRef.Kind != "NicoMachine" {
-		return false, nil
-	}
-
 	nicoMachine := &nicov1.NicoMachine{}
 	if err := k8sClient.Get(ctx, client.ObjectKey{
 		Namespace: machine.Namespace,
@@ -190,10 +187,6 @@ func rotateNicoMachineSubnet(ctx context.Context, k8sClient client.Client, nicoM
 // creating any backing instance, so rotation is an in-place Spec.InstanceTypeID
 // patch with nothing to tear down.
 func shouldRotateNicoMachineInstanceType(ctx context.Context, k8sClient client.Client, machine *clusterv1.Machine) (bool, error) {
-	if machine.Spec.InfrastructureRef.APIGroup != nicov1.GroupVersion.Group || machine.Spec.InfrastructureRef.Kind != "NicoMachine" {
-		return false, nil
-	}
-
 	nicoMachine := &nicov1.NicoMachine{}
 	if err := k8sClient.Get(ctx, client.ObjectKey{
 		Namespace: machine.Namespace,
@@ -236,14 +229,23 @@ func isNicoInstanceTypeUnavailableReason(reason string) bool {
 // highest-preference type once that type has capacity rather than sticking on a
 // lower-preference fallback. CWE only patches the NicoMachine spec; Nico owns
 // availability (its preflight surfaces the Ready condition reacted to here), so
-// the walk reads the live spec and needs no node-side bookkeeping.
-func rotateNicoMachineInstanceType(ctx context.Context, deps shared.MachineAdvanceDeps, node db.Node, machine *clusterv1.Machine) error {
-	preference, err := deps.ControlPlaneInstanceTypePreference(ctx, node)
-	if err != nil {
-		return err
+// the walk reads the live spec and needs no node-side bookkeeping. Returns
+// whether it actually patched the NicoMachine.
+func rotateNicoMachineInstanceType(ctx context.Context, deps shared.MachineAdvanceDeps, node db.Node, machine *clusterv1.Machine) (bool, error) {
+	if !node.ControlPlane || node.ControlPlaneConfigurationID == uuid.Nil {
+		return false, nil
 	}
+	snapshot, err := deps.ControlPlaneConfigSnapshot(ctx, node)
+	if err != nil {
+		return false, err
+	}
+	nicoProvider, err := snapshot.NicoProvider()
+	if err != nil {
+		return false, err
+	}
+	preference := nicoProvider.InstanceTypePreference
 	if len(preference) == 0 {
-		return nil
+		return false, nil
 	}
 
 	nicoMachine := &nicov1.NicoMachine{}
@@ -251,33 +253,33 @@ func rotateNicoMachineInstanceType(ctx context.Context, deps shared.MachineAdvan
 		Namespace: machine.Namespace,
 		Name:      machine.Spec.InfrastructureRef.Name,
 	}, nicoMachine); err != nil {
-		return fmt.Errorf("failed to get NicoMachine %s/%s: %w", machine.Namespace, machine.Spec.InfrastructureRef.Name, err)
+		return false, fmt.Errorf("failed to get NicoMachine %s/%s: %w", machine.Namespace, machine.Spec.InfrastructureRef.Name, err)
 	}
 	currentInstanceTypeID := nicoMachine.Spec.InstanceTypeID
 	if currentInstanceTypeID == "" {
-		return nil
+		return false, nil
 	}
 
 	nextInstanceTypeID, err := shared.NextInPreference(preference, currentInstanceTypeID)
 	switch {
 	case errors.Is(err, shared.ErrPreferenceCurrentNotFound):
-		return fmt.Errorf("current NicoMachine instance type %s is not in configured instance type preference", currentInstanceTypeID)
+		return false, fmt.Errorf("current NicoMachine instance type %s is not in configured instance type preference", currentInstanceTypeID)
 	case err != nil:
-		return err
+		return false, err
 	}
 	if nextInstanceTypeID.String() == currentInstanceTypeID {
 		// Single-entry preference (or wrap-around to the same entry): nothing to
 		// patch; keep retrying the same type in place until Nico gets capacity.
-		return nil
+		return false, nil
 	}
 
 	patchOpts := client.MergeFromWithOptions(nicoMachine.DeepCopy(), client.MergeFromWithOptimisticLock{})
 	nicoMachine.Spec.InstanceTypeID = nextInstanceTypeID.String()
 	if err := deps.K8sClient.Patch(ctx, nicoMachine, patchOpts); err != nil {
-		return fmt.Errorf("failed to rotate NicoMachine instance type from %s to %s: %w", currentInstanceTypeID, nextInstanceTypeID, err)
+		return false, fmt.Errorf("failed to rotate NicoMachine instance type from %s to %s: %w", currentInstanceTypeID, nextInstanceTypeID, err)
 	}
 
-	return nil
+	return true, nil
 }
 
 // nicoMachineProvisionedCondition returns the NicoMachine MachineProvisioned

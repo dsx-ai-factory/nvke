@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -86,11 +85,14 @@ type MachineCreateDeps struct {
 type MachineAdvanceDeps struct {
 	K8sClient client.Client
 
-	// ControlPlaneInstanceTypePreference returns the ordered instance-type
-	// preference a control-plane node is pinned to, or nil if it carries
-	// none (not a control-plane node, or provisioned without a pinned
-	// control-plane configuration). Only the nico client calls this.
-	ControlPlaneInstanceTypePreference func(ctx context.Context, node db.Node) ([]uuid.UUID, error)
+	// ControlPlaneConfigSnapshot returns the control-plane-config snapshot
+	// pinned to node's ControlPlaneConfigurationID. Only called for a
+	// control-plane node that carries one — the caller checks eligibility
+	// itself, since that only needs fields already on db.Node. Interpreting
+	// the snapshot's contents (e.g. a NICo instance-type preference) is the
+	// caller's job too; this is just the DB-backed fetch only Activities can
+	// perform.
+	ControlPlaneConfigSnapshot func(ctx context.Context, node db.Node) (db.ControlPlaneConfigSpec, error)
 }
 
 // BuildBootstrapSecret builds the bootstrap data Secret for a node. Identical
