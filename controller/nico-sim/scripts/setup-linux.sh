@@ -153,6 +153,11 @@ else
     fi
 fi
 
+# Container nodes share this kernel. swtpm --vtpm-proxy needs /dev/vtpmx.
+# `make -C controller host-up` runs the same script.
+info "Ensuring /dev/vtpmx for container nodes..."
+sudo bash "${SCRIPT_DIR}/../../hack/ensure-vtpm-proxy.sh"
+
 echo ""
 
 info "Installing for user: $USER (home: $HOME)"

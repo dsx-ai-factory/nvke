@@ -357,32 +357,8 @@ log "PASS: all fake nodes are up with TPM and SPIRE services ready"
 # and have been retrying since. This stage only records their EK thumbprints in
 # the site spec and runs the command; the next one checks the agents got in.
 
-if [ ! -c /dev/vtpmx ]; then
-  log "loading the vTPM proxy driver (/dev/vtpmx)"
-  sudo modprobe tpm_vtpm_proxy 2>/dev/null || {
-    log "not loadable as shipped; it usually lives in linux-modules-extra"
-    sudo apt-get install -y "linux-modules-extra-$(uname -r)" >/dev/null 2>&1 || true
-    sudo modprobe tpm_vtpm_proxy 2>/dev/null || true
-  }
-fi
-if [ ! -c /dev/vtpmx ]; then
-  fail "no /dev/vtpmx. The fake nodes emulate a TPM with swtpm, which asks" \
-    "the kernel to allocate one through that device, so this suite cannot run" \
-    "without it. There are two causes, and the kernel config separates them:" \
-    "" \
-    "  grep CONFIG_TCG_VTPM_PROXY /boot/config-$(uname -r)" \
-    "" \
-    "=m       built, just not installed or loaded. Install" \
-    "         linux-modules-extra-$(uname -r) and modprobe tpm_vtpm_proxy." \
-    "         Persist it with:" \
-    "           echo tpm_vtpm_proxy | sudo tee /etc/modules-load.d/tpm_vtpm_proxy.conf" \
-    "not set  this kernel never built it, and no package will supply it." \
-    "         Ubuntu enables it on some flavours and versions and not others" \
-    "         (6.8-azure yes; 6.11-azure and 6.17-azure no), so this is an" \
-    "         ordinary outcome rather than a broken machine. Run on a host" \
-    "         whose kernel has it -- the CI workflow pins its runner for" \
-    "         exactly this reason."
-fi
+log "ensuring /dev/vtpmx for the fake nodes' swtpm"
+sudo bash "${CLI_DIR}/../controller/hack/ensure-vtpm-proxy.sh"
 
 log "building the provisioned CAPI provider image (${NKECTL_CAPI_PROVISIONED_IMAGE})"
 # Its Docker Hub bases come through NKE_E2E_DOCKERHUB_MIRROR when set, like

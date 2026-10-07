@@ -158,9 +158,12 @@ fi
 
 if [[ "${host_os}" == darwin ]]; then
   log "starting Colima with ${COLIMA_CPUS} CPUs, ${COLIMA_MEMORY_GIB} GiB memory, and ${COLIMA_DISK_GIB} GiB disk"
-  make -C "${repo_root}" colima-up
+  make -C "${repo_root}" host-up
 else
   log "using the host Docker daemon"
+  # `make host-up` loads /dev/vtpmx for a developer. This lane still falls back
+  # to join-token attestation when the device is absent, which is the GitHub
+  # runner case.
   docker info >/dev/null 2>&1 || fail "cannot reach the Docker daemon; is it running and is your user in the docker group?"
 fi
 

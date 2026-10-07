@@ -380,6 +380,14 @@ dev-clusters: ## List available clusters via Teleport
 	@echo ""
 	@tsh kube ls
 
+.PHONY: host-up
+host-up: ## Prepare the Docker host for local clusters (Colima on macOS, vTPM proxy on Linux)
+	@case "$$(uname -s)" in \
+		Darwin) $(MAKE) colima-up ;; \
+		Linux) sudo ./hack/ensure-vtpm-proxy.sh ;; \
+		*) echo "host-up: unsupported OS $$(uname -s)" >&2; exit 1 ;; \
+	esac
+
 .PHONY: colima-up
 colima-up: ## Start Colima with CWE-friendly defaults
 	@./hack/colima-start.sh

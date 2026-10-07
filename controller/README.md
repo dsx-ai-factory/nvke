@@ -116,19 +116,25 @@ Full nico-vms (real libvirt VMs / amd64 OS profiles) usually needs an x86_64 Lin
 
 ### First Run
 
-1. Start Colima on macOS:
+1. Prepare the Docker host. On macOS this starts Colima. On Linux it loads the
+   vTPM proxy module on the host kernel:
 
 ```bash
-make colima-up
+make host-up
+```
 
-# Set the Docker host this can be in your shell rc file for convenience or .env.local
+On macOS, point Docker at the Colima socket. This can live in your shell rc or
+`.env.local`:
+
+```bash
 export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock
 ```
 
-`make colima-up` prepares the Colima VM for local Kind/CAPD development. It also
-ensures the vTPM proxy dependency (`tpm_vtpm_proxy`, exposed as `/dev/vtpmx`) is
-available for the TPM-backed Forge flow. On a fresh VM, the first run may take a
-little longer while that extra module package is installed.
+`make host-up` is `make colima-up` on macOS. That prepares the Colima VM,
+including `/dev/vtpmx` for the TPM-backed Forge flow. On Linux it runs
+`sudo ./hack/ensure-vtpm-proxy.sh` against the host kernel. A fresh Colima VM
+may take longer the first time while the extra kernel module package is
+installed.
 
 **macOS: reach the Kind Docker subnet directly**
 
@@ -284,12 +290,13 @@ The CAPI cluster creation path supports both modes. The Docker-based Forge flow
 keeps the same TPM-shaped contracts as a real Forge node and swaps only the
 physical TPM for a software-backed vTPM chain:
 
-1. `make colima-up` prepares the Colima VM kernel to expose `/dev/vtpmx` via
-   the `tpm_vtpm_proxy` module. That is the host-side bridge `swtpm` needs in
-   order to ask Linux for a real TPM device.
+1. `make host-up` prepares the kernel that runs Docker to expose `/dev/vtpmx`
+   via the `tpm_vtpm_proxy` module. On macOS that kernel is the Colima VM. On
+   Linux it is the host. That is the bridge `swtpm` needs in order to ask Linux
+   for a real TPM device.
 2. Each local node container starts `swtpm --vtpm-proxy` through
    `swtpm-local.service` in `hack/capd-kindest-node/Dockerfile`. That causes
-   the Colima VM kernel to allocate a vTPM-backed TPM device for that node,
+   the kernel from the previous step to allocate a vTPM-backed TPM device for that node,
    which the image then mirrors into the container as `/dev/tpm0` (and
    `/dev/tpmrm0` when available).
 3. `spire-agent` still uses the TPM attestor plugin against that Linux
@@ -832,7 +839,8 @@ docker exec <container> bash -lc 'ls -l /sys/class/misc/vtpmx/dev /dev/vtpmx /de
 
 Interpret the results this way:
 
-- If Colima does not expose `/dev/vtpmx`, rerun `make colima-up`.
+- If `/dev/vtpmx` is missing, rerun `make host-up`. On macOS that is the Colima
+  VM. On Linux it is the host kernel.
 - If host-side CAPD e2e tests fail with `no route to host` to a `172.18.0.x`
   apiserver, confirm `docker-mac-net-connect` is installed and running
   (`sudo brew services list | grep docker-mac-net-connect`). See [First

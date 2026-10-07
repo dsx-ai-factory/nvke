@@ -753,6 +753,7 @@ sudo ./scripts/setup-linux.sh
 
 This installs QEMU, libvirt, swtpm, and configures:
 
+- `/dev/vtpmx` for container nodes, through `controller/hack/ensure-vtpm-proxy.sh`
 - Bridge `cwebr0` with `172.30.0.0/24`
 - Metadata IP `169.254.169.254` on the bridge
 - dnsmasq DHCP on the bridge

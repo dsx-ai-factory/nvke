@@ -106,31 +106,11 @@ fi
 }
 
 ensure_colima_vtpm_proxy() {
-    colima ssh -- sudo sh -c "
-set -eu
-
-# swtpm --vtpm-proxy needs the Linux vTPM proxy driver to expose /dev/vtpmx.
-# Some Colima kernels ship the module in linux-modules-extra instead of the base
-# image, so install that package only when the module is absent.
-release=\$(uname -r)
-vtpm_module=tpm_vtpm_proxy
-modules_extra_pkg=linux-modules-extra-\${release}
-
-if ! modinfo \"\${vtpm_module}\" >/dev/null 2>&1; then
-  export DEBIAN_FRONTEND=noninteractive
-  apt-get update
-  apt-get install -y \"\${modules_extra_pkg}\"
-fi
-
-# Persist the module load so subsequent Colima boots still expose /dev/vtpmx
-# before the local node image asks the kernel for a vTPM-backed TPM device.
-install -d /etc/modules-load.d
-cat >/etc/modules-load.d/99-capi-vtpm.conf <<EOF
-\${vtpm_module}
-EOF
-
-modprobe \"\${vtpm_module}\"
-"
+    # Same helper the Linux host runs. Docker's kernel here is the Colima VM.
+    local script
+    script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ensure-vtpm-proxy.sh"
+    [[ -f "${script}" ]] || fail "missing ${script}"
+    colima ssh -- sudo bash -s <"${script}"
 }
 
 # Colima ignores --cpu and --memory when the profile already exists, so a VM

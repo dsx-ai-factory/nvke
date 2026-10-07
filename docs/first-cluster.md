@@ -35,13 +35,15 @@ cd nke
 
 macOS or Linux; Windows is not supported.
 
-**On macOS, use Colima, not Docker Desktop.** `controller/Makefile.dev` points
-every `kind`, `docker` and `clusterctl` call at the Colima socket, so `capd-up`
-cannot work under Docker Desktop. A plain `colima start` gives a 2 CPU, 2 GiB VM
-that `colima-up` will then refuse to resize, so size it first:
+**Prepare the Docker host once, before Kind or Tilt.** On macOS, use Colima
+rather than Docker Desktop. `controller/Makefile.dev` points every `kind`,
+`docker` and `clusterctl` call at the Colima socket, so `capd-up` cannot work
+under Docker Desktop. A plain `colima start` gives a 2 CPU, 2 GiB VM that this
+command then refuses to resize. On Linux the same command loads `tpm_vtpm_proxy`
+on the host kernel, which container nodes need for a software TPM.
 
 ```bash
-make -C controller colima-up      # 6 CPU, 12 GiB
+make -C controller host-up
 ```
 
 **API Only** needs nothing internal and no NGC account.
