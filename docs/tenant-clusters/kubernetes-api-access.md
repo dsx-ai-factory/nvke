@@ -291,3 +291,124 @@ logs.
 
 Human OIDC checks become applicable only after the identity-provider and RBAC
 mapping contracts are implemented.
+
+## Tenant Kubernetes API Access Through a Bastion
+
+When the tenant API endpoint is not routable from your workstation but is
+routable from a bastion host, use one of the two approaches below. Both
+approaches:
+
+- Fetch the tenant kubeconfig from the Site Controller cluster.
+- Require SSH access to the bastion but not to a tenant control-plane node.
+- Require the bastion to have network connectivity to the tenant API endpoint.
+
+NKE does not create or configure the bastion, and it does not distribute SSH
+keys for access to it.
+
+| | Option A: `kubectl` on your laptop | Option B: `kubectl` on the bastion |
+|---|---|---|
+| Kubeconfig location | Your laptop | The bastion |
+| Network path | SSH tunnel from the laptop to the bastion, then direct TCP from the bastion to the tenant API endpoint | SSH session on the bastion, then direct TCP from the bastion to the tenant API endpoint |
+| Kubeconfig modifications | Set the server endpoint to `localhost` and set `tls-server-name` to the original endpoint | None |
+| Required access | Bastion SSH access with TCP forwarding, Site Controller access from your laptop | Bastion SSH access with a shell, Site Controller access from the bastion or from your laptop |
+
+### Option A: `kubectl` on your laptop
+
+1. Fetch the kubeconfig, as described in
+   [Alpha Operator Access](#alpha-operator-access):
+
+   ```bash
+   nkectl get kubeconfig "$CLUSTER_NAME" --output-file tenant.kubeconfig
+   chmod 0600 tenant.kubeconfig
+   ```
+
+2. In a dedicated terminal, read the tenant API endpoint from the kubeconfig,
+   then open a tunnel that forwards a local port to it through the bastion.
+   Leave the tunnel running:
+
+   ```bash
+   TENANT_API_SERVER="$(kubectl --kubeconfig tenant.kubeconfig \
+     config view --minify -o jsonpath='{.clusters[0].cluster.server}')"
+   TENANT_API_HOSTPORT="${TENANT_API_SERVER#https://}"
+
+   ssh -N -o ExitOnForwardFailure=yes \
+     -L "localhost:16443:${TENANT_API_HOSTPORT}" "$BASTION_USER@$BASTION_HOST"
+   ```
+
+3. In a second terminal, point the kubeconfig at the tunnel. The API server
+   certificate does not list `localhost` among its SANs, so keep the CA data
+   and set `tls-server-name` to the original endpoint host, which is in the
+   SANs:
+
+   ```bash
+   CLUSTER_ENTRY="$(kubectl --kubeconfig tenant.kubeconfig \
+     config view --minify -o jsonpath='{.clusters[0].name}')"
+   TENANT_API_HOST="$(kubectl --kubeconfig tenant.kubeconfig \
+     config view --minify -o jsonpath='{.clusters[0].cluster.server}')"
+   TENANT_API_HOST="${TENANT_API_HOST#https://}"
+   TENANT_API_HOST="${TENANT_API_HOST%:*}"
+
+   kubectl --kubeconfig tenant.kubeconfig config set-cluster "$CLUSTER_ENTRY" \
+     --server=https://localhost:16443 --tls-server-name="$TENANT_API_HOST"
+   ```
+
+4. Run `kubectl` commands in the second terminal:
+
+   ```bash
+   kubectl --kubeconfig tenant.kubeconfig get nodes
+   ```
+
+5. When you finish your `kubectl` session, stop the tunnel with Ctrl-C in
+   the first terminal and remove the kubeconfig from your laptop:
+
+   ```bash
+   rm -f tenant.kubeconfig
+   ```
+
+### Option B: `kubectl` on the bastion
+
+1. Copy the kubeconfig to the bastion.
+
+   If the bastion can reach the Site Controller cluster, SSH to the bastion and
+   fetch the kubeconfig there, as described in
+   [Alpha Operator Access](#alpha-operator-access):
+
+   ```bash
+   ssh "$BASTION_USER@$BASTION_HOST"
+   nkectl get kubeconfig "$CLUSTER_NAME" --output-file tenant.kubeconfig
+   chmod 0600 tenant.kubeconfig
+   ```
+
+   Otherwise, fetch the kubeconfig on your laptop and copy it to the bastion.
+   Set the mode after copying, because `scp` keeps the mode of an existing
+   destination file:
+
+   ```bash
+   nkectl get kubeconfig "$CLUSTER_NAME" --output-file tenant.kubeconfig
+   scp tenant.kubeconfig "${BASTION_USER}@${BASTION_HOST}:tenant.kubeconfig"
+   ssh "$BASTION_USER@$BASTION_HOST" 'chmod 0600 tenant.kubeconfig'
+   ```
+
+2. If you are not already connected, SSH to the bastion:
+
+   ```bash
+   ssh "$BASTION_USER@$BASTION_HOST"
+   ```
+
+3. Run `kubectl` commands on the bastion. The kubeconfig needs no
+   modifications because the tenant API endpoint is included in the SANs of the
+   API server certificate:
+
+   ```bash
+   kubectl --kubeconfig tenant.kubeconfig get nodes
+   ```
+
+4. When you finish your `kubectl` session, remove the kubeconfig from the
+   bastion:
+
+   ```bash
+   rm -f tenant.kubeconfig
+   ```
+
+   If you copied the kubeconfig to the bastion from your laptop, also remove
+   the copy on your laptop.
