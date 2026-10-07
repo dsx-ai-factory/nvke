@@ -196,6 +196,9 @@ func TestValidateInvalidInputs(t *testing.T) {
 		{"bad podCidr in list", func(i *SiteSpec) { i.Cluster.PodCidr = "10.100.0.0/16,nope" }, pathPodCidr},
 		{"missing serviceCidr", func(i *SiteSpec) { i.Cluster.ServiceCidr = "" }, pathServiceCidr},
 		{"podCidr overlaps serviceCidr", func(i *SiteSpec) { i.Cluster.ServiceCidr = "10.100.128.0/17" }, "overlaps cluster.serviceCidr"},
+		{"podCidr overlaps a serviceCidr whose prefix length has a leading zero", func(i *SiteSpec) {
+			i.Cluster.ServiceCidr = "10.100.128.0/017"
+		}, "overlaps cluster.serviceCidr"},
 		{"podCidr list entry overlaps serviceCidr", func(i *SiteSpec) {
 			i.Cluster.PodCidr = "10.100.0.0/16,10.200.0.0/24"
 		}, "\"10.200.0.0/24\" overlaps cluster.serviceCidr"},
