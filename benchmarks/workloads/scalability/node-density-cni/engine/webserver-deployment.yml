@@ -24,7 +24,7 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution: {{.nodeSelector|toJson}}
       containers:
       - name: webserver
-        image: docker.io/library/nginx:1.27-alpine
+        image: docker.io/library/nginx:1.31-alpine
         resources:
           requests:
             memory: "10Mi"
