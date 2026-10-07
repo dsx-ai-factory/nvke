@@ -95,7 +95,7 @@ func TestClusterConditionLocking(t *testing.T) {
 			require.Eventually(t, func() bool {
 				var blocked int
 				err := bunDB.NewRaw(`SELECT count(*) FROM pg_stat_activity
-					WHERE cardinality(pg_blocking_pids(pid)) > 0 AND query LIKE ?`, "%"+cluster.ID.String()+"%").Scan(ctx, &blocked)
+					WHERE pid <> pg_backend_pid() AND cardinality(pg_blocking_pids(pid)) > 0 AND query LIKE ?`, "%"+cluster.ID.String()+"%").Scan(ctx, &blocked)
 				return err == nil && blocked == 1
 			}, 5*time.Second, 10*time.Millisecond, "second reader did not wait for the row lock")
 			close(release)
