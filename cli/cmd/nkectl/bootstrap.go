@@ -762,7 +762,7 @@ func envOrDefault(key, fallback string) string {
 }
 
 // cweDeployConfig assembles everything the CWE deploy needs into one value,
-// from the site spec and the environment, before any of it is used.
+// from the site spec, the flags and the environment, before any of it is used.
 //
 // It is separate from deployAndWaitForCWE so that the two questions stay apart:
 // this one is "what did the operator ask for", and everything it can get wrong
@@ -784,10 +784,10 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 	// Both images default to the local build's tag from the bootstrap
 	// manifest, so an empty value means the manifest lacks the entry.
 	if cfg.CWEImage == "" {
-		return cfg, errors.New("NKECTL_CWE_IMAGE is not set and the bootstrap manifest carries no default CWE image")
+		return cfg, errors.New("--controller-image and NKECTL_CWE_IMAGE are not set and the bootstrap manifest carries no default CWE image")
 	}
 	if cfg.ProvisionedProviderImage == "" {
-		return cfg, errors.New("NKECTL_CAPI_PROVISIONED_IMAGE is not set and the bootstrap manifest carries no default provisioned-provider image")
+		return cfg, errors.New("--provisioned-provider-image and NKECTL_CAPI_PROVISIONED_IMAGE are not set and the bootstrap manifest carries no default provisioned-provider image")
 	}
 
 	// SPIRE is told the Kind cluster's own name. The identity trust domain comes
@@ -982,12 +982,13 @@ func requireLocalImages(ctx context.Context, engine *bootstrapengine.Engine, ima
 	return nil
 }
 
-// missingLocalImageError names the build command and the two variables that
-// replace a local build, and keeps the inspect failure.
+// missingLocalImageError names the build command and the flags and variables
+// that replace a local build, and keeps the inspect failure.
 func missingLocalImageError(image string, err error, out string) error {
 	return fmt.Errorf("image %s is not in the local image store (%w\n%s) and names no registry to pull it from; "+
-		"build it with `make -C cli images`, or set NKECTL_CWE_IMAGE / NKECTL_CAPI_PROVISIONED_IMAGE "+
-		"to an image the runtime can pull (for Docker Hub, write docker.io/<org>/<name>)",
+		"build it with `make -C cli images`, or name an image the runtime can pull with "+
+		"--controller-image / --provisioned-provider-image or NKECTL_CWE_IMAGE / NKECTL_CAPI_PROVISIONED_IMAGE "+
+		"(for Docker Hub, write docker.io/<org>/<name>)",
 		image, err, strings.TrimSpace(out))
 }
 

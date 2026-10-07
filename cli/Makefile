@@ -184,8 +184,9 @@ ensure-capd-image:
 # build context is the repository root, because the Dockerfile builds from the
 # workspace vendor tree.
 CAPI_PROVISIONED_IMAGE ?= cluster-api-provider-provisioned:latest
-# The tags below are the defaults `bootstrap site` uses when NKECTL_CWE_IMAGE
-# and NKECTL_CAPI_PROVISIONED_IMAGE are unset; the bootstrap manifest pins them.
+# The tags below are the defaults `bootstrap site` uses when neither the image
+# flags nor NKECTL_CWE_IMAGE / NKECTL_CAPI_PROVISIONED_IMAGE name an image; the
+# bootstrap manifest pins them.
 CWE_IMAGE ?= nke-controller:latest
 
 # Set by cli/e2e/bootstrap/run.sh to point the images' Docker Hub bases at a

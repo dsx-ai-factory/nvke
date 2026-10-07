@@ -635,8 +635,44 @@ func TestRunBootstrapSiteDefaultsImagesToTheLocalBuild(t *testing.T) {
 	}
 }
 
+// TestRunBootstrapSiteUsesTheImageFlags drives the two flags through the
+// command: the images they name are the ones the bootstrap loads.
+func TestRunBootstrapSiteUsesTheImageFlags(t *testing.T) {
+	t.Setenv("NKECTL_CWE_IMAGE", "env.example/nke-controller:env")
+	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "env.example/provisioned:env")
+	startFakeCWEAPI(t, true)
+
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:                 writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:          runner,
+		cweRunner:                fakeCWERunner{},
+		kubeconfigOut:            filepath.Join(t.TempDir(), "site.kubeconfig"),
+		lookPath:                 runtimeOnPath,
+		dialContext:              refuseDial,
+		untaintControlPlane:      skipUntaint,
+		dumpSpireEntries:         func(context.Context, string, string) (int, error) { return 1, nil },
+		encryptionKeyOut:         filepath.Join(t.TempDir(), "key.json"),
+		controllerImage:          "nke-controller:flag",
+		provisionedProviderImage: "cluster-api-provider-provisioned:flag",
+	})
+	if err != nil {
+		t.Fatalf("bootstrap with image flags: %v", err)
+	}
+	for _, image := range []string{"nke-controller:flag", "cluster-api-provider-provisioned:flag"} {
+		if !runner.sawArgs("image", "inspect", image) {
+			t.Errorf("flag image %s was not used; calls: %v", image, runner.calls)
+		}
+	}
+	for _, image := range []string{"env.example/nke-controller:env", "env.example/provisioned:env"} {
+		if runner.sawArgs("image", "inspect", image) {
+			t.Errorf("variable image %s was used although a flag named another; calls: %v", image, runner.calls)
+		}
+	}
+}
+
 // TestEnsureImageAvailableRefusesToPullAHostlessRef: a local build that is
-// not in the image store fails with the build command and the two variables.
+// not in the image store fails with the build command and the flags and variables.
 // Nothing is pulled, and the inspect failure stays in the message.
 func TestEnsureImageAvailableRefusesToPullAHostlessRef(t *testing.T) {
 	var pulled bool
@@ -654,7 +690,7 @@ func TestEnsureImageAvailableRefusesToPullAHostlessRef(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for a local build that is not in the store")
 	}
-	for _, want := range []string{"make -C cli images", "NKECTL_CWE_IMAGE", "docker.io/<org>/<name>", "no such image"} {
+	for _, want := range []string{"make -C cli images", "--controller-image", "NKECTL_CWE_IMAGE", "docker.io/<org>/<name>", "no such image"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
 		}
@@ -689,7 +725,7 @@ func TestRunBootstrapSiteRefusesMissingLocalImageBeforeCreate(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error when the default local image is not in the store")
 	}
-	for _, want := range []string{"nke-controller:latest", "make -C cli images", "NKECTL_CWE_IMAGE"} {
+	for _, want := range []string{"nke-controller:latest", "make -C cli images", "--controller-image", "NKECTL_CWE_IMAGE"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
 		}
@@ -1452,7 +1488,7 @@ func TestMakeControlPlaneSchedulableBuildsTheClientFromTheKubeconfig(t *testing.
 // variable wins over the manifest default.
 func TestCWEDeployConfigImagePrecedence(t *testing.T) {
 	t.Setenv("NKECTL_CWE_IMAGE", "env.example/nke-controller:env")
-	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "")
+	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "env.example/provisioned:env")
 
 	cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "c", false, "flag.example/nke-controller:flag", "")
 	if err != nil {
@@ -1461,8 +1497,8 @@ func TestCWEDeployConfigImagePrecedence(t *testing.T) {
 	if cfg.CWEImage != "flag.example/nke-controller:flag" {
 		t.Errorf("CWEImage = %q, want the flag", cfg.CWEImage)
 	}
-	if cfg.ProvisionedProviderImage != "cluster-api-provider-provisioned:latest" {
-		t.Errorf("ProvisionedProviderImage = %q, want the manifest default", cfg.ProvisionedProviderImage)
+	if cfg.ProvisionedProviderImage != "env.example/provisioned:env" {
+		t.Errorf("ProvisionedProviderImage = %q, want the variable", cfg.ProvisionedProviderImage)
 	}
 
 	cfg, err = cweDeployConfig(&sitespec.SiteSpec{}, "c", false, "", "flag.example/provisioned:flag")
