@@ -209,6 +209,10 @@ site spec file format.`,
 	return cmd
 }
 
+// cleanupTimeout bounds each post-failure cleanup step. The steps run on a
+// context detached from the command's, so they need a stop of their own.
+const cleanupTimeout = 2 * time.Minute
+
 func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	logger := slog.Default().With("component", "bootstrap-site")
 
@@ -322,11 +326,20 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		// removed on every exit path, so this is the only moment the evidence
 		// still exists. Only on failure — a successful bootstrap has nothing
 		// to explain.
+		// Cleanup runs on the cancellation path too: a SIGINT during the
+		// deploy cancels ctx, and both runners exec through
+		// exec.CommandContext, so reusing ctx here would skip the diagnostics
+		// and leave the Kind cluster standing to block the next bootstrap.
+		// Each step gets its own bounded context detached from ctx, so slow
+		// diagnostics cannot eat the deletion's budget.
 		if err != nil && !handedOver {
+			diagnosticsCtx, cancelDiagnostics := context.WithTimeout(
+				context.WithoutCancel(ctx), cleanupTimeout)
 			dir := opts.diagnosticsDir
 			logger.Info("bootstrap failed; collecting cluster diagnostics", "dir", dir)
 			controllerdeploy.New(opts.cweRunner, logger).
-				DumpDiagnostics(ctx, cluster.KubeconfigPath, dir)
+				DumpDiagnostics(diagnosticsCtx, cluster.KubeconfigPath, dir)
+			cancelDiagnostics()
 		}
 
 		if opts.keepBootstrapKind || (siteClusterCreated && err != nil) {
@@ -340,7 +353,10 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 			return
 		}
 		logger.Info("tearing down bootstrap kind cluster", "cluster", cluster.Name)
-		if deleteErr := engine.Delete(ctx, cluster.Name); deleteErr != nil {
+		deleteCtx, cancelDelete := context.WithTimeout(
+			context.WithoutCancel(ctx), cleanupTimeout)
+		defer cancelDelete()
+		if deleteErr := engine.Delete(deleteCtx, cluster.Name); deleteErr != nil {
 			logger.Error("failed to tear down bootstrap kind cluster",
 				"cluster", cluster.Name, "err", deleteErr)
 		}

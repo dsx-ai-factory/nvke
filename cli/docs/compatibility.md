@@ -27,7 +27,7 @@ this document.
 | **Command and subcommand names** | `version`, `config`, `bootstrap`, `generate`, `get`, `create`, `patch`, `delete` and their subcommands keep their names and their argument shape. Aliases already published (`cluster`/`clusters`, `nodepool`/`nodepools`) keep working. |
 | **Flag names and semantics** | A documented flag keeps its name, its short form, and its meaning. New flags may be added. A flag's default may change only in a MINOR release and only when the new default cannot break a scripted invocation. |
 | **Exit codes** | The table below. |
-| **Output channels** | Results go to stdout. Diagnostics, progress and logs go to stderr. A successful command writes nothing to stderr; a failing one writes nothing to stdout. |
+| **Output channels** | Results go to stdout. Diagnostics, progress, logs and deprecation warnings go to stderr. The two never mix: a failing command writes nothing to stdout, so a piped `-o json` is never polluted by an error. A query command (`version`, `config view`, `get`, `generate`) that succeeds writes nothing to stderr; a command that does work, such as `bootstrap`, reports its progress there. |
 | **Machine-readable output** | `-o json` and `-o yaml` keep the field names they emit. `nkectl version -o short` stays the bare version string and nothing else. |
 | **Config file** | The location (`$XDG_CONFIG_HOME/nkectl/config.yaml`, else `~/.config/nkectl/config.yaml`) and the `sites` / `current-site` schema. Fields may be added; existing ones are not renamed or repurposed. |
 | **Environment variables** | The `NKECTL_*` variables and `REGISTRY_API_KEY`, as documented in [the README](../README.md), keep their names and meanings. |
