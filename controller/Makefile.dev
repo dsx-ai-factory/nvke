@@ -517,7 +517,11 @@ registry-mirror: ## Start Docker Hub and registry.k8s.io pull-through caches
 .PHONY: capd-up
 capd-up: kind-up clusterctl-install capd-image registry-mirror ## Bring up the local CAPD management cluster workflow (builds the CAPD node image first)
 	@echo "Installing CAPI core + CAPD providers..."
-	@PATH="$(LOCAL_BIN):$$PATH" $(kind-docker-host) CLUSTER_TOPOLOGY=true clusterctl init --core cluster-api:$(CAPI_CORE_VERSION) --infrastructure docker:$(CAPD_PROVIDER_VERSION)
+	@PATH="$(LOCAL_BIN):$$PATH" $(kind-docker-host) CLUSTER_TOPOLOGY=true clusterctl init \
+		--core cluster-api:$(CAPI_CORE_VERSION) \
+		--bootstrap kubeadm:$(CAPI_CORE_VERSION) \
+		--control-plane kubeadm:$(CAPI_CORE_VERSION) \
+		--infrastructure docker:$(CAPD_PROVIDER_VERSION)
 	@echo "Waiting for CAPI and CAPD controllers to be ready..."
 	@kubectl rollout status deployment/capi-controller-manager -n capi-system --timeout=300s
 	@kubectl rollout status deployment/capd-controller-manager -n capd-system --timeout=300s

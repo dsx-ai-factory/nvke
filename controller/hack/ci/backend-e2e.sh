@@ -647,17 +647,22 @@ TARGETS_VALIDATED=true
   log "this entrypoint requires a Linux Docker host" >&2
   exit 1
 }
-: "${CAPI_CORE_VERSION:=v1.13.6}"
-: "${CAPD_PROVIDER_VERSION:=v1.13.6}"
+# Share the release and committed digests with local development and bootstrap.
+capi_version="$(make --no-print-directory -C "${WORKSPACE_ROOT}" -f make/versions.mk print-CAPI_VERSION)"
+: "${CAPI_CORE_VERSION:=${capi_version}}"
+: "${CAPD_PROVIDER_VERSION:=${capi_version}}"
+if [[ "${CAPI_CORE_VERSION}" != "${capi_version}" && -z "${CLUSTERCTL_SHA256:-}" ]]; then
+  log "overriding CAPI_CORE_VERSION requires a matching CLUSTERCTL_SHA256" >&2
+  exit 1
+fi
+: "${CLUSTERCTL_SHA256:=$(make --no-print-directory -C "${WORKSPACE_ROOT}" -f make/versions.mk "print-CLUSTERCTL_SHA256_${host_arch^^}")}"
 : "${TILT_VERSION:=v0.37.5}"
 # Per-arch pins. host_arch was already validated above, so this is exhaustive.
 case "${host_arch}" in
   amd64)
-    : "${CLUSTERCTL_SHA256:=1e4019b8ef30fa13993716d28b9fec4072fee1e17ea2cc69cb7c8f232d9b8c2f}"
     : "${TILT_SHA256:=9efb56969c48ddea4adfb56a604b9ca5ed254924ddf140fc3e068a305cacf558}"
     ;;
   arm64)
-    : "${CLUSTERCTL_SHA256:=c3fe61fd44fa63d2efcee2a93432619527909b210a84cda7ee86eea1425de8c2}"
     : "${TILT_SHA256:=1f9c62dcce0608aeb0c63533b14e260fc2e8c5797f81589b0914c398ba53d5b0}"
     ;;
 esac
@@ -728,13 +733,13 @@ OVN_CHARTS_DEB="${BUNDLE_DIR}/nke-cni-ovn-charts-1.4.0_1.4.0_${host_arch}.deb"
   exit 1
 }
 
-log "installing clusterctl ${CAPD_PROVIDER_VERSION}"
+log "installing clusterctl ${CAPI_CORE_VERSION}"
 if [[ ! "${CLUSTERCTL_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
   log "clusterctl checksum is not configured for linux/${host_arch}"
   exit 1
 fi
-clusterctl_url="https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPD_PROVIDER_VERSION}/clusterctl-linux-${host_arch}"
-curl_with_retry "downloading clusterctl ${CAPD_PROVIDER_VERSION}" \
+clusterctl_url="https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPI_CORE_VERSION}/clusterctl-linux-${host_arch}"
+curl_with_retry "downloading clusterctl ${CAPI_CORE_VERSION}" \
   "${clusterctl_url}" \
   -o "${CLUSTERCTL_BIN}"
 printf '%s  %s\n' "${CLUSTERCTL_SHA256}" "${CLUSTERCTL_BIN}" | sha256sum -c -
@@ -1005,6 +1010,8 @@ docker exec "${KIND_CLUSTER_NAME}-control-plane" test -S /var/run/docker.sock
 log "installing CAPI core ${CAPI_CORE_VERSION} and CAPD ${CAPD_PROVIDER_VERSION}"
 runner_exec env CLUSTER_TOPOLOGY=true clusterctl init \
   --core "cluster-api:${CAPI_CORE_VERSION}" \
+  --bootstrap "kubeadm:${CAPI_CORE_VERSION}" \
+  --control-plane "kubeadm:${CAPI_CORE_VERSION}" \
   --infrastructure "docker:${CAPD_PROVIDER_VERSION}"
 runner_exec kubectl rollout status deployment/capi-controller-manager -n capi-system --timeout=5m
 runner_exec kubectl rollout status deployment/capd-controller-manager -n capd-system --timeout=5m

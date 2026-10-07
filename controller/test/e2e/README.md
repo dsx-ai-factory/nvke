@@ -211,10 +211,12 @@ replacement refills the deleted Machine's domain. A second, provisioning-only
 control-plane Machine has no requested domain. The full CAPD backend E2E job
 runs both rows in its controller-managed leg.
 
-The CI lane pins CAPI core and CAPD to v1.13.6. CAPD records placement on the
-Docker container label and publishes status.failureDomain, which CAPI propagates
-to the Machine. The test compares any published status with container placement
-and also supports older providers, such as v1.12.3, that leave the field empty.
+Local and CI lanes read the CAPI core and CAPD pin from `make/tool-versions.mk`
+(v1.13.6). The kubeadm bootstrap and control-plane providers use that same
+release. CAPD records placement on the Docker container label and publishes
+status.failureDomain, which CAPI propagates to the Machine. The test compares
+any published status with container placement and also supports explicitly
+selected older providers that leave the field empty.
 CAPD cannot exercise the status-over-spec preference when those values differ;
 the control-plane `TestReadFailureDomains` unit test covers that case. An E2E
 drift scenario needs a backend where observed placement can differ from the

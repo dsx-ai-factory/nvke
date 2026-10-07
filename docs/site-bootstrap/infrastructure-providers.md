@@ -12,7 +12,7 @@ This page covers [CAPNICo](https://github.com/dsx-ai-factory/cluster-api-provide
 |---|---|
 | A bootstrapped site cluster | From [Pre-Provisioned Nodes](pre-provisioned-nodes.md), with its kubeconfig |
 | `kubectl` | Pointed at the site cluster |
-| `clusterctl` | Matching the Cluster API version NKE pins, `v1.12.3` |
+| `clusterctl` | Matching the Cluster API version NKE pins, `v1.13.6` |
 | `helm` **v4 or later** | Helm 3 cannot install the CAPNICo chart; see [Troubleshooting](#troubleshooting) |
 | Outbound network | `clusterctl init` fetches Cluster API and cert-manager from `github.com`. An air-gapped site needs a mirror |
 | A NICo site | Already installed, machines enrolled, and someone who can issue you a token |
@@ -59,15 +59,15 @@ Use NKE's own pinned invocation. Do **not** use the unpinned `clusterctl init` l
 
 ```bash
 clusterctl init \
-  --core cluster-api:v1.12.3 \
-  --bootstrap kubeadm:v1.12.3 \
-  --control-plane kubeadm:v1.12.3 \
+  --core cluster-api:v1.13.6 \
+  --bootstrap kubeadm:v1.13.6 \
+  --control-plane kubeadm:v1.13.6 \
   --wait-providers
 ```
 
 This also installs cert-manager, which the providers depend on.
 
-`v1.12.3` is the version NKE pins, in `make/tool-versions.mk`. Keep them in step.
+`v1.13.6` is the version NKE pins, in `make/tool-versions.mk`. Keep them in step.
 
 Running `clusterctl init` again later is supported and skips what is already present, so this is safe to re-run. Only a *conflicting* provider instance is an error.
 

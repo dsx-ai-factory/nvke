@@ -82,7 +82,7 @@ INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-${DEFAULT_INSTANCE_TYPE_ID}}"
 NICO_SIM_URL="${NICO_SIM_URL:-http://localhost:18080}"
 NICO_SIM_TOKEN="${NICO_SIM_TOKEN:-nico-simctl-token}"
 
-# cluster.x-k8s.io/v1beta1 is still served on the pinned CAPI v1.12.3 and
+# cluster.x-k8s.io/v1beta1 is still served on the pinned CAPI v1.13.6 and
 # matches the controller's own nico_machine_builders output, but the CRDs mark it
 # deprecated (applying it prints a deprecation warning) and v1beta2 is the
 # storage version. v1beta2 is the current-generation form: it references infra
