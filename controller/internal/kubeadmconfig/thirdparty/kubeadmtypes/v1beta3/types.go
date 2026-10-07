@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 /*
 Copyright 2021 The Kubernetes Authors.
 
@@ -13,11 +16,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
-// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-// SPDX-License-Identifier: Apache-2.0
-//
-// Derived from Kubernetes (Apache-2.0) and modified by NVIDIA; see "Local changes".
 
 // Package v1beta3 contains local copies of the kubeadm v1beta3 config
 // structs, tracking the upstream kubeadm file as closely as practical.
