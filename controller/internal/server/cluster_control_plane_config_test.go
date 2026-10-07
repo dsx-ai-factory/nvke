@@ -413,6 +413,9 @@ func TestGetClusterControlPlane(t *testing.T) {
 			KubernetesVersion: "1.29.0",
 			ControlPlaneConfig: db.ControlPlaneConfig{
 				DesiredCount: 3,
+				ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
+					NodeLabels: map[string]string{"role": "cp"},
+				},
 			},
 			Conditions: db.ClusterConditions{
 				ControlPlaneUpgrading: db.NewCondition(true, "upgrading to 1.29.0"),
@@ -459,6 +462,7 @@ func TestGetClusterControlPlane(t *testing.T) {
 		out, ok := resp.(api.GetClusterControlPlane200JSONResponse)
 		require.True(t, ok, "expected 200 response, got %T", resp)
 		require.Equal(t, 3, out.Config.DesiredCount)
+		require.Equal(t, map[string]string{"role": "cp"}, out.Config.NodeLabels)
 		require.NotNil(t, out.Config.Nico)
 		require.Equal(t, "ubuntu", out.Config.Nico.OSProfile)
 		require.Equal(t, 2, out.Status.NodeCount)
@@ -493,6 +497,7 @@ func TestGetClusterControlPlane(t *testing.T) {
 		require.Equal(t, 1, out.Status.NodeCount)
 		require.Equal(t, 1, out.Status.ReadyNodeCount)
 		require.Equal(t, 3, out.Config.DesiredCount)
+		require.Equal(t, map[string]string{"role": "cp"}, out.Config.NodeLabels)
 		mockDB.AssertExpectations(t)
 	})
 
@@ -667,6 +672,7 @@ func TestControlPlaneConfigSpecFromCreateAPI_NestedProviders(t *testing.T) {
 	t.Run("nested nico lands on the stored nico payload", func(t *testing.T) {
 		cfg := &api.CreateClusterControlPlaneConfig{
 			DesiredCount: 3,
+			NodeLabels:   map[string]string{"role": "cp"},
 			Nico: &api.NicoControlPlaneProviderCreate{
 				InstanceTypePreference: prefs,
 				SubnetIDs:              []uuid.UUID{subnet},
@@ -677,6 +683,7 @@ func TestControlPlaneConfigSpecFromCreateAPI_NestedProviders(t *testing.T) {
 		}
 
 		spec := controlPlaneConfigSpecFromCreateAPI(cfg, "1.31.0", true, db.ProviderTypeNico)
+		assert.Equal(t, map[string]string{"role": "cp"}, spec.NodeLabels)
 		require.NotNil(t, spec.Nico)
 		assert.Nil(t, spec.Capi)
 		assert.Equal(t, prefs, spec.Nico.InstanceTypePreference)
@@ -691,6 +698,7 @@ func TestControlPlaneConfigSpecFromCreateAPI_NestedProviders(t *testing.T) {
 	t.Run("nested infra lands on the stored provider payload", func(t *testing.T) {
 		cfg := &api.CreateClusterControlPlaneConfig{
 			DesiredCount: 3,
+			NodeLabels:   map[string]string{"role": "cp"},
 			Infra: &api.InfraControlPlaneProvider{
 				MachineTemplate:    tmpl,
 				PreKubeadmCommands: []string{"prep"},
@@ -698,6 +706,7 @@ func TestControlPlaneConfigSpecFromCreateAPI_NestedProviders(t *testing.T) {
 		}
 
 		spec := controlPlaneConfigSpecFromCreateAPI(cfg, "1.31.0", true, db.ProviderTypeCAPI)
+		assert.Equal(t, map[string]string{"role": "cp"}, spec.NodeLabels)
 		assert.Nil(t, spec.Nico)
 		require.NotNil(t, spec.Capi)
 		require.Len(t, spec.Capi.InfraMachineTemplatePreferences, 1)
