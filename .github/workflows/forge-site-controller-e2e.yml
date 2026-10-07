@@ -779,6 +779,7 @@ jobs:
           IN_CAPI_PROVISIONED_VERSION: ${{ inputs.capi-provisioned-version }}
           IN_KUBERNETES_VERSION: ${{ inputs.kubernetes-version }}
           IN_CNI_OVN_VERSION: ${{ inputs.cni-ovn-version }}
+          IN_CWE_NAME: ${{ inputs.cwe-name }}
           IN_OS_IMAGE_BOOTLOADER_AMD64: ${{ inputs.os-image-bootloader-amd64 }}
           IN_OS_IMAGE_AMD64: ${{ inputs.os-image-amd64 }}
           IN_OS_IMAGE_BOOTLOADER_ARM64: ${{ inputs.os-image-bootloader-arm64 }}
@@ -802,6 +803,8 @@ jobs:
           VAR_CAPI_PROVISIONED_VERSION: ${{ vars.SITE_E2E_CAPI_PROVISIONED_VERSION }}
           VAR_KUBERNETES_VERSION: ${{ vars.SITE_E2E_KUBERNETES_VERSION }}
           VAR_CNI_OVN_VERSION: ${{ vars.SITE_E2E_CNI_OVN_VERSION }}
+          VAR_CWE_NAMESPACE: ${{ vars.CWE_NAMESPACE }}
+          VAR_CWE_SERVICE: ${{ vars.CWE_SERVICE }}
           VAR_OS_IMAGE_BOOTLOADER_AMD64: ${{ vars.SITE_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
           VAR_OS_IMAGE_AMD64: ${{ vars.SITE_E2E_OS_IMAGE_AMD64 }}
           VAR_OS_IMAGE_BOOTLOADER_ARM64: ${{ vars.SITE_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
@@ -838,6 +841,8 @@ jobs:
             "capi-provisioned version|CAPI_PROVISIONED_VERSION|IN_CAPI_PROVISIONED_VERSION|VAR_CAPI_PROVISIONED_VERSION|SITE_E2E_CAPI_PROVISIONED_VERSION||"
             "kubernetes version|KUBERNETES_VERSION|IN_KUBERNETES_VERSION|VAR_KUBERNETES_VERSION|SITE_E2E_KUBERNETES_VERSION||"
             "cni-ovn version|CNI_OVN_VERSION|IN_CNI_OVN_VERSION|VAR_CNI_OVN_VERSION|SITE_E2E_CNI_OVN_VERSION||"
+            "CWE namespace|CWE_NAMESPACE|IN_CWE_NAME|VAR_CWE_NAMESPACE|CWE_NAMESPACE||"
+            "CWE service|CWE_SERVICE|IN_CWE_NAME|VAR_CWE_SERVICE|CWE_SERVICE||"
             "amd64 OS image bootloader|OS_IMAGE_BOOTLOADER_AMD64|IN_OS_IMAGE_BOOTLOADER_AMD64|VAR_OS_IMAGE_BOOTLOADER_AMD64|SITE_E2E_OS_IMAGE_BOOTLOADER_AMD64||"
             "amd64 OS image|OS_IMAGE_AMD64|IN_OS_IMAGE_AMD64|VAR_OS_IMAGE_AMD64|SITE_E2E_OS_IMAGE_AMD64||"
             "arm64 OS image bootloader|OS_IMAGE_BOOTLOADER_ARM64|IN_OS_IMAGE_BOOTLOADER_ARM64|VAR_OS_IMAGE_BOOTLOADER_ARM64|SITE_E2E_OS_IMAGE_BOOTLOADER_ARM64||"
@@ -866,12 +871,15 @@ jobs:
           # FORGE_ when that was the only one, which means a variable
           # renamed out of that prefix would have dropped out of this check
           # silently -- no failure, just less coverage, which is the one
-          # thing this step exists to prevent. Both prefixes are listed, and
-          # a third would have to be added here too.
+          # thing this step exists to prevent. Every prefix in use is listed,
+          # and a new one has to be added here too. CWE_ is here because the
+          # name CWE is installed under is read by the suite from the
+          # environment variables it already honours, so it carries no
+          # SITE_E2E_ prefix of its own.
           missing=()
           while read -r name; do
             printf '%s\n' "${rows[@]}" | cut -d'|' -f5,7 | tr '|' '\n' | grep -qx "${name}" || missing+=("vars.${name}")
-          done < <(grep -oE 'vars\.(FORGE|SITE_E2E)_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
+          done < <(grep -oE 'vars\.(FORGE|SITE_E2E|CWE)_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
           while read -r name; do
             printf '%s\n' "${rows[@]}" | cut -d'|' -f3 |
               grep -qx "IN_$(printf '%s' "${name}" | tr 'a-z-' 'A-Z_')" || missing+=("inputs.${name}")
