@@ -32,7 +32,7 @@ the main Collector and stops after it.
 
 Operator injection cannot add this sidecar. The Operator skips injection when a
 Pod has a container named otc-container, which is the name it gives every
-Collector's main container.
+Collector's main container. See docs/nktp/architecture/self-telemetry.md.
 
 The sidecar configuration is passed unchanged, as JSON, to --config=yaml:.
 Environment variables in env (name to fieldRef path) are added to the sidecar's

@@ -11,8 +11,7 @@
 # or a Target Allocator that discovers nothing all fail here and nowhere else.
 #
 # The assertions live in nktp/hack/e2e-validate.sh, not inline, so the same
-# checks run locally. docs/nktp/kind-validation.md is the hand-run version and
-# the source of the queries.
+# checks run locally.
 #
 # Runs on linux-amd64-cpu8. One Kind node, and no KVM, but not a hosted runner:
 # the chart requests about 2 CPU across its pods, and a 4-vCPU ubuntu-latest

@@ -1,0 +1,2721 @@
+{
+  "apiVersion": "dashboard.grafana.app/v1",
+  "kind": "Dashboard",
+  "metadata": {
+    "name": "availability-per-cluster-reference"
+  },
+  "spec": {
+    "__inputs": [
+      {
+        "name": "DS_PROMETHEUS",
+        "label": "Prometheus",
+        "description": "Prometheus datasource containing cluster telemetry",
+        "type": "datasource",
+        "pluginId": "prometheus",
+        "pluginName": "Prometheus"
+      }
+    ],
+    "annotations": {
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": {
+            "type": "grafana",
+            "uid": "-- Grafana --"
+          },
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        }
+      ]
+    },
+    "description": "Reference per-cluster capacity availability (GPUs) and service availability (Kubernetes API). All queried series must carry a `k8s_cluster_name` label. Extra installs: NVIDIA GPU Operator with DCGM Exporter; kube-apiserver scrape for apiserver_request_total; NVSentinel Janitor (https://github.com/NVIDIA/NVSentinel). Missing optional dependencies leave their panels empty.",
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 1,
+    "id": null,
+    "links": [],
+    "panels": [
+      {
+        "id": 0,
+        "type": "text",
+        "title": "Requirements and scope",
+        "description": "Metric assumptions and dependencies.",
+        "gridPos": {
+          "x": 0,
+          "y": 0,
+          "w": 24,
+          "h": 14
+        },
+        "options": {
+          "mode": "markdown",
+          "content": "### Assumptions\n- Every queried series has a `k8s_cluster_name` label. Select one or more clusters with the variable above.\n- **Capacity availability** is GPU node and allocatable-GPU inventory (raw counts).\n- **Service availability** is Kubernetes API success from `apiserver_request_total`. Errors are HTTP 5xx and 429. The **availability target** variable is a policy choice used only for burn-rate and error-budget panels; observed error rates do not depend on it.\n\n### Metric dependencies\n- **kube-state-metrics:** node capacity, readiness, scheduling, conditions, and GPU Operator pod health\n- **node_exporter:** reboot and network metrics\n\n### Extra installs (panels stay empty without them)\n- **NVIDIA GPU Operator and DCGM Exporter:** GPU model, temperature, utilization, power, thermal, clock-throttle, XID, and `gpu_operator_nodes_upgrades_*`. Not part of this chart. See [NVIDIA/gpu-operator](https://github.com/NVIDIA/gpu-operator).\n- **kube-apiserver request metrics:** `apiserver_request_total` with a `k8s_cluster_name` label. NKTP does not scrape the API server by default; you must scrape kube-apiserver (or an equivalent control-plane job) and keep the `k8s_cluster_name` label.\n- **NVSentinel Janitor:** reboot and GPU-reset count/latency metrics (`janitor_actions_count`, `janitor_action_mttr_seconds`, `gpu_reset_*`). See [NVIDIA/NVSentinel](https://github.com/NVIDIA/NVSentinel).\n\nMissing optional dependencies leave their corresponding panels empty."
+        }
+      },
+      {
+        "id": 1,
+        "type": "row",
+        "title": "Capacity availability (GPUs)",
+        "description": "Raw GPU node and allocatable GPU counts for the selected clusters.",
+        "collapsed": false,
+        "gridPos": {
+          "x": 0,
+          "y": 14,
+          "w": 24,
+          "h": 1
+        },
+        "panels": []
+      },
+      {
+        "id": 2,
+        "type": "stat",
+        "title": "Selected clusters",
+        "description": "",
+        "gridPos": {
+          "x": 0,
+          "y": 15,
+          "w": 4,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "count(group by (k8s_cluster_name) (kube_node_info{k8s_cluster_name=~\"$cluster\"}))",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 3,
+        "type": "stat",
+        "title": "GPU nodes",
+        "description": "",
+        "gridPos": {
+          "x": 4,
+          "y": 15,
+          "w": 4,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "count(group by (k8s_cluster_name, node) (kube_node_status_capacity{resource=~\"nvidia_com_gpu|nvidia_com_pgpu\",k8s_cluster_name=~\"$cluster\"} > 0))",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 4,
+        "type": "stat",
+        "title": "Ready schedulable GPU nodes",
+        "description": "",
+        "gridPos": {
+          "x": 8,
+          "y": 15,
+          "w": 4,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "count((group by (k8s_cluster_name, node) (kube_node_status_capacity{resource=~\"nvidia_com_gpu|nvidia_com_pgpu\",k8s_cluster_name=~\"$cluster\"} > 0)) and on (k8s_cluster_name,node) (kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=\"Ready\",status=\"true\"} == 1) unless on (k8s_cluster_name,node) (kube_node_spec_unschedulable{k8s_cluster_name=~\"$cluster\"} == 1))",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 5,
+        "type": "stat",
+        "title": "NotReady GPU nodes",
+        "description": "",
+        "gridPos": {
+          "x": 12,
+          "y": 15,
+          "w": 4,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "count((group by (k8s_cluster_name, node) (kube_node_status_capacity{resource=~\"nvidia_com_gpu|nvidia_com_pgpu\",k8s_cluster_name=~\"$cluster\"} > 0)) unless on (k8s_cluster_name,node) (kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=\"Ready\",status=\"true\"} == 1)) or vector(0)",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 6,
+        "type": "stat",
+        "title": "Cordoned GPU nodes",
+        "description": "",
+        "gridPos": {
+          "x": 16,
+          "y": 15,
+          "w": 4,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "count((group by (k8s_cluster_name, node) (kube_node_status_capacity{resource=~\"nvidia_com_gpu|nvidia_com_pgpu\",k8s_cluster_name=~\"$cluster\"} > 0)) and on (k8s_cluster_name,node) (kube_node_spec_unschedulable{k8s_cluster_name=~\"$cluster\"} == 1)) or vector(0)",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 7,
+        "type": "stat",
+        "title": "Total GPUs",
+        "description": "",
+        "gridPos": {
+          "x": 20,
+          "y": 15,
+          "w": 4,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(kube_node_status_capacity{resource=~\"nvidia_com_gpu|nvidia_com_pgpu\",k8s_cluster_name=~\"$cluster\"})",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 8,
+        "type": "stat",
+        "title": "Allocatable GPUs",
+        "description": "",
+        "gridPos": {
+          "x": 0,
+          "y": 21,
+          "w": 6,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(kube_node_status_allocatable{resource=~\"nvidia_com_gpu|nvidia_com_pgpu\",k8s_cluster_name=~\"$cluster\"} and on (k8s_cluster_name,node) ((group by (k8s_cluster_name, node) (kube_node_status_capacity{resource=~\"nvidia_com_gpu|nvidia_com_pgpu\",k8s_cluster_name=~\"$cluster\"} > 0)) and on (k8s_cluster_name,node) (kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=\"Ready\",status=\"true\"} == 1) unless on (k8s_cluster_name,node) (kube_node_spec_unschedulable{k8s_cluster_name=~\"$cluster\"} == 1)))",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 9,
+        "type": "stat",
+        "title": "Control-plane targets reporting",
+        "description": "Raw count of healthy, scraped control-plane component targets; managed providers may not expose every component.",
+        "gridPos": {
+          "x": 6,
+          "y": 21,
+          "w": 6,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "count(max by (k8s_cluster_name,job) (up{k8s_cluster_name=~\"$cluster\",job=~\"apiserver|kube-etcd|kube-scheduler|kube-controller-manager\"} == 1))",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 10,
+        "type": "table",
+        "title": "GPU models",
+        "description": "Requires DCGM Exporter and its modelName label.",
+        "gridPos": {
+          "x": 12,
+          "y": 21,
+          "w": 12,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "group by (k8s_cluster_name,modelName) (DCGM_FI_DEV_GPU_TEMP{k8s_cluster_name=~\"$cluster\"})",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false,
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "cellHeight": "sm",
+          "showHeader": true
+        }
+      },
+      {
+        "id": 11,
+        "type": "row",
+        "title": "Node health",
+        "description": "Requires kube-state-metrics and node_exporter; GPU panels additionally require NVIDIA DCGM Exporter.",
+        "collapsed": false,
+        "gridPos": {
+          "x": 0,
+          "y": 27,
+          "w": 24,
+          "h": 1
+        },
+        "panels": []
+      },
+      {
+        "id": 12,
+        "type": "table",
+        "title": "Node reboot counts",
+        "description": "",
+        "gridPos": {
+          "x": 0,
+          "y": 28,
+          "w": 8,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum by (k8s_cluster_name,node_name) (changes(node_boot_time_seconds{k8s_cluster_name=~\"$cluster\"}[$__range])) > 0",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false,
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "cellHeight": "sm",
+          "showHeader": true
+        }
+      },
+      {
+        "id": 13,
+        "type": "timeseries",
+        "title": "Node reboot timeline",
+        "description": "",
+        "gridPos": {
+          "x": 8,
+          "y": 28,
+          "w": 16,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum by (k8s_cluster_name,node_name) (changes(node_boot_time_seconds{k8s_cluster_name=~\"$cluster\"}[$__interval])) > 0",
+            "legendFormat": "{{k8s_cluster_name}} / {{node_name}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        }
+      },
+      {
+        "id": 14,
+        "type": "table",
+        "title": "Active node conditions",
+        "description": "",
+        "gridPos": {
+          "x": 0,
+          "y": 35,
+          "w": 8,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum by (k8s_cluster_name,node,condition) (kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition!=\"Ready\",status=\"true\"} == 1)",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false,
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "cellHeight": "sm",
+          "showHeader": true
+        }
+      },
+      {
+        "id": 15,
+        "type": "table",
+        "title": "Cordoned nodes",
+        "description": "",
+        "gridPos": {
+          "x": 8,
+          "y": 35,
+          "w": 8,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "kube_node_spec_unschedulable{k8s_cluster_name=~\"$cluster\"} == 1",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false,
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "cellHeight": "sm",
+          "showHeader": true
+        }
+      },
+      {
+        "id": 16,
+        "type": "table",
+        "title": "NotReady nodes",
+        "description": "",
+        "gridPos": {
+          "x": 16,
+          "y": 35,
+          "w": 8,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=\"Ready\",status=\"true\"} == 0",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false,
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "cellHeight": "sm",
+          "showHeader": true
+        }
+      },
+      {
+        "id": 17,
+        "type": "table",
+        "title": "GPU temperature",
+        "description": "",
+        "gridPos": {
+          "x": 0,
+          "y": 42,
+          "w": 8,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "topk(1000, DCGM_FI_DEV_GPU_TEMP{k8s_cluster_name=~\"$cluster\"})",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false,
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "orange",
+                  "value": 75
+                },
+                {
+                  "color": "red",
+                  "value": 90
+                }
+              ]
+            },
+            "unit": "celsius"
+          },
+          "overrides": []
+        },
+        "options": {
+          "cellHeight": "sm",
+          "showHeader": true
+        }
+      },
+      {
+        "id": 18,
+        "type": "piechart",
+        "title": "XID errors",
+        "description": "",
+        "gridPos": {
+          "x": 8,
+          "y": 42,
+          "w": 8,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "count by (k8s_cluster_name,err_code) (DCGM_FI_DEV_XID_ERRORS{k8s_cluster_name=~\"$cluster\"} > 0)",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        }
+      },
+      {
+        "id": 19,
+        "type": "table",
+        "title": "Non-application XID errors",
+        "description": "",
+        "gridPos": {
+          "x": 16,
+          "y": 42,
+          "w": 8,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "count by (k8s_cluster_name,Hostname,err_msg,err_code) (DCGM_FI_DEV_XID_ERRORS{k8s_cluster_name=~\"$cluster\"} > 0 and ignoring(instance) (DCGM_FI_DEV_XID_ERRORS != 43 and DCGM_FI_DEV_XID_ERRORS != 109 and DCGM_FI_DEV_XID_ERRORS != 31))",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false,
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "cellHeight": "sm",
+          "showHeader": true
+        }
+      },
+      {
+        "id": 20,
+        "type": "table",
+        "title": "Top GPU thermal throttles",
+        "description": "",
+        "gridPos": {
+          "x": 0,
+          "y": 49,
+          "w": 8,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "topk(10, increase(DCGM_FI_DEV_THERMAL_VIOLATION{k8s_cluster_name=~\"$cluster\"}[$__range]) / 3.6e9) > 0",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false,
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            },
+            "unit": "h"
+          },
+          "overrides": []
+        },
+        "options": {
+          "cellHeight": "sm",
+          "showHeader": true
+        }
+      },
+      {
+        "id": 21,
+        "type": "table",
+        "title": "Clock throttle reasons",
+        "description": "",
+        "gridPos": {
+          "x": 8,
+          "y": 49,
+          "w": 8,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "DCGM_FI_DEV_CLOCK_THROTTLE_REASONS{k8s_cluster_name=~\"$cluster\"} != 0 and DCGM_FI_DEV_CLOCK_THROTTLE_REASONS{k8s_cluster_name=~\"$cluster\"} != 1",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false,
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "cellHeight": "sm",
+          "showHeader": true
+        }
+      },
+      {
+        "id": 22,
+        "type": "timeseries",
+        "title": "GPU utilization",
+        "description": "",
+        "gridPos": {
+          "x": 16,
+          "y": 49,
+          "w": 8,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "DCGM_FI_DEV_GPU_UTIL{k8s_cluster_name=~\"$cluster\"}",
+            "legendFormat": "{{k8s_cluster_name}} / {{Hostname}} / GPU {{gpu}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            },
+            "unit": "percent",
+            "max": 100
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        }
+      },
+      {
+        "id": 23,
+        "type": "timeseries",
+        "title": "GPU power consumption",
+        "description": "",
+        "gridPos": {
+          "x": 0,
+          "y": 56,
+          "w": 24,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "DCGM_FI_DEV_POWER_USAGE{k8s_cluster_name=~\"$cluster\"}",
+            "legendFormat": "{{k8s_cluster_name}} / {{Hostname}} / GPU {{gpu}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            },
+            "unit": "watt"
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        }
+      },
+      {
+        "id": 24,
+        "type": "row",
+        "title": "Network",
+        "description": "Requires node_exporter metrics with a `k8s_cluster_name` label.",
+        "collapsed": false,
+        "gridPos": {
+          "x": 0,
+          "y": 63,
+          "w": 24,
+          "h": 1
+        },
+        "panels": []
+      },
+      {
+        "id": 25,
+        "type": "timeseries",
+        "title": "Cluster network throughput",
+        "description": "",
+        "gridPos": {
+          "x": 0,
+          "y": 64,
+          "w": 24,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum by (k8s_cluster_name) (rate(node_network_transmit_bytes_total{k8s_cluster_name=~\"$cluster\"}[$__rate_interval]))",
+            "legendFormat": "{{k8s_cluster_name}} transmit",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "B",
+            "expr": "sum by (k8s_cluster_name) (rate(node_network_receive_bytes_total{k8s_cluster_name=~\"$cluster\"}[$__rate_interval]))",
+            "legendFormat": "{{k8s_cluster_name}} receive",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            },
+            "unit": "Bps"
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        }
+      },
+      {
+        "id": 26,
+        "type": "timeseries",
+        "title": "Network errors",
+        "description": "",
+        "gridPos": {
+          "x": 0,
+          "y": 71,
+          "w": 12,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum by (k8s_cluster_name) (rate(node_network_transmit_errs_total{k8s_cluster_name=~\"$cluster\"}[$__rate_interval]))",
+            "legendFormat": "{{k8s_cluster_name}} TX",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "B",
+            "expr": "sum by (k8s_cluster_name) (rate(node_network_receive_errs_total{k8s_cluster_name=~\"$cluster\"}[$__rate_interval]))",
+            "legendFormat": "{{k8s_cluster_name}} RX",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            },
+            "unit": "ops"
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        }
+      },
+      {
+        "id": 27,
+        "type": "timeseries",
+        "title": "Network drops",
+        "description": "",
+        "gridPos": {
+          "x": 12,
+          "y": 71,
+          "w": 12,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum by (k8s_cluster_name) (rate(node_network_transmit_drop_total{k8s_cluster_name=~\"$cluster\"}[$__rate_interval]))",
+            "legendFormat": "{{k8s_cluster_name}} TX",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "B",
+            "expr": "sum by (k8s_cluster_name) (rate(node_network_receive_drop_total{k8s_cluster_name=~\"$cluster\"}[$__rate_interval]))",
+            "legendFormat": "{{k8s_cluster_name}} RX",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            },
+            "unit": "ops"
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        }
+      },
+      {
+        "id": 28,
+        "type": "row",
+        "title": "Component health \u2014 GPU Operator",
+        "description": "Pod health requires kube-state-metrics. Rollout status requires GPU Operator upgrade-controller metrics.",
+        "collapsed": false,
+        "gridPos": {
+          "x": 0,
+          "y": 78,
+          "w": 24,
+          "h": 1
+        },
+        "panels": []
+      },
+      {
+        "id": 29,
+        "type": "stat",
+        "title": "GPU Operator error pods",
+        "description": "",
+        "gridPos": {
+          "x": 0,
+          "y": 79,
+          "w": 6,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "count(kube_pod_container_status_waiting_reason{k8s_cluster_name=~\"$cluster\",namespace=~\"gpu-operator|cw-nvidia-gpu-operator\"} > 0) or vector(0)",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 30,
+        "type": "table",
+        "title": "GPU Operator pod failures",
+        "description": "",
+        "gridPos": {
+          "x": 6,
+          "y": 79,
+          "w": 18,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum by (k8s_cluster_name,pod,namespace,reason) (kube_pod_container_status_waiting_reason{k8s_cluster_name=~\"$cluster\",namespace=~\"gpu-operator|cw-nvidia-gpu-operator\"} > 0) * on (k8s_cluster_name,pod,namespace) group_left(node) kube_pod_info{k8s_cluster_name=~\"$cluster\"}",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false,
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "cellHeight": "sm",
+          "showHeader": true
+        }
+      },
+      {
+        "id": 31,
+        "type": "timeseries",
+        "title": "GPU Operator rollout status",
+        "description": "",
+        "gridPos": {
+          "x": 0,
+          "y": 85,
+          "w": 24,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum by (k8s_cluster_name) (gpu_operator_nodes_upgrades_done{k8s_cluster_name=~\"$cluster\"})",
+            "legendFormat": "{{k8s_cluster_name}} done",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "B",
+            "expr": "sum by (k8s_cluster_name) (gpu_operator_nodes_upgrades_failed{k8s_cluster_name=~\"$cluster\"})",
+            "legendFormat": "{{k8s_cluster_name}} failed",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "C",
+            "expr": "sum by (k8s_cluster_name) (gpu_operator_nodes_upgrades_pending{k8s_cluster_name=~\"$cluster\"})",
+            "legendFormat": "{{k8s_cluster_name}} pending",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        }
+      },
+      {
+        "id": 32,
+        "type": "row",
+        "title": "Service availability (Kubernetes API)",
+        "description": "API server availability from apiserver_request_total. Error ratio is 5xx+429 over all requests, summed by cluster. Burn rate and error-budget panels divide by (100 - $availability_target) / 100.",
+        "collapsed": false,
+        "gridPos": {
+          "x": 0,
+          "y": 92,
+          "w": 24,
+          "h": 1
+        },
+        "panels": []
+      },
+      {
+        "id": 33,
+        "type": "timeseries",
+        "title": "API server success rate \u2014 30d lookback",
+        "description": "100 minus the 30d average of the 5m error ratio (Prometheus subquery step 5m).",
+        "gridPos": {
+          "x": 0,
+          "y": 93,
+          "w": 24,
+          "h": 8
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "100 - avg_over_time((sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\",code=~\"(5..|429)\"}[5m])) / sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\"}[5m])))[30d:5m]) * 100",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 98,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red",
+                  "value": null
+                },
+                {
+                  "color": "yellow",
+                  "value": 99
+                },
+                {
+                  "color": "green",
+                  "value": 99.9
+                }
+              ]
+            },
+            "unit": "percent",
+            "max": 100
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        }
+      },
+      {
+        "id": 34,
+        "type": "timeseries",
+        "title": "API server error rates",
+        "description": "",
+        "gridPos": {
+          "x": 0,
+          "y": 101,
+          "w": 12,
+          "h": 8
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "(sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\",code=~\"(5..|429)\"}[5m])) / sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\"}[5m]))) * 100",
+            "legendFormat": "{{k8s_cluster_name}} / 5m",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "B",
+            "expr": "(sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\",code=~\"(5..|429)\"}[30m])) / sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\"}[30m]))) * 100",
+            "legendFormat": "{{k8s_cluster_name}} / 30m",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "C",
+            "expr": "(sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\",code=~\"(5..|429)\"}[1h])) / sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\"}[1h]))) * 100",
+            "legendFormat": "{{k8s_cluster_name}} / 1h",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "D",
+            "expr": "(sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\",code=~\"(5..|429)\"}[6h])) / sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\"}[6h]))) * 100",
+            "legendFormat": "{{k8s_cluster_name}} / 6h",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "E",
+            "expr": "(sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\",code=~\"(5..|429)\"}[1d])) / sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\"}[1d]))) * 100",
+            "legendFormat": "{{k8s_cluster_name}} / 1d",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "F",
+            "expr": "(sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\",code=~\"(5..|429)\"}[3d])) / sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\"}[3d]))) * 100",
+            "legendFormat": "{{k8s_cluster_name}} / 3d",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            },
+            "unit": "percent"
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        }
+      },
+      {
+        "id": 35,
+        "type": "timeseries",
+        "title": "Burn rates",
+        "description": "A burn rate below 1 stays within budget; above 1 consumes budget faster than allowed.",
+        "gridPos": {
+          "x": 12,
+          "y": 101,
+          "w": 12,
+          "h": 8
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "(sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\",code=~\"(5..|429)\"}[5m])) / sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\"}[5m]))) / ((100 - $availability_target) / 100)",
+            "legendFormat": "{{k8s_cluster_name}} / 5m",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "B",
+            "expr": "(sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\",code=~\"(5..|429)\"}[30m])) / sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\"}[30m]))) / ((100 - $availability_target) / 100)",
+            "legendFormat": "{{k8s_cluster_name}} / 30m",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "C",
+            "expr": "(sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\",code=~\"(5..|429)\"}[1h])) / sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\"}[1h]))) / ((100 - $availability_target) / 100)",
+            "legendFormat": "{{k8s_cluster_name}} / 1h",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "D",
+            "expr": "(sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\",code=~\"(5..|429)\"}[6h])) / sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\"}[6h]))) / ((100 - $availability_target) / 100)",
+            "legendFormat": "{{k8s_cluster_name}} / 6h",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "E",
+            "expr": "(sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\",code=~\"(5..|429)\"}[1d])) / sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\"}[1d]))) / ((100 - $availability_target) / 100)",
+            "legendFormat": "{{k8s_cluster_name}} / 1d",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "F",
+            "expr": "(sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\",code=~\"(5..|429)\"}[3d])) / sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\"}[3d]))) / ((100 - $availability_target) / 100)",
+            "legendFormat": "{{k8s_cluster_name}} / 3d",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        }
+      },
+      {
+        "id": 36,
+        "type": "stat",
+        "title": "Availability target",
+        "description": "Value of the availability target dashboard variable. Not derived from telemetry.",
+        "gridPos": {
+          "x": 0,
+          "y": 109,
+          "w": 8,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "vector($availability_target)",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            },
+            "unit": "percent"
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 37,
+        "type": "stat",
+        "title": "Allowed error budget",
+        "description": "Allowed error budget as 100 minus the availability target. Not derived from telemetry.",
+        "gridPos": {
+          "x": 8,
+          "y": 109,
+          "w": 8,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "vector(100 - $availability_target)",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            },
+            "unit": "percent"
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 38,
+        "type": "stat",
+        "title": "Consumed error budget",
+        "description": "30d average error ratio divided by the allowed error budget.",
+        "gridPos": {
+          "x": 16,
+          "y": 109,
+          "w": 8,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "avg_over_time((sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\",code=~\"(5..|429)\"}[5m])) / sum by (k8s_cluster_name) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\"}[5m])))[30d:5m]) / ((100 - $availability_target) / 100) * 100",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            },
+            "unit": "percent"
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 39,
+        "type": "stat",
+        "title": "API server status",
+        "description": "1 means a scraped target is up. No data may be expected when a managed provider does not expose this component.",
+        "gridPos": {
+          "x": 0,
+          "y": 115,
+          "w": 6,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "max by (k8s_cluster_name) (up{k8s_cluster_name=~\"$cluster\",job=\"apiserver\"})",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red",
+                  "value": null
+                },
+                {
+                  "color": "green",
+                  "value": 1
+                }
+              ]
+            },
+            "max": 1
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 40,
+        "type": "stat",
+        "title": "etcd status",
+        "description": "1 means a scraped target is up. No data may be expected when a managed provider does not expose this component.",
+        "gridPos": {
+          "x": 6,
+          "y": 115,
+          "w": 6,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "max by (k8s_cluster_name) (up{k8s_cluster_name=~\"$cluster\",job=\"kube-etcd\"})",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red",
+                  "value": null
+                },
+                {
+                  "color": "green",
+                  "value": 1
+                }
+              ]
+            },
+            "max": 1
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 41,
+        "type": "stat",
+        "title": "Scheduler status",
+        "description": "1 means a scraped target is up. No data may be expected when a managed provider does not expose this component.",
+        "gridPos": {
+          "x": 12,
+          "y": 115,
+          "w": 6,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "max by (k8s_cluster_name) (up{k8s_cluster_name=~\"$cluster\",job=\"kube-scheduler\"})",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red",
+                  "value": null
+                },
+                {
+                  "color": "green",
+                  "value": 1
+                }
+              ]
+            },
+            "max": 1
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 42,
+        "type": "stat",
+        "title": "Controller manager status",
+        "description": "1 means a scraped target is up. No data may be expected when a managed provider does not expose this component.",
+        "gridPos": {
+          "x": 18,
+          "y": 115,
+          "w": 6,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "max by (k8s_cluster_name) (up{k8s_cluster_name=~\"$cluster\",job=\"kube-controller-manager\"})",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red",
+                  "value": null
+                },
+                {
+                  "color": "green",
+                  "value": 1
+                }
+              ]
+            },
+            "max": 1
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 43,
+        "type": "row",
+        "title": "Janitor reboots",
+        "description": "Requires NVSentinel Janitor metrics. This module may be disabled and produce no data.",
+        "collapsed": false,
+        "gridPos": {
+          "x": 0,
+          "y": 121,
+          "w": 24,
+          "h": 1
+        },
+        "panels": []
+      },
+      {
+        "id": 44,
+        "type": "stat",
+        "title": "Successful reboots",
+        "description": "",
+        "gridPos": {
+          "x": 0,
+          "y": 122,
+          "w": 6,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(increase(janitor_actions_count{k8s_cluster_name=~\"$cluster\",action_type=\"reboot\",status=\"succeeded\"}[$__range])) or vector(0)",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 45,
+        "type": "stat",
+        "title": "Failed reboots",
+        "description": "",
+        "gridPos": {
+          "x": 6,
+          "y": 122,
+          "w": 6,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(increase(janitor_actions_count{k8s_cluster_name=~\"$cluster\",action_type=\"reboot\",status=\"failed\"}[$__range])) or vector(0)",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "red",
+                  "value": 1
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 46,
+        "type": "piechart",
+        "title": "Successful reboots by node",
+        "description": "",
+        "gridPos": {
+          "x": 12,
+          "y": 122,
+          "w": 6,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum by (k8s_cluster_name,node) (increase(janitor_actions_count{k8s_cluster_name=~\"$cluster\",action_type=\"reboot\",status=\"succeeded\"}[$__range])) > 0",
+            "legendFormat": "{{k8s_cluster_name}} / {{node}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        }
+      },
+      {
+        "id": 47,
+        "type": "piechart",
+        "title": "Failed reboots by node",
+        "description": "",
+        "gridPos": {
+          "x": 18,
+          "y": 122,
+          "w": 6,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum by (k8s_cluster_name,node) (increase(janitor_actions_count{k8s_cluster_name=~\"$cluster\",action_type=\"reboot\",status=\"failed\"}[$__range])) > 0",
+            "legendFormat": "{{k8s_cluster_name}} / {{node}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        }
+      },
+      {
+        "id": 48,
+        "type": "timeseries",
+        "title": "Reboot latency",
+        "description": "",
+        "gridPos": {
+          "x": 0,
+          "y": 128,
+          "w": 24,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "histogram_quantile(0.5, sum by (k8s_cluster_name,le) (rate(janitor_action_mttr_seconds_bucket{k8s_cluster_name=~\"$cluster\",action_type=\"reboot\"}[$__rate_interval])))",
+            "legendFormat": "{{k8s_cluster_name}} / p50",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "B",
+            "expr": "histogram_quantile(0.9, sum by (k8s_cluster_name,le) (rate(janitor_action_mttr_seconds_bucket{k8s_cluster_name=~\"$cluster\",action_type=\"reboot\"}[$__rate_interval])))",
+            "legendFormat": "{{k8s_cluster_name}} / p90",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "C",
+            "expr": "histogram_quantile(0.99, sum by (k8s_cluster_name,le) (rate(janitor_action_mttr_seconds_bucket{k8s_cluster_name=~\"$cluster\",action_type=\"reboot\"}[$__rate_interval])))",
+            "legendFormat": "{{k8s_cluster_name}} / p99",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            },
+            "unit": "s"
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        }
+      },
+      {
+        "id": 49,
+        "type": "row",
+        "title": "Janitor GPU resets",
+        "description": "Requires NVSentinel GPU reset metrics. This module may be disabled and produce no data.",
+        "collapsed": false,
+        "gridPos": {
+          "x": 0,
+          "y": 135,
+          "w": 24,
+          "h": 1
+        },
+        "panels": []
+      },
+      {
+        "id": 50,
+        "type": "stat",
+        "title": "Successful GPU resets",
+        "description": "",
+        "gridPos": {
+          "x": 0,
+          "y": 136,
+          "w": 6,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(increase(gpu_reset_requests_completed_total{k8s_cluster_name=~\"$cluster\",status=\"success\"}[$__range])) or vector(0)",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 51,
+        "type": "stat",
+        "title": "Failed GPU resets",
+        "description": "",
+        "gridPos": {
+          "x": 6,
+          "y": 136,
+          "w": 6,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(increase(gpu_reset_requests_completed_total{k8s_cluster_name=~\"$cluster\",status=\"failure\"}[$__range])) or vector(0)",
+            "legendFormat": "{{k8s_cluster_name}}",
+            "instant": true,
+            "range": false
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "red",
+                  "value": 1
+                }
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "calcs": [
+              "lastNotNull"
+            ],
+            "fields": "",
+            "values": false
+          },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 52,
+        "type": "piechart",
+        "title": "Successful resets by node",
+        "description": "",
+        "gridPos": {
+          "x": 12,
+          "y": 136,
+          "w": 6,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum by (k8s_cluster_name,node) (increase(gpu_reset_requests_completed_total{k8s_cluster_name=~\"$cluster\",status=\"success\"}[$__range])) > 0",
+            "legendFormat": "{{k8s_cluster_name}} / {{node}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        }
+      },
+      {
+        "id": 53,
+        "type": "piechart",
+        "title": "Failed resets by node",
+        "description": "",
+        "gridPos": {
+          "x": 18,
+          "y": 136,
+          "w": 6,
+          "h": 6
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum by (k8s_cluster_name,node) (increase(gpu_reset_requests_completed_total{k8s_cluster_name=~\"$cluster\",status=\"failure\"}[$__range])) > 0",
+            "legendFormat": "{{k8s_cluster_name}} / {{node}}",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            }
+          },
+          "overrides": []
+        }
+      },
+      {
+        "id": 54,
+        "type": "timeseries",
+        "title": "GPU reset latency",
+        "description": "",
+        "gridPos": {
+          "x": 0,
+          "y": 142,
+          "w": 24,
+          "h": 7
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "histogram_quantile(0.5, sum by (k8s_cluster_name,le) (rate(gpu_reset_duration_seconds_bucket{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])))",
+            "legendFormat": "{{k8s_cluster_name}} / p50",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "B",
+            "expr": "histogram_quantile(0.9, sum by (k8s_cluster_name,le) (rate(gpu_reset_duration_seconds_bucket{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])))",
+            "legendFormat": "{{k8s_cluster_name}} / p90",
+            "instant": false,
+            "range": true
+          },
+          {
+            "refId": "C",
+            "expr": "histogram_quantile(0.99, sum by (k8s_cluster_name,le) (rate(gpu_reset_duration_seconds_bucket{k8s_cluster_name=~\"$cluster\"}[$__rate_interval])))",
+            "legendFormat": "{{k8s_cluster_name}} / p99",
+            "instant": false,
+            "range": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            },
+            "unit": "s"
+          },
+          "overrides": []
+        },
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        }
+      }
+    ],
+    "refresh": "1m",
+    "schemaVersion": 39,
+    "tags": [
+      "reference",
+      "kubernetes",
+      "gpu",
+      "availability",
+      "per-cluster"
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "cluster",
+          "label": "Cluster",
+          "type": "query",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "definition": "label_values(kube_node_info, k8s_cluster_name)",
+          "query": {
+            "query": "label_values(kube_node_info, k8s_cluster_name)",
+            "refId": "VariableQuery-cluster"
+          },
+          "current": {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          "includeAll": true,
+          "allValue": ".*",
+          "multi": true,
+          "refresh": 2,
+          "sort": 1,
+          "description": "Prometheus label `k8s_cluster_name` (OTel resource `k8s.cluster.name`) used by every dashboard section."
+        },
+        {
+          "name": "availability_target",
+          "label": "Availability target %",
+          "type": "textbox",
+          "current": {
+            "selected": false,
+            "text": "99.9",
+            "value": "99.9"
+          },
+          "options": [
+            {
+              "selected": true,
+              "text": "99.9",
+              "value": "99.9"
+            }
+          ],
+          "query": "99.9",
+          "hide": 0,
+          "skipUrlSync": false,
+          "description": "Desired API success percent. Used only for burn-rate and error-budget math. Observed 5xx+429 rates do not use this value."
+        }
+      ]
+    },
+    "time": {
+      "from": "now-7d",
+      "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "browser",
+    "title": "Reference - Cluster Availability",
+    "uid": "nktp-availability-per-cluster-ref",
+    "version": 1,
+    "weekStart": ""
+  }
+}

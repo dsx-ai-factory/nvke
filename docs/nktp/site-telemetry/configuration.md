@@ -23,8 +23,8 @@ By default every exporter points at the development backend, `lgtm`, in the
 `nktp` namespace. For anything beyond evaluation, point them at your own
 backend and turn `lgtm` off:
 
-1. **Write a values file for the site.** The keys are listed in the chart
-   README's [The backend](../../../nktp/deploy/charts/nktp/README.md#the-backend):
+1. **Write a values file for the site.** The keys are listed in
+   [Set a backend](../getting-started.md#set-a-backend):
    the `otlp_http` exporter of the watchdog, the watchdog's sidecar and each
    gateway, plus `otel-lgtm.enabled: false`.
 2. **Pass it to the deploy path** with `--values-for nktp=<file>`. It is

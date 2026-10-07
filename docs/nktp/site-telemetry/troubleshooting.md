@@ -158,20 +158,31 @@ helm template nktp <nktp-x.y.z.tgz> --include-crds \
   | kubectl apply --server-side -f -
 ```
 
-## Target Allocators can't pull their image from a mirror
+## Some images still pull from public registries behind a mirror
 
-**Cause:** `global.imageRegistry` moves every Collector image to the mirror,
-but the three Target Allocators leave `targetAllocator.image` unset. They run
-the Operator's default image from `ghcr.io`. metrics-server and the Operator
-don't read `global.imageRegistry` either.
+**Cause:** `global.imageRegistry` moves the Collector and Target Allocator
+images to the mirror, but three images don't read it: metrics-server's, the
+OpenTelemetry Operator's, and the kubectl image of opentelemetry-kube-stack's
+uninstall hook.
 
-**Fix:** on an air-gapped site, set the image for each enabled allocator
-(`watchdog`, `daemonset`, `large_target_metrics`) under
-`<workload>.kubernetes.targetAllocator.image`. Set metrics-server's and the
-Operator's through their own values, as the chart README's
-[Images](../../../nktp/deploy/charts/nktp/README.md#images) section shows.
+**Fix:** on an air-gapped site, point those three at the mirror through their
+own values:
 
-## An image tag renders as `%!s(float64=...)`
+```yaml
+metrics-server:
+  image:
+    repository: <mirror>/metrics-server/metrics-server
+opentelemetry-kube-stack:
+  opentelemetry-operator:
+    manager:
+      image:
+        repository: <mirror>/open-telemetry/opentelemetry-operator/opentelemetry-operator
+  cleanupJob:
+    image:
+      repository: <mirror>/rancher/kubectl
+```
+
+## The chart fails with `image tag ... must be a quoted string`
 
 **Cause:** a numeric-looking tag such as `tag: 1.0` was written unquoted, so
 YAML reads it as a number.

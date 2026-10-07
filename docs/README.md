@@ -62,6 +62,32 @@ indexes both.
 | [nktp/site-telemetry/verification.md](nktp/site-telemetry/verification.md) | Checking every telemetry signal end to end after an install |
 | [nktp/site-telemetry/troubleshooting.md](nktp/site-telemetry/troubleshooting.md) | Telemetry failures seen on site controllers, and their fixes |
 
+## Running the telemetry pipeline (NKTP)
+
+| Document | Contents |
+|---|---|
+| [nktp/getting-started.md](nktp/getting-started.md) | NKTP on any cluster: installing the chart, a first look, and what commonly needs changing |
+| [nktp/guides/send-telemetry.md](nktp/guides/send-telemetry.md) | For service owners: how a workload's logs, OTLP and Prometheus metrics reach NKTP |
+| [nktp/architecture/topology.md](nktp/architecture/topology.md) | The Collectors, how each signal flows to the backend, and how scraping is allocated |
+| [nktp/architecture/backpressure.md](nktp/architecture/backpressure.md) | How queues and the memory limiter behave when a Collector is saturated |
+| [nktp/architecture/self-telemetry.md](nktp/architecture/self-telemetry.md) | The sidecar that buffers each Collector's own telemetry, and how it samples traces |
+| [nktp/guides/size-resources.md](nktp/guides/size-resources.md) | Default requests and limits, and the footprint of a three-node cluster |
+| [nktp/guides/configure-cert-manager.md](nktp/guides/configure-cert-manager.md) | What NKTP uses cert-manager for, and installing without it |
+| [nktp/guides/secure-gateway-export.md](nktp/guides/secure-gateway-export.md) | TLS and mTLS from the gateways and the watchdog to the backend |
+| [nktp/guides/configure-kubelet-metrics.md](nktp/guides/configure-kubelet-metrics.md) | Changing the kubelet scrapes, verifying kubelet certificates, and running beside kube-prometheus-stack |
+| [nktp/guides/enable-host-process-metrics.md](nktp/guides/enable-host-process-metrics.md) | Per-process host metrics, the privileges they need, and their cardinality |
+| [nktp/components/node-collector.md](nktp/components/node-collector.md) | The node Collector (`daemonset`): OTLP endpoint, pod logs, journal, log classification and monitor credentials |
+| [nktp/components/gateways.md](nktp/components/gateways.md) | The logs, metrics and traces gateways (`gateway_*`) and their endpoints |
+| [nktp/components/large-target-metrics.md](nktp/components/large-target-metrics.md) | The large-target pool (`large_target_metrics`), sizing large scrapes, and Kubernetes component metrics |
+| [nktp/components/cluster-events.md](nktp/components/cluster-events.md) | The cluster event reader (`cluster_events`) and its leader election |
+| [nktp/components/watchdog.md](nktp/components/watchdog.md) | The watchdog (`watchdog`), which carries the pipeline's own telemetry |
+| [nktp/components/kube-state-metrics.md](nktp/components/kube-state-metrics.md) | kube-state-metrics (`kube-state-metrics`): collection groups, sharding and opt-in Secret metrics |
+| [nktp/components/otel-lgtm.md](nktp/components/otel-lgtm.md) | The bundled development backend (`otel-lgtm`), its dashboards and settings |
+| [nktp/components/dependencies.md](nktp/components/dependencies.md) | The bundled Operator, CRDs, node-exporter and metrics-server |
+| [nktp/design-principles.md](nktp/design-principles.md) | Why the chart renders each Collector configuration exactly as written |
+| [nktp/designs/target-allocation.md](nktp/designs/target-allocation.md) | Why every scraping Collector requires a Target Allocator |
+| [nktp/designs/kube-state-metrics.md](nktp/designs/kube-state-metrics.md) | The approaches considered for scaling kube-state-metrics collection |
+
 ## The modules
 
 Each module has its own README. `go.work` is the list of record for which modules
@@ -102,7 +128,6 @@ Deeper module documentation:
 | [qualification/triage.md](qualification/triage.md) | Telling a site fault from a code defect on a failed hardware run |
 | [../controller/integration-test/README.md](../controller/integration-test/README.md) | The integration tests |
 | [../controller/nico-sim/docs/e2e-testing.md](../controller/nico-sim/docs/e2e-testing.md) | End-to-end testing for nico-sim's VM backend |
-| [nktp/kind-validation.md](nktp/kind-validation.md) | Ad hoc validation of the NKTP chart's default values on a Kind cluster |
 
 ## Project and process
 

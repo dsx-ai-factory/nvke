@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Kind sizing and settings for nktp/hack/e2e-validate.sh and the hand-run
-# docs/nktp/kind-validation.md, applied over the chart's defaults.
+# Kind sizing and settings for nktp/hack/e2e-validate.sh, applied over the
+# chart's defaults.
 #
 # The defaults size NKTP for a multi-node cluster; one Kind node on the e2e
 # runner cannot schedule them. Lower replica counts, autoscaler floors and

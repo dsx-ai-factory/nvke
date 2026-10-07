@@ -4,8 +4,9 @@
 global:
   # Override image registry for every image this chart and its dependencies pull.
   #
-  # NOTE: metrics-server (disabled by default) and the opentelemetry-operator chart
-  # nested in opentelemetry-kube-stack do NOT read global.imageRegistry.
+  # NOTE: metrics-server (disabled by default), the opentelemetry-operator chart
+  # nested in opentelemetry-kube-stack, and opentelemetry-kube-stack's uninstall
+  # hook kubectl image (cleanupJob) do NOT read global.imageRegistry.
   # Point them at a mirror explicitly instead:
   #   metrics-server:
   #     image:
@@ -15,6 +16,9 @@ global:
   #       manager:
   #         image:
   #           repository: <mirror>/open-telemetry/opentelemetry-operator/opentelemetry-operator
+  #     cleanupJob:
+  #       image:
+  #         repository: <mirror>/rancher/kubectl
   imageRegistry: ""
 
 # Collector image used by all OTel workloads. global.imageRegistry replaces registry.
@@ -2378,7 +2382,8 @@ opentelemetry-kube-stack:
     installOtel: true
     installPrometheus: true
   # Declare Kubernetes control-plane and DNS metrics endpoints. These monitors
-  # require a Target Allocator with denyFSAccessThroughSMs disabled; see README.
+  # require a Target Allocator with denyFSAccessThroughSMs disabled; see
+  # docs/nktp/components/large-target-metrics.md.
   kubernetesServiceMonitors:
     enabled: true
   kubeApiServer:

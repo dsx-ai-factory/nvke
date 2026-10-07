@@ -64,6 +64,59 @@ navigation:
           - page: Troubleshooting and FAQ
             path: operations/faq.md
 
+      - section: Telemetry (NKTP)
+        contents:
+          - page: Getting Started
+            path: nktp/getting-started.md
+          - page: Send Telemetry to NKTP
+            path: nktp/guides/send-telemetry.md
+          - section: Architecture
+            contents:
+              - page: Topology
+                path: nktp/architecture/topology.md
+              - page: Backpressure
+                path: nktp/architecture/backpressure.md
+              - page: Self-Telemetry Sidecars
+                path: nktp/architecture/self-telemetry.md
+          - section: Guides
+            contents:
+              - page: Size Resources
+                path: nktp/guides/size-resources.md
+              - page: Configure cert-manager
+                path: nktp/guides/configure-cert-manager.md
+              - page: Secure Gateway Export
+                path: nktp/guides/secure-gateway-export.md
+              - page: Configure Kubelet Metrics
+                path: nktp/guides/configure-kubelet-metrics.md
+              - page: Enable Host Process Metrics
+                path: nktp/guides/enable-host-process-metrics.md
+          - section: Components
+            contents:
+              - page: Node Collector
+                path: nktp/components/node-collector.md
+              - page: Gateways
+                path: nktp/components/gateways.md
+              - page: Large-Target Metrics
+                path: nktp/components/large-target-metrics.md
+              - page: Cluster Events
+                path: nktp/components/cluster-events.md
+              - page: Watchdog
+                path: nktp/components/watchdog.md
+              - page: kube-state-metrics
+                path: nktp/components/kube-state-metrics.md
+              - page: otel-lgtm
+                path: nktp/components/otel-lgtm.md
+              - page: Managed Dependencies
+                path: nktp/components/dependencies.md
+          - section: Design
+            contents:
+              - page: Design Principles
+                path: nktp/design-principles.md
+              - page: Required Target Allocation
+                path: nktp/designs/target-allocation.md
+              - page: kube-state-metrics Scaling
+                path: nktp/designs/kube-state-metrics.md
+
       - section: Site Telemetry (NKTP)
         contents:
           - page: Getting Started

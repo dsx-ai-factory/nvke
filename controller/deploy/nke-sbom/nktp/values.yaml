@@ -9,8 +9,8 @@
 #
 # The exporters stay pointed at the bundled development backend, which keeps
 # data in memory and has no authentication. A site with its own backend passes
-# --values-for nktp=<file>; the chart README's "The backend" section lists the
-# keys that file sets.
+# --values-for nktp=<file>; "Set a backend" in docs/nktp/getting-started.md
+# lists the keys that file sets.
 #
 # Helm merges maps key by key but replaces lists whole. Every list below is
 # therefore complete: the env lists restate the chart's entries alongside ours.

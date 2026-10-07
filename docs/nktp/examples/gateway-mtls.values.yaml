@@ -1,0 +1,76 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Replace the endpoint and Secret name for your backend. The Secret must
+# contain ca.crt, tls.crt, and tls.key.
+gateway_logs:
+  kubernetes:
+    podSecurityContext:
+      fsGroup: 10001
+    volumes:
+      - name: backend-tls
+        secret:
+          secretName: backend-tls
+          defaultMode: 0440
+    volumeMounts:
+      - name: backend-tls
+        mountPath: /etc/nktp/backend-tls
+        readOnly: true
+  otelcol:
+    config:
+      exporters:
+        otlp_http:
+          endpoint: https://telemetry.example.com:4318
+          tls:
+            ca_file: /etc/nktp/backend-tls/ca.crt
+            cert_file: /etc/nktp/backend-tls/tls.crt
+            key_file: /etc/nktp/backend-tls/tls.key
+            reload_interval: 1m
+
+gateway_metrics:
+  kubernetes:
+    podSecurityContext:
+      fsGroup: 10001
+    volumes:
+      - name: backend-tls
+        secret:
+          secretName: backend-tls
+          defaultMode: 0440
+    volumeMounts:
+      - name: backend-tls
+        mountPath: /etc/nktp/backend-tls
+        readOnly: true
+  otelcol:
+    config:
+      exporters:
+        otlp_http:
+          endpoint: https://telemetry.example.com:4318
+          tls:
+            ca_file: /etc/nktp/backend-tls/ca.crt
+            cert_file: /etc/nktp/backend-tls/tls.crt
+            key_file: /etc/nktp/backend-tls/tls.key
+            reload_interval: 1m
+
+gateway_traces:
+  kubernetes:
+    podSecurityContext:
+      fsGroup: 10001
+    volumes:
+      - name: backend-tls
+        secret:
+          secretName: backend-tls
+          defaultMode: 0440
+    volumeMounts:
+      - name: backend-tls
+        mountPath: /etc/nktp/backend-tls
+        readOnly: true
+  otelcol:
+    config:
+      exporters:
+        otlp_http:
+          endpoint: https://telemetry.example.com:4318
+          tls:
+            ca_file: /etc/nktp/backend-tls/ca.crt
+            cert_file: /etc/nktp/backend-tls/tls.crt
+            key_file: /etc/nktp/backend-tls/tls.key
+            reload_interval: 1m

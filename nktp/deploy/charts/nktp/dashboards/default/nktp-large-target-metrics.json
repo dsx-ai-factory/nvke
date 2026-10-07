@@ -1,48 +1,81 @@
 {
   "uid": "nktp-large-target-metrics",
   "title": "NKTP Large-target Metrics",
-  "description": "A separate Collector pool for metrics endpoints with large scrape responses, such as kube-state-metrics. It scrapes ServiceMonitor, PodMonitor, Probe, and ScrapeConfig resources explicitly labeled nktp.nvidia.io/large-target=true; NKTP does not classify targets by size automatically. A Target Allocator spreads those scrapes across the Collectors. Collected metrics go to the NKTP metrics gateway, while the Collectors' own diagnostic telemetry goes to Watchdog. Panels show metric flow, queue use, scrape sample counts, and target assignments; sample counts do not measure response bytes or delivery to storage.",
+  "tags": [
+    "nktp",
+    "nktp-collector",
+    "opentelemetry"
+  ],
   "schemaVersion": 39,
   "refresh": "30s",
   "time": {
     "from": "now-30m",
     "to": "now"
   },
+  "links": [
+    {
+      "title": "Collectors",
+      "type": "dashboards",
+      "tags": [
+        "nktp-collector"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "NKTP Health",
+      "type": "link",
+      "url": "/d/nktp-health",
+      "includeVars": false,
+      "keepTime": true,
+      "targetBlank": false
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "namespace",
+        "label": "Workload namespace",
+        "description": "Filters Kubernetes workload state and namespaced scrape targets. Collector native telemetry has no namespace attribute and covers all NKTP services in the selected datasource.",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": "label_values(kube_deployment_spec_replicas{deployment=\"nktp-operator\"}, namespace)",
+        "refresh": 1,
+        "current": {
+          "text": "nktp",
+          "value": "nktp"
+        },
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  },
   "panels": [
     {
       "id": 1,
-      "type": "timeseries",
-      "title": "Received metrics /s",
+      "type": "row",
+      "title": "Pipeline",
+      "collapsed": false,
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 12,
-        "h": 7
+        "w": 24,
+        "h": 1
       },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "min": 0
-        }
-      },
-      "targets": [
-        {
-          "expr": "sum by (instance) (rate(otelcol_receiver_accepted_metric_points_total{job=\"nktp-large-target-metrics\"}[5m]))",
-          "legendFormat": "{{instance}}",
-          "refId": "A"
-        }
-      ]
+      "panels": []
     },
     {
       "id": 2,
       "type": "timeseries",
-      "title": "Exported metrics /s",
+      "title": "Received /s",
       "gridPos": {
-        "x": 12,
-        "y": 0,
+        "x": 0,
+        "y": 1,
         "w": 12,
         "h": 7
       },
@@ -57,19 +90,20 @@
       },
       "targets": [
         {
-          "expr": "sum by (instance) (rate(otelcol_exporter_sent_metric_points_total{job=\"nktp-large-target-metrics\"}[5m]))",
-          "legendFormat": "{{instance}}",
+          "expr": "sum(rate(otelcol_receiver_accepted_metric_points_total{job=\"nktp-large-target-metrics\"}[5m]))",
+          "legendFormat": "metric points",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Items received per second across all replicas."
     },
     {
       "id": 3,
       "type": "timeseries",
-      "title": "Export failures /s",
+      "title": "Exported /s",
       "gridPos": {
-        "x": 0,
-        "y": 7,
+        "x": 12,
+        "y": 1,
         "w": 12,
         "h": 7
       },
@@ -84,19 +118,20 @@
       },
       "targets": [
         {
-          "expr": "sum by (instance) (rate(otelcol_exporter_send_failed_metric_points_total{job=\"nktp-large-target-metrics\"}[5m]))",
-          "legendFormat": "{{instance}}",
+          "expr": "sum(rate(otelcol_exporter_sent_metric_points_total{job=\"nktp-large-target-metrics\"}[5m]))",
+          "legendFormat": "metric points",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Items exported per second across all replicas."
     },
     {
       "id": 4,
       "type": "timeseries",
-      "title": "Refused metrics /s",
+      "title": "Export failures /s",
       "gridPos": {
-        "x": 12,
-        "y": 7,
+        "x": 0,
+        "y": 8,
         "w": 12,
         "h": 7
       },
@@ -111,20 +146,21 @@
       },
       "targets": [
         {
-          "expr": "sum by (instance) (rate(otelcol_receiver_refused_metric_points_total{job=\"nktp-large-target-metrics\"}[5m]))",
-          "legendFormat": "{{instance}}",
+          "expr": "sum(rate(otelcol_exporter_send_failed_metric_points_total{job=\"nktp-large-target-metrics\"}[5m])) or 0 * sum(otelcol_exporter_queue_capacity{job=\"nktp-large-target-metrics\",data_type=\"metrics\"})",
+          "legendFormat": "metric points",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Items that failed to send, across all replicas. The exporter may retry them."
     },
     {
       "id": 5,
       "type": "timeseries",
-      "title": "Exporter queue use",
+      "title": "Refused /s",
       "gridPos": {
-        "x": 0,
-        "y": 14,
-        "w": 24,
+        "x": 12,
+        "y": 8,
+        "w": 12,
         "h": 7
       },
       "datasource": {
@@ -133,54 +169,67 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 100
+          "min": 0
         }
       },
       "targets": [
         {
-          "expr": "100 * sum by (instance, exporter) (otelcol_exporter_queue_size{job=\"nktp-large-target-metrics\",data_type=\"metrics\"}) / sum by (instance, exporter) (otelcol_exporter_queue_capacity{job=\"nktp-large-target-metrics\",data_type=\"metrics\"})",
-          "legendFormat": "{{instance}} {{exporter}}",
+          "expr": "sum(rate(otelcol_receiver_refused_metric_points_total{job=\"nktp-large-target-metrics\"}[5m])) or 0 * sum(rate(otelcol_receiver_accepted_metric_points_total{job=\"nktp-large-target-metrics\"}[5m]))",
+          "legendFormat": "metric points",
+          "refId": "A"
+        }
+      ],
+      "description": "Items the receivers refused across all replicas, for example under memory pressure."
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "Received /s by replica · top 20",
+      "description": "The 20 replicas that received the most at the end of the range, to show imbalance.",
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "(sum by (instance) (rate(otelcol_receiver_accepted_metric_points_total{job=\"nktp-large-target-metrics\"}[5m]))) and on (instance) topk(20, sum by (instance) (rate(otelcol_receiver_accepted_metric_points_total{job=\"nktp-large-target-metrics\"}[5m] @ end())))",
+          "legendFormat": "{{instance}} metric points",
           "refId": "A"
         }
       ]
     },
     {
       "id": 6,
-      "type": "timeseries",
-      "title": "CPU cores",
+      "type": "row",
+      "title": "Target Allocator",
+      "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 21,
-        "w": 12,
-        "h": 7
+        "y": 23,
+        "w": 24,
+        "h": 1
       },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "cores",
-          "min": 0
-        }
-      },
-      "targets": [
-        {
-          "expr": "sum by (instance) (rate(otelcol_process_cpu_seconds_total{job=\"nktp-large-target-metrics\"}[5m]))",
-          "legendFormat": "{{instance}}",
-          "refId": "A"
-        }
-      ]
+      "panels": []
     },
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Memory (RSS)",
+      "title": "Target Allocator collectors",
+      "description": "Discovered and allocatable large-target Collectors reported by each Target Allocator replica. A discovered Collector may not yet be allocatable; replica reports are shown separately.",
       "gridPos": {
-        "x": 12,
-        "y": 21,
+        "x": 0,
+        "y": 24,
         "w": 12,
         "h": 7
       },
@@ -190,27 +239,128 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
           "min": 0
         }
       },
       "targets": [
         {
-          "expr": "sum by (instance) (otelcol_process_memory_rss_bytes{job=\"nktp-large-target-metrics\"})",
-          "legendFormat": "{{instance}}",
+          "expr": "opentelemetry_allocator_collectors_discovered{job=\"nktp-large-target-metrics-targetallocator\"}",
+          "legendFormat": "{{instance}} discovered",
           "refId": "A"
+        },
+        {
+          "expr": "opentelemetry_allocator_collectors_allocatable{job=\"nktp-large-target-metrics-targetallocator\"}",
+          "legendFormat": "{{instance}} allocatable",
+          "refId": "B"
         }
       ]
     },
     {
       "id": 8,
+      "type": "timeseries",
+      "title": "Targets per collector",
+      "description": "Targets assigned to each large-target Collector by the Target Allocator. This is an assignment count, not a count of successful scrapes. Multiple allocator replicas may report the same assignments.",
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "opentelemetry_allocator_targets_per_collector{job=\"nktp-large-target-metrics-targetallocator\"}",
+          "legendFormat": "{{collector_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Target Allocator CPU cores",
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "cores"
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"nktp-large-target-metrics-targetallocator\"}[5m])",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Target Allocator memory (RSS)",
+      "gridPos": {
+        "x": 12,
+        "y": 31,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "expr": "process_resident_memory_bytes{job=\"nktp-large-target-metrics-targetallocator\"}",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "Large targets",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 12,
       "type": "histogram",
       "title": "Samples per scrape",
       "description": "Latest sample count per target before metric filtering. Sample count indicates scrape work. It does not measure response bytes or memory use.",
       "gridPos": {
         "x": 0,
-        "y": 28,
-        "w": 12,
+        "y": 39,
+        "w": 24,
         "h": 7
       },
       "datasource": {
@@ -250,130 +400,13 @@
       ]
     },
     {
-      "id": 10,
-      "type": "timeseries",
-      "title": "Target Allocator collectors",
-      "description": "Discovered and allocatable large-target Collectors reported by each Target Allocator replica. A discovered Collector may not yet be allocatable; replica reports are shown separately.",
-      "gridPos": {
-        "x": 0,
-        "y": 35,
-        "w": 12,
-        "h": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "min": 0
-        }
-      },
-      "targets": [
-        {
-          "expr": "opentelemetry_allocator_collectors_discovered{job=\"nktp-large-target-metrics-targetallocator\"}",
-          "legendFormat": "{{instance}} discovered",
-          "refId": "A"
-        },
-        {
-          "expr": "opentelemetry_allocator_collectors_allocatable{job=\"nktp-large-target-metrics-targetallocator\"}",
-          "legendFormat": "{{instance}} allocatable",
-          "refId": "B"
-        }
-      ]
-    },
-    {
-      "id": 11,
-      "type": "timeseries",
-      "title": "Targets per collector",
-      "description": "Targets assigned to each large-target Collector by the Target Allocator. This is an assignment count, not a count of successful scrapes. Multiple allocator replicas may report the same assignments.",
-      "gridPos": {
-        "x": 12,
-        "y": 35,
-        "w": 12,
-        "h": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "min": 0
-        }
-      },
-      "targets": [
-        {
-          "expr": "opentelemetry_allocator_targets_per_collector{job=\"nktp-large-target-metrics-targetallocator\"}",
-          "legendFormat": "{{collector_name}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 12,
-      "type": "timeseries",
-      "title": "Target Allocator CPU cores",
-      "gridPos": {
-        "x": 0,
-        "y": 42,
-        "w": 12,
-        "h": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "min": 0,
-          "unit": "cores"
-        }
-      },
-      "targets": [
-        {
-          "expr": "rate(process_cpu_seconds_total{job=\"nktp-large-target-metrics-targetallocator\"}[5m])",
-          "legendFormat": "{{instance}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
       "id": 13,
-      "type": "timeseries",
-      "title": "Target Allocator memory (RSS)",
-      "gridPos": {
-        "x": 12,
-        "y": 42,
-        "w": 12,
-        "h": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "min": 0,
-          "unit": "bytes"
-        }
-      },
-      "targets": [
-        {
-          "expr": "process_resident_memory_bytes{job=\"nktp-large-target-metrics-targetallocator\"}",
-          "legendFormat": "{{instance}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 14,
       "type": "table",
       "title": "Largest targets by sample count",
       "description": "The 20 targets with the largest latest sample counts, with scrape duration matched by job and instance.",
       "gridPos": {
         "x": 0,
-        "y": 49,
+        "y": 46,
         "w": 24,
         "h": 8
       },
@@ -467,6 +500,1111 @@
           }
         }
       ]
+    },
+    {
+      "id": 14,
+      "type": "row",
+      "title": "kube-state-metrics scrapes",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 54,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "KSM samples per scrape · top 20",
+      "description": "Samples exposed by each KSM object endpoint. Selects the 20 largest peaks in the chosen range. This measures sample count, not response bytes or memory. Failed scrapes are gaps. Compare changes with scrape duration and the outlier table.",
+      "gridPos": {
+        "x": 0,
+        "y": 55,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "(scrape_samples_scraped{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} and on (job, instance) (up{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} == 1)) and on (job, instance) topk(20, max_over_time(scrape_samples_scraped{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"}[$__range] @ end()))",
+          "legendFormat": "{{job}} · {{pod}} · {{instance}}",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "Unknown",
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unknown",
+                  "color": "#8e8e8e"
+                }
+              }
+            }
+          ],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisBorderShow": false
+          }
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^nktp-",
+            "renamePattern": ""
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max"
+          ],
+          "sortBy": "Max",
+          "sortDesc": true,
+          "height": 110
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Slowest KSM scrapes · top 20",
+      "description": "Duration of KSM object scrape attempts, including failures. Selects the 20 slowest peaks in the selected range, preserving past outliers. The outlier table supplies current Up state. The telemetry endpoint is excluded.",
+      "gridPos": {
+        "x": 12,
+        "y": 55,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "scrape_duration_seconds{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} and on (job, instance) topk(20, max_over_time(scrape_duration_seconds{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"}[$__range] @ end()))",
+          "legendFormat": "{{job}} · {{pod}} · {{instance}}",
+          "refId": "A",
+          "range": true,
+          "instant": false,
+          "interval": "1m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "noValue": "Unknown",
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unknown",
+                  "color": "#8e8e8e"
+                }
+              }
+            }
+          ],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisBorderShow": false
+          }
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^nktp-",
+            "renamePattern": ""
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max"
+          ],
+          "sortBy": "Max",
+          "sortDesc": true,
+          "height": 110
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "KSM largest, growing and failed targets",
+      "description": "Up to 20 largest sample counts, 20 fastest-growing counts and 20 failed object endpoints. Sample-count growth estimates the change over the selected range from successful scrapes only. Gauge delta extrapolates across the range. Missing history stays Unknown. A failed scrape can report zero samples and does not establish a small target. Counts are not response bytes or memory.",
+      "gridPos": {
+        "x": 0,
+        "y": 63,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "max by (target) (label_join((scrape_samples_scraped{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"}) and on (job, instance) (topk(20, scrape_samples_scraped{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"}) or on (job, instance) topk(20, (delta((scrape_samples_scraped{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} and on (job, instance) (up{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} == 1))[$__range:1m])) > 0) or on (job, instance) topk(20, up{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} == 0)), \"target\", \" · \", \"job\", \"pod\", \"instance\"))",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "refId": "A"
+        },
+        {
+          "expr": "max by (target) (label_join((delta((scrape_samples_scraped{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} and on (job, instance) (up{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} == 1))[$__range:1m])) and on (job, instance) (topk(20, scrape_samples_scraped{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"}) or on (job, instance) topk(20, (delta((scrape_samples_scraped{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} and on (job, instance) (up{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} == 1))[$__range:1m])) > 0) or on (job, instance) topk(20, up{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} == 0)), \"target\", \" · \", \"job\", \"pod\", \"instance\"))",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "refId": "B"
+        },
+        {
+          "expr": "max by (target) (label_join((scrape_duration_seconds{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"}) and on (job, instance) (topk(20, scrape_samples_scraped{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"}) or on (job, instance) topk(20, (delta((scrape_samples_scraped{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} and on (job, instance) (up{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} == 1))[$__range:1m])) > 0) or on (job, instance) topk(20, up{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} == 0)), \"target\", \" · \", \"job\", \"pod\", \"instance\"))",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "refId": "C"
+        },
+        {
+          "expr": "max by (target) (label_join((up{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"}) and on (job, instance) (topk(20, scrape_samples_scraped{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"}) or on (job, instance) topk(20, (delta((scrape_samples_scraped{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} and on (job, instance) (up{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} == 1))[$__range:1m])) > 0) or on (job, instance) topk(20, up{job=~\"$namespace/nktp-ksm-.*\",endpoint=\"http-metrics\",namespace=\"$namespace\"} == 0)), \"target\", \" · \", \"job\", \"pod\", \"instance\"))",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "refId": "D"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "Unknown",
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unknown",
+                  "color": "#8e8e8e"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Target"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 650
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Samples"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sample growth"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Scrape duration"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Up"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Up"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "Down",
+                        "color": "red"
+                      },
+                      "1": {
+                        "text": "Up",
+                        "color": "green"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Target"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 580
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Samples"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sample growth"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Scrape duration"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Up"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Up",
+            "desc": false
+          },
+          {
+            "displayName": "Samples",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "target",
+            "mode": "outerTabular"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true
+            },
+            "indexByName": {
+              "target": 0,
+              "Value #D": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "Value #C": 4
+            },
+            "renameByName": {
+              "target": "Target",
+              "Value #A": "Samples",
+              "Value #B": "Sample growth",
+              "Value #C": "Scrape duration",
+              "Value #D": "Up"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "KSM watch establishment errors",
+      "description": "Kubernetes watch establishment errors per KSM group. Zero is shown only when the corresponding watch counter exists. This does not count every error during an established watch.",
+      "gridPos": {
+        "x": 0,
+        "y": 72,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "(sum by (job) (rate(kube_state_metrics_watch_total{job=~\"$namespace/nktp-ksm-.*\",namespace=\"$namespace\",endpoint=\"telemetry\",result=\"error\"}[$__rate_interval]))) or (0 * sum by (job) (rate(kube_state_metrics_watch_total{job=~\"$namespace/nktp-ksm-.*\",namespace=\"$namespace\",endpoint=\"telemetry\"}[$__rate_interval])))",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "interval": "1m",
+          "legendFormat": "{{job}} watch"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0,
+          "noValue": "Unknown",
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unknown",
+                  "color": "#8e8e8e"
+                }
+              }
+            }
+          ],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisBorderShow": false
+          }
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^nktp-",
+            "renamePattern": ""
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "table",
+      "title": "KSM central shard coverage",
+      "description": "Each central KSM resource group has its own shard set. Configured comes from the total_shards metric reported by KSM; it is not a Kubernetes desired replica count. Reporting counts distinct shard ordinals with a successful telemetry scrape, so duplicate replicas do not increase coverage. Missing is configured minus reporting. Missing telemetry stays Unknown; workload readiness remains the independent check when a whole group disappears. Scrape coverage does not prove Kubernetes objects are current.",
+      "gridPos": {
+        "x": 0,
+        "y": 79,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "label_replace((max by (job) (kube_state_metrics_total_shards{job=~\"$namespace/nktp-ksm-.*\",job!=\"$namespace/nktp-ksm-pods\",namespace=\"$namespace\",endpoint=\"telemetry\"})), \"target\", \"$1\", \"job\", \"(.+)\")",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "interval": "1m",
+          "legendFormat": "",
+          "format": "table"
+        },
+        {
+          "expr": "label_replace(((count by (job) (count by (job, shard_ordinal) (kube_state_metrics_shard_ordinal{job=~\"$namespace/nktp-ksm-.*\",job!=\"$namespace/nktp-ksm-pods\",namespace=\"$namespace\",endpoint=\"telemetry\"} and on (job, instance) (up{job=~\"$namespace/nktp-ksm-.*\",job!=\"$namespace/nktp-ksm-pods\",namespace=\"$namespace\",endpoint=\"telemetry\"} == 1)))) or (0 * (count by (job) (up{job=~\"$namespace/nktp-ksm-.*\",job!=\"$namespace/nktp-ksm-pods\",namespace=\"$namespace\",endpoint=\"telemetry\"})))), \"target\", \"$1\", \"job\", \"(.+)\")",
+          "refId": "B",
+          "instant": true,
+          "range": false,
+          "interval": "1m",
+          "legendFormat": "",
+          "format": "table"
+        },
+        {
+          "expr": "label_replace((clamp_min((max by (job) (kube_state_metrics_total_shards{job=~\"$namespace/nktp-ksm-.*\",job!=\"$namespace/nktp-ksm-pods\",namespace=\"$namespace\",endpoint=\"telemetry\"})) - ((count by (job) (count by (job, shard_ordinal) (kube_state_metrics_shard_ordinal{job=~\"$namespace/nktp-ksm-.*\",job!=\"$namespace/nktp-ksm-pods\",namespace=\"$namespace\",endpoint=\"telemetry\"} and on (job, instance) (up{job=~\"$namespace/nktp-ksm-.*\",job!=\"$namespace/nktp-ksm-pods\",namespace=\"$namespace\",endpoint=\"telemetry\"} == 1)))) or (0 * (count by (job) (up{job=~\"$namespace/nktp-ksm-.*\",job!=\"$namespace/nktp-ksm-pods\",namespace=\"$namespace\",endpoint=\"telemetry\"})))), 0)), \"target\", \"$1\", \"job\", \"(.+)\")",
+          "refId": "C",
+          "instant": true,
+          "range": false,
+          "interval": "1m",
+          "legendFormat": "",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "Unknown",
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unknown",
+                  "color": "#8e8e8e"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Target"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "custom.width",
+                "value": 650
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Configured"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Reporting"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Missing"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Target",
+            "desc": false
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "target",
+            "mode": "outerTabular"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "job": true,
+              "job 1": true,
+              "job 2": true
+            },
+            "indexByName": {
+              "target": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3
+            },
+            "renameByName": {
+              "target": "Target",
+              "Value #A": "Configured",
+              "Value #B": "Reporting",
+              "Value #C": "Missing"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "KSM node-local coverage",
+      "description": "Desired is the KSM pod DaemonSet desired node count. Reporting counts distinct nodes whose KSM telemetry endpoint scrapes successfully. These node-local instances all use shard ordinal 0 and are not one hash-sharded group. Successful telemetry scraping does not prove every Kubernetes object is current.",
+      "gridPos": {
+        "x": 0,
+        "y": 88,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "max(kube_daemonset_status_desired_number_scheduled{namespace=\"$namespace\",daemonset=\"nktp-ksm-pods\"})",
+          "refId": "A",
+          "instant": false,
+          "range": true,
+          "interval": "1m",
+          "legendFormat": "Desired nodes"
+        },
+        {
+          "expr": "(count(count by (k8s_node_name) (up{job=\"$namespace/nktp-ksm-pods\",namespace=\"$namespace\",endpoint=\"telemetry\"} == 1))) or (0 * count(up{job=\"$namespace/nktp-ksm-pods\",namespace=\"$namespace\",endpoint=\"telemetry\"}))",
+          "refId": "B",
+          "instant": false,
+          "range": true,
+          "interval": "1m",
+          "legendFormat": "Nodes with successful KSM scrapes"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "noValue": "Unknown",
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unknown",
+                  "color": "#8e8e8e"
+                }
+              }
+            }
+          ],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisBorderShow": false
+          }
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^nktp-",
+            "renamePattern": ""
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "max"
+          ],
+          "sortBy": "Max",
+          "sortDesc": true,
+          "height": 110
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "row",
+      "title": "Queues and resources",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 96,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Exporter queue use · top 20",
+      "gridPos": {
+        "x": 0,
+        "y": 97,
+        "w": 24,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "percent"
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * (max by (instance, exporter, data_type) (otelcol_exporter_queue_size{job=\"nktp-large-target-metrics\"} / otelcol_exporter_queue_capacity{job=\"nktp-large-target-metrics\"})) and on (instance, exporter, data_type) topk(20, max by (instance, exporter, data_type) (otelcol_exporter_queue_size{job=\"nktp-large-target-metrics\"} @ end() / otelcol_exporter_queue_capacity{job=\"nktp-large-target-metrics\"} @ end()))",
+          "legendFormat": "{{instance}} {{exporter}} {{data_type}}",
+          "refId": "A"
+        }
+      ],
+      "description": "The 20 fullest exporter queues at the end of the range."
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "CPU cores · top 20",
+      "gridPos": {
+        "x": 0,
+        "y": 104,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "cores"
+        }
+      },
+      "targets": [
+        {
+          "expr": "(sum by (instance) (rate(otelcol_process_cpu_seconds_total{job=\"nktp-large-target-metrics\"}[5m]))) and on (instance) topk(20, sum by (instance) (rate(otelcol_process_cpu_seconds_total{job=\"nktp-large-target-metrics\"}[5m] @ end())))",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "Memory (RSS) · top 20",
+      "gridPos": {
+        "x": 12,
+        "y": 104,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "expr": "(sum by (instance) (otelcol_process_memory_rss_bytes{job=\"nktp-large-target-metrics\"})) and on (instance) topk(20, sum by (instance) (otelcol_process_memory_rss_bytes{job=\"nktp-large-target-metrics\"} @ end()))",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "type": "row",
+      "title": "Self-telemetry sidecar",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 111,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 26,
+      "type": "timeseries",
+      "title": "Sidecar queue use",
+      "description": "Fullest sidecar export queue of any Pod, per signal. The sidecar buffers this Collector's internal telemetry while the watchdog is unavailable.",
+      "gridPos": {
+        "x": 0,
+        "y": 112,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "percent"
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * max by (data_type) (otelcol_exporter_queue_size{job=\"nktp-large-target-metrics-sidecar\"} / otelcol_exporter_queue_capacity{job=\"nktp-large-target-metrics-sidecar\"})",
+          "legendFormat": "{{data_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "Sidecar export failures /s",
+      "description": "Internal telemetry that the sidecar failed to send to the watchdog, per signal.",
+      "gridPos": {
+        "x": 12,
+        "y": 112,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(otelcol_exporter_send_failed_metric_points_total{job=\"nktp-large-target-metrics-sidecar\"}[5m])) or 0 * sum(otelcol_exporter_queue_capacity{job=\"nktp-large-target-metrics-sidecar\",data_type=\"metrics\"})",
+          "legendFormat": "metrics",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(otelcol_exporter_send_failed_log_records_total{job=\"nktp-large-target-metrics-sidecar\"}[5m])) or 0 * sum(otelcol_exporter_queue_capacity{job=\"nktp-large-target-metrics-sidecar\",data_type=\"logs\"})",
+          "legendFormat": "logs",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(otelcol_exporter_send_failed_spans_total{job=\"nktp-large-target-metrics-sidecar\"}[5m])) or 0 * sum(otelcol_exporter_queue_capacity{job=\"nktp-large-target-metrics-sidecar\",data_type=\"traces\"})",
+          "legendFormat": "traces",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Sidecar refused /s",
+      "description": "Internal telemetry that the sidecar refused, per signal, for example under memory pressure.",
+      "gridPos": {
+        "x": 0,
+        "y": 119,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(otelcol_receiver_refused_metric_points_total{job=\"nktp-large-target-metrics-sidecar\"}[5m])) or 0 * sum(rate(otelcol_receiver_accepted_metric_points_total{job=\"nktp-large-target-metrics-sidecar\"}[5m]))",
+          "legendFormat": "metrics",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(otelcol_receiver_refused_log_records_total{job=\"nktp-large-target-metrics-sidecar\"}[5m])) or 0 * sum(rate(otelcol_receiver_accepted_log_records_total{job=\"nktp-large-target-metrics-sidecar\"}[5m]))",
+          "legendFormat": "logs",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(otelcol_receiver_refused_spans_total{job=\"nktp-large-target-metrics-sidecar\"}[5m])) or 0 * sum(rate(otelcol_receiver_accepted_spans_total{job=\"nktp-large-target-metrics-sidecar\"}[5m]))",
+          "legendFormat": "traces",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "Sidecar traces kept and dropped /s",
+      "description": "Tail sampling decisions. A trace is kept when a span has an error or lasts longer than 1 second.",
+      "gridPos": {
+        "x": 12,
+        "y": 119,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(otelcol_processor_tail_sampling_global_count_traces_sampled_total{job=\"nktp-large-target-metrics-sidecar\",sampled=\"true\"}[5m])) or 0 * sum(rate(otelcol_processor_tail_sampling_global_count_traces_sampled_total{job=\"nktp-large-target-metrics-sidecar\",sampled=\"false\"}[5m]))",
+          "legendFormat": "kept",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(otelcol_processor_tail_sampling_global_count_traces_sampled_total{job=\"nktp-large-target-metrics-sidecar\",sampled=\"false\"}[5m]))",
+          "legendFormat": "dropped",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Sidecar CPU cores, highest Pod",
+      "gridPos": {
+        "x": 0,
+        "y": 126,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "cores"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(rate(otelcol_process_cpu_seconds_total{job=\"nktp-large-target-metrics-sidecar\"}[5m]))",
+          "legendFormat": "highest Pod",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Sidecar memory (RSS), highest Pod",
+      "gridPos": {
+        "x": 12,
+        "y": 126,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(otelcol_process_memory_rss_bytes{job=\"nktp-large-target-metrics-sidecar\"})",
+          "legendFormat": "highest Pod",
+          "refId": "A"
+        }
+      ],
+      "description": "Memory of the sidecar that uses the most. Compare it with the sidecar's memory limit."
     }
   ]
 }

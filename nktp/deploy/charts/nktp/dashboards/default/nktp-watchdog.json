@@ -1,108 +1,648 @@
 {
   "uid": "nktp-watchdog",
   "title": "NKTP Watchdog",
-  "description": "NKTP's monitoring Collector. Other NKTP Collectors send it their internal metrics, logs, and traces. It forwards that diagnostic telemetry to the configured backend (bundled LGTM by default) and scrapes OpenTelemetry Operator metrics. These panels show Watchdog traffic, failures, queue use, process resources, Operator scrape reachability, and Target Allocator reports.",
+  "tags": [
+    "nktp",
+    "nktp-collector",
+    "opentelemetry"
+  ],
   "schemaVersion": 39,
   "refresh": "30s",
-  "time": { "from": "now-30m", "to": "now" },
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "links": [
+    {
+      "title": "Collectors",
+      "type": "dashboards",
+      "tags": [
+        "nktp-collector"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "NKTP Health",
+      "type": "link",
+      "url": "/d/nktp-health",
+      "includeVars": false,
+      "keepTime": true,
+      "targetBlank": false
+    }
+  ],
+  "templating": {
+    "list": []
+  },
   "panels": [
     {
       "id": 1,
-      "type": "timeseries",
-      "title": "Received /s",
-      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 7 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "min": 0 } },
-      "targets": [
-        { "expr": "sum(rate(otelcol_receiver_accepted_metric_points_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "metric points", "refId": "A" },
-        { "expr": "sum(rate(otelcol_receiver_accepted_log_records_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "log records", "refId": "B" },
-        { "expr": "sum(rate(otelcol_receiver_accepted_spans_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "spans", "refId": "C" }
-      ]
+      "type": "row",
+      "title": "Pipeline",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
     },
     {
       "id": 2,
       "type": "timeseries",
-      "title": "Exported /s",
-      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 7 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "min": 0 } },
+      "title": "Received /s",
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
       "targets": [
-        { "expr": "sum(rate(otelcol_exporter_sent_metric_points_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "metric points", "refId": "A" },
-        { "expr": "sum(rate(otelcol_exporter_sent_log_records_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "log records", "refId": "B" },
-        { "expr": "sum(rate(otelcol_exporter_sent_spans_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "spans", "refId": "C" }
-      ]
+        {
+          "expr": "sum(rate(otelcol_receiver_accepted_metric_points_total{job=\"nktp-watchdog\"}[5m]))",
+          "legendFormat": "metric points",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(otelcol_receiver_accepted_log_records_total{job=\"nktp-watchdog\"}[5m]))",
+          "legendFormat": "log records",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(otelcol_receiver_accepted_spans_total{job=\"nktp-watchdog\"}[5m]))",
+          "legendFormat": "spans",
+          "refId": "C"
+        }
+      ],
+      "description": "Items received per second across all replicas."
     },
     {
       "id": 3,
       "type": "timeseries",
-      "title": "Export failures /s",
-      "gridPos": { "x": 0, "y": 7, "w": 12, "h": 7 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "min": 0 } },
+      "title": "Exported /s",
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
       "targets": [
-        { "expr": "sum(rate(otelcol_exporter_send_failed_metric_points_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "metric points", "refId": "A" },
-        { "expr": "sum(rate(otelcol_exporter_send_failed_log_records_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "log records", "refId": "B" },
-        { "expr": "sum(rate(otelcol_exporter_send_failed_spans_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "spans", "refId": "C" }
-      ]
+        {
+          "expr": "sum(rate(otelcol_exporter_sent_metric_points_total{job=\"nktp-watchdog\"}[5m]))",
+          "legendFormat": "metric points",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(otelcol_exporter_sent_log_records_total{job=\"nktp-watchdog\"}[5m]))",
+          "legendFormat": "log records",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(otelcol_exporter_sent_spans_total{job=\"nktp-watchdog\"}[5m]))",
+          "legendFormat": "spans",
+          "refId": "C"
+        }
+      ],
+      "description": "Items exported per second across all replicas."
     },
     {
       "id": 4,
       "type": "timeseries",
-      "title": "Exporter queue use",
-      "gridPos": { "x": 12, "y": 7, "w": 12, "h": 7 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } },
+      "title": "Export failures /s",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
       "targets": [
-        { "expr": "100 * sum by (exporter, data_type) (otelcol_exporter_queue_size{job=\"nktp-watchdog\"}) / sum by (exporter, data_type) (otelcol_exporter_queue_capacity{job=\"nktp-watchdog\"})", "legendFormat": "{{exporter}} {{data_type}}", "refId": "A" }
-      ]
+        {
+          "expr": "sum(rate(otelcol_exporter_send_failed_metric_points_total{job=\"nktp-watchdog\"}[5m])) or 0 * sum(otelcol_exporter_queue_capacity{job=\"nktp-watchdog\",data_type=\"metrics\"})",
+          "legendFormat": "metric points",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(otelcol_exporter_send_failed_log_records_total{job=\"nktp-watchdog\"}[5m])) or 0 * sum(otelcol_exporter_queue_capacity{job=\"nktp-watchdog\",data_type=\"logs\"})",
+          "legendFormat": "log records",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(otelcol_exporter_send_failed_spans_total{job=\"nktp-watchdog\"}[5m])) or 0 * sum(otelcol_exporter_queue_capacity{job=\"nktp-watchdog\",data_type=\"traces\"})",
+          "legendFormat": "spans",
+          "refId": "C"
+        }
+      ],
+      "description": "Items that failed to send, across all replicas. The exporter may retry them."
     },
     {
       "id": 5,
       "type": "timeseries",
-      "title": "CPU cores",
-      "gridPos": { "x": 0, "y": 14, "w": 12, "h": 7 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "min": 0 } },
+      "title": "Refused /s",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
       "targets": [
-        { "expr": "sum(rate(otelcol_process_cpu_seconds_total{job=\"nktp-watchdog\"}[5m]))", "legendFormat": "CPU cores", "refId": "A" }
+        {
+          "expr": "sum(rate(otelcol_receiver_refused_metric_points_total{job=\"nktp-watchdog\"}[5m])) or 0 * sum(rate(otelcol_receiver_accepted_metric_points_total{job=\"nktp-watchdog\"}[5m]))",
+          "legendFormat": "metric points",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(otelcol_receiver_refused_log_records_total{job=\"nktp-watchdog\"}[5m])) or 0 * sum(rate(otelcol_receiver_accepted_log_records_total{job=\"nktp-watchdog\"}[5m]))",
+          "legendFormat": "log records",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(otelcol_receiver_refused_spans_total{job=\"nktp-watchdog\"}[5m])) or 0 * sum(rate(otelcol_receiver_accepted_spans_total{job=\"nktp-watchdog\"}[5m]))",
+          "legendFormat": "spans",
+          "refId": "C"
+        }
+      ],
+      "description": "Items the receivers refused across all replicas, for example under memory pressure."
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Received /s by replica · top 20",
+      "description": "The 20 replicas that received the most at the end of the range, to show imbalance.",
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "(sum by (instance) (rate(otelcol_receiver_accepted_metric_points_total{job=\"nktp-watchdog\"}[5m]))) and on (instance) topk(20, sum by (instance) (rate(otelcol_receiver_accepted_metric_points_total{job=\"nktp-watchdog\"}[5m] @ end())))",
+          "legendFormat": "{{instance}} metric points",
+          "refId": "A"
+        },
+        {
+          "expr": "(sum by (instance) (rate(otelcol_receiver_accepted_log_records_total{job=\"nktp-watchdog\"}[5m]))) and on (instance) topk(20, sum by (instance) (rate(otelcol_receiver_accepted_log_records_total{job=\"nktp-watchdog\"}[5m] @ end())))",
+          "legendFormat": "{{instance}} log records",
+          "refId": "B"
+        },
+        {
+          "expr": "(sum by (instance) (rate(otelcol_receiver_accepted_spans_total{job=\"nktp-watchdog\"}[5m]))) and on (instance) topk(20, sum by (instance) (rate(otelcol_receiver_accepted_spans_total{job=\"nktp-watchdog\"}[5m] @ end())))",
+          "legendFormat": "{{instance}} spans",
+          "refId": "C"
+        }
       ]
     },
     {
       "id": 6,
+      "type": "row",
+      "title": "Target Allocator and Operator scrape",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 7,
       "type": "timeseries",
-      "title": "Memory (RSS)",
-      "gridPos": { "x": 12, "y": 14, "w": 12, "h": 7 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 } },
-      "targets": [
-        { "expr": "sum(otelcol_process_memory_rss_bytes{job=\"nktp-watchdog\"})", "legendFormat": "RSS", "refId": "A" }
-      ]
-    },
-    {
-      "id": 7, "type": "stat", "title": "Operator scrape targets up",
-      "description": "Number of discovered nktp-operator endpoints whose latest scrape succeeded (up = 1). Other Watchdog inputs are excluded. A positive count can hide failed endpoints; no value means Operator scrape telemetry is absent, not that all targets are healthy.",
-      "gridPos": { "x": 0, "y": 21, "w": 6, "h": 7 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "expr": "sum(up{job=\"nktp-operator\"})", "legendFormat": "Operator", "instant": true, "refId": "A" }]
-    },
-    {
-      "id": 8, "type": "timeseries", "title": "Allocator collectors",
+      "title": "Allocator collectors",
       "description": "Sum of discovered and allocatable Watchdog collectors reported by Target Allocator replicas. With multiple allocator replicas, the same collectors may be counted more than once.",
-      "gridPos": { "x": 6, "y": 21, "w": 9, "h": 7 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "min": 0 } },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
       "targets": [
-        { "expr": "sum(opentelemetry_allocator_collectors_discovered{job=\"nktp-watchdog-targetallocator\"})", "legendFormat": "discovered", "refId": "A" },
-        { "expr": "sum(opentelemetry_allocator_collectors_allocatable{job=\"nktp-watchdog-targetallocator\"})", "legendFormat": "allocatable", "refId": "B" }
+        {
+          "expr": "sum(opentelemetry_allocator_collectors_discovered{job=\"nktp-watchdog-targetallocator\"})",
+          "legendFormat": "discovered",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(opentelemetry_allocator_collectors_allocatable{job=\"nktp-watchdog-targetallocator\"})",
+          "legendFormat": "allocatable",
+          "refId": "B"
+        }
       ]
     },
     {
-      "id": 9, "type": "timeseries", "title": "Targets per collector",
+      "id": 8,
+      "type": "timeseries",
+      "title": "Targets per collector",
       "description": "Targets assigned to each Watchdog Collector as reported by the Target Allocator. Each allocator replica can report the same assignment; this is not a count of successful scrapes.",
-      "gridPos": { "x": 15, "y": 21, "w": 9, "h": 7 },
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "min": 0 } },
-      "targets": [{ "expr": "opentelemetry_allocator_targets_per_collector{job=\"nktp-watchdog-targetallocator\"}", "legendFormat": "{{collector_name}}", "refId": "A" }]
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "opentelemetry_allocator_targets_per_collector{job=\"nktp-watchdog-targetallocator\"}",
+          "legendFormat": "{{collector_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Operator scrape targets up",
+      "description": "Number of discovered nktp-operator endpoints whose latest scrape succeeded (up = 1). Other Watchdog inputs are excluded. A positive count can hide failed endpoints; no value means Operator scrape telemetry is absent, not that all targets are healthy.",
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(up{job=\"nktp-operator\"})",
+          "legendFormat": "Operator",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Queues and resources",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Exporter queue use · top 20",
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 24,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "percent"
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * (max by (instance, exporter, data_type) (otelcol_exporter_queue_size{job=\"nktp-watchdog\"} / otelcol_exporter_queue_capacity{job=\"nktp-watchdog\"})) and on (instance, exporter, data_type) topk(20, max by (instance, exporter, data_type) (otelcol_exporter_queue_size{job=\"nktp-watchdog\"} @ end() / otelcol_exporter_queue_capacity{job=\"nktp-watchdog\"} @ end()))",
+          "legendFormat": "{{instance}} {{exporter}} {{data_type}}",
+          "refId": "A"
+        }
+      ],
+      "description": "The 20 fullest exporter queues at the end of the range."
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "CPU cores · top 20",
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "cores"
+        }
+      },
+      "targets": [
+        {
+          "expr": "(sum by (instance) (rate(otelcol_process_cpu_seconds_total{job=\"nktp-watchdog\"}[5m]))) and on (instance) topk(20, sum by (instance) (rate(otelcol_process_cpu_seconds_total{job=\"nktp-watchdog\"}[5m] @ end())))",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Memory (RSS) · top 20",
+      "gridPos": {
+        "x": 12,
+        "y": 46,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "expr": "(sum by (instance) (otelcol_process_memory_rss_bytes{job=\"nktp-watchdog\"})) and on (instance) topk(20, sum by (instance) (otelcol_process_memory_rss_bytes{job=\"nktp-watchdog\"} @ end()))",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "row",
+      "title": "Self-telemetry sidecar",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 53,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Sidecar queue use",
+      "description": "Fullest sidecar export queue of any Pod, per signal. The sidecar buffers this Collector's internal telemetry while the backend is unavailable.",
+      "gridPos": {
+        "x": 0,
+        "y": 54,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "percent"
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * max by (data_type) (otelcol_exporter_queue_size{job=\"nktp-watchdog-sidecar\"} / otelcol_exporter_queue_capacity{job=\"nktp-watchdog-sidecar\"})",
+          "legendFormat": "{{data_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Sidecar export failures /s",
+      "description": "Internal telemetry that the sidecar failed to send to the backend, per signal.",
+      "gridPos": {
+        "x": 12,
+        "y": 54,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(otelcol_exporter_send_failed_metric_points_total{job=\"nktp-watchdog-sidecar\"}[5m])) or 0 * sum(otelcol_exporter_queue_capacity{job=\"nktp-watchdog-sidecar\",data_type=\"metrics\"})",
+          "legendFormat": "metrics",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(otelcol_exporter_send_failed_log_records_total{job=\"nktp-watchdog-sidecar\"}[5m])) or 0 * sum(otelcol_exporter_queue_capacity{job=\"nktp-watchdog-sidecar\",data_type=\"logs\"})",
+          "legendFormat": "logs",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(otelcol_exporter_send_failed_spans_total{job=\"nktp-watchdog-sidecar\"}[5m])) or 0 * sum(otelcol_exporter_queue_capacity{job=\"nktp-watchdog-sidecar\",data_type=\"traces\"})",
+          "legendFormat": "traces",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Sidecar refused /s",
+      "description": "Internal telemetry that the sidecar refused, per signal, for example under memory pressure.",
+      "gridPos": {
+        "x": 0,
+        "y": 61,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(otelcol_receiver_refused_metric_points_total{job=\"nktp-watchdog-sidecar\"}[5m])) or 0 * sum(rate(otelcol_receiver_accepted_metric_points_total{job=\"nktp-watchdog-sidecar\"}[5m]))",
+          "legendFormat": "metrics",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(otelcol_receiver_refused_log_records_total{job=\"nktp-watchdog-sidecar\"}[5m])) or 0 * sum(rate(otelcol_receiver_accepted_log_records_total{job=\"nktp-watchdog-sidecar\"}[5m]))",
+          "legendFormat": "logs",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(otelcol_receiver_refused_spans_total{job=\"nktp-watchdog-sidecar\"}[5m])) or 0 * sum(rate(otelcol_receiver_accepted_spans_total{job=\"nktp-watchdog-sidecar\"}[5m]))",
+          "legendFormat": "traces",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Sidecar traces kept and dropped /s",
+      "description": "Tail sampling decisions. A trace is kept when a span has an error or lasts longer than 1 second.",
+      "gridPos": {
+        "x": 12,
+        "y": 61,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(otelcol_processor_tail_sampling_global_count_traces_sampled_total{job=\"nktp-watchdog-sidecar\",sampled=\"true\"}[5m])) or 0 * sum(rate(otelcol_processor_tail_sampling_global_count_traces_sampled_total{job=\"nktp-watchdog-sidecar\",sampled=\"false\"}[5m]))",
+          "legendFormat": "kept",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(otelcol_processor_tail_sampling_global_count_traces_sampled_total{job=\"nktp-watchdog-sidecar\",sampled=\"false\"}[5m]))",
+          "legendFormat": "dropped",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Sidecar CPU cores, highest Pod",
+      "gridPos": {
+        "x": 0,
+        "y": 68,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "cores"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(rate(otelcol_process_cpu_seconds_total{job=\"nktp-watchdog-sidecar\"}[5m]))",
+          "legendFormat": "highest Pod",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Sidecar memory (RSS), highest Pod",
+      "gridPos": {
+        "x": 12,
+        "y": 68,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(otelcol_process_memory_rss_bytes{job=\"nktp-watchdog-sidecar\"})",
+          "legendFormat": "highest Pod",
+          "refId": "A"
+        }
+      ],
+      "description": "Memory of the sidecar that uses the most. Compare it with the sidecar's memory limit."
     }
   ]
 }

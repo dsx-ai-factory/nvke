@@ -6,8 +6,12 @@ here and no image; the chart is the whole component.
 
 ## What to read first
 
-- [deploy/charts/nktp/README.md](deploy/charts/nktp/README.md) — what the chart
-  deploys, its values, the development backend and the bundled dependencies
+- [deploy/charts/nktp/README.md](deploy/charts/nktp/README.md) — prerequisites,
+  installation, the components and the configuration model, in summary
+- [docs/nktp/architecture/topology.md](../docs/nktp/architecture/topology.md) —
+  how the Collectors fit together, with links to each component's page under
+  [docs/nktp/components/](../docs/nktp/components/) and the guides under
+  [docs/nktp/guides/](../docs/nktp/guides/)
 
 ## Layout
 
@@ -16,7 +20,7 @@ deploy/charts/nktp/
   Chart.yaml, Chart.lock   # chart version and dependency pins
   values.yaml              # every Collector's configuration and workload
   templates/               # Collectors, kube-state-metrics, RBAC, development backend
-  dashboards/              # Grafana dashboards the development backend loads
+  dashboards/              # Grafana dashboards: default/ the development backend loads, examples/ import-only
 hack/chart-validate.sh     # renders the chart, validates it; make nktp-chart-lint runs it
 ```
 
@@ -55,6 +59,9 @@ named in `Chart.yaml`, and kubeconform downloads its schemas.
 
   Keep both trim markers. Do not add headers to `templates/` with addlicense: it
   writes `#` lines, and Helm copies those into every rendered manifest.
-- The README, the checks under `hack/` and this guidance are written for this
-  repository. When templates, values or dashboards change, update the README's
-  functional sections to match rather than replacing it.
+- The README is packaged into the chart, where links to other files do not
+  resolve. Keep it a self-contained summary that links only to the
+  documentation under `docs/nktp/`, from its last section.
+- When a change alters a component's behavior or values, update its page under
+  `docs/nktp/components/`, and any guide under `docs/nktp/guides/` that shows
+  those values, in the same pull request.

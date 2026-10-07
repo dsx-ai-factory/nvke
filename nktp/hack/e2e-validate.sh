@@ -10,9 +10,8 @@
 # exists to catch: a Collector that crash-loops, an exporter that cannot reach the
 # backend, a Target Allocator that discovers nothing.
 #
-# The assertions are the ones docs/nktp/kind-validation.md lists, run against the
-# bundled development backend. They are queries, not `kubectl get`: a Collector
-# can be Ready and still export nothing.
+# The assertions run against the bundled development backend. They are queries,
+# not `kubectl get`: a Collector can be Ready and still export nothing.
 #
 # Usage:
 #   nktp/hack/e2e-validate.sh              # create a cluster, validate, delete it
