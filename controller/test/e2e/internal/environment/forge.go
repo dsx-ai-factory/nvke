@@ -4,12 +4,19 @@
 package environment
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 )
 
 const (
+	// DefaultArch is the CPU architecture a run that named none gets. Every
+	// site onboarded so far has an amd64 CPU shape, so this keeps a run
+	// without -e2e.capabilities resolving as it did before architectures were
+	// told apart.
+	DefaultArch = "amd64"
+
 	// ForgeProvider is the provider name environments/forge.yaml declares.
 	ForgeProvider = "forge"
 
@@ -41,9 +48,13 @@ type ForgeSite struct {
 	// can report which site answered without threading the name alongside.
 	Key string `json:"-"`
 
-	ID       string `json:"id"`
-	VpcID    string `json:"vpcID"`
-	SubnetID string `json:"subnetID"`
+	ID    string `json:"id"`
+	VpcID string `json:"vpcID"`
+	// SubnetID or VpcPrefixID, never both: a VPC exposes subnets or prefixes
+	// according to its network virtualization, and which one a site uses is a
+	// property of its fabric rather than a choice.
+	SubnetID    string `json:"subnetID"`
+	VpcPrefixID string `json:"vpcPrefixID"`
 
 	// SSHKeyGroupID is attached to the nodes Forge creates. It governs
 	// Serial-over-LAN console access rather than the OS account's
@@ -152,7 +163,6 @@ func (s ForgeSite) validate() error {
 	for _, field := range []struct{ name, value string }{
 		{"id", s.ID},
 		{"vpcID", s.VpcID},
-		{"subnetID", s.SubnetID},
 		{"sshKeyGroupID", s.SSHKeyGroupID},
 	} {
 		if strings.TrimSpace(field.value) == "" {
@@ -178,6 +188,12 @@ func (s ForgeSite) validate() error {
 			missing = append(missing, where+".id")
 		}
 	}
+	switch {
+	case s.SubnetID == "" && s.VpcPrefixID == "":
+		missing = append(missing, "subnetID or vpcPrefixID")
+	case s.SubnetID != "" && s.VpcPrefixID != "":
+		missing = append(missing, "both subnetID and vpcPrefixID, which a VPC never exposes together")
+	}
 	if len(missing) > 0 {
 		return fmt.Errorf("site %q is missing %s", s.Key, strings.Join(missing, ", "))
 	}
@@ -191,6 +207,117 @@ func (f *Forge) siteNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// Selection is the machines one run resolves to at one site.
+//
+// Two shapes rather than one, because a run's CPU machines and its GPU
+// machines need not be the same architecture. A GB200 tenant puts arm64 GPU
+// workers behind an amd64 control plane, and the site controller in front of
+// both is a third machine of the CPU kind.
+type Selection struct {
+	Site ForgeSite
+
+	// CPU carries the site controller and the tenant control plane. Its
+	// architecture is the run's `arch` capability, because that is the one a
+	// caller chooses: the CPU machines are supporting infrastructure and
+	// nothing about the workload decides what they are.
+	CPU ForgeInstanceType
+
+	// GPU carries the tenant workers, and is the zero value when the run
+	// asked for no GPU. Its architecture is read from the shape rather than
+	// requested, because a GPU model comes on the architecture it comes on:
+	// asking for a GB200 has already decided arm64, and stating it separately
+	// could only contradict the hardware.
+	GPU ForgeInstanceType
+}
+
+// HasGPU reports whether the run asked for a GPU shape.
+func (s Selection) HasGPU() bool { return s.GPU.ID != "" }
+
+// WorkerType is the shape a tenant's workers take: the GPU shape when the run
+// asked for one, else the same CPU shape as everything else.
+func (s Selection) WorkerType() ForgeInstanceType {
+	if s.HasGPU() {
+		return s.GPU
+	}
+	return s.CPU
+}
+
+// Resolve picks the site and the machine shapes that satisfy a run's
+// capabilities, searching every declared site rather than a pre-chosen one.
+//
+// Selection is by capability because that is what a stream names. A run asks
+// for {gpu: gb200, arch: amd64}; which site owns both such machines is
+// infrastructure, and nothing above this should have to know it. Keying on a
+// site name instead works only while exactly one site is declared, and turns
+// declaring a second into an error for every run that did not name one.
+//
+// The two capabilities are read differently, and deliberately. `arch` applies
+// to the CPU shape alone: it is the architecture of the supporting machines,
+// which is a choice. `gpu` selects by model with no architecture attached,
+// because the model already determines one. Applying `arch` to both would ask
+// a single machine to be a GB200 and amd64 at once, which no site offers.
+//
+// Sites are searched in name order so two sites offering the same shapes
+// resolve the same way twice. Within a site, MatchInstanceType takes the first
+// declared type, so a file lists shapes cheapest first.
+func (f *Forge) Resolve(capabilities map[string]string) (Selection, error) {
+	if len(f.Sites) == 0 {
+		return Selection{}, errors.New("the environment declares no sites")
+	}
+	arch := capabilities[capabilityArch]
+	if strings.TrimSpace(arch) == "" {
+		arch = DefaultArch
+	}
+	gpu := strings.TrimSpace(capabilities[capabilityGPU])
+
+	// A site that does not validate is skipped rather than fatal: the file
+	// declares what exists, and a repository that has not onboarded one of
+	// them leaves its identifiers unset. Breaking every run over a site this
+	// one was never going to use would make declaring a second site a
+	// coordinated change instead of an additive one.
+	var unusable []string
+	for _, name := range f.siteNames() {
+		site, err := f.Site(name)
+		if err != nil {
+			unusable = append(unusable, fmt.Sprintf("%s (%v)", name, err))
+			continue
+		}
+		cpu, err := site.MatchCPU(arch)
+		if err != nil {
+			continue
+		}
+		selection := Selection{Site: site, CPU: cpu}
+		if gpu != "" {
+			accelerator, err := site.MatchGPU(gpu)
+			if err != nil {
+				continue
+			}
+			selection.GPU = accelerator
+		}
+		return selection, nil
+	}
+
+	// Naming every site and what each offers, because the usual cause is a
+	// shape no declared site has rather than a typo in one of them.
+	wanted := fmt.Sprintf("a %s CPU shape", arch)
+	if gpu != "" {
+		wanted += fmt.Sprintf(" and a %s GPU shape", gpu)
+	}
+	offered := make([]string, 0, len(f.Sites))
+	for _, name := range f.siteNames() {
+		var shapes []string
+		for _, candidate := range f.Sites[name].InstanceTypes {
+			shapes = append(shapes, candidate.Name)
+		}
+		offered = append(offered, fmt.Sprintf("%s (%s)", name, strings.Join(shapes, ", ")))
+	}
+	msg := fmt.Sprintf("no declared site offers %s; sites are %s", wanted, strings.Join(offered, "; "))
+	if len(unusable) > 0 {
+		msg += fmt.Sprintf(". Skipped as incomplete: %s", strings.Join(unusable, "; "))
+	}
+	return Selection{}, errors.New(msg)
 }
 
 // MatchInstanceType returns the first declared type providing everything the
@@ -214,6 +341,31 @@ func (s ForgeSite) MatchInstanceType(capabilities map[string]string) (ForgeInsta
 		"site %q offers no instance type providing %s; it offers %s",
 		s.Key, formatCapabilities(capabilities), strings.Join(offered, ", "),
 	)
+}
+
+// MatchCPU returns this site's CPU instance type for an architecture. It
+// exists so a caller wanting a non-GPU machine does not have to spell the
+// capability keys itself, which would put them in two packages and let them
+// drift apart.
+//
+// The architecture is a parameter rather than derived, because the caller
+// asking for this already has one to match: a cluster's control plane and its
+// workers cannot run different OS images.
+func (s ForgeSite) MatchCPU(arch string) (ForgeInstanceType, error) {
+	return s.MatchInstanceType(map[string]string{
+		capabilityMachineType: "cpu",
+		capabilityArch:        arch,
+	})
+}
+
+// MatchGPU returns this site's shape for a GPU model. No architecture is
+// asked for: a model comes on the architecture it comes on, and this is read
+// back off the result rather than requested.
+func (s ForgeSite) MatchGPU(model string) (ForgeInstanceType, error) {
+	return s.MatchInstanceType(map[string]string{
+		capabilityMachineType: "gpu",
+		capabilityGPU:         model,
+	})
 }
 
 func (t ForgeInstanceType) provides(capabilities map[string]string) bool {

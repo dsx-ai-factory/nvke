@@ -109,8 +109,56 @@ func TestCollectDiagnostics(t *testing.T) {
 		t.Errorf("wrote %q, %v", got, err)
 	}
 	// Archived from the parent so the tarball is not inside what it archives.
-	if i := s.ran("tar -czf " + diagnosticsArchive + " -C " + workDir + " diagnostics"); i < 0 {
+	if i := s.ran("cd " + workDir); i < 0 {
+		t.Errorf("did not archive from the parent directory: %v", s.runs)
+	}
+	if i := s.ran("tar -czf " + diagnosticsArchive); i < 0 {
 		t.Errorf("did not archive the diagnostics: %v", s.runs)
+	}
+}
+
+// The node's own journals and agent state, which are the only copy of what
+// kubeadm printed: the agent keeps the whole output but the status RPC
+// carries one line of it, so a preflight failure reaches CWE as "preflight
+// checks failed" with the [ERROR ...] lines dropped.
+func TestCollectDiagnosticsCapturesTheNodeRecord(t *testing.T) {
+	s := newFakeSession()
+	s.fetch[diagnosticsArchive] = []byte("tarball")
+
+	if err := CollectDiagnostics(context.Background(), s, filepath.Join(t.TempDir(), "d.tar.gz")); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	for _, item := range nodeRecord() {
+		if i := s.ran(item.cmd + " > " + filepath.Join(nodeRecordDir, item.name)); i < 0 {
+			t.Errorf("did not capture %s: %v", item.name, s.runs)
+		}
+	}
+	// Captured before the archive, or it is not in it.
+	if capture, archive := s.ran("journalctl"), s.ran("tar -czf"); capture > archive {
+		t.Errorf("captured the node record after archiving: %v", s.runs)
+	}
+}
+
+// kubeadm's own credentials, as opposed to the ones the suite placed: a site
+// whose init succeeded has the token and certificate key in the agent's
+// journal, and this archive leaves the cluster they are scoped to.
+func TestCollectDiagnosticsMasksJoinCredentials(t *testing.T) {
+	s := newFakeSession()
+	s.fetch[diagnosticsArchive] = []byte("tarball")
+
+	if err := CollectDiagnostics(context.Background(), s, filepath.Join(t.TempDir(), "d.tar.gz")); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	cmd := s.cmd(t, "sed -i")
+	for _, want := range []string{"--token", "--certificate-key", nodeRecordDir} {
+		if !strings.Contains(cmd, want) {
+			t.Errorf("the mask does not cover %s: %s", want, cmd)
+		}
+	}
+	// Over the node record only. nkectl's diagnostics are the cluster's own
+	// Secrets, which redactArchive handles with the values the suite knows.
+	if strings.Contains(cmd, diagnosticsDir) {
+		t.Errorf("the mask reaches nkectl's diagnostics: %s", cmd)
 	}
 }
 

@@ -1,0 +1,139 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Puts an e2e run's result on the run's Summary page, so that reading it does
+# not mean downloading an artifact.
+#
+# Every e2e lane here already writes Ginkgo JUnit XML and has done for a long
+# time. Nothing read it: the file rides along inside a diagnostics upload, and
+# the run page shows a green tick and nothing else. A labelled hardware run
+# that takes an hour of a bare-metal machine should be able to say which specs
+# it ran without anyone unpacking a zip.
+#
+# NATIVE, NOT A TEST REPORTER. $GITHUB_STEP_SUMMARY is markdown GitHub renders
+# above the job list. No third-party action, no `checks: write`, and nothing
+# that behaves differently on a fork. The repository already uses it for the
+# merge gate, deb packaging and the vulnerability scans; this is the same
+# mechanism pointed at test results.
+#
+# WHY A GO TOOL AND NOT A SHELL ONE-LINER. summarize-junit unmarshals into
+# reporters.JUnitTestSuites, the types Ginkgo wrote the file with, so the
+# reader cannot drift from the writer. That matters more than it sounds: the
+# tests attribute counts Ginkgo's suite-level nodes and "Ran N of M" does not,
+# so the obvious `grep` for a skip count reports a number no other view of the
+# same run agrees with. The tool has unit tests; a step body would not.
+#
+# NEVER THE REASON A RUN IS RED. Every failure here is a warning. The summary
+# is a convenience laid over results that are already decided by the suite's
+# own exit code, and a job that passed its specs must not go red because a
+# report could not be parsed.
+name: Summarise JUnit results
+description: Render Ginkgo JUnit XML into the GitHub job summary
+
+inputs:
+  path:
+    description: >-
+      Glob for the JUnit file or files, relative to the workspace or absolute.
+
+      A glob rather than a path because two lanes split their run into legs and
+      write one report each -- junit-cp-controller.xml and junit-nodepool.xml --
+      and which of those exist depends on the event. Each match becomes its own
+      section, named for its leg.
+    required: true
+  title:
+    description: >-
+      Heading for the section, naming the lane and architecture. Several jobs
+      of one workflow write to the same summary page, so this is what tells
+      them apart.
+    required: true
+  include-failure-text:
+    description: >-
+      Include the failure message of specs that did not pass.
+
+      Off by default, and that is a disclosure decision rather than a taste
+      one. Two lanes publish their artifacts only behind a SAFE_TO_UPLOAD
+      marker written after redaction, a summary page is more visible than an
+      artifact, and this repository is being prepared to go public. Spec names
+      and counts are safe; what a spec printed is not. Even on, only the
+      message attribute is read and it is clipped -- never the element bodies,
+      which hold captured output.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        # Through the environment rather than interpolated into the script:
+        # a title reaches this action from a workflow expression, and one
+        # containing a quote would otherwise end the command it sits in.
+        JUNIT_PATH: ${{ inputs.path }}
+        JUNIT_TITLE: ${{ inputs.title }}
+        JUNIT_WITH_TEXT: ${{ inputs.include-failure-text }}
+        # Where the tool's module lives. A local action, so this is allowed to
+        # know the repository layout.
+        TOOL_MODULE: ${{ github.workspace }}/controller/test/e2e
+      run: |
+        set -uo pipefail
+
+        note() {
+          echo "::warning::summarize-junit: $1"
+          {
+            echo "### ${JUNIT_TITLE}"
+            echo
+            echo "No test summary: $1"
+          } >> "${GITHUB_STEP_SUMMARY}"
+        }
+
+        # compgen and not an unquoted expansion: the glob has to expand, but
+        # the input must not also be split on whitespace or interpreted for
+        # anything else. Sorted, because compgen does not, and the legs of a
+        # split run should appear in the same order on every run.
+        #
+        # Read in a loop rather than with mapfile, and built up
+        # as one never-empty argument list rather than several arrays that may
+        # be, because both mapfile and the expansion of an empty array under
+        # -u need bash 4 and the runners here are not all the same image.
+        args=( -title "${JUNIT_TITLE}" )
+        if [ "${JUNIT_WITH_TEXT}" = "true" ]; then
+          args=( "${args[@]}" -with-text )
+        fi
+
+        found=0
+        while IFS= read -r report; do
+          [ -n "${report}" ] || continue
+          # Made absolute before the cd below, because the globs the callers
+          # pass are relative to the workspace and the tool has to run from
+          # its own module.
+          args=( "${args[@]}" "$(cd "$(dirname "${report}")" && pwd)/$(basename "${report}")" )
+          found=$(( found + 1 ))
+        done < <(compgen -G "${JUNIT_PATH}" | sort || true)
+
+        if [ "${found}" -eq 0 ]; then
+          # Not an error. A lane that failed before Ginkgo started has no
+          # report to show, and that is already visible in the failed step.
+          note "no JUnit report matched ${JUNIT_PATH}"
+          exit 0
+        fi
+
+        if ! command -v go >/dev/null; then
+          note "go is not on this runner, so the report cannot be parsed"
+          exit 0
+        fi
+
+        rendered="${RUNNER_TEMP}/junit-summary.md"
+        if ! (cd "${TOOL_MODULE}" && go run ./cmd/summarize-junit "${args[@]}") > "${rendered}"; then
+          note "the report could not be parsed; see the step log"
+          exit 0
+        fi
+
+        cat "${rendered}" >> "${GITHUB_STEP_SUMMARY}"
+        # Also to the step log, so the result survives where the summary is
+        # not kept: summaries age out with the run, and a person reading an
+        # old log should still find the counts.
+        cat "${rendered}"
+
+        # Deliberate, and the reason -e is not set above: nothing in this step
+        # may decide the outcome of the job it is reporting on.
+        exit 0

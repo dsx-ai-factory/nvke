@@ -254,3 +254,218 @@ func TestSiteReportsEveryMissingField(t *testing.T) {
 		}
 	}
 }
+
+func TestResolvePicksTheSiteByCapability(t *testing.T) {
+	az61 := ForgeSite{
+		ID: "a", VpcID: "v", SubnetID: "s", SSHKeyGroupID: "k",
+		InstanceTypes: []ForgeInstanceType{
+			{Name: "cpu.himem.t1", ID: "1", Provides: map[string]string{"machineType": "cpu", "arch": "amd64"}},
+			{Name: "gpu.l40sx8", ID: "2", Provides: map[string]string{"machineType": "gpu", "arch": "amd64", "gpu": "l40"}},
+		},
+	}
+	ytl := ForgeSite{
+		ID: "b", VpcID: "v", VpcPrefixID: "p", SSHKeyGroupID: "k",
+		InstanceTypes: []ForgeInstanceType{
+			{Name: "cpu.x86_64", ID: "2", Provides: map[string]string{"machineType": "cpu", "arch": "amd64"}},
+			{Name: "gpu.gb200", ID: "3", Provides: map[string]string{"machineType": "gpu", "arch": "arm64", "gpu": "gb200"}},
+		},
+	}
+	env := &Forge{Sites: map[string]ForgeSite{"az61": az61, "ytl": ytl}}
+
+	// The capability picks the site. Keying on a name instead would make this
+	// ambiguous the moment a second site is declared.
+	for _, tc := range []struct{ name, gpu, wantSite, wantType string }{
+		{"l40 is only at az61", "l40", "az61", "gpu.l40sx8"},
+		{"gb200 is only at ytl", "gb200", "ytl", "gpu.gb200"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			selection, err := env.Resolve(map[string]string{"gpu": tc.gpu})
+			if err != nil {
+				t.Fatalf("resolving: %v", err)
+			}
+			if selection.Site.Key != tc.wantSite {
+				t.Errorf("site = %q, want %q", selection.Site.Key, tc.wantSite)
+			}
+			if selection.GPU.Name != tc.wantType {
+				t.Errorf("gpu shape = %q, want %q", selection.GPU.Name, tc.wantType)
+			}
+			// `arch` never reaches the GPU match: the model decides it, and
+			// the CPU shape carries the requested one independently.
+			if selection.CPU.Arch() != "amd64" {
+				t.Errorf("cpu arch = %q, want the requested amd64", selection.CPU.Arch())
+			}
+		})
+	}
+
+	// A capability no site has names every site and what each offers, because
+	// the usual cause is missing capacity rather than a typo.
+	_, err := env.Resolve(map[string]string{"gpu": "h100"})
+	if err == nil {
+		t.Fatal("a capability no site offers should fail")
+	}
+	for _, want := range []string{"az61", "ytl", "gpu.gb200"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error does not mention %q: %v", want, err)
+		}
+	}
+}
+
+func TestSiteRequiresOneOfSubnetOrPrefix(t *testing.T) {
+	base := ForgeSite{
+		ID: "a", VpcID: "v", SSHKeyGroupID: "k",
+		InstanceTypes: []ForgeInstanceType{{Name: "cpu", ID: "1"}},
+	}
+
+	neither := base
+	if _, err := (&Forge{Sites: map[string]ForgeSite{"s": neither}}).Site("s"); err == nil {
+		t.Error("a site with neither subnetID nor vpcPrefixID should not validate")
+	}
+
+	both := base
+	both.SubnetID, both.VpcPrefixID = "s", "p"
+	if _, err := (&Forge{Sites: map[string]ForgeSite{"s": both}}).Site("s"); err == nil {
+		t.Error("a VPC never exposes both, so declaring both should not validate")
+	}
+
+	for _, tc := range []struct {
+		name string
+		set  func(*ForgeSite)
+	}{
+		{"subnet", func(s *ForgeSite) { s.SubnetID = "s" }},
+		{"prefix", func(s *ForgeSite) { s.VpcPrefixID = "p" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			site := base
+			tc.set(&site)
+			if _, err := (&Forge{Sites: map[string]ForgeSite{"s": site}}).Site("s"); err != nil {
+				t.Errorf("a site declaring only a %s should validate: %v", tc.name, err)
+			}
+		})
+	}
+}
+
+// An un-onboarded site leaves its identifiers unset. That must not break a
+// run against a site the repository does have, or declaring a second site
+// becomes a coordinated change rather than an additive one.
+func TestResolveSkipsIncompleteSites(t *testing.T) {
+	usable := ForgeSite{
+		ID: "a", VpcID: "v", SubnetID: "s", SSHKeyGroupID: "k",
+		InstanceTypes: []ForgeInstanceType{
+			{Name: "cpu", ID: "1", Provides: map[string]string{"machineType": "cpu", "arch": "amd64"}},
+		},
+	}
+	env := &Forge{Sites: map[string]ForgeSite{"az61": usable, "ytl": {}}}
+
+	selection, err := env.Resolve(nil)
+	if err != nil {
+		t.Fatalf("an incomplete site should be skipped, not fatal: %v", err)
+	}
+	if selection.Site.Key != "az61" {
+		t.Errorf("site = %q, want az61", selection.Site.Key)
+	}
+	if selection.HasGPU() {
+		t.Error("a run asking for no GPU should resolve none")
+	}
+
+	// When nothing matches, the skipped ones are named: "no site offers gb200"
+	// reads very differently if ytl was silently dropped for being unset.
+	if _, err := env.Resolve(map[string]string{"gpu": "gb200"}); err == nil {
+		t.Fatal("a capability no usable site offers should fail")
+	} else if !strings.Contains(err.Error(), "ytl") {
+		t.Errorf("the error should name the skipped site: %v", err)
+	}
+}
+
+// A GPU run must not put its control plane on GPU machines: they are scarce
+// enough that the cluster fails to schedule for a reason unrelated to what the
+// run was qualifying.
+func TestMatchCPUTakesTheCPUShapeOfTheSameArch(t *testing.T) {
+	site := ForgeSite{
+		Key: "ytl",
+		InstanceTypes: []ForgeInstanceType{
+			{Name: "cpu.amd", ID: "a", Provides: map[string]string{"machineType": "cpu", "arch": "amd64"}},
+			{Name: "cpu.arm", ID: "b", Provides: map[string]string{"machineType": "cpu", "arch": "arm64"}},
+			{Name: "gpu.gb200", ID: "c", Provides: map[string]string{"machineType": "gpu", "arch": "arm64", "gpu": "gb200"}},
+		},
+	}
+	got, err := site.MatchCPU("arm64")
+	if err != nil {
+		t.Fatalf("matching a CPU shape: %v", err)
+	}
+	if got.Name != "cpu.arm" {
+		t.Errorf("should take the arm64 CPU shape, got %s", got.Name)
+	}
+
+	if _, err := site.MatchCPU("riscv64"); err == nil {
+		t.Error("should fail when the site offers no CPU shape of that arch")
+	}
+}
+
+// A site declaring two architectures where only one has an id must not answer
+// a request for the other with an empty identifier.
+func TestSiteRequiresAnIDOnEveryInstanceType(t *testing.T) {
+	site := ForgeSite{
+		Key: "ytl", ID: "s", VpcID: "v", VpcPrefixID: "p", SSHKeyGroupID: "k",
+		InstanceTypes: []ForgeInstanceType{
+			{Name: "cpu.arm", ID: "b", Provides: map[string]string{"machineType": "cpu", "arch": "arm64"}},
+			{Name: "cpu.amd", Provides: map[string]string{"machineType": "cpu", "arch": "amd64"}},
+		},
+	}
+	err := site.validate()
+	if err == nil {
+		t.Fatal("a shape with no id should invalidate the site")
+	}
+	if !strings.Contains(err.Error(), "instanceTypes[cpu.amd].id") {
+		t.Errorf("error should name the shape, got %v", err)
+	}
+}
+
+// A GB200 run is the mixed case: arm64 workers behind an amd64 control plane.
+// `arch` names the CPU side only, and the GPU shape's architecture is read off
+// the shape rather than asked for, because the model already decided it.
+func TestResolveMixesArchitectures(t *testing.T) {
+	ytl := ForgeSite{
+		ID: "b", VpcID: "v", VpcPrefixID: "p", SSHKeyGroupID: "k",
+		InstanceTypes: []ForgeInstanceType{
+			{Name: "cpu.x86_64", ID: "1", Provides: map[string]string{"machineType": "cpu", "arch": "amd64"}},
+			{Name: "cpu.arm", ID: "2", Provides: map[string]string{"machineType": "cpu", "arch": "arm64"}},
+			{Name: "gpu.gb200", ID: "3", Provides: map[string]string{"machineType": "gpu", "arch": "arm64", "gpu": "gb200"}},
+		},
+	}
+	env := &Forge{Sites: map[string]ForgeSite{"ytl": ytl}}
+
+	selection, err := env.Resolve(map[string]string{"gpu": "gb200", "arch": "amd64"})
+	if err != nil {
+		t.Fatalf("resolving: %v", err)
+	}
+	if got := selection.CPU.Name; got != "cpu.x86_64" {
+		t.Errorf("cpu shape = %q, want the amd64 one that arch asked for", got)
+	}
+	if got := selection.GPU.Name; got != "gpu.gb200" {
+		t.Errorf("gpu shape = %q, want gpu.gb200", got)
+	}
+	if got := selection.WorkerType().Arch(); got != "arm64" {
+		t.Errorf("worker arch = %q, want the arm64 the GB200 comes on", got)
+	}
+
+	// arch=arm64 picks the other CPU shape and leaves the GPU one alone.
+	selection, err = env.Resolve(map[string]string{"gpu": "gb200", "arch": "arm64"})
+	if err != nil {
+		t.Fatalf("resolving arm64: %v", err)
+	}
+	if got := selection.CPU.Name; got != "cpu.arm" {
+		t.Errorf("cpu shape = %q, want cpu.arm", got)
+	}
+
+	// With no GPU asked for, the workers are the CPU shape.
+	selection, err = env.Resolve(map[string]string{"arch": "amd64"})
+	if err != nil {
+		t.Fatalf("resolving cpu-only: %v", err)
+	}
+	if selection.HasGPU() {
+		t.Error("no gpu was asked for, so none should resolve")
+	}
+	if got := selection.WorkerType().Name; got != "cpu.x86_64" {
+		t.Errorf("worker shape = %q, want the CPU one", got)
+	}
+}

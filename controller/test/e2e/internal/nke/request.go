@@ -46,8 +46,10 @@ type NodePoolSpec struct {
 	KubeReservedMemory   string // optional, e.g. "250Mi"
 
 	// Infrastructure-specific pool fields. Nico containers use InstanceTypeID,
-	// SubnetIDs, and SSHKeyGroupIDs; NICo VMs use InstanceTypeID,
-	// VpcPrefixIDs, SSHKeyGroupIDs, and the profile/disk fields.
+	// SubnetIDs, and SSHKeyGroupIDs; Nico Forge uses the same, with
+	// VpcPrefixIDs in place of SubnetIDs at a site that attaches by prefix;
+	// NICo VMs use InstanceTypeID, VpcPrefixIDs, SSHKeyGroupIDs, and the
+	// profile/disk fields.
 	InstanceTypeID        string
 	SubnetIDs             []string
 	VpcPrefixIDs          []string
@@ -115,7 +117,7 @@ type ClusterSpec struct {
 	VpcID  string
 
 	// NodePayloads is required by nico-forge and ignored by everything else.
-	NodePayloads *NodePayloads
+	NodePayloads *RolePayloads
 }
 
 // NodePayloads are the two things that turn a bare machine into an NKE node:
@@ -129,6 +131,20 @@ type ClusterSpec struct {
 type NodePayloads struct {
 	IPXEScript         string
 	PreKubeadmCommands []string
+}
+
+// RolePayloads is one set per role, because a cluster's control plane and its
+// workers need not be the same architecture: a GB200 tenant puts arm64 workers
+// behind an amd64 control plane, and each boots the OS image and installs the
+// packages built for its own machine.
+//
+// Both are required rather than one defaulting to the other. A single-
+// architecture cluster passes the same value twice, which is a line of code,
+// whereas a silent fallback would let a mixed cluster boot half its nodes on
+// the wrong image and say nothing.
+type RolePayloads struct {
+	ControlPlane NodePayloads
+	Worker       NodePayloads
 }
 
 var (
@@ -201,16 +217,27 @@ func buildNicoForgeRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 		return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires node payloads: a real machine boots an image and installs packages")
 	}
 	payloads := *spec.NodePayloads
-	if payloads.IPXEScript == "" {
-		return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires an iPXE script: without one the instance boots nothing")
-	}
-	if len(payloads.PreKubeadmCommands) == 0 {
-		return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires pre-kubeadm commands: without them the node has no nke-agent")
+	for _, role := range []struct {
+		name     string
+		payloads NodePayloads
+	}{
+		{"control plane", payloads.ControlPlane},
+		{"worker", payloads.Worker},
+	} {
+		if role.payloads.IPXEScript == "" {
+			return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires a %s iPXE script: without one the instance boots nothing", role.name)
+		}
+		if len(role.payloads.PreKubeadmCommands) == 0 {
+			return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires %s pre-kubeadm commands: without them the node has no nke-agent", role.name)
+		}
 	}
 
-	// Both roles boot the same image and install the same packages, so unlike
-	// the container stub the payloads do not vary by role.
-	return buildCAPNicoRequest(spec, func(bool) NodePayloads { return payloads })
+	return buildCAPNicoRequest(spec, func(controlPlane bool) NodePayloads {
+		if controlPlane {
+			return payloads.ControlPlane
+		}
+		return payloads.Worker
+	})
 }
 
 // containerNodePayloads stubs both payloads for the container backend. The
@@ -301,6 +328,7 @@ func buildNicoControlPlaneConfig(clusterName string, vpcID uuid.UUID, spec Clust
 		SystemReservedMemory: cp.SystemReservedMemory,
 		InstanceTypeID:       cp.InstanceTypeID,
 		SubnetIDs:            cp.SubnetIDs,
+		VpcPrefixIDs:         cp.VpcPrefixIDs,
 		SSHKeyGroupIDs:       cp.SSHKeyGroupIDs,
 	}, payloads)
 	if err != nil {
@@ -323,22 +351,15 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec, p
 	if err != nil {
 		return api.NodePoolCreateConfig{}, fmt.Errorf("parsing instance type ID %q: %w", spec.InstanceTypeID, err)
 	}
-	subnetIDs, err := parseUUIDs(spec.SubnetIDs)
+	interfaces, err := nicoMachineInterfaces(spec.SubnetIDs, spec.VpcPrefixIDs)
 	if err != nil {
-		return api.NodePoolCreateConfig{}, fmt.Errorf("parsing subnet IDs: %w", err)
-	}
-	if len(subnetIDs) == 0 {
-		return api.NodePoolCreateConfig{}, fmt.Errorf("at least one subnet ID is required")
+		return api.NodePoolCreateConfig{}, err
 	}
 	sshKeyGroupIDs, err := parseUUIDs(spec.SSHKeyGroupIDs)
 	if err != nil {
 		return api.NodePoolCreateConfig{}, fmt.Errorf("parsing SSH key group IDs: %w", err)
 	}
 
-	interfaces := make([]map[string]any, 0, len(subnetIDs))
-	for _, subnetID := range subnetIDs {
-		interfaces = append(interfaces, map[string]any{"subnetID": subnetID.String()})
-	}
 	sshKeyGroups := make([]string, 0, len(sshKeyGroupIDs))
 	for _, sshKeyGroupID := range sshKeyGroupIDs {
 		sshKeyGroups = append(sshKeyGroups, sshKeyGroupID.String())
@@ -374,6 +395,38 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec, p
 	}
 
 	return pool, nil
+}
+
+// nicoMachineInterfaces is a NicoMachine's network attachments: one per
+// subnet on a fabric that attaches by subnet, or one per VPC prefix on one
+// that attaches by prefix. CAPNico takes exactly one of the two on each
+// interface, and a site is one kind of fabric or the other, so a pool naming
+// both is a mistake rather than two attachments.
+func nicoMachineInterfaces(subnets, vpcPrefixes []string) ([]map[string]any, error) {
+	subnetIDs, err := parseUUIDs(subnets)
+	if err != nil {
+		return nil, fmt.Errorf("parsing subnet IDs: %w", err)
+	}
+	vpcPrefixIDs, err := parseUUIDs(vpcPrefixes)
+	if err != nil {
+		return nil, fmt.Errorf("parsing VPC prefix IDs: %w", err)
+	}
+
+	key, ids := "subnetID", subnetIDs
+	switch {
+	case len(subnetIDs) > 0 && len(vpcPrefixIDs) > 0:
+		return nil, fmt.Errorf("both subnet IDs and VPC prefix IDs are set; a site attaches by one or the other")
+	case len(vpcPrefixIDs) > 0:
+		key, ids = "vpcPrefixID", vpcPrefixIDs
+	case len(subnetIDs) == 0:
+		return nil, fmt.Errorf("at least one subnet ID or VPC prefix ID is required")
+	}
+
+	interfaces := make([]map[string]any, 0, len(ids))
+	for _, id := range ids {
+		interfaces = append(interfaces, map[string]any{key: id.String()})
+	}
+	return interfaces, nil
 }
 
 // buildCAPDRequest stamps the embedded CAPD skeletons with the values from spec

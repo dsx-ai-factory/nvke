@@ -438,6 +438,15 @@ go test -timeout 5h . -args \
   -e2e.versions=controller=<the same value>,os-image-bootloader=<url>,os-image=<url>
 ```
 
+The two OS-image keys may carry an architecture, as `os-image-arm64`. That is
+how one run boots two: a GB200 tenant puts arm64 workers behind a control plane
+of whatever `-e2e.capabilities` asked for under `arch`, and each machine takes
+the pair built for it. The unsuffixed keys above are what a run on a single
+architecture passes, and are used for any architecture that has no suffixed
+pair. The CI workflow always passes suffixed pairs, from the
+`SITE_E2E_OS_IMAGE_<ARCH>` and `SITE_E2E_OS_IMAGE_BOOTLOADER_<ARCH>`
+repository variables.
+
 `SITE_CONTROLLER_VERSION` and `-e2e.versions=controller=` have to be the same
 string, because they name one image: the archive `site-inputs` writes, and the
 reference the suite hands the bootstrap and the deploy path, which the node
@@ -480,8 +489,9 @@ the jump host is enrolled in. In CI it is a bot identity in `TELEPORT_PROXY`
 and `TELEPORT_IDENTITY_FILE`, which
 `.github/workflows/forge-site-controller-e2e.yml` obtains by joining with the
 repository's GitHub OIDC token — nothing is stored. The bot's login is `root`,
-so the workflow sets `FORGE_TELEPORT_LOGIN=root`, which the site's
-`teleportLogin` in `environments/forge.yaml` reads. Unset is tsh's default.
+so the workflow sets `FORGE_TELEPORT_LOGIN=root` and
+`FORGE_YTL_TELEPORT_LOGIN=root`, which each site's `teleportLogin` in
+`environments/forge.yaml` reads. Unset is tsh's default.
 
 For a site whose jump host is *not* enrolled, set `JUMP_HOST_PASSWORD` and the
 harness logs into it over plain SSH and asks its sshd to forward, instead of

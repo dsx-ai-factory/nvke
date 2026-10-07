@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -399,9 +400,9 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	// declarations answer -e2e.capabilities instead, so the machine is chosen
 	// by what the run needs rather than pinned in the table.
 	//
-	// provisioningOnly to start with. Create, node readiness and delete are
-	// what a first run on Forge has to get through before any deeper
-	// assertion is worth attempting.
+	// The validations it runs, and why the rest are off, are on the entry
+	// itself: what this site's capacity and shape allow rather than what the
+	// subtree offers.
 	Entry("nico-forge", Ordered, ContinueOnFailure, Label("nico-forge"), nicoForgeTenant()),
 )...)
 
@@ -418,8 +419,18 @@ func nicoForgeTenant() testSpec {
 	return testSpec{
 		buildSpec: nicoForgeSpec,
 		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			// Cluster-level rather than a control-plane node pool, because the
+			// site's own CWE rejects such a pool at create. #1054 turned
+			// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER on by
+			// default, and the controller chart does not set the variable, so
+			// that default is what a site CWE runs with.
+			//
+			// Not nkectl, despite it forcing the same flag on: that one
+			// reaches only the ephemeral Kind bootstrap CWE, which builds the
+			// site cluster. The tenant is created against the site's CWE,
+			// which cwedeploy never touches.
+			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
+			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
 		// Generous next to the simulator lanes: these timeouts cover a bare
 		// machine booting an OS image over the network and installing
@@ -430,8 +441,26 @@ func nicoForgeTenant() testSpec {
 		// machines are. Run 36051890151 failed the delete at 1800.306s
 		// against the 30 minutes this used to be, while the instances were
 		// still reporting Terminating.
-		options:  nke.Options{Provision: 90 * time.Minute, Delete: 45 * time.Minute, Poll: 30 * time.Second},
-		validate: validations{provisioningOnly: true},
+		options: nke.Options{Provision: 90 * time.Minute, Delete: 45 * time.Minute, Poll: 30 * time.Second},
+		// Everything that asserts against the cluster as it stands. The ones
+		// left off all add, remove, replace, reboot or roll a node: scale,
+		// nodeReplacement, manualScaleDown, nodePoolLifecycle,
+		// nodePoolCascade, reboot, upgrade, cpRotation and the three
+		// controlPlaneController mutations.
+		//
+		// Off for other reasons:
+		//   postReadyChecks and kubeVipRouteWithdrawal want a control-plane
+		//   VIP, which no Forge tenant here is created with.
+		//   certificateRenewal restarts every control-plane node in turn.
+		//   brownfieldEtcdEncryption and brownfieldOIDC mutate a running
+		//   cluster and roll the control plane to do it.
+		validate: validations{
+			clusterConfig:          true,
+			openVSwitch:            true,
+			ovnNetworking:          true,
+			csrApproval:            true,
+			controlPlaneController: true,
+		},
 	}
 }
 
@@ -717,10 +746,10 @@ type clusterShape struct {
 	workerPools       []nke.NodePoolSpec
 	etcdEncrypted     bool
 	controlPlaneVIP   string
-	// controlPlaneConfig provisions the control plane through the cluster-level
-	// control-plane controller. Set it instead of controlPlanePools, never both:
-	// the cp-controller entries use it for controller-only fields, and the
-	// builders leave a spec that already carries a config unconverted.
+	// controlPlaneConfig, when set, provisions the control plane through the
+	// cluster-level control-plane controller (no control-plane node pool) instead
+	// of controlPlanePools. Consumed by the *ControlPlaneControllerSpec builders
+	// and by nicoForgeSpec, whose site CWE runs with the flag on by default.
 	controlPlaneConfig *nke.ControlPlaneConfigSpec
 }
 
@@ -1314,6 +1343,68 @@ func builtControlPlaneInstanceType(spec nke.ClusterSpec) string {
 	return ""
 }
 
+func TestUnit_ForgeControlPlaneConfig(t *testing.T) {
+	cpu := environment.ForgeInstanceType{Name: "cpu", ID: uuid.NewString()}
+	subnet, prefix, keys := uuid.NewString(), uuid.NewString(), uuid.NewString()
+
+	tests := map[string]struct {
+		site                      environment.ForgeSite
+		wantSubnets, wantPrefixes []string
+	}{
+		// az61: attaches by subnet.
+		"subnet site": {
+			site:        environment.ForgeSite{ID: uuid.NewString(), VpcID: uuid.NewString(), SubnetID: subnet, SSHKeyGroupID: keys},
+			wantSubnets: []string{subnet},
+		},
+		// ytl: attaches by VPC prefix and has no subnet, which must stay empty
+		// rather than become [""].
+		"VPC prefix site": {
+			site:         environment.ForgeSite{ID: uuid.NewString(), VpcID: uuid.NewString(), VpcPrefixID: prefix, SSHKeyGroupID: keys},
+			wantPrefixes: []string{prefix},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := forgeControlPlaneConfig(nil, tc.site, cpu); got != nil {
+				t.Fatalf("config for a pool-based entry = %+v, want nil", got)
+			}
+
+			got := forgeControlPlaneConfig(&nke.ControlPlaneConfigSpec{DesiredCount: 1}, tc.site, cpu)
+			if got.InstanceTypeID != cpu.ID || got.SystemReservedMemory != "16Gi" || !slices.Equal(got.SSHKeyGroupIDs, []string{keys}) {
+				t.Errorf("defaults = %+v, want the control plane type, 16Gi and the site's key group", got)
+			}
+			if !slices.Equal(got.SubnetIDs, tc.wantSubnets) || !slices.Equal(got.VpcPrefixIDs, tc.wantPrefixes) {
+				t.Errorf("subnets %q prefixes %q, want %q and %q", got.SubnetIDs, got.VpcPrefixIDs, tc.wantSubnets, tc.wantPrefixes)
+			}
+
+			// The request the site CWE is sent: the control plane rides the
+			// cluster-level config, and no pool claims it.
+			payloads := nke.NodePayloads{IPXEScript: "#!ipxe", PreKubeadmCommands: []string{"true"}}
+			req, err := nke.BuildCreateRequest(nke.ClusterSpec{
+				Name:         "forge-test",
+				Backend:      nke.BackendNicoForge,
+				SiteID:       tc.site.ID,
+				VpcID:        tc.site.VpcID,
+				NodePayloads: &nke.RolePayloads{ControlPlane: payloads, Worker: payloads},
+				ControlPlane: nke.ControlPlane{Config: got},
+				Workers:      forgeNodePoolSpecs([]nke.NodePoolSpec{{DesiredNodeCount: 1}}, "worker", "w", tc.site, cpu),
+			})
+			if err != nil {
+				t.Fatalf("building the create request: %v", err)
+			}
+			if req.ControlPlaneConfig == nil {
+				t.Fatal("request has no cluster-level control plane")
+			}
+			for _, pool := range *req.NodePools {
+				if pool.ControlPlane {
+					t.Errorf("pool %q is a control-plane pool, which the site CWE rejects", pool.Name)
+				}
+			}
+		})
+	}
+}
+
 func capdNodePoolSpecs(pools []nke.NodePoolSpec, defaultName, defaultNodeNamePrefix string) []nke.NodePoolSpec {
 	out := make([]nke.NodePoolSpec, 0, len(pools))
 	for _, pool := range pools {
@@ -1370,14 +1461,11 @@ func nicoSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec 
 // required inputs: they are not what a nico-forge run qualifies, and a resolved
 // combination from the qualify tool will supply them once the run verb exists.
 //
-// Kubernetes and the CNI are what the recorded Forge exercises ran. The SPIRE
-// pin is weaker evidence — those runs installed spire-agent unpinned, so this
-// is the version the repo's own Forge scaffolding names rather than one
-// observed on the hardware.
+// Kubernetes and the CNI are what the recorded Forge exercises ran. There is
+// no SPIRE pin: the OS image owns its spire-agent, so the lane installs none.
 const (
 	forgeDefaultKubernetesVersion = "1.36.3"
 	forgeDefaultCNIVersion        = "1.4.0"
-	forgeDefaultSpireVersion      = "1.14.1+tpm1.9.0"
 )
 
 // nicoForgeSpec builds a CAPNico topology on real Forge. The manifests are the
@@ -1391,32 +1479,34 @@ const (
 func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec {
 	GinkgoHelper()
 
-	forge, err := forgeEnvironment()
+	env, err := runEnvironment()
 	Expect(err).NotTo(HaveOccurred(), "should load the environment named by -e2e.environment")
-	site, err := forge.Site("")
-	Expect(err).NotTo(HaveOccurred(), "should resolve a site in the environment")
+	forge, err := env.Forge()
+	Expect(err).NotTo(HaveOccurred(), "should read it as a Forge declaration")
 	capabilities, err := runCapabilities()
 	Expect(err).NotTo(HaveOccurred(), "should parse -e2e.capabilities")
-	instanceType, err := site.MatchInstanceType(capabilities)
-	Expect(err).NotTo(HaveOccurred(), "should find an instance type providing the requested capabilities")
+	// The same resolution the site lane made, so a tenant lands on the site
+	// hosting it rather than on whichever other site happens to offer a
+	// matching shape.
+	//
+	// The control plane takes the CPU shape and the workers take the GPU one,
+	// so a GB200 tenant is arm64 workers behind an amd64 control plane and
+	// each role boots the image built for its own machine.
+	//
+	// Which shape a control plane should take is not really fixed like this:
+	// it depends on what is scarce at the site, and a run ought to be able to
+	// choose. That choice is not built yet, so this is the one configuration
+	// the lane offers. A pool that names its own InstanceTypeID still
+	// overrides it, though its payloads follow the role rather than the pool,
+	// so an override that changes architecture would boot the wrong image.
+	selection, err := forge.Resolve(capabilities)
+	Expect(err).NotTo(HaveOccurred(), "should resolve a site offering the requested shapes")
+	site := selection.Site
+	controlPlaneType, workerType := selection.CPU, selection.WorkerType()
 
 	kubernetesVersion := cmp.Or(optionalVersion("kube"), shape.kubernetesVersion, forgeDefaultKubernetesVersion)
 
-	// The OS image is the component under qualification, so it is required and
-	// has no default: a run that did not name one has not said what it is
-	// qualifying. The imager is versioned separately and cannot be derived.
-	bootLoaderURL, err := requireVersion("os-image-bootloader")
-	Expect(err).NotTo(HaveOccurred(), "should be told which qcow imager to boot")
-	imageURL, err := requireVersion("os-image")
-	Expect(err).NotTo(HaveOccurred(), "should be told which OS image to qualify")
-
-	payloads, err := nke.BuildForgeNodePayloads(nke.NodeInputs{
-		BootLoaderURL:     bootLoaderURL,
-		ImageURL:          imageURL,
-		KubernetesVersion: kubernetesVersion,
-		CNIVersion:        cmp.Or(optionalVersion("nke-cni-ovn"), forgeDefaultCNIVersion),
-		SpireVersion:      cmp.Or(optionalVersion("spire-agent"), forgeDefaultSpireVersion),
-	})
+	payloads, err := forgeRolePayloads(controlPlaneType.Arch(), workerType.Arch(), kubernetesVersion)
 	Expect(err).NotTo(HaveOccurred(), "should render the Forge node payloads")
 
 	return nke.ClusterSpec{
@@ -1429,9 +1519,10 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.Cluster
 		OrgID:        forge.Org.ID,
 		SiteID:       site.ID,
 		VpcID:        site.VpcID,
-		NodePayloads: &payloads,
+		NodePayloads: payloads,
 		ControlPlane: nke.ControlPlane{
-			Pools:         forgeNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", site, instanceType),
+			Pools:         forgeNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", site, controlPlaneType),
+			Config:        forgeControlPlaneConfig(shape.controlPlaneConfig, site, controlPlaneType),
 			EtcdEncrypted: shape.etcdEncrypted,
 			// Empty unless an entry asks for one, which CWE reads as "do not
 			// configure kube-vip". The Forge tenants were created without one,
@@ -1440,8 +1531,64 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.Cluster
 			// hosts, and a real site has no equivalent to borrow from.
 			ControlPlaneVIP: shape.controlPlaneVIP,
 		},
-		Workers: forgeNodePoolSpecs(shape.workerPools, "worker", "w", site, instanceType),
+		Workers: forgeNodePoolSpecs(shape.workerPools, "worker", "w", site, workerType),
 	}
+}
+
+// forgeControlPlaneConfig fills a cluster-level control-plane config from the
+// environment, the same defaults forgeNodePoolSpecs applies to a pool: a
+// control-plane node is the same machine as a pool node, so it is chosen by
+// the same capability match and attaches the way the site's fabric does.
+// Returns nil for an entry that asks for a control-plane node pool instead,
+// which CWE reads as "no cluster-level control plane".
+func forgeControlPlaneConfig(
+	cfg *nke.ControlPlaneConfigSpec,
+	site environment.ForgeSite,
+	instanceType environment.ForgeInstanceType,
+) *nke.ControlPlaneConfigSpec {
+	if cfg == nil {
+		return nil
+	}
+	out := *cfg
+	out.SystemReservedMemory = cmp.Or(out.SystemReservedMemory, "16Gi")
+	out.InstanceTypeID = cmp.Or(out.InstanceTypeID, instanceType.ID)
+	// optionalStrings, as for a pool: at a site that attaches by prefix the
+	// subnet is unset, and a plain default would send Forge [""].
+	out.SubnetIDs = optionalStrings(out.SubnetIDs, site.SubnetID)
+	out.VpcPrefixIDs = optionalStrings(out.VpcPrefixIDs, site.VpcPrefixID)
+	out.SSHKeyGroupIDs = defaultStrings(out.SSHKeyGroupIDs, site.SSHKeyGroupID)
+	return &out
+}
+
+// forgeRolePayloads renders one payload set per role. When both roles are the
+// same architecture the work is done once and shared, which is the ordinary
+// single-architecture cluster.
+func forgeRolePayloads(controlPlaneArch, workerArch, kubernetesVersion string) (*nke.RolePayloads, error) {
+	build := func(arch string) (nke.NodePayloads, error) {
+		bootLoaderURL, imageURL, err := requireNodeArtifacts(arch)
+		if err != nil {
+			return nke.NodePayloads{}, err
+		}
+		return nke.BuildForgeNodePayloads(nke.NodeInputs{
+			BootLoaderURL:     bootLoaderURL,
+			ImageURL:          imageURL,
+			Arch:              arch,
+			KubernetesVersion: kubernetesVersion,
+			CNIVersion:        cmp.Or(optionalVersion("cni-ovn"), forgeDefaultCNIVersion),
+		})
+	}
+
+	controlPlane, err := build(controlPlaneArch)
+	if err != nil {
+		return nil, fmt.Errorf("control plane (%s): %w", controlPlaneArch, err)
+	}
+	worker := controlPlane
+	if workerArch != controlPlaneArch {
+		if worker, err = build(workerArch); err != nil {
+			return nil, fmt.Errorf("workers (%s): %w", workerArch, err)
+		}
+	}
+	return &nke.RolePayloads{ControlPlane: controlPlane, Worker: worker}, nil
 }
 
 // forgeNodePoolSpecs fills each pool from the environment. A pool naming its
@@ -1461,8 +1608,13 @@ func forgeNodePoolSpecs(
 			DesiredNodeCount:     pool.DesiredNodeCount,
 			SystemReservedMemory: cmp.Or(pool.SystemReservedMemory, "16Gi"),
 			InstanceTypeID:       cmp.Or(pool.InstanceTypeID, instanceType.ID),
-			SubnetIDs:            defaultStrings(pool.SubnetIDs, site.SubnetID),
-			SSHKeyGroupIDs:       defaultStrings(pool.SSHKeyGroupIDs, site.SSHKeyGroupID),
+			// Whichever of the two the site's fabric uses. The other has
+			// to stay an empty slice rather than a slice holding an empty
+			// string, which is what a plain default would produce and what
+			// Forge would reject as an unknown identifier.
+			SubnetIDs:      optionalStrings(pool.SubnetIDs, site.SubnetID),
+			VpcPrefixIDs:   optionalStrings(pool.VpcPrefixIDs, site.VpcPrefixID),
+			SSHKeyGroupIDs: defaultStrings(pool.SSHKeyGroupIDs, site.SSHKeyGroupID),
 		})
 	}
 	return out
@@ -1574,6 +1726,16 @@ func nicoVMSNodePoolSpec(pool nke.NodePoolSpec, defaultName, defaultNodeNamePref
 		ConfigProfile:         cmp.Or(pool.ConfigProfile, defaultConfigProfile),
 		DiskSelectionStrategy: cmp.Or(pool.DiskSelectionStrategy, "smallest"),
 	}
+}
+
+// optionalStrings is defaultStrings for a default that may legitimately be
+// unset, where the empty result has to stay empty rather than become a
+// one-element slice holding "".
+func optionalStrings(s []string, defaultValue string) []string {
+	if len(s) == 0 && defaultValue == "" {
+		return nil
+	}
+	return defaultStrings(s, defaultValue)
 }
 
 func defaultStrings(s []string, defaultValue string) []string {

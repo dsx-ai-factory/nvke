@@ -147,7 +147,66 @@ const (
 	siteSpecPath   = workDir + "/sitespec.yaml"
 	kubeconfigPath = workDir + "/site.kubeconfig"
 	diagnosticsDir = workDir + "/diagnostics"
+
+	// nodeRecordDir is what the node says about itself, as opposed to what
+	// nkectl says about the cluster. captureNodeRecord fills it.
+	nodeRecordDir = workDir + "/node"
 )
+
+const (
+	// agentStateFile is the node agent's state on disk, mirroring StateFile
+	// in agent/internal/agent. Duplicated rather than imported because that
+	// package is internal to the agent module.
+	//
+	// It is the only place the whole of a failed kubeadm run survives: the
+	// agent keeps the output in kubeadmErrorMessage, but
+	// KubeadmStatusResponse has no field for it, so what reaches CWE is one
+	// line picked out of it. Run 36908360256 reported "error execution phase
+	// preflight: preflight checks failed" and nothing more, when the
+	// [ERROR ...] lines naming the check that failed were sitting here.
+	agentStateFile = "/var/lib/nke/state.json"
+
+	// maskJoinCredentials blanks kubeadm's bootstrap token and certificate
+	// key in the captured files.
+	//
+	// A site whose own kubeadm init succeeded has both in the agent's
+	// journal -- the failure that prompted the collection can be anywhere
+	// after it -- and this archive is uploaded as a CI artifact, so it
+	// outlives the cluster they are scoped to. redactArchive cannot do this:
+	// it substitutes the values the suite placed on the node, and these are
+	// kubeadm's own.
+	//
+	// The third expression is the bootstrap token's documented shape, which
+	// catches it in the agent's state as well, where it is a JSON field
+	// rather than a command-line flag.
+	maskJoinCredentials = "find " + nodeRecordDir + " -type f -exec sed -i -E" +
+		" -e \"s/--token[= ][^[:space:]]+/--token " + redactedMarker + "/g\"" +
+		" -e \"s/--certificate-key[= ][^[:space:]]+/--certificate-key " + redactedMarker + "/g\"" +
+		" -e \"s/[a-z0-9]{6}\\.[a-z0-9]{16}/" + redactedMarker + "/g\"" +
+		" {} +"
+)
+
+// nodeRecordItem is one file of the node record: the command to run, and the
+// name to write its output under.
+type nodeRecordItem struct {
+	name string
+	cmd  string
+}
+
+// nodeRecord is what to read off the node and where to put it, in the order
+// a reader wants them: the agent first, since it is the process that runs
+// kubeadm, then the two services a preflight check can fail on.
+func nodeRecord() []nodeRecordItem {
+	return []nodeRecordItem{
+		// No -n: CWE polls the agent for status every few seconds, so on a
+		// 30-minute timeout a tail is 30 minutes of polls and the kubeadm
+		// output is above it.
+		{"nke-agent.journal", "journalctl -b -u nke-agent --no-pager -o cat"},
+		{"kubelet.journal", "journalctl -b -u kubelet --no-pager -o cat"},
+		{"containerd.journal", "journalctl -b -u containerd --no-pager -o cat"},
+		{"state.json", "cat " + agentStateFile},
+	}
+}
 
 const (
 	// diagnosticsArchive is where CollectDiagnostics stages its tarball on
@@ -162,18 +221,19 @@ const (
 	noDiagnosticsMarker = "nke-e2e-no-diagnostics"
 )
 
-// ErrNoDiagnostics is returned when the node has no diagnostics directory,
-// which is the ordinary case: nkectl writes one when it fails, so its absence
-// usually means the deploy worked and the run failed somewhere after it. Run
-// 36045936723 did exactly that -- the stack came up and the suite tripped on
-// a version-string comparison -- and reporting "could not collect the node's
-// diagnostics" as an error there sent the reader looking for a second fault
-// that did not exist. Distinguished from a real failure to archive or fetch,
-// which means diagnostics do exist and are being lost.
-var ErrNoDiagnostics = errors.New("the node has no diagnostics directory")
+// ErrNoDiagnostics is returned when the node yielded nothing at all: nkectl
+// wrote no diagnostics directory and the node record is missing too, which
+// takes a session that cannot run anything. nkectl's absence on its own is
+// not an error, and used to be: run 36045936723 came up and tripped on a
+// version-string comparison, and reporting "could not collect the node's
+// diagnostics" there sent the reader looking for a second fault that did not
+// exist. Distinguished from a real failure to archive or fetch, which means
+// diagnostics do exist and are being lost.
+var ErrNoDiagnostics = errors.New("the node has no diagnostics")
 
-// CollectDiagnostics copies the cluster diagnostics nkectl writes on failure
-// off the node and into dest.
+// CollectDiagnostics copies what the node knows about its own failure off it
+// and into dest: the cluster diagnostics nkectl writes when it fails, and
+// the node's own journals and agent state.
 //
 // It has to be called before the node is released, which on a failed run is
 // minutes later, and nothing else preserves them: run 36016817952 spent 48
@@ -186,9 +246,17 @@ var ErrNoDiagnostics = errors.New("the node has no diagnostics directory")
 // journal is a plausible place for a credential to surface, so a caller that
 // put one on the machine is expected to name it here.
 func CollectDiagnostics(ctx context.Context, s infra.Session, dest string, secrets ...string) error {
-	cmd := fmt.Sprintf("if test -d %s; then tar -czf %s -C %s diagnostics; else echo %s; fi",
-		shellQuote(diagnosticsDir), shellQuote(diagnosticsArchive), shellQuote(workDir),
-		shellQuote(noDiagnosticsMarker))
+	// Before the archive, because the point is to be inside it. Not fatal:
+	// nkectl's diagnostics are worth having on their own, and each item
+	// records its own error in the file it was meant to fill.
+	_ = captureNodeRecord(ctx, s)
+
+	// Whichever of the two exist, named rather than globbed so tar does not
+	// take the archive it is writing as a member.
+	cmd := fmt.Sprintf("cd %s && members= && for d in %s %s; do if test -d $d; then members=\"$members $d\"; fi; done && "+
+		"if test -z \"$members\"; then echo %s; else tar -czf %s $members; fi",
+		shellQuote(workDir), path.Base(diagnosticsDir), path.Base(nodeRecordDir),
+		shellQuote(noDiagnosticsMarker), shellQuote(diagnosticsArchive))
 	out, err := s.Run(ctx, asRoot(cmd))
 	if err != nil {
 		return fmt.Errorf("archive the diagnostics on the node: %w\n%s", err, tail(out))
@@ -207,6 +275,26 @@ func CollectDiagnostics(ctx context.Context, s infra.Session, dest string, secre
 		return err
 	}
 	return os.WriteFile(dest, redacted, 0o600)
+}
+
+// captureNodeRecord writes the node's own account of itself into
+// nodeRecordDir, for CollectDiagnostics to archive alongside nkectl's.
+//
+// Every item redirects its own stderr into its own file, so an absent unit
+// or an unreadable path documents itself in the archive instead of failing
+// the capture and taking the rest with it.
+func captureNodeRecord(ctx context.Context, s infra.Session) error {
+	record := nodeRecord()
+	script := make([]string, 0, len(record)+2)
+	script = append(script, "mkdir -p "+shellQuote(nodeRecordDir))
+	for _, item := range record {
+		script = append(script, item.cmd+" > "+shellQuote(path.Join(nodeRecordDir, item.name))+" 2>&1")
+	}
+	script = append(script, maskJoinCredentials)
+	if _, err := s.Run(ctx, asRoot(strings.Join(script, "; "))); err != nil {
+		return fmt.Errorf("capture the node's record: %w", err)
+	}
+	return nil
 }
 
 func (b bootstrap) stageNkectl(ctx context.Context) error {

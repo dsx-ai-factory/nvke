@@ -6,6 +6,7 @@ package nke
 import (
 	_ "embed"
 	"fmt"
+	"regexp"
 	"strings"
 	"text/template"
 )
@@ -15,6 +16,18 @@ var (
 	nicoForgeIPXETmpl string
 	//go:embed nico_forge_prekubeadm.tmpl
 	nicoForgePreKubeadmTmpl string
+
+	// archInURL and bootLoaderArchInURL match the architecture an artifact
+	// names. The two spell it differently: the OS image uses the Go/Debian
+	// names and the EFI imager uses the uname ones.
+	archInURL           = regexp.MustCompile(`\b(amd64|arm64)\b`)
+	bootLoaderArchInURL = regexp.MustCompile(`\b(x86_64|aarch64)\b`)
+
+	// ubuntuReleaseInURL matches the Ubuntu release in an OS image filename,
+	// as in nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2. The point release is
+	// optional and ignored: NKE publishes a suite per Ubuntu release, not per
+	// point.
+	ubuntuReleaseInURL = regexp.MustCompile(`ubuntu-(\d+\.\d+)`)
 )
 
 // NodeInputs is everything building an NKE node from an image needs that a
@@ -33,12 +46,22 @@ type NodeInputs struct {
 	BootLoaderURL string
 	ImageURL      string
 
+	// Arch is the machine's architecture, "amd64" or "arm64". It selects the
+	// console and kernel parameters the iPXE script sets, which differ by
+	// architecture rather than by run. It comes from the instance type the
+	// node is created as, so it cannot disagree with the hardware.
+	Arch string
+
 	// KubernetesVersion selects the nke-kubeadm-distro package, e.g. "1.34.2".
 	KubernetesVersion string
 	// CNIVersion selects the nke-cni-ovn-images package, e.g. "1.4.0".
 	CNIVersion string
-	// SpireVersion selects the spire-agent package, e.g. "1.14.1+tpm1.9.0".
-	SpireVersion string
+	// AptSuite is the NKE apt suite the node installs its packages from, one
+	// per Ubuntu release. Empty derives it from ImageURL, which is where the
+	// answer already is: the suite has to match the release the image was
+	// built from, and a separately supplied one is just an opportunity for
+	// the two to disagree. Set it only when the URL does not name a release.
+	AptSuite string
 
 	// AgentArgs overrides the node agent's arguments. Empty means the port
 	// CWE dials and nothing else. Whether the agent runs --disable-mtls has to
@@ -72,9 +95,9 @@ func (i NodeInputs) validate() error {
 	}{
 		{"BootLoaderURL", i.BootLoaderURL},
 		{"ImageURL", i.ImageURL},
+		{"Arch", i.Arch},
 		{"KubernetesVersion", i.KubernetesVersion},
 		{"CNIVersion", i.CNIVersion},
-		{"SpireVersion", i.SpireVersion},
 	} {
 		if strings.TrimSpace(field.value) == "" {
 			missing = append(missing, field.name)
@@ -94,6 +117,16 @@ func BuildForgeNodePayloads(inputs NodeInputs) (NodePayloads, error) {
 	}
 	if strings.TrimSpace(inputs.AgentArgs) == "" {
 		inputs.AgentArgs = defaultAgentArgs
+	}
+	if err := inputs.checkArch(); err != nil {
+		return NodePayloads{}, err
+	}
+	if strings.TrimSpace(inputs.AptSuite) == "" {
+		suite, err := aptSuiteFor(inputs.ImageURL)
+		if err != nil {
+			return NodePayloads{}, err
+		}
+		inputs.AptSuite = suite
 	}
 
 	ipxe, err := renderTemplate("nico_forge_ipxe", nicoForgeIPXETmpl, inputs)
@@ -115,6 +148,85 @@ func BuildForgeNodePayloads(inputs NodeInputs) (NodePayloads, error) {
 	}
 
 	return NodePayloads{IPXEScript: ipxe, PreKubeadmCommands: commands}, nil
+}
+
+// ubuntuReleaseInURL matches the Ubuntu release in an OS image filename, as in
+// nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2. The point release is optional
+// and ignored: NKE publishes a suite per Ubuntu release, not per point.
+
+// unameArch is the imager's spelling of an architecture, empty for one it does
+// not name.
+func unameArch(arch string) string {
+	switch arch {
+	case "amd64":
+		return "x86_64"
+	case "arm64":
+		return "aarch64"
+	default:
+		return ""
+	}
+}
+
+// checkArch refuses an image or imager built for a different machine than the
+// one being created.
+//
+// The URLs come from -e2e.versions and the architecture from the instance type,
+// so nothing upstream forces them to agree: pointing a run at an arm64 site
+// while leaving the amd64 image URL in place is a one-variable mistake. Caught
+// here, it is a message naming both; left alone, it is a machine that boots an
+// image its firmware cannot execute and reports nothing.
+//
+// A URL naming no architecture is accepted. Only a stated disagreement is an
+// error, because an internal build may follow neither convention.
+func (i NodeInputs) checkArch() error {
+	for _, artifact := range []struct {
+		what, url, want string
+		pattern         *regexp.Regexp
+	}{
+		{"OS image", i.ImageURL, i.Arch, archInURL},
+		{"boot loader", i.BootLoaderURL, unameArch(i.Arch), bootLoaderArchInURL},
+	} {
+		if artifact.want == "" {
+			continue
+		}
+		for _, found := range artifact.pattern.FindAllString(artifact.url, -1) {
+			if found != artifact.want {
+				return fmt.Errorf("the node is %s but its %s names %s: %s", i.Arch, artifact.what, found, artifact.url)
+			}
+		}
+	}
+	return nil
+}
+
+// aptSuite is the NKE apt suite built for an Ubuntu release, and the list of
+// releases that have one. Adding a release means publishing its suite first;
+// see agent/scripts/upload-s3-apt-intake.sh, whose default list is these two.
+func aptSuite(release string) (string, []string) {
+	known := []string{"24.04", "26.04"}
+	switch release {
+	case "24.04":
+		return "noble", known
+	case "26.04":
+		return "resolute", known
+	default:
+		return "", known
+	}
+}
+
+// aptSuiteFor reads the suite out of the image URL rather than guessing one.
+// An unknown release is an error and not a fallback: installing from the wrong
+// suite fails as a package that cannot be found, minutes into a boot, with
+// nothing naming the release as the cause.
+func aptSuiteFor(imageURL string) (string, error) {
+	match := ubuntuReleaseInURL.FindStringSubmatch(imageURL)
+	if match == nil {
+		return "", fmt.Errorf("cannot tell which Ubuntu release %q is, so cannot pick an apt suite: set NodeInputs.AptSuite", imageURL)
+	}
+	suite, known := aptSuite(match[1])
+	if suite == "" {
+		return "", fmt.Errorf("no NKE apt suite is known for Ubuntu %s (only %s); publish one and add it to aptSuite", match[1], strings.Join(known, ", "))
+	}
+	return suite, nil
 }
 
 func renderTemplate(name, text string, data any) (string, error) {

@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -25,6 +26,16 @@ import (
 )
 
 const (
+	// cloudInitDiagnosticTimeout bounds the diagnostic collection. The context
+	// that reached this point may already be at its deadline, and a node that
+	// has stopped answering must not turn a reported failure into a hang.
+	cloudInitDiagnosticTimeout = 2 * time.Minute
+
+	// cloudInitStatusError is the status cloud-init reports when a module
+	// failed outright, as opposed to the "degraded done" it reports for a
+	// warning.
+	cloudInitStatusError = "error"
+
 	// DefaultEndpoint is production NGC. Staging is
 	// https://api.stg.ngc.nvidia.com.
 	DefaultEndpoint = "https://api.ngc.nvidia.com"
@@ -60,7 +71,11 @@ const (
 // Images resolves the Node version under qualification to the two URLs the
 // iPXE script boots: the qcow imager and the image it writes. Both must be
 // plain HTTPS, since iPXE cannot pull an OCI artifact.
-type Images func(nodeVersion string) (bootLoaderURL, imageURL string, err error)
+//
+// The architecture is a parameter because a run can span two: the machine
+// being created decides which image it needs, and only the provider knows
+// which machine that is.
+type Images func(nodeVersion, arch string) (bootLoaderURL, imageURL string, err error)
 
 // Conn is a connection to a node. It is everything a Session does except
 // release the machine, which is the provider's.
@@ -106,6 +121,12 @@ type Options struct {
 
 	Images Images
 	Dialer Dialer
+	// NodeUser is the account the OS image bakes, and the login every
+	// session uses. Empty is the OSS os-image default; an internal-pipeline
+	// image needs its own. It must match the image or cloud-init writes
+	// authorized_keys for an account that does not exist.
+	NodeUser string
+
 	// JumpHost is the Teleport node the site's machines are reached through.
 	// They are not Teleport-enrolled themselves, so it is the only route to
 	// one. It comes from the runner, not the environment file, so the access
@@ -309,27 +330,127 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	if err != nil {
 		return fail(err)
 	}
-	conn, err := p.waitReachable(ctx, teleport.Target{JumpHost: p.opts.JumpHost, Address: address, User: nodeUser, Signer: signer})
+	conn, err := p.waitReachable(ctx, teleport.Target{JumpHost: p.opts.JumpHost, Address: address, User: p.nodeUser(), Signer: signer})
 	if err != nil {
+		// A key this run generated moments ago is not rejected by chance.
+		// sshd answering and refusing publickey means cloud-init wrote
+		// authorized_keys somewhere else, which is what a node.user that
+		// does not match the account the OS image bakes looks like. Say so
+		// here: the alternative is a bare auth error after the whole
+		// provisioning wait, with nothing naming the setting to change.
+		if strings.Contains(err.Error(), "unable to authenticate") {
+			err = fmt.Errorf("%w\n\tthe node answered but refused this run's key, so cloud-init likely wrote authorized_keys for a different account: check node.user (%q) against the account %s bakes", err, p.nodeUser(), req.Name)
+		}
 		return fail(err)
 	}
-	if out, err := conn.Run(ctx, "cloud-init status --wait"); err != nil {
+	if err := awaitCloudInit(ctx, conn, req.Name); err != nil {
 		_ = conn.Close()
-		return fail(fmt.Errorf("forge: cloud-init on %s did not finish cleanly, and node preflight would reject it: %w\n%s", req.Name, err, out))
+		return fail(err)
 	}
 
 	return infra.Node{Name: req.Name, IP: address, Arch: instanceType.Arch()}, &session{Conn: conn, release: release}, nil
 }
 
+// cloudInitReport is the part of `cloud-init status --format=json` the node
+// preflight reads.
+type cloudInitReport struct {
+	Status         string   `json:"status"`
+	ExtendedStatus string   `json:"extended_status"`
+	Errors         []string `json:"errors"`
+	// RecoverableErrors are warnings. They set "degraded done" and a non-zero
+	// exit code without saying anything about whether the user data ran, so
+	// they are reported when something else fails rather than failing a node
+	// themselves.
+	RecoverableErrors map[string][]string `json:"recoverable_errors"`
+}
+
+// awaitCloudInit blocks until cloud-init settles, then reports whether the
+// node is fit to bootstrap on.
+//
+// The exit code of `cloud-init status` is not that verdict. An instance is
+// created with phone-home disabled and cannot reach the metadata service, so
+// cloud-init finds no datasource, falls back to DataSourceNone and finishes
+// "degraded done" -- exit 2 -- over a warning that says nothing about whether
+// the user data ran. `errors` is what carries a real failure, so that is what
+// the preflight reads.
+func awaitCloudInit(ctx context.Context, conn Conn, name string) error {
+	// The wait must not decide the outcome, so its exit code is discarded and
+	// the verdict comes from the report below.
+	if _, err := conn.Run(ctx, "cloud-init status --wait >/dev/null 2>&1 || true"); err != nil {
+		return fmt.Errorf("forge: waiting for cloud-init on %s: %w", name, err)
+	}
+
+	out, err := conn.Run(ctx, "cloud-init status --format=json || true")
+	if err != nil {
+		return fmt.Errorf("forge: reading cloud-init status on %s: %w", name, err)
+	}
+
+	var report cloudInitReport
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		return fmt.Errorf("forge: cloud-init status on %s is not the JSON the preflight reads: %w\n%s%s", name, err, out, cloudInitDiagnostics(ctx, conn))
+	}
+	if report.Status == cloudInitStatusError || len(report.Errors) > 0 {
+		detail := strings.Join(report.Errors, "; ")
+		if detail == "" {
+			detail = report.ExtendedStatus
+		}
+		return fmt.Errorf("forge: cloud-init on %s failed, and node preflight would reject it: %s%s", name, detail, cloudInitDiagnostics(ctx, conn))
+	}
+	return nil
+}
+
+// cloudInitDiagnostics reports why cloud-init degraded. `cloud-init status
+// --wait` gives an exit code and the word "done", which is not enough to act
+// on once the run has deleted the instance.
+//
+// Best effort throughout: a probe that fails contributes its error rather
+// than replacing the failure being reported, since the caller already has the
+// only fact that must survive.
+func cloudInitDiagnostics(ctx context.Context, conn Conn) string {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cloudInitDiagnosticTimeout)
+	defer cancel()
+
+	probes := []struct{ label, cmd string }{
+		// --long carries the recoverable errors that set the exit code.
+		{"cloud-init status --long", "cloud-init status --long"},
+		// Where a failing runcmd prints. The usual answer is here.
+		{"cloud-init-output.log (tail)", "sudo -n tail -n 120 /var/log/cloud-init-output.log"},
+		// cloud-init's own warnings, for a module that failed before runcmd.
+		{"cloud-init.log (warnings)", "sudo -n grep -aE 'WARNING|ERROR|CRITICAL' /var/log/cloud-init.log | tail -n 40"},
+	}
+
+	var b strings.Builder
+	for _, probe := range probes {
+		out, err := conn.Run(ctx, probe.cmd)
+		b.WriteString("\n--- " + probe.label + " ---\n")
+		if err != nil {
+			b.WriteString("collecting failed: " + err.Error() + "\n")
+		}
+		if trimmed := strings.TrimSpace(out); trimmed != "" {
+			b.WriteString(trimmed + "\n")
+		}
+	}
+	return b.String()
+}
+
 // payloads returns the iPXE script and the cloud-init user data, in that
 // order.
 func (p *Provider) payloads(req infra.NodeRequest, instanceType environment.ForgeInstanceType, authorizedKey string) (string, string, error) {
-	bootLoader, image, err := p.opts.Images(req.NodeVersion)
-	if err != nil {
-		return "", "", fmt.Errorf("forge: resolving the image for node version %q: %w", req.NodeVersion, err)
+	// Resolved first: it selects the image, the console and kernel parameters
+	// the iPXE script sets, and the host tools. The instance type is the only
+	// thing here that knows which machine is being created.
+	arch := instanceType.Arch()
+	if arch == "" {
+		return "", "", fmt.Errorf("forge: instance type %s declares no arch, so neither boot parameters nor host tools can be chosen for it", instanceType.Name)
 	}
+	bootLoader, image, err := p.opts.Images(req.NodeVersion, arch)
+	if err != nil {
+		return "", "", fmt.Errorf("forge: resolving the %s image for node version %q: %w", arch, req.NodeVersion, err)
+	}
+
 	inputs := p.opts.Node
 	inputs.BootLoaderURL, inputs.ImageURL = bootLoader, image
+	inputs.Arch = arch
 	if p.opts.DisableMTLS {
 		inputs.AgentArgs = "--secure-server-port 15005 --disable-mtls"
 	}
@@ -337,16 +458,12 @@ func (p *Provider) payloads(req infra.NodeRequest, instanceType environment.Forg
 	if err != nil {
 		return "", "", fmt.Errorf("forge: %w", err)
 	}
-
-	arch := instanceType.Provides["arch"]
-	if arch == "" {
-		return "", "", fmt.Errorf("forge: instance type %s declares no arch, so no host tools can be chosen for it", instanceType.Name)
-	}
 	userData, err := renderUserData(userDataInputs{
 		Hostname:      req.Name,
 		AuthorizedKey: authorizedKey,
 		Arch:          arch,
 		NodeCommands:  node.PreKubeadmCommands,
+		NodeUser:      p.nodeUser(),
 		Tools:         p.opts.Tools,
 	})
 	if err != nil {
@@ -355,12 +472,16 @@ func (p *Provider) payloads(req infra.NodeRequest, instanceType environment.Forg
 	return node.IPXEScript, userData, nil
 }
 
-// interfaces attaches the instance to the site's subnet. A VPC exposes
-// subnets or prefixes according to its network virtualization, never both;
-// only subnets are declared today.
+// interfaces attaches the instance to the site's network. A VPC exposes
+// subnets or prefixes according to its network virtualization, never both,
+// so the site declares whichever one its fabric uses and this follows it.
 func (p *Provider) interfaces() []standard.InterfaceCreateRequest {
 	iface := standard.NewInterfaceCreateRequest()
-	iface.SetSubnetId(p.site.SubnetID)
+	if p.site.VpcPrefixID != "" {
+		iface.SetVpcPrefixId(p.site.VpcPrefixID)
+	} else {
+		iface.SetSubnetId(p.site.SubnetID)
+	}
 	iface.SetIsPhysical(true)
 	return []standard.InterfaceCreateRequest{*iface}
 }
@@ -482,6 +603,16 @@ func instanceAddress(inst *standard.Instance) string {
 		}
 	}
 	return ""
+}
+
+// nodeUser is the login for this provider's machines, defaulted once so the
+// cloud-init that writes authorized_keys and the dial that uses them cannot
+// disagree.
+func (p *Provider) nodeUser() string {
+	if u := strings.TrimSpace(p.opts.NodeUser); u != "" {
+		return u
+	}
+	return defaultNodeUser
 }
 
 func newKey() (ssh.Signer, string, error) {
