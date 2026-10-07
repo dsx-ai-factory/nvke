@@ -15,6 +15,14 @@ CLUSTER_NAME="${CLUSTER_NAME:-$(whoami)-capnico-forge}"
 KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}"
 # CNI defaults to ovn-kubernetes. Set CNI_PLUGIN=calico to use Calico instead.
 CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}"
+case "${CNI_PLUGIN}" in
+  ovn-kubernetes) CNI_IMAGES_PACKAGE="nke-cni-ovn-images-1.4.0" ;;
+  calico) CNI_IMAGES_PACKAGE="nke-cni-calico-images-3.30.1" ;;
+  *)
+    printf 'create-forge-nico-cluster: unsupported CNI_PLUGIN %s\n' "${CNI_PLUGIN}" >&2
+    exit 1
+    ;;
+esac
 CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}"
 WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}"
 
@@ -108,7 +116,7 @@ BODY=$(cat <<EOF
         "echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://nke-prod-assets.s3.us-west-2.amazonaws.com/nke-apt-noble nke-noble main' > /etc/apt/sources.list.d/nke-apt.list",
         "apt-get update",
         "DEBIAN_FRONTEND=noninteractive apt-get install -y nke-agent nke-kubeadm-distro-${KUBERNETES_VERSION}",
-        "DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-1.4.0",
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y ${CNI_IMAGES_PACKAGE}",
         "DEBIAN_FRONTEND=noninteractive apt-get install -y spire-agent=1.14.1+tpm1.9.0",
         "printf 'AGENT_ARGS=\"--secure-server-port 15005\"\\n' > /etc/default/nke-agent",
         "sysctl --system",
@@ -160,7 +168,7 @@ BODY=$(cat <<EOF
         "echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://nke-prod-assets.s3.us-west-2.amazonaws.com/nke-apt-noble nke-noble main' > /etc/apt/sources.list.d/nke-apt.list",
         "apt-get update",
         "DEBIAN_FRONTEND=noninteractive apt-get install -y nke-agent nke-kubeadm-distro-${KUBERNETES_VERSION}",
-        "DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-1.4.0",
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y ${CNI_IMAGES_PACKAGE}",
         "DEBIAN_FRONTEND=noninteractive apt-get install -y spire-agent=1.14.1+tpm1.9.0",
         "printf 'AGENT_ARGS=\"--secure-server-port 15005\"\\n' > /etc/default/nke-agent",
         "sysctl --system",
