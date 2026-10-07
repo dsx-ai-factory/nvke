@@ -218,11 +218,26 @@ func TestOpenVSwitchUserspaceTSO(t *testing.T) {
 			},
 			wantCalls: []string{getTSO, setTSO, restart},
 		},
-		"restart failure is reported": {
+		"restart failure restores an unset value": {
 			responses: map[string][]openVSwitchCommandResult{
 				getTSO: {{}}, setTSO: {{}}, restart: {{err: errors.New("unit failed")}},
+				"ovs-vsctl remove Open_vSwitch . other_config userspace-tso-enable": {{}},
 			},
-			wantCalls:   []string{getTSO, setTSO, restart},
+			wantCalls: []string{
+				getTSO, setTSO, restart,
+				"ovs-vsctl remove Open_vSwitch . other_config userspace-tso-enable",
+			},
+			errorString: "restart ovs-vswitchd to apply userspace-tso-enable",
+		},
+		"restart failure restores the previous value": {
+			responses: map[string][]openVSwitchCommandResult{
+				getTSO: {{output: []byte("\"false\"\n")}}, setTSO: {{}}, restart: {{err: errors.New("unit failed")}},
+				"ovs-vsctl set Open_vSwitch . other_config:userspace-tso-enable=false": {{}},
+			},
+			wantCalls: []string{
+				getTSO, setTSO, restart,
+				"ovs-vsctl set Open_vSwitch . other_config:userspace-tso-enable=false",
+			},
 			errorString: "restart ovs-vswitchd to apply userspace-tso-enable",
 		},
 	}

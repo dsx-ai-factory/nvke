@@ -284,7 +284,8 @@ func (s *NodeAgentServer) ensureOpenVSwitchUserspaceTSO() error {
 	if err != nil {
 		return fmt.Errorf("read Open vSwitch %s: %w", openVSwitchUserspaceTSOKey, err)
 	}
-	if strings.Trim(strings.TrimSpace(string(output)), `"`) == "true" {
+	previous := strings.Trim(strings.TrimSpace(string(output)), `"`)
+	if previous == "true" {
 		return nil
 	}
 	if _, err := s.runOpenVSwitchCommand(
@@ -293,9 +294,27 @@ func (s *NodeAgentServer) ensureOpenVSwitchUserspaceTSO() error {
 		return fmt.Errorf("enable Open vSwitch %s: %w", openVSwitchUserspaceTSOKey, err)
 	}
 	if _, err := s.runOpenVSwitchCommand("systemctl", "restart", openVSwitchDaemonService); err != nil {
+		// ovs-vswitchd reads the setting only at startup. Leaving it set would
+		// make the next attempt look unchanged and skip the restart.
+		if restoreErr := s.restoreOpenVSwitchUserspaceTSO(previous); restoreErr != nil {
+			return fmt.Errorf("restart %s to apply %s: %w; restoring previous value: %v", openVSwitchDaemonService, openVSwitchUserspaceTSOKey, err, restoreErr)
+		}
 		return fmt.Errorf("restart %s to apply %s: %w", openVSwitchDaemonService, openVSwitchUserspaceTSOKey, err)
 	}
 	return nil
+}
+
+// restoreOpenVSwitchUserspaceTSO puts the setting back so a failed daemon
+// restart is attempted again. An empty previous value means the key was unset.
+func (s *NodeAgentServer) restoreOpenVSwitchUserspaceTSO(previous string) error {
+	if previous == "" {
+		_, err := s.runOpenVSwitchCommand("ovs-vsctl", "remove", "Open_vSwitch", ".", "other_config", openVSwitchUserspaceTSOKey)
+		return err
+	}
+	_, err := s.runOpenVSwitchCommand(
+		"ovs-vsctl", "set", "Open_vSwitch", ".", "other_config:"+openVSwitchUserspaceTSOKey+"="+previous,
+	)
+	return err
 }
 
 func configuredOpenVSwitchResult(plan openVSwitchPlan) *pb.OpenVSwitchReconciliationResult {
