@@ -379,8 +379,8 @@ func (c *Collector) collectClusterNodePoolAndNodeSetInfo(ctx context.Context, ch
 		clusterCtx := clusterInfoContext{
 			Name: cluster.Name,
 		}
-		// NKX-14085 exception, not routed through a capability client: this
-		// enriches an observability metric's labels, not reconciliation
+		// Intentionally not routed through a provider-capability client:
+		// this enriches an observability metric's labels, not reconciliation
 		// behavior — a missing label for another provider degrades a
 		// dashboard, not a cluster. Revisit only if another provider needs
 		// its own set of metric-label fields worth generalizing.

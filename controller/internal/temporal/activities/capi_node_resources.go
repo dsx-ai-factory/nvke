@@ -293,9 +293,9 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 		// Stamp only when there is something to record or nico already exists.
 		// Empty CAPD lookups must not invent a nico payload.
 		//
-		// NKX-14085 exception, not routed through a capability client: this
-		// is the already-documented edge case of a CAPI cluster whose own
-		// template happens to render a NicoMachine (see
+		// Intentionally not routed through a provider-capability client:
+		// this is the already-documented edge case of a CAPI cluster whose
+		// own template happens to render a NicoMachine (see
 		// applyNicoMachineInstanceLabels) — provider-blending by template
 		// choice, not by cluster.ProviderType, so it does not generalize to
 		// another provider the way a true dispatch point would. Revisit only
