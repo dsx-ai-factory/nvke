@@ -8,6 +8,7 @@ import (
 
 	"github.com/dsx-ai-factory/nke/cli/internal/cwe/clusters"
 	"github.com/dsx-ai-factory/nke/cli/internal/cwe/nodepools"
+	operatorcmd "github.com/dsx-ai-factory/nke/cli/internal/operator/command"
 )
 
 func newDeleteCmd() *cobra.Command {
@@ -17,5 +18,6 @@ func newDeleteCmd() *cobra.Command {
 	}
 	cmd.AddCommand(clusters.NewDeleteCmd(loadClient))
 	cmd.AddCommand(nodepools.NewDeleteCmd(loadClient))
+	cmd.AddCommand(operatorcmd.NewDeleteCmds(loadOperator)...)
 	return cmd
 }

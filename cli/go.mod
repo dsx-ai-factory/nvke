@@ -5,15 +5,18 @@ go 1.27.1
 require (
 	github.com/dsx-ai-factory/nke/controller/api v0.0.0-00010101000000-000000000000
 	github.com/dsx-ai-factory/nke/controller/deploy/charts v0.0.0-00010101000000-000000000000
+	github.com/dsx-ai-factory/nke/management-engine v0.0.0-00010101000000-000000000000
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/google/uuid v1.6.0
 	github.com/oapi-codegen/runtime v1.7.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
+	github.com/stretchr/testify v1.12.1
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.37.0
 	k8s.io/apimachinery v0.37.0
 	k8s.io/client-go v0.37.0
+	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730
 	sigs.k8s.io/yaml v1.6.0
 )
 
@@ -70,7 +73,6 @@ require (
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd // indirect
-	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 )
@@ -78,3 +80,5 @@ require (
 replace github.com/dsx-ai-factory/nke/controller/api => ../controller/api
 
 replace github.com/dsx-ai-factory/nke/controller/deploy/charts => ../controller/deploy/charts
+
+replace github.com/dsx-ai-factory/nke/management-engine => ../management-engine

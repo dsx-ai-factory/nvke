@@ -5,8 +5,6 @@ package clusters
 
 import (
 	"fmt"
-	"io"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -62,20 +60,9 @@ Example — stdin via pipe:
 // loadCreateClusterRequest reads YAML from path (or stdin when path is "-")
 // and deserialises it into a CreateClusterJSONRequestBody.
 func loadCreateClusterRequest(cmd *cobra.Command, path string) (api.CreateClusterJSONRequestBody, error) {
-	var r io.Reader
-	if path == "-" {
-		r = cmd.InOrStdin()
-	} else {
-		f, err := os.Open(path)
-		if err != nil {
-			return api.CreateClusterJSONRequestBody{}, fmt.Errorf("opening %q: %w", path, err)
-		}
-		defer f.Close()
-		r = f
-	}
-	data, err := io.ReadAll(r)
+	data, err := util.ReadFileOrStdin(cmd.InOrStdin(), path, "spec")
 	if err != nil {
-		return api.CreateClusterJSONRequestBody{}, fmt.Errorf("reading spec: %w", err)
+		return api.CreateClusterJSONRequestBody{}, err
 	}
 	return util.YAMLToRequest[api.CreateClusterJSONRequestBody](data)
 }

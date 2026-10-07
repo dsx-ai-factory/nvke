@@ -7,8 +7,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -86,20 +84,9 @@ exactly. See /api/docs on your site controller.`,
 func loadPatchClusterRequest(cmd *cobra.Command, patch, patchFile string) ([]byte, error) {
 	raw := []byte(patch)
 	if patch == "" {
-		var r io.Reader
-		if patchFile == "-" {
-			r = cmd.InOrStdin()
-		} else {
-			f, err := os.Open(patchFile)
-			if err != nil {
-				return nil, fmt.Errorf("opening %q: %w", patchFile, err)
-			}
-			defer f.Close()
-			r = f
-		}
-		data, err := io.ReadAll(r)
+		data, err := util.ReadFileOrStdin(cmd.InOrStdin(), patchFile, "patch")
 		if err != nil {
-			return nil, fmt.Errorf("reading patch: %w", err)
+			return nil, err
 		}
 		raw = data
 	}

@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# A machine image for `nkectl create machineimage -f machineimage.yaml`.
+#
+# The whole image is immutable once published. To change anything, publish a
+# new name and point new releases at it; never edit the published object.
+metadata:
+  name: example-ubuntu-24.04-amd64
+spec:
+  operatingSystem:
+    family: ubuntu
+    version: "24.04"
+  architecture: amd64
+  buildDate: "2026-03-23"
+  nico:
+    # A Go template rendered per machine. It must begin with a #!ipxe line of
+    # its own and carry at least one command after it.
+    ipxeScript: |
+      #!ipxe
+      # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+      # SPDX-License-Identifier: Apache-2.0
+
+      set boot_assets https://boot.example.com/ubuntu-24.04-amd64
+
+      kernel ${boot_assets}/vmlinuz console=tty0 console=ttyS0,115200 ip=dhcp url=https://releases.example.com/ubuntu-24.04-live-server-amd64.iso autoinstall ds=nocloud-net;s=${cloudinit-url} initrd=initrd
+      initrd ${boot_assets}/initrd
+      boot

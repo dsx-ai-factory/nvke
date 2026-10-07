@@ -4,6 +4,7 @@
 package util
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -124,5 +125,25 @@ func TestYAMLToGenericMap_NullDocumentVariants(t *testing.T) {
 		if err == nil || err.Error() != "empty document" {
 			t.Errorf("YAMLToGenericMap(%q) = %v, want \"empty document\"", data, err)
 		}
+	}
+}
+
+// JSON has no timestamps, so a scalar YAML would read as one stays the text it
+// was written as, at any depth.
+func TestYAMLToGenericMap_TimestampsStayText(t *testing.T) {
+	t.Parallel()
+
+	got, err := YAMLToGenericMap([]byte("date: 2026-03-23\nnested:\n  at: 2026-03-23T10:00:00Z\nlist:\n  - 2026-03-23\nquoted: \"2026-03-23\"\n"))
+	if err != nil {
+		t.Fatalf("YAMLToGenericMap: %v", err)
+	}
+	want := map[string]interface{}{
+		"date":   "2026-03-23",
+		"nested": map[string]interface{}{"at": "2026-03-23T10:00:00Z"},
+		"list":   []interface{}{"2026-03-23"},
+		"quoted": "2026-03-23",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %#v, want %#v", got, want)
 	}
 }

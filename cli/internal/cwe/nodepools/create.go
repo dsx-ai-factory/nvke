@@ -5,8 +5,6 @@ package nodepools
 
 import (
 	"fmt"
-	"io"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -63,20 +61,9 @@ Example — stdin via pipe:
 // loadCreateNodePoolRequest reads the spec from path ("-" reads stdin) and
 // deserialises it into a CreateNodePoolJSONRequestBody.
 func loadCreateNodePoolRequest(cmd *cobra.Command, path string) (api.CreateNodePoolJSONRequestBody, error) {
-	var r io.Reader
-	if path == "-" {
-		r = cmd.InOrStdin()
-	} else {
-		f, err := os.Open(path)
-		if err != nil {
-			return api.CreateNodePoolJSONRequestBody{}, fmt.Errorf("opening %q: %w", path, err)
-		}
-		defer f.Close()
-		r = f
-	}
-	data, err := io.ReadAll(r)
+	data, err := util.ReadFileOrStdin(cmd.InOrStdin(), path, "spec")
 	if err != nil {
-		return api.CreateNodePoolJSONRequestBody{}, fmt.Errorf("reading spec: %w", err)
+		return api.CreateNodePoolJSONRequestBody{}, err
 	}
 	return util.YAMLToRequest[api.CreateNodePoolJSONRequestBody](data)
 }

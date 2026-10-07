@@ -13,6 +13,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ErrNotMapping is returned when a YAML document is not a mapping at the top
+// level, for example a list or a single value.
+var ErrNotMapping = errors.New("yaml document is not a mapping")
+
 // YAMLToRequest reads a YAML document and deserialises it into a CWE API
 // request type T. Field names in the YAML must match the json tags of T.
 func YAMLToRequest[T any](data []byte) (T, error) {
@@ -33,6 +37,20 @@ func YAMLToRequest[T any](data []byte) (T, error) {
 		return *new(T), fmt.Errorf("unmarshal request: %w", err)
 	}
 	return req, nil
+}
+
+// keepTimestampText makes every scalar that YAML would read as a timestamp, such
+// as the unquoted 2026-03-23, stay the text it was written as. Otherwise the
+// decoder turns it into a time and JSON encoding renders it as
+// "2026-03-23T00:00:00Z", which is not a date. JSON has no timestamps, so the
+// text is what the document said.
+func keepTimestampText(n *yaml.Node) {
+	if n.Kind == yaml.ScalarNode && n.Tag == "!!timestamp" {
+		n.Tag = "!!str"
+	}
+	for _, c := range n.Content {
+		keepTimestampText(c)
+	}
 }
 
 // YAMLToGenericMap parses a single YAML document into a
@@ -67,8 +85,9 @@ func YAMLToGenericMap(data []byte) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("empty document")
 	}
 	if root.Kind != yaml.MappingNode {
-		return nil, fmt.Errorf("yaml document is not a mapping")
+		return nil, ErrNotMapping
 	}
+	keepTimestampText(root)
 	if err := validateStringKeys(root); err != nil {
 		return nil, err
 	}

@@ -73,6 +73,16 @@ nkectl get nodepools <name>... --cluster <name> -o yaml  # full detail for named
 nkectl patch nodepool <name> --cluster <name> --patch 'desiredNodeCount: 8'
 nkectl patch nodepool <name> --cluster <name> --patch-file patch.yaml
 nkectl delete nodepool <name> --cluster <name>
+
+# Machine images and releases. Example files are in cli/examples/. Published
+# content is immutable, so to change one, create a new name
+nkectl create machineimage -f machineimage.yaml
+nkectl create clusterrelease -f clusterrelease.yaml --dry-run=client
+nkectl create nodepoolrelease -f nodepoolrelease.yaml
+nkectl get machineimages
+nkectl get clusterreleases <name>... -o yaml
+nkectl deprecate nodepoolrelease <name>
+nkectl delete clusterrelease <name>
 ```
 
 ## Authenticating to CWE
@@ -97,6 +107,11 @@ The kubeconfig identity needs:
 A cluster-admin kubeconfig already has both. Least-privilege grants, and
 creating the service account on a real site, are in
 [Configuring NKE API Authentication](../controller/docs/configuring-api-authentication.md).
+
+The machine image and release commands do not use CWE or a token. Their
+kubeconfig identity needs `get`, `list`, `create` and `delete` on
+`machineimages`, `clusterreleases` and `nodepoolreleases` in
+`internal.nke.nvidia.com`, plus `patch` for `nkectl deprecate`.
 
 ## Infrastructure providers
 

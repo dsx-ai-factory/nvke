@@ -12,6 +12,7 @@ import (
 
 	"github.com/dsx-ai-factory/nke/cli/internal/clients"
 	"github.com/dsx-ai-factory/nke/cli/internal/config"
+	"github.com/dsx-ai-factory/nke/cli/internal/operator"
 )
 
 var (
@@ -42,6 +43,7 @@ func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
 	root.AddCommand(newCreateCmd())
 	root.AddCommand(newPatchCmd())
 	root.AddCommand(newDeleteCmd())
+	root.AddCommand(newDeprecateCmd())
 
 	return root
 }
@@ -72,6 +74,20 @@ func loadSite() (config.SiteConfig, error) {
 		return config.SiteConfig{}, fmt.Errorf("loading config: %w", err)
 	}
 	return resolveSiteConfig(cfg)
+}
+
+// loadOperator builds the machine image and release client for the active site, from the
+// site's management cluster kubeconfig. Like loadSite it is called lazily.
+func loadOperator() (operator.Client, error) {
+	siteCfg, err := loadSite()
+	if err != nil {
+		return nil, err
+	}
+	c, err := operator.NewDynamic(siteCfg.Kubeconfig)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 // resolveSiteConfig returns the active site's SiteConfig.
