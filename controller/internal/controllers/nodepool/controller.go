@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile"
 	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/dbwrapper"
@@ -103,6 +104,11 @@ func (a *Controller) reconcileNodePool(ctx context.Context, tx db.Tx, nodePool d
 		return nil
 	}
 
+	cluster, err := tx.GetCluster(ctx, nodePool.ClusterID)
+	if err != nil {
+		return fmt.Errorf("failed to get cluster: %w", err)
+	}
+
 	var currentNodeSet db.NodeSet
 	if nodePool.CurrentNodeSetID != nil {
 		currentNodeSet, err = tx.GetNodeSet(ctx, *nodePool.CurrentNodeSetID)
@@ -111,15 +117,7 @@ func (a *Controller) reconcileNodePool(ctx context.Context, tx db.Tx, nodePool d
 		}
 	}
 
-	// Nico and CAPI are mutually exclusive — exactly one is set per pool.
-	switch {
-	case nodePool.Nico != nil:
-		nodePool, currentNodeSet, err = a.createNicoNodeSetIfChanged(ctx, tx, nodePool, currentNodeSet, logger)
-	case nodePool.Capi != nil:
-		nodePool, currentNodeSet, err = a.createCAPINodeSetIfChanged(ctx, tx, nodePool, currentNodeSet, logger)
-	default:
-		err = fmt.Errorf("node pool %s has no provider payload: expected exactly one of Nico or CAPI to be set", nodePool.ID)
-	}
+	nodePool, currentNodeSet, err = a.createNodeSetIfChanged(ctx, tx, cluster, nodePool, currentNodeSet, logger)
 	if err != nil {
 		return err
 	}
@@ -208,37 +206,28 @@ func (a *Controller) reconcileNodePool(ctx context.Context, tx db.Tx, nodePool d
 	return nil
 }
 
-// createNicoNodeSetIfChanged compares the pool's Nico provider and common fields
-// against the current NodeSet, and creates a new NodeSet when anything has changed.
-func (a *Controller) createNicoNodeSetIfChanged(
+// createNodeSetIfChanged compares the pool's provider payload and common
+// fields against the current NodeSet, and creates a new NodeSet when
+// anything has changed. Provider-specific payload comparison and
+// construction are delegated to clients.NodeSetProvider so this stays
+// provider-agnostic.
+func (a *Controller) createNodeSetIfChanged(
 	ctx context.Context, tx db.Tx,
-	nodePool db.NodePool, currentNodeSet db.NodeSet,
+	cluster db.Cluster, nodePool db.NodePool, currentNodeSet db.NodeSet,
 	logger *slog.Logger,
 ) (db.NodePool, db.NodeSet, error) {
-	nicoNodePoolProvider, _ := nodePool.NicoProvider()
-
 	if !db.NodePoolNeedsNewNodeSet(nodePool, currentNodeSet) {
 		return nodePool, currentNodeSet, nil
 	}
-	newNodeSet := buildBaseNodeSet(nodePool)
-	newNodeSet.SetNico(nicoNodePoolProvider)
-	return applyNewNodeSet(ctx, tx, nodePool, currentNodeSet, newNodeSet, logger)
-}
 
-// createCAPINodeSetIfChanged compares the pool's CAPI provider and common fields
-// against the current NodeSet, and creates a new NodeSet when anything has changed.
-func (a *Controller) createCAPINodeSetIfChanged(
-	ctx context.Context, tx db.Tx,
-	nodePool db.NodePool, currentNodeSet db.NodeSet,
-	logger *slog.Logger,
-) (db.NodePool, db.NodeSet, error) {
-	capiNodePoolProvider, _ := nodePool.CAPIProvider()
-
-	if !db.NodePoolNeedsNewNodeSet(nodePool, currentNodeSet) {
-		return nodePool, currentNodeSet, nil
+	nodeSetProvider, err := clients.GetNodeSetProvider(cluster)
+	if err != nil {
+		return nodePool, currentNodeSet, err
 	}
 	newNodeSet := buildBaseNodeSet(nodePool)
-	newNodeSet.SetCapi(capiNodePoolProvider)
+	if err := nodeSetProvider.ApplyNodeSetProvider(nodePool, newNodeSet); err != nil {
+		return nodePool, currentNodeSet, err
+	}
 	return applyNewNodeSet(ctx, tx, nodePool, currentNodeSet, newNodeSet, logger)
 }
 

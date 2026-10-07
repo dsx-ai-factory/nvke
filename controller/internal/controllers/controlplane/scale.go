@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
 )
@@ -93,12 +94,11 @@ func (r *reconciler) createPendingNode(
 	}
 	nodes.PinAgentProfile(&pendingNode, r.cfg)
 
-	if cluster.ProviderType == db.ProviderTypeNico {
-		// Every node on a Nico cluster carries a payload, which strict readers
-		// such as labelNode rely on. The instance type is left unset here: the
-		// infra provider settles it, and waitForCAPIMachineReady records it.
-		pendingNode.SetNico(db.NicoNodeProvider{})
+	nodeProvider, err := clients.GetNewNodeProvider(cluster)
+	if err != nil {
+		return db.Node{}, err
 	}
+	nodeProvider.ApplyPlaceholderNodePayload(&pendingNode)
 
 	createdNode, err := r.db.CreateNode(ctx, &pendingNode)
 	if err != nil {

@@ -149,8 +149,9 @@ func TestCreatePendingNodeSetsFailureDomainButLeavesInstanceTypeUnset(t *testing
 
 	r := &reconciler{db: mockTx, logger: slog.Default()}
 	cluster := db.Cluster{
-		ID:   clusterID,
-		Name: "test-cluster",
+		ID:           clusterID,
+		Name:         "test-cluster",
+		ProviderType: db.ProviderTypeCAPI,
 		ControlPlaneConfig: db.ControlPlaneConfig{
 			ConfigurationID: controlPlaneConfigID,
 		},
@@ -287,7 +288,8 @@ func TestReconcileControlPlaneScaleUp_FeatureFlagEnabled(t *testing.T) {
 	}
 
 	cluster := db.Cluster{
-		ID: clusterID,
+		ID:           clusterID,
+		ProviderType: db.ProviderTypeNico,
 		ControlPlaneConfig: db.ControlPlaneConfig{
 			ConfigurationID: controlPlaneConfigID,
 			DesiredCount:    3,
@@ -313,7 +315,8 @@ func TestScaleUpSharesFailureDomainAllocatorAcrossCreationSites(t *testing.T) {
 	t.Parallel()
 
 	cluster := db.Cluster{
-		ID: uuid.New(),
+		ID:           uuid.New(),
+		ProviderType: db.ProviderTypeCAPI,
 		ControlPlaneConfig: db.ControlPlaneConfig{
 			ConfigurationID: uuid.New(),
 		},
@@ -364,7 +367,8 @@ func TestScaleUpUsesAllocatorDecision(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			cluster := db.Cluster{
-				ID: uuid.New(),
+				ID:           uuid.New(),
+				ProviderType: db.ProviderTypeCAPI,
 				ControlPlaneConfig: db.ControlPlaneConfig{
 					ConfigurationID: uuid.New(),
 				},
@@ -427,7 +431,8 @@ func TestReconcileControlPlaneScaleUp_Deficit(t *testing.T) {
 			}
 
 			cluster := db.Cluster{
-				ID: clusterID,
+				ID:           clusterID,
+				ProviderType: db.ProviderTypeNico,
 				ControlPlaneConfig: db.ControlPlaneConfig{
 					ConfigurationID: controlPlaneConfigID,
 					DesiredCount:    tc.desiredCount,

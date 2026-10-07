@@ -292,6 +292,15 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 		stampInstanceType := observedInstanceTypeID != uuid.Nil && nodeForUpdate.NicoInstanceTypeID() == uuid.Nil
 		// Stamp only when there is something to record or nico already exists.
 		// Empty CAPD lookups must not invent a nico payload.
+		//
+		// NKX-14085 exception, not routed through a capability client: this
+		// is the already-documented edge case of a CAPI cluster whose own
+		// template happens to render a NicoMachine (see
+		// applyNicoMachineInstanceLabels) — provider-blending by template
+		// choice, not by cluster.ProviderType, so it does not generalize to
+		// another provider the way a true dispatch point would. Revisit only
+		// if this edge case needs to be handled for more than NICo-flavored
+		// CAPI machines.
 		if stampInstanceType || observedInstanceID != "" || observedMachineID != "" || nodeForUpdate.Nico != nil {
 			nico := db.NicoNodeProvider{}
 			if nodeForUpdate.Nico != nil {

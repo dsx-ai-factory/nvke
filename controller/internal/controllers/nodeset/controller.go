@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile"
 	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/dbwrapper"
@@ -251,14 +252,12 @@ func (c *Controller) createPendingNode(ctx context.Context, tx db.Tx, cluster db
 		},
 	}
 	nodes.PinAgentProfile(&dbNode, c.cfg)
-	if cluster.ProviderType == db.ProviderTypeNico {
-		nicoNodePoolProvider, err := nodePool.NicoProvider()
-		if err != nil {
-			return db.Node{}, err
-		}
-		dbNode.SetNico(db.NicoNodeProvider{
-			InstanceTypeID: nicoNodePoolProvider.InstanceTypeID,
-		})
+	nodeProvider, err := clients.GetNewNodeProvider(cluster)
+	if err != nil {
+		return db.Node{}, err
+	}
+	if err := nodeProvider.ApplyNodePoolNodePayload(nodePool, &dbNode); err != nil {
+		return db.Node{}, err
 	}
 
 	createdNode, err := tx.CreateNode(ctx, &dbNode)
