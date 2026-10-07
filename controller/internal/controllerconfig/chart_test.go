@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/stretchr/testify/require"
@@ -79,6 +80,12 @@ func TestRenderedChart(t *testing.T) {
 			require.NoError(t, err)
 			fromFile.ApplyTo(&cfg)
 			require.NoError(t, cfg.Validate())
+
+			if filepath.Base(render) == "readiness-custom.yaml" {
+				require.Equal(t, config.AgentReadinessConfig{
+					Workers: 4, Timeout: 10 * time.Second, Interval: 90 * time.Second,
+				}, cfg.AgentReadiness)
+			}
 
 			if filepath.Base(render) == "defaults.yaml" {
 				checkLocalAgreesWithChart(t, fromFile)

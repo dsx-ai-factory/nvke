@@ -23,7 +23,7 @@ func init() {
 // RecordOpenVSwitchReconciliation records which implementation path handled an
 // Open vSwitch reconciliation and whether the attempt succeeded.
 func RecordOpenVSwitchReconciliation(clusterName, nodeName, path string, err error) {
-	result := "success"
+	result := metricOutcomeSuccess
 	if err != nil {
 		result = "failure"
 	}

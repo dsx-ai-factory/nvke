@@ -83,6 +83,15 @@ controllers:
     enabled: true
 
 nodeAgent:
+  readiness:
+    # -- Maximum simultaneous node-agent readiness reconciles.
+    workers: 8
+    # -- Deadline for agent transport setup and version RPC.
+    timeout: "30s"
+    # -- Delay after a reconcile before its next periodic check.
+    interval: "2m"
+    # -- Symmetric fractional scheduling variation. Set 0 to disable jitter.
+    jitter: 0.1
   # -- SPIRE node attestation method pinned to newly created nodes. Changing
   # this deployment default does not reconfigure existing nodes; keep their
   # attestation plugins available until those nodes are retired or migrated.

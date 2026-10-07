@@ -25,6 +25,11 @@ metadata:
     {{- include "controller.labels" . | nindent 4 }}
 data:
   {{ include "controller.controllerConfig.file" . }}: |
+    agentReadiness:
+      workers: {{ .Values.nodeAgent.readiness.workers }}
+      timeout: {{ .Values.nodeAgent.readiness.timeout | quote }}
+      interval: {{ .Values.nodeAgent.readiness.interval | quote }}
+      jitter: {{ .Values.nodeAgent.readiness.jitter }}
     fieldManager:
       name: {{ .Values.identity.fieldManagerName | default "cloud-workflow-engine" | quote }}
       rebootMachineName: {{ .Values.identity.fieldManagerRebootMachineName | default "cloud-workflow-engine-reboot-machine" | quote }}

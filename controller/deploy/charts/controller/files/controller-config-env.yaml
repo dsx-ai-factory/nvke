@@ -73,3 +73,8 @@ TELEPORT_MANAGED_BY_LABEL_VALUE: teleport.managedByLabelValue
 TELEPORT_TOKEN_NAME_PREFIX: teleport.tokenNamePrefix
 
 PERMISSIVE_MODE: permissiveMode
+
+NODE_AGENT_READINESS_WORKERS: agentReadiness.workers
+NODE_AGENT_READINESS_TIMEOUT: agentReadiness.timeout
+NODE_AGENT_READINESS_INTERVAL: agentReadiness.interval
+NODE_AGENT_READINESS_JITTER: agentReadiness.jitter

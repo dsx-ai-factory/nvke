@@ -21,6 +21,11 @@ import (
 // baseConfig is every required key except nodeAgent, for tests that supply
 // their own nodeAgent block.
 const baseConfig = `
+agentReadiness:
+  workers: 8
+  timeout: 30s
+  interval: 2m
+  jitter: 0.1
 metricsListenAddress: 127.0.0.1:9090
 supportedInfraProviders: [nico]
 spire:
@@ -57,6 +62,11 @@ func TestLoadFullConfig(t *testing.T) {
 	t.Parallel()
 
 	const full = `
+agentReadiness:
+  workers: 8
+  timeout: 30s
+  interval: 2m
+  jitter: 0.1
 fieldManager:
   name: cloud-workflow-engine
   rebootMachineName: cloud-workflow-engine-reboot-machine
@@ -395,6 +405,11 @@ nodeAgent:
 // nodeAgent keys indented by two spaces.
 func attestationConfig(spiffeEnabled bool, method string) string {
 	return fmt.Sprintf(`
+agentReadiness:
+  workers: 8
+  timeout: 30s
+  interval: 2m
+  jitter: 0.1
 metricsListenAddress: 127.0.0.1:9090
 supportedInfraProviders: [nico]
 spire:

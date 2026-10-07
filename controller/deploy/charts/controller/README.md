@@ -74,6 +74,10 @@ A Helm chart to deploy the NVKE controller service
 | nodeAgent.externalMTLS.secret.certificateKey | string | `"tls.crt"` | Secret key containing the PEM-encoded client certificate chain. |
 | nodeAgent.externalMTLS.secret.name | string | `""` | Name of the externally managed Secret containing the client identity. |
 | nodeAgent.externalMTLS.secret.privateKeyKey | string | `"tls.key"` | Secret key containing the PEM-encoded client private key. |
+| nodeAgent.readiness.workers | int | `8` | Maximum simultaneous node-agent readiness reconciles. |
+| nodeAgent.readiness.timeout | string | `"30s"` | Deadline for agent transport setup and version RPC. |
+| nodeAgent.readiness.interval | string | `"2m"` | Delay after a reconcile before its next periodic check. |
+| nodeAgent.readiness.jitter | float | `0.1` | Symmetric fractional scheduling variation; 0 disables jitter. |
 | nodeAgent.spireAttestationMethod | string | `"tpm"` | SPIRE node attestation method pinned to newly created nodes. Existing nodes retain their method when this deployment default changes; keep their attestation plugins available. dsxImds requires SPIFFE and a compatible DSX node image. |
 | nodeAgent.tlsJwt.algorithms | list | `["RS256"]` | Asymmetric JWT signing algorithms accepted from the issuer. |
 | nodeAgent.tlsJwt.dsxIdentityExchangeURL | string | `""` | DSX Identity token-exchange endpoint injected into node-agent bootstrap arguments when TLS/JWT is enabled. |

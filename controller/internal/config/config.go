@@ -162,6 +162,9 @@ type Config struct {
 	// NodeHealthCheckTimeout is the timeout for a cluster's node health check reconcile
 	NodeHealthCheckTimeout time.Duration `env:"NODE_HEALTH_CHECK_TIMEOUT" default:"2m"`
 
+	// AgentReadiness controls node-agent reachability probes independently of tenant health checks.
+	AgentReadiness AgentReadinessConfig
+
 	// NicoControllersEnabled enables controllers that watch NICo infrastructure
 	// resources. Disable it when the controller manages only provisioned infrastructure.
 	NicoControllersEnabled bool `controllerconfig:"nicoControllersEnabled"`
@@ -509,6 +512,9 @@ func isLoopbackHost(host string) bool {
 // Validate checks the settings the environment supplies. nke-controller-config
 // validates its own when it loads.
 func (c *Config) Validate() error {
+	if err := c.AgentReadiness.Validate(); err != nil {
+		return err
+	}
 	if err := c.validateDBCredentials(); err != nil {
 		return err
 	}

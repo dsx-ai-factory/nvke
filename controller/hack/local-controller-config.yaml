@@ -9,6 +9,11 @@
 #
 # To change a setting for your own runs, copy this file under .local/ and point
 # CONTROLLER_CONFIG_PATH at the copy.
+agentReadiness:
+  workers: 8
+  timeout: 30s
+  interval: 2m
+  jitter: 0.1
 fieldManager:
   name: cloud-workflow-engine
   rebootMachineName: cloud-workflow-engine-reboot-machine

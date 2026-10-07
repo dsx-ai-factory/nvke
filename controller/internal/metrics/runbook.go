@@ -21,7 +21,7 @@ func init() {
 }
 
 func RecordRunbookExecution(runbookName, clusterName, nodeName string, err error) {
-	result := "success"
+	result := metricOutcomeSuccess
 	if err != nil {
 		result = "failure"
 	}

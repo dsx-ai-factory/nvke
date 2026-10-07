@@ -33,6 +33,7 @@ func LoadStartupConfig() (config.Config, *Config, error) {
 // ApplyTo copies the file into every field of cfg that has a controllerconfig
 // tag, and leaves the fields that come from the environment alone.
 func (c *Config) ApplyTo(cfg *config.Config) {
+	cfg.AgentReadiness = c.AgentReadiness.runtimeConfig()
 	cfg.FieldManagerName = c.FieldManager.Name
 	cfg.FieldManagerRebootMachineName = c.FieldManager.RebootMachineName
 	cfg.FieldManagerMachineHealthIssueName = c.FieldManager.MachineHealthIssueName
