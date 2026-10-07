@@ -211,6 +211,11 @@ replacement refills the deleted Machine's domain. A second, provisioning-only
 control-plane Machine has no requested domain. The full CAPD backend E2E job
 runs both rows in its controller-managed leg.
 
+These CAPD controller fixtures reject `lifecycle.reuseCluster`: each row needs
+its own advertised domain set. Each placement poll snapshots all running
+containers in one Docker call, and the delete scenario reuses the validated
+node-to-domain snapshot when selecting its victim and checking its replacement.
+
 Local and CI lanes read the CAPI core and CAPD pin from `make/tool-versions.mk`
 (v1.13.6). The kubeadm bootstrap and control-plane providers use that same
 release. CAPD records placement on the Docker container label and publishes

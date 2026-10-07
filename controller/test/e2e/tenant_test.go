@@ -941,6 +941,7 @@ func setupTenantTest(ctx context.Context, mgmt managementCluster, timeouts nke.O
 func (t *tenantTest) initCluster(ctx context.Context, b testSpec) {
 	GinkgoHelper()
 	t.spec = b.buildSpec(t.cfg, clusterNamePrefix, b.shape)
+	Expect(validateCAPDFailureDomainReuse(t.spec, b.validate.controlPlaneController, t.cfg.Lifecycle.ReuseCluster)).To(Succeed())
 	if b.validate.controlPlaneController && t.spec.Backend == nke.BackendCAPD {
 		Expect(t.spec.CAPDFailureDomains).NotTo(BeEmpty(), "CAPD control-plane-controller rows must advertise failure domains")
 	}
