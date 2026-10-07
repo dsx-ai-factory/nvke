@@ -668,37 +668,6 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
-  /nodePools/{nodePoolID}/configHistory:
-    parameters:
-      - name: nodePoolID
-        in: path
-        required: true
-        description: Node pool ID.
-        schema:
-          type: string
-          format: uuid
-    get:
-      tags: [Node pools]
-      summary: Get node pool config history
-      operationId: getNodePoolConfigHistory
-      description: |
-        Returns the node pool's configuration change history, derived from its
-        NodeSet snapshots, oldest first. Each entry shows which fields changed
-        relative to the previous snapshot.
-      responses:
-        "200":
-          description: The node pool config history
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NodePoolConfigHistory"
-        "404":
-          description: Node pool not found. No body is returned.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-
   /nodeSets:
     get:
       tags: [Node sets]
@@ -1799,61 +1768,6 @@ components:
           items:
             $ref: "#/components/schemas/NodeSet"
           description: Node sets.
-
-    NodePoolConfigHistory:
-      description: Ordered snapshots of node pool configuration changes.
-      type: object
-      required:
-        - changes
-      properties:
-        changes:
-          type: array
-          items:
-            $ref: "#/components/schemas/NodePoolConfigChange"
-          description: Oldest first.
-
-    NodePoolConfigChange:
-      description: One node pool configuration snapshot and what changed in it.
-      type: object
-      required:
-        - nodeSetID
-        - createdAt
-        - isCurrent
-        - changedFields
-      properties:
-        nodeSetID:
-          type: string
-          format: uuid
-          description: The NodeSet snapshot that holds this configuration.
-        createdAt:
-          type: string
-          format: date-time
-          description: When the change took effect.
-        isCurrent:
-          type: boolean
-          description: Whether this is the pool's current configuration.
-        changedFields:
-          type: array
-          items:
-            $ref: "#/components/schemas/NodePoolConfigField"
-          description: Fields that changed relative to the previous snapshot. Empty for the first entry.
-
-    NodePoolConfigField:
-      description: One field that changed between two snapshots. Values are JSON-encoded.
-      type: object
-      required:
-        - field
-        - to
-      properties:
-        field:
-          type: string
-          description: The field that changed.
-        from:
-          type: string
-          description: JSON-encoded previous value. Omitted for the first entry.
-        to:
-          type: string
-          description: JSON-encoded new value.
 
     ControlPlaneConfigHistory:
       description: Ordered snapshots of control-plane configuration changes.

@@ -30,9 +30,6 @@ const (
 	EnableEtcdEncryptionWorkflowType = "EnableEtcdEncryption"
 	EnableOIDCWorkflowType           = "EnableOIDC"
 
-	RecordNodePoolConfigChangeWorkflowType   = "RecordNodePoolConfigChange"
-	RecordNodePoolConfigChangeWorkflowPrefix = "record-node-pool-config-change-"
-
 	RebootNodeWorkflowPrefix       = "reboot-node-"
 	RebootNodeUptimeWorkflowPrefix = "reboot-node-uptime-"
 

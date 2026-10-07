@@ -959,39 +959,6 @@ type NodePoolConditions struct {
 	Provisioning Condition `json:"provisioning"`
 }
 
-// NodePoolConfigChange One node pool configuration snapshot and what changed in it.
-type NodePoolConfigChange struct {
-	// ChangedFields Fields that changed relative to the previous snapshot. Empty for the first entry.
-	ChangedFields []NodePoolConfigField `json:"changedFields"`
-
-	// CreatedAt When the change took effect.
-	CreatedAt time.Time `json:"createdAt"`
-
-	// IsCurrent Whether this is the pool's current configuration.
-	IsCurrent bool `json:"isCurrent"`
-
-	// NodeSetID The NodeSet snapshot that holds this configuration.
-	NodeSetID openapi_types.UUID `json:"nodeSetID"`
-}
-
-// NodePoolConfigField One field that changed between two snapshots. Values are JSON-encoded.
-type NodePoolConfigField struct {
-	// Field The field that changed.
-	Field string `json:"field"`
-
-	// From JSON-encoded previous value. Omitted for the first entry.
-	From *string `json:"from,omitempty"`
-
-	// To JSON-encoded new value.
-	To string `json:"to"`
-}
-
-// NodePoolConfigHistory Ordered snapshots of node pool configuration changes.
-type NodePoolConfigHistory struct {
-	// Changes Oldest first.
-	Changes []NodePoolConfigChange `json:"changes"`
-}
-
 // NodePoolCreateConfig A node pool and its provider settings. The provider follows the cluster's
 // and is fixed at creation.
 type NodePoolCreateConfig struct {

@@ -190,7 +190,6 @@ func NewWorker(
 	w.RegisterWorkflow(workflows.EnableEtcdEncryption)
 	w.RegisterWorkflow(workflows.EnableOIDC)
 	w.RegisterWorkflow(workflows.RotateEtcdEncryptionKey)
-	w.RegisterWorkflow(workflows.RecordNodePoolConfigChange)
 	w.RegisterWorkflow(workflows.UpgradeControlPlaneAddons)
 	w.RegisterWorkflow(workflows.UpdateKubeadmConfigMap)
 	w.RegisterWorkflow(workflows.RenewK8sCerts)

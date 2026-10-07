@@ -117,7 +117,6 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 			return f.NodePoolID != nil && *f.NodePoolID == poolID
 		})).Return([]db.NodeSet{newNodeSet}, nil).Once()
 		// ListNodes is only called for non-current node sets; with a single (current) set it is not called
-		mockTx.On("CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(db.WorkflowOutbox{}, nil)
 		mockTx.On("GetNodeSet", mock.Anything, newNodeSetID).Return(newNodeSet, nil)
 		mockTx.On("UpdateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
 			return ns.ID == newNodeSetID && ns.DesiredCount == 2
@@ -317,7 +316,6 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 		mockTx.On("UpdateNodePool", mock.Anything, mock.MatchedBy(func(np *db.NodePool) bool {
 			return np.CurrentNodeSetID != nil && *np.CurrentNodeSetID == newNodeSetID
 		})).Return(poolWithNewCurrent, nil)
-		mockTx.On("CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(db.WorkflowOutbox{}, nil)
 		mockTx.On("ListNodeSets", mock.Anything, mock.Anything).Return([]db.NodeSet{oldNodeSet, newNodeSet}, nil).Once()
 		mockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{}, nil)
 		mockTx.On("GetNodeSet", mock.Anything, oldNodeSetID).Return(oldNodeSet, nil)
@@ -404,7 +402,6 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 		mockTx.On("UpdateNodePool", mock.Anything, mock.MatchedBy(func(np *db.NodePool) bool {
 			return np.CurrentNodeSetID != nil && *np.CurrentNodeSetID == newNodeSetID
 		})).Return(poolWithNewCurrent, nil)
-		mockTx.On("CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(db.WorkflowOutbox{}, nil)
 		mockTx.On("ListNodeSets", mock.Anything, mock.Anything).Return([]db.NodeSet{oldNodeSet, newNodeSet}, nil).Once()
 		mockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{}, nil)
 		mockTx.On("GetNodeSet", mock.Anything, oldNodeSetID).Return(oldNodeSet, nil)
@@ -598,7 +595,6 @@ func TestUnit_NodePoolControllerReconcileCAPIInfraTemplateChange(t *testing.T) {
 	mockTx.On("UpdateNodePool", mock.Anything, mock.MatchedBy(func(np *db.NodePool) bool {
 		return np.CurrentNodeSetID != nil && *np.CurrentNodeSetID == newNodeSetID
 	})).Return(poolWithNewCurrent, nil)
-	mockTx.On("CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(db.WorkflowOutbox{}, nil)
 	mockTx.On("ListNodeSets", mock.Anything, mock.Anything).Return([]db.NodeSet{oldNodeSet, newNodeSet}, nil).Once()
 	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{}, nil)
 	mockTx.On("GetNodeSet", mock.Anything, oldNodeSetID).Return(oldNodeSet, nil)
@@ -761,8 +757,6 @@ func TestUnit_NodePoolControllerReplacementRequiresVIP(t *testing.T) {
 					mockTx.On("UpdateNodePool", mock.Anything, mock.MatchedBy(func(np *db.NodePool) bool {
 						return np.CurrentNodeSetID != nil && *np.CurrentNodeSetID == active.ID
 					})).Return(updatedPool, nil).Once()
-					mockTx.On("CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-						Return(db.WorkflowOutbox{}, nil).Once()
 					mockTx.On("GetNodeSet", mock.Anything, active.ID).Return(active, nil)
 				}
 				if tc.clusterError == nil {
@@ -787,7 +781,6 @@ func TestUnit_NodePoolControllerReplacementRequiresVIP(t *testing.T) {
 				if !tc.wantCreate {
 					mockTx.AssertNotCalled(t, "CreateNodeSet", mock.Anything, mock.Anything)
 					mockTx.AssertNotCalled(t, "UpdateNodePool", mock.Anything, mock.Anything)
-					mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 				}
 				mockDB.AssertExpectations(t)
 				mockTx.AssertExpectations(t)

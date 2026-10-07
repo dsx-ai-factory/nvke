@@ -140,9 +140,6 @@ type ClientInterface interface {
 
 	UpdateNodePool(ctx context.Context, nodePoolID openapi_types.UUID, body UpdateNodePoolJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetNodePoolConfigHistory request
-	GetNodePoolConfigHistory(ctx context.Context, nodePoolID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// ListNodeSets request
 	ListNodeSets(ctx context.Context, params *ListNodeSetsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -358,18 +355,6 @@ func (c *Client) UpdateNodePoolWithBody(ctx context.Context, nodePoolID openapi_
 
 func (c *Client) UpdateNodePool(ctx context.Context, nodePoolID openapi_types.UUID, body UpdateNodePoolJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateNodePoolRequest(c.Server, nodePoolID, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetNodePoolConfigHistory(ctx context.Context, nodePoolID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetNodePoolConfigHistoryRequest(c.Server, nodePoolID)
 	if err != nil {
 		return nil, err
 	}
@@ -991,40 +976,6 @@ func NewUpdateNodePoolRequestWithBody(server string, nodePoolID openapi_types.UU
 	return req, nil
 }
 
-// NewGetNodePoolConfigHistoryRequest generates requests for GetNodePoolConfigHistory
-func NewGetNodePoolConfigHistoryRequest(server string, nodePoolID openapi_types.UUID) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "nodePoolID", runtime.ParamLocationPath, nodePoolID)
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/nodePools/%s/configHistory", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
 // NewListNodeSetsRequest generates requests for ListNodeSets
 func NewListNodeSetsRequest(server string, params *ListNodeSetsParams) (*http.Request, error) {
 	var err error
@@ -1407,9 +1358,6 @@ type ClientWithResponsesInterface interface {
 
 	UpdateNodePoolWithResponse(ctx context.Context, nodePoolID openapi_types.UUID, body UpdateNodePoolJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateNodePoolClientResponse, error)
 
-	// GetNodePoolConfigHistoryWithResponse request
-	GetNodePoolConfigHistoryWithResponse(ctx context.Context, nodePoolID openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetNodePoolConfigHistoryClientResponse, error)
-
 	// ListNodeSetsWithResponse request
 	ListNodeSetsWithResponse(ctx context.Context, params *ListNodeSetsParams, reqEditors ...RequestEditorFn) (*ListNodeSetsClientResponse, error)
 
@@ -1746,30 +1694,6 @@ func (r UpdateNodePoolClientResponse) StatusCode() int {
 	return 0
 }
 
-type GetNodePoolConfigHistoryClientResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *NodePoolConfigHistory
-	JSON401      *Unauthorized
-	JSON403      *Forbidden
-}
-
-// Status returns HTTPResponse.Status
-func (r GetNodePoolConfigHistoryClientResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetNodePoolConfigHistoryClientResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
 type ListNodeSetsClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -2061,15 +1985,6 @@ func (c *ClientWithResponses) UpdateNodePoolWithResponse(ctx context.Context, no
 		return nil, err
 	}
 	return ParseUpdateNodePoolClientResponse(rsp)
-}
-
-// GetNodePoolConfigHistoryWithResponse request returning *GetNodePoolConfigHistoryClientResponse
-func (c *ClientWithResponses) GetNodePoolConfigHistoryWithResponse(ctx context.Context, nodePoolID openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetNodePoolConfigHistoryClientResponse, error) {
-	rsp, err := c.GetNodePoolConfigHistory(ctx, nodePoolID, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetNodePoolConfigHistoryClientResponse(rsp)
 }
 
 // ListNodeSetsWithResponse request returning *ListNodeSetsClientResponse
@@ -2654,46 +2569,6 @@ func ParseUpdateNodePoolClientResponse(rsp *http.Response) (*UpdateNodePoolClien
 			return nil, err
 		}
 		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest Unauthorized
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest Forbidden
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetNodePoolConfigHistoryClientResponse parses an HTTP response from a GetNodePoolConfigHistoryWithResponse call
-func ParseGetNodePoolConfigHistoryClientResponse(rsp *http.Response) (*GetNodePoolConfigHistoryClientResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetNodePoolConfigHistoryClientResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest NodePoolConfigHistory
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest Unauthorized

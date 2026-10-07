@@ -15,7 +15,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
-	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile"
 	"github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/dbwrapper"
 	dbfilters "github.com/dsx-ai-factory/nke/controller/internal/controllers/dbreconcile/filters"
@@ -82,67 +81,6 @@ func (a *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 		return a.reconcileNodePool(ctx, tx, nodePool)
 	})
 	return reconcile.Result{}, err
-}
-
-// recordNodePoolConfigChange emits an audit record via the outbox capturing the before/after
-// config of a node pool change. The no-op RecordNodePoolConfigChange workflow persists the
-// snapshot in Temporal history, surviving NodeSet GC. Query via Temporal UI by workflow type
-// or ID prefix. prevNodeSet is the zero value when this is the pool's first NodeSet.
-func recordNodePoolConfigChange(ctx context.Context, tx db.Tx, prevNodeSet, currentNodeSet db.NodeSet) error {
-	var prevNodeSetID *uuid.UUID
-	if prevNodeSet.ID != uuid.Nil {
-		prevNodeSetID = &prevNodeSet.ID
-	}
-
-	// Best-effort reads for audit only: missing payloads yield zero values rather than
-	// failing NodeSet creation. Exactly one of Nico/CAPI is set per NodeSet in practice.
-	prevNicoNodeSetProvider, _ := prevNodeSet.NicoProvider()
-	currentNicoNodeSetProvider, _ := currentNodeSet.NicoProvider()
-	prevCapiNodeSetProvider, _ := prevNodeSet.CAPIProvider()
-	currentCapiNodeSetProvider, _ := currentNodeSet.CAPIProvider()
-
-	auditID := constants.RecordNodePoolConfigChangeWorkflowPrefix +
-		currentNodeSet.NodePoolID.String() + "-" + currentNodeSet.ID.String()
-	if _, err := tx.CreateWorkflowOutboxEntry(ctx, constants.RecordNodePoolConfigChangeWorkflowType, auditID, map[string]interface{}{
-		"nodePoolID":    currentNodeSet.NodePoolID,
-		"newNodeSetID":  currentNodeSet.ID,
-		"prevNodeSetID": prevNodeSetID,
-
-		"oldOSProfile": prevNicoNodeSetProvider.OSProfile,
-		"newOSProfile": currentNicoNodeSetProvider.OSProfile,
-
-		"oldConfigProfile": prevNicoNodeSetProvider.ConfigProfile,
-		"newConfigProfile": currentNicoNodeSetProvider.ConfigProfile,
-
-		"oldKubernetesVersion": prevNodeSet.KubernetesVersion,
-		"newKubernetesVersion": currentNodeSet.KubernetesVersion,
-
-		"oldSystemReservedMemory": prevNodeSet.SystemReservedMemory,
-		"newSystemReservedMemory": currentNodeSet.SystemReservedMemory,
-		"oldKubeReservedMemory":   prevNodeSet.KubeReservedMemory,
-		"newKubeReservedMemory":   currentNodeSet.KubeReservedMemory,
-
-		"oldDiskSelectionStrategy": prevNicoNodeSetProvider.DiskSelectionStrategy,
-		"newDiskSelectionStrategy": currentNicoNodeSetProvider.DiskSelectionStrategy,
-
-		"oldCapiSpireAttestationMethod": prevCapiNodeSetProvider.SpireAttestationMethod,
-		"newCapiSpireAttestationMethod": currentCapiNodeSetProvider.SpireAttestationMethod,
-
-		"oldTeleportEnabled": prevNodeSet.TeleportEnabled,
-		"newTeleportEnabled": currentNodeSet.TeleportEnabled,
-
-		"oldSubnetIDs": prevNicoNodeSetProvider.SubnetIDs,
-		"newSubnetIDs": currentNicoNodeSetProvider.SubnetIDs,
-
-		"oldVpcPrefixIDs": prevNicoNodeSetProvider.VpcPrefixIDs,
-		"newVpcPrefixIDs": currentNicoNodeSetProvider.VpcPrefixIDs,
-
-		"oldCapiPreKubeadmCommands": prevCapiNodeSetProvider.PreKubeadmCommands,
-		"newCapiPreKubeadmCommands": currentCapiNodeSetProvider.PreKubeadmCommands,
-	}); err != nil {
-		return fmt.Errorf("failed to create config change audit entry: %w", err)
-	}
-	return nil
 }
 
 func (a *Controller) reconcileNodePool(ctx context.Context, tx db.Tx, nodePool db.NodePool) error {
@@ -317,8 +255,8 @@ func buildBaseNodeSet(nodePool db.NodePool) *db.NodeSet {
 	}
 }
 
-// applyNewNodeSet persists the new NodeSet, updates the pool's current NodeSet pointer,
-// and records the config change. Shared by createNicoNodeSetIfChanged and createCAPINodeSetIfChanged.
+// applyNewNodeSet persists the new NodeSet and updates the pool's current NodeSet pointer.
+// Shared by createNicoNodeSetIfChanged and createCAPINodeSetIfChanged.
 func applyNewNodeSet(
 	ctx context.Context, tx db.Tx,
 	nodePool db.NodePool, prevNodeSet db.NodeSet, newNodeSet *db.NodeSet,
@@ -345,8 +283,5 @@ func applyNewNodeSet(
 		return nodePool, currentNodeSet, fmt.Errorf("failed to update node pool: %w", err)
 	}
 	logger.Info("Created new current node set", "nodeSetID", currentNodeSet.ID, "desiredCount", 0)
-	if err := recordNodePoolConfigChange(ctx, tx, prevNodeSet, currentNodeSet); err != nil {
-		return nodePool, currentNodeSet, err
-	}
 	return nodePool, currentNodeSet, nil
 }

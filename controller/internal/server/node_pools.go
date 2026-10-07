@@ -411,8 +411,7 @@ func (s *nodePoolService) UpdateNodePool(
 			return &badRequestError{message: err.Error()}
 		}
 
-		// Snapshot the pre-update config so we can emit an audit record below. Safe as a shallow
-		// copy: applyUpdateNodePoolRequest reassigns slice fields rather than mutating in place.
+		// Preserve the pre-update config for control-plane rollout validation.
 		oldNodePool := dbNodePool
 
 		if err := applyUpdateNodePoolRequest(cluster, &dbNodePool, req.Body); err != nil {
@@ -463,23 +462,6 @@ func (s *nodePoolService) UpdateNodePool(
 		updatedNodePool, err = tx.UpdateNodePool(ctx, &dbNodePool)
 		if err != nil {
 			return fmt.Errorf("failed to update node pool: %w", err)
-		}
-
-		// Auto-provision-disabled pools (e.g. L0 platform-managed control planes) never have their
-		// config changes turned into a new NodeSet by the NodePoolController, so the reconciler's
-		// audit path is skipped. Emit the audit record directly here from the before/after config.
-		// Auto-provisioned pools are intentionally excluded: they get their audit record when the
-		// reconciler creates the resulting NodeSet, so emitting here too would double-record.
-		if updatedNodePool.AutoProvisionDisabled {
-			if input, changed := nodePoolConfigChangeInput(oldNodePool, updatedNodePool); changed {
-				auditID := constants.RecordNodePoolConfigChangeWorkflowPrefix +
-					updatedNodePool.ID.String() + "-" + input.NewNodeSetID.String()
-				if _, err := tx.CreateWorkflowOutboxEntry(
-					ctx, constants.RecordNodePoolConfigChangeWorkflowType, auditID, input,
-				); err != nil {
-					return fmt.Errorf("failed to create config change audit entry: %w", err)
-				}
-			}
 		}
 
 		return nil
