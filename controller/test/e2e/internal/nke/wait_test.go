@@ -9,7 +9,7 @@ import (
 )
 
 // A stall window at or above the budget can never elapse first, which is how
-// the short lanes keep the behaviour they had: the deadline ends them and
+// the short lanes keep the behavior they had: the deadline ends them and
 // nothing else does. The bare-metal lanes are the ones long enough for a
 // silence to mean something.
 func TestStallWindow(t *testing.T) {

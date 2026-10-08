@@ -35,7 +35,7 @@ const (
 // spend all of it on a node that stopped reporting progress.
 //
 // A window at or above the budget can never elapse first, which is how the
-// short lanes keep their old behaviour: the deadline is the only thing that
+// short lanes keep their old behavior: the deadline is the only thing that
 // ends them.
 func stallWindow(budget time.Duration) time.Duration {
 	window := budget / 3
@@ -87,7 +87,8 @@ func (c *Client) WaitForClusterReady(ctx context.Context, id openapi_types.UUID)
 				} else if waited := time.Since(changed); waited >= stall {
 					return nil, fmt.Errorf(
 						"cluster %s has not progressed for %v of its %v: provisioning still reports %q",
-						cluster.Name, waited.Round(time.Second), c.opts.Provision, current)
+						cluster.Name, waited.Round(time.Second), c.opts.Provision, current,
+					)
 				}
 			}
 		}
