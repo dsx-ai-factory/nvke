@@ -37,6 +37,10 @@ RUN ! grep -q -- '--disable-mtls' /etc/default/nke-agent
 RUN install -d /var/lib/nico-containers/cloud-init && \
     printf 'done\n' >/var/lib/nico-containers/cloud-init/status
 
+# This suite runs Calico; the base image's OVS uplink bridge is for OVN Geneve
+# and leaves these nodes unreachable on the substrate network.
+RUN SYSTEMD_OFFLINE=1 systemctl disable nke-container-network.service
+
 # SPIRE.
 #
 # The base image already installs spire-agent, the TPM attestor plugin and a
