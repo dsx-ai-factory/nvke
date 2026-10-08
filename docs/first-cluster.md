@@ -340,7 +340,8 @@ registries. Cluster API and cert-manager come from `github.com` through
 
 It creates a throwaway kind cluster, installs Postgres, Temporal, SPIRE, CAPI and
 CWE into it, builds the site cluster on your hosts through `nvke-agent`, and
-writes `my-site.kubeconfig`. Allow 30 minutes.
+writes `my-site.kubeconfig` (a breakglass kubeconfig in group `nvke:breakglass`).
+Allow 30 minutes.
 
 Allow longer than that and raise `--timeout` (default `30m`) if the site is large —
 the command gives up on the provisioning wait when it expires.

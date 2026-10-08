@@ -77,7 +77,7 @@ type bootstrapSiteOptions struct {
 	// cluster, from the create call to every node having joined.
 	clusterTimeout time.Duration
 
-	// kubeconfigOut is where the finished cluster's admin kubeconfig is
+	// kubeconfigOut is where the finished cluster's admin breakglass kubeconfig is
 	// written. Empty defaults to <clusterName>.kubeconfig in the working
 	// directory.
 	kubeconfigOut string
@@ -201,7 +201,7 @@ site spec file format.`,
 		"How long to wait for the cluster to finish provisioning, which includes "+
 			"every control plane node joining. Overrides NVKECTL_BOOTSTRAP_CLUSTER_TIMEOUT.")
 	cmd.Flags().StringVar(&opts.kubeconfigOut, "kubeconfig-out", "",
-		"Where to write the finished cluster's admin kubeconfig "+
+		"Where to write the finished cluster's admin breakglass kubeconfig "+
 			"(default: <clusterName>.kubeconfig in the working directory)")
 	cmd.Flags().StringVar(&opts.encryptionKeyOut, "encryption-key-out", "",
 		"Where to write the finished cluster's etcd encryption key, as a Secret manifest "+
@@ -674,12 +674,10 @@ func (e *keyCaptureError) Error() string {
 
 func (e *keyCaptureError) Unwrap() error { return e.err }
 
-// writeTenantKubeconfig saves the finished cluster's admin kubeconfig beside
-// the operator and returns its path.
+// writeTenantKubeconfig mints an admin breakglass kubeconfig for the finished cluster
+// and writes it beside the operator.
 //
-// 0o600: it is an admin credential for the cluster that was just created. A
-// plain write, unlike the etcd key's: a kubeconfig can be issued again from
-// the cluster, so losing or overwriting this file is recoverable.
+// 0o600: it is a cluster-admin credential.
 func writeTenantKubeconfig(
 	ctx context.Context,
 	bootstrapCluster *bootstrapengine.Cluster,
@@ -689,11 +687,17 @@ func writeTenantKubeconfig(
 ) (string, error) {
 	path := siteKubeconfigPath(clusterName, opts)
 
-	kubeconfig, err := controllerdeploy.New(opts.cweRunner, logger).
+	adminConf, err := controllerdeploy.New(opts.cweRunner, logger).
 		TenantKubeconfig(ctx, bootstrapCluster.KubeconfigPath, clusterName, opts.kubeconfigTimeout)
 	if err != nil {
 		return "", fmt.Errorf("reading the kubeconfig of cluster %q: %w", clusterName, err)
 	}
+
+	kubeconfig, err := sitecluster.GenerateBreakglassKubeconfig(ctx, adminConf, clusterName)
+	if err != nil {
+		return "", fmt.Errorf("issuing an admin breakglass kubeconfig for cluster %q: %w", clusterName, err)
+	}
+
 	if err := os.WriteFile(path, kubeconfig, 0o600); err != nil {
 		return "", fmt.Errorf("writing %s: %w", path, err)
 	}

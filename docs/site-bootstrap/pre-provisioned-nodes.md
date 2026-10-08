@@ -277,11 +277,11 @@ Useful flags:
 | `--timeout` | `30m` | How long to wait for the cluster to finish provisioning. A three-node site usually finishes in 10–15 minutes; raise it for larger sites. |
 | `--diagnostics-dir` | `cluster-diagnostics` | Where a failed run writes cluster diagnostics before tearing down. |
 | `--keep-bootstrap-cluster` | off | Leave the ephemeral Kind cluster running for debugging. |
-| `--kubeconfig-out` | `<clusterName>.kubeconfig` | Where to write the finished cluster's admin kubeconfig. |
+| `--kubeconfig-out` | `<clusterName>.kubeconfig` | Where to write the finished cluster's breakglass admin kubeconfig. |
 | `--encryption-key-out` | `<clusterName>-etcd-encryption-key.json` | Where to write the cluster's etcd encryption key, as a Secret manifest. |
 | `--disable-mtls` | off | Stand the site up with no SPIRE, CWE dialling agents in plaintext. **Development only.** This guide uses it because the agents in Step 1 run with `--disable-mtls`; the two sides must agree. Drop it only when every node runs `spire-agent` and has a thumbprint in the CSV. |
 
-When bootstrap finishes it writes two files into the working directory: `<clusterName>.kubeconfig`, the cluster's admin credential, and `<clusterName>-etcd-encryption-key.json`, the key that encrypts the cluster's etcd data. Both are secrets. The cluster does not depend on the key file: every control-plane node holds the key at `/etc/kubernetes/kube-api-encryption/encryption-config.yaml`, and that is what kube-apiserver reads. The file is for two things the nodes cannot do. It is what a controller installed later is given, so nobody has to pull the key off a node by hand, and it is the copy that restores etcd onto new hosts when no control-plane node survives. **Move it off this host** — this host is one of the nodes it protects — and keep it with the cluster's other credentials. Use `--kubeconfig-out` and `--encryption-key-out` to write the files elsewhere.
+When bootstrap finishes it writes two files into the working directory: `<clusterName>.kubeconfig`, a breakglass admin kubeconfig, and `<clusterName>-etcd-encryption-key.json`, the key that encrypts the cluster's etcd data. Both are secrets. The cluster does not depend on the key file: every control-plane node holds the key at `/etc/kubernetes/kube-api-encryption/encryption-config.yaml`, and that is what kube-apiserver reads. The file is for two things the nodes cannot do. It is what a controller installed later is given, so nobody has to pull the key off a node by hand, and it is the copy that restores etcd onto new hosts when no control-plane node survives. **Move it off this host** — this host is one of the nodes it protects — and keep it with the cluster's other credentials. Use `--kubeconfig-out` and `--encryption-key-out` to write the files elsewhere.
 
 **Duration**: Typically **10–15 minutes** for a three-node site
 
@@ -289,7 +289,7 @@ When bootstrap finishes it writes two files into the working directory: `<cluste
 
 ## Step 3: Verify the Cluster
 
-On success `nvkectl` writes the new cluster's admin kubeconfig to
+On success `nvkectl` writes the breakglass admin kubeconfig to
 `my-tier0-site.kubeconfig` in the working directory (`--kubeconfig-out` changes the
 path) and prints the command to use it:
 
@@ -297,8 +297,7 @@ path) and prints the command to use it:
 kubectl --kubeconfig ./my-tier0-site.kubeconfig get nodes
 ```
 
-All nodes should show `Ready` status. On the init node,
-`/etc/kubernetes/admin.conf` is the same credential.
+All nodes should show `Ready` status.
 
 ## What Happens Next
 

@@ -195,7 +195,7 @@ handshake error. This mirrors the documented provisioning procedure, which
 brings SPIRE and TPM attestation up in the management-plane install rather than
 at bootstrap.
 
-**Verification is not "nvkectl exited 0".** The admin kubeconfig is forwarded
+**Verification is not "nvkectl exited 0".** The breakglass admin kubeconfig is forwarded
 off the node to the runner, the controller is polled on `/healthz` and then `/api/version`,
 and the reported version is compared against the candidate's expected version.
 
