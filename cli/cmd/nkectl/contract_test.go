@@ -400,6 +400,37 @@ func TestGetClustersOutputFormats(t *testing.T) {
 			t.Errorf("exit code = %d, want 1\nstderr: %q", got.exitCode, got.stderr)
 		}
 		assertStream(t, "stderr", got.stderr, `cluster "missing" not found`)
+		if strings.Contains(got.stdout, "Error") {
+			t.Errorf("stdout = %q, want no error text on stdout", got.stdout)
+		}
+	})
+
+	// The one failing command that writes to stdout: a multi-name get prints
+	// the matches, kubectl-style, then exits 1 for the names that matched
+	// nothing. docs/compatibility.md states the exception.
+	t.Run("several names print the matches and fail for the rest", func(t *testing.T) {
+		t.Parallel()
+		partial := stubCWE(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if r.URL.Query().Get("name") != clusterName {
+				fmt.Fprint(w, `{"clusters":[]}`)
+				return
+			}
+			fmt.Fprintf(w, `{"clusters":[{"id": %q, "name": %q}]}`, clusterID, clusterName)
+		})
+		got := run(t, writeSiteConfig(t, partial.URL), "get", "clusters", clusterName, "missing", "-o", "json")
+		if got.exitCode != 1 {
+			t.Errorf("exit code = %d, want 1\nstderr: %q", got.exitCode, got.stderr)
+		}
+		assertStream(t, "stderr", got.stderr, `cluster "missing" not found`)
+
+		var clusters []map[string]any
+		if err := json.Unmarshal([]byte(got.stdout), &clusters); err != nil {
+			t.Fatalf("parsing stdout as JSON: %v\nstdout: %q", err, got.stdout)
+		}
+		if len(clusters) != 1 || clusters[0]["name"] != clusterName {
+			t.Errorf("stdout = %q, want only the cluster that matched", got.stdout)
+		}
 	})
 }
 

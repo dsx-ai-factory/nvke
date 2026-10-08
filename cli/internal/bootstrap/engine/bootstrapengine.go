@@ -43,6 +43,11 @@ const (
 	// reads from kindExperimentalProviderEnv and as the binary callers shell
 	// out to for the image operations kind does not cover.
 	RuntimeCLI = "nerdctl"
+
+	// createCleanupTimeout bounds the diagnostics and teardown that follow a
+	// failed create. They run on a context detached from the caller's, so they
+	// need a stop of their own.
+	createCleanupTimeout = 2 * time.Minute
 )
 
 // kindEnv returns the environment a kind invocation runs with, so kind
@@ -216,11 +221,17 @@ func (e *Engine) Create(ctx context.Context, cfg Config) (*Cluster, error) {
 
 	e.log.Info("creating bootstrap kind cluster", "cluster", cfg.ClusterName)
 	if out, err := e.Runner.Run(ctx, kindEnv(), "kind", args...); err != nil {
-		e.dumpCreateFailure(ctx, cfg)
+		// A SIGINT during `kind create` cancels ctx, and the runner execs
+		// through exec.CommandContext, so reusing ctx would skip the
+		// diagnostics and the delete and leave the retained node container
+		// standing. Detach from the cancellation and bound the cleanup.
+		cleanupCtx, cancelCleanup := context.WithTimeout(context.WithoutCancel(ctx), createCleanupTimeout)
+		defer cancelCleanup()
+		e.dumpCreateFailure(cleanupCtx, cfg)
 		if cfg.KeepFailedCluster {
 			e.log.Warn("--keep-bootstrap-cluster set: leaving the failed bootstrap kind cluster in place",
 				"cluster", cfg.ClusterName)
-		} else if deleteErr := e.Delete(ctx, cfg.ClusterName); deleteErr != nil {
+		} else if deleteErr := e.Delete(cleanupCtx, cfg.ClusterName); deleteErr != nil {
 			e.log.Error("could not clean up after a failed create",
 				"cluster", cfg.ClusterName, "err", deleteErr)
 		}
