@@ -222,10 +222,6 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 				collectSiteClusterState(ctx, session, secrets...)
 			}
 			Expect(err).NotTo(HaveOccurred(), "should bootstrap Kubernetes on the node")
-			// The kubeconfig is an admin credential in a temporary directory
-			// nothing else removes. Every spec after this one reads it, so it
-			// goes when the container does.
-			DeferCleanup(func() { _ = os.RemoveAll(filepath.Dir(cluster.Kubeconfig)) })
 			GinkgoLogr.Info("site controller", "kubeconfig", cluster.Kubeconfig)
 		}, NodeTimeout(3*time.Hour))
 
@@ -303,6 +299,18 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 	// Tenants first: their machines are Forge instances this site holds, and
 	// once the site is gone nothing is left to release them.
 	AfterAll(func(ctx SpecContext) {
+		// The kubeconfig is an admin credential in a temporary directory
+		// nothing else removes. Deferred so it goes on every path out of this
+		// function, and after the sweep and teardown below, which read it.
+		//
+		// Not DeferCleanup inside a spec: Ginkgo runs that when the spec ends,
+		// not when this container does, so the specs after the bootstrap would
+		// read a deleted file.
+		defer func() {
+			if cluster.Kubeconfig != "" {
+				_ = os.RemoveAll(filepath.Dir(cluster.Kubeconfig))
+			}
+		}()
 		if session == nil {
 			return
 		}
