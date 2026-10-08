@@ -140,11 +140,16 @@ The bootstrap cluster runs on nerdctl and containerd. Docker is not
 supported. Install both on the machine running `nkectl`; see
 [Installation](../../docs/site-bootstrap/installation.md#additional-prerequisites-for-bootstrap).
 
-**`NKECTL_CWE_IMAGE is not set`** or **`NKECTL_CAPI_PROVISIONED_IMAGE is not set`**
+**`image <image> is not in the local image store ... and names no registry to pull it from`**
 
-The two images bootstrap deploys have no default. Set both to full image
-references your host can pull. If the registry needs credentials, log in with
-`nerdctl login <registry>` first.
+Bootstrap side-loads two images that default to local builds,
+`nke-controller:latest` and `cluster-api-provider-provisioned:latest`, and
+neither is in containerd's image store. Build them with `make -C cli images`,
+or name images your host can pull, with `--controller-image` and
+`--provisioned-provider-image` or `NKECTL_CONTROLLER_IMAGE` and
+`NKECTL_CAPI_PROVISIONED_IMAGE`. A reference with a registry, such as
+`docker.io/<org>/<name>`, is pulled; if the pull is refused, see
+[Bootstrap cluster](#bootstrap-cluster).
 
 **`bootstrap cluster "nkectl-bootstrap" from an earlier run is still running`**
 
@@ -233,8 +238,8 @@ Three patterns account for most of them:
 
 - *Chart fetch failed*, such as `failed to fetch ... 500` or a timeout. The
   chart repository is unreachable from the bootstrap host. Retry, or point at
-  a mirror or local copy with `NKECTL_CWE_TEMPORAL_CHART`,
-  `NKECTL_CWE_SPIRE_CHART` and `NKECTL_CWE_SPIRE_CRDS_CHART`. Nodes are
+  a mirror or local copy with `NKECTL_CONTROLLER_TEMPORAL_CHART`,
+  `NKECTL_CONTROLLER_SPIRE_CHART` and `NKECTL_CONTROLLER_SPIRE_CRDS_CHART`. Nodes are
   untouched.
 - *Image pull failed inside the cluster*, visible in `pods-described.txt` as
   `ErrImagePull` or `ImagePullBackOff`. The Kind node cannot reach the image
@@ -247,7 +252,7 @@ Three patterns account for most of them:
   shared password did not reach one side; a schema migration error names the
   migration that failed.
 
-`NKECTL_CWE_HELM_TIMEOUT` raises the per-release wait from its default of
+`NKECTL_CONTROLLER_HELM_TIMEOUT` raises the per-release wait from its default of
 five minutes on a slow network.
 
 **`cwe did not report healthy on /readyz within 5m0s: last error=... last response=...`**
@@ -256,14 +261,14 @@ The controller pod is running but its readiness check is failing. The response
 names which dependency: `database` means Postgres is not reachable with the
 generated password, `temporal` means the Temporal frontend is not up yet or
 its schema jobs failed. Open `temporal/*/logs.txt` and `postgres/*/logs.txt`
-in the diagnostics directory. `NKECTL_CWE_READY_TIMEOUT` raises the wait.
+in the diagnostics directory. `NKECTL_CONTROLLER_READY_TIMEOUT` raises the wait.
 
 **`waiting for the published cwe api: http://127.0.0.1:30080/readyz did not become ready`**
 
 The controller is healthy inside the cluster but not reachable from the host. The
 Kind host port mapping or the NodePort Service did not come up. Check that
 nothing else on the host holds port 30080, or change it with
-`NKECTL_CWE_PORT`.
+`NKECTL_CONTROLLER_PORT`.
 
 ### Site cluster
 
