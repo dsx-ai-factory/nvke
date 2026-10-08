@@ -75,6 +75,8 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 |---|---|
 | [tenant-clusters/node-lifecycle.md](tenant-clusters/node-lifecycle.md) | What happens to a node through its life |
 | [tenant-clusters/kubernetes-api-access.md](tenant-clusters/kubernetes-api-access.md) | How operators, automation and Site Controller services reach and authenticate to tenant Kubernetes APIs |
+| [tenant-clusters/certificate-renewal.md](tenant-clusters/certificate-renewal.md) | Scheduled and forced T2 leaf renewal, preflight, terminal verification and recovery |
+| [tenant-clusters/kubelet-serving-certificates.md](tenant-clusters/kubelet-serving-certificates.md) | Kubelet-serving identity validation, CSR signing, installation and troubleshooting |
 | [../controller/docs/authenticating-to-the-api.md](../controller/docs/authenticating-to-the-api.md) | Authenticating to the API |
 | [../controller/docs/configuring-api-authentication.md](../controller/docs/configuring-api-authentication.md) | Turning API authentication on, including RBAC for `nvkectl` |
 | [design/README.md](design/README.md) | Design records and proposals; status is stated at the top of each |
@@ -90,6 +92,11 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [operations/label-domain-migration.md](operations/label-domain-migration.md) | What the move to the `nvke.nvidia.com` label and annotation domain means for an existing site |
 | [site-operations/certificate-renewal.md](site-operations/certificate-renewal.md) | Site-management certificate renewal for NVKE fleet operators |
 | [operations/observability.md](operations/observability.md) | Temporal UI, CWE logs, database health, and CAPNICo diagnostics |
+| [operations/credential-lifecycle.md](operations/credential-lifecycle.md) | OSS alpha credential inventory, supported procedures, CA limits, monitoring, audit and evidence |
+| [../controller/docs/certificate-renewal.md](../controller/docs/certificate-renewal.md) | T2 workflow, executor, receipt and retained ownership contracts |
+| [../controller/docs/etcd-encryption-key-rotation.md](../controller/docs/etcd-encryption-key-rotation.md) | Existing T2 key rotation, phase-specific recovery and preexisting-object rewrite proof |
+| [../controller/docs/credential-monitoring.md](../controller/docs/credential-monitoring.md) | Actual expiry inspection, configuration bounds, metrics and alert delivery |
+| [../controller/docs/credential-audit.md](../controller/docs/credential-audit.md) | Versioned lifecycle audit, manual evidence tool, ledger export and retention limits |
 | [operations/faq.md](operations/faq.md) | Common bootstrap and tenant cluster failure modes |
 | [nktp/site-telemetry/getting-started.md](nktp/site-telemetry/getting-started.md) | Management cluster telemetry: what NKTP collects and what the deploy path needs |
 | [nktp/site-telemetry/configuration.md](nktp/site-telemetry/configuration.md) | What the site's NKTP values change, connecting a real backend, and overriding values safely |

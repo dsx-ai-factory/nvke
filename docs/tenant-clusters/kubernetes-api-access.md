@@ -86,6 +86,11 @@ exactly two control-plane nodes; see
 files that operators have already downloaded. Operators must retrieve a
 refreshed kubeconfig before the certificate in their local copy expires.
 
+Follow the [tenant renewal runbook](certificate-renewal.md) for target selection,
+forced invocation, health checks, refreshed-copy verification and failed-cycle
+recovery. The [credential operations inventory](../operations/credential-lifecycle.md)
+states the existing-CA profile and deferred revocation/CA-rotation capabilities.
+
 ## Service Identity and Tenant OIDC
 
 NVKE's existing SPIFFE/OIDC integration is for service-to-cluster API access. It

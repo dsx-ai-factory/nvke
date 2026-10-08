@@ -20,13 +20,15 @@ control-plane node UUIDs, topology, operator, time, and approved change window.
 
 - `GET /api/clusters/{clusterID}` reports `etcdEncrypted: true`, a provisioned
   cluster, no deletion, and no `conditions.updateInProgress`.
-- Every control-plane node is joined, reachable, and running a node agent built
-  from this release or later. Rotation needs the `GetEtcdEncryptionKeyIdentity`
-  RPC and the `api_encryption_key_name` request fields, which this release adds.
-  No published agent up to and including `agent/v0.3.0-rc.2` has them. The
-  workflow's existing v0.1.26 version gate does not prove these capabilities, so
-  check each control-plane node before starting. For agents serving plain mTLS,
-  check through gRPC reflection, using the controller's mTLS client identity:
+- Every control-plane node is joined, reachable, and running a node agent from
+  the **same qualified build as the controller**, built from this release or
+  later. Rotation needs the `GetEtcdEncryptionKeyIdentity` RPC and the
+  `api_encryption_key_name` request fields, which this release adds. No
+  published agent up to and including `agent/v0.3.0-rc.2` has them. The
+  workflow's existing v0.1.26 version gate does not prove these capabilities,
+  so check each control-plane node before starting. For agents serving plain
+  mTLS, check through gRPC reflection, using the controller's mTLS client
+  identity:
 
   ```bash
   grpcurl <mTLS flags> <node-ip>:15005 list proto.NodeAgent | grep -Fx proto.NodeAgent.GetEtcdEncryptionKeyIdentity
@@ -44,7 +46,9 @@ control-plane node UUIDs, topology, operator, time, and approved change window.
   with a **new workflow ID**, not a reset of the failed workflow (see recovery
   below). Any already-staged pending key is preserved and reused.
 - Membership must stay fixed throughout the operation. No upgrades, recycling,
-  certificate renewal, or other mutations may overlap.
+  certificate renewal, or other mutations may overlap. Quiesce independent
+  filesystem/configuration writers; they do not share the node agent's mutation
+  mutex.
 - The API servers run **Kubernetes 1.34 or newer** and use the controller's
   encryption configuration with automatic reload. Each node-local `/metrics` endpoint must
   expose `apiserver_encryption_config_controller_last_config_info` and a valid
