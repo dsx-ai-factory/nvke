@@ -67,8 +67,7 @@ type ControlPlane struct {
 
 	// Config, when non-nil, provisions the control plane through the cluster-level
 	// control-plane controller (CreateClusterControlPlaneConfig) with no
-	// control-plane node pool. It is mutually exclusive with Pools and requires
-	// a controller with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER on (its default).
+	// control-plane node pool. It is mutually exclusive with Pools.
 	Config *ControlPlaneConfigSpec
 }
 

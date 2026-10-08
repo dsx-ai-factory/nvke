@@ -104,19 +104,17 @@ jobs:
       # management-cluster controller, not the tenant backend, so this lane already
       # pays for them. authn-spire is out because the NICo provider does not
       # set SPIFFE_ENABLED. The label filter keeps this job focused on the
-      # nico-containers specs; nico-vms uses its own job below.
-      # Ignored under single-runner-control-plane-modes below, which derives a
-      # filter per leg. Kept to satisfy the required input and to record what the
-      # node-pool leg runs.
-      label-filter: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'core-nico || health' || 'nico-containers || health || (authn && !authn-spire) || authn-permissive' }}
+      # nico-containers specs; nico-vms uses its own job below. Keep the full
+      # expression in step with e2e_suite_filter in hack/backend-e2e-lib.sh.
+      label-filter: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'core-nico || health' || '(nico-containers || health) || (authn && !authn-spire) || authn-permissive' }}
       # The nico provider installs CAPNICo, starts nico-sim by default, and
       # brings its own node image step. capi_core is required.
       providers: '["capi_core", "bgp-containers", "nico"]'
       # copy-pr-bot mirrors PRs onto pull-request/<n> for self-hosted runners.
       # Mirrored runs select the smaller core/health suite; 30 minutes leaves
       # room for arm64 diagnostics and action cleanup after that suite finishes.
-      # Full runs cover both control-plane modes and extended NICo container scenarios,
-      # so they retain their 240-minute allowance.
+      # Full runs cover the extended NICo container scenarios, so they retain
+      # their 240-minute allowance.
       timeout-minutes: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 30 || 240 }}
       # Without this, a broken auth deployment turns the authn specs into
       # skips and the lane stays green having tested nothing new.
@@ -125,10 +123,6 @@ jobs:
       # nkectl. It is on because it costs a minute on a lane that already runs,
       # and it catches a controller deployment difference the CAPD lane would not see.
       nkectl-smoke: true
-      # cp-controller specs skip unless the controller is deployed flag-on, and the flag is
-      # deployment-wide, so it needs its own leg. Without this the lane is the
-      # only one in CI not covering controller-managed control planes.
-      single-runner-control-plane-modes: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}
       needs-capnico-source: true
       # Default on every trigger; a dispatch can still opt out, the same form
       # the CAPD lane uses. Written as "not a dispatch OR the input" rather

@@ -196,32 +196,28 @@ make test-e2e E2E_TIMEOUT=3h ARGS='--label-filter=capd'
 The two `core` targets run one control-plane node and one worker through create,
 tenant-node readiness, delete, and tenant-access cleanup. Pull-request mirror
 branches use these rows for bounded feedback. Runs on `main`, scheduled runs,
-and manual runs keep the comprehensive backend rows, including both
-control-plane provisioning modes and the extended lifecycle validations.
+and manual runs keep the comprehensive backend rows, including the extended
+lifecycle validations.
 
 ### Local CAPD e2e (`make test-e2e-capd-local`)
 
-`make test-e2e-capd-local` (Colima + kind + Tilt + CAPD) validates **both**
-control-plane paths on one cluster by default, mirroring CI: the
-controller-managed leg (`cp-controller`, deployed with
-`PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true`) runs first, then a
-light CWE redeploy flips the flag off for the node-pool leg. The node-pool leg
-only starts once the cp-controller leg's tenant cluster is fully torn down.
+`make test-e2e-capd-local` (Colima + kind + Tilt + CAPD) runs the CAPD suite
+against a controller that provisions every control plane from the cluster-level
+`controlPlaneConfig`, cp-controller entries included. It skips the `nkectl` row,
+which needs the CLI and `kubectl` that the local runner does not have, so the
+local run is not CLI coverage. An entry that describes its control plane as one
+node pool is sent as the equivalent `controlPlaneConfig`.
 
 The CAPD node image uses Open vSwitch's kernel datapath. Geneve leaves through
 the kernel route on Docker's uplink, and `br-ex` stays a dummy gateway so OVN
 does not adopt that interface. `NKE_OVS_DATAPATH_TYPE=netdev` selects the
 userspace datapath instead. The existing DNS workload probe and networking
-scenarios exercise this setup in the node-pool leg.
+scenarios exercise this setup.
 
-To iterate faster, run a single leg instead:
+To iterate faster, run a single filter instead:
 
 ```bash
-# One explicit filter, single-mode (honors PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER):
 LOCAL_NKE_E2E_LABEL_FILTER="capd && cp-controller" make test-e2e-capd-local
-
-# Node-pool path only:
-LOCAL_NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES=false make test-e2e-capd-local
 ```
 
 ### OS profile provisioning matrix

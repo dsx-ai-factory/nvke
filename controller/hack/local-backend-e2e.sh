@@ -289,30 +289,6 @@ e2e_write_tilt_config "${tilt_config}" \
   "${LOCAL_CWE_IMAGE:-}" "${management_vip}" "${BGP_CONTAINER_NAME:-bgp-containers}"
 tilt_config_staged=true
 
-# Sequential two-mode CAPD run (mirrors controller/hack/ci/backend-e2e.sh): a
-# default local run validates both control-plane paths on one cluster -- the
-# cp-controller leg (flag-on) first, then a light controller redeploy to flag-off for
-# the node-pool leg. Set LOCAL_NKE_E2E_LABEL_FILTER to run a single explicit
-# filter instead, or LOCAL_NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES=false.
-sequential_modes="${LOCAL_NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES:-true}"
-if [[ -n "${LOCAL_NKE_E2E_LABEL_FILTER:-}" ]]; then
-  sequential_modes=false
-fi
-# The cp-controller leg needs a flag-on controller, so deploy flag-on when sequential.
-# A single-filter run deploys one controller and never redeploys, so it has to state
-# the mode rather than inherit it: the controller's own default is now true (#1054), and an
-# unset flag used to mean "node-pool control plane". Left unset, the node-pool
-# specs get a flag-on controller, which rejects control-plane node pools outright --
-# `control-plane node pools are not allowed when control-plane controller
-# provisioning is enabled`. Defaulted, not forced, so an explicit
-# PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true still selects the
-# cp-controller specs.
-if [[ "${sequential_modes}" == "true" ]]; then
-  export PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true
-else
-  export PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-false}"
-fi
-
 log "deploying local controller through Tilt"
 TILT_DISABLE_ANALYTICS=1 tilt ci \
   --port=0 \
@@ -366,17 +342,14 @@ docker cp "${e2e_binary}" "${runner_name}:/state/cwe-e2e.test"
 docker cp "${internal_kubeconfig}" "${runner_name}:/state/management.kubeconfig"
 docker cp "${e2e_config}" "${runner_name}:/state/e2e-config.json"
 
-# Run one Ginkgo leg against the already-deployed controller. suffix keeps each leg's
-# log and JUnit report distinct (empty for a single-mode run).
 # Tilt builds the controller with `make build`, which bakes BUILD_VERSION in, so ask the
 # Makefile for the same value rather than deriving it again here. Without it the
-# health suite's version spec skips itself and the leg still reports success.
+# health suite's version spec skips itself and the run still reports success.
 cwe_expected_version="$(make -C "${repo_root}" -s --no-print-directory print-BUILD_VERSION)"
 
-# Exec adapter for the shared leg runner: locally the suite runs in a container
+# Exec adapter for the shared Ginkgo runner: locally the suite runs in a container
 # on the Kind network, reached with `docker exec`.
 local_e2e_exec() {
-  local cp_flag="$1"; shift
   local e2e_bundle_server_url="${BUNDLE_SERVER_URL:-}"
   if [[ "${INSTALL_CNI_AFTER_INIT:-false}" == "true" ]]; then
     e2e_bundle_server_url=""
@@ -389,66 +362,29 @@ local_e2e_exec() {
     -e "NKE_CONTROLLER_EXPECTED_VERSION=${cwe_expected_version}" \
     -e "NKE_E2E_DSX_IDENTITY_EXCHANGE=${exchange_enabled}" \
     -e "NKE_E2E_BUNDLE_SERVER_URL=${e2e_bundle_server_url}" \
-    -e "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${cp_flag}" \
     -e E2E_BGP_CONTAINER_NAME=bgp-containers \
     "${runner_name}" "$@"
 }
 
-run_local_leg() {
-  local label_filter="$1" cp_flag="$2" suffix="$3" rc=0
+run_local_e2e() {
+  local label_filter="$1" rc=0
   # The nkectl row drives the CLI, so it needs nkectl and kubectl inside the
   # runner. ci/backend-e2e.sh builds and stages both; this script stages only
   # the test binary, the kubeconfig and the config, and its runner image
   # carries neither. Without this the row would skip, and the skip audit in
-  # e2e_run_ginkgo_leg fails the leg on a skip reported from an It.
+  # e2e_run_ginkgo fails the run on a skip reported from an It.
   #
   # Excluded here rather than in the shared filters, so CI -- where both
   # binaries are present -- still runs it. Stage nkectl and a linux kubectl
   # into the runner to drop this.
   label_filter="(${label_filter}) && !nkectl"
-  e2e_run_ginkgo_leg local_e2e_exec log "${state_dir}" \
-    "${label_filter}" "${cp_flag}" "${suffix}" || rc=$?
-  docker cp "${runner_name}:/state/junit${suffix}.xml" "${state_dir}/junit${suffix}.xml" >/dev/null 2>&1 || true
+  e2e_run_ginkgo local_e2e_exec log "${state_dir}" "${label_filter}" || rc=$?
+  docker cp "${runner_name}:/state/junit.xml" "${state_dir}/junit.xml" >/dev/null 2>&1 || true
   return "${rc}"
 }
 
-# Cleanup gate between legs: the cp-controller leg's delete spec should have
-# removed every tenant cluster before the node-pool leg starts. Count CAPI
-# Cluster objects directly (not the controller API, which enforces auth); zero of them
-# is a faithful, auth-free "cluster is clean" signal.
-local_kubectl() { kubectl "$@"; }
-
-wait_for_zero_tenant_clusters() {
-  e2e_wait_for_zero_tenant_clusters local_kubectl log ||
-    fail "cleanup gate: tenant clusters still present"
-}
-
-# Flip the deployment-wide control-plane-controller flag with a light redeploy
-# (no re-run of Tilt), wait for the rollout, and confirm the new value stuck.
-redeploy_cwe() {
-  local value="$1" got
-  log "redeploying the controller with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
-  kubectl -n nke-controller set env deployment/nke-controller \
-    "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
-  kubectl -n nke-controller rollout status deployment/nke-controller --timeout=5m
-  got="$(kubectl -n nke-controller get deployment/nke-controller \
-    -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER\")].value}")"
-  [[ "${got}" == "${value}" ]] || \
-    fail "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER must be ${value} after redeploy, got ${got:-<empty>}"
-}
-
-if [[ "${sequential_modes}" == "true" ]]; then
-  log "sequential CAPD control-plane modes: cp-controller (flag-on) then node-pool (flag-off)"
-  run_local_leg "${E2E_CAPD_CP_CONTROLLER_FILTER}" "true" "-cp-controller" || \
-    fail "cp-controller leg failed with exit code $?; not running the node-pool leg"
-  log "cp-controller leg passed; confirming the cluster is clean before the node-pool leg"
-  wait_for_zero_tenant_clusters
-  redeploy_cwe false
-  run_local_leg "${E2E_CAPD_NODE_POOL_FILTER}" "false" "-nodepool" || \
-    fail "node-pool leg failed with exit code $?"
-  log "sequential CAPD control-plane E2E passed (cp-controller then node-pool)"
-else
-  label_filter="${LOCAL_NKE_E2E_LABEL_FILTER:-capd}"
-  run_local_leg "${label_filter}" "${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" "" || exit "$?"
-  log "E2E specs matching ${label_filter} passed"
-fi
+# The full suite by default, as CI's full runs do. Set LOCAL_NKE_E2E_LABEL_FILTER
+# to run a narrower filter.
+label_filter="${LOCAL_NKE_E2E_LABEL_FILTER:-${E2E_CAPD_SUITE_FILTER}}"
+run_local_e2e "${label_filter}" || exit "$?"
+log "E2E specs matching ${label_filter} passed"

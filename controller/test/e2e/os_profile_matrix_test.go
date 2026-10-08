@@ -124,8 +124,8 @@ func nicoVMSOSProfileTestSpec(profile nicoVMSOSProfileEntry, index int) testSpec
 			kubernetesVersion: kubernetesVersion,
 			cniPlugin:         CNIPluginCalico,
 			// The profile under test is the worker's. The control plane takes the
-			// nico-vms default instance, which leaves room for a flag-on controller's
-			// kubelet reservation (see nicoVMSSpec).
+			// nico-vms default instance, which leaves room for the controller's kubelet
+			// reservation (see nicoVMSSpec).
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
 			workerPools: []nke.NodePoolSpec{{
 				Name:             fmt.Sprintf("worker-profile-%02d", index+1),

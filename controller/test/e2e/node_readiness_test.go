@@ -75,13 +75,10 @@ func validateNodeReadinessPostCreate(test *tenantTest) {
 }
 
 // expectedNodeCounts returns the desired node count of every node pool in spec,
-// keyed by pool name. A controller-managed control plane has no pool, so its
-// nodes are not in the map; see controlPlaneConfigNodeCount.
+// keyed by pool name. The control plane has no pool, so its nodes are not in the
+// map; see controlPlaneConfigNodeCount.
 func expectedNodeCounts(spec nke.ClusterSpec) map[string]int {
-	counts := make(map[string]int, len(spec.ControlPlane.Pools)+len(spec.Workers))
-	for _, pool := range spec.ControlPlane.Pools {
-		counts[pool.Name] = pool.DesiredNodeCount
-	}
+	counts := make(map[string]int, len(spec.Workers))
 	for _, pool := range spec.Workers {
 		counts[pool.Name] = pool.DesiredNodeCount
 	}
@@ -89,8 +86,7 @@ func expectedNodeCounts(spec nke.ClusterSpec) map[string]int {
 }
 
 // controlPlaneConfigNodeCount returns how many nodes spec's cluster-level
-// controlPlaneConfig asks for: the nodes that belong to no node pool. Zero when
-// the control plane is a node pool.
+// controlPlaneConfig asks for: the nodes that belong to no node pool.
 func controlPlaneConfigNodeCount(spec nke.ClusterSpec) int {
 	if spec.ControlPlane.Config == nil {
 		return 0
@@ -98,17 +94,9 @@ func controlPlaneConfigNodeCount(spec nke.ClusterSpec) int {
 	return spec.ControlPlane.Config.DesiredCount
 }
 
-// controlPlaneNodeCount returns how many control-plane nodes spec asks for. A
-// control plane is either a controlPlaneConfig or node pools, never both.
+// controlPlaneNodeCount returns how many control-plane nodes spec asks for.
 func controlPlaneNodeCount(spec nke.ClusterSpec) int {
-	if spec.ControlPlane.Config != nil {
-		return spec.ControlPlane.Config.DesiredCount
-	}
-	count := 0
-	for _, pool := range spec.ControlPlane.Pools {
-		count += pool.DesiredNodeCount
-	}
-	return count
+	return controlPlaneConfigNodeCount(spec)
 }
 
 // clusterNodeCount returns how many nodes spec asks for in total: every

@@ -36,39 +36,10 @@ BUNDLE_VOLUME="capd-e2e-bundles-${RUN_ID}"
 CAPD_NODE_IMAGE="cwe-capd-kindest-node:run-${RUN_ID}"
 BGP_CONTAINER_NAME="bgp-containers-${RUN_ID}"
 DIAGNOSTICS_MARKER="${STATE_DIR}/SAFE_TO_UPLOAD"
-# Sequential two-mode run: the cp-controller and node-pool provisioning modes run
-# back to back on one kind cluster. The cp-controller leg runs first, so the controller is
-# brought up flag-on here and the node-pool leg flips the deployment-wide flag
-# off between the legs. A caller that drives the flag itself leaves this unset
-# and takes the single-mode path below.
-SINGLE_RUNNER_CONTROL_PLANE_MODES="${NKE_E2E_SINGLE_RUNNER_CONTROL_PLANE_MODES:-${NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES:-false}}"
-# The ginkgo label for this backend's rows. BACKEND names the lane; the label is
-# what tenant_test.go tags with, and for NICo the two differ.
-case "${BACKEND}" in
-  nico) BACKEND_LABEL=nico-containers ;;
-  *) BACKEND_LABEL="${BACKEND}" ;;
-esac
 # Run the nkectl checks in hack/ci/nkectl-smoke.sh once the suite passes. This
 # lane has an inner runner, so the smoke drives the CLI inside it.
 NKECTL_SMOKE="${NKE_E2E_NKECTL_SMOKE:-false}"
 NKECTL_SMOKE_RUNNER="${RUNNER_NAME}"
-# Resolve the control-plane mode to a concrete value exactly once, here. The
-# sequential path drives the flag per leg, so it starts flag-on for the
-# cp-controller leg. The single-mode path deploys one controller and never redeploys,
-# so it has to state the mode rather than inherit it: the controller's own default is now
-# true (#1054), and an unset flag used to mean "node-pool control plane". Left
-# unset, the node-pool specs would get a flag-on controller, which rejects
-# control-plane node pools outright -- `control-plane node pools are not
-# allowed when control-plane controller provisioning is enabled`. Defaulted,
-# not forced, so an explicit
-# PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true still selects the
-# cp-controller specs. Every use below is then unconditional: the controller deploy
-# and the e2e spec selection cannot diverge.
-if [[ "${SINGLE_RUNNER_CONTROL_PLANE_MODES}" == "true" ]]; then
-  PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true
-else
-  PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-false}"
-fi
 TMP_DIR="$(mktemp -d)"
 MANAGEMENT_KUBECONFIG="${TMP_DIR}/management.kubeconfig"
 CLUSTERCTL_BIN="${TMP_DIR}/clusterctl"
@@ -357,10 +328,9 @@ start_state_monitor() {
   start_cwe_log_follower
 }
 
-# The controller is the one deployment this run rolls: redeploy_cwe flips the
-# control-plane-controller flag between the legs, and it rolls again near the
-# end. `kubectl logs deployment/...` at teardown only reaches the pod that
-# survived, so every line before the last roll is gone. Run 35364887944
+# The controller is the one deployment this run can roll. `kubectl logs deployment/...` at
+# teardown only reaches the pod that survived, so every line before the last roll
+# is gone. Run 35364887944
 # shipped a 20-line cwe.log starting 50 minutes after the first spec failed,
 # which is why that failure was never root-caused. Follow the deployment for
 # the whole run instead and re-attach after each roll; --prefix names the pod
@@ -390,18 +360,14 @@ stop_state_monitor() {
   STATE_MONITOR_PID=""
 }
 
-# Run one Ginkgo leg against the already-deployed management plane. The label
-# filter and the control-plane-controller flag differ per leg; the flag is
-# forwarded to the e2e binary the same way the single-mode run always has. The
-# suffix keeps each leg's e2e log and JUnit report distinct (empty for the
-# single-mode run, so its artifact names are unchanged). Returns the suite's
-# exit code rather than aborting, so the caller decides what a failure means.
-# Exec adapter for the shared leg runner: CI runs the suite inside its runner
+# Run the Ginkgo suite against the already-deployed management plane. Returns
+# the suite's exit code rather than aborting, so the caller decides what a
+# failure means.
+# Exec adapter for the shared Ginkgo runner: CI runs the suite inside its runner
 # container, with two env vars the local path has no equivalent for.
 # NKE_CONTROLLER_EXPECTED_VERSION turns the third health spec from a self-skip into a real
 # assertion, so a stale image fails here rather than passing quietly.
 ci_e2e_exec() {
-  local cp_flag="$1"; shift
   local e2e_bundle_server_url="http://${BUNDLE_MIRROR_NAME}/"
   if [[ "${INSTALL_CNI_AFTER_INIT:-false}" == "true" ]]; then
     e2e_bundle_server_url=""
@@ -414,53 +380,32 @@ ci_e2e_exec() {
     "NKE_E2E_DSX_IDENTITY_EXCHANGE=${DSX_IDENTITY_EXCHANGE_ENABLED}" \
     "NKE_E2E_BUNDLE_SERVER_URL=${e2e_bundle_server_url}" \
     "E2E_BGP_CONTAINER_NAME=${BGP_CONTAINER_NAME}" \
-    "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${cp_flag}" \
     "NKE_E2E_SPIRE_RELEASE=${NKE_E2E_SPIRE_RELEASE:-}" \
     "$@"
 }
 
-run_ginkgo_leg() {
-  local label_filter="$1" cp_flag="$2" suffix="$3"
+run_ginkgo() {
+  local label_filter="$1"
   local -a extra=()
   [[ -n "${NKE_E2E_FOCUS}" ]] && extra+=("-ginkgo.focus=${NKE_E2E_FOCUS}")
-  e2e_run_ginkgo_leg ci_e2e_exec log "${STATE_DIR}" \
-    "${label_filter}" "${cp_flag}" "${suffix}" -- "${extra[@]}"
+  e2e_run_ginkgo ci_e2e_exec log "${STATE_DIR}" \
+    "${label_filter}" -- "${extra[@]}"
 }
 
-# Cleanup gate between the two sequential legs: the cp-controller leg's delete
-# spec should have removed every tenant cluster before the node-pool leg starts.
-# Count CAPI Cluster objects directly with kubectl rather than the controller API: the
-# apiserver service proxy authenticates the caller to the apiserver but does not
-# forward a bearer token to the controller, so a flag-on, auth-enforcing controller 401s the raw
-# /api/clusters probe. Every tenant owns a cluster.cluster.x-k8s.io object the controller
+# Cleanup gate after the suite: its delete specs should have removed every
+# tenant cluster. Count CAPI Cluster objects directly with kubectl rather than
+# the controller API: the apiserver service proxy authenticates the caller to the
+# apiserver but does not forward a bearer token to the controller, so an auth-enforcing controller
+# 401s the raw /api/clusters probe. Every tenant owns a cluster.cluster.x-k8s.io object the controller
 # deletes on teardown, so zero of them is a faithful, auth-free "cluster is clean"
 # signal (no DB access needed).
 ci_kubectl() { runner_exec kubectl "$@"; }
 
 wait_for_zero_tenant_clusters() {
   e2e_wait_for_zero_tenant_clusters ci_kubectl log && return 0
-  log "refusing the node-pool leg" >&2
+  log "tenant clusters remain after the suite" >&2
   runner_exec kubectl get clusters.cluster.x-k8s.io -A >&2 2>/dev/null || true
   return 1
-}
-
-# Flip the deployment-wide control-plane-controller flag via a light redeploy
-# (no re-run of Tilt), wait for the rollout, then confirm the deployment now
-# carries the requested value. Mirrors the flag-on verification the Tilt deploy
-# already does, so a forwarding regression fails here rather than mid-leg.
-redeploy_cwe() {
-  local value="$1"
-  log "redeploying the controller with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
-  runner_exec kubectl -n "${CONTROLLER_NAME}" set env "deployment/${CONTROLLER_NAME}" \
-    "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
-  runner_exec kubectl -n "${CONTROLLER_NAME}" rollout status "deployment/${CONTROLLER_NAME}" --timeout=5m
-  local got
-  got="$(runner_exec kubectl -n "${CONTROLLER_NAME}" get "deployment/${CONTROLLER_NAME}" \
-    -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER\")].value}")"
-  if [[ "${got}" != "${value}" ]]; then
-    log "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER must be ${value} after redeploy, got ${got:-<empty>}" >&2
-    exit 1
-  fi
 }
 
 handle_signal() {
@@ -570,8 +515,7 @@ collect_diagnostics() {
           clusters,machinedeployments,machinesets,machines,kubeadmcontrolplanes,kubeadmconfigs,dockerclusters,dockermachines \
           -A \
           >"${STATE_DIR}/capi-describe.txt" 2>&1
-        for artifact in tilt.log tilt-snapshot.json nico-sim.log e2e.log junit.xml \
-          junit-cp-controller.xml junit-nodepool.xml; do
+        for artifact in tilt.log tilt-snapshot.json nico-sim.log e2e.log junit.xml; do
           docker cp "${RUNNER_NAME}:/state/${artifact}" "${STATE_DIR}/${artifact}" >/dev/null 2>&1 || true
         done
       fi
@@ -1135,7 +1079,7 @@ docker cp "${E2E_CONFIG}" "${RUNNER_NAME}:/state/e2e-config.json"
 
 # Installs the management plane from controller/deploy/capd-e2e, one helm release per
 # component, instead of Tilt. Everything below -- rollout checks, CAPI probes,
-# the Ginkgo legs -- is identical either way. Tilt stays available for the
+# the Ginkgo run -- is identical either way. Tilt stays available for the
 # inner loop, which the deploy path has no live_update equivalent for. The
 # pieces its providers deploy that the deploy path does not carry -- the BGP
 # container -- are handled explicitly here.
@@ -1214,7 +1158,6 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
     CNPG_SUPERUSER_PASSWORD=example-password \
     CNPG_CLOUD_PASSWORD=example-password \
     CNPG_TEMPORAL_PASSWORD=example-password \
-    PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER}" \
     NODE_REBOOT_SOFT_REBOOT_ENABLED="${NODE_REBOOT_SOFT_REBOOT_ENABLED:-}" \
     NODE_AGENT_SPIRE_ATTESTATION_METHOD="${CAPD_SPIRE_ATTESTATION_METHOD}" \
     SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM="${SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM:-}" \
@@ -1232,8 +1175,8 @@ BGP_CONTAINER_OWNED=true
 tilt_exec=runner_exec
 tilt_mode=ci
 if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
-  # NICo's simulator is a Tilt local resource. Keep Tilt alive through both
-  # E2E legs; `tilt ci` exits after deployment and stops the simulator.
+  # NICo's simulator is a Tilt local resource. Keep Tilt alive through the
+  # E2E run; `tilt ci` exits after deployment and stops the simulator.
   tilt_exec=runner_exec_detached
   tilt_mode=up
 fi
@@ -1256,7 +1199,6 @@ fi
   NICO_VMS_VM_BACKEND=mock \
   NKE_E2E_TILT_MODE="${tilt_mode}" \
   INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}" \
-  PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER}" \
   NODE_REBOOT_SOFT_REBOOT_ENABLED="${NODE_REBOOT_SOFT_REBOOT_ENABLED:-}" \
   NODE_AGENT_SPIRE_ATTESTATION_METHOD="${CAPD_SPIRE_ATTESTATION_METHOD}" \
   TILT_DISABLE_ANALYTICS=1 \
@@ -1300,68 +1242,14 @@ for env_name in TENANT_ACCESS_ENABLED NKE_OIDC_AUTH_ENABLED; do
     exit 1
   fi
 done
-# When the caller asked for control-plane-controller provisioning, confirm the
-# flag actually reached the controller deployment. This catches a Tiltfile forwarding
-# regression before the cp-controller specs would mis-fail at cluster create.
-if [[ "${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER}" == "true" ]]; then
-  cp_flag_value="$(runner_exec kubectl -n "${CONTROLLER_NAME}" get "deployment/${CONTROLLER_NAME}" \
-    -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER\")].value}")"
-  if [[ "${cp_flag_value}" != "true" ]]; then
-    log "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER must be true in the controller deployment, got ${cp_flag_value:-<empty>}"
-    exit 1
-  fi
-fi
 runner_exec kubectl get --raw \
   "/api/v1/namespaces/${CONTROLLER_NAME}/services/${CONTROLLER_NAME}:8080/proxy/api/version" \
   >"${STATE_DIR}/cwe-version.json"
 
 NKE_E2E_FOCUS="${NKE_E2E_FOCUS:-}"
 
-if [[ "${SINGLE_RUNNER_CONTROL_PLANE_MODES}" == "true" ]]; then
-  # Two provisioning modes, one cluster, back to back. cp-controller runs first,
-  # against the flag-on controller the Tilt deploy just verified, so a regression in the
-  # newer control-plane-controller path fails fast -- before the long node-pool
-  # leg spends a runner on a feature the first leg already showed is broken.
-  #
-  # `health` rides along with the cp-controller leg so the controller's /healthz, /readyz and
-  # version endpoints are probed against a flag-on deployment too.
-  start_state_monitor
-  leg_rc=0
-  run_ginkgo_leg "$(e2e_cp_controller_filter "${BACKEND_LABEL}")" "true" "-cp-controller" || leg_rc=$?
-  if ((leg_rc != 0)); then
-    stop_state_monitor
-    log "cp-controller leg failed with exit code ${leg_rc}; not running the node-pool leg" >&2
-    exit "${leg_rc}"
-  fi
-  log "cp-controller leg passed; confirming the cluster is clean before the node-pool leg"
-  if ! wait_for_zero_tenant_clusters; then
-    stop_state_monitor
-    exit 1
-  fi
-  redeploy_cwe false
-  # Node-pool control plane (flag off): the long-standing CAPD lane. `!cp-controller`
-  # keeps the flag-on spec out of this flag-off controller. `health` and the authn specs
-  # ride along here -- both need a deployed, enforcing NKE, which this leg has;
-  # authn-spire is excluded (needs SPIRE pod attestation not yet wired in CAPD).
-  leg_rc=0
-  run_ginkgo_leg "$(e2e_node_pool_filter "${BACKEND_LABEL}")" "false" "-nodepool" || leg_rc=$?
-  stop_state_monitor
-  if ((leg_rc != 0)); then
-    log "node-pool leg failed with exit code ${leg_rc}" >&2
-    exit "${leg_rc}"
-  fi
-  if [[ "${NKECTL_SMOKE}" == "true" ]]; then
-    nkectl_smoke
-  fi
-  log "${BACKEND} sequential management-plane E2E passed (cp-controller then node-pool)"
-  exit 0
-fi
-
-# Single-mode (default): one label filter, one flag. Every other backend and any
-# local run takes this path unchanged.
-#
-# The default is the CAPD lane's filter, for a local run with nothing set. A
-# caller passes its own; the NICo lane passes nico-containers.
+# One label filter. The default is the CAPD lane's filter, for a local run with
+# nothing set. A caller passes its own; the NICo lane passes nico-containers.
 #
 # `health` rides along with `capd`. Those specs need a cluster running the controller in
 # namespace ${CONTROLLER_NAME} on port 8080, which this script has already
@@ -1370,7 +1258,7 @@ fi
 NKE_E2E_LABEL_FILTER="${NKE_E2E_LABEL_FILTER:-capd || health}"
 start_state_monitor
 e2e_rc=0
-run_ginkgo_leg "${NKE_E2E_LABEL_FILTER}" "${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER}" "" || e2e_rc=$?
+run_ginkgo "${NKE_E2E_LABEL_FILTER}" || e2e_rc=$?
 stop_state_monitor
 
 if ((e2e_rc != 0)); then
@@ -1378,10 +1266,8 @@ if ((e2e_rc != 0)); then
   exit "${e2e_rc}"
 fi
 
-# A focused pull-request run takes the single-mode path, so it does not pass
-# through the cleanup gate between sequential legs above. Assert the same
-# invariant before reporting success: a green core run must not leave a tenant
-# behind on its management cluster.
+# Assert before reporting success that a green run left no tenant behind on its
+# management cluster.
 log "E2E specs passed; confirming the cluster is clean"
 if ! wait_for_zero_tenant_clusters; then
   exit 1

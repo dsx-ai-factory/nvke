@@ -132,8 +132,8 @@ TRUST_DOMAIN="${KIND_CLUSTER_NAME}.nke.local"
 
 # The env list the controller container needs, assembled the way
 # controller/Tiltfile assembles _cwe_chart_extra_env. Four sources:
-#   * PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER, set per leg -- the
-#     single-runner mode runs cp-controller on, then flips it off
+#   * PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER, when the caller sets
+#     it; the e2e lanes leave it unset, so the controller takes its default
 #   * the five credentials the Tiltfile treats as required
 #   * NODE_REBOOT_SOFT_REBOOT_ENABLED, which backend-e2e.yml does set
 #   * the remaining optional names (LOG_LEVEL, FORGE_URL, ...) which nothing on

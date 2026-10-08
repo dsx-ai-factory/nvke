@@ -100,7 +100,7 @@ e2e_write_tilt_config() {
     }' >"${out}"
 }
 
-# One Ginkgo leg. `exec_fn` runs a command against the E2E runner, which is the
+# The Ginkgo run. `exec_fn` runs a command against the E2E runner, which is the
 # one thing that legitimately differs: CI execs into its inner runner, local
 # into a container on the Kind network. Anything after `--` is appended to the
 # suite's argv, which is how CI adds its extra assertions without either side
@@ -109,16 +109,15 @@ e2e_write_tilt_config() {
 # The flags below are the ones both must share. `-ginkgo.fail-on-empty` is in
 # that set deliberately: without it a label filter that matches no spec passes
 # silently, which is the failure mode a shared filter constant exists to stop.
-e2e_run_ginkgo_leg() {
-  local exec_fn="$1" log_fn="$2" state_dir="$3"
-  local label_filter="$4" cp_flag="$5" suffix="$6"
-  shift 6
+e2e_run_ginkgo() {
+  local exec_fn="$1" log_fn="$2" state_dir="$3" label_filter="$4"
+  shift 4
   [[ "${1:-}" == "--" ]] && shift
 
-  "${log_fn}" "running E2E specs matching ${label_filter} (PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${cp_flag:-<unset>})"
+  "${log_fn}" "running E2E specs matching ${label_filter}"
 
   set +e
-  "${exec_fn}" "${cp_flag}" \
+  "${exec_fn}" \
     /state/cwe-e2e.test \
     -test.v \
     -test.timeout=105m \
@@ -128,14 +127,14 @@ e2e_run_ginkgo_leg() {
     -ginkgo.fail-on-empty \
     -ginkgo.timeout=100m \
     "-ginkgo.label-filter=${label_filter}" \
-    "-ginkgo.junit-report=/state/junit${suffix}.xml" \
+    "-ginkgo.junit-report=/state/junit.xml" \
     "$@" \
-    2>&1 | tee "${state_dir}/e2e${suffix}.log"
+    2>&1 | tee "${state_dir}/e2e.log"
   local rc=${PIPESTATUS[0]}
   set -e
 
   if ((rc == 0)); then
-    e2e_assert_no_new_skips "${log_fn}" "${state_dir}/e2e${suffix}.log" || rc=1
+    e2e_assert_no_new_skips "${log_fn}" "${state_dir}/e2e.log" || rc=1
   fi
   return "${rc}"
 }
@@ -168,12 +167,12 @@ e2e_assert_no_new_skips() {
   fi
 }
 
-# Between the two CAPD legs the first leg's delete spec should have removed every
-# tenant cluster. Count CAPI Cluster objects rather than asking the controller API,
-# which enforces auth: zero objects is an auth-free "the cluster is clean".
-# Returns non-zero on timeout rather than exiting, because the two entrypoints
-# want different things from that: CI dumps the surviving clusters and refuses
-# the next leg, local stops outright.
+# After the run the suite's delete specs should have removed every tenant
+# cluster. Count CAPI Cluster objects rather than asking the controller API, which
+# enforces auth: zero objects is an auth-free "the cluster is clean". Returns
+# non-zero on timeout rather than exiting, because the two entrypoints want
+# different things from that: CI dumps the surviving clusters, local stops
+# outright.
 e2e_wait_for_zero_tenant_clusters() {
   local kubectl_fn="$1" log_fn="$2"
   local deadline=$((SECONDS + 300)) list count
@@ -215,29 +214,25 @@ e2e_collect_node_diagnostics() {
 }
 
 # The Tilt providers a CAPD run needs. This belongs beside the filters because
-# the two are one contract: the node-pool filter selects reboot_test.go, which
+# the two are one contract: the suite filter selects reboot_test.go, which
 # reboots a worker through the nke.nvidia.com/reboot label, and nothing acts on
-# that label unless capd-reboot-controller is deployed. The local entrypoint
-# omitted it and so could never pass its own node-pool leg, on any platform.
+# that label unless capd-reboot-controller is deployed.
 # shellcheck disable=SC2034  # consumed by the scripts that source this file
 E2E_CAPD_PROVIDERS='["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]'
 
-# The label filters for a sequential two-mode run, built from the backend's
-# ginkgo label. Derived here so the two entrypoints cannot drift into testing
-# different things, which they had: the local one ran
-# `(capd || health) && !cp-controller` and so never ran the authentication specs
-# that CI runs. authn-spire stays out because it needs SPIRE pod attestation
-# that neither container-backed backend wires up.
-e2e_cp_controller_filter() { printf '(%s && cp-controller) || health' "$1"; }
-e2e_node_pool_filter() {
-  printf '((%s || health) && !cp-controller) || (authn && !authn-spire) || authn-permissive' "$1"
+# The label filter for the full suite, built from the backend's ginkgo label. It
+# runs every entry for the backend, cp-controller entries included, plus the
+# `health` probes against the deployed controller and the authentication specs.
+# authn-spire stays out because it needs SPIRE pod attestation that neither
+# container-backed backend wires up. The CI workflows pass the same expression
+# as `label-filter` for their full runs; keep the three in step.
+e2e_suite_filter() {
+  printf '(%s || health) || (authn && !authn-spire) || authn-permissive' "$1"
 }
 
 # Kept for callers that still name CAPD directly.
 # shellcheck disable=SC2034  # consumed by the scripts that source this file
-E2E_CAPD_CP_CONTROLLER_FILTER="$(e2e_cp_controller_filter capd)"
-# shellcheck disable=SC2034
-E2E_CAPD_NODE_POOL_FILTER="$(e2e_node_pool_filter capd)"
+E2E_CAPD_SUITE_FILTER="$(e2e_suite_filter capd)"
 
 # Build-args that point a Dockerfile's Docker Hub bases at the mirror in
 # NKE_E2E_DOCKERHUB_MIRROR, one token per line for `mapfile -t`. Handles

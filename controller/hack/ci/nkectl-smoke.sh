@@ -38,8 +38,10 @@ NKECTL_SMOKE_KUBERNETES_VERSION="${NKECTL_SMOKE_KUBERNETES_VERSION:-1.34.2}"
 NKECTL_SMOKE_WRITE_CLUSTER=nkectl-smoke-write
 # The worker pool the round trip adds to that cluster, then removes.
 NKECTL_SMOKE_WRITE_NODEPOOL=nkectl-smoke-pool
-# Delete wait: this many polls, this many seconds apart.
+# Delete wait: this many polls, this many seconds apart. A cluster delete tears
+# down a real control-plane node, so it gets the longer cap.
 NKECTL_SMOKE_DELETE_POLLS="${NKECTL_SMOKE_DELETE_POLLS:-60}"
+NKECTL_SMOKE_CLUSTER_DELETE_POLLS="${NKECTL_SMOKE_CLUSTER_DELETE_POLLS:-120}"
 NKECTL_SMOKE_DELETE_POLL_SECONDS="${NKECTL_SMOKE_DELETE_POLL_SECONDS:-5}"
 
 nkectl_smoke_build() {
@@ -577,11 +579,51 @@ nkectl_smoke_expect_create_rejected() {
   fi
 }
 
+# Prints the write round trip's cluster spec. The control plane is a
+# cluster-level controlPlaneConfig, which has no autoProvisionDisabled
+# equivalent, so this round trip provisions a real control-plane node. The
+# kubeconfig, nodepool-list and delete handling below account for that.
+nkectl_smoke_write_spec() {
+  cat <<EOF
+name: ${NKECTL_SMOKE_WRITE_CLUSTER}
+controlPlaneKubernetesVersion: ${NKECTL_SMOKE_KUBERNETES_VERSION}
+cniPlugin: ovn-kubernetes
+etcdEncrypted: false
+controlPlaneConfig:
+  desiredCount: 1
+  systemReservedMemory: "1Gi"
+  infra:
+    preKubeadmCommands:
+      - "mkdir -p /run/cluster-api"
+      - "echo success > /run/cluster-api/bootstrap-success.complete"
+    machineTemplate:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+      kind: DockerMachineTemplate
+      spec:
+        template:
+          spec:
+            customImage: ${CAPD_NODE_IMAGE}
+            extraMounts:
+              - containerPath: /var/run/docker.sock
+                hostPath: /var/run/docker.sock
+infra:
+  cluster:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+    kind: DockerCluster
+    metadata:
+      name: ${NKECTL_SMOKE_WRITE_CLUSTER}
+    spec: {}
+EOF
+}
+
 # Create, list, duplicate-reject, delete, with the node pool round trip nested
-# inside it. One control-plane pool with autoProvisionDisabled passes create
-# validation and schedules no node, so the controller writes only the CAPI Cluster and
-# DockerCluster. Runs after the last leg: the gate between legs counts tenant
-# clusters.
+# inside it. Runs after the suite, never during it, and removes its own cluster
+# before returning, so the cleanup gate that counts tenant clusters still sees
+# none.
+#
+# The control plane is a cluster-level controlPlaneConfig, which has no way to
+# hold provisioning back, so the controller starts building a real control-plane node as
+# soon as the cluster exists.
 nkectl_smoke_write_round_trip() {
   local out rc=0
 
@@ -596,36 +638,7 @@ nkectl_smoke_write_round_trip() {
     return 0
   fi
 
-  nkectl_smoke_stage_spec write <<EOF || return 1
-name: ${NKECTL_SMOKE_WRITE_CLUSTER}
-controlPlaneKubernetesVersion: ${NKECTL_SMOKE_KUBERNETES_VERSION}
-cniPlugin: ovn-kubernetes
-etcdEncrypted: false
-nodePools:
-  - name: control-plane
-    nodeNamePrefix: cp
-    desiredNodeCount: 1
-    controlPlane: true
-    systemReservedMemory: "1Gi"
-    autoProvisionDisabled: true
-    autoModeDisabled: false
-    recycleBudget: 0
-    infra:
-      machineTemplate:
-        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
-        kind: DockerMachineTemplate
-        spec:
-          template:
-            spec:
-              customImage: ${CAPD_NODE_IMAGE}
-infra:
-  cluster:
-    apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
-    kind: DockerCluster
-    metadata:
-      name: ${NKECTL_SMOKE_WRITE_CLUSTER}
-    spec: {}
-EOF
+  nkectl_smoke_write_spec | nkectl_smoke_stage_spec write || return 1
 
   if ! out="$(nkectl_exec create cluster -f "$(nkectl_smoke_spec_path write)" 2>&1)"; then
     log "nkectl smoke: 'create cluster' failed: ${out}" >&2
@@ -715,18 +728,20 @@ EOF
     return 1
   fi
 
-  # A real cluster name, so this resolves further than the absent-name case:
-  # autoProvisionDisabled means tenantaccess never writes the Secret, and the
-  # message must say so rather than blaming the name.
+  # A real cluster name, so this resolves further than the absent-name case. The
+  # control plane is really provisioning, so the Secret appears once it is up:
+  # either a kubeconfig or the missing-Secret message is correct, depending on
+  # timing.
   if out="$(nkectl_exec get kubeconfig "${name}" 2>&1)"; then
-    log "nkectl smoke: 'get kubeconfig ${name}' returned a kubeconfig for an unprovisioned cluster" >&2
-    return 1
-  fi
-  if ! grep -q "nke-system/${name}-admin-kubeconfig" <<<"${out}"; then
+    if ! grep -q 'kind: Config' <<<"${out}"; then
+      log "nkectl smoke: 'get kubeconfig ${name}' succeeded without printing a kubeconfig" >&2
+      return 1
+    fi
+    log "nkectl smoke: ${name}'s control plane was already up; 'get kubeconfig' returned its kubeconfig"
+  elif ! grep -q "nke-system/${name}-admin-kubeconfig" <<<"${out}"; then
     log "nkectl smoke: 'get kubeconfig ${name}' named the wrong secret: ${out}" >&2
     return 1
-  fi
-  if ! grep -q 'not be provisioned yet' <<<"${out}"; then
+  elif ! grep -q 'not be provisioned yet' <<<"${out}"; then
     log "nkectl smoke: 'get kubeconfig ${name}' failed for some reason other than the missing Secret: ${out}" >&2
     return 1
   fi
@@ -761,9 +776,9 @@ EOF
     return 1
   fi
 
-  # Teardown is asynchronous.
+  # Teardown is asynchronous, and it removes a real control-plane node.
   local attempt
-  for ((attempt = 1; attempt <= NKECTL_SMOKE_DELETE_POLLS; attempt++)); do
+  for ((attempt = 1; attempt <= NKECTL_SMOKE_CLUSTER_DELETE_POLLS; attempt++)); do
     if out="$(nkectl_exec get clusters "${name}" 2>&1)"; then
       sleep "${NKECTL_SMOKE_DELETE_POLL_SECONDS}"
       continue
@@ -775,7 +790,7 @@ EOF
     log "nkectl smoke: polling for ${name} failed for a reason other than not-found: ${out}" >&2
     return 1
   done
-  log "nkectl smoke: ${name} was still listed after ${NKECTL_SMOKE_DELETE_POLLS} polls" >&2
+  log "nkectl smoke: ${name} was still listed after ${NKECTL_SMOKE_CLUSTER_DELETE_POLLS} polls" >&2
   return 1
 }
 
@@ -839,14 +854,14 @@ EOF
     return 1
   fi
 
-  # Filter by cluster: the cluster's own control-plane pool and ours, and
-  # nothing belonging to another cluster.
+  # Filter by cluster: the cluster's own pools and nothing belonging to another
+  # cluster. The control plane has no pool, so ours is the only one.
   if ! out="$(nkectl_exec get nodepools --cluster "${cluster}" -o json 2>&1)"; then
     log "nkectl smoke: 'get nodepools --cluster ${cluster} -o json' failed: ${out}" >&2
     return 1
   fi
   if ! jq -e --arg p "${pool}" --arg id "${cluster_id}" \
-    'all(.clusterID == $id) and ([.[].name] | index($p) != null and index("control-plane") != null)' \
+    'all(.clusterID == $id) and ([.[].name] == [$p])' \
     <<<"${out}" >/dev/null; then
     log "nkectl smoke: 'get nodepools --cluster ${cluster}' did not return exactly that cluster's pools: ${out}" >&2
     return 1

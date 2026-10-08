@@ -21,14 +21,9 @@ import (
 // validateControllerManagedControlPlane asserts a cluster provisioned from the
 // cluster-level controlPlaneConfig (control-plane controller, no control-plane
 // node pool) has no such pool and brings the desired control-plane nodes to Ready
-// in both the controller and the tenant API. Requires flag-on controller (a flag-off controller rejects
-// controlPlaneConfig at create); self-skips otherwise.
+// in both the controller and the tenant API.
 func validateControllerManagedControlPlane(test *tenantTest) {
 	It("manages the control plane from the cluster-level config without a control-plane node pool", func(ctx context.Context) {
-		if !controlPlaneControllerEnabled() {
-			Skip("requires the controller deployed with " + controlPlaneControllerEnv + " on")
-		}
-
 		Expect(test.spec.ControlPlane.Config).NotTo(BeNil(),
 			"the control-plane-controller spec must set a cluster-level control plane config")
 		desired := test.spec.ControlPlane.Config.DesiredCount
@@ -60,14 +55,9 @@ const controlPlaneControllerUpdateDesiredCount = 3
 // validateControllerManagedControlPlaneUpdate PATCHes the cluster-level
 // controlPlaneConfig desiredCount and waits for the control plane to converge on
 // the new count in the controller and the tenant API. The controller-managed control plane
-// has no node pool, so it can't be scaled through the node pool API. Requires
-// flag-on controller; self-skips otherwise.
+// has no node pool, so it can't be scaled through the node pool API.
 func validateControllerManagedControlPlaneUpdate(test *tenantTest) {
 	It("scales the controller-managed control plane to a new desired count", func(ctx context.Context) {
-		if !controlPlaneControllerEnabled() {
-			Skip("requires the controller deployed with " + controlPlaneControllerEnv + " on")
-		}
-
 		Expect(test.spec.ControlPlane.Config).NotTo(BeNil(),
 			"the control-plane-controller spec must set a cluster-level control plane config")
 		desired := controlPlaneControllerUpdateDesiredCount
@@ -101,13 +91,9 @@ const controlPlaneControllerRollKubernetesVersion = "1.34.8"
 // node-pool baseline in upgrade_test.go, but via the cluster-level config
 // revision). The field it bumps depends on the provider, since the replacing
 // fields differ. Runs after the desiredCount update so quorum survives a
-// one-at-a-time roll. Requires flag-on controller; self-skips otherwise.
+// one-at-a-time roll.
 func validateControllerManagedControlPlaneRollingUpdate(test *tenantTest) {
 	It("rolls the controller-managed control plane on a control-plane config revision", func(ctx context.Context) {
-		if !controlPlaneControllerEnabled() {
-			Skip("requires the controller deployed with " + controlPlaneControllerEnv + " on")
-		}
-
 		Expect(test.spec.ControlPlane.Config).NotTo(BeNil(),
 			"the control-plane-controller spec must set a cluster-level control plane config")
 
@@ -197,10 +183,6 @@ const controlPlaneControllerDeleteSurgeCount = 4
 // is deterministic because nothing asynchronous has to happen for it to hold.
 func validateControllerManagedControlPlaneDeleteRefused(test *tenantTest) {
 	It("refuses a control-plane node delete that would leave fewer than three", func(ctx context.Context) {
-		if !controlPlaneControllerEnabled() {
-			Skip("requires the controller deployed with " + controlPlaneControllerEnv + " on")
-		}
-
 		By("Confirming the control plane is at the three-node fault-tolerant floor")
 		Eventually(func(ctx context.Context) error {
 			return test.nke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount)
@@ -254,10 +236,6 @@ func validateControllerManagedControlPlaneDeleteRefused(test *tenantTest) {
 // also the replacement-first shape operators are told to use.
 func validateControllerManagedControlPlaneSerializedDelete(test *tenantTest) {
 	It("serializes a quorum-safe control-plane node delete and gates joins on it", func(ctx context.Context) {
-		if !controlPlaneControllerEnabled() {
-			Skip("requires the controller deployed with " + controlPlaneControllerEnv + " on")
-		}
-
 		By(fmt.Sprintf("Growing the control plane to %d so the delete clears the quorum floor", controlPlaneControllerDeleteSurgeCount))
 		expectSucceed(test.nke.UpdateControlPlaneDesiredCount(ctx, test.cluster.ID, controlPlaneControllerDeleteSurgeCount))
 		Eventually(func(ctx context.Context) error {
@@ -360,10 +338,6 @@ func validateControllerManagedControlPlaneSerializedDelete(test *tenantTest) {
 // teardown runs to completion is what the unit tests cannot cover.
 func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 	It("refuses deleting a healthy control-plane node but removes an unreachable one", func(ctx context.Context) {
-		if !controlPlaneControllerEnabled() {
-			Skip("requires the controller deployed with " + controlPlaneControllerEnv + " on")
-		}
-
 		By("Confirming the control plane is settled at the three-node fault-tolerant floor")
 		Eventually(func(ctx context.Context) error {
 			return test.nke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount)

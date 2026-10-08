@@ -374,15 +374,6 @@ export TILT_DISABLE_ANALYTICS=1
 # Read by the Tiltfile. The agent then installs the CNI from the charts deb
 # rather than fetching a bundle, as local-entrypoint-e2e already does.
 export INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-true}"
-# Resolve the control-plane mode to a concrete value here. The controller now defaults
-# control-plane-controller provisioning on (#1054), and both the Tiltfile and
-# deploy-stack.sh only set the container env when this is non-empty, so an unset
-# flag would deploy the controller flag-on. The nico-vms specs still describe the control
-# plane as a control-plane node pool, which a flag-on controller rejects at create
-# ("control-plane node pools are not allowed ..."). Deploy flag-off so those
-# specs are accepted; an explicit value still wins. Migrating the nico-vms specs
-# to controlPlaneConfig and flipping this lane flag-on is a follow-up.
-export PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-false}"
 
 case "$(uname -m)" in
   x86_64) host_arch=amd64 ;;

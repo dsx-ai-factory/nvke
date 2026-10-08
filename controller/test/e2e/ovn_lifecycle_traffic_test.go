@@ -101,13 +101,9 @@ func currentOVNLifecycleNodeCounts(ctx context.Context, test *tenantTest) (map[s
 	return counts, nil
 }
 
-// currentControllerControlPlaneCount returns the current desired count of a
-// controller-managed control plane, or zero when the control plane is a node
-// pool (currentOVNLifecycleNodeCounts counts those nodes).
+// currentControllerControlPlaneCount returns the current desired count of the
+// cluster's controller-managed control plane.
 func currentControllerControlPlaneCount(ctx context.Context, test *tenantTest) (int, error) {
-	if test.spec.ControlPlane.Config == nil {
-		return 0, nil
-	}
 	controlPlane, err := test.nke.GetClusterControlPlane(ctx, test.cluster.ID)
 	if err != nil {
 		return 0, err

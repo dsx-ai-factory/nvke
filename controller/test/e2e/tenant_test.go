@@ -11,7 +11,6 @@ import (
 	"os"
 	"runtime"
 	"slices"
-	"strconv"
 	"testing"
 	"time"
 
@@ -120,8 +119,8 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	// One control-plane node, no workers, and provisioningOnly: what this row
 	// adds over the others is the transport, not the assertions.
 	//
-	// The "capd" label puts it in the node-pool leg, on the substrate that lane
-	// already builds, on main, scheduled and manual runs. The bounded
+	// The "capd" label puts it in the full CAPD run on main, scheduled and manual
+	// runs, on the substrate that run already builds. The bounded
 	// pull-request lane selects only "core-docker" and has no room for a second
 	// cluster. "nkectl" selects this row alone.
 	Entry("CAPD via nkectl", Ordered, ContinueOnFailure, Label("capd", "nkectl"), testSpec{
@@ -154,19 +153,9 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		},
 		options: nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 	}),
-	Entry("CAPD single control-plane node without kube-vip", Ordered, ContinueOnFailure, Label("capd", "no-vip"), testSpec{
-		buildSpec: capdSpec,
-		shape: clusterShape{
-			controlPlanePools:      []nke.NodePoolSpec{{DesiredNodeCount: 1}},
-			withoutControlPlaneVIP: true,
-		},
-		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
-		validate: validations{provisioningOnly: true, noVIPNodePoolScale: true, noVIPUpgrade: true},
-	}),
 	// Opt-in via the "cp-controller" label: it exercises cluster-level
 	// control-plane-controller provisioning (no control-plane node pool) and its
-	// update, rolling-update and delete specs, so it needs a flag-on controller and
-	// self-skips on a flag-off one.
+	// update, rolling-update and delete specs.
 	Entry("CAPD control-plane controller (no CP node pool)", Ordered, ContinueOnFailure, Label("capd", "cp-controller"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
@@ -393,19 +382,6 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		options:  nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{clusterConfig: true, nodeReplacement: true, manualScaleDown: true, nodePoolLifecycle: true, nodePoolCascade: true},
 	}),
-	// Opt-in via the "cp-rotation" label: it exercises a 2-to-1 etcd member
-	// transition while rotating a single-node control plane. It scales a
-	// control-plane node pool, so it needs a flag-off controller and self-skips on a
-	// flag-on one.
-	Entry("nico-vms single-node control-plane rotation", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "cp-rotation"), testSpec{
-		buildSpec: nicoVMSSpec,
-		shape: clusterShape{
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
-		},
-		options:  nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
-		validate: validations{cpRotation: true},
-	}),
 	// The only entry that runs on hardware, and so the only one needing
 	// -e2e.environment. Opt-in via the "nico-forge" label, and that label
 	// alone: everything above runs against a simulator on the runner, while
@@ -500,16 +476,6 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 		AfterEach(func() { failed = failed || CurrentSpecReport().Failed() })
 
 		It("creates the cluster", func(ctx context.Context) {
-			// A controller accepts only one control-plane shape, so skip an entry that
-			// needs the other one rather than fail its create.
-			if (spec.validate.controlPlaneController || spec.validate.controlPlaneControllerUpdate ||
-				spec.validate.controlPlaneControllerRollingUpdate || spec.validate.controlPlaneControllerDelete) &&
-				!controlPlaneControllerEnabled() {
-				Skip("requires the controller deployed with " + controlPlaneControllerEnv + " on")
-			}
-			if (spec.validate.cpRotation || spec.validate.noVIPNodePoolScale) && controlPlaneControllerEnabled() {
-				Skip("requires control-plane node-pool provisioning with " + controlPlaneControllerEnv + "=false")
-			}
 			test = expectSucceed(setupTenantTest(ctx, expectSucceed(resolve()), spec.options))
 			if spec.createVia == clientNkectl {
 				// Torn down in AfterAll. A DeferCleanup registered here would run
@@ -590,17 +556,11 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			if spec.validate.manualScaleDown {
 				validateManualScaleDownStability(&test)
 			}
-			if spec.validate.cpRotation {
-				validateSingleNodeControlPlaneRotation(&test)
-			}
 			if spec.validate.controlPlaneController {
 				validateControllerManagedControlPlane(&test)
 			}
 			if spec.validate.controlPlaneControllerUpdate {
 				validateControllerManagedControlPlaneUpdate(&test)
-			}
-			if spec.validate.noVIPNodePoolScale {
-				validateNoVIPNodePoolScaleRefused(&test)
 			}
 			if spec.validate.noVIPControllerScale {
 				validateNoVIPControllerScaleRefused(&test)
@@ -761,9 +721,9 @@ const (
 type clusterShape struct {
 	kubernetesVersion string
 	cniPlugin         string
-	// controlPlanePools describes the control plane as one node pool. Against a
-	// controller with the control-plane controller on, the spec builders send the same
-	// shape as a cluster-level controlPlaneConfig (see applyControlPlaneMode).
+	// controlPlanePools describes the control plane as one node pool. The spec
+	// builders send it as a cluster-level controlPlaneConfig (see
+	// applyControlPlaneMode).
 	controlPlanePools []nke.NodePoolSpec
 	workerPools       []nke.NodePoolSpec
 	etcdEncrypted     bool
@@ -801,7 +761,7 @@ type validations struct {
 	// csrApproval rotates a Ready worker's kubelet serving certificate and
 	// verifies that the tenant CSR controller approves and obtains a new one.
 	csrApproval bool
-	// scale exercises control-plane and worker node pool scale-up and scale-down.
+	// scale exercises worker node pool scale-up and scale-down.
 	scale bool
 	// reboot applies nke.nvidia.com/reboot to a worker and waits for remediation.
 	reboot bool
@@ -830,20 +790,14 @@ type validations struct {
 	nodePoolCascade bool
 	// upgrade performs an in-place Kubernetes version upgrade validation.
 	upgrade bool
-	// cpRotation rotates a single-node control-plane node pool. Requires a 1-CP
-	// shape and a flag-off controller (self-skips otherwise).
-	cpRotation bool
 	// controlPlaneController asserts the control plane is provisioned by the
 	// cluster-level control-plane controller with no control-plane node pool.
-	// Requires a flag-on controller (self-skips otherwise).
 	controlPlaneController bool
 	// controlPlaneControllerUpdate PATCHes the cluster-level controlPlaneConfig
 	// desiredCount and asserts the controller-managed control plane converges on
-	// the new count in the controller and the tenant API. Requires the same flag-on controller as
-	// controlPlaneController (self-skips otherwise).
+	// the new count in the controller and the tenant API.
 	controlPlaneControllerUpdate bool
 	// The noVIP flags add rejection checks to single-node no-VIP rows.
-	noVIPNodePoolScale   bool
 	noVIPControllerScale bool
 	noVIPUpgrade         bool
 	// controlPlaneControllerRollingUpdate PATCHes the cluster-level
@@ -851,16 +805,14 @@ type validations struct {
 	// configuration revision and asserts the controller-managed control-plane
 	// nodes are rolled onto new nodes at the same desired count in the controller and the
 	// tenant API. Ordered after controlPlaneControllerUpdate so the control plane
-	// has enough nodes to keep quorum while rolling. Requires the same flag-on controller
-	// as controlPlaneController (self-skips otherwise).
+	// has enough nodes to keep quorum while rolling.
 	controlPlaneControllerRollingUpdate bool
 	// controlPlaneControllerDelete asserts the controller-owned, serialized
 	// control-plane delete: a delete that would leave fewer than three joined
 	// control-plane nodes is refused at the API, and an accepted one runs one
 	// teardown at a time with no control-plane join overlapping it. Ordered after
 	// controlPlaneControllerRollingUpdate so the control plane is already at three
-	// nodes. Requires the same flag-on controller as controlPlaneController (self-skips
-	// otherwise).
+	// nodes.
 	controlPlaneControllerDelete bool
 }
 
@@ -1153,33 +1105,11 @@ func (t *tenantTest) availableControlPlaneVIP(ctx context.Context, preferred str
 	return "", fmt.Errorf("no unused control-plane VIP at or after %s in %s", preferredAddr, prefix)
 }
 
-// controlPlaneControllerEnv selects how the controller under test provisions control
-// planes: through the cluster-level controlPlaneConfig when on, as a
-// control-plane node pool when off. The two shapes are mutually exclusive.
-const controlPlaneControllerEnv = "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER"
-
-// controlPlaneControllerEnabled reports whether the controller under test provisions
-// control planes through the control-plane controller, read from
-// controlPlaneControllerEnv. An unset or empty value means true, the controller's default.
-// It panics if the value is not a boolean.
-func controlPlaneControllerEnabled() bool {
-	value := os.Getenv(controlPlaneControllerEnv)
-	if value == "" {
-		return true
-	}
-	enabled, err := strconv.ParseBool(value)
-	if err != nil {
-		panic(fmt.Sprintf("%s=%q is not a boolean: %v", controlPlaneControllerEnv, value, err))
-	}
-	return enabled
-}
-
 // applyControlPlaneMode sends spec's control-plane pool as the equivalent
-// cluster-level controlPlaneConfig when the controller under test is flag-on, since it
-// rejects a control-plane node pool. A spec that already carries a
-// controlPlaneConfig is left as it is.
+// cluster-level controlPlaneConfig, the only shape the controller provisions. A spec that
+// already carries a controlPlaneConfig is left as it is.
 func applyControlPlaneMode(spec nke.ClusterSpec) nke.ClusterSpec {
-	if spec.ControlPlane.Config != nil || len(spec.ControlPlane.Pools) == 0 || !controlPlaneControllerEnabled() {
+	if spec.ControlPlane.Config != nil || len(spec.ControlPlane.Pools) == 0 {
 		return spec
 	}
 	spec.ControlPlane.Config = controlPlaneConfigFromPools(spec.ControlPlane.Pools)
@@ -1229,7 +1159,7 @@ func capdSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpe
 
 // nicoControlPlaneControllerSpec builds a NICo container topology whose control
 // plane is shape.controlPlaneConfig, filling in the mock's seed identifiers the
-// entry leaves unset. Requires a flag-on controller.
+// entry leaves unset.
 func nicoControlPlaneControllerSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpec {
 	spec := nicoSpec(cfg, name, shape)
 	if spec.ControlPlane.Config != nil {
@@ -1265,31 +1195,6 @@ func TestUnit_CAPDSpec(t *testing.T) {
 	}
 }
 
-func TestUnit_ControlPlaneControllerEnabled(t *testing.T) {
-	tests := []struct {
-		value     string
-		want      bool
-		wantPanic bool
-	}{
-		{value: "", want: true},
-		{value: "true", want: true},
-		{value: "1", want: true},
-		{value: "false", want: false},
-		{value: "0", want: false},
-		{value: "no", wantPanic: true},
-	}
-	for _, tt := range tests {
-		t.Run("value "+strconv.Quote(tt.value), func(t *testing.T) {
-			t.Setenv(controlPlaneControllerEnv, tt.value)
-			if tt.wantPanic {
-				require.Panics(t, func() { controlPlaneControllerEnabled() })
-				return
-			}
-			require.Equal(t, tt.want, controlPlaneControllerEnabled())
-		})
-	}
-}
-
 func TestUnit_ApplyControlPlaneMode(t *testing.T) {
 	poolShape := clusterShape{
 		controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
@@ -1302,14 +1207,12 @@ func TestUnit_ApplyControlPlaneMode(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		flag       string
 		build      specBuilder
 		shape      clusterShape
-		wantPools  int
 		wantConfig *nke.ControlPlaneConfigSpec
 	}{
 		{
-			name:  "unset flag follows the controller default and sends a nico-vms pool as config",
+			name:  "a nico-vms pool is sent as config",
 			build: nicoVMSSpec,
 			shape: poolShape,
 			wantConfig: &nke.ControlPlaneConfigSpec{
@@ -1323,15 +1226,13 @@ func TestUnit_ApplyControlPlaneMode(t *testing.T) {
 			},
 		},
 		{
-			name:       "flag on sends a CAPD pool as config",
-			flag:       "true",
+			name:       "a CAPD pool is sent as config",
 			build:      capdSpec,
 			shape:      poolShape,
 			wantConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 3, SystemReservedMemory: "1Gi"},
 		},
 		{
-			name:  "flag on fills the NICo container seed identifiers",
-			flag:  "true",
+			name:  "a NICo container pool gets the seed identifiers",
 			build: nicoSpec,
 			shape: clusterShape{controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}}},
 			wantConfig: &nke.ControlPlaneConfigSpec{
@@ -1343,15 +1244,7 @@ func TestUnit_ApplyControlPlaneMode(t *testing.T) {
 			},
 		},
 		{
-			name:      "flag off keeps the control-plane pool",
-			flag:      "false",
-			build:     capdSpec,
-			shape:     poolShape,
-			wantPools: 1,
-		},
-		{
-			name:       "an explicit config wins even with the flag off",
-			flag:       "false",
+			name:       "an explicit config is left as it is",
 			build:      capdSpec,
 			shape:      configShape,
 			wantConfig: configShape.controlPlaneConfig,
@@ -1359,10 +1252,9 @@ func TestUnit_ApplyControlPlaneMode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(controlPlaneControllerEnv, tt.flag)
 			spec := tt.build(config.Config{}, "unit", tt.shape)
 
-			require.Len(t, spec.ControlPlane.Pools, tt.wantPools)
+			require.Empty(t, spec.ControlPlane.Pools)
 			require.Equal(t, tt.wantConfig, spec.ControlPlane.Config)
 			require.Len(t, spec.Workers, len(tt.shape.workerPools))
 		})
@@ -1376,8 +1268,6 @@ func TestUnit_ApplyControlPlaneMode(t *testing.T) {
 const cweDefaultKubeReservedMemory = "2Gi"
 
 func TestUnit_NicoVMSControlPlaneFitsKubeletReservation(t *testing.T) {
-	t.Setenv(controlPlaneControllerEnv, "true")
-
 	fits := func(t *testing.T, instanceTypeID, systemReserved string) bool {
 		t.Helper()
 		memory, ok := nicoVMSInstanceMemory[instanceTypeID]
@@ -1398,7 +1288,7 @@ func TestUnit_NicoVMSControlPlaneFitsKubeletReservation(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			cp := nicoVMSSpec(config.Config{}, "unit", shape).ControlPlane.Config
 			if cp == nil {
-				t.Fatal("a flag-on nico-vms spec carries no controlPlaneConfig")
+				t.Fatal("a nico-vms spec carries no controlPlaneConfig")
 			}
 			if !fits(t, cp.InstanceTypeID, cp.SystemReservedMemory) {
 				t.Fatalf("instance %s cannot hold %s kube-reserved plus %s system-reserved",
@@ -1773,9 +1663,9 @@ func nicoVMSSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSp
 		SiteID:    nicoVMSSiteID,
 		VpcID:     nicoVMSVpcID,
 		ControlPlane: nke.ControlPlane{
-			// Control planes default to the large instance. A flag-on controller reserves
-			// its default 2Gi for the kubelet on them, since controlPlaneConfig
-			// cannot carry the pool's 250Mi, and that does not fit in 2 GiB.
+			// Control planes default to the large instance. The controller reserves its default
+			// 2Gi for the kubelet on them, since controlPlaneConfig cannot carry
+			// the pool's 250Mi, and that does not fit in 2 GiB.
 			Pools: nicoVMSNodePoolSpecs(
 				withDefaultInstanceType(shape.controlPlanePools, nicoVMSLargeInstanceID),
 				"control-plane", "cp", nicoVMSOSProfile, nicoVMSCPConfigProfile,

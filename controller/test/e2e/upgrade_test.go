@@ -77,10 +77,8 @@ func upgradeControlPlaneTo(test *tenantTest, targetVersion string) func(context.
 		test.cluster = cluster
 
 		By("Verifying recycled control-plane nodes were replaced")
-		if test.spec.ControlPlane.Config != nil {
-			Expect(test.nke.WaitForControlPlaneNodesRolled(ctx, test.cluster.ID, originalDesiredCount, originalControlPlaneNodes)).
-				To(Succeed(), "controller-managed control plane should finish rolling onto replacement nodes")
-		}
+		Expect(test.nke.WaitForControlPlaneNodesRolled(ctx, test.cluster.ID, originalDesiredCount, originalControlPlaneNodes)).
+			To(Succeed(), "controller-managed control plane should finish rolling onto replacement nodes")
 		currentControlPlaneNodes, _ := expectControlPlaneNodes(ctx, test)
 		Expect(currentControlPlaneNodes).To(HaveLen(originalDesiredCount), "control plane should retain its desired node count")
 
@@ -134,34 +132,14 @@ func assertKubeadmKubernetesVersion(ctx context.Context, tenantClient client.Cli
 	return nil
 }
 
-// expectControlPlanePool returns the cluster's control-plane node pool, failing
-// the spec when there is none. A controller-managed control plane has no pool.
-func expectControlPlanePool(ctx context.Context, test *tenantTest) api.NodePool {
-	GinkgoHelper()
-
-	pools := expectSucceed(test.nke.ListNodePools(ctx, test.cluster.ID))
-	for i := range pools {
-		if pools[i].ControlPlane {
-			return pools[i]
-		}
-	}
-	Fail(fmt.Sprintf("cluster %s has no control-plane pool", test.cluster.ID))
-	return api.NodePool{}
-}
-
 // expectControlPlaneNodes returns the cluster's control-plane nodes and their
-// desired count, in either control-plane shape.
+// desired count.
 func expectControlPlaneNodes(ctx context.Context, test *tenantTest) ([]api.Node, int) {
 	GinkgoHelper()
 
-	if test.spec.ControlPlane.Config != nil {
-		controlPlane := expectSucceed(test.nke.GetClusterControlPlane(ctx, test.cluster.ID))
-		nodes := expectSucceed(test.nke.ListClusterNodesByControlPlane(ctx, test.cluster.ID, true))
-		return nodes, controlPlane.Config.DesiredCount
-	}
-	pool := expectControlPlanePool(ctx, test)
-	nodes := expectSucceed(test.nke.ListNodePoolNodes(ctx, pool.ID))
-	return nodes, pool.DesiredNodeCount
+	controlPlane := expectSucceed(test.nke.GetClusterControlPlane(ctx, test.cluster.ID))
+	nodes := expectSucceed(test.nke.ListClusterNodesByControlPlane(ctx, test.cluster.ID, true))
+	return nodes, controlPlane.Config.DesiredCount
 }
 
 func conditionIsTrue(condition *api.Condition) bool {

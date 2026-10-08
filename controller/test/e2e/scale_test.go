@@ -28,16 +28,11 @@ import (
 
 const drainProbeLabel = "e2e.nvidia.com/drain-probe"
 
-// validateNodePoolScale scales each node pool up by one node and back down: the
-// worker pool, then the control-plane pool when the control plane is one. A
-// controller-managed control plane has no pool; the cp-controller entries scale
-// it instead.
+// validateNodePoolScale scales the worker pool up by one node and back down. The
+// control plane has no pool; the cp-controller entries scale it instead.
 func validateNodePoolScale(test *tenantTest) {
 	It("scales the node pools up and down", func(ctx context.Context) {
 		pools := []api.NodePool{expectWorkerPool(ctx, test)}
-		if test.spec.ControlPlane.Config == nil {
-			pools = append(pools, expectControlPlanePool(ctx, test))
-		}
 		originalNodes := make([]map[openapi_types.UUID]struct{}, len(pools))
 		for i, pool := range pools {
 			originalNodes[i] = expectNodeIDs(ctx, test, pool.ID)
@@ -70,10 +65,6 @@ func validateNodePoolScale(test *tenantTest) {
 		} else {
 			By("Deleting the scaled-up worker node")
 			Expect(test.nke.DeleteNode(ctx, workerNode.ID)).To(Succeed(), "should delete the scaled-up worker node")
-		}
-		for _, controlPlaneNode := range newNodes[1:] {
-			By("Deleting the scaled-up control-plane node")
-			Expect(test.nke.DeleteNode(ctx, controlPlaneNode.ID)).To(Succeed(), "should delete the scaled-up control-plane node")
 		}
 
 		By("Waiting for each node pool to return to its original desired count")
