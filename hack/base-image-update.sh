@@ -98,16 +98,20 @@ done < <(git ls-files -- '*Dockerfile' '*Dockerfile.*' | grep -v '^vendor/' | so
 
 pinned=0
 for f in "${dockerfiles[@]}"; do
+	# `ARG[[:space:]]+` rather than a single space: base-image-check.sh resolves
+	# an ARG default with that same rule, so anything it accepts must be scanned
+	# here too or a stale digest is reported as current.
 	lines=()
 	while IFS= read -r l; do
 		lines+=("${l}")
-	done < <(grep -nE '^ARG [A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+@sha256:[0-9a-f]{64}$' "${f}" || true)
+	done < <(grep -nE '^ARG[[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+@sha256:[0-9a-f]{64}$' "${f}" || true)
 
 	for entry in "${lines[@]}"; do
 		lineno="${entry%%:*}"
 		decl="${entry#*:}"          # ARG NAME=ref@sha256:...
-		name="${decl%%=*}"
-		name="${name#ARG }"
+		name="${decl%%=*}"             # ARG<whitespace>NAME
+		name="${name#ARG}"
+		name="${name//[[:space:]]/}"   # an ARG name cannot contain whitespace
 		ref="${decl#*=}"
 		tagged="${ref%@sha256:*}"
 		old="${ref##*@}"
