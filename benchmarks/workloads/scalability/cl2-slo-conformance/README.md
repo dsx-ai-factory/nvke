@@ -10,19 +10,14 @@ Result: [cl2-slo-conformance-2026-05-25.md](../../../results/1.34.2/cl2-slo-conf
 
 Control-plane behavior under a mixed, production-representative object-churn
 workload, judged against the three official SIG-Scalability Service Level
-Objectives:
+Objectives: mutating API latency, read-only API latency and pod startup
+latency. Their bars are under "How to judge the result" below.
 
 **This is not a maximum-scale claim.** The 47-node topology below is what
 this run happened to test, not a ceiling on how large an NKE cluster can go.
 `sizing.derivation` exists so a reader can size this workload to their own
 node count — a bigger or smaller cluster is a different `sizing.observed`,
 not a different scenario.
-
-| SLO | Bar |
-|---|---|
-| Mutating API (POST/DELETE) request p99 | ≤ 1 s |
-| Read-only API (GET) request p99 | ≤ 1 s (single resource) / ≤ 30 s (namespace or cluster scope) |
-| Pod startup p99 | ≤ 5 s |
 
 Alongside the SLOs, the run also characterizes scheduler throughput,
 control-plane CPU/memory headroom, in-cluster network and DNS lookup latency,
@@ -93,12 +88,8 @@ skipped without it. That Prometheus scrapes the API server on port 443 unless
 
 ### Dashboard
 
-`control-plane.json` needs a Prometheus scraping the control plane. Its queries
-filter on an optional `k8s_cluster_name` label and match everything when that label is
-absent, so a single-cluster Prometheus needs no relabeling. Panels are scoped
-to what this scenario measures — it is not a general control-plane dashboard.
-
-Two things to read carefully before trusting a panel:
+`control-plane.json` needs a Prometheus scraping the control plane. Two things
+to read carefully before trusting a panel:
 
 - **The pod-startup panel is a proxy, not the gated number.** It plots
   `kubelet_pod_start_sli_duration_seconds_bucket`. The scenario's
@@ -110,11 +101,9 @@ Two things to read carefully before trusting a panel:
   scheduler throughput only in a separate phase that runs on clusters of 100
   or more schedulable, untainted nodes. The panel plots the whole run.
 
-The panels depend on `job` labels (`apiserver`, `kube-etcd`,
-`kube-controller-manager`, `kube-scheduler`, `kubelet`) matching how your
-Prometheus is configured to scrape. The "Control-plane component up" panel is
-the quickest way to see whether they do: a component missing entirely means
-the scrape config does not match what these queries expect.
+The queries expect the `job` labels `apiserver`, `kube-etcd`,
+`kube-controller-manager`, `kube-scheduler` and `kubelet`; the "Control-plane
+component up" panel shows any that do not match.
 
 ### Alerts
 
@@ -126,66 +115,10 @@ Below 100 schedulable, untainted nodes, `junit.xml` does not include the 5 s
 pod-startup or scheduler-throughput checks. Judge `pod_startup_p99_s` against
 `slo` from the `CreatePhasePodStartupLatency` summary in `--report-dir`.
 
-Three of the scenario's four `slo` entries have a `severity: error` rule:
-
-- `post_p99_ms` and `delete_p99_ms` share one rule, the SIG mutating-API SLO.
-- `get_p99_ms` has a resource-scope rule at 1 s. A separate rule holds
-  namespace- and cluster-scoped LISTs to their 30 s bar; it tracks no `slo`
-  entry.
-
-`pod_startup_p99_s` has no rule; it comes from ClusterLoader2's own
-measurement.
-
-The `severity: warning` rules — 429s, etcd disk latency, etcd leader changes,
-control-plane liveness — do not judge the run; they explain a violation when
-one fires, or invalidate a run outright in the case of a component going away
-mid-flight.
-
-**The etcd disk rules assume real disks.** On virtualized or shared storage
-the 10 ms fsync and 30 ms commit bars report the storage layer instead.
-
-#### Validated against live data
-
-Every panel was run against a live OVN-Kubernetes cluster
-(Kubernetes 1.34.2) on a
-Prometheus carrying no `k8s_cluster_name` label. 18 of the 19 queries
-returned series; the APF rejection query is empty until a rejection happens
-(below). All five expected `job` labels were present exactly as written.
-
-Three panels — kubelet pod startup, scheduler attempt latency and scheduler
-algorithm duration — return **no data on an idle cluster**. They are
-`rate()` over histograms that only accumulate observations when pods are
-actually being scheduled and started, so an idle control plane renders them
-blank. Under pod churn all three populate. This is worth knowing before
-concluding a panel is broken: check that the workload is running first.
-
-**Both etcd disk alerts fire on virtualized storage.** On the cluster above,
-WAL fsync p99 measured 35–42 ms against the alert's 10 ms bar, and backend
-commit p99 45–49 ms against its 30 ms bar. Those thresholds are calibrated
-for real disks; on a simulated or heavily shared environment they report the
-storage layer rather than a control-plane problem. Read them accordingly, or
-raise them for that environment.
-
-Every alert rule was executed against the same cluster: all parse and
-evaluate, and each was separately confirmed able to fire by seeding a
-threshold below the cluster's observed value. A rule that never fires is
-indistinguishable from a healthy cluster unless you check.
-
-One metric needs explaining, because it looks absent when it is not.
-`apiserver_flowcontrol_rejected_requests_total` is label-partitioned by
-`flow_schema`, `priority_level` and `reason`, so until a rejection actually
-happens there is no label combination to emit and the counter does not appear
-in `/metrics` at all. On this cluster it was missing for exactly that reason,
-alongside 52 other `apiserver_flowcontrol_*` metrics that were present. **An
-empty APF panel means no rejections, not a broken query.** That is also why
-the panel carries no `or vector(0)` fallback: a synthetic zero renders
-identically whether the metric is absent or genuinely zero, which is the one
-case worth being able to tell apart.
-
-Numbers observed during validation are **not** benchmark results — that
-cluster is a simulation with virtualized disks and 4-core workers, and its
-figures are not comparable to the published result. Pod startup p99 measured
-tens of seconds there against the published 2.54 s.
+`post_p99_ms` and `delete_p99_ms` share the mutating-API `severity: error`
+rule, and `get_p99_ms` has a resource-scope rule at 1 s. A separate rule holds
+namespace- and cluster-scoped LISTs to their 30 s bar; it tracks no `slo`
+entry. `pod_startup_p99_s` has no rule.
 
 ### What the overrides file changes from upstream defaults
 

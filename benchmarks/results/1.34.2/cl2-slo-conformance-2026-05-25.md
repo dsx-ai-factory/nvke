@@ -116,8 +116,8 @@ server's APF limit of 600.
   worker counts is therefore optional; if pursued it would require raising
   kube-controller-manager qps/burst and API-server inflight limits in
   concert.
-- **Pod saturation:** achieved 3,920 pods (~83% of the 4,730-pod theoretical
-  capacity); full saturation not reached due to load-generation logic, not a
-  cluster limit.
+- **Pod saturation:** peak 3,920 pods, about 85% of the 4,620-pod budget
+  (42 workers × `PODS_PER_NODE` 110). Full saturation was not reached due to
+  load-generation logic, not a cluster limit.
 - **Conclusion:** this cluster shape had sufficient capacity for the
-  workload tested, including a hypothetical 3× increase.
+  workload tested.
