@@ -465,13 +465,35 @@ jobs:
           # failed 15s later for want of that acceleration -- naming the
           # accelerator, not the runner, as the cause (#1337).
           #
-          # Little time is saved by catching it here; the point is the
-          # diagnosis. Ask the detector the bake itself will use, under the
-          # same ACCELERATOR=kvm the build steps pass, so this step cannot
-          # disagree with check-acceleration by construction, and dump what
-          # distinguishes a bad pod from a bad device when it does fail.
+          # First ask the detector the bake itself will use, under the same
+          # ACCELERATOR=kvm the build steps pass, so this step cannot disagree
+          # with check-acceleration by construction, and dump what
+          # distinguishes a bad pod from a bad device when it does fail. That
+          # call alone saves little time -- check-acceleration repeats it
+          # seconds later -- and is here for the diagnosis.
+          #
+          # Then start QEMU for real on what it picked. nke_qemu_env goes no
+          # further than the permission bits and 'qemu -accel help', and that
+          # list is what this QEMU was compiled with, not what it can
+          # initialise here -- so a pod whose /dev/kvm cannot back a VM still
+          # satisfies both it and check-acceleration. Creating the machine is
+          # what settles it: KVM_CREATE_VM and KVM_CREATE_VCPU run during
+          # setup, so such a pod fails in about a second rather than minutes
+          # into the bake.
+          #
+          # The machine, CPU and accelerator flags are the detector's own, so
+          # the probe boots what the bake would. -S holds the vCPU before its
+          # first instruction, which is why no firmware or disk is needed and
+          # nothing can hang; the monitor 'quit' then ends a VM that did come
+          # up.
           if ! ( cd os-image/packer && ACCELERATOR=kvm REQUIRE_ACCELERATION=1 \
-                 bash -ec '. ./scripts/qemu-arch.sh; nke_qemu_env "${ARCH}"' ); then
+                 bash -ec '
+                   . ./scripts/qemu-arch.sh
+                   nke_qemu_env "${ARCH}"
+                   printf "quit\\n" | timeout 60 "${QEMU_BIN}" \
+                     -machine "${QEMU_MACHINE}" -cpu "${QEMU_CPU}" "${ACCEL_ARGS[@]}" \
+                     -S -no-user-config -nodefaults -display none -monitor stdio
+                 ' ); then
             echo "::error::This runner exposes /dev/kvm but QEMU cannot use it (${ARCH} leg)."
             echo "::error::The bake would fall back to tcg, which has never finished for arm64."
             echo "::group::KVM diagnostics"
