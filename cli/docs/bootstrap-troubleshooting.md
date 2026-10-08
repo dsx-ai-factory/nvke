@@ -210,11 +210,12 @@ re-run. If a half-created cluster remains, delete it with the command above.
 
 The token used in `nerdctl login` for the image's registry is incorrect, or the
 image reference is wrong. Use the correct token for that registry, such as an
-NGC API key for `nvcr.io`, then confirm the login works before re-running
-bootstrap:
+NGC API key for `nvcr.io`. The login is stored per user, so it must be in the
+environment bootstrap runs in: the root login shell (`sudo -n -i`), not plain
+`sudo`. Confirm it works there before re-running bootstrap:
 
 ```bash
-nerdctl pull <image>
+sudo -n -i nerdctl pull <image>
 ```
 
 **`kind load image-archive ...: exit status 1`** or **`want two sha256 digests`**
