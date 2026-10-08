@@ -81,10 +81,10 @@ commands are not listed, because they are not distributed.
 | [gopkg.in/evanphx/json-patch.v4](https://github.com/evanphx/json-patch/blob/v4.13.0/LICENSE) | BSD-3-Clause | gopkg.in/evanphx/json-patch.v4@v4.13.0 |
 | [gopkg.in/inf.v0](https://github.com/go-inf/inf/blob/v0.9.1/LICENSE) | BSD-3-Clause | gopkg.in/inf.v0@v0.9.1 |
 | [gopkg.in/yaml.v2](https://github.com/go-yaml/yaml/blob/v2.4.0/LICENSE) | Apache-2.0 | gopkg.in/yaml.v2@v2.4.0 |
-| [k8s.io/api](https://github.com/kubernetes/api/blob/v0.37.0/LICENSE) | Apache-2.0 | — |
-| [k8s.io/apimachinery/pkg](https://github.com/kubernetes/apimachinery/blob/v0.37.0/LICENSE) | Apache-2.0 | — |
-| [k8s.io/apimachinery/third_party/forked/golang](https://github.com/kubernetes/apimachinery/blob/v0.37.0/third_party/forked/golang/LICENSE) | BSD-3-Clause | — |
-| [k8s.io/client-go](https://github.com/kubernetes/client-go/blob/v0.37.0/LICENSE) | Apache-2.0 | — |
+| [k8s.io/api](https://github.com/kubernetes/api/blob/v0.37.1/LICENSE) | Apache-2.0 | — |
+| [k8s.io/apimachinery/pkg](https://github.com/kubernetes/apimachinery/blob/v0.37.1/LICENSE) | Apache-2.0 | — |
+| [k8s.io/apimachinery/third_party/forked/golang](https://github.com/kubernetes/apimachinery/blob/v0.37.1/third_party/forked/golang/LICENSE) | BSD-3-Clause | — |
+| [k8s.io/client-go](https://github.com/kubernetes/client-go/blob/v0.37.1/LICENSE) | Apache-2.0 | — |
 | [k8s.io/klog/v2](https://github.com/kubernetes/klog/blob/v2.140.0/LICENSE) | Apache-2.0 | k8s.io/klog/v2@v2.140.0 |
 | [k8s.io/kube-openapi/pkg](https://github.com/kubernetes/kube-openapi/blob/d427ff9ee9ad/LICENSE) | Apache-2.0 | — |
 | [k8s.io/kube-openapi/pkg/internal/third_party/go-json-experiment/json](https://github.com/kubernetes/kube-openapi/blob/d427ff9ee9ad/pkg/internal/third_party/go-json-experiment/json/LICENSE) | BSD-3-Clause | k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad |

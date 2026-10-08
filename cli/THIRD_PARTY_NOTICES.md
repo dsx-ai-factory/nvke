@@ -71,10 +71,10 @@ notices-check` verifies it is up to date.
 | `gopkg.in/evanphx/json-patch.v4` | BSD-3-Clause | `gopkg.in/evanphx/json-patch.v4@v4.13.0` | https://github.com/evanphx/json-patch/blob/v4.13.0/LICENSE |
 | `gopkg.in/inf.v0` | BSD-3-Clause | `gopkg.in/inf.v0@v0.9.1` | https://github.com/go-inf/inf/blob/v0.9.1/LICENSE |
 | `gopkg.in/yaml.v3` | MIT | `gopkg.in/yaml.v3@v3.0.1` | https://github.com/go-yaml/yaml/blob/v3.0.1/LICENSE |
-| `k8s.io/api` | Apache-2.0 | `k8s.io/api@v0.37.0` | https://github.com/kubernetes/api/blob/v0.37.0/LICENSE |
-| `k8s.io/apimachinery/pkg` | Apache-2.0 | `k8s.io/apimachinery@v0.37.0` | https://github.com/kubernetes/apimachinery/blob/v0.37.0/LICENSE |
-| `k8s.io/apimachinery/third_party/forked/golang` | BSD-3-Clause | `k8s.io/apimachinery@v0.37.0` | https://github.com/kubernetes/apimachinery/blob/v0.37.0/third_party/forked/golang/LICENSE |
-| `k8s.io/client-go` | Apache-2.0 | `k8s.io/client-go@v0.37.0` | https://github.com/kubernetes/client-go/blob/v0.37.0/LICENSE |
+| `k8s.io/api` | Apache-2.0 | `k8s.io/api@v0.37.1` | https://github.com/kubernetes/api/blob/v0.37.1/LICENSE |
+| `k8s.io/apimachinery/pkg` | Apache-2.0 | `k8s.io/apimachinery@v0.37.1` | https://github.com/kubernetes/apimachinery/blob/v0.37.1/LICENSE |
+| `k8s.io/apimachinery/third_party/forked/golang` | BSD-3-Clause | `k8s.io/apimachinery@v0.37.1` | https://github.com/kubernetes/apimachinery/blob/v0.37.1/third_party/forked/golang/LICENSE |
+| `k8s.io/client-go` | Apache-2.0 | `k8s.io/client-go@v0.37.1` | https://github.com/kubernetes/client-go/blob/v0.37.1/LICENSE |
 | `k8s.io/klog/v2` | Apache-2.0 | `k8s.io/klog/v2@v2.140.0` | https://github.com/kubernetes/klog/blob/v2.140.0/LICENSE |
 | `k8s.io/kube-openapi/pkg` | Apache-2.0 | `k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad` | https://github.com/kubernetes/kube-openapi/blob/d427ff9ee9ad/LICENSE |
 | `k8s.io/kube-openapi/pkg/internal/third_party/go-json-experiment/json` | BSD-3-Clause | `k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad` | https://github.com/kubernetes/kube-openapi/blob/d427ff9ee9ad/pkg/internal/third_party/go-json-experiment/json/LICENSE |
@@ -6191,7 +6191,7 @@ limitations under the License.
 
 ### k8s.io/api
 
-_Apache-2.0 — k8s.io/api@v0.37.0_
+_Apache-2.0 — k8s.io/api@v0.37.1_
 
 #### LICENSE
 
@@ -6403,7 +6403,7 @@ _Apache-2.0 — k8s.io/api@v0.37.0_
 
 ### k8s.io/apimachinery/pkg
 
-_Apache-2.0 — k8s.io/apimachinery@v0.37.0_
+_Apache-2.0 — k8s.io/apimachinery@v0.37.1_
 
 #### LICENSE
 
@@ -6615,7 +6615,7 @@ _Apache-2.0 — k8s.io/apimachinery@v0.37.0_
 
 ### k8s.io/apimachinery/third_party/forked/golang
 
-_BSD-3-Clause — k8s.io/apimachinery@v0.37.0_
+_BSD-3-Clause — k8s.io/apimachinery@v0.37.1_
 
 #### LICENSE
 
@@ -6652,7 +6652,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### k8s.io/client-go
 
-_Apache-2.0 — k8s.io/client-go@v0.37.0_
+_Apache-2.0 — k8s.io/client-go@v0.37.1_
 
 #### LICENSE
 
