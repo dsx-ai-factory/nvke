@@ -187,8 +187,12 @@ CAPI_PROVISIONED_IMAGE ?= cluster-api-provider-provisioned:latest
 # The tags below are the defaults `bootstrap site` uses when neither the image
 # flags nor NKECTL_CONTROLLER_IMAGE / NKECTL_CAPI_PROVISIONED_IMAGE name an image; the
 # bootstrap manifest pins them.
-# CWE_IMAGE is the old name for CONTROLLER_IMAGE. It is still read, with a
-# warning, when CONTROLLER_IMAGE is unset, for one release.
+# CONTROLLER_IMAGE is the tag `images` gives the controller image. CWE_IMAGE
+# is its deprecated name. When CONTROLLER_IMAGE is unset or empty and
+# CWE_IMAGE is set, `images` uses CWE_IMAGE and make prints a warning. When
+# both are set, CONTROLLER_IMAGE wins and there is no warning. `override` is
+# needed because an empty CONTROLLER_IMAGE= on the command line otherwise
+# blocks the assignment. CWE_IMAGE support is removed in a later release.
 ifneq ($(CWE_IMAGE),)
 ifeq ($(CONTROLLER_IMAGE),)
 $(warning CWE_IMAGE is deprecated and will be removed in a future release; set CONTROLLER_IMAGE instead)
