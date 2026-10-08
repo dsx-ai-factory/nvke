@@ -421,10 +421,13 @@ jobs:
       # than hours into a bake. arm64 used to warn instead, which is how it
       # burned 2 to 5 hours per run and never finished.
       - name: Enable KVM access
+        env:
+          ARCH: ${{ matrix.arch }}
+          QEMU_SUFFIX: ${{ matrix.arch == 'arm64' && 'aarch64' || 'x86_64' }}
         run: |
           set -euo pipefail
           if [[ ! -c /dev/kvm ]]; then
-            echo "::error::This runner did not expose /dev/kvm (${{ matrix.arch }} leg)"
+            echo "::error::This runner did not expose /dev/kvm (${ARCH} leg)"
             echo "::error::Without it the bake falls back to tcg, which has never finished for arm64."
             lscpu
             grep -m1 -E '^(flags|Features)' /proc/cpuinfo || true
@@ -451,9 +454,35 @@ jobs:
             sudo chmod 666 /dev/kvm
           fi
           ls -l /dev/kvm
+          # Still open it: nke_qemu_env tests the permission bits with -w,
+          # which says nothing about whether open(2) would actually succeed.
           exec 3<>/dev/kvm
           exec 3>&-
-          echo "::notice::/dev/kvm present and writable; building with hardware acceleration"
+          # But opening the device is not a test of whether KVM works. Some runner
+          # pods come up with /dev/kvm bind-mounted and openable on a host
+          # where QEMU cannot actually use it, so this step reported
+          # "building with hardware acceleration" and check-acceleration then
+          # failed 15s later for want of that acceleration -- naming the
+          # accelerator, not the runner, as the cause (#1337).
+          #
+          # Little time is saved by catching it here; the point is the
+          # diagnosis. Ask the detector the bake itself will use, under the
+          # same ACCELERATOR=kvm the build steps pass, so this step cannot
+          # disagree with check-acceleration by construction, and dump what
+          # distinguishes a bad pod from a bad device when it does fail.
+          if ! ( cd os-image/packer && ACCELERATOR=kvm REQUIRE_ACCELERATION=1 \
+                 bash -ec '. ./scripts/qemu-arch.sh; nke_qemu_env "${ARCH}"' ); then
+            echo "::error::This runner exposes /dev/kvm but QEMU cannot use it (${ARCH} leg)."
+            echo "::error::The bake would fall back to tcg, which has never finished for arm64."
+            echo "::group::KVM diagnostics"
+            ls -l /dev/kvm || true
+            "qemu-system-${QEMU_SUFFIX}" -accel help || true
+            lscpu || true
+            lsmod 2>/dev/null | grep -E '^kvm' || echo "no kvm module listed"
+            echo "::endgroup::"
+            exit 1
+          fi
+          echo "::notice::QEMU reports usable KVM; building with hardware acceleration"
 
       - name: Install Packer
         env:
