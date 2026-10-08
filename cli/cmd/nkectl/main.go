@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 )
 
@@ -28,13 +29,18 @@ const (
 	// invalid input, a usage error, and an API or infrastructure failure alike.
 	// nkectl does not distinguish them by code.
 	exitError = 1
-	// exitCanceled is returned when SIGINT or SIGTERM cut the command short,
-	// following the shell convention of 128 plus the signal number for SIGINT.
-	exitCanceled = 130
+	// exitSIGINT and exitSIGTERM are returned when that signal cut the command
+	// short, following the shell convention of 128 plus the signal number.
+	exitSIGINT  = 128 + int(syscall.SIGINT)
+	exitSIGTERM = 128 + int(syscall.SIGTERM)
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, cancel := context.WithCancel(context.Background())
+	// caught holds the first signal received, or zero if none was.
+	var caught atomic.Int32
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 
 	// The first signal cancels the command's context, so a command that honours
 	// it unwinds and cleans up rather than dying mid-step. Restoring the default
@@ -42,8 +48,12 @@ func main() {
 	// operation blocked somewhere that does not watch the context — a read from
 	// a terminal, a child process — still answers to Ctrl-C.
 	go func() {
-		<-ctx.Done()
-		stop()
+		sig := <-sigs
+		if s, ok := sig.(syscall.Signal); ok {
+			caught.Store(int32(s))
+		}
+		signal.Stop(sigs)
+		cancel()
 	}()
 
 	err := Execute(ctx, version, gitCommit, gitTreeState, buildDate)
@@ -54,7 +64,10 @@ func main() {
 	// than as a wrapped "context canceled" from wherever the request gave up.
 	if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 		fmt.Fprintln(os.Stderr, "nkectl: canceled")
-		os.Exit(exitCanceled)
+		if syscall.Signal(caught.Load()) == syscall.SIGTERM {
+			os.Exit(exitSIGTERM)
+		}
+		os.Exit(exitSIGINT)
 	}
 	fmt.Fprintln(os.Stderr, "Error:", err)
 	os.Exit(exitError)

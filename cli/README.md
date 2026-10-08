@@ -253,7 +253,8 @@ The short version, for scripting:
 |---|---|
 | Exit `0` | Success |
 | Exit `1` | Failure — the reason is on stderr |
-| Exit `130` | Interrupted by a signal before finishing |
+| Exit `130` | Interrupted by `SIGINT` before finishing |
+| Exit `143` | Interrupted by `SIGTERM` before finishing |
 | stdout | Results only |
 | stderr | Diagnostics, progress and logs only |
 

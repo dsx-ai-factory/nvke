@@ -57,13 +57,14 @@ Depend on these and a patch release may break you.
 |---|---|
 | `0` | The command succeeded. |
 | `1` | The command failed. Invalid input, a usage error, an unreachable or erroring site controller, and a failed operation all report `1` — nkectl does not distinguish them by code. The reason is on stderr. |
-| `130` | The command was interrupted by `SIGINT` or `SIGTERM` and stopped before finishing. `128 + SIGINT`, following shell convention. |
+| `130` | The command was interrupted by `SIGINT` and stopped before finishing. `128 + SIGINT`, following shell convention. |
+| `143` | The command was interrupted by `SIGTERM` and stopped before finishing. `128 + SIGTERM`. |
 
 Nothing else is returned deliberately. A code outside this table means the
 process was killed by a signal nkectl does not handle, and the shell reported
 `128 + signum`.
 
-**`130` does not mean nothing happened.** Interrupting `bootstrap site` part way
+**`130` and `143` do not mean nothing happened.** Interrupting `bootstrap site` part way
 through leaves whatever it had already created. It means nkectl stopped, not
 that it rolled back.
 
@@ -71,7 +72,7 @@ that it rolled back.
 
 The first `SIGINT` or `SIGTERM` cancels the running command's context. A command
 that is waiting on the network or on a child process unwinds, cleans up, and
-exits `130`.
+exits `130` for `SIGINT` or `143` for `SIGTERM`.
 
 A second signal kills the process outright. nkectl restores the default
 disposition as soon as the first one arrives, so a command blocked somewhere

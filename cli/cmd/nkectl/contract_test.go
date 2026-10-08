@@ -454,62 +454,76 @@ func TestAPIErrorsReachStderrWithANonZeroExit(t *testing.T) {
 	assertStream(t, "stderr", got.stderr, "database unavailable")
 }
 
-// TestSIGINTCancelsAnInFlightCommand covers the cancellation half of the
+// TestSignalCancelsAnInFlightCommand covers the cancellation half of the
 // contract: a command interrupted while it is waiting on the network stops, and
-// reports 130 rather than the 1 it would use for a genuine failure. Without the
-// signal-aware root context this test hangs until the stub is torn down.
-func TestSIGINTCancelsAnInFlightCommand(t *testing.T) {
+// reports 128 plus the signal number rather than the 1 it would use for a
+// genuine failure. Without the signal-aware root context this test hangs until
+// the stub is torn down.
+func TestSignalCancelsAnInFlightCommand(t *testing.T) {
 	t.Parallel()
 
-	reached := make(chan struct{})
-	release := make(chan struct{})
-	var once sync.Once
-	srv := stubCWE(t, func(_ http.ResponseWriter, r *http.Request) {
-		once.Do(func() { close(reached) })
-		// Hold the request open until the command is interrupted, or until the
-		// test finishes, whichever comes first.
-		select {
-		case <-release:
-		case <-r.Context().Done():
-		}
-	})
+	for _, tc := range []struct {
+		name     string
+		sig      syscall.Signal
+		wantExit int
+	}{
+		{"SIGINT", syscall.SIGINT, 130},
+		{"SIGTERM", syscall.SIGTERM, 143},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	cmd := exec.Command(nkectlBin, "get", "clusters")
-	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+writeSiteConfig(t, srv.URL))
-	var stdout, stderr strings.Builder
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("starting nkectl: %v", err)
-	}
-	t.Cleanup(func() { close(release) })
+			reached := make(chan struct{})
+			release := make(chan struct{})
+			var once sync.Once
+			srv := stubCWE(t, func(_ http.ResponseWriter, r *http.Request) {
+				once.Do(func() { close(reached) })
+				// Hold the request open until the command is interrupted, or until
+				// the test finishes, whichever comes first.
+				select {
+				case <-release:
+				case <-r.Context().Done():
+				}
+			})
 
-	select {
-	case <-reached:
-	case <-time.After(30 * time.Second):
-		_ = cmd.Process.Kill()
-		t.Fatal("nkectl never reached the stub site controller")
-	}
+			cmd := exec.Command(nkectlBin, "get", "clusters")
+			cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+writeSiteConfig(t, srv.URL))
+			var stdout, stderr strings.Builder
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := cmd.Start(); err != nil {
+				t.Fatalf("starting nkectl: %v", err)
+			}
+			t.Cleanup(func() { close(release) })
 
-	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
-		t.Fatalf("sending SIGINT: %v", err)
-	}
+			select {
+			case <-reached:
+			case <-time.After(30 * time.Second):
+				_ = cmd.Process.Kill()
+				t.Fatal("nkectl never reached the stub site controller")
+			}
 
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-	select {
-	case <-done:
-	case <-time.After(30 * time.Second):
-		_ = cmd.Process.Kill()
-		t.Fatal("nkectl did not exit within 30s of SIGINT")
-	}
+			if err := cmd.Process.Signal(tc.sig); err != nil {
+				t.Fatalf("sending %s: %v", tc.name, err)
+			}
 
-	if got := cmd.ProcessState.ExitCode(); got != exitCanceled {
-		t.Errorf("exit code = %d, want %d\nstdout: %q\nstderr: %q",
-			got, exitCanceled, stdout.String(), stderr.String())
-	}
-	if stdout.String() != "" {
-		t.Errorf("stdout = %q, want nothing: a cancelled command produces no result", stdout.String())
+			done := make(chan error, 1)
+			go func() { done <- cmd.Wait() }()
+			select {
+			case <-done:
+			case <-time.After(30 * time.Second):
+				_ = cmd.Process.Kill()
+				t.Fatalf("nkectl did not exit within 30s of %s", tc.name)
+			}
+
+			if got := cmd.ProcessState.ExitCode(); got != tc.wantExit {
+				t.Errorf("exit code = %d, want %d\nstdout: %q\nstderr: %q",
+					got, tc.wantExit, stdout.String(), stderr.String())
+			}
+			if stdout.String() != "" {
+				t.Errorf("stdout = %q, want nothing: a cancelled command produces no result", stdout.String())
+			}
+		})
 	}
 }
 
