@@ -160,6 +160,23 @@ passed, since nothing reads it without SPIRE. `--dry-run` applies the same check
 Setting `spire.externalAddress` with `provisioned` is rejected: those hosts were
 given their SPIRE address when they were provisioned.
 
+### Profiles and node credentials
+
+`cluster.nico.osProfile` and `configProfile` name profiles CWE reads from its
+profiles directory, and `nkectl` deploys CWE with that directory empty. Until
+the site spec can say where a site's profiles come from, supply them with
+`NKECTL_CWE_PROFILES_IMAGE`, an OCI content image whose `/profiles` tree is
+copied into place; see the [README](../README.md#bootstrap-cluster-and-cwe).
+Without it CWE accepts the cluster request but has nothing to render a node from.
+
+CWE also builds a login user for each node it provisions this way, from
+credentials it reads at startup. `nkectl` does not supply them either; name a
+Secret that holds them (keys `user` and `password`, in CWE's namespace,
+`nke-controller`) with `NKECTL_CWE_TENANT_CREDENTIALS_SECRET`. Without it every
+node fails to provision and CWE retries it indefinitely, so the cluster stays in
+`Provisioning` with nothing in the command's output to say why. Both of these are
+open items for the site spec.
+
 ### NICo credentials
 
 The token is not in the site spec. `NVKECTL_NICO_CREDENTIALS` names a file that

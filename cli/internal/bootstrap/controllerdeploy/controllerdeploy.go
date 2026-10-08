@@ -239,6 +239,27 @@ type Config struct {
 	// attest are outside the cluster, and a ClusterIP is not a route they have.
 	TPMEKFingerprints []string
 
+	// ProfilesImage is an OCI content image holding the OS and config profiles
+	// CWE reads, mounted at PROFILES_DIR by the chart's init container. Empty
+	// deploys CWE with the controller image's empty /profiles, which is enough
+	// for hosts that already exist and not for nodes CAPNICo creates: those need
+	// the profiles a cluster request names.
+	//
+	// A reference without a registry is side-loaded from the local image store,
+	// like CWEImage. The chart sets no pull policy on it, so it has to carry a
+	// tag other than latest, or a digest, or the cluster tries to pull it.
+	ProfilesImage string
+
+	// TenantCredentialsSecret names a Secret in CWE's namespace, with keys user
+	// and password, that the chart injects as DGXC_TENANT_USER and
+	// DGXC_TENANT_PASSWORD. CWE renders the login for the nodes it provisions
+	// through the NICo path from them, and fails every node without them. Empty
+	// injects neither, which is enough for hosts that already exist.
+	//
+	// The Secret is not created here: the namespace belongs to the CWE release,
+	// and the credential is the operator's to supply.
+	TenantCredentialsSecret string
+
 	// SPIREExternalAddress is the address nodes created by CAPNICo use to reach
 	// the SPIRE server. CWE writes it into each node's userdata, so it has to
 	// work from outside the cluster; the in-cluster name the provisioned path
@@ -704,6 +725,14 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "spiffe.spire.serverPort=" + spireNodePort(cfg),
 		"--set-string", "supportedInfraProviders=" + supportedInfraProviders(cfg),
 		"--set", fmt.Sprintf("service.port=%d", cwePort),
+	}
+	profilesArgs, err := profilesImageArgs(cfg)
+	if err != nil {
+		return err
+	}
+	cweArgs = append(cweArgs, profilesArgs...)
+	if cfg.TenantCredentialsSecret != "" {
+		cweArgs = append(cweArgs, "--set-string", "secrets.dgxcTenantCredSecretName="+cfg.TenantCredentialsSecret)
 	}
 	cweArgs = append(cweArgs, cweEnvArgs(cfg)...)
 	if cfg.NicoInfrastructure {

@@ -1156,7 +1156,10 @@ func nvkeImages(cfg controllerdeploy.Config) []string {
 	if cfg.NicoInfrastructure {
 		return []string{cfg.CWEImage}
 	}
-	return []string{cfg.CWEImage, cfg.ProvisionedProviderImage}
+	if cfg.ProfilesImage != "" {
+		images = append(images, cfg.ProfilesImage)
+	}
+	return images
 }
 
 // capnicoAccess resolves the site spec's infra.nico into the values the
