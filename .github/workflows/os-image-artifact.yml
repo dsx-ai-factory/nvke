@@ -1247,9 +1247,11 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           RELEASE_ID: ${{ steps.release.outputs.id }}
+          CHECKSUMS: dist/checksums.txt
         with:
           retries: 3
           script: |
+            const fs = require('fs');
             const release_id = Number(process.env.RELEASE_ID);
 
             const { data: rel } = await github.rest.repos.getRelease({
@@ -1260,14 +1262,40 @@ jobs:
               .filter(a => a.state === 'uploaded' && a.size > 0)
               .map(a => a.name)
               .sort();
-            const want = ['checksums.txt', 'nke-os-image-check'];
-            for (const n of want) {
-              if (!names.includes(n)) {
-                core.setFailed(
-                  `Release ${release_id} is missing ${n} (has [${names.join(', ') || 'nothing'}]). ` +
-                  `It is left as an unpublished draft.`);
-                return;
-              }
+
+            // Name every asset the release must carry, rather than trusting
+            // the count the verify step enforces: that is a floor, so one
+            // stray attachment would let it stand in for a missing SBOM.
+            //
+            // The list comes out of checksums.txt instead of being spelled
+            // here, so adding an Ubuntu flavor or an architecture to the
+            // matrix does not need a second edit. The eight build legs each
+            // append their own disk and SBOM to it, so it names all eight
+            // .spdx.json and nke-os-image-check. The qcow2s are dropped: they
+            // ship as OCI artifacts, too large to attach. checksums.txt and
+            // its attestation do not appear inside it, so they stay explicit.
+            const listed = fs.readFileSync(process.env.CHECKSUMS, 'utf8')
+              .split('\n')
+              .map(l => l.replace(/^[0-9a-f]+\s+[ *]?/, '').trim())
+              .filter(n => n && !n.endsWith('.qcow2'));
+            const sboms = listed.filter(n => n.endsWith('.spdx.json'));
+            if (sboms.length !== 8) {
+              core.setFailed(
+                `checksums.txt names ${sboms.length} SBOMs, expected 8 ` +
+                `(one per matrix leg). The release is left as an unpublished draft.`);
+              return;
+            }
+
+            const want = [...new Set([
+              ...listed, 'checksums.txt', 'checksums.txt.sigstore.json',
+            ])].sort();
+            const missing = want.filter(n => !names.includes(n));
+            if (missing.length > 0) {
+              core.setFailed(
+                `Release ${release_id} is missing ${missing.join(', ')} ` +
+                `(has [${names.join(', ') || 'nothing'}]). ` +
+                `It is left as an unpublished draft.`);
+              return;
             }
 
             if (rel.draft) {
