@@ -2,6 +2,12 @@
 
 NVKE's operational surface spans three layers: the management plane services, the Cluster API infrastructure provider, and the tenant cluster nodes. Observability tooling for each is covered here.
 
+For credential expiry, renewal/rotation health, kubelet-serving CSRs and audit
+evidence, start with [OSS alpha credential operations](credential-lifecycle.md).
+The [credential monitoring guide](../../controller/docs/credential-monitoring.md)
+defines current observations and alert rules, including the evaluator and
+notification receiver required beyond scraping.
+
 ## Management plane services
 
 ### Temporal Web UI
