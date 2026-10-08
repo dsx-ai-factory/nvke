@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
@@ -21,6 +22,11 @@ type MockDB struct {
 	MockTx *MockTx
 	// GetTx, if set, is used by RunInTx to obtain the tx (e.g. func() db.Tx { return mockTx }). Use when MockTx is not reliable.
 	GetTx func() db.Tx
+}
+
+func (m *MockDB) RecordCredentialAuditEvent(ctx context.Context, event credentialaudit.Event) error {
+	args := m.Called(ctx, event)
+	return args.Error(0)
 }
 
 func (m *MockDB) Ping(ctx context.Context) error {

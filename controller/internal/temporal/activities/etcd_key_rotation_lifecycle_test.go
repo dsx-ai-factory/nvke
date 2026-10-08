@@ -78,6 +78,7 @@ func rotationActivities(t *testing.T, cluster *db.Cluster) (*activities.Activiti
 	tx := &rotationTx{cluster: cluster}
 	store := &testutil.MockDB{GetTx: func() db.Tx { return tx }}
 	store.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+	store.On("RecordCredentialAuditEvent", mock.Anything, mock.Anything).Return(nil).Maybe()
 	return activities.NewActivities(config.Config{}, store, nil, nil, "", nil, ""), tx
 }
 
@@ -288,8 +289,6 @@ func TestRotationBeginRetryKeepsOwnership(t *testing.T) {
 	require.ErrorContains(t, err, "in progress")
 }
 
-// TestRotationPhaseRedeliveryAndRecovery distinguishes phase progress from polling
-// and ensures reset recovery retains the same key lifecycle and owner.
 func TestRotationPhaseRedeliveryAndRecovery(t *testing.T) {
 	cluster := runningRotation()
 	a, _ := rotationActivities(t, &cluster)

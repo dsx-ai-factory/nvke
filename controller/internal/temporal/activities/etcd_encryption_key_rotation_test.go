@@ -48,6 +48,7 @@ func TestBeginEtcdEncryptionKeyRotation_AcquiresClusterMutationLock(t *testing.T
 			cluster.Conditions.UpdateInProgress.Message == "rotating etcd encryption key"
 	})).Return(db.Cluster{}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+	mockDB.On("RecordCredentialAuditEvent", mock.Anything, mock.Anything).Return(nil).Maybe()
 	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil, "")
 
 	_, err := a.BeginEtcdEncryptionKeyRotation(
@@ -73,6 +74,7 @@ func TestBeginEtcdEncryptionKeyRotation_RejectsExistingClusterMutation(t *testin
 		},
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+	mockDB.On("RecordCredentialAuditEvent", mock.Anything, mock.Anything).Return(nil).Maybe()
 	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil, "")
 
 	_, err := a.BeginEtcdEncryptionKeyRotation(
@@ -88,6 +90,7 @@ func TestPrepareEtcdEncryptionKeyRotation_RequiresEncryptedCluster(t *testing.T)
 	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
 	mockDB := &testutil.MockDB{}
 	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID}, nil).Once()
+	mockDB.On("RecordCredentialAuditEvent", mock.Anything, mock.Anything).Return(nil).Maybe()
 	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil, "")
 
 	_, err := a.PrepareEtcdEncryptionKeyRotation(
@@ -118,6 +121,7 @@ func TestCompleteEtcdEncryptionKeyRotation_PreservesEncryptionAndClearsProgress(
 	})).Return(db.Cluster{}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
+	mockDB.On("RecordCredentialAuditEvent", mock.Anything, mock.Anything).Return(nil).Maybe()
 	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil, "")
 	_, err := a.CompleteEtcdEncryptionKeyRotation(
 		context.Background(),
@@ -143,6 +147,7 @@ func TestStartEtcdEncryptionRewrite_StartsFreshOperationAfterPriorSuccess(t *tes
 			}, nil
 		},
 	}
+	mockDB.On("RecordCredentialAuditEvent", mock.Anything, mock.Anything).Return(nil).Maybe()
 	a := activities.NewActivities(config.Config{}, mockDB, nil, nodeAgent, "", nil, "")
 
 	operation, err := a.StartEtcdEncryptionRewrite(context.Background(), activities.EtcdEncryptionRewriteInput{
