@@ -755,7 +755,14 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 	if err != nil {
 		return site.Stack{}, nil, err
 	}
-	assets, err := site.ExportRef(context.Background(), repo, ref, site.DeployAssetPaths())
+	// Which directories to export, and what the executor in them is called,
+	// are properties of ref rather than of this checkout: the lane qualifies
+	// release tags, and the deploy assets have moved between releases.
+	layout, err := site.ResolveLayout(context.Background(), repo, ref)
+	if err != nil {
+		return site.Stack{}, nil, err
+	}
+	assets, err := site.ExportRef(context.Background(), repo, ref, layout.Export)
 	if err != nil {
 		return site.Stack{}, nil, err
 	}
@@ -766,7 +773,7 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 	// nothing else makes the two agree. Checked here rather than beside the
 	// spec because the stack is what exports these assets and so what knows
 	// the name they install.
-	if nameErr := site.CheckControllerName(assets); nameErr != nil {
+	if nameErr := site.CheckControllerName(assets, layout.DeployPath); nameErr != nil {
 		return site.Stack{}, nil, nameErr
 	}
 	images := cfg.Site.Images
@@ -787,7 +794,8 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 	GinkgoLogr.Info("deploying the stack", "controller", controller.Ref(), "profiles", profiles.Ref())
 	return site.Stack{
 		Assets:     assets,
-		AssetPaths: site.DeployAssetPaths(),
+		AssetPaths: layout.Export,
+		Layout:     layout,
 		Controller: controller,
 		Profiles:   profiles,
 		Provider:   deployConfig,

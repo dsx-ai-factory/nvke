@@ -24,9 +24,6 @@ import (
 )
 
 const (
-	// defaultDeployPath is the customer deploy path, relative to the assets.
-	defaultDeployPath = "deploy/nico"
-
 	// defaultStorageClassManifest is rancher local-path, what the reference
 	// site used because its instance type has one NVMe with root on it.
 	defaultStorageClassManifest = "https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.31/deploy/local-path-storage.yaml"
@@ -166,8 +163,12 @@ type Tenant struct {
 // not from this suite, so the suite follows whatever deploy path the checkout
 // it stages carries.
 type Stack struct {
+	// Layout is where the exported assets keep the executor and the deploy
+	// path, which depends on the ref they came from. Zero is LayoutDeploy().
+	Layout Layout
+
 	// DeployPath is the deploy path to install, relative to the assets.
-	// Defaults to deploy/nico.
+	// Defaults to the one Layout names.
 	DeployPath string
 
 	Controller Image
@@ -293,8 +294,11 @@ func (d Stack) Deploy(ctx context.Context, s infra.Session, t DeployTarget) erro
 }
 
 func (d Stack) withDefaults() Stack {
+	if d.Layout.Executor == "" {
+		d.Layout = LayoutDeploy()
+	}
 	if d.DeployPath == "" {
-		d.DeployPath = defaultDeployPath
+		d.DeployPath = d.Layout.DeployPath
 	}
 	if d.StorageClassManifest == "" {
 		d.StorageClassManifest = defaultStorageClassManifest
@@ -304,12 +308,6 @@ func (d Stack) withDefaults() Stack {
 	}
 	return d
 }
-
-const (
-	// controllerReleasePath is the HelmRelease the deploy/nico deploy path
-	// installs CWE from, relative to the exported assets.
-	controllerReleasePath = defaultDeployPath + "/controller/release.yaml"
-)
 
 // CheckControllerName fails when the deploy path installs CWE under a name the
 // suite is not configured to look for.
@@ -325,8 +323,8 @@ const (
 // retried the NotFound rather than reporting it, and the run spent ten minutes
 // reporting that CWE would not come up while CWE was healthy in the namespace
 // beside it. Checked here, on the runner, before any machine is taken.
-func CheckControllerName(assets string) error {
-	deployed, err := controllerNameFromDeployPath(assets)
+func CheckControllerName(assets, deployPath string) error {
+	deployed, err := controllerNameFromDeployPath(assets, deployPath)
 	if err != nil {
 		return err
 	}
@@ -341,8 +339,9 @@ func CheckControllerName(assets string) error {
 
 // controllerNameFromDeployPath is the name a set of exported assets installs
 // CWE under, read from the HelmRelease rather than assumed.
-func controllerNameFromDeployPath(assets string) (string, error) {
-	raw, err := os.ReadFile(filepath.Join(assets, controllerReleasePath))
+func controllerNameFromDeployPath(assets, deployPath string) (string, error) {
+	releasePath := ControllerReleasePath(deployPath)
+	raw, err := os.ReadFile(filepath.Join(assets, releasePath))
 	if err != nil {
 		return "", fmt.Errorf("reading the deploy path's controller release: %w", err)
 	}
@@ -353,10 +352,10 @@ func controllerNameFromDeployPath(assets string) (string, error) {
 		} `json:"release"`
 	}
 	if err := yaml.Unmarshal(raw, &release); err != nil {
-		return "", fmt.Errorf("parsing %s: %w", controllerReleasePath, err)
+		return "", fmt.Errorf("parsing %s: %w", releasePath, err)
 	}
 	if release.Release.Namespace == "" {
-		return "", fmt.Errorf("%s names no release namespace, so the name CWE is installed under cannot be read", controllerReleasePath)
+		return "", fmt.Errorf("%s names no release namespace, so the name CWE is installed under cannot be read", releasePath)
 	}
 	return release.Release.Namespace, nil
 }
@@ -427,13 +426,22 @@ func (d Stack) commands(t DeployTarget, valuesDir string) []step {
 		return "--values-for " + shellQuote(release+"="+path.Join(valuesDir, valuesFile(release)))
 	}
 	defaultClass := `{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}`
+	// The flag that names the deploy path is the one thing the two executors
+	// spell differently.
+	target := ""
+	for i, arg := range d.Layout.TargetArgs(assetsDir, d.DeployPath) {
+		if i > 0 {
+			target += " "
+		}
+		target += shellQuote(arg)
+	}
 	return []step{
 		{"untaint the control plane", env + "kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true"},
 		{"clusterctl init", env + "clusterctl init --wait-providers"},
 		{"default storage class", env + "kubectl apply -f " + shellQuote(d.StorageClassManifest) +
 			" && " + env + "kubectl patch storageclass " + shellQuote(d.StorageClassName) + " -p " + shellQuote(defaultClass)},
-		{"install " + d.DeployPath, env + "bash " + shellQuote(path.Join(assetsDir, scriptsDir, "nke-deploy.sh")) + " install" +
-			" --deploy-path " + shellQuote(path.Join(assetsDir, d.DeployPath)) +
+		{"install " + d.DeployPath, env + "bash " + shellQuote(path.Join(assetsDir, d.Layout.Executor)) + " install" +
+			" " + target +
 			" --config " + shellQuote(path.Join(valuesDir, "bootstrap-config.json")) +
 			" " + values(releaseController) +
 			" " + values(releaseSpire) +

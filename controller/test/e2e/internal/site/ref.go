@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -26,20 +27,104 @@ const (
 	// deployPathRef in site_controller_test.go.
 	DeployPathRef = "HEAD"
 
-	// scriptsDir holds the executor, its helpers and the customer deploy
-	// path deploy/nico; deployDir the e2e deploy paths and the charts every
-	// path installs by relative path; hackDir the post-install script; and
-	// nktpChartDir the NKTP chart, which the nktp item installs by relative
-	// path from outside both.
-	scriptsDir   = "deploy"
+	// deployDir holds the e2e deploy paths and the charts every path installs
+	// by relative path; hackDir the post-install script; and nktpChartDir the
+	// NKTP chart, which the nktp item installs by relative path from outside
+	// both. These three have not moved between releases.
 	deployDir    = "controller/deploy"
 	hackDir      = "controller/hack"
 	nktpChartDir = "nktp/deploy/charts/nktp"
 )
 
-// DeployAssetPaths are what the Stack deployer runs from.
-func DeployAssetPaths() []string {
-	return []string{scriptsDir, deployDir, hackDir, nktpChartDir}
+// Layout is where a ref keeps the deploy assets, and how the executor it
+// ships is called. The lane exports from the release tag under
+// qualification, so it reads trees older than itself and cannot assume they
+// are shaped like the checkout it was built from.
+//
+// There are two so far. The executor, its helpers and the customer deploy
+// path moved to a top-level deploy/ in #1291; every tag cut before that
+// keeps them under build/ and controller/deploy/nke-sbom. A new entry is
+// owed to this list whenever they move again.
+type Layout struct {
+	// Name identifies the layout in errors, as the directory it is built
+	// around.
+	Name string
+	// Executor is the install script, relative to the exported assets.
+	Executor string
+	// DeployPath is the customer deploy path, relative to the exported
+	// assets. What is inside it has not changed: both layouts hold
+	// controller/release.yaml and spire/overlay.yaml.
+	DeployPath string
+	// Export is what to pull out of the ref.
+	Export []string
+	// sbomStyleTarget selects the deploy path the way the older executor
+	// does. See TargetArgs.
+	sbomStyleTarget bool
+}
+
+// LayoutDeploy() is the layout from #1291 onwards.
+//
+// A function and not a package variable, so each caller gets its own Export
+// and appending to one cannot reshape the other's.
+func LayoutDeploy() Layout {
+	return Layout{
+		Name:       "deploy",
+		Executor:   "deploy/nke-deploy.sh",
+		DeployPath: "deploy/nico",
+		Export:     []string{"deploy", deployDir, hackDir, nktpChartDir},
+	}
+}
+
+// LayoutBuild() is the layout every release tag before #1291 carries.
+func LayoutBuild() Layout {
+	return Layout{
+		Name:            "build",
+		Executor:        "build/use-nke-sbom.sh",
+		DeployPath:      deployDir + "/nke-sbom",
+		Export:          []string{"build", deployDir, hackDir, nktpChartDir},
+		sbomStyleTarget: true,
+	}
+}
+
+// TargetArgs names deployPath, which is under assets, to this layout's
+// executor. It is the whole command-line difference between the two:
+// `--sbom DIR --target NAME` became `--deploy-path DIR/NAME`. Every other
+// flag they take is spelled the same.
+//
+// deployPath rather than l.DeployPath so a caller that overrides it still
+// gets the right flags.
+func (l Layout) TargetArgs(assets, deployPath string) []string {
+	full := path.Join(assets, deployPath)
+	if l.sbomStyleTarget {
+		return []string{"--sbom", path.Dir(full), "--target", path.Base(full)}
+	}
+	return []string{"--deploy-path", full}
+}
+
+// ControllerReleasePath is the HelmRelease deployPath installs the
+// controller from, relative to the exported assets. Both layouts keep it in
+// the same place inside the deploy path.
+func ControllerReleasePath(deployPath string) string {
+	return path.Join(deployPath, "controller", "release.yaml")
+}
+
+// ResolveLayout reports which layout ref uses.
+//
+// It probes for each executor rather than reading the version, because the
+// move is a property of the tree and a version string only correlates with
+// it: a backport, a branch or a hand-cut tag can carry either shape.
+func ResolveLayout(ctx context.Context, repo, ref string) (Layout, error) {
+	for _, layout := range []Layout{LayoutDeploy(), LayoutBuild()} {
+		probe := exec.CommandContext(ctx, "git", "-C", repo, "cat-file", "-e", ref+":"+layout.Executor)
+		if probe.Run() == nil {
+			return layout, nil
+		}
+	}
+	return Layout{}, fmt.Errorf(
+		"%s in %s carries neither %s nor %s, so the deploy assets cannot be placed: "+
+			"if the executor moved again, add the layout it moved to",
+		ref, repo, LayoutDeploy().Executor, LayoutBuild().Executor,
+	)
 }
 
 // ExportRef writes paths as they are at ref in the repository at repo into a
