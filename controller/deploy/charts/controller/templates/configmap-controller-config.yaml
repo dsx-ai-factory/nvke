@@ -16,6 +16,7 @@
 {{- if gt (len $oidcProviders) 5 }}
 {{- fail (printf "oidc.providers has %d entries; at most 5 are allowed" (len $oidcProviders)) }}
 {{- end }}
+{{- include "controller.validateCredentialMonitoring" . }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -60,6 +61,11 @@ data:
       controllerEnabled: {{ include "controller.controllerConfig.orGoDefault" (list .Values.scheduledMaintenance.certRenewal.enabled true) }}
       interval: {{ .Values.scheduledMaintenance.certRenewal.interval | default "12h" | quote }}
       thresholdDays: {{ include "controller.controllerConfig.orGoDefault" (list .Values.scheduledMaintenance.certRenewal.thresholdDays 30) | int }}
+    credentialMonitoring:
+      enabled: {{ include "controller.controllerConfig.orGoDefault" (list .Values.credentialMonitoring.enabled true) }}
+      inspectionInterval: {{ .Values.credentialMonitoring.inspectionInterval | default "1h" | quote }}
+      observationMaxAge: {{ .Values.credentialMonitoring.observationMaxAge | default "3h" | quote }}
+      warningDays: {{ include "controller.controllerConfig.orGoDefault" (list .Values.credentialMonitoring.warningDays 45) | int }}
     kubeadmImageRepository: {{ .Values.kubeadm.imageRepository | default "registry.k8s.io" | quote }}
     cniImageRegistry: {{ .Values.cni.imageRegistry | quote }}
     installCNIAfterInit: {{ .Values.cni.installAfterInit }}

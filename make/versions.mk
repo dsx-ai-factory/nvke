@@ -42,6 +42,7 @@ show-versions: ## Print every pinned tool version.
 		"TELEPORT_VERSION"       "$(TELEPORT_VERSION)" \
 		"KUBECONFORM_VERSION"    "$(KUBECONFORM_VERSION)" \
 		"HELM_VERSION"           "$(HELM_VERSION)" \
+		"PROMTOOL_VERSION"       "$(PROMTOOL_VERSION)" \
 		"KIND_VERSION"           "$(KIND_VERSION)" \
 		"KUBECTL_VERSION"        "$(KUBECTL_VERSION)" \
 		"CAPI_VERSION"           "$(CAPI_VERSION)" \

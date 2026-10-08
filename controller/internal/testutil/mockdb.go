@@ -323,6 +323,10 @@ func (m *MockTx) UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID 
 	return args.Error(0)
 }
 
+func (m *MockTx) UpdateClusterConditions(ctx context.Context, cluster *db.Cluster) error {
+	return m.Called(ctx, cluster).Error(0)
+}
+
 func (m *MockTx) SyncClusterControlPlaneConfigFromCPNodePools(ctx context.Context, clusterID uuid.UUID) error {
 	args := m.Called(ctx, clusterID)
 	return args.Error(0)

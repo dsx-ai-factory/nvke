@@ -30,6 +30,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/automode"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/certificates"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/certrenewal"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/controlplane"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/controlplanenodescheduler"
@@ -185,11 +186,16 @@ func main() {
 
 	dbMetricsLogger := logger.With("logger", "db-metrics")
 	dbMetricsCollector := dbmetrics.NewCollector(dbMetricsLogger, dbInstance)
+	credentialMetricsCollector := dbmetrics.NewCredentialCollector(dbMetricsLogger, dbInstance, cfg)
 	if err := prometheus.Register(dbMetricsCollector); err != nil {
 		logger.Error("Failed to register db metrics collector", "error", err)
 		os.Exit(1)
 	}
 
+	if err := prometheus.Register(credentialMetricsCollector); err != nil {
+		logger.Error("Failed to register credential metrics collector", "error", err)
+		os.Exit(1)
+	}
 	teleportCollector := metrics.NewTeleportCollector(
 		logger.With("logger", "teleport-metrics"), dbInstance,
 	)
@@ -443,6 +449,9 @@ func main() {
 	tenantRegistrars := []tenant.Registrar{
 		csr.NewRegistrar(dbInstance, logger.With("logger", "tenant-csr-controller")),
 	}
+	if cfg.CredentialMonitoringEnabled {
+		tenantRegistrars = append(tenantRegistrars, csr.NewObserverRegistrar(dbInstance, logger.With("logger", "tenant-csr-observer")))
+	}
 	if !cfg.NodeHealthCheckDisabled {
 		tenantRegistrars = append(tenantRegistrars,
 			tenantnodestatus.NewRegistrar(dbInstance, logger.With("logger", "tenant-node-health-controller")),
@@ -537,6 +546,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	if cfg.CredentialMonitoringEnabled {
+		if err := certificates.NewController(cfg, dbInstance, nodeAgentClient).SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to setup certificate inspection controller", "error", err)
+			os.Exit(1)
+		}
+	}
 	if cfg.CertRenewalControllerEnabled {
 		certRenewalController := certrenewal.NewController(
 			cfg,

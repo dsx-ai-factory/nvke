@@ -53,6 +53,14 @@ KUBECONFORM_VERSION ?= v0.7.0
 KUBECONFORM_SHA256_AMD64 ?= c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3
 HELM_VERSION         ?= v4.2.4
 
+# promtool comes from the Prometheus release archive, installed on demand by
+# chart-credential-alerts-assertions.sh for both chart-check and local use.
+PROMTOOL_VERSION ?= 3.2.1
+PROMTOOL_SHA256_LINUX_AMD64 ?= a622e3007c9109a7f470e1433cbd29bf392596715cf7eea8b81b37fa9d26b7be
+PROMTOOL_SHA256_LINUX_ARM64 ?= f2dec3178f1181c1b795b275750d056e71ead13f7fbfe08b76834c4ec20b748e
+PROMTOOL_SHA256_DARWIN_AMD64 ?= e73ecf2ccd3ecca4bba8f2f82f82c8c51d190283217c6007b41bfe2478ebe482
+PROMTOOL_SHA256_DARWIN_ARM64 ?= f71d933be340486e27625a9b80c7be8282a5c8dbb041594ba2e52a4788dc6ebb
+
 # crane and nfpm build the CNI debs under os-image/packages/.
 CRANE_VERSION ?= 0.21.9
 CRANE_SHA256_AMD64 ?= 5c16d8ddb971cb1d5e6ed8b1e743da8224414eeba2c2762d8f1a61b2f095699e
