@@ -141,6 +141,9 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 	if err != nil {
 		return nonRetryableIfNotFound("failed to get node", err)
 	}
+	if err := a.reserveControlPlaneDeletion(ctx, node); err != nil {
+		return err
+	}
 	machine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
@@ -490,6 +493,15 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	node, err := a.db.GetNode(ctx, nodeID)
 	if err != nil {
 		return nonRetryableIfNotFound("failed to get node", err)
+	}
+	if annotation != nil && node.ControlPlane {
+		if err := a.UpdateNodeConditions(ctx, NodeConditionsUpdate{
+			NodeID: node.ID, Conditions: NodeConditions{Rebooting: &ConditionUpdate{
+				Status: db.ConditionStatusTrue, Message: "Control-plane reboot is in progress",
+			}},
+		}); err != nil {
+			return err
+		}
 	}
 	cluster, err := a.GetCluster(ctx, node.ClusterID)
 	if err != nil {

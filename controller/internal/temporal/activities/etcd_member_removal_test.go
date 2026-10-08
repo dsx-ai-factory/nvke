@@ -26,7 +26,13 @@ func TestRemoveEtcdMemberUsesSurvivingNode(t *testing.T) {
 	clusterID := uuid.New()
 	target := joinedControlPlaneNode(clusterID, "target", true)
 	executor := joinedControlPlaneNode(clusterID, "executor", true)
-	database := &testutil.MockDB{}
+	database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
+	database.On("GetNode", mock.Anything, target.ID).Return(target, nil).Once()
+	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+	database.MockTx.On("GetNode", mock.Anything, target.ID).Return(target, nil).Once()
+	database.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID}, nil).Once()
+	database.MockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil).Once()
+	database.MockTx.On("UpdateNode", mock.Anything, mock.Anything).Return(target, nil).Once()
 	database.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{target, executor}, nil).Once()
 	fakeAgent := &agenttest.FakeClient{RemoveEtcdMemberResponse: &nvkeproto.RemoveEtcdMemberResponse{}}
 	a := &Activities{db: database, nodeAgentClient: fakeAgent}
@@ -60,7 +66,13 @@ func TestRemoveEtcdMemberFallsBackOnlyOnUnimplemented(t *testing.T) {
 			clusterID := uuid.New()
 			target := joinedControlPlaneNode(clusterID, "target", true)
 			executor := joinedControlPlaneNode(clusterID, "executor", true)
-			database := &testutil.MockDB{}
+			database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
+			database.On("GetNode", mock.Anything, target.ID).Return(target, nil).Once()
+			database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+			database.MockTx.On("GetNode", mock.Anything, target.ID).Return(target, nil).Once()
+			database.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID}, nil).Once()
+			database.MockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil).Once()
+			database.MockTx.On("UpdateNode", mock.Anything, mock.Anything).Return(target, nil).Once()
 			database.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{target, executor}, nil).Once()
 			if tt.wantFallback {
 				database.On("GetNode", mock.Anything, executor.ID).Return(executor, nil).Once()

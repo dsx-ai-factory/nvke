@@ -313,8 +313,20 @@ func snapshotOperatorProvider() db.ClusterOIDCProvider {
 	}
 }
 
+// snapshotAdmissionTx serves the control-plane mutation admission that init and
+// join take before any provisioning work: the cluster row lock and the node row.
+func snapshotAdmissionTx(cluster db.Cluster, node db.Node) *testutil.MockTx {
+	tx := &testutil.MockTx{}
+	tx.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
+	tx.On("GetClusterForUpdate", mock.Anything, cluster.ID).Return(cluster, nil).Once()
+	tx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil).Once()
+	tx.On("UpdateNode", mock.Anything, mock.Anything).Return(node, nil).Once()
+	return tx
+}
+
 func snapshotInitDatabase(cluster db.Cluster, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool) *testutil.MockDB {
-	database := &testutil.MockDB{}
+	database := &testutil.MockDB{MockTx: snapshotAdmissionTx(cluster, node)}
+	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
 	database.On("GetCluster", mock.Anything, cluster.ID).Return(cluster, nil).Once()
 	database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
 	database.On("GetNodeSet", mock.Anything, nodeSet.ID).Return(nodeSet, nil).Once()
@@ -329,7 +341,8 @@ func snapshotJoinDatabase(
 	nodeSet db.NodeSet,
 	nodePool db.NodePool,
 ) *testutil.MockDB {
-	database := &testutil.MockDB{}
+	database := &testutil.MockDB{MockTx: snapshotAdmissionTx(cluster, joiningNode)}
+	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
 	database.On("GetCluster", mock.Anything, cluster.ID).Return(cluster, nil).Once()
 	database.On("ListNodes", mock.Anything, mock.MatchedBy(func(filters db.NodeFilters) bool {
 		return filters.ClusterID != nil && *filters.ClusterID == cluster.ID &&

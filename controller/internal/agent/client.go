@@ -36,6 +36,7 @@ type Client interface {
 	KubeadmUpgradeApply(ctx context.Context, node db.Node, req *nvkeproto.KubeadmUpgradeApplyRequest) (*nvkeproto.KubeadmUpgradeApplyResponse, error)
 	ReconcileKubeVip(ctx context.Context, node db.Node, req *nvkeproto.ReconcileKubeVipRequest) (*nvkeproto.ReconcileKubeVipResponse, error)
 	StartKubernetesCertificateRenewal(ctx context.Context, node db.Node, req *nvkeproto.StartKubernetesCertificateRenewalRequest) (*nvkeproto.StartKubernetesCertificateRenewalResponse, error)
+	StartKubernetesCertificateRenewalV2(ctx context.Context, node db.Node, req *nvkeproto.StartKubernetesCertificateRenewalV2Request) (*nvkeproto.StartKubernetesCertificateRenewalV2Response, error)
 	GetKubernetesCertificateRenewalStatus(ctx context.Context, node db.Node, req *nvkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nvkeproto.GetKubernetesCertificateRenewalStatusResponse, error)
 	RemoveEtcdMember(ctx context.Context, node db.Node, req *nvkeproto.RemoveEtcdMemberRequest) (*nvkeproto.RemoveEtcdMemberResponse, error)
 	ExecuteNodePreflight(ctx context.Context, node db.Node, req *nvkeproto.ExecuteNodePreflightRequest) (*nvkeproto.ExecuteNodePreflightResponse, error)
@@ -378,6 +379,27 @@ func (c *NodeAgentClient) StartKubernetesCertificateRenewal(
 	resp, err := nvkeproto.NewNodeAgentClient(conn).StartKubernetesCertificateRenewal(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start certificate renewal on node %s: %w", node.Name, err)
+	}
+	return resp, nil
+}
+
+// StartKubernetesCertificateRenewalV2 preserves the capability-distinct RPC and
+// wrapped gRPC status so the activity can distinguish Unimplemented from an
+// ambiguous transport failure. It neither selects fallback nor waits for renewal;
+// canceling this RPC does not cancel work the agent has already accepted.
+func (c *NodeAgentClient) StartKubernetesCertificateRenewalV2(
+	ctx context.Context,
+	node db.Node,
+	req *nvkeproto.StartKubernetesCertificateRenewalV2Request,
+) (*nvkeproto.StartKubernetesCertificateRenewalV2Response, error) {
+	conn, cleanup, err := c.getGRPCConnection(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node agent for certificate renewal on node %s: %w", node.Name, err)
+	}
+	defer cleanup()
+	resp, err := nvkeproto.NewNodeAgentClient(conn).StartKubernetesCertificateRenewalV2(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start V2 certificate renewal on node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }

@@ -427,6 +427,9 @@ func (s *nodePoolService) DeleteNodePool(
 			// Teardown already in progress via cluster delete or a prior pool delete.
 			return api.DeleteNodePool202Response{}, nil
 		}
+		if errors.Is(err, db.ErrControlPlaneMutationBlocked) {
+			return api.DeleteNodePool409JSONResponse{Message: err.Error()}, nil
+		}
 		if errors.Is(err, nodes.ErrLastJoinedControlPlaneNodePool) {
 			return api.DeleteNodePool400JSONResponse{Message: err.Error()}, nil
 		}
@@ -478,6 +481,7 @@ func (s *nodePoolService) UpdateNodePool(
 			return errNodePoolDeleting
 		}
 
+		// Never accepted, lock or not, so the lock's retry advice does not apply.
 		if dbNodePool.ControlPlane {
 			return &badRequestError{message: errControlPlaneNodePoolNotAllowed.Error()}
 		}
@@ -537,6 +541,9 @@ func (s *nodePoolService) UpdateNodePool(
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, db.ErrControlPlaneMutationBlocked) {
+			return api.UpdateNodePool400JSONResponse{Message: err.Error()}, nil
+		}
 		var badRequestErr *badRequestError
 		if errors.As(err, &badRequestErr) {
 			return api.UpdateNodePool400JSONResponse{Message: badRequestErr.Error()}, nil

@@ -124,6 +124,24 @@ func (a *Activities) UpdateNodeConditions(ctx context.Context, update NodeCondit
 
 // UpdateNodeConditionsWithTx updates the conditions of a node in the database, using the provided transaction.
 func (a *Activities) UpdateNodeConditionsWithTx(ctx context.Context, tx db.Tx, update NodeConditionsUpdate) error {
+	// Admission for queued CP work must serialize with Begin before any node
+	// lock is taken. These conditions remain set until external work finishes,
+	// so credential operations also refuse work admitted before Begin.
+	if update.Conditions.startsMutation() {
+		unlocked, err := tx.GetNode(ctx, update.NodeID)
+		if err != nil {
+			return fmt.Errorf("reading node for mutation admission: %w", err)
+		}
+		if unlocked.ControlPlane {
+			cluster, err := tx.GetClusterForUpdate(ctx, unlocked.ClusterID)
+			if err != nil {
+				return fmt.Errorf("locking cluster for node mutation: %w", err)
+			}
+			if db.ControlPlaneMutationBlocked(cluster) {
+				return db.ErrControlPlaneMutationBlocked
+			}
+		}
+	}
 	// Get existing node for update with lock
 	node, err := tx.GetNodeForUpdate(ctx, update.NodeID)
 	if err != nil {
@@ -170,10 +188,31 @@ func (a *Activities) ListControlPlaneNodes(ctx context.Context, clusterID uuid.U
 // DeleteNode deletes a node from the database.
 func (a *Activities) DeleteNode(ctx context.Context, nodeID uuid.UUID) error {
 	return a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		node, err := tx.GetNode(ctx, nodeID)
+		if err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				// A redelivered activity after the delete committed must succeed.
+				return nil
+			}
+			return fmt.Errorf("reading node before deletion: %w", err)
+		}
+		if err := controlPlaneMutationLock(ctx, tx, node); err != nil {
+			return err
+		}
 		if err := tx.DeleteNode(ctx, nodeID); err != nil {
 			return fmt.Errorf("failed to delete node from database: %w", err)
 		}
 
 		return nil
 	})
+}
+
+// startsMutation excludes health observations and completion updates.
+func (conditions NodeConditions) startsMutation() bool {
+	for _, condition := range []*ConditionUpdate{conditions.Provisioning, conditions.Deleting, conditions.Rebooting} {
+		if condition != nil && condition.Status == db.ConditionStatusTrue {
+			return true
+		}
+	}
+	return false
 }

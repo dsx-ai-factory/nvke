@@ -60,6 +60,19 @@ func (a *Activities) KubeadmUpgradeApply(
 
 	//nolint:gosec // Non-secure random number generator is acceptable here.
 	controlPlaneNode := candidates[rand.Intn(len(candidates))]
+	// Redelivery must resolve the same admitted node, especially after an RPC
+	// timeout with an uncertain remote outcome. Never abandon its reservation
+	// and clear a different node while the earlier call could still be running.
+	for _, node := range controlPlaneNodes {
+		if node.Conditions.Provisioning.Status == db.ConditionStatusTrue &&
+			node.Conditions.Provisioning.Message == controlPlaneUpgradeAdmissionMessage(ctx, input.KubernetesVersion) {
+			controlPlaneNode = node
+			break
+		}
+	}
+	if err := a.reserveControlPlaneUpgrade(ctx, controlPlaneNode, input.KubernetesVersion, true); err != nil {
+		return KubeadmUpgradeApplyResult{}, err
+	}
 	heartbeatCancel := startActivityHeartbeat(ctx)
 	defer heartbeatCancel()
 
@@ -85,6 +98,9 @@ func (a *Activities) KubeadmUpgradeApply(
 			if runbookErr != nil {
 				return KubeadmUpgradeApplyResult{}, fmt.Errorf("failed to execute legacy kubeadm upgrade runbook on control plane node %s: %w", controlPlaneNode.Name, runbookErr)
 			}
+			if err := a.reserveControlPlaneUpgrade(ctx, controlPlaneNode, input.KubernetesVersion, false); err != nil {
+				return KubeadmUpgradeApplyResult{}, err
+			}
 
 			return KubeadmUpgradeApplyResult{
 				NodeID:   controlPlaneNode.ID,
@@ -96,6 +112,9 @@ func (a *Activities) KubeadmUpgradeApply(
 	}
 	if response.GetOutcome() != nvkeproto.KubeadmUpgradeApplyResponse_OUTCOME_APPLIED {
 		return KubeadmUpgradeApplyResult{}, fmt.Errorf("kubeadm upgrade on control plane node %s returned outcome %s", controlPlaneNode.Name, response.GetOutcome())
+	}
+	if err := a.reserveControlPlaneUpgrade(ctx, controlPlaneNode, input.KubernetesVersion, false); err != nil {
+		return KubeadmUpgradeApplyResult{}, err
 	}
 
 	return KubeadmUpgradeApplyResult{

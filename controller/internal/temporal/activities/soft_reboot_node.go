@@ -12,6 +12,8 @@ import (
 	"go.temporal.io/sdk/activity"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 const (
@@ -65,6 +67,15 @@ func (a *Activities) softRebootNode(ctx context.Context, input SoftRebootNodeInp
 	node, err := a.db.GetNode(ctx, input.NodeID)
 	if err != nil {
 		return SoftRebootNodeResult{}, fmt.Errorf("failed to get node %s: %w", input.NodeID, err)
+	}
+	if node.ControlPlane {
+		if err := a.UpdateNodeConditions(ctx, NodeConditionsUpdate{
+			NodeID: node.ID, Conditions: NodeConditions{Rebooting: &ConditionUpdate{
+				Status: db.ConditionStatusTrue, Message: "Control-plane reboot is in progress",
+			}},
+		}); err != nil {
+			return SoftRebootNodeResult{}, err
+		}
 	}
 
 	// The agent starts reboot as a detached process, so this call does not wait
