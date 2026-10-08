@@ -8,13 +8,18 @@
 > [cluster-lock rollout design](in-place-rollout-design.md) is retained for
 > comparison.
 
-## Problem
+## Summary
+
+Today, upgrading the node agent requires rolling bare-metal nodes with a new
+OS image that contains the desired agent version. Managing the bare-metal node
+lifecycle is difficult and error-prone. This makes an agent upgrade depend on a
+node rolling update, even when only the agent needs to change.
 
 NKE records each node's observed agent version but does not maintain a desired
-version throughout the cluster lifecycle. Provisioning already depends on the
-agent for preflight, file preparation, kubeadm init or join, and status polling.
-Waiting until after join to update the agent can leave these steps using an
-agent that cannot perform the requested work.
+version. In-place agent updates let NKE change that version without replacing
+the node. New nodes still start with the agent baked into the OS image. If that
+version differs from the desired version, NKE installs the desired version
+before preflight and kubeadm.
 
 The earlier cluster-lock proposal adds desired state but blocks unrelated
 topology and cluster updates while control-plane agents converge. The proposal
@@ -23,17 +28,19 @@ conflicting operations at the node boundary.
 
 ## Proposal
 
-**Desired node-agent versions are cluster desired state, set separately for
-control plane nodes and worker nodes. Lifecycle workflows converge nodes to the desired version before preflight and
+**The desired node-agent version is part of `controlPlaneConfig`. Lifecycle
+workflows converge control-plane nodes to that version before preflight and
 kubeadm. Background reconciliation handles later drift on joined nodes.**
 
 This proposal covers node-agent convergence and the coordination it needs. It
 does not redesign cluster orchestration or upgrades of other system components.
+Pool-managed control planes and workers are out of scope. Future worker support
+can use roughly the same mechanism.
 
 ### Design invariants
 
-1. When a desired version is defined, kubeadm does not run on a node until its
-   agent runs exactly that version.
+1. When a desired version is defined, kubeadm does not run on a control-plane
+   node until its agent runs exactly that version.
 2. Changing the desired version does not interrupt an operation in flight.
 3. No other operation starts on a node while an agent upgrade is still running on it.
    - Rationale: an agent upgrade is disruptive because it restarts the agent and
@@ -41,9 +48,9 @@ does not redesign cluster orchestration or upgrades of other system components.
 4. Only one disruptive operation acts on a node at a time. Only deletion and
    remediation may preempt another operation.
 5. Background upgrades act only on nodes that have joined the cluster.
-6. If a background upgrade fails on a node, no further nodes of the same type
-   (control plane or worker) are upgraded to that version until an operator
-   retries or changes it.
+6. While a background upgrade runs or retries, no other control-plane node
+   starts an agent upgrade. The controller treats failures as transient and
+   keeps retrying the same node until its upgrade succeeds.
 7. Every controller call to an agent works with any agent version present in
    the cluster. See the
    [Day 1 compatibility contract](#day-1-controller-agent-compatibility-contract).
@@ -51,34 +58,33 @@ does not redesign cluster orchestration or upgrades of other system components.
 ### Why not the cluster-wide lock?
 
 A cluster-wide lock makes unrelated updates wait for the entire agent rollout,
-including retries on a single failing node. Per-node ownership makes only work
-on the same node wait.
+including retries on a single failing node. The control-plane controller
+sequences agent upgrades and defers conflicting work. No node ownership lock
+is required.
 
 ## API contract
 
-The API persists the desired version on the cluster, separately for
-`controlPlane` and `workers`. Per-node observations record what is running. The
-authoritative desired version remains on the cluster.
+The API persists the desired version in `controlPlaneConfig.nodeAgentConfig.version`.
+Per-node observations record what is running. The control-plane configuration
+remains the source of the desired version.
 
 ### CreateCluster
 
-`CreateCluster` persists the initial desired versions for control plane nodes and worker nodes:
+`CreateCluster` persists the initial desired version in `controlPlaneConfig`:
 
 ```json
 {
-  "nodeAgentConfig": {
-    "controlPlane": {
-      "version": "v0.1.33"
-    },
-    "workers": {
+  "controlPlaneConfig": {
+    "nodeAgentConfig": {
       "version": "v0.1.33"
     }
   }
 }
 ```
 
-`nodeAgentConfig` is optional. Without it, NKE does not upgrade node agents in
-that cluster.
+Operators opt in through `CreateCluster` or `UpdateCluster` by setting a nonempty
+`controlPlaneConfig.nodeAgentConfig.version`. An absent or empty desired version
+disables both in-place updates and the lifecycle version step.
 
 The API accepts exact release SemVer and canonicalizes it to
 `vMAJOR.MINOR.PATCH`.
@@ -91,27 +97,23 @@ version after creation. It uses the same `nodeAgentConfig` shape as
 
 - The API records the new desired version and returns. It does not wait for
   agents to converge.
-- Control plane nodes and worker nodes can be updated independently.
 - Downgrades are allowed and follow the same path as upgrades.
-- The API rejects a version whose artifact does not exist for the site's
-  update method, before any node is touched.
-- If upgrades to a version halt after a failure, submitting the same version
-  again retries them.
+- The controller treats upgrade failures as transient and keeps retrying
+  automatically. `GetCluster` reports the current failure while retries continue.
+  Operators do not need to resubmit the desired version to trigger retries.
 
 ### NKE controller configuration
 
 | Setting | Required | Values | Purpose |
 |---|---|---|---|
 | `NODE_AGENT_UPDATE_METHOD` | Yes | `apt` or `bundle` | How agents are installed |
-| `NODE_AGENT_WORKER_MAX_CONCURRENT` | No | Integer ≥ 1, default `1` | How many worker nodes per cluster may upgrade at once in the background |
 
 Control plane nodes always upgrade one at a time per cluster. This is not
 configurable.
 
 ## Shared node-agent convergence operation
 
-Both lifecycle workflows and background upgrade workflows use the same
-operation:
+Lifecycle workflows and background reconciliation use the same operation:
 
 ```text
 EnsureNodeAgentVersion(
@@ -130,15 +132,23 @@ EnsureNodeAgentVersion(
 4. Establish a fresh authenticated connection, verify the exact desired version,
    and persist the new observation before returning success.
 
-A background upgrade workflow holds node ownership throughout this operation.
+The control-plane controller tracks the active upgrade throughout this operation.
 The sections below show where each caller invokes it.
 
 ## Lifecycle workflow integration
 
-The lifecycle workflow snapshots the node's desired version and update method,
-then provisions the host until the bootstrap agent is reachable. It invokes
+The lifecycle workflow snapshots the desired version from `controlPlaneConfig`
+and the update method. It provisions the host until the agent baked into the
+OS image is reachable. It invokes
 `EnsureNodeAgentVersion` directly before preflight and preparation. Kubeadm
 proceeds only after that operation succeeds or returns `Unchanged`.
+
+If operators opt in to set `controlPlaneConfig.nodeAgentConfig.version` to a
+non-empty valid version, they must keep the OS image's agent version equal to
+the desired version during rolling node updates. Before a rolling update, operators must update the image or the desired
+version so that both match. A newer OS image does not change the desired version
+automatically. If the versions differ at boot, NKE installs the desired version
+first, including a downgrade when necessary.
 
 ### Provisioning and join sequence
 
@@ -186,93 +196,86 @@ For control-plane-controller-managed nodes:
 6. `JoinNode` uses the persisted lifecycle snapshot and proceeds with kubeadm
    join.
 
-Lifecycle workflows do not take node ownership. Background upgrades act only on
+Background upgrades act only on
 joined nodes ([invariant 5](#design-invariants)), so nothing else upgrades the
 agent between `ProvisionNode` and `JoinNode`, including the `ReadyToJoin`
 interval.
 
-For workers and legacy paths where provisioning and join occur in one workflow,
-the same workflow runs `EnsureNodeAgentVersion` immediately before the
-remaining preflight and join sequence.
-
 ## Background reconciliation
 
-After join, the node-agent controller compares the latest desired version with
-each node's observed version. Database change events and periodic resynchronization
-trigger reconciliation using desired versions, observations, lifecycle and
-health conditions, and node ownership.
+After join, the control-plane controller compares the desired version in
+`controlPlaneConfig` with each control-plane node's observed version. Database
+change events and periodic resynchronization trigger reconciliation using
+desired versions, observations, lifecycle and health conditions, and active operations.
 
-Without a desired version, NKE only observes. An owned node is deferred. For
-an eligible joined node with version drift, the reconciler acquires ownership
-and starts a per-node `NodeAgentUpgrade` workflow that calls
-`EnsureNodeAgentVersion`. The existing rollout executor is not used, because it
-applies one operation across all control-plane nodes and cannot skip a busy
-node or target workers.
+Without a desired version, NKE only observes. A node with conflicting work is
+deferred. For an eligible joined node with version drift, the controller records
+the active upgrade and starts or resumes `EnsureNodeAgentVersion` directly. It persists upgrade
+state and polls status on later reconciliations. The control-plane controller
+starts only one
+background agent upgrade at a time per cluster, across replicas and restarts.
 
 ### Reconciliation sequence
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Reconciler as Node-agent reconciler
+    participant Reconciler as Control-plane controller
     participant DB as PostgreSQL
-    participant Temporal as Temporal workflow
     participant Agent as Node agent
     participant Updater as Independent updater
 
     Reconciler->>DB: Load current desired and observed node versions
 
-    alt Node is owned by another operation
-        Reconciler-->>DB: Defer until node operation owner is released
+    alt A control-plane upgrade is running or retrying
+        Reconciler->>Agent: Resume or retry upgrade and poll status
+        Note over Reconciler,DB: Keep retrying this node until success
+    else Conflicting work is in progress
+        Reconciler-->>DB: Defer agent upgrade until that work completes
     else Eligible joined node differs from a defined desired version
-        Reconciler->>DB: Atomically acquire node operation owner
-        Reconciler->>DB: Record Running
-        Reconciler->>Temporal: Start NodeAgentUpgrade workflow
-        Temporal->>Agent: Start or resume upgrade operation
+        Reconciler->>DB: Record active node and upgrade state
+        Reconciler->>Agent: Start or resume upgrade operation
         Agent->>Updater: Run independent updater
-        Temporal->>Agent: Poll status and reconnect
-        Agent-->>Temporal: Exact running version
-        Temporal->>DB: Persist observed version
-        Temporal->>DB: Release node operation owner
+        Reconciler->>Agent: Poll status and reconnect
+        Agent-->>Reconciler: Exact running version
+        Reconciler->>DB: Persist observed version
+        Reconciler->>DB: Complete active upgrade before selecting the next node
     else Desired version is not set or node already matches
         Reconciler-->>DB: Continue observation without an upgrade
     end
 ```
 
 This also covers drift from older OS images or restored artifacts and nodes
-that become reachable again. Each attempt records what actually ran, and the next
+that become reachable again. Each upgrade records what actually ran, and the next
 reconcile compares that observation with the current desired version.
 
 ## Execution coordination
 
 An agent upgrade can restart the agent while a join workflow is using it, and
-deletion can remove a node while an upgrade is still running. Both workflows
-could then fail or act on a node whose state has changed underneath them.
+deletion can remove a node while an upgrade is still running. Both operations
+can fail or act on a node whose state changed underneath them.
 Execution coordination prevents this overlap on the same node.
 
-Here, disruptive work means work that changes the node or requires exclusive
-use of its agent: node-agent or Kubernetes upgrade, reboot, certificate renewal,
-kubelet reconfiguration, remediation, and deletion. Provisioning and join do not
-take ownership, because background upgrades never act on nodes that have not
-joined.
+The control-plane controller sequences background agent upgrades, as it already
+sequences joins and requested deletes. It uses the existing cluster-row
+transaction to select and record work.
 
-The proposal adds one field to the node row in PostgreSQL:
+1. Record the active node and upgrade state before starting the asynchronous
+   agent operation. The database transaction ends before the upgrade completes.
+2. On later reconciliations, resume that upgrade before selecting another node.
+   Keep retrying transient failures and make sure that the running version
+   matches the target before marking success.
+3. Defer conflicting joins, Kubernetes upgrades, rolling replacements, and
+   deletions while the agent upgrade runs. Unrelated observation and host
+   provisioning can continue. Deletion and remediation can cancel the upgrade
+   before proceeding.
+4. Operations started outside this controller, such as certificate renewal,
+   must use the same scheduling checks. They must not overlap with an agent
+   upgrade on the same node.
 
-| Field | Problem it solves |
-|---|---|
-| `node_operation_owner` | Identifies the operation holding the node. Empty means available. Atomic acquisition prevents two operations from starting disruptive work on the same node. |
-
-1. Before disruptive work, acquire ownership atomically if the field is empty.
-2. If another operation owns the node, a competing workflow waits and retries,
-   and a reconciler defers this node and can continue processing other nodes. Neither
-   steals ownership nor aborts the active operation. Deletion and remediation
-   are the exception: they cancel the active operation and take ownership.
-3. Hold ownership until the operation completes, including agent restarts and
-   retries. Only the matching owner may release it. If the owning workflow has ended
-   without releasing, the reconciler clears the owner once no agent upgrade is
-   running on the node.
-4. After release, re-evaluate eligibility and compare the latest desired version
-   with the fresh observation before starting another upgrade.
+The controller also publishes the desired version and observed upgrade state
+on existing control-plane CAPI Machine objects. It continues to use controller
+records for upgrade decisions. It does not consume Machine state yet.
 
 ### Example: a desired version changes during join
 
@@ -283,7 +286,8 @@ joining with a snapshot of `v0.1.33`, `UpdateCluster` changes the desired versio
 
 The joining node finishes using `v0.1.33` and records that actual version.
 After it joins, the reconciler sees `v0.1.33` versus `v0.1.34` and schedules
-the next upgrade. Other eligible joined nodes can converge while that node is joining.
+the next upgrade. Other eligible joined nodes can converge one at a time while
+that node is joining.
 
 ## Agent RPC and independent updater
 
@@ -295,8 +299,8 @@ When the agent supports typed self-upgrade, this design uses the same
 narrow asynchronous RPCs as the cluster-lock design:
 
 ```text
-StartNodeAgentUpgrade(operation_id, target_version, method)
-GetNodeAgentUpgradeStatus(operation_id)
+StartNodeAgentUpgrade(target_version, method)
+GetNodeAgentUpgradeStatus()
 ```
 
 `method` is `APT` or `BUNDLE` and is supplied only by NKE controller
@@ -305,8 +309,9 @@ or command. For older agents that do not expose these RPCs, the Day 1
 compatibility contract allows the controller to use the existing shell-script
 runbook path instead.
 
-Repeating the same operation ID returns the existing status, and status
-remains readable after the agent restarts.
+Repeated requests for the same target version and method resume the active
+upgrade. If the previous upgrade failed, the controller repeats the request to
+retry it. Status remains readable after the agent restarts.
 
 The agent persists request and status on the node and starts the independent
 systemd updater without blocking. The updater owns staging, installation,
