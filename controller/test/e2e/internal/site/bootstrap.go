@@ -248,9 +248,15 @@ func (b bootstrap) bootstrapSite(ctx context.Context) error {
 // env is the image references nkectl reads from the environment. The mapping
 // from a reference to the variable that carries it lives here, so a caller
 // states what it is qualifying and not how nkectl is told.
+//
+// The controller image goes under both its names: the staged nkectl may be a
+// published release from before NKECTL_CONTROLLER_IMAGE, which reads only
+// NKECTL_CWE_IMAGE. A current nkectl prefers the new name and, with it set,
+// does not warn about the old one.
 func (b bootstrap) env() string {
 	var sb strings.Builder
 	for _, v := range []struct{ key, value string }{
+		{"NKECTL_CONTROLLER_IMAGE", b.spec.ControllerImage},
 		{"NKECTL_CWE_IMAGE", b.spec.ControllerImage},
 		{"NKECTL_CAPI_PROVISIONED_IMAGE", b.spec.CAPIProvisionedImage},
 	} {

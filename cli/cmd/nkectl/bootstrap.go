@@ -146,7 +146,7 @@ dispatched or any node is touched.
 The bootstrap side-loads two images this repository builds,
 nke-controller:latest and cluster-api-provider-provisioned:latest, which
 "make -C cli images" builds. --controller-image and --provisioned-provider-image, or
-NKECTL_CWE_IMAGE and NKECTL_CAPI_PROVISIONED_IMAGE, name other images, such as
+NKECTL_CONTROLLER_IMAGE and NKECTL_CAPI_PROVISIONED_IMAGE, name other images, such as
 ones pushed to a registry; a flag wins over its variable. cli/README.md lists
 every NKECTL_* variable.
 
@@ -183,7 +183,7 @@ site spec file format.`,
 	cmd.Flags().StringVar(&opts.registryAPIKey, "registry-api-key", "",
 		"Container registry credential (overrides registry.apiKey and the "+registryAPIKeyEnv+" env var)")
 	cmd.Flags().StringVar(&opts.controllerImage, "controller-image", "",
-		"Controller image to deploy (overrides NKECTL_CWE_IMAGE and the manifest default)")
+		"Controller image to deploy (overrides NKECTL_CONTROLLER_IMAGE and the manifest default)")
 	cmd.Flags().StringVar(&opts.provisionedProviderImage, "provisioned-provider-image", "",
 		"Provisioned-provider image to deploy (overrides NKECTL_CAPI_PROVISIONED_IMAGE and the manifest default)")
 	cmd.Flags().StringVar(&opts.diagnosticsDir, "diagnostics-dir",
@@ -215,6 +215,10 @@ const cleanupTimeout = 2 * time.Minute
 
 func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	logger := slog.Default().With("component", "bootstrap-site")
+	for _, s := range controllerdeploy.DeprecatedSettings() {
+		logger.Warn(s.Old+" is deprecated and will be removed in a future release; set "+s.New+" instead",
+			"deprecated", s.Old, "replacement", s.New)
+	}
 
 	// Step 1: load and validate the sitespec. Fail fast on any problem.
 	inv, err := sitespec.Load(opts.siteSpec)
@@ -809,7 +813,7 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 	// Both images default to the local build's tag from the bootstrap
 	// manifest, so an empty value means the manifest lacks the entry.
 	if cfg.CWEImage == "" {
-		return cfg, errors.New("--controller-image and NKECTL_CWE_IMAGE are not set and the bootstrap manifest carries no default CWE image")
+		return cfg, errors.New("--controller-image and NKECTL_CONTROLLER_IMAGE are not set and the bootstrap manifest carries no default controller image")
 	}
 	if cfg.ProvisionedProviderImage == "" {
 		return cfg, errors.New("--provisioned-provider-image and NKECTL_CAPI_PROVISIONED_IMAGE are not set and the bootstrap manifest carries no default provisioned-provider image")
@@ -1012,7 +1016,7 @@ func requireLocalImages(ctx context.Context, engine *bootstrapengine.Engine, ima
 func missingLocalImageError(image string, err error, out string) error {
 	return fmt.Errorf("image %s is not in the local image store (%w\n%s) and names no registry to pull it from; "+
 		"build it with `make -C cli images`, or name an image the runtime can pull with "+
-		"--controller-image / --provisioned-provider-image or NKECTL_CWE_IMAGE / NKECTL_CAPI_PROVISIONED_IMAGE "+
+		"--controller-image / --provisioned-provider-image or NKECTL_CONTROLLER_IMAGE / NKECTL_CAPI_PROVISIONED_IMAGE "+
 		"(for Docker Hub, write docker.io/<org>/<name>)",
 		image, err, strings.TrimSpace(out))
 }

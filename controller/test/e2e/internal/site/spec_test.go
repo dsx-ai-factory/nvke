@@ -279,7 +279,7 @@ func TestBootstrap(t *testing.T) {
 		}
 	}
 	boot := s.cmd(t, "bootstrap site")
-	for _, want := range []string{"sudo -n -i sh -c ", "--disable-mtls", "--kubeconfig-out", "NKECTL_CWE_IMAGE=nvcr.io/nke/cwe:v1.2.3", "NKECTL_CAPI_PROVISIONED_IMAGE="} {
+	for _, want := range []string{"sudo -n -i sh -c ", "--disable-mtls", "--kubeconfig-out", "NKECTL_CONTROLLER_IMAGE=nvcr.io/nke/cwe:v1.2.3", "NKECTL_CWE_IMAGE=nvcr.io/nke/cwe:v1.2.3", "NKECTL_CAPI_PROVISIONED_IMAGE="} {
 		if !strings.Contains(boot, want) {
 			t.Errorf("bootstrap site lacks %s: %s", want, boot)
 		}

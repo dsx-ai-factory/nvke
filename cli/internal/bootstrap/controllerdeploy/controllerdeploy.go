@@ -30,6 +30,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"text/template"
@@ -163,7 +164,7 @@ const defaultTenantKubeconfigTimeout = 2 * time.Minute
 // Config describes a CWE deployment.
 type Config struct {
 	// CWEImage is the image reference to deploy. Defaults to nke-controller:latest,
-	// the local build's tag, from the bootstrap manifest. NKECTL_CWE_IMAGE
+	// the local build's tag, from the bootstrap manifest. NKECTL_CONTROLLER_IMAGE
 	// overrides it, for example with the image .github/workflows/image-nvcr.yml
 	// publishes.
 	CWEImage string
@@ -255,7 +256,7 @@ type Config struct {
 // bootstrapengine.DefaultConfig's env-driven shape.
 func DefaultConfig() Config {
 	return Config{
-		CWEImage: envOr("NKECTL_CWE_IMAGE", defaultImage(manifest.ComponentController, manifest.ImageController)),
+		CWEImage: envOr("NKECTL_CONTROLLER_IMAGE", defaultImage(manifest.ComponentController, manifest.ImageController)),
 		// No cluster-name variable of its own: the bootstrap cluster has one
 		// name, NKECTL_BOOTSTRAP_CLUSTER_NAME, and SPIRE is told that one.
 		// Callers set SPIFFEClusterName; an empty trust domain is derived from
@@ -263,15 +264,61 @@ func DefaultConfig() Config {
 		SPIFFETrustDomain: os.Getenv("NKECTL_SPIFFE_TRUST_DOMAIN"),
 
 		ProvisionedProviderImage: envOr("NKECTL_CAPI_PROVISIONED_IMAGE", defaultImage(manifest.ComponentProvisioned, manifest.ImageManager)),
-		CWEPort:                  envPort("NKECTL_CWE_PORT", DefaultCWEPort),
+		CWEPort:                  envPort("NKECTL_CONTROLLER_PORT", DefaultCWEPort),
 
-		HelmTimeout:  envDuration("NKECTL_CWE_HELM_TIMEOUT", 5*time.Minute),
-		ReadyTimeout: envDuration("NKECTL_CWE_READY_TIMEOUT", 5*time.Minute),
+		HelmTimeout:  envDuration("NKECTL_CONTROLLER_HELM_TIMEOUT", 5*time.Minute),
+		ReadyTimeout: envDuration("NKECTL_CONTROLLER_READY_TIMEOUT", 5*time.Minute),
 
-		TemporalChartRef:  os.Getenv("NKECTL_CWE_TEMPORAL_CHART"),
-		SPIREChartRef:     os.Getenv("NKECTL_CWE_SPIRE_CHART"),
-		SPIRECRDsChartRef: os.Getenv("NKECTL_CWE_SPIRE_CRDS_CHART"),
+		TemporalChartRef:  getenv("NKECTL_CONTROLLER_TEMPORAL_CHART"),
+		SPIREChartRef:     getenv("NKECTL_CONTROLLER_SPIRE_CHART"),
+		SPIRECRDsChartRef: getenv("NKECTL_CONTROLLER_SPIRE_CRDS_CHART"),
 	}
+}
+
+// renamedSettings maps each setting named for the controller to the name it
+// had while the controller was called CWE. The old name is still read when the
+// new one is unset, for one release, and DeprecatedSettings reports it.
+var renamedSettings = map[string]string{
+	"NKECTL_CONTROLLER_IMAGE":            "NKECTL_CWE_IMAGE",
+	"NKECTL_CONTROLLER_PORT":             "NKECTL_CWE_PORT",
+	"NKECTL_CONTROLLER_HELM_TIMEOUT":     "NKECTL_CWE_HELM_TIMEOUT",
+	"NKECTL_CONTROLLER_READY_TIMEOUT":    "NKECTL_CWE_READY_TIMEOUT",
+	"NKECTL_CONTROLLER_TEMPORAL_CHART":   "NKECTL_CWE_TEMPORAL_CHART",
+	"NKECTL_CONTROLLER_SPIRE_CHART":      "NKECTL_CWE_SPIRE_CHART",
+	"NKECTL_CONTROLLER_SPIRE_CRDS_CHART": "NKECTL_CWE_SPIRE_CRDS_CHART",
+}
+
+// RenamedSetting is an old setting name that is set while its replacement is
+// not.
+type RenamedSetting struct {
+	Old, New string
+}
+
+// DeprecatedSettings returns, sorted by old name, every old NKECTL_CWE_*
+// setting DefaultConfig reads because its NKECTL_CONTROLLER_* replacement is
+// unset. The caller warns about each; this package has no logger of its own at
+// the point DefaultConfig runs.
+func DeprecatedSettings() []RenamedSetting {
+	var found []RenamedSetting
+	for name, old := range renamedSettings {
+		if os.Getenv(name) == "" && os.Getenv(old) != "" {
+			found = append(found, RenamedSetting{Old: old, New: name})
+		}
+	}
+	sort.Slice(found, func(i, j int) bool { return found[i].Old < found[j].Old })
+	return found
+}
+
+// getenv returns the setting's value, or, when it is unset or empty, the value
+// of the name it replaced.
+func getenv(name string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	if old, ok := renamedSettings[name]; ok {
+		return os.Getenv(old)
+	}
+	return ""
 }
 
 // CommandRunner is the seam every helm/kubectl invocation goes through, so
@@ -708,7 +755,7 @@ func randomPassword() (string, error) {
 }
 
 func envDuration(key string, fallback time.Duration) time.Duration {
-	v := os.Getenv(key)
+	v := getenv(key)
 	if v == "" {
 		return fallback
 	}
@@ -720,7 +767,7 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 }
 
 func envPort(key string, fallback int32) int32 {
-	value := os.Getenv(key)
+	value := getenv(key)
 	if value == "" {
 		return fallback
 	}
@@ -744,10 +791,9 @@ func spireServiceHost() string {
 	return spireReleaseName + "-server." + spireNamespace + ".svc.cluster.local"
 }
 
-// envOr returns the environment variable's value, or fallback when it is unset
-// or empty.
+// envOr returns the setting's value, or fallback when it is unset or empty.
 func envOr(name, fallback string) string {
-	if v := os.Getenv(name); v != "" {
+	if v := getenv(name); v != "" {
 		return v
 	}
 	return fallback

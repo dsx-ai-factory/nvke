@@ -185,9 +185,17 @@ ensure-capd-image:
 # workspace vendor tree.
 CAPI_PROVISIONED_IMAGE ?= cluster-api-provider-provisioned:latest
 # The tags below are the defaults `bootstrap site` uses when neither the image
-# flags nor NKECTL_CWE_IMAGE / NKECTL_CAPI_PROVISIONED_IMAGE name an image; the
+# flags nor NKECTL_CONTROLLER_IMAGE / NKECTL_CAPI_PROVISIONED_IMAGE name an image; the
 # bootstrap manifest pins them.
-CWE_IMAGE ?= nke-controller:latest
+# CWE_IMAGE is the old name for CONTROLLER_IMAGE. It is still read, with a
+# warning, when CONTROLLER_IMAGE is unset, for one release.
+ifneq ($(CWE_IMAGE),)
+ifeq ($(CONTROLLER_IMAGE),)
+$(warning CWE_IMAGE is deprecated and will be removed in a future release; set CONTROLLER_IMAGE instead)
+override CONTROLLER_IMAGE := $(CWE_IMAGE)
+endif
+endif
+CONTROLLER_IMAGE ?= nke-controller:latest
 
 # Set by cli/e2e/bootstrap/run.sh to point the images' Docker Hub bases at a
 # mirror; see dockerhub_build_args in controller/hack/backend-e2e-lib.sh.
@@ -200,12 +208,12 @@ ensure-provisioned-provider-image:
 
 # The controller image records the commit it was built from; the Dockerfile
 # defaults both to v0.0.0 otherwise.
-CWE_IMAGE_BUILD_ARGS = --build-arg BUILD_VERSION=$(NKECTL_VERSION) --build-arg GIT_VERSION=$(NKECTL_COMMIT)
+CONTROLLER_IMAGE_BUILD_ARGS = --build-arg BUILD_VERSION=$(NKECTL_VERSION) --build-arg GIT_VERSION=$(NKECTL_COMMIT)
 
 # `images` always rebuilds. An `ensure-*` target keeps a stale image after a
 # `git pull`; this target does not. BuildKit's cache keeps a no-op rebuild cheap.
 images: ## Build the two images `bootstrap site` side-loads by default.
-	nerdctl build -t $(CWE_IMAGE) $(CWE_IMAGE_BUILD_ARGS) $(DOCKERHUB_MIRROR_BUILD_ARGS) -f ../controller/Dockerfile ..
+	nerdctl build -t $(CONTROLLER_IMAGE) $(CONTROLLER_IMAGE_BUILD_ARGS) $(DOCKERHUB_MIRROR_BUILD_ARGS) -f ../controller/Dockerfile ..
 	nerdctl build -t $(CAPI_PROVISIONED_IMAGE) $(DOCKERHUB_MIRROR_BUILD_ARGS) -f ../cluster-api-provider-provisioned/Dockerfile ..
 
 nodes-up: ensure-capd-image

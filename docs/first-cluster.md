@@ -295,7 +295,7 @@ bootstrap side-loads them by default. To use images you pushed to a registry
 instead, name them:
 
 ```bash
-export NKECTL_CWE_IMAGE=<nke-controller image>
+export NKECTL_CONTROLLER_IMAGE=<nke-controller image>
 export NKECTL_CAPI_PROVISIONED_IMAGE=<provisioned provider image>
 ```
 
@@ -319,8 +319,8 @@ the listed images into a local or private registry. To change where they come
 from:
 
 - `NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR=<host>` pulls the Docker Hub images from a mirror.
-- `NKECTL_CWE_TEMPORAL_CHART`, `NKECTL_CWE_SPIRE_CHART` and
-  `NKECTL_CWE_SPIRE_CRDS_CHART` take an OCI reference or a local path.
+- `NKECTL_CONTROLLER_TEMPORAL_CHART`, `NKECTL_CONTROLLER_SPIRE_CHART` and
+  `NKECTL_CONTROLLER_SPIRE_CRDS_CHART` take an OCI reference or a local path.
 
 Images from `ghcr.io`, `registry.k8s.io` and `cgr.dev` come from those
 registries. Cluster API and cert-manager come from `github.com` through

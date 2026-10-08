@@ -144,7 +144,7 @@ func startFakeCWEAPIWithNodes(t *testing.T, provisioned bool, total, joined int)
 	if err != nil {
 		t.Fatalf("parsing the test server address %q: %v", srv.URL, err)
 	}
-	t.Setenv("NKECTL_CWE_PORT", port)
+	t.Setenv("NKECTL_CONTROLLER_PORT", port)
 }
 
 // fakeBootstrapRunner is a scripted bootstrapengine.CommandRunner so
@@ -466,7 +466,7 @@ func runtimeOnPath(name string) (string, error) { return "/usr/local/bin/" + nam
 // about something else does not fail on one of them.
 func setBootstrapEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("NKECTL_CWE_IMAGE", "nvcr.io/org/controller:edge")
+	t.Setenv("NKECTL_CONTROLLER_IMAGE", "nvcr.io/org/controller:edge")
 	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "cluster-api-provider-provisioned:latest")
 }
 
@@ -609,6 +609,7 @@ func TestBootstrapSiteRejectsBootstrapProviderFlag(t *testing.T) {
 // TestRunBootstrapSiteDefaultsImagesToTheLocalBuild confirms the bootstrap
 // side-loads the local build's tags when neither image variable is set.
 func TestRunBootstrapSiteDefaultsImagesToTheLocalBuild(t *testing.T) {
+	t.Setenv("NKECTL_CONTROLLER_IMAGE", "")
 	t.Setenv("NKECTL_CWE_IMAGE", "")
 	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "")
 	startFakeCWEAPI(t, true)
@@ -638,7 +639,7 @@ func TestRunBootstrapSiteDefaultsImagesToTheLocalBuild(t *testing.T) {
 // TestRunBootstrapSiteUsesTheImageFlags drives the two flags through the
 // command: the images they name are the ones the bootstrap loads.
 func TestRunBootstrapSiteUsesTheImageFlags(t *testing.T) {
-	t.Setenv("NKECTL_CWE_IMAGE", "env.example/nke-controller:env")
+	t.Setenv("NKECTL_CONTROLLER_IMAGE", "env.example/nke-controller:env")
 	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "env.example/provisioned:env")
 	startFakeCWEAPI(t, true)
 
@@ -690,7 +691,7 @@ func TestEnsureImageAvailableRefusesToPullAHostlessRef(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for a local build that is not in the store")
 	}
-	for _, want := range []string{"make -C cli images", "--controller-image", "NKECTL_CWE_IMAGE", "docker.io/<org>/<name>", "no such image"} {
+	for _, want := range []string{"make -C cli images", "--controller-image", "NKECTL_CONTROLLER_IMAGE", "docker.io/<org>/<name>", "no such image"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
 		}
@@ -703,6 +704,7 @@ func TestEnsureImageAvailableRefusesToPullAHostlessRef(t *testing.T) {
 // TestRunBootstrapSiteRefusesMissingLocalImageBeforeCreate: with the default
 // images and no local build, the command fails before any cluster is built.
 func TestRunBootstrapSiteRefusesMissingLocalImageBeforeCreate(t *testing.T) {
+	t.Setenv("NKECTL_CONTROLLER_IMAGE", "")
 	t.Setenv("NKECTL_CWE_IMAGE", "")
 	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "")
 
@@ -725,7 +727,7 @@ func TestRunBootstrapSiteRefusesMissingLocalImageBeforeCreate(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error when the default local image is not in the store")
 	}
-	for _, want := range []string{"nke-controller:latest", "make -C cli images", "--controller-image", "NKECTL_CWE_IMAGE"} {
+	for _, want := range []string{"nke-controller:latest", "make -C cli images", "--controller-image", "NKECTL_CONTROLLER_IMAGE"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
 		}
@@ -745,7 +747,7 @@ func TestMakefileImageTagsMatchTheManifest(t *testing.T) {
 	}
 	m := manifest.Load()
 	for _, tc := range []struct{ variable, component, image string }{
-		{"CWE_IMAGE", manifest.ComponentController, manifest.ImageController},
+		{"CONTROLLER_IMAGE", manifest.ComponentController, manifest.ImageController},
 		{"CAPI_PROVISIONED_IMAGE", manifest.ComponentProvisioned, manifest.ImageManager},
 	} {
 		re := regexp.MustCompile(`(?m)^` + tc.variable + `\s*\?=\s*(\S+)\s*$`)
@@ -757,6 +759,48 @@ func TestMakefileImageTagsMatchTheManifest(t *testing.T) {
 		if got := string(match[1]); got != want {
 			t.Errorf("cli/Makefile %s = %q, manifest says %q", tc.variable, got, want)
 		}
+	}
+}
+
+// TestMakefileControllerImageFallsBackToTheOldName drives `make -n images`:
+// CONTROLLER_IMAGE wins, CWE_IMAGE is used with a warning when
+// CONTROLLER_IMAGE is unset or empty, from the environment or the command
+// line, and neither gives the manifest default.
+func TestMakefileControllerImageFallsBackToTheOldName(t *testing.T) {
+	makeBin, err := exec.LookPath("make")
+	if err != nil {
+		t.Skip("make is not on PATH")
+	}
+	const warning = "CWE_IMAGE is deprecated"
+	for _, tc := range []struct {
+		desc      string
+		env, args []string
+		wantTag   string
+		wantWarn  bool
+	}{
+		{"neither", nil, nil, "nke-controller:latest", false},
+		{"new name", nil, []string{"CONTROLLER_IMAGE=new:1"}, "new:1", false},
+		{"old name from the environment", []string{"CWE_IMAGE=old:1"}, nil, "old:1", true},
+		{"old name on the command line", nil, []string{"CWE_IMAGE=old:1"}, "old:1", true},
+		{"both names", []string{"CWE_IMAGE=old:1"}, []string{"CONTROLLER_IMAGE=new:1"}, "new:1", false},
+		{"old name with the new one empty on the command line", []string{"CWE_IMAGE=old:1"}, []string{"CONTROLLER_IMAGE="}, "old:1", true},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			cmd := exec.Command(makeBin, append([]string{"-n", "-C", filepath.Join("..", ".."), "images"}, tc.args...)...)
+			cmd.Env = append(slices.DeleteFunc(os.Environ(), func(kv string) bool {
+				return strings.HasPrefix(kv, "CWE_IMAGE=") || strings.HasPrefix(kv, "CONTROLLER_IMAGE=")
+			}), tc.env...)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("make -n images: %v\n%s", err, out)
+			}
+			if !strings.Contains(string(out), "nerdctl build -t "+tc.wantTag+" ") {
+				t.Errorf("controller image is not tagged %s:\n%s", tc.wantTag, out)
+			}
+			if got := strings.Contains(string(out), warning); got != tc.wantWarn {
+				t.Errorf("deprecation warning printed = %v, want %v:\n%s", got, tc.wantWarn, out)
+			}
+		})
 	}
 }
 
@@ -894,7 +938,7 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 	t.Run("a real failure writes a bundle", func(t *testing.T) {
 		// Short, so the suite does not sit through the default five minutes
 		// waiting for a CWE that will never report healthy.
-		t.Setenv("NKECTL_CWE_READY_TIMEOUT", "1s")
+		t.Setenv("NKECTL_CONTROLLER_READY_TIMEOUT", "1s")
 		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
 		// CWE never reports healthy: the failure this exists for.
 		err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
@@ -1487,7 +1531,7 @@ func TestMakeControlPlaneSchedulableBuildsTheClientFromTheKubeconfig(t *testing.
 // TestCWEDeployConfigImagePrecedence: a flag wins over its variable, and a
 // variable wins over the manifest default.
 func TestCWEDeployConfigImagePrecedence(t *testing.T) {
-	t.Setenv("NKECTL_CWE_IMAGE", "env.example/nke-controller:env")
+	t.Setenv("NKECTL_CONTROLLER_IMAGE", "env.example/nke-controller:env")
 	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "env.example/provisioned:env")
 
 	cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "c", false, "flag.example/nke-controller:flag", "")
@@ -1510,5 +1554,60 @@ func TestCWEDeployConfigImagePrecedence(t *testing.T) {
 	}
 	if cfg.ProvisionedProviderImage != "flag.example/provisioned:flag" {
 		t.Errorf("ProvisionedProviderImage = %q, want the flag", cfg.ProvisionedProviderImage)
+	}
+}
+
+// TestControllerImageOrder pins the whole order for the
+// controller image: the flag, then NKECTL_CONTROLLER_IMAGE, then the old
+// NKECTL_CWE_IMAGE, then the manifest default.
+func TestControllerImageOrder(t *testing.T) {
+	for _, tc := range []struct {
+		desc, flag, newV, oldV, want string
+	}{
+		{"flag over both settings", "flag.example/c:flag", "new.example/c:new", "old.example/c:old", "flag.example/c:flag"},
+		{"new setting over old", "", "new.example/c:new", "old.example/c:old", "new.example/c:new"},
+		{"old setting alone", "", "", "old.example/c:old", "old.example/c:old"},
+		{"neither", "", "", "", "nke-controller:latest"},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Setenv("NKECTL_CONTROLLER_IMAGE", tc.newV)
+			t.Setenv("NKECTL_CWE_IMAGE", tc.oldV)
+			cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "c", false, tc.flag, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.CWEImage != tc.want {
+				t.Errorf("CWEImage = %q, want %q", cfg.CWEImage, tc.want)
+			}
+		})
+	}
+}
+
+// TestRunBootstrapSiteWarnsAboutOldSettingNames: an old NKECTL_CWE_* name set
+// without its replacement is logged as a warning naming the replacement, before
+// anything else runs; a setting under its new name is not.
+func TestRunBootstrapSiteWarnsAboutOldSettingNames(t *testing.T) {
+	t.Setenv("NKECTL_CONTROLLER_IMAGE", "")
+	t.Setenv("NKECTL_CWE_IMAGE", "old.example/c:old")
+	t.Setenv("NKECTL_CONTROLLER_HELM_TIMEOUT", "2m")
+	t.Setenv("NKECTL_CWE_HELM_TIMEOUT", "")
+
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	// A missing site spec stops the command right after the warnings.
+	_ = runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
+		siteSpec: filepath.Join(t.TempDir(), "missing.yaml"),
+	})
+
+	logged := buf.String()
+	if !strings.Contains(logged, "level=WARN") ||
+		!strings.Contains(logged, "NKECTL_CWE_IMAGE is deprecated and will be removed in a future release; set NKECTL_CONTROLLER_IMAGE instead") {
+		t.Errorf("no deprecation warning for NKECTL_CWE_IMAGE in:\n%s", logged)
+	}
+	if strings.Contains(logged, "HELM_TIMEOUT") {
+		t.Errorf("warned about a setting given under its new name:\n%s", logged)
 	}
 }

@@ -42,7 +42,7 @@ nkectl version
 # Bootstrap a new site controller with the images `make -C cli images` built
 nkectl bootstrap site -f sitespec.yaml
 # ... or with images you pushed to a registry
-NKECTL_CWE_IMAGE=nvcr.io/<org>/nke-controller:edge \
+NKECTL_CONTROLLER_IMAGE=nvcr.io/<org>/nke-controller:edge \
 NKECTL_CAPI_PROVISIONED_IMAGE=nvcr.io/<org>/cluster-api-provider-provisioned:edge \
   nkectl bootstrap site -f sitespec.yaml
 nkectl bootstrap site -f sitespec.yaml --dry-run              # validate only
@@ -199,14 +199,21 @@ metadata.
 | Variable | Default | Purpose |
 |---|---|---|
 | `NKECTL_BOOTSTRAP_CLUSTER_NAME` | `nkectl-bootstrap` | Name of the ephemeral cluster |
-| `NKECTL_CWE_IMAGE` | `nke-controller:latest` | CWE image to deploy. A reference without a registry is side-loaded from the local image store; `make -C cli images` builds the default with nerdctl. For Docker Hub, write `docker.io/<org>/<name>`. `--controller-image` overrides it for one run. |
+| `NKECTL_CONTROLLER_IMAGE` | `nke-controller:latest` | Controller image to deploy. A reference without a registry is side-loaded from the local image store; `make -C cli images` builds the default with nerdctl. For Docker Hub, write `docker.io/<org>/<name>`. `--controller-image` overrides it for one run. |
 | `NKECTL_CAPI_PROVISIONED_IMAGE` | `cluster-api-provider-provisioned:latest` | Provisioned-provider image, same semantics. `--provisioned-provider-image` overrides it for one run. |
-| `NKECTL_CWE_TEMPORAL_CHART` | `temporal` from `https://go.temporal.io/helm-charts` | Temporal chart, as an OCI reference or a local path. Set, it replaces the repo lookup. |
-| `NKECTL_CWE_SPIRE_CHART` | `spire` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE chart, same semantics |
-| `NKECTL_CWE_SPIRE_CRDS_CHART` | `spire-crds` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE CRDs chart, same semantics |
-| `NKECTL_CWE_HELM_TIMEOUT` | `5m` | Bounds each `helm upgrade --install --wait` |
-| `NKECTL_CWE_READY_TIMEOUT` | `5m` | Bounds the wait for CWE's `/readyz` |
+| `NKECTL_CONTROLLER_PORT` | `30080` | Port of the controller API: its Service, NodePort, Kind host mapping and the address `nkectl` calls |
+| `NKECTL_CONTROLLER_TEMPORAL_CHART` | `temporal` from `https://go.temporal.io/helm-charts` | Temporal chart, as an OCI reference or a local path. Set, it replaces the repo lookup. |
+| `NKECTL_CONTROLLER_SPIRE_CHART` | `spire` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE chart, same semantics |
+| `NKECTL_CONTROLLER_SPIRE_CRDS_CHART` | `spire-crds` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE CRDs chart, same semantics |
+| `NKECTL_CONTROLLER_HELM_TIMEOUT` | `5m` | Bounds each `helm upgrade --install --wait` |
+| `NKECTL_CONTROLLER_READY_TIMEOUT` | `5m` | Bounds the wait for the controller's `/readyz` |
 | `NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR` | `cluster-diagnostics` | Where a failed bootstrap writes a cluster dump before tearing the cluster down (`--diagnostics-dir`) |
+
+Each `NKECTL_CONTROLLER_*` variable above was named `NKECTL_CWE_*` before the
+controller was renamed. The old names still work for one release: when only
+the old name is set, `nkectl` uses it and logs a warning naming the
+replacement. When both are set, the new name wins. Likewise `make -C cli
+images` reads `CONTROLLER_IMAGE`, and still reads `CWE_IMAGE` with a warning.
 
 The controller and Postgres charts are carried in the binary and are never
 pulled, so they have no variable. For the three that are pulled, the chart

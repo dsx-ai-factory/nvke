@@ -12,7 +12,7 @@
 # Two kinds of image entries: images the bootstrap pulls, with a digest; and
 # the two images you build, with the default tag `make -C cli images` gives
 # them and no digest. The --controller-image and --provisioned-provider-image flags,
-# or NKECTL_CWE_IMAGE and NKECTL_CAPI_PROVISIONED_IMAGE, replace those two.
+# or NKECTL_CONTROLLER_IMAGE and NKECTL_CAPI_PROVISIONED_IMAGE, replace those two.
 #
 # Not listed:
 # - The controller chart, the Postgres chart and the provisioned provider's
@@ -97,7 +97,7 @@ components:
 
   # Built by you from controller/Dockerfile. The ref below is the default:
   # the tag `make -C cli images` builds, side-loaded from the local image
-  # store. --controller-image or NKECTL_CWE_IMAGE overrides it. The controller chart ships inside
+  # store. --controller-image or NKECTL_CONTROLLER_IMAGE overrides it. The controller chart ships inside
   # nkectl, so there is no chart entry.
   controller:
     images:
