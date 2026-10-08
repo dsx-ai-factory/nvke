@@ -202,9 +202,10 @@ re-run. If a half-created cluster remains, delete it with the command above.
 
 The controller or provider image is in a registry that needs a credential, and
 the bootstrap host does not hold a valid one for it, or the image reference is
-wrong. Make sure the correct token is available to `nerdctl` on the bootstrap
-host. `REGISTRY_API_KEY` does not apply here: this pull uses the credentials
-`nerdctl` already holds. Confirm by hand before re-running bootstrap:
+wrong. The pull uses the credential `nerdctl login` stored for the user running
+bootstrap, so that user must have logged in to the registry with the correct
+token, such as an NGC API key for `nvcr.io`. If bootstrap runs under `sudo`,
+that is root's login, not yours. Confirm by hand before re-running bootstrap:
 
 ```bash
 nerdctl pull <image>
