@@ -167,13 +167,15 @@ jobs:
     # Named for what the run qualifies, so the shape is readable from the
     # checks list without opening the run. forge is hardcoded: a second
     # infrastructure provider gets its own job rather than a parameter on this
-    # one.
+    # one. The fallbacks are what the run itself falls back to, not what the
+    # dispatch defaults to, so a labelled pull request is labelled with the
+    # architecture it actually takes.
     #
     # The Ubuntu release is absent: it exists only inside the OS image URL,
     # and job names are evaluated before any step, with no expression function
     # that can extract it.
     name: >-
-      forge-${{ inputs.gpu || vars.SITE_E2E_GPU || 'cpu' }}-${{ inputs.arch || vars.SITE_E2E_ARCH || 'arm64' }}-kube-${{ inputs.kubernetes-version || vars.SITE_E2E_KUBERNETES_VERSION || 'default' }}
+      forge-${{ inputs.gpu || vars.SITE_E2E_GPU || 'cpu' }}-${{ inputs.arch || vars.SITE_E2E_ARCH || 'amd64' }}-kube-${{ inputs.kubernetes-version || vars.SITE_E2E_KUBERNETES_VERSION || 'default' }}
     # The ARC fleet on the RelEng EKS cluster: 16 vCPU / 64 GiB with dind, on
     # a runner image built to stand in for ubuntu-latest. In the corpnet VPC,
     # which is what makes the jump host reachable at all. Capped at two

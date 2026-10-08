@@ -154,6 +154,11 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		session infra.Session
 		cluster site.Cluster
 		failed  bool
+		// deployed records that the install returned without error. The
+		// controller tag is set before Deploy runs, so it cannot stand in for
+		// this: after a failed install it is non-empty and the CWE probe would
+		// poll its full timeout against a stack that was never installed.
+		deployed bool
 	)
 
 	BeforeAll(func() {
@@ -173,6 +178,13 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		capabilities = siteCapabilities(expectSucceed(runCapabilities()))
 		name := expectSucceed(newSiteName())
 		spec = expectSucceed(siteSpec(cfg, name))
+		// Every full-stage input check lives in newStack: the deploy path's
+		// controller name, the tag it is exported from, the Forge API key and
+		// the registry credentials. Resolved here so a misconfigured run fails
+		// before a machine is provisioned rather than twenty minutes into one.
+		if siteStage == siteStageFull {
+			stack, secrets = expectSucceed2(newStack(cfg, capabilities[infra.CapabilityArch]))
+		}
 	})
 
 	AfterEach(func() { failed = failed || CurrentSpecReport().Failed() })
@@ -243,7 +255,6 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			if cluster.Kubeconfig == "" || session == nil {
 				Skip("the site controller was not bootstrapped")
 			}
-			stack, secrets = expectSucceed2(newStack(cfg, capabilities[infra.CapabilityArch]))
 			err := stack.Deploy(ctx, session, site.DeployTarget{
 				Node:        node,
 				SiteName:    spec.Name,
@@ -254,21 +265,22 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 				collectSiteDiagnostics(ctx, session, secrets...)
 			}
 			Expect(err).NotTo(HaveOccurred(), "should install the NKE stack")
+			deployed = true
 		}, NodeTimeout(1*time.Hour))
 
 		It("reports its CWE version", func(ctx SpecContext) {
-			if cluster.Kubeconfig == "" {
-				Skip("the site controller was not bootstrapped")
+			// ContinueOnFailure reaches this spec after a failed bootstrap or
+			// a failed install. Probing either would poll the whole readiness
+			// timeout against a cluster with no CWE on it, and teardown needs
+			// those minutes to release the node.
+			if !deployed {
+				Skip("the stack was not deployed")
 			}
 			version, err := site.ProbeCWE(ctx, cluster.Kubeconfig, 0, 0)
 			Expect(err).NotTo(HaveOccurred(), "CWE should become healthy")
 			GinkgoLogr.Info("site controller", "cweVersion", version)
-			// Empty when the deploy never ran, which ContinueOnFailure allows:
-			// a bootstrap failure still reaches this spec.
-			if deployed := stack.Controller.Tag; deployed != "" {
-				Expect(version).To(Equal(deployed),
-					"CWE should report the version the run deployed")
-			}
+			Expect(version).To(Equal(stack.Controller.Tag),
+				"CWE should report the version the run deployed")
 		}, NodeTimeout(15*time.Minute))
 	}
 
