@@ -1162,7 +1162,7 @@ func (s *NodeAgentServer) installCNIPlugin(req *pb.InstallCNIPluginRequest) erro
 		}
 		return s.installCalico(version, req.GetTigeraOperatorManifest(), req.GetTigeraCustomResourceManifest())
 	default:
-		slog.Info("unknown or no CniPlugin specified, will install default calico/tigera version", "version", DefaultTigeraVersion)
+		slog.Info("unknown or no CniPlugin specified, will install default calico/tigera version", "version", nkeutils.VersionString(DefaultTigeraVersion))
 		return s.installCalico(DefaultTigeraVersion, "", "")
 	}
 }
@@ -2096,7 +2096,7 @@ func (s *NodeAgentServer) InstallBundle(
 		return nil, fmt.Errorf("failed to parse version: %v", err)
 	}
 
-	slog.Info("[DEBUG] attempt to fetch bundle from index", "IDX", s.BundleIndexFile, "Name", req.Name, "Version", version, "ARCH", s.NodeStatus.Architecture)
+	slog.Info("[DEBUG] attempt to fetch bundle from index", "IDX", s.BundleIndexFile, "Name", req.Name, "Version", nkeutils.VersionString(version), "ARCH", s.NodeStatus.Architecture)
 	bundle, err := nkeutils.FetchBundleFromIndex(ctx, s.BundleServerURL, s.BundleIndexFile, req.Name, version, s.NodeStatus.Architecture)
 	if err != nil {
 		return nil, err
@@ -2144,7 +2144,7 @@ func (s *NodeAgentServer) processBundleInstall(
 
 	out, err := nkeutils.InstallBundle(bundle, s.Runner, s.BundleSource)
 	if err != nil {
-		slog.Error("failed to install bundle", "name", bundle.Name, "version", bundle.Version, "err", err)
+		slog.Error("failed to install bundle", "name", bundle.Name, "version", nkeutils.VersionString(bundle.Version), "err", err)
 		bundleStatus.Status = ErrorStatus
 		bundleStatus.Error = fmt.Sprintf("failed to install %s bundle version %s @ %s: %v", bundle.Name, bundle.Version, time.Now().Format(time.RFC3339), err)
 		bundleStatus.Output = out
@@ -2156,7 +2156,7 @@ func (s *NodeAgentServer) processBundleInstall(
 	}
 
 	bundleStatus.Status = SuccessStatus
-	slog.Info("bundle successfully installed", "name", bundle.Name, "version", bundle.Version)
+	slog.Info("bundle successfully installed", "name", bundle.Name, "version", nkeutils.VersionString(bundle.Version))
 
 	return nil
 }
@@ -2239,11 +2239,11 @@ func (s *NodeAgentServer) InstallCollection(ctx context.Context, req *pb.Install
 		}
 
 		for _, bundleReq := range profile.Bundles {
-			slog.InfoContext(ctx, "Adding bundle", "name", bundleReq.Name, "version", bundleReq.Version, "request_id", requestID)
+			slog.InfoContext(ctx, "Adding bundle", "name", bundleReq.Name, "version", nkeutils.VersionString(bundleReq.Version), "request_id", requestID)
 
 			bundle, ok := index.Find(bundleReq.Name, bundleReq.Version, s.NodeStatus.Architecture)
 			if !ok {
-				slog.Error("bundle not found in index", "name", bundleReq.Name, "version", bundleReq.Version, "architecture", s.NodeStatus.Architecture)
+				slog.Error("bundle not found in index", "name", bundleReq.Name, "version", nkeutils.VersionString(bundleReq.Version), "architecture", s.NodeStatus.Architecture)
 				return nil, status.Errorf(codes.Internal, "bundle %s version %s not found in index", bundleReq.Name, bundleReq.Version)
 			}
 

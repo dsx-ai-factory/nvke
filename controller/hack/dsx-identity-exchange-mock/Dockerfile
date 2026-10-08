@@ -3,7 +3,7 @@
 
 ARG BASE_REGISTRY=docker.io
 
-FROM ${BASE_REGISTRY}/golang:1.27.1 AS builder
+FROM ${BASE_REGISTRY}/golang:1.27.2 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /workspace

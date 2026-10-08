@@ -179,6 +179,15 @@ type Entry struct {
 	Version *semver.Version `json:"version"`
 }
 
+// VersionString returns v as a string, or "" when v is nil, so a log line
+// cannot panic on a bundle with no version.
+func VersionString(v *semver.Version) string {
+	if v == nil {
+		return ""
+	}
+	return v.String()
+}
+
 // Component represents a component with multiple entries
 type Component struct {
 	Entries []Entry `json:"entries"`
@@ -207,14 +216,14 @@ func (idx Index) Find(name string, version *semver.Version, architecture string)
 		archLabels = ArmArchLabels
 	}
 
-	slog.Info("searching for entries that match architecture", "name", bundle.Name, "version", bundle.Version, "arch", architecture, "archLabels", archLabels)
+	slog.Info("searching for entries that match architecture", "name", bundle.Name, "version", VersionString(bundle.Version), "arch", architecture, "archLabels", archLabels)
 
 	for _, p := range comp.Entries {
 		slog.Info("comparing index entry to archlables", "IndexEntry", p, "ArchLabels", archLabels, "Architecture", architecture)
 		if p.Version.Equal(bundle.Version) && slices.Contains(archLabels, p.Arch) {
 			bundle.Path = p.Path
 			found = true
-			slog.Info("bundle found in index", "name", bundle.Name, "version", bundle.Version, "arch", architecture, "path", bundle.Path)
+			slog.Info("bundle found in index", "name", bundle.Name, "version", VersionString(bundle.Version), "arch", architecture, "path", bundle.Path)
 			break
 		}
 	}
@@ -360,7 +369,7 @@ func FetchBundleFromIndex(ctx context.Context, bundleServerURL, indexFile, name 
 
 	bundle, found := idx.Find(name, version, architecture)
 	if !found {
-		slog.Error("bundle version not found in index", "bundle", bundle.Name, "version", bundle.Version, "arch", architecture)
+		slog.Error("bundle version not found in index", "bundle", bundle.Name, "version", VersionString(bundle.Version), "arch", architecture)
 		return bundle, fmt.Errorf("%s bundle version %s for arch %s not found in index", bundle.Name, bundle.Version, architecture)
 	}
 
@@ -546,7 +555,7 @@ func downloadAndExtractFromHTTP(b *Bundle) (string, error) {
 func downloadAndExtractFromOCI(ctx context.Context, b *Bundle, ociRegistryURL, arch, osVersion string) (string, error) {
 	slog.Info("pulling bundle from OCI registry",
 		"bundle", b.Name,
-		"version", b.Version,
+		"version", VersionString(b.Version),
 		"registry", ociRegistryURL,
 		"arch", arch,
 		"osVersion", osVersion)
@@ -555,7 +564,7 @@ func downloadAndExtractFromOCI(ctx context.Context, b *Bundle, ociRegistryURL, a
 	if err != nil {
 		slog.Error("failed to pull bundle from OCI registry",
 			"bundle", b.Name,
-			"version", b.Version,
+			"version", VersionString(b.Version),
 			"error", err)
 		return "", fmt.Errorf("failed to pull bundle %s from OCI registry: %w", b.Name, err)
 	}
@@ -589,7 +598,7 @@ func FetchBundleFromOCIRegistry(ctx context.Context, ociRegistryURL, name string
 
 	slog.Info("preparing bundle from OCI registry",
 		"name", name,
-		"version", version,
+		"version", VersionString(version),
 		"ociReference", bundle.OCIReference)
 
 	return bundle, nil

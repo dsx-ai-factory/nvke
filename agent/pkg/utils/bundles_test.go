@@ -634,3 +634,19 @@ func TestFetchBundleFromIndex(t *testing.T) {
 		assert.ErrorContains(t, err, "unable to fetch index")
 	})
 }
+
+func TestVersionString(t *testing.T) {
+	tests := []struct {
+		name    string
+		version *semver.Version
+		want    string
+	}{
+		{name: "nil version", version: nil, want: ""},
+		{name: "parsed version", version: semver.MustParse("1.30.2"), want: "1.30.2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, VersionString(tt.version))
+		})
+	}
+}

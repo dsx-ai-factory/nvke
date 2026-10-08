@@ -6,7 +6,7 @@
 # with all the plugins listed below.
 #
 # See: https://golangci-lint.run/plugins/module-plugins/
-version: v2.13.2
+version: v2.14.0
 plugins:
   - module: "github.com/dsx-ai-factory/cluster-api-provider-nico"
     import: "github.com/dsx-ai-factory/cluster-api-provider-nico/tools/commentpolicy"
