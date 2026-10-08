@@ -20,6 +20,9 @@ bin/
 **/bin/
 release/
 **/release/
+# The root release/ is the release tooling module. go.work lists it, so any
+# image built from the workspace needs it. A nested release/ stays excluded.
+!release
 out/
 **/out/
 agent/build/deb/
