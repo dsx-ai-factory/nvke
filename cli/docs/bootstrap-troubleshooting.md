@@ -172,15 +172,23 @@ check is a plain TCP connect, so it cannot tell a control plane from anything
 else, but a control plane left by an earlier attempt is the usual cause.
 Bootstrap does not provision over one, because encryption is configured
 during `kubeadm init` and a second run cannot adopt a key the host already
-holds. On each listed node:
+holds. On each listed node, first check whether it is a control plane:
 
 ```bash
 ls /etc/kubernetes/manifests    # kube-apiserver.yaml here means a control plane
+```
+
+Reset a node only once you have confirmed it was left by your failed bootstrap:
+it is in your site spec, and `/var/log/nke-agent-audit.log` on it shows requests
+from your earlier attempt. On a control plane node `kubeadm reset` also removes
+its local etcd member, which would disrupt a different cluster running there.
+
+```bash
 sudo kubeadm reset -f
 ```
 
-If nothing on the host is a control plane, check the node list in the site
-spec.
+If a host answering on the port is not from your bootstrap, or nothing on it is
+a control plane, do not reset it. Check the node list in the site spec.
 
 **`<path> already exists and holds the etcd encryption key of an earlier bootstrap`**
 
@@ -278,10 +286,13 @@ The first control plane node never finished `kubeadm init`. In order:
 2. On that node, check `nke-agent` is running and its journal shows the controller
    connecting. No connection at all means the controller cannot reach the node's
    agent port: check the `nodeAgentPort` in the site spec and any firewall.
-3. With SPIFFE enabled, a connection that is refused or reset with a TLS error
-   means attestation failed. Check that the node's TPM endorsement key
-   thumbprint in the site spec matches the hardware, and read
-   `spire-server/*/logs.txt` for the rejected attestation.
+3. A refused connection happens before any TLS handshake, so it is not an
+   attestation failure. Check that `nke-agent` is listening on the agent port
+   and that nothing blocks the route to it. With SPIFFE enabled, a connection
+   that is reset or fails during the TLS handshake means attestation failed.
+   Check that the node's TPM endorsement key thumbprint in the site spec
+   matches the hardware, and read `spire-server/*/logs.txt` for the rejected
+   attestation.
 4. If the agent ran `kubeadm init` and it failed, the kubelet journal on the
    node has the reason. Missing container images on the node and a
    misconfigured container runtime are the usual causes; see
@@ -328,13 +339,18 @@ cluster.
 
 The cluster is built but the controller has not yet written its admin kubeconfig
 Secret. This is a timing problem on a slow control plane. The bootstrap
-cluster is retained. Fetch the kubeconfig yourself and then delete the Kind
-cluster:
+cluster is retained. Fetch the kubeconfig yourself:
 
 ```bash
 kubectl --kubeconfig <bootstrap-kubeconfig> -n nke-system get secret <name>-kubeconfig -o jsonpath='{.data.value}' | base64 -d > <name>.kubeconfig
 chmod 600 <name>.kubeconfig
 ```
+
+Bootstrap saves the encryption key only after it has the kubeconfig, so it has
+not saved it yet. If the site spec enables etcd encryption, save the
+`etcd-encryption-key-*` Secret from `nke-controller` first, using the commands
+in [Bootstrap refuses to start](#bootstrap-refuses-to-start). If you cannot
+save it, keep the bootstrap cluster. Then delete the Kind cluster.
 
 ### The encryption key was not saved
 
