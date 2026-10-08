@@ -223,6 +223,14 @@ step its own `--operation` suffix (for example `example-maintenance-run/renew-2`
 whenever any step, including a renewal or approval, is repeated with otherwise
 unchanged fields.
 
+The rotation demo's manual-T1 collector is narrower: it accepts recent manual
+rows only when their operation hash equals its single configured
+`manual_operation`, so rows written with a different suffix fail with
+`manual_audit_target_or_run_mismatch`. For demo evidence use that exact
+`--operation` value for every row; the per-step suffix above does not apply
+there. Keep the original audit records; do not delete rows or repeat maintenance
+to manufacture matching evidence.
+
 For public certificate evidence, add `--certificate /path/to/public-certificate.pem`
 to `check` and `verify` observations. Maximum input is 1 MiB and 32 certificates.
 Take public certificate-only copies without exporting private keys or kubeconfig
