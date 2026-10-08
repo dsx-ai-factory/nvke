@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"sync/atomic"
@@ -60,15 +61,26 @@ func main() {
 	if err == nil {
 		return
 	}
-	// Cancellation is the operator's own doing, so it reports as one line rather
-	// than as a wrapped "context canceled" from wherever the request gave up.
-	if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
-		fmt.Fprintln(os.Stderr, "nkectl: canceled")
-		if syscall.Signal(caught.Load()) == syscall.SIGTERM {
-			os.Exit(exitSIGTERM)
-		}
-		os.Exit(exitSIGINT)
+	canceled := errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled)
+	os.Exit(reportFailure(os.Stderr, err, canceled, syscall.Signal(caught.Load())))
+}
+
+// reportFailure writes err's report to w and returns the exit code. A
+// cancellation is the operator's own doing, so it reports as one line rather
+// than as a wrapped "context canceled" from wherever the request gave up — but
+// not when the error carries recovery instructions, which the operator needs.
+func reportFailure(w io.Writer, err error, canceled bool, sig syscall.Signal) int {
+	if !canceled {
+		fmt.Fprintln(w, "Error:", err)
+		return exitError
 	}
-	fmt.Fprintln(os.Stderr, "Error:", err)
-	os.Exit(exitError)
+	fmt.Fprintln(w, "nkectl: canceled")
+	var recovery *recoveryError
+	if errors.As(err, &recovery) {
+		fmt.Fprintln(w, "Error:", err)
+	}
+	if sig == syscall.SIGTERM {
+		return exitSIGTERM
+	}
+	return exitSIGINT
 }

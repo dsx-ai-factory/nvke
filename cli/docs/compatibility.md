@@ -65,8 +65,10 @@ process was killed by a signal nkectl does not handle, and the shell reported
 `128 + signum`.
 
 **`130` and `143` do not mean nothing happened.** Interrupting `bootstrap site` part way
-through leaves whatever it had already created. It means nkectl stopped, not
-that it rolled back.
+may leave the site cluster it already created; nkectl does not roll it back.
+Before site-cluster creation has started, nkectl tears down the bootstrap Kind
+cluster unless `--keep-bootstrap-cluster` is set. After it has started, nkectl
+retains the bootstrap cluster for recovery and prints how to recover it.
 
 ## Signals
 

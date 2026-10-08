@@ -382,8 +382,8 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		// the operator does not have, and the error says so instead.
 		var capture *keyCaptureError
 		if errors.As(err, &capture) {
-			return fmt.Errorf("%w (bootstrap cluster %q kept; its kubeconfig is %s)",
-				err, cluster.Name, cluster.KubeconfigPath)
+			return &recoveryError{fmt.Errorf("%w (bootstrap cluster %q kept; its kubeconfig is %s)",
+				err, cluster.Name, cluster.KubeconfigPath)}
 		}
 		// The env prefix is not optional: kind resolves a cluster through the
 		// provider that created it, so without it the command reports the
@@ -391,9 +391,9 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		deleteCommand := fmt.Sprintf(
 			"KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s", cluster.Name,
 		)
-		return fmt.Errorf("%w; site cluster creation has started, so bootstrap cluster %q was retained for recovery "+
+		return &recoveryError{fmt.Errorf("%w; site cluster creation has started, so bootstrap cluster %q was retained for recovery "+
 			"(kubeconfig: %s); delete it after recovery with `%s`",
-			err, cluster.Name, cluster.KubeconfigPath, deleteCommand)
+			err, cluster.Name, cluster.KubeconfigPath, deleteCommand)}
 	}
 	if err == nil && !cweCfg.DisableMTLS {
 		count, dumpErr := dumpSpireBootstrapEntries(
@@ -457,8 +457,8 @@ func makeControlPlaneSchedulable(
 	defer cancel()
 	changed, err := run(untaintCtx, kubeconfigPath, logger)
 	if err != nil {
-		return fmt.Errorf("making the control-plane nodes schedulable: %w; the cluster is up and its kubeconfig is at %s, "+
-			"finish by hand with `%s --kubeconfig %s`", err, kubeconfigPath, untaint.ManualCommand, kubeconfigPath)
+		return &recoveryError{fmt.Errorf("making the control-plane nodes schedulable: %w; the cluster is up and its kubeconfig is at %s, "+
+			"finish by hand with `%s --kubeconfig %s`", err, kubeconfigPath, untaint.ManualCommand, kubeconfigPath)}
 	}
 	logger.Info("control-plane nodes are schedulable", "untainted", len(changed))
 	return nil
@@ -630,6 +630,14 @@ func saveEtcdEncryptionKey(
 // etcdKeyReadTimeout bounds the read of the key Secret. It exists by the time
 // this runs, so this is a bound on a wedged kubectl, not a wait.
 const etcdKeyReadTimeout = 2 * time.Minute
+
+// recoveryError marks a failure whose message tells the operator how to
+// recover. It must reach stderr even when a signal caused the failure, so
+// main prints it instead of the bare cancellation line.
+type recoveryError struct{ err error }
+
+func (e *recoveryError) Error() string { return e.err.Error() }
+func (e *recoveryError) Unwrap() error { return e.err }
 
 // keyCaptureError is a bootstrap that built and encrypted its cluster and then
 // failed to save the key.
