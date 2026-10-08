@@ -7,7 +7,7 @@
 # fern/ artifact, generates a preview with DOCS_FERN_TOKEN, and posts (or
 # updates) a comment on the PR. Secrets are never exposed to untrusted code.
 #
-# Requires: DOCS_FERN_TOKEN organization secret.
+# Requires: FERN_TOKEN organization secret.
 
 name: "Preview Fern Docs: Comment"
 
@@ -47,7 +47,7 @@ jobs:
       - name: Generate preview URL
         id: generate-docs
         env:
-          FERN_TOKEN: ${{ secrets.DOCS_FERN_TOKEN }}
+          FERN_TOKEN: ${{ secrets.FERN_TOKEN }}
           HEAD_REF: ${{ steps.metadata.outputs.head_ref }}
         working-directory: ./fern
         run: |
@@ -63,7 +63,7 @@ jobs:
       - name: Build page links for changed files
         id: page-links
         env:
-          FERN_TOKEN: ${{ secrets.DOCS_FERN_TOKEN }}
+          FERN_TOKEN: ${{ secrets.FERN_TOKEN }}
           PREVIEW_URL: ${{ steps.generate-docs.outputs.preview_url }}
         run: |
           CHANGED_FILES=""
