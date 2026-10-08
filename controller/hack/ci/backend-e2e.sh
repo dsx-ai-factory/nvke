@@ -1286,6 +1286,7 @@ fi
 for controller in \
   "capi-system capi-controller-manager" \
   "capi-kubeadm-control-plane-system capi-kubeadm-control-plane-controller-manager" \
+  "capi-kubeadm-bootstrap-system capi-kubeadm-bootstrap-controller-manager" \
   "capd-system capd-controller-manager"; do
   read -r namespace deployment <<<"${controller}"
   runner_exec kubectl rollout status "deployment/${deployment}" -n "${namespace}" --timeout=5m

@@ -70,6 +70,9 @@ metadata:
 {{- if and .Values.spiffe.jwtExchangeEndpoint (not .Values.spiffe.capiKubeadmControlPlaneManagerSubject) }}
 {{- fail "spiffe.capiKubeadmControlPlaneManagerSubject must be set when spiffe.jwtExchangeEndpoint is set: the exchange may rewrite the kubeadm control-plane manager's sub claim, so the default subject would not authorize it against tenant clusters" }}
 {{- end }}
+{{- if and .Values.spiffe.jwtExchangeEndpoint (not .Values.spiffe.capiKubeadmBootstrapManagerSubject) }}
+{{- fail "spiffe.capiKubeadmBootstrapManagerSubject must be set when spiffe.jwtExchangeEndpoint is set: the exchange may rewrite the kubeadm bootstrap manager's sub claim, so the default subject would not authorize it against tenant clusters" }}
+{{- end }}
 {{- if and .Values.spiffe.jwtExchangeEndpoint (not .Values.spiffe.capdManagerSubject) }}
 {{- fail "spiffe.capdManagerSubject must be set when spiffe.jwtExchangeEndpoint is set: the exchange may rewrite capd-manager's sub claim, so the default subject would not authorize CAPD against tenant clusters" }}
 {{- end }}
@@ -86,6 +89,7 @@ metadata:
 {{- $cweSubject := .Values.spiffe.cweSubject | default (printf "spiffe://%s/nke-service/%s" $td (include "controller.serviceAccountName" .)) }}
 {{- $capiManagerSubject := .Values.spiffe.capiManagerSubject | default (printf "spiffe://%s/nke-service/capi-manager" $td) }}
 {{- $capiKubeadmControlPlaneManagerSubject := .Values.spiffe.capiKubeadmControlPlaneManagerSubject | default (printf "spiffe://%s/nke-service/capi-kubeadm-control-plane-manager" $td) }}
+{{- $capiKubeadmBootstrapManagerSubject := .Values.spiffe.capiKubeadmBootstrapManagerSubject | default (printf "spiffe://%s/nke-service/capi-kubeadm-bootstrap-manager" $td) }}
 {{- $capdManagerSubject := .Values.spiffe.capdManagerSubject | default (printf "spiffe://%s/nke-service/capd-manager" $td) }}
 {{- $tenantRbacName := .Values.nkeOIDCAuth.tenantRbacName }}
 ---
@@ -234,6 +238,9 @@ data:
         apiGroup: rbac.authorization.k8s.io
       - kind: User
         name: {{ $capiKubeadmControlPlaneManagerSubject | quote }}
+        apiGroup: rbac.authorization.k8s.io
+      - kind: User
+        name: {{ $capiKubeadmBootstrapManagerSubject | quote }}
         apiGroup: rbac.authorization.k8s.io
       - kind: User
         name: {{ $capdManagerSubject | quote }}

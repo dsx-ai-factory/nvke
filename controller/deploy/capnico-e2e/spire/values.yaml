@@ -146,6 +146,7 @@ spire-server:
                   - nke-controller
                   - capi-system
                   - capi-kubeadm-control-plane-system
+                  - capi-kubeadm-bootstrap-system
                   - capd-system
   nodeAttestor:
     k8sPSAT:

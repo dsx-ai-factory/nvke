@@ -166,6 +166,7 @@ spire-server:
                   - nke-controller
                   - capi-system
                   - capi-kubeadm-control-plane-system
+                  - capi-kubeadm-bootstrap-system
   nodeAttestor:
     k8sPSAT:
       # The agent moved to spire-system, so the server must accept it from

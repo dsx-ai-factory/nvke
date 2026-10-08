@@ -1,0 +1,67 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Containerd only supports directory subpaths for Image volumes. Stage the
+# plugin into an emptyDir so the manager still sees the expected executable.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: capi-kubeadm-bootstrap-controller-manager
+  namespace: capi-kubeadm-bootstrap-system
+spec:
+  template:
+    spec:
+      securityContext:
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+      volumes:
+        - name: spiffe-workload-api
+          csi:
+            driver: csi.spiffe.io
+            readOnly: true
+        - name: spiffe-exec-plugin
+          image:
+            reference: ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:0.3.0@sha256:6402624276b66ef7a733e126488397c9cf33c6706ee1f52a9c7ffad2a540aa7c
+            pullPolicy: IfNotPresent
+        - name: spiffe-exec-bin
+          emptyDir: {}
+      initContainers:
+        - name: install-spiffe-exec-plugin
+          image: alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/cp
+            - /plugin/cmd
+            - /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+          volumeMounts:
+            - name: spiffe-exec-plugin
+              mountPath: /plugin
+              subPath: ko-app
+              readOnly: true
+            - name: spiffe-exec-bin
+              mountPath: /opt/spiffe/bin
+      containers:
+        - name: manager
+          env:
+            - name: SPIFFE_ENDPOINT_SOCKET
+              value: unix:///spiffe-workload-api/spire-agent.sock
+          volumeMounts:
+            - name: spiffe-workload-api
+              mountPath: /spiffe-workload-api
+              readOnly: true
+            - name: spiffe-exec-plugin
+              mountPath: /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth
+              $patch: delete
+            - name: spiffe-exec-bin
+              mountPath: /opt/spiffe/bin
+              readOnly: true

@@ -58,6 +58,8 @@ def main():
         "--set",
         "spiffe.capiKubeadmControlPlaneManagerSubject=spiffe://exchange.example/kcp-manager",
         "--set",
+        "spiffe.capiKubeadmBootstrapManagerSubject=spiffe://exchange.example/kubeadm-bootstrap-manager",
+        "--set",
         "spiffe.capdManagerSubject=spiffe://exchange.example/capd-manager",
     ]
     rendered = subprocess.run(command, check=False, capture_output=True, text=True)
@@ -107,6 +109,7 @@ def main():
     expected_capi_subjects = {
         "spiffe://exchange.example/capi-manager",
         "spiffe://exchange.example/kcp-manager",
+        "spiffe://exchange.example/kubeadm-bootstrap-manager",
         "spiffe://exchange.example/capd-manager",
     }
     if capi_subjects != expected_capi_subjects:
@@ -121,6 +124,7 @@ def main():
     exchange_subjects = {
         "spiffe.capiManagerSubject": "spiffe://exchange.example/capi-manager",
         "spiffe.capiKubeadmControlPlaneManagerSubject": "spiffe://exchange.example/kcp-manager",
+        "spiffe.capiKubeadmBootstrapManagerSubject": "spiffe://exchange.example/kubeadm-bootstrap-manager",
         "spiffe.capdManagerSubject": "spiffe://exchange.example/capd-manager",
     }
     for missing_name in exchange_subjects:

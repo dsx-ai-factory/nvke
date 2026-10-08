@@ -67,6 +67,7 @@ func validateOIDCPostCreate(test *tenantTest) {
 			}{
 				{"capi-system", "capi-manager", "spiffe://nke.capd.capi-manager.nvid.id/bm/cwe"},
 				{"capi-kubeadm-control-plane-system", "capi-kubeadm-control-plane-manager", "spiffe://nke.capd.capi-kubeadm-control-plane-manager.nvid.id/bm/cwe"},
+				{"capi-kubeadm-bootstrap-system", "capi-kubeadm-bootstrap-manager", "spiffe://nke.capd.capi-kubeadm-bootstrap-manager.nvid.id/bm/cwe"},
 				{"capd-system", "capd-manager", "spiffe://nke.capd.capd-manager.nvid.id/bm/cwe"},
 			}
 			for _, controller := range controllers {

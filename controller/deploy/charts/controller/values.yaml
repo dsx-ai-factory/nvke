@@ -587,6 +587,10 @@ spiffe:
   # control-plane manager. Defaults to its local SPIFFE ID; set it to the
   # rewritten subject when that controller uses an exchanged tenant kubeconfig.
   capiKubeadmControlPlaneManagerSubject: ""
+  # -- Subject the nke:capi-cluster-admin RBAC binding names for the kubeadm
+  # bootstrap manager. Defaults to its local SPIFFE ID; set it to the rewritten
+  # subject when that controller uses an exchanged tenant kubeconfig.
+  capiKubeadmBootstrapManagerSubject: ""
   # -- Subject the nke:capi-cluster-admin RBAC binding names for the CAPD
   # manager. Defaults to its local SPIFFE ID; set it to the rewritten subject
   # when CAPD uses an exchanged tenant kubeconfig.

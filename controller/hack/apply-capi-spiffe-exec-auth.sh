@@ -45,5 +45,7 @@ patch_if_present capi-system capi-controller-manager \
   "${OVERLAY}/capi-controller-manager.yaml"
 patch_if_present capi-kubeadm-control-plane-system capi-kubeadm-control-plane-controller-manager \
   "${OVERLAY}/capi-kubeadm-control-plane-controller-manager.yaml"
+patch_if_present capi-kubeadm-bootstrap-system capi-kubeadm-bootstrap-controller-manager \
+  "${OVERLAY}/capi-kubeadm-bootstrap-controller-manager.yaml"
 patch_if_present capd-system capd-controller-manager \
   "${OVERLAY}/capd-controller-manager.yaml"
