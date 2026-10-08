@@ -300,7 +300,7 @@ for ((i = 1; i <= count; i++)); do
 		fail=1
 	fi
 
-	printf '%s\t%s\t%s\n' "${i}" "${vuln}" "${scope}" >>"${meta}"
+	printf '%s\t%s\t%s\t%s\n' "${i}" "${vuln}" "${pkg}" "${scope}" >>"${meta}"
 done
 
 [[ ${fail} -eq 0 ]] || exit 1
@@ -317,7 +317,11 @@ fi
 # --- staleness -------------------------------------------------------------
 #
 # grype records, per suppressed match, which ignore rules applied to it. A rule
-# that appears nowhere in that list suppressed nothing. The reports are unioned
+# that appears nowhere in that list suppressed nothing. The match is on advisory
+# and package together, because the same advisory is routinely ignored once per
+# affected package -- CVE-x in libssl3 and CVE-x in libcrypto3 are two entries,
+# and matching on the advisory alone would let either one vouch for the other.
+# The reports are unioned
 # because one scan is not the whole picture: an entry for an OS package in the
 # published image never matches the source-tree scan, which is why each entry
 # declares the scope that is entitled to judge it.
@@ -332,13 +336,13 @@ for r in "${reports[@]}"; do
 		echo "ERROR: grype report '${r}' is missing or empty; refusing to call entries stale on no evidence" >&2
 		exit 2
 	}
-	jq -r '(.ignoredMatches // [])[] | (.appliedIgnoreRules // [])[] | .vulnerability // empty' "${r}"
+	jq -r '(.ignoredMatches // [])[] | (.appliedIgnoreRules // [])[] | select(.vulnerability) | "\(.vulnerability)\t\(.package.name // "")"' "${r}"
 done | sort -u >"${applied}"
 
-while IFS=$'\t' read -r i vuln scope; do
+while IFS=$'\t' read -r i vuln pkg scope; do
 	[[ "${scope}" == "both" || "${scope}" == "${want_scope}" ]] || continue
-	if ! grep -qxF "${vuln}" "${applied}"; then
-		error "entry ${i} (${vuln}) suppressed nothing in the ${want_scope} scan. Either the finding is gone and the entry should go with it, or the entry no longer matches it."
+	if ! grep -qxF "${vuln}"$'\t'"${pkg}" "${applied}"; then
+		error "entry ${i} (${vuln} in ${pkg}) suppressed nothing in the ${want_scope} scan. Either the finding is gone and the entry should go with it, or the entry no longer matches it."
 		fail=1
 	fi
 done <"${meta}"
