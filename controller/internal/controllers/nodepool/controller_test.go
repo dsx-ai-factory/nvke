@@ -739,13 +739,15 @@ func TestUnit_NodePoolControllerReplacementRequiresVIP(t *testing.T) {
 				mockDB := &testutil.MockDB{MockTx: mockTx}
 				mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 				mockTx.On("GetNodePoolForUpdate", mock.Anything, pool.ID).Return(pool, nil)
-				if !tc.bootstrap {
-					mockTx.On("GetNodeSet", mock.Anything, current.ID).Return(current, nil)
+				clusterProviderType := db.ProviderTypeNico
+				if provider == "capi" {
+					clusterProviderType = db.ProviderTypeCAPI
 				}
-				if tc.controlPlane && !tc.bootstrap && !tc.unchanged {
-					mockTx.On("GetCluster", mock.Anything, pool.ClusterID).Return(db.Cluster{
-						ID: pool.ClusterID, ControlPlaneVIP: tc.vip,
-					}, tc.clusterError).Once()
+				mockTx.On("GetCluster", mock.Anything, pool.ClusterID).Return(db.Cluster{
+					ID: pool.ClusterID, ProviderType: clusterProviderType, ControlPlaneVIP: tc.vip,
+				}, tc.clusterError).Once()
+				if !tc.bootstrap && tc.clusterError == nil {
+					mockTx.On("GetNodeSet", mock.Anything, current.ID).Return(current, nil)
 				}
 
 				active := current

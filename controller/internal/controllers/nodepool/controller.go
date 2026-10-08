@@ -167,15 +167,9 @@ func (a *Controller) reconcileNodePool(ctx context.Context, tx db.Tx, nodePool d
 	// Only surge when there are deprecated nodes to migrate, enabling faster rollout
 	// Cap surge to the number of deprecated nodes (no point surging more than what we're migrating)
 	surgeNodes := min(nodePool.MaxSurge, nodesInNonCurrentNodeSets)
-	if nodePool.ControlPlane && surgeNodes > 0 {
-		cluster, err := tx.GetCluster(ctx, nodePool.ClusterID)
-		if err != nil {
-			return fmt.Errorf("failed to get cluster: %w", err)
-		}
-		if strings.TrimSpace(cluster.ControlPlaneVIP) == "" {
-			logger.Warn("Skipping control-plane surge because controlPlaneVIP is not configured")
-			surgeNodes = 0
-		}
+	if nodePool.ControlPlane && surgeNodes > 0 && strings.TrimSpace(cluster.ControlPlaneVIP) == "" {
+		logger.Warn("Skipping control-plane surge because controlPlaneVIP is not configured")
+		surgeNodes = 0
 	}
 
 	// Set the desired count of the current nodeSet to be the desired count of the node pool
@@ -228,7 +222,7 @@ func (a *Controller) createNodeSetIfChanged(
 	if err := nodeSetProvider.ApplyNodeSetProvider(nodePool, newNodeSet); err != nil {
 		return nodePool, currentNodeSet, err
 	}
-	return applyNewNodeSet(ctx, tx, nodePool, currentNodeSet, newNodeSet, logger)
+	return applyNewNodeSet(ctx, tx, cluster, nodePool, currentNodeSet, newNodeSet, logger)
 }
 
 // buildBaseNodeSet returns a new NodeSet pre-populated with the provider-independent
@@ -245,21 +239,14 @@ func buildBaseNodeSet(nodePool db.NodePool) *db.NodeSet {
 }
 
 // applyNewNodeSet persists the new NodeSet and updates the pool's current NodeSet pointer.
-// Shared by createNicoNodeSetIfChanged and createCAPINodeSetIfChanged.
 func applyNewNodeSet(
 	ctx context.Context, tx db.Tx,
-	nodePool db.NodePool, prevNodeSet db.NodeSet, newNodeSet *db.NodeSet,
+	cluster db.Cluster, nodePool db.NodePool, prevNodeSet db.NodeSet, newNodeSet *db.NodeSet,
 	logger *slog.Logger,
 ) (db.NodePool, db.NodeSet, error) {
-	if nodePool.ControlPlane && nodePool.CurrentNodeSetID != nil {
-		cluster, err := tx.GetCluster(ctx, nodePool.ClusterID)
-		if err != nil {
-			return nodePool, prevNodeSet, fmt.Errorf("failed to get cluster: %w", err)
-		}
-		if strings.TrimSpace(cluster.ControlPlaneVIP) == "" {
-			logger.Warn("Skipping control-plane NodeSet replacement because controlPlaneVIP is not configured")
-			return nodePool, prevNodeSet, nil
-		}
+	if nodePool.ControlPlane && nodePool.CurrentNodeSetID != nil && strings.TrimSpace(cluster.ControlPlaneVIP) == "" {
+		logger.Warn("Skipping control-plane NodeSet replacement because controlPlaneVIP is not configured")
+		return nodePool, prevNodeSet, nil
 	}
 
 	currentNodeSet, err := tx.CreateNodeSet(ctx, newNodeSet)
