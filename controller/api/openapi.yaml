@@ -1480,6 +1480,7 @@ components:
       properties:
         key:
           type: string
+          minLength: 1
           description: Taint key.
           x-go-type-skip-optional-pointer: true
         value:
