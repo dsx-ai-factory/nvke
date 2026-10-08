@@ -436,10 +436,12 @@ BUNDLE_MIRROR_NAME ?= capd-bundle-mirror
 BUNDLE_MIRROR_VOLUME ?= capd-bundle-mirror-data
 
 .PHONY: bundle-mirror
-# The agent installs Calico by fetching a bundle through its index, so a node
+# The agent installs its CNI by fetching a bundle through its index, so a node
 # with no bundle server cannot bring CNI up. prepare-capd-bundles.sh builds that
 # bundle from checksum-verified public sources; serving it here beside the
-# registry caches means `make capd-up` needs no external bundle host.
+# registry caches means `make capd-up` needs no external bundle host. The
+# packages follow the Docker daemon's architecture. OVN image debs are not
+# architecture-independent, so an arm64 daemon cannot install an amd64 build.
 # e2e_start_bundle_mirror copies into a named volume rather than bind mounting,
 # because the daemon that resolves a bind path is not always this host.
 bundle-mirror: kind-up ## Serve the CAPD bundle, built from public sources, on the kind network
@@ -447,8 +449,15 @@ bundle-mirror: kind-up ## Serve the CAPD bundle, built from public sources, on t
 		echo "✅ Bundle mirror already running"; \
 	else \
 		echo "Building the CAPD bundle from public sources..."; \
+		server_arch="$$($(kind-docker-host) docker version --format '{{.Server.Arch}}')"; \
+		case "$$server_arch" in \
+			amd64|x86_64) bundle_arch=amd64 ;; \
+			arm64|aarch64) bundle_arch=arm64 ;; \
+			*) echo "unsupported docker server arch: $$server_arch" >&2; exit 1 ;; \
+		esac; \
 		rm -rf "$(CURDIR)/.local/bundles" && \
-		bash ./hack/ci/prepare-capd-bundles.sh "$(CURDIR)/.local/bundles" && \
+		CNI_PLUGIN="$${CNI_PLUGIN:-$(CNI_PLUGIN)}" BUNDLE_ARCH="$$bundle_arch" \
+			bash ./hack/ci/prepare-capd-bundles.sh "$(CURDIR)/.local/bundles" && \
 		$(kind-docker-host) bash -c '. hack/backend-e2e-lib.sh; \
 			e2e_stop_bundle_mirror $(BUNDLE_MIRROR_NAME) $(BUNDLE_MIRROR_VOLUME); \
 			e2e_start_bundle_mirror $(BUNDLE_MIRROR_NAME) $(BUNDLE_MIRROR_VOLUME) \
