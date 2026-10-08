@@ -1225,15 +1225,20 @@ jobs:
       # The name-and-size check below proves an asset arrived, not that it
       # arrived whole. The shared action hashes what the release carries
       # against checksums.txt, which is the bar release.yml already held.
-      # require-all is false because the same file also covers the four
+      # require-all is false because the same file also covers the eight
       # qcow2s, which ship as OCI artifacts rather than release assets.
+      #
+      # expected-count is a floor, so it has to name every attachment or a
+      # release missing all eight SBOMs still clears it on the three others:
+      # eight .spdx.json, the checker binary, checksums.txt and its
+      # attestation.
       - name: Verify the release assets
         if: startsWith(github.ref, 'refs/tags/os-image/')
         uses: ./.github/actions/verify-release-assets
         with:
           release-id: ${{ steps.release.outputs.id }}
           checksums: dist/checksums.txt
-          expected-count: "2"
+          expected-count: "11"
           require-all: "false"
           github-token: ${{ github.token }}
 
