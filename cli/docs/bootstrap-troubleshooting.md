@@ -124,7 +124,7 @@ The phase tells you what state you are in. In order:
 |---|---|---|
 | Preflight | `loaded site spec`, then checks that run before anything is created | Nothing created. Safe to fix and re-run. |
 | Bootstrap cluster | `creating ephemeral bootstrap kind cluster` to `bootstrap kind cluster ready`, then `loading image into bootstrap kind cluster` | A Kind cluster may exist. It is deleted on failure unless you kept it. |
-| Engine deploy | `installing postgres` through `cwe deployment healthy` | Kind cluster exists with partial installs. Deleted on failure unless kept. Nodes untouched. |
+| Controller deploy | `installing postgres` through `cwe deployment healthy` | Kind cluster exists with partial installs. Deleted on failure unless kept. Nodes untouched. |
 | Site cluster | `creating the site cluster` through `all control plane nodes joined` | Nodes are being changed. The Kind cluster is retained. Read the recovery section before re-running. |
 | Finish | `wrote the cluster kubeconfig`, `wrote the etcd encryption key`, `wrote SPIRE bootstrap resources` | The cluster is built. A failure here is about saving its outputs, not about the cluster. |
 
@@ -200,7 +200,7 @@ re-run. If a half-created cluster remains, delete it with the command above.
 
 **`nerdctl pull <image>: exit status 1`** with an authentication error
 
-The engine or provider image is in a registry that needs a login, or the
+The controller or provider image is in a registry that needs a login, or the
 reference is wrong. Log in on the bootstrap host and re-run:
 
 ```bash
@@ -214,7 +214,7 @@ The image exists locally but could not be exported into the Kind cluster. Pull
 it again with the platform of the bootstrap host and re-run. A multi-platform
 image that was only partially pulled is the usual cause.
 
-### Engine deploy
+### Controller deploy
 
 **`installing postgres` / `temporal` / `SPIRE CRDs` / `SPIRE` / `cwe`: `helm ... exit status 1`**
 
@@ -229,10 +229,10 @@ Three patterns account for most of them:
 - *Image pull failed inside the cluster*, visible in `pods-described.txt` as
   `ErrImagePull` or `ImagePullBackOff`. The Kind node cannot reach the image
   registry. Set `NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` for Docker Hub images, and
-  check that the engine image was loaded rather than pulled.
+  check that the controller image was loaded rather than pulled.
 - *`--wait` timed out* with pods still `Pending` or `CrashLoopBackOff`. Open
   the pod's `logs.txt`. A Pending pod is usually resources on the bootstrap
-  host. A crash-looping engine pod whose log ends in a database or Temporal
+  host. A crash-looping controller pod whose log ends in a database or Temporal
   connection error means Postgres or Temporal is not ready yet, or their
   shared password did not reach one side; a schema migration error names the
   migration that failed.
@@ -242,7 +242,7 @@ five minutes on a slow network.
 
 **`cwe did not report healthy on /readyz within 5m0s: last error=... last response=...`**
 
-The engine pod is running but its readiness check is failing. The response
+The controller pod is running but its readiness check is failing. The response
 names which dependency: `database` means Postgres is not reachable with the
 generated password, `temporal` means the Temporal frontend is not up yet or
 its schema jobs failed. Open `temporal/*/logs.txt` and `postgres/*/logs.txt`
@@ -250,21 +250,21 @@ in the diagnostics directory. `NKECTL_CWE_READY_TIMEOUT` raises the wait.
 
 **`waiting for the published cwe api: http://127.0.0.1:30080/readyz did not become ready`**
 
-The engine is healthy inside the cluster but not reachable from the host. The
+The controller is healthy inside the cluster but not reachable from the host. The
 Kind host port mapping or the NodePort Service did not come up. Check that
 nothing else on the host holds port 30080, or change it with
 `NKECTL_CWE_PORT`.
 
 ### Site cluster
 
-From here on, the engine is driving `kubeadm` on your nodes through
-`nke-agent`. The bootstrap cluster is retained on failure, and the engine's
+From here on, the controller is driving `kubeadm` on your nodes through
+`nke-agent`. The bootstrap cluster is retained on failure, and the controller's
 logs in it are the primary record.
 
 **`creating cluster "<name>": 400 Bad Request: <message>`**
 
-The engine rejected the cluster request before doing anything. The message is
-the engine's validation error. The most common is a non-default pod or
+The controller rejected the cluster request before doing anything. The message is
+the controller's validation error. The most common is a non-default pod or
 service CIDR with a CNI that does not support it. Fix the site spec and
 re-run; nothing was created.
 
@@ -272,10 +272,10 @@ re-run; nothing was created.
 
 The first control plane node never finished `kubeadm init`. In order:
 
-1. In the engine logs, search for the cluster name and read the last activity
+1. In the controller logs, search for the cluster name and read the last activity
    it ran for the first node.
-2. On that node, check `nke-agent` is running and its journal shows the engine
-   connecting. No connection at all means the engine cannot reach the node's
+2. On that node, check `nke-agent` is running and its journal shows the controller
+   connecting. No connection at all means the controller cannot reach the node's
    agent port: check the `nodeAgentPort` in the site spec and any firewall.
 3. With SPIFFE enabled, a connection that is refused or reset with a TLS error
    means attestation failed. Check that the node's TPM endorsement key
@@ -311,13 +311,13 @@ itself is healthy.
 
 **`cluster provisioning failed: cluster "<name>" reports updateFailed: <message>`**
 
-The engine gave up on the cluster. The message is the engine's own summary;
+The controller gave up on the cluster. The message is the controller's own summary;
 its logs hold the detail. This is terminal for that attempt: follow the
 recovery section, then re-run.
 
 **`cluster provisioning failed: cluster "<name>" started deleting while it was being provisioned`**
 
-Something deleted the cluster through the engine's API while bootstrap was
+Something deleted the cluster through the controller's API while bootstrap was
 waiting. Check for another operator or automation using the same bootstrap
 cluster.
 
@@ -325,7 +325,7 @@ cluster.
 
 **`tenant kubeconfig for "<name>" was not published within 2m0s`**
 
-The cluster is built but the engine has not yet written its admin kubeconfig
+The cluster is built but the controller has not yet written its admin kubeconfig
 Secret. This is a timing problem on a slow control plane. The bootstrap
 cluster is retained. Fetch the kubeconfig yourself and then delete the Kind
 cluster:
@@ -353,7 +353,7 @@ What to do with the saved key, and how to use it when restoring etcd, is in
 | Where it failed | Re-run as is? | First |
 |---|---|---|
 | Preflight | Yes | Fix what the message names |
-| Bootstrap cluster or engine deploy | Yes | Delete the Kind cluster if one was left behind |
+| Bootstrap cluster or controller deploy | Yes | Delete the Kind cluster if one was left behind |
 | Site cluster, before any node initialised | Yes | Delete the retained Kind cluster |
 | Site cluster, after a node initialised | No | Save any key Secret from the retained Kind cluster, `kubeadm reset -f` on every node that has `/etc/kubernetes/manifests`, delete the Kind cluster, then re-run |
 | Finish | No | The cluster exists. Recover the missing output by hand as described above, then delete the Kind cluster |
