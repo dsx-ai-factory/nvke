@@ -101,6 +101,12 @@ func (a *Activities) executeHostRunbook(ctx context.Context, input ExecuteHostRu
 	// non-zero agent ExecuteScript exit code into ExecutionStatusFailed, which
 	// the controller surfaced as RunbookError.
 	if !isExpectedRunbookExitCode(int(result.GetExitCode()), input) {
+		if input.RunbookName == legacyKubernetesCertificateRenewalRunbook && result.GetExitCode() != 0 {
+			// A received nonzero exit proves a failed process invocation. RPC
+			// errors and cancellation returned above cannot establish its outcome.
+			a.recordNodeCertificateRenewalAudit(ctx, node, input.RunbookEnv["OPERATION_ID"],
+				KubernetesCertificateRenewalResult{ExitCode: int(result.GetExitCode())}, nil)
+		}
 		output := result.GetOutput()
 		scriptError := result.GetErrorMessage()
 		errMessage := fmt.Sprintf("runbook %q on node %s exited %d", input.RunbookName, node.Name, result.GetExitCode())

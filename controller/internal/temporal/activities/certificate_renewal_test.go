@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
@@ -514,11 +516,13 @@ func TestFailCertificateRenewalCannotClearAnotherOwner(t *testing.T) {
 				UpdateInProgress:   &db.UpdateInProgress{Type: tt.operationType},
 				CertificateRenewal: &db.CertificateRenewalStatus{CycleID: tt.cycleID, State: tt.state},
 			}}, nil).Once()
-			a := &Activities{db: database}
+			store := &auditTestStore{}
+			a := &Activities{db: database, credentialAudit: credentialaudit.NewRecorder(store, slog.New(slog.DiscardHandler), nil)}
 
 			_, err := a.FailCertificateRenewal(t.Context(), FailCertificateRenewalInput{ClusterID: clusterID, CycleID: "cycle-1"})
 
 			require.Error(t, err)
+			require.Empty(t, store.events, "a failure this cycle did not persist is not audited")
 			tx.AssertNotCalled(t, "UpdateCluster", mock.Anything, mock.Anything)
 			tx.AssertExpectations(t)
 		})

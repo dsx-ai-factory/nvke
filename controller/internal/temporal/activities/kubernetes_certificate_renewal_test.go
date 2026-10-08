@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
@@ -855,6 +857,55 @@ func TestResolveLegacyKubernetesCertificateRenewalUsesOnlyEmbeddedStatusMode(t *
 			require.Empty(t, fakeAgent.StartKubernetesCertificateRenewalV2Calls)
 			require.Empty(t, fakeAgent.GetKubernetesCertificateRenewalCalls)
 			require.Len(t, fakeAgent.ExecuteScriptNames, 1)
+		})
+	}
+}
+
+// TestRenewKubernetesCertificatesV1AuditsOnlyExplicitOutcomeMarker keeps V1's
+// returned result diagnostic-only while the audit trusts an explicit marker.
+// Markerless success is not evidence of a mutation, so it records nothing.
+func TestRenewKubernetesCertificatesV1AuditsOnlyExplicitOutcomeMarker(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		output     string
+		wantEvents []string
+	}{
+		{name: "unchanged", output: "RENEWAL_OUTCOME=unchanged\n", wantEvents: []string{credentialaudit.OutcomeNoop + "/" + credentialaudit.ReasonUnchanged}},
+		{name: "renewed", output: "RENEWAL_OUTCOME=renewed\n", wantEvents: []string{credentialaudit.OutcomeSuccess + "/" + credentialaudit.ReasonCompleted}},
+		{name: "markerless", output: "legacy success"},
+		{name: "unknown marker", output: "RENEWAL_OUTCOME=rotated"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			node := pooledCertificateRenewalTestNode()
+			database := &testutil.MockDB{}
+			database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Times(3)
+			database.On("GetCluster", mock.Anything, node.ClusterID).Return(db.Cluster{ID: node.ClusterID}, nil).Once()
+			store := &auditTestStore{}
+			fakeAgent := &agenttest.FakeClient{
+				StartKubernetesCertificateRenewalHook: func(db.Node, *nvkeproto.StartKubernetesCertificateRenewalRequest) (*nvkeproto.StartKubernetesCertificateRenewalResponse, error) {
+					return nil, status.Error(codes.Unimplemented, "unknown method")
+				},
+				ExecuteScriptHook: func(db.Node, string, string) (*nvkeproto.ExecuteScriptResponse, error) {
+					return &nvkeproto.ExecuteScriptResponse{Output: tt.output}, nil
+				},
+			}
+			a := &Activities{
+				cfg: config.Config{RunbooksDir: t.TempDir()}, db: database, nodeAgentClient: fakeAgent,
+				credentialAudit: credentialaudit.NewRecorder(store, slog.New(slog.DiscardHandler), nil),
+			}
+
+			result, err := executeCertificateRenewalActivity(t, a, KubernetesCertificateRenewalInput{
+				NodeID: node.ID, OperationID: "stable-operation", ThresholdDays: 14,
+			})
+
+			require.NoError(t, err)
+			require.Empty(t, result.Outcome, "V1 keeps its diagnostic-only result")
+			require.Equal(t, tt.output, result.Output)
+			events := make([]string, 0, len(store.events))
+			for _, event := range store.events {
+				events = append(events, event.Outcome+"/"+event.Reason)
+			}
+			require.ElementsMatch(t, tt.wantEvents, events)
 		})
 	}
 }

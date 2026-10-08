@@ -15,7 +15,9 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodecontract"
 	"github.com/dsx-ai-factory/nvke/controller/internal/spiffe"
 )
@@ -31,6 +33,7 @@ type Activities struct {
 	trustDomain              string
 	controllerClientCABundle string
 	getTrustDomainBundle     trustDomainAndBundleGetter
+	credentialAudit          *credentialaudit.Recorder
 	// certificateRenewalReleaseBackoff overrides the first release retry wait
 	// when non-zero, so tests need not wait the real backoff.
 	certificateRenewalReleaseBackoff time.Duration
@@ -54,6 +57,7 @@ func NewActivities(
 		trustDomain:              trustDomain,
 		controllerClientCABundle: controllerClientCABundle,
 		getTrustDomainBundle:     spiffe.GetTrustDomainAndBundle,
+		credentialAudit:          credentialaudit.NewRecorder(database, nil, metrics.RecordCredentialAuditWrite),
 	}
 }
 

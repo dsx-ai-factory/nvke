@@ -13,6 +13,7 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"k8s.io/apimachinery/pkg/util/version"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
@@ -126,6 +127,14 @@ func (a *Activities) BeginEtcdEncryptionKeyRotation(
 		}
 		return nil
 	})
+	outcome, reason := auditOperationOutcome(err)
+	if err == nil {
+		reason = credentialaudit.ReasonAccepted
+	}
+	event := credentialOperationAudit(input.ClusterID, nil, credentialaudit.ActionCheck,
+		credentialaudit.TypeEtcdKey, outcome, reason)
+	event.Phase = string(db.EtcdKeyRotationPhasePrepare)
+	a.recordCredentialAudit(ctx, event, input.WorkflowID)
 	if err != nil {
 		return BeginEtcdEncryptionKeyRotationResult{}, err
 	}
@@ -236,6 +245,11 @@ func (a *Activities) CompleteEtcdEncryptionKeyRotation(
 	} else {
 		err = a.completeEtcdKeyRotation(ctx, input.ClusterID, input.WorkflowID)
 	}
+	outcome, reason := auditOperationOutcome(err)
+	event := credentialOperationAudit(input.ClusterID, nil, credentialaudit.ActionRotate,
+		credentialaudit.TypeEtcdKey, outcome, reason)
+	event.Phase = string(db.EtcdKeyRotationPhaseFinalize)
+	a.recordCredentialAudit(ctx, event, input.WorkflowID)
 	if err != nil {
 		return CompleteEtcdEncryptionKeyRotationResult{}, err
 	}
