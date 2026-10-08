@@ -19,14 +19,49 @@ const (
 	nodeRebootStartTimeout = 5 * time.Minute
 	// noLastError is the placeholder used before a poll loop records a failure.
 	noLastError = "<none>"
+
+	// minStallWindow is the shortest a provisioning message may stay unchanged
+	// before a wait calls it stuck. A bare machine is quiet for minutes at a
+	// time while it boots an image over the network, so anything shorter
+	// reports a healthy node as stalled.
+	minStallWindow = 15 * time.Minute
 )
 
+// stallWindow is how long the provisioning message may stay unchanged before a
+// wait gives up on it.
+//
+// Derived from the budget rather than configured: a lane that allows little
+// time cannot also allow a long silence, and one that allows a lot should not
+// spend all of it on a node that stopped reporting progress.
+//
+// A window at or above the budget can never elapse first, which is how the
+// short lanes keep their old behaviour: the deadline is the only thing that
+// ends them.
+func stallWindow(budget time.Duration) time.Duration {
+	window := budget / 3
+	if window < minStallWindow {
+		window = minStallWindow
+	}
+	return window
+}
+
 // WaitForClusterReady polls the cluster until its Provisioned condition is True,
-// erroring if Provisioning flips to False, the deadline passes, or ctx is done.
+// erroring if Provisioning flips to False, the message stops changing, the
+// deadline passes, or ctx is done.
+//
+// The message is watched because CWE does not give up. Its provisioning
+// activities retry indefinitely, so a node that cannot be provisioned leaves
+// Provisioning True and Provisioned False for as long as anyone waits, and the
+// deadline is the only thing that ends it. A run then spends its whole budget
+// to report that the time ran out. A message that has not changed for
+// stallWindow says the same thing sooner, and says what it was stuck on.
 func (c *Client) WaitForClusterReady(ctx context.Context, id openapi_types.UUID) (*api.Cluster, error) {
 	deadline := time.After(c.opts.Provision)
 	ticker := time.NewTicker(c.opts.Poll)
 	defer ticker.Stop()
+
+	stall := stallWindow(c.opts.Provision)
+	message, changed := noLastError, time.Now()
 
 	for {
 		select {
@@ -46,6 +81,13 @@ func (c *Client) WaitForClusterReady(ctx context.Context, id openapi_types.UUID)
 				}
 				if cluster.Conditions.Provisioning.Status == api.ConditionStatusFalse {
 					return nil, fmt.Errorf("cluster %s provisioning failed: %s", cluster.Name, cluster.Conditions.Provisioning.Message)
+				}
+				if current := cluster.Conditions.Provisioning.Message; current != message {
+					message, changed = current, time.Now()
+				} else if waited := time.Since(changed); waited >= stall {
+					return nil, fmt.Errorf(
+						"cluster %s has not progressed for %v of its %v: provisioning still reports %q",
+						cluster.Name, waited.Round(time.Second), c.opts.Provision, current)
 				}
 			}
 		}
