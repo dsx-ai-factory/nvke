@@ -638,15 +638,6 @@ func TestApplyClusterControlPlaneConfigUpdate_RejectsClearingRequiredField(t *te
 		require.Contains(t, err.Error(), "osProfile is required")
 	})
 
-	t.Run("clearing configProfile is rejected", func(t *testing.T) {
-		empty := ""
-		err := applyUpdate(t, newForgeCluster(), &api.UpdateClusterControlPlaneConfig{
-			Nico: &api.NicoControlPlaneProviderUpdate{ConfigProfile: &empty},
-		})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "configProfile is required")
-	})
-
 	// instanceTypePreference is merged in the parent (not applyClusterLevelControlPlaneSpecUpdate),
 	// so this exercises the parent-level merged-spec validation.
 	t.Run("clearing instanceTypePreference is rejected", func(t *testing.T) {
@@ -732,4 +723,28 @@ func TestApiCapiControlPlaneProviderFromDB_ExposesOnlyFirstPreference(t *testing
 		"kind":     "DockerMachineTemplate",
 		"metadata": map[string]interface{}{"name": "current"},
 	}, got.MachineTemplate)
+}
+
+// TestNicoControlPlaneConfigProfileIsOptional proves a nico control plane may
+// omit the config profile on create and may clear it on update. A node with no
+// config profile runs no config-profile hooks or labels.
+func TestNicoControlPlaneConfigProfileIsOptional(t *testing.T) {
+	t.Run("create without configProfile is accepted", func(t *testing.T) {
+		err := validateCreateForgeControlPlaneConfigFields(&api.CreateClusterControlPlaneConfig{
+			Nico: &api.NicoControlPlaneProviderCreate{
+				InstanceTypePreference: []uuid.UUID{uuid.New()},
+				OSProfile:              "ubuntu",
+			},
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("merged spec without configProfile is accepted", func(t *testing.T) {
+		var spec db.ControlPlaneConfigSpec
+		spec.SetNico(db.NicoControlPlaneProvider{
+			InstanceTypePreference: []uuid.UUID{uuid.New()},
+			OSProfile:              "ubuntu",
+		})
+		require.NoError(t, validateMergedForgeControlPlaneSpec(spec))
+	})
 }

@@ -203,9 +203,6 @@ func validateCreateForgeControlPlaneConfigFields(c *api.CreateClusterControlPlan
 	if c.Nico.OSProfile == "" {
 		return fmt.Errorf("controlPlaneConfig.nico.osProfile is required for a nico cluster control plane")
 	}
-	if c.Nico.ConfigProfile == "" {
-		return fmt.Errorf("controlPlaneConfig.nico.configProfile is required for a nico cluster control plane")
-	}
 	return nil
 }
 
@@ -235,9 +232,6 @@ func validateMergedForgeControlPlaneSpec(spec db.ControlPlaneConfigSpec) error {
 	}
 	if spec.Nico.OSProfile == "" {
 		return newBadRequestErrorf("controlPlaneConfig.nico.osProfile is required for a nico cluster control plane")
-	}
-	if spec.Nico.ConfigProfile == "" {
-		return newBadRequestErrorf("controlPlaneConfig.nico.configProfile is required for a nico cluster control plane")
 	}
 	return nil
 }
