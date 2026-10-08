@@ -71,86 +71,94 @@ func runCleanupActivity(t *testing.T, a *activities.Activities, target db.Node, 
 }
 
 func TestPreJoinCleanupRetainsProvisioning(t *testing.T) {
-	for _, retry := range []bool{false, true} {
-		t.Run(map[bool]string{false: "fresh", true: "retry_after_uncertain_cleanup"}[retry], func(t *testing.T) {
-			store := preJoinCleanupStore()
-			agent := &cleanupAgent{}
-			a := activities.NewActivities(config.Config{}, store, nil, agent, "", nil, "")
-			if retry {
-				store.nodes[1].Conditions.Provisioning = db.NewCondition(true, "earlier join failed")
-				agent.RemoveEtcdMemberError = errors.New("RPC outcome unknown")
-				agent.resetError = errors.New("RPC outcome unknown")
-				for _, op := range []string{"remove_member", "reset"} {
-					require.ErrorContains(t, runCleanupActivity(t, a, store.nodes[1], op), "RPC outcome unknown")
-					require.Equal(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Provisioning.Status)
-					require.NotEqual(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Deleting.Status)
-				}
-				agent.RemoveEtcdMemberError, agent.resetError = nil, nil
+	for _, owner := range fenceOwners {
+		t.Run(string(owner), func(t *testing.T) {
+			for _, retry := range []bool{false, true} {
+				t.Run(map[bool]string{false: "fresh", true: "retry_after_uncertain_cleanup"}[retry], func(t *testing.T) {
+					store := preJoinCleanupStore()
+					agent := &cleanupAgent{}
+					a := activities.NewActivities(config.Config{}, store, nil, agent, "", nil, "")
+					if retry {
+						store.nodes[1].Conditions.Provisioning = db.NewCondition(true, "earlier join failed")
+						agent.RemoveEtcdMemberError = errors.New("RPC outcome unknown")
+						agent.resetError = errors.New("RPC outcome unknown")
+						for _, op := range []string{"remove_member", "reset"} {
+							require.ErrorContains(t, runCleanupActivity(t, a, store.nodes[1], op), "RPC outcome unknown")
+							require.Equal(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Provisioning.Status)
+							require.NotEqual(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Deleting.Status)
+						}
+						agent.RemoveEtcdMemberError, agent.resetError = nil, nil
+					}
+					for _, op := range []string{"remove_member", "reset"} {
+						require.NoError(t, runCleanupActivity(t, a, store.nodes[1], op))
+						require.Equal(t, []string{"cluster", "node"}, store.lockOrder)
+						require.Equal(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Provisioning.Status)
+						require.NotEqual(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Deleting.Status)
+						require.Error(t, beginFenceOwner(t, a, store, owner))
+					}
+					wantCalls := 1
+					if retry {
+						wantCalls = 2
+					}
+					require.Len(t, agent.RemoveEtcdMemberCalls, wantCalls)
+					require.Equal(t, wantCalls, agent.resetCalls)
+					// The normal join-completion condition updates must suffice; no
+					// invented Deleting cleanup is allowed to make admission pass.
+					require.NoError(t, a.UpdateNodeConditions(t.Context(), activities.NodeConditionsUpdate{
+						NodeID: store.nodes[1].ID, Conditions: activities.NodeConditions{
+							Joined: &activities.ConditionUpdate{Status: db.ConditionStatusTrue},
+						},
+					}))
+					require.Error(t, beginFenceOwner(t, a, store, owner), "post-join provisioning still owns the node")
+					require.NoError(t, a.UpdateNodeConditions(t.Context(), activities.NodeConditionsUpdate{
+						NodeID: store.nodes[1].ID, Conditions: activities.NodeConditions{
+							Provisioning: &activities.ConditionUpdate{Status: db.ConditionStatusFalse},
+							Provisioned:  &activities.ConditionUpdate{Status: db.ConditionStatusTrue},
+						},
+					}))
+					require.NoError(t, beginFenceOwner(t, a, store, owner))
+				})
 			}
-			for _, op := range []string{"remove_member", "reset"} {
-				require.NoError(t, runCleanupActivity(t, a, store.nodes[1], op))
-				require.Equal(t, []string{"cluster", "node"}, store.lockOrder)
-				require.Equal(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Provisioning.Status)
-				require.NotEqual(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Deleting.Status)
-				require.Error(t, beginFenceOwner(t, a, store))
-			}
-			wantCalls := 1
-			if retry {
-				wantCalls = 2
-			}
-			require.Len(t, agent.RemoveEtcdMemberCalls, wantCalls)
-			require.Equal(t, wantCalls, agent.resetCalls)
-			// The normal join-completion condition updates must suffice; no
-			// invented Deleting cleanup is allowed to make admission pass.
-			require.NoError(t, a.UpdateNodeConditions(t.Context(), activities.NodeConditionsUpdate{
-				NodeID: store.nodes[1].ID, Conditions: activities.NodeConditions{
-					Joined: &activities.ConditionUpdate{Status: db.ConditionStatusTrue},
-				},
-			}))
-			require.Error(t, beginFenceOwner(t, a, store), "post-join provisioning still owns the node")
-			require.NoError(t, a.UpdateNodeConditions(t.Context(), activities.NodeConditionsUpdate{
-				NodeID: store.nodes[1].ID, Conditions: activities.NodeConditions{
-					Provisioning: &activities.ConditionUpdate{Status: db.ConditionStatusFalse},
-					Provisioned:  &activities.ConditionUpdate{Status: db.ConditionStatusTrue},
-				},
-			}))
-			require.NoError(t, beginFenceOwner(t, a, store))
 		})
 	}
 }
 
 func TestControlPlaneCleanupAndCredentialsAreExclusive(t *testing.T) {
-	for _, op := range []string{"remove_member", "reset"} {
-		for _, credentialFirst := range []bool{false, true} {
-			t.Run(op+map[bool]string{false: "/cleanup_first", true: "/credential_first"}[credentialFirst], func(t *testing.T) {
-				store := preJoinCleanupStore()
-				agent := &cleanupAgent{}
-				a := activities.NewActivities(config.Config{}, store, nil, agent, "", nil, "")
-				if credentialFirst {
-					// Admit on a stable control plane, then deliver old cleanup
-					// work. No remote mutation or node write may escape the owner.
-					store.nodes[1].Conditions.Joined = db.NewCondition(true, "joined")
-					store.nodes[1].Conditions.Provisioned = db.NewCondition(true, "provisioned")
-					require.NoError(t, beginFenceOwner(t, a, store))
-					writes := store.writes
-					require.ErrorContains(t, runCleanupActivity(t, a, store.nodes[1], op), db.ErrControlPlaneMutationBlocked.Error())
-					require.Equal(t, []string{"cluster"}, store.lockOrder)
-					require.Equal(t, writes, store.writes)
-					require.Empty(t, agent.RemoveEtcdMemberCalls)
-					require.Zero(t, agent.resetCalls)
-				} else {
-					require.NoError(t, runCleanupActivity(t, a, store.nodes[1], op))
-					require.Equal(t, []string{"cluster", "node"}, store.lockOrder)
-					// Even if Joined/Provisioned observations catch up before
-					// completion, the durable provisioning reservation fences Begin.
-					store.nodes[1].Conditions.Joined = db.NewCondition(true, "joined")
-					store.nodes[1].Conditions.Provisioned = db.NewCondition(true, "observed")
-					require.Equal(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Provisioning.Status)
-					require.Error(t, beginFenceOwner(t, a, store))
-					require.Nil(t, store.cluster.Conditions.UpdateInProgress)
+	for _, owner := range fenceOwners {
+		t.Run(string(owner), func(t *testing.T) {
+			for _, op := range []string{"remove_member", "reset"} {
+				for _, credentialFirst := range []bool{false, true} {
+					t.Run(op+map[bool]string{false: "/cleanup_first", true: "/credential_first"}[credentialFirst], func(t *testing.T) {
+						store := preJoinCleanupStore()
+						agent := &cleanupAgent{}
+						a := activities.NewActivities(config.Config{}, store, nil, agent, "", nil, "")
+						if credentialFirst {
+							// Admit on a stable control plane, then deliver old cleanup
+							// work. No remote mutation or node write may escape the owner.
+							store.nodes[1].Conditions.Joined = db.NewCondition(true, "joined")
+							store.nodes[1].Conditions.Provisioned = db.NewCondition(true, "provisioned")
+							require.NoError(t, beginFenceOwner(t, a, store, owner))
+							writes := store.writes
+							require.ErrorContains(t, runCleanupActivity(t, a, store.nodes[1], op), db.ErrControlPlaneMutationBlocked.Error())
+							require.Equal(t, []string{"cluster"}, store.lockOrder)
+							require.Equal(t, writes, store.writes)
+							require.Empty(t, agent.RemoveEtcdMemberCalls)
+							require.Zero(t, agent.resetCalls)
+						} else {
+							require.NoError(t, runCleanupActivity(t, a, store.nodes[1], op))
+							require.Equal(t, []string{"cluster", "node"}, store.lockOrder)
+							// Even if Joined/Provisioned observations catch up before
+							// completion, the durable provisioning reservation fences Begin.
+							store.nodes[1].Conditions.Joined = db.NewCondition(true, "joined")
+							store.nodes[1].Conditions.Provisioned = db.NewCondition(true, "observed")
+							require.Equal(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Provisioning.Status)
+							require.Error(t, beginFenceOwner(t, a, store, owner))
+							require.Nil(t, store.cluster.Conditions.UpdateInProgress)
+						}
+					})
 				}
-			})
-		}
+			}
+		})
 	}
 }
 
@@ -166,68 +174,76 @@ func (s *staleCleanupStore) GetNode(context.Context, uuid.UUID) (db.Node, error)
 }
 
 func TestControlPlaneCleanupReadsLockedLifecycle(t *testing.T) {
-	for _, op := range []string{"remove_member", "reset"} {
-		for _, state := range []string{"pre_join", "joined", "delete_requested", "deleting", "requested_and_deleting", "stale_deleting"} {
-			for _, uncertain := range []bool{false, true} {
-				t.Run(op+"/"+state+map[bool]string{false: "/success", true: "/unknown"}[uncertain], func(t *testing.T) {
-					store := preJoinCleanupStore()
-					snapshot := store.nodes[1]
-					switch state {
-					case "pre_join":
-						snapshot.Conditions.Joined = db.NewCondition(true, "stale")
-					case "joined":
-						store.nodes[1].Conditions.Joined = db.NewCondition(true, "joined")
-					case "delete_requested":
-						store.nodes[1].Conditions.DeleteRequested = db.NewCondition(true, "accepted")
-					case "deleting", "requested_and_deleting":
-						store.nodes[1].Conditions.Deleting = db.NewCondition(true, "teardown")
-						if state == "requested_and_deleting" {
-							store.nodes[1].Conditions.DeleteRequested = db.NewCondition(true, "accepted")
-						}
-					case "stale_deleting":
-						snapshot.Conditions.Deleting = db.NewCondition(true, "stale")
-						store.nodes[1].Conditions.DeleteRequested = db.NewCondition(true, "accepted")
+	for _, owner := range fenceOwners {
+		t.Run(string(owner), func(t *testing.T) {
+			for _, op := range []string{"remove_member", "reset"} {
+				for _, state := range []string{"pre_join", "joined", "delete_requested", "deleting", "requested_and_deleting", "stale_deleting"} {
+					for _, uncertain := range []bool{false, true} {
+						t.Run(op+"/"+state+map[bool]string{false: "/success", true: "/unknown"}[uncertain], func(t *testing.T) {
+							store := preJoinCleanupStore()
+							snapshot := store.nodes[1]
+							switch state {
+							case "pre_join":
+								snapshot.Conditions.Joined = db.NewCondition(true, "stale")
+							case "joined":
+								store.nodes[1].Conditions.Joined = db.NewCondition(true, "joined")
+							case "delete_requested":
+								store.nodes[1].Conditions.DeleteRequested = db.NewCondition(true, "accepted")
+							case "deleting", "requested_and_deleting":
+								store.nodes[1].Conditions.Deleting = db.NewCondition(true, "teardown")
+								if state == "requested_and_deleting" {
+									store.nodes[1].Conditions.DeleteRequested = db.NewCondition(true, "accepted")
+								}
+							case "stale_deleting":
+								snapshot.Conditions.Deleting = db.NewCondition(true, "stale")
+								store.nodes[1].Conditions.DeleteRequested = db.NewCondition(true, "accepted")
+							}
+							requested := store.nodes[1].Conditions.DeleteRequested
+							agent := &cleanupAgent{}
+							if uncertain {
+								agent.RemoveEtcdMemberError = errors.New("RPC outcome unknown")
+								agent.resetError = errors.New("RPC outcome unknown")
+							}
+							a := activities.NewActivities(config.Config{}, &staleCleanupStore{store, snapshot}, nil, agent, "", nil, "")
+							err := runCleanupActivity(t, a, snapshot, op)
+							if uncertain {
+								require.ErrorContains(t, err, "RPC outcome unknown")
+							} else {
+								require.NoError(t, err)
+							}
+							require.Equal(t, []string{"cluster", "node"}, store.lockOrder)
+							require.Equal(t, requested, store.nodes[1].Conditions.DeleteRequested, "cleanup must not promote or erase queued intent")
+							if state == "pre_join" || state == "delete_requested" || state == "stale_deleting" {
+								require.NotEqual(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Deleting.Status)
+								require.Equal(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Provisioning.Status)
+							} else {
+								require.Equal(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Deleting.Status)
+							}
+							require.Error(t, beginFenceOwner(t, a, store, owner))
+						})
 					}
-					requested := store.nodes[1].Conditions.DeleteRequested
-					agent := &cleanupAgent{}
-					if uncertain {
-						agent.RemoveEtcdMemberError = errors.New("RPC outcome unknown")
-						agent.resetError = errors.New("RPC outcome unknown")
-					}
-					a := activities.NewActivities(config.Config{}, &staleCleanupStore{store, snapshot}, nil, agent, "", nil, "")
-					err := runCleanupActivity(t, a, snapshot, op)
-					if uncertain {
-						require.ErrorContains(t, err, "RPC outcome unknown")
-					} else {
-						require.NoError(t, err)
-					}
-					require.Equal(t, []string{"cluster", "node"}, store.lockOrder)
-					require.Equal(t, requested, store.nodes[1].Conditions.DeleteRequested, "cleanup must not promote or erase queued intent")
-					if state == "pre_join" || state == "delete_requested" || state == "stale_deleting" {
-						require.NotEqual(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Deleting.Status)
-						require.Equal(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Provisioning.Status)
-					} else {
-						require.Equal(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Deleting.Status)
-					}
-					require.Error(t, beginFenceOwner(t, a, store))
-				})
+				}
 			}
-		}
+		})
 	}
 }
 
 func TestCAPIMachineDeletionReservesTeardownEvenBeforeJoin(t *testing.T) {
-	store := preJoinCleanupStore()
-	scheme := runtime.NewScheme()
-	require.NoError(t, clusterv1.AddToScheme(scheme))
-	require.NoError(t, corev1.AddToScheme(scheme))
-	a := activities.NewActivities(config.Config{}, store, fake.NewClientBuilder().WithScheme(scheme).Build(), nil, "", nil, "")
-	var suite testsuite.WorkflowTestSuite
-	env := suite.NewTestActivityEnvironment()
-	env.RegisterActivity(a.DeleteCAPIMachineForNode)
-	_, err := env.ExecuteActivity(a.DeleteCAPIMachineForNode, activities.DeleteCAPIMachineForNodeInput{NodeID: store.nodes[1].ID})
-	require.NoError(t, err)
-	require.Equal(t, []string{"cluster", "node"}, store.lockOrder)
-	require.Equal(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Deleting.Status)
-	require.Error(t, beginFenceOwner(t, a, store))
+	for _, owner := range fenceOwners {
+		t.Run(string(owner), func(t *testing.T) {
+			store := preJoinCleanupStore()
+			scheme := runtime.NewScheme()
+			require.NoError(t, clusterv1.AddToScheme(scheme))
+			require.NoError(t, corev1.AddToScheme(scheme))
+			a := activities.NewActivities(config.Config{}, store, fake.NewClientBuilder().WithScheme(scheme).Build(), nil, "", nil, "")
+			var suite testsuite.WorkflowTestSuite
+			env := suite.NewTestActivityEnvironment()
+			env.RegisterActivity(a.DeleteCAPIMachineForNode)
+			_, err := env.ExecuteActivity(a.DeleteCAPIMachineForNode, activities.DeleteCAPIMachineForNodeInput{NodeID: store.nodes[1].ID})
+			require.NoError(t, err)
+			require.Equal(t, []string{"cluster", "node"}, store.lockOrder)
+			require.Equal(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Deleting.Status)
+			require.Error(t, beginFenceOwner(t, a, store, owner))
+		})
+	}
 }

@@ -28,12 +28,13 @@ import (
 // encRotationWALEntry is the WAL checkpoint written atomically before the
 // encryption config is updated. It is JSON-serialized to encRotationWALFile.
 type encRotationWALEntry struct {
-	// ReloadCountBefore is the apiserver reload counter read immediately before
-	// the config write, used to detect when the apiserver has loaded the new config.
+	// ReloadCountBefore is retained so existing checkpoints stay readable; new
+	// checkpoints leave it zero. A process-local counter is not proof that the
+	// intended config is loaded.
 	ReloadCountBefore int `json:"reload_count_before"`
 	// OpID identifies the specific rotation operation (see encRotationOpID) so
 	// that a retry can detect a stale checkpoint left by a different, preceding
-	// operation and discard it safely.
+	// operation and reject the conflicting request.
 	OpID string `json:"op_id"`
 }
 
@@ -43,16 +44,10 @@ const (
 	// It records the UpdateEncryptionConfig operation id and the apiserver reload
 	// counter before the operation is applied.
 	//
-	// On any retry the agent reads this file to determine where the rotation
-	// left off and resumes correctly:
-	//
-	//   WAL absent  + config=old                          → fresh:            write config and wait for reload
-	//   WAL present + config=old    + op_id match         → resume write:     crash between ① and ②; re-write config then wait
-	//   WAL present + config=old    + op_id mismatch      → protocol error:   prior op crashed mid-flight; caller must retry that op before issuing a new one
-	//   WAL present + config=desired + op_id mismatch     → protocol error:   prior op crashed mid-flight; caller must retry that op before issuing a new one
-	//   WAL present + config=desired + op_id match R == N → reload pending:   wait for reload
-	//   WAL present + config=desired + op_id match R > N  → reload confirmed: skip wait, clean up
-	//   WAL absent  + config=desired                      → complete:         return success immediately
+	// A matching pending operation verifies the intended on-disk configuration
+	// against the local apiserver's loaded configuration identity, even after
+	// process restart. A different operation cannot take over its checkpoint.
+	// Already-desired config without a WAL still requires live loaded-config proof.
 	encRotationWALFile = "/var/lib/nvke/enc-rotation.state"
 
 	// encryptionReloadTimeout is the maximum time UpdateEncryptionConfig will
@@ -91,7 +86,7 @@ const (
 //     resumes from exactly the right point without re-applying the mutation.
 //
 //   - On DeadlineExceeded the WAL remains on disk so the caller can retry
-//     safely.  All other errors leave the filesystem in a clean state.
+//     safely. Other failures also preserve a pending WAL for recovery.
 func (n *NodeAgentServer) UpdateEncryptionConfig(
 	ctx context.Context,
 	req *pb.UpdateEncryptionConfigRequest,
@@ -104,6 +99,9 @@ func (n *NodeAgentServer) UpdateEncryptionConfig(
 		return nil, err
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, encryptionReloadTimeout)
+	defer cancel()
+
 	walPath := n.encRotationWALPath()
 
 	opID, err := encRotationOpID(req)
@@ -111,42 +109,22 @@ func (n *NodeAgentServer) UpdateEncryptionConfig(
 		return nil, err
 	}
 
-	// Phase 1 (under encryptionMu): read config + WAL state, classify recovery
-	// state, and write to WAL if needed. The reload counter snapshot and
-	// "config update operation id" write must be atomic w.r.t. concurrent rotations, so both happen
-	// under the lock. Phases 2–3 (reload check / blocking wait) run outside it.
+	// Mutation admission and the WAL/config write share encryptionMu. Polling
+	// runs outside it; the final bounded confirmation reacquires it so agent
+	// writers cannot change ownership or configuration during cleanup.
 	n.encryptionMu.Lock()
-	result, err := n.tryCommitEncryptionConfigUpdate(req, walPath)
+	result, err := n.tryCommitEncryptionConfigUpdate(ctx, req, walPath)
 	n.encryptionMu.Unlock()
 
+	if ctx.Err() != nil {
+		return nil, encryptionConfirmationContextError(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
-	if result.status == prevEncComplete {
-		// Config already in desired state with no pending WAL — nothing to do.
-		return &pb.UpdateEncryptionConfigResponse{}, nil
-	}
-
-	// Phase 2 (outside lock): check whether the apiserver has already reloaded
-	// the config since the baseline was snapshotted. If the counter has advanced
-	// (R > baseline), we can skip the blocking wait entirely. R is monotonically
-	// increasing, so R > baseline outside the lock is an unambiguous confirmation.
-	if R, metricErr := n.getEncryptionReloadSuccessCount(); metricErr == nil && R > result.reloadCountBefore {
-		slog.Info("UpdateEncryptionConfig: reload already confirmed, cleaning up",
-			"reloadCount", R, "reloadCountBefore", result.reloadCountBefore, "stateFile", walPath)
-		if err := n.removeWALIfOwned(walPath, opID); err != nil {
-			return nil, err
-		}
-		return &pb.UpdateEncryptionConfigResponse{}, nil
-	}
-
-	// Phase 3 (outside lock): block until apiserver confirms the reload.
-	// The WAL remains as a crash checkpoint; on timeout the caller retries.
-	if err := n.waitForEncryptionReload(ctx, result.reloadCountBefore); err != nil {
-		return nil, err
-	}
-
-	if err := n.removeWALIfOwned(walPath, opID); err != nil {
+	// The loaded config identity, not a counter from an earlier apiserver
+	// process, proves completion. Cleanup rechecks identity and ownership.
+	if err := n.waitForEncryptionConfig(ctx, walPath, opID, result.configHash); err != nil {
 		return nil, err
 	}
 	return &pb.UpdateEncryptionConfigResponse{}, nil
@@ -237,9 +215,8 @@ func encRotationOpID(req *pb.UpdateEncryptionConfigRequest) (string, error) {
 type walRecoveryState int
 
 const (
-	// walCompleted: config is in desired state, no WAL → nothing to do
-	// because the request is successfully applied and reloaded in apiserver and the
-	// file has been removed.
+	// walCompleted: config is in desired state without a WAL; confirm loaded
+	// identity without writing another checkpoint or mutating the file.
 	walCompleted walRecoveryState = iota
 	// walReloadPending: config is in desired state, WAL entry belongs to this
 	// op → wait for apiserver reload.
@@ -271,37 +248,30 @@ func classifyWALState(configInDesiredState, walExists bool, savedOpID, requested
 	}
 }
 
-// prevEncStatus classifies the outcome of tryCommitEncryptionConfigUpdate.
-type prevEncStatus int
-
-const (
-	// prevEncComplete means the config is already in the desired state with no
-	// pending WAL entry; the caller can return success immediately.
-	prevEncComplete prevEncStatus = iota
-	// prevEncReloadPending means the config was just written (or was written in
-	// a prior call and reload is not yet confirmed); the caller must wait for
-	// the apiserver to reload it.
-	prevEncReloadPending
-)
-
 // prevEncResult is returned by tryCommitEncryptionConfigUpdate.
 type prevEncResult struct {
-	status            prevEncStatus
-	reloadCountBefore int // only meaningful when status == prevEncReloadPending
+	configHash string // agent-local only; never log or return this fingerprint
 }
 
 // tryCommitEncryptionConfigUpdate reads the current config and WAL entry, classifies
 // the WAL recovery state, and writes the new config if needed. It MUST be
 // called with n.encryptionMu held.
 func (n *NodeAgentServer) tryCommitEncryptionConfigUpdate(
+	ctx context.Context,
 	req *pb.UpdateEncryptionConfigRequest,
 	walPath string,
 ) (prevEncResult, error) {
-	cfg, err := n.readEncryptionConfig()
+	if ctx.Err() != nil {
+		return prevEncResult{}, encryptionConfirmationContextError(ctx)
+	}
+	cfg, currentHash, err := n.readEncryptionConfigWithHash()
 	if err != nil {
 		return prevEncResult{}, err
 	}
 	if err := cfg.ValidateSecretbox(); err != nil {
+		return prevEncResult{}, err
+	}
+	if err := cfg.validateMutationIdentity(req); err != nil {
 		return prevEncResult{}, err
 	}
 
@@ -320,12 +290,12 @@ func (n *NodeAgentServer) tryCommitEncryptionConfigUpdate(
 	switch state {
 	case walCompleted:
 		slog.Info("UpdateEncryptionConfig: config already in desired state")
-		return prevEncResult{status: prevEncComplete}, nil
+		return prevEncResult{configHash: currentHash}, nil
 
 	case walReloadPending:
 		// WAL state indicates this operation is a retry; caller will check outside the
 		// lock whether reload is already confirmed, and block-wait if not.
-		return prevEncResult{status: prevEncReloadPending, reloadCountBefore: wal.ReloadCountBefore}, nil
+		return prevEncResult{configHash: currentHash}, nil
 
 	case walStale:
 		slog.Error("stale WAL entry from a different operation; caller must retry the previous operation first",
@@ -337,7 +307,7 @@ func (n *NodeAgentServer) tryCommitEncryptionConfigUpdate(
 			wal.OpID,
 		)
 	case walNeedsWrite:
-		return n.commitConfigWrite(cfg, req, walPath)
+		return n.commitConfigWrite(ctx, cfg, currentHash, req, walPath)
 	default:
 		panic("impossible wal state")
 	}
@@ -345,6 +315,12 @@ func (n *NodeAgentServer) tryCommitEncryptionConfigUpdate(
 
 // readEncryptionConfig reads and parses the EncryptionConfiguration from disk.
 func (n *NodeAgentServer) readEncryptionConfig() (*EncryptionConfiguration, error) {
+	cfg, _, err := n.readEncryptionConfigWithHash()
+	return cfg, err
+}
+
+// readEncryptionConfigWithHash binds parsed state and fingerprint to one read.
+func (n *NodeAgentServer) readEncryptionConfigWithHash() (*EncryptionConfiguration, string, error) {
 	configPath := filepath.Join(n.RootPath, "/etc/kubernetes/kube-api-encryption/encryption-config.yaml")
 	b, err := os.ReadFile(configPath)
 	if err != nil {
@@ -352,19 +328,19 @@ func (n *NodeAgentServer) readEncryptionConfig() (*EncryptionConfiguration, erro
 			slog.Error("encryption config not found; caller must retry the previous operation first",
 				"config_path", configPath,
 			)
-			return nil, status.Errorf(codes.FailedPrecondition,
+			return nil, "", status.Errorf(codes.FailedPrecondition,
 				"encryption config not found at %s; run InitializeKubernetesAPIEncryption first",
 				configPath,
 			)
 		}
 		slog.Error("read encryption config", "err", err, "config_path", configPath)
-		return nil, fmt.Errorf("read encryption config: %w", err)
+		return nil, "", fmt.Errorf("read encryption config: %w", err)
 	}
 	cfg := &EncryptionConfiguration{}
 	if err := yaml.Unmarshal(b, cfg); err != nil {
-		return nil, fmt.Errorf("unmarshal encryption config: %w", err)
+		return nil, "", fmt.Errorf("unmarshal encryption config: %w", err)
 	}
-	return cfg, nil
+	return cfg, encryptionConfigContentHash(b), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -410,7 +386,9 @@ func writeEncRotationWAL(path string, state encRotationWALEntry) error {
 // It validates mutation preconditions, snapshots the reload counter, applies
 // the mutation, and performs the two WAL writes (WAL ①, config ②).
 func (n *NodeAgentServer) commitConfigWrite(
+	ctx context.Context,
 	cfg *EncryptionConfiguration,
+	currentHash string,
 	req *pb.UpdateEncryptionConfigRequest,
 	walPath string,
 ) (prevEncResult, error) {
@@ -418,13 +396,25 @@ func (n *NodeAgentServer) commitConfigWrite(
 		return prevEncResult{}, err
 	}
 
-	// Snapshot the reload counter BEFORE any write (WAL pre-condition).
-	// Without a valid baseline we cannot distinguish our reload from a prior one.
-	reloadCountBefore, err := n.getEncryptionReloadSuccessCount()
+	// Establish that this apiserver exposes a loaded-config identity before
+	// mutation. Missing/invalid metrics cannot be replaced by a counter guess.
+	baseline, err := n.getApiserverEncryptionState(ctx)
 	if err != nil {
 		return prevEncResult{}, fmt.Errorf("cannot establish reload baseline (metrics unavailable): %w", err)
 	}
-
+	onDisk, err := n.encryptionConfigHash()
+	if err != nil {
+		return prevEncResult{}, err
+	}
+	if onDisk != currentHash {
+		return prevEncResult{}, status.Error(codes.FailedPrecondition, "encryption config changed before mutation")
+	}
+	if baseline.configHash != currentHash {
+		return prevEncResult{}, status.Error(codes.FailedPrecondition, "apiserver has not loaded the current encryption config; retry after it converges")
+	}
+	if ctx.Err() != nil {
+		return prevEncResult{}, encryptionConfirmationContextError(ctx)
+	}
 	opID, err := encRotationOpID(req)
 	if err != nil {
 		return prevEncResult{}, err
@@ -434,7 +424,7 @@ func (n *NodeAgentServer) commitConfigWrite(
 	// crashes after this but before step ②, the next retry sees WAL +
 	// config=old and re-runs from here. The op_id lets a retry detect a stale
 	// checkpoint left by a different, preceding operation.
-	if err := writeEncRotationWAL(walPath, encRotationWALEntry{ReloadCountBefore: reloadCountBefore, OpID: opID}); err != nil {
+	if err := writeEncRotationWAL(walPath, encRotationWALEntry{OpID: opID}); err != nil {
 		return prevEncResult{}, fmt.Errorf("write rotation WAL: %w", err)
 	}
 
@@ -451,7 +441,7 @@ func (n *NodeAgentServer) commitConfigWrite(
 		return prevEncResult{}, fmt.Errorf("write encryption config: %w", err)
 	}
 
-	return prevEncResult{status: prevEncReloadPending, reloadCountBefore: reloadCountBefore}, nil
+	return prevEncResult{configHash: encryptionConfigContentHash(b)}, nil
 }
 
 // atomicWriteFile writes data to path atomically via a temp file + rename,
@@ -545,27 +535,6 @@ func parseEncryptionReloadCount(metrics string) int {
 		}
 	}
 	return total
-}
-
-// removeWALIfOwned deletes the WAL only if it still belongs to
-// the given opID. This must be called outside the encryptionMu lock but
-// re-acquires it briefly to close the race between reload confirmation and
-// deletion: without the check, a concurrent operation that wrote a new state
-// file after ours was confirmed could have its checkpoint silently deleted.
-func (n *NodeAgentServer) removeWALIfOwned(walPath, opID string) error {
-	n.encryptionMu.Lock()
-	defer n.encryptionMu.Unlock()
-	saved, exists, err := readEncRotationWAL(walPath)
-	if err != nil {
-		return fmt.Errorf("read WAL for cleanup: %w", err)
-	}
-	if !exists || saved.OpID != opID {
-		return nil
-	}
-	if err := os.Remove(walPath); err != nil {
-		return fmt.Errorf("remove WAL: %w", err)
-	}
-	return nil
 }
 
 // waitForEncryptionReload blocks until the local apiserver's encryption-config

@@ -89,12 +89,20 @@ type FakeClient struct {
 
 	StartEncryptedObjectsRewriteHook func(node db.Node, operationID string) (*nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error)
 	GetEncryptedObjectsRewriteHook   func(node db.Node, operationID string) (*nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation, error)
+	GetEtcdEncryptionKeyIdentityHook func(node db.Node, digest string) (string, error)
 
 	// ReconfigureSpireAgentHook and GetSpireAgentStatusHook produce the
 	// responses for those RPCs. They may be called concurrently, so the fake
 	// records no calls for them; a hook that needs to must synchronize itself.
 	ReconfigureSpireAgentHook func(ctx context.Context, node db.Node, req *nvkeproto.ReconfigureSpireAgentRequest) (*nvkeproto.ReconfigureSpireAgentResponse, error)
 	GetSpireAgentStatusHook   func(ctx context.Context, node db.Node) (*nvkeproto.GetSpireAgentStatusResponse, error)
+}
+
+func (f *FakeClient) GetEtcdEncryptionKeyIdentity(_ context.Context, node db.Node, digest string) (string, error) {
+	if f.GetEtcdEncryptionKeyIdentityHook != nil {
+		return f.GetEtcdEncryptionKeyIdentityHook(node, digest)
+	}
+	return "", errors.New("encryption identity lookup is not configured")
 }
 
 func (f *FakeClient) GetKubeconfig(ctx context.Context, node db.Node) (string, error) {

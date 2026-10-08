@@ -43,9 +43,9 @@ func (fencedRun) GetID() string    { return "join-cp" }
 func (fencedRun) GetRunID() string { return "run" }
 
 // fenceOwners are the operations whose retained ownership must fence control-plane mutations.
-var fenceOwners = []db.OperationType{db.OperationTypeCertRenewal}
+var fenceOwners = []db.OperationType{db.OperationTypeEtcdKeyRotation, db.OperationTypeCertRenewal}
 
-func TestControlPlaneJoinDefersDuringRenewal(t *testing.T) {
+func TestControlPlaneJoinDefersDuringCredentialOperation(t *testing.T) {
 	for _, owner := range fenceOwners {
 		t.Run(string(owner), func(t *testing.T) {
 			temporal := &fencedTemporal{}

@@ -530,6 +530,7 @@ type ClusterConditions struct {
 	UpdateInProgress   *UpdateInProgress         `json:"updateInProgress,omitempty"`
 	UpdateFailed       *Condition                `json:"updateFailed,omitempty"`
 	CertificateRenewal *CertificateRenewalStatus `json:"certificateRenewal,omitempty"`
+	EtcdKeyRotation    *EtcdKeyRotationStatus    `json:"etcdKeyRotation,omitempty"`
 }
 
 type ClusterFilters struct {

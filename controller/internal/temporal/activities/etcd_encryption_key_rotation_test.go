@@ -32,7 +32,10 @@ func TestBeginEtcdEncryptionKeyRotation_AcquiresClusterMutationLock(t *testing.T
 			Provisioned:  db.NewCondition(true, "ready"),
 			UpdateFailed: conditionPtr(db.NewCondition(true, "prior failure")),
 		},
+		KubernetesVersion: "1.34.0",
 	}, nil).Once()
+	mockDB.MockTx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Once()
+	mockDB.MockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{stableRotationNode(clusterID)}, nil).Once()
 	mockDB.MockTx.On("UpdateCluster", mock.Anything, mock.MatchedBy(func(cluster *db.Cluster) bool {
 		return cluster.ID == clusterID &&
 			cluster.EtcdEncrypted &&
@@ -148,4 +151,11 @@ func TestStartEtcdEncryptionRewrite_StartsFreshOperationAfterPriorSuccess(t *tes
 	require.Equal(t, activities.EtcdEncryptionOperationPhaseRunning, operation.Phase)
 	require.Equal(t, []string{"rotation-op"}, nodeAgent.StartEncryptedObjectsRewriteIDs)
 	mockDB.AssertExpectations(t)
+}
+
+func stableRotationNode(clusterID uuid.UUID) db.Node {
+	return db.Node{
+		ID: uuid.New(), ClusterID: clusterID, ControlPlane: true, Name: "cp-0", IP: "10.0.0.10",
+		Conditions: db.NodeConditions{Joined: db.NewCondition(true, "joined"), Provisioned: db.NewCondition(true, "provisioned"), NodeAgentReady: db.NewCondition(true, "ready")},
+	}
 }

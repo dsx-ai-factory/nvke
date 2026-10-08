@@ -81,6 +81,7 @@ type OperationType string
 
 const (
 	OperationTypeEtcdEncryption    OperationType = "etcd_encryption"
+	OperationTypeEtcdKeyRotation   OperationType = "etcd_key_rotation"
 	OperationTypeK8sUpgrade        OperationType = "k8s_upgrade"
 	OperationTypeCPNodesRecycling  OperationType = "cp_nodes_recycling"
 	OperationTypeOIDCEnable        OperationType = "oidc_enable"

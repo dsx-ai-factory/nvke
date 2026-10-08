@@ -270,7 +270,8 @@ func rewriteEtcdEncryptedObjectsWithTimeout(ctx workflow.Context, nodeID uuid.UU
 	if operation.OperationID == "" {
 		return errors.New("encrypted-object rewrite returned an empty operation ID")
 	}
-	// Start may resume an operation left running by an earlier workflow run.
+	// Retain the acknowledged operation ID, including when a reset replays
+	// the Start result recorded by the original run.
 	input.OperationID = operation.OperationID
 	if done, err := validateEtcdEncryptionRewriteOperation(input.OperationID, operation); done || err != nil {
 		return err

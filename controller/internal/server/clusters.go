@@ -1344,6 +1344,22 @@ func APIClusterFromDB(dbCluster *db.Cluster) api.Cluster {
 		conditions.CertificateRenewal = &apiStatus
 	}
 
+	if status := dbCluster.Conditions.EtcdKeyRotation; status != nil {
+		apiStatus := api.EtcdKeyRotationStatus{
+			WorkflowID:     status.WorkflowID,
+			State:          api.EtcdKeyRotationStatusState(status.State),
+			Phase:          api.EtcdKeyRotationStatusPhase(status.Phase),
+			StartedAt:      status.StartedAt,
+			LastProgressAt: status.LastProgressAt,
+			CompletedAt:    status.CompletedAt,
+		}
+		if status.FailureReason != "" {
+			reason := api.EtcdKeyRotationStatusFailureReason(status.FailureReason)
+			apiStatus.FailureReason = &reason
+		}
+		conditions.EtcdKeyRotation = &apiStatus
+	}
+
 	return api.Cluster{
 		ID:                            dbCluster.ID,
 		Name:                          dbCluster.Name,

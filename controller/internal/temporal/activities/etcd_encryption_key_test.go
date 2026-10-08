@@ -18,6 +18,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 func TestPendingKubeAPIEncryptionKeyIsStableAcrossRetries(t *testing.T) {
@@ -93,6 +94,12 @@ func TestPendingKubeAPIEncryptionRotationKeyIsFreshAndStableAcrossRetries(t *tes
 		k8sClient: k8sClient,
 	}
 
+	withIdentityTestNodes(t, a, clusterID, func(_ db.Node, digest string) (string, error) {
+		if digest == identityTestDigest("active-key") {
+			return constants.LegacyAPIEncryptionKeyName, nil
+		}
+		return "", nil
+	})
 	pending, err := a.ensurePendingKubeAPIEncryptionRotationKey(ctx, clusterID)
 	require.NoError(t, err)
 	require.NotEmpty(t, pending)
@@ -101,6 +108,15 @@ func TestPendingKubeAPIEncryptionRotationKeyIsFreshAndStableAcrossRetries(t *tes
 	retriedPending, err := a.ensurePendingKubeAPIEncryptionRotationKey(ctx, clusterID)
 	require.NoError(t, err)
 	require.Equal(t, pending, retriedPending)
+	stored, err := a.getKubeAPIEncryptionKeySecret(ctx, clusterID)
+	require.NoError(t, err)
+	name := string(stored.Data[constants.EtcdEncryptionKeyFieldPendingName])
+	require.NotEmpty(t, name)
+	require.NotEqual(t, constants.LegacyAPIEncryptionKeyName, name)
+	require.NoError(t, a.finalizePendingKubeAPIEncryptionKey(ctx, clusterID))
+	activeName, err := a.requireKubeAPIEncryptionKeyName(ctx, clusterID)
+	require.NoError(t, err)
+	require.Equal(t, name, activeName)
 }
 
 func TestPendingKubeAPIEncryptionRotationKeyRequiresActiveKey(t *testing.T) {

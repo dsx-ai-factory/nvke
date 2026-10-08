@@ -822,7 +822,7 @@ func TestUnit_NodePoolControllerReplacementRequiresVIP(t *testing.T) {
 }
 
 func TestControlPlaneNodePoolResumesDeferredDesiredCountAfterCredentialOperation(t *testing.T) {
-	for _, owner := range []db.OperationType{db.OperationTypeCertRenewal} {
+	for _, owner := range []db.OperationType{db.OperationTypeEtcdKeyRotation, db.OperationTypeCertRenewal} {
 		t.Run(string(owner), func(t *testing.T) {
 			clusterID, poolID, setID := uuid.New(), uuid.New(), uuid.New()
 			pool := db.NodePool{ID: poolID, ClusterID: clusterID, ControlPlane: true, DesiredCount: 1, CurrentNodeSetID: &setID}

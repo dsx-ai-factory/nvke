@@ -5,9 +5,12 @@ package etcd
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -122,7 +125,7 @@ func (op *EncryptionOperation) ApplyToNode(ctx context.Context, node rollout.Nod
 		return rollout.OutcomeFailedRestored, errors.New("etcd encryption artifact is missing clusterId")
 	}
 
-	key := ""
+	key := EncryptionKey{}
 	if op.requiresEncryptionKey() {
 		key, err = op.readEncryptionKey(ctx, artifact.ClusterID)
 		if err != nil {
@@ -137,17 +140,27 @@ func (op *EncryptionOperation) ApplyToNode(ctx context.Context, node rollout.Nod
 	if cleanup != nil {
 		defer cleanup()
 	}
+	if op.isRotation() {
+		if err := verifyRotationKeyIdentity(ctx, client, &key); err != nil {
+			return rollout.OutcomeFailedNotRestored, err
+		}
+	}
 	if err := op.runEncryptionPhase(ctx, client, artifact, key); err != nil {
+		if op.isRotation() {
+			// An upstream validation error may echo the secret-bearing request.
+			// Do not serialize that error into Temporal activity failures.
+			return rollout.OutcomeFailedNotRestored, fmt.Errorf("%s on node %s failed; inspect node encryption health", op.name, node.Name())
+		}
 		return rollout.OutcomeFailedNotRestored, fmt.Errorf("%s on node %s: %w", op.name, node.Name(), err)
 	}
 	return rollout.OutcomeApplied, nil
 }
 
-func (op *EncryptionOperation) runEncryptionPhase(ctx context.Context, client nodeAgentEncryptionClient, artifact encryptionArtifact, key string) error {
+func (op *EncryptionOperation) runEncryptionPhase(ctx context.Context, client nodeAgentEncryptionClient, artifact encryptionArtifact, key EncryptionKey) error {
 	switch op.phase {
 	case phaseInitialize:
 		resp, err := client.InitializeKubernetesAPIEncryption(ctx, &nvkeproto.InitializeKubernetesAPIEncryptionRequest{
-			EncryptionKey: key, ObjectsToEncrypt: artifact.ObjectsToEncrypt,
+			EncryptionKey: key.Key, EncryptionKeyName: key.Name, ObjectsToEncrypt: artifact.ObjectsToEncrypt,
 		})
 		if err != nil {
 			return fmt.Errorf("initialize kubernetes API encryption: %w", err)
@@ -170,7 +183,7 @@ func (op *EncryptionOperation) runEncryptionPhase(ctx context.Context, client no
 	case phaseAddSecondaryKey:
 		if _, err := client.UpdateEncryptionConfig(ctx, &nvkeproto.UpdateEncryptionConfigRequest{
 			Operation: &nvkeproto.UpdateEncryptionConfigRequest_AddSecondaryKey{
-				AddSecondaryKey: &nvkeproto.AddSecondaryKeyOperation{NewKey: key},
+				AddSecondaryKey: &nvkeproto.AddSecondaryKeyOperation{NewKey: key.Key, KeyName: key.Name},
 			},
 		}); err != nil {
 			return fmt.Errorf("add secondary encryption key: %w", err)
@@ -178,7 +191,7 @@ func (op *EncryptionOperation) runEncryptionPhase(ctx context.Context, client no
 	case phasePromotePrimaryKey:
 		if _, err := client.UpdateEncryptionConfig(ctx, &nvkeproto.UpdateEncryptionConfigRequest{
 			Operation: &nvkeproto.UpdateEncryptionConfigRequest_PromotePrimaryKey{
-				PromotePrimaryKey: &nvkeproto.PromotePrimaryKeyOperation{NewKey: key},
+				PromotePrimaryKey: &nvkeproto.PromotePrimaryKeyOperation{NewKey: key.Key, KeyName: key.Name},
 			},
 		}); err != nil {
 			return fmt.Errorf("promote primary encryption key: %w", err)
@@ -186,7 +199,7 @@ func (op *EncryptionOperation) runEncryptionPhase(ctx context.Context, client no
 	case phaseRemoveOldEncryptionKey:
 		if _, err := client.UpdateEncryptionConfig(ctx, &nvkeproto.UpdateEncryptionConfigRequest{
 			Operation: &nvkeproto.UpdateEncryptionConfigRequest_RemoveOldKeys{
-				RemoveOldKeys: &nvkeproto.RemoveOldKeysOperation{PrimaryKey: key},
+				RemoveOldKeys: &nvkeproto.RemoveOldKeysOperation{PrimaryKey: key.Key, KeyName: key.Name},
 			},
 		}); err != nil {
 			return fmt.Errorf("remove old encryption keys: %w", err)
@@ -227,11 +240,11 @@ func (op *EncryptionOperation) BuildApplyToNodePayload(_ context.Context, cluste
 	return rollout.ApplyToNodePayload(out), nil
 }
 
-func (op *EncryptionOperation) readEncryptionKey(ctx context.Context, clusterID uuid.UUID) (string, error) {
+func (op *EncryptionOperation) readEncryptionKey(ctx context.Context, clusterID uuid.UUID) (EncryptionKey, error) {
 	if op.encryptionKeyReader == nil {
-		return "", errors.New("etcd encryption operation key reader is not configured")
+		return EncryptionKey{}, errors.New("etcd encryption operation key reader is not configured")
 	}
-	var key string
+	var key EncryptionKey
 	var err error
 	switch op.phase {
 	case phaseInitialize:
@@ -239,15 +252,18 @@ func (op *EncryptionOperation) readEncryptionKey(ctx context.Context, clusterID 
 	case phaseAddSecondaryKey, phasePromotePrimaryKey, phaseRemoveOldEncryptionKey:
 		key, err = op.encryptionKeyReader.ReadRotationKey(ctx, clusterID)
 	case phasePromote, phaseRemove:
-		return "", fmt.Errorf("etcd encryption phase %q does not use key material", op.phase)
+		return EncryptionKey{}, fmt.Errorf("etcd encryption phase %q does not use key material", op.phase)
 	default:
-		return "", fmt.Errorf("etcd encryption phase %q does not use key material", op.phase)
+		return EncryptionKey{}, fmt.Errorf("etcd encryption phase %q does not use key material", op.phase)
 	}
 	if err != nil {
-		return "", fmt.Errorf("read etcd encryption key for cluster %s: %w", clusterID, err)
+		if op.isRotation() {
+			return EncryptionKey{}, fmt.Errorf("read etcd rotation key failed; inspect Kubernetes access and pending key state")
+		}
+		return EncryptionKey{}, fmt.Errorf("read etcd encryption key for cluster %s: %w", clusterID, err)
 	}
-	if key == "" {
-		return "", fmt.Errorf("etcd encryption key is empty for cluster %s", clusterID)
+	if key.Key == "" {
+		return EncryptionKey{}, fmt.Errorf("etcd encryption key is empty for cluster %s", clusterID)
 	}
 	return key, nil
 }
@@ -302,4 +318,28 @@ func parsePayload(payload rollout.ApplyToNodePayload) (encryptionArtifact, error
 		return encryptionArtifact{}, fmt.Errorf("unmarshal etcd encryption artifact: %w", err)
 	}
 	return out, nil
+}
+
+func (op *EncryptionOperation) isRotation() bool {
+	return op.phase == phaseAddSecondaryKey || op.phase == phasePromotePrimaryKey || op.phase == phaseRemoveOldEncryptionKey
+}
+
+// verifyRotationKeyIdentity confirms the upgraded agent supports named keys and
+// rejects conflicting live names before any mutation. Legacy activity histories
+// may still have unnamed pending keys; preserve their existing naming protocol.
+func verifyRotationKeyIdentity(ctx context.Context, client nodeAgentEncryptionClient, key *EncryptionKey) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	sum := sha256.Sum256([]byte(key.Key))
+	resp, err := client.GetEtcdEncryptionKeyIdentity(ctx, &nvkeproto.GetEtcdEncryptionKeyIdentityRequest{KeySha256: hex.EncodeToString(sum[:])})
+	if err != nil {
+		return errors.New("cannot prove rotation key identity; check connectivity and upgrade older node agents")
+	}
+	if name := resp.GetKeyName(); name != "" {
+		if key.Name != "" && key.Name != name {
+			return errors.New("pending encryption storage identity conflicts with the node configuration")
+		}
+		key.Name = name
+	}
+	return nil
 }

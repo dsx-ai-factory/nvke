@@ -90,7 +90,7 @@ func (s *fenceStore) ListNodePools(context.Context, db.NodePoolFilters) ([]db.No
 }
 
 func newFenceStore() *fenceStore {
-	cluster := db.Cluster{ID: uuid.New(), Conditions: db.ClusterConditions{Provisioned: db.NewCondition(true, "ready"), UpdateInProgress: &db.UpdateInProgress{Type: db.OperationTypeCertRenewal}}}
+	cluster := db.Cluster{ID: uuid.New(), EtcdEncrypted: true, Conditions: db.ClusterConditions{Provisioned: db.NewCondition(true, "ready"), UpdateInProgress: &db.UpdateInProgress{Type: db.OperationTypeCertRenewal}}, KubernetesVersion: "1.34.0"}
 	return &fenceStore{cluster: cluster, nodes: []db.Node{stableRenewalNode(cluster.ID)}}
 }
 
@@ -99,15 +99,19 @@ func fenceActivities(store *fenceStore, agent *agenttest.FakeClient) *activities
 }
 
 // beginFenceOwner accepts ownership for either credential operation through its production activity.
-// Each call is a new cycle, as the controller's retries are: a refused cycle is recorded as failed.
-func beginFenceOwner(t *testing.T, a *activities.Activities, store *fenceStore) error {
+// Each call is a new cycle, as the controller's retries are: a refused renewal cycle is recorded as failed.
+func beginFenceOwner(t *testing.T, a *activities.Activities, store *fenceStore, owner db.OperationType) error {
 	t.Helper()
+	if owner == db.OperationTypeEtcdKeyRotation {
+		_, err := a.BeginEtcdEncryptionKeyRotation(t.Context(), activities.BeginEtcdEncryptionKeyRotationInput{ClusterID: store.cluster.ID, WorkflowID: "owner"})
+		return err
+	}
 	store.cycles++
 	_, err := a.BeginCertificateRenewal(t.Context(), activities.BeginCertificateRenewalInput{ClusterID: store.cluster.ID, CycleID: fmt.Sprintf("cycle-%d", store.cycles)})
 	return err
 }
 
-func TestRenewalBeginRejectsPreviouslyAcceptedMembershipWork(t *testing.T) {
+func TestCredentialBeginRejectsPreviouslyAcceptedMembershipWork(t *testing.T) {
 	for _, c := range ownedOperations("not_joined", "not_provisioned", "provisioning", "delete_requested", "deleting", "rebooting", "pool_deleting") {
 		state := c.operation
 		t.Run(string(c.owner)+"/"+state, func(t *testing.T) {
@@ -130,20 +134,24 @@ func TestRenewalBeginRejectsPreviouslyAcceptedMembershipWork(t *testing.T) {
 			case "pool_deleting":
 				store.pools = []db.NodePool{{Conditions: db.NodePoolConditions{Deleting: db.NewCondition(true, "")}}}
 			}
-			require.Error(t, beginFenceOwner(t, fenceActivities(store, nil), store))
+			require.Error(t, beginFenceOwner(t, fenceActivities(store, nil), store, c.owner))
 			require.Nil(t, store.cluster.Conditions.UpdateInProgress)
-			// The refusal is recorded as a failed cycle, never as ownership.
-			require.Equal(t, 1, store.writes)
-			require.Equal(t, db.CertificateRenewalStateFailed, store.cluster.Conditions.CertificateRenewal.State)
+			if c.owner == db.OperationTypeCertRenewal {
+				// The refusal is recorded as a failed cycle, never as ownership.
+				require.Equal(t, 1, store.writes)
+				require.Equal(t, db.CertificateRenewalStateFailed, store.cluster.Conditions.CertificateRenewal.State)
+			} else {
+				require.Zero(t, store.writes)
+			}
 		})
 	}
 }
 
-func TestControlPlaneAdmissionAndRenewalAreExclusive(t *testing.T) {
+func TestControlPlaneAdmissionAndCredentialOperationAreExclusive(t *testing.T) {
 	for _, c := range ownedOperations("join", "teardown", "reboot") {
 		mutation := c.operation
-		for _, renewalFirst := range []bool{true, false} {
-			t.Run(string(c.owner)+"/"+mutation+map[bool]string{true: "_renewal_first", false: "_mutation_first"}[renewalFirst], func(t *testing.T) {
+		for _, credentialFirst := range []bool{true, false} {
+			t.Run(string(c.owner)+"/"+mutation+map[bool]string{true: "_credential_first", false: "_mutation_first"}[credentialFirst], func(t *testing.T) {
 				store := newFenceStore()
 				store.cluster.Conditions.UpdateInProgress = nil
 				a := fenceActivities(store, nil)
@@ -157,8 +165,8 @@ func TestControlPlaneAdmissionAndRenewalAreExclusive(t *testing.T) {
 				case "reboot":
 					update.Conditions.Rebooting = condition
 				}
-				begin := func() error { return beginFenceOwner(t, a, store) }
-				if renewalFirst {
+				begin := func() error { return beginFenceOwner(t, a, store, c.owner) }
+				if credentialFirst {
 					require.NoError(t, begin())
 					require.ErrorIs(t, a.UpdateNodeConditions(t.Context(), update), db.ErrControlPlaneMutationBlocked)
 					require.Equal(t, []string{"cluster"}, store.lockOrder)
@@ -175,7 +183,7 @@ func TestControlPlaneAdmissionAndRenewalAreExclusive(t *testing.T) {
 }
 
 // fenceOwners are the operations whose retained ownership must fence control-plane mutations.
-var fenceOwners = []db.OperationType{db.OperationTypeCertRenewal}
+var fenceOwners = []db.OperationType{db.OperationTypeEtcdKeyRotation, db.OperationTypeCertRenewal}
 
 type ownedOperation struct {
 	owner     db.OperationType
@@ -259,7 +267,7 @@ func TestInFlightUpgradeRetainsAdmissionUntilConfirmedSuccess(t *testing.T) {
 				}
 				require.Len(t, agent.KubeadmUpgradeApplyCalls, 1)
 				require.Equal(t, []string{"cluster", "node"}, store.lockOrder)
-				err = beginFenceOwner(t, a, store)
+				err = beginFenceOwner(t, a, store, owner)
 				if successful {
 					require.NoError(t, err)
 				} else {
@@ -298,7 +306,7 @@ func TestRetainedFailedRenewalKeepsFencingUntilReleased(t *testing.T) {
 			store := newFenceStore()
 			store.cluster.Conditions.UpdateInProgress = nil
 			a := fenceActivities(store, nil)
-			require.NoError(t, beginFenceOwner(t, a, store))
+			require.NoError(t, beginFenceOwner(t, a, store, db.OperationTypeCertRenewal))
 			_, err := a.FailCertificateRenewal(t.Context(), activities.FailCertificateRenewalInput{
 				ClusterID: store.cluster.ID, CycleID: store.cluster.Conditions.CertificateRenewal.CycleID, RetainMutationLock: retain, Phase: "renew", Message: "outcome unknown",
 			})
@@ -341,7 +349,7 @@ func TestFailedV1StartReleasesReservationForV2Begin(t *testing.T) {
 
 	require.ErrorContains(t, err, "failed to start certificate renewal")
 	require.Nil(t, store.cluster.CertificateRenewal, "a failed V1 Start must not outlive its activity")
-	require.NoError(t, beginFenceOwner(t, a, store), "a later V2 cycle is admitted")
+	require.NoError(t, beginFenceOwner(t, a, store, db.OperationTypeCertRenewal), "a later V2 cycle is admitted")
 	require.Equal(t, db.CertificateRenewalStateAccepted, store.cluster.Conditions.CertificateRenewal.State)
 }
 
@@ -382,6 +390,88 @@ func TestClusterDeletionPreemptsCredentialOwners(t *testing.T) {
 			require.ErrorAs(t, err, &appErr)
 			require.True(t, appErr.NonRetryable())
 			require.ErrorContains(t, err, "cluster deletion is in progress")
+		})
+	}
+}
+
+func TestRotationPreservesWorkerAdmissionsAndControlPlaneObservations(t *testing.T) {
+	store := newFenceStore()
+	store.cluster = runningRotation()
+	store.nodes = []db.Node{stableRenewalNode(store.cluster.ID)}
+	a := fenceActivities(store, nil)
+	require.NoError(t, a.UpdateNodeConditions(t.Context(), activities.NodeConditionsUpdate{
+		NodeID:     store.nodes[0].ID,
+		Conditions: activities.NodeConditions{NodeAgentReady: &activities.ConditionUpdate{Status: db.ConditionStatusFalse, Message: "unreachable"}},
+	}))
+	require.Equal(t, db.EtcdKeyRotationStateRunning, store.cluster.Conditions.EtcdKeyRotation.State)
+	require.Equal(t, db.OperationTypeEtcdKeyRotation, store.cluster.Conditions.UpdateInProgress.Type)
+	require.Equal(t, []string{"node"}, store.lockOrder)
+	store.nodes[0].ControlPlane = false
+	require.NoError(t, a.UpdateNodeConditions(t.Context(), activities.NodeConditionsUpdate{
+		NodeID:     store.nodes[0].ID,
+		Conditions: activities.NodeConditions{Provisioning: &activities.ConditionUpdate{Status: db.ConditionStatusTrue, Message: "worker join"}},
+	}))
+	require.Equal(t, []string{"node"}, store.lockOrder)
+	require.NoError(t, a.RecordEtcdKeyRotationPhase(t.Context(), activities.RecordEtcdKeyRotationPhaseInput{ClusterID: store.cluster.ID, WorkflowID: "owner", Phase: db.EtcdKeyRotationPhaseRewrite}))
+	require.Equal(t, db.EtcdKeyRotationPhaseRewrite, store.cluster.Conditions.EtcdKeyRotation.Phase)
+}
+
+func TestRotationStopsWhenClusterDeletionStarts(t *testing.T) {
+	store := newFenceStore()
+	store.cluster = runningRotation()
+	store.cluster.Conditions.Deleting = db.NewCondition(true, "Tearing down")
+	store.nodes = []db.Node{stableRenewalNode(store.cluster.ID)}
+	a := fenceActivities(store, nil)
+	err := a.RecordEtcdKeyRotationPhase(t.Context(), activities.RecordEtcdKeyRotationPhaseInput{ClusterID: store.cluster.ID, WorkflowID: "owner", Phase: db.EtcdKeyRotationPhaseRewrite})
+	require.ErrorContains(t, err, "cluster deletion is in progress")
+	err = a.ValidateEtcdRotationMembership(t.Context(), activities.ValidateEtcdRotationMembershipInput{ClusterID: store.cluster.ID, WorkflowID: "owner", ExpectedNodeIDs: []uuid.UUID{store.nodes[0].ID}})
+	require.ErrorContains(t, err, "no longer owns")
+	require.Zero(t, store.writes)
+}
+
+func TestRotationRemovalGateRejectsMembershipDriftAndRequiresEveryNodeReady(t *testing.T) {
+	for _, failure := range []string{"", "db_membership", "unfinished", "agent_not_ready", "api_not_ready", "live_membership"} {
+		name := failure
+		if name == "" {
+			name = "converged"
+		}
+		t.Run(name, func(t *testing.T) {
+			store := newFenceStore()
+			store.cluster = runningRotation()
+			store.nodes = []db.Node{stableRenewalNode(store.cluster.ID)}
+			store.nodes = append(store.nodes, stableRenewalNode(store.cluster.ID))
+			store.nodes[1].Name = "cp-1"
+			ids := []uuid.UUID{store.nodes[0].ID, store.nodes[1].ID}
+			switch failure {
+			case "db_membership":
+				store.nodes[1].ID = uuid.New()
+			case "unfinished":
+				store.nodes[1].Conditions.DeleteRequested = db.NewCondition(true, "")
+			case "agent_not_ready":
+				store.nodes[1].Conditions.NodeAgentReady = db.NewCondition(false, "")
+			}
+			agent := &agenttest.FakeClient{ExecuteScriptHook: func(node db.Node, name, _ string) (*nvkeproto.ExecuteScriptResponse, error) {
+				if name == "etcd-rotation-membership" {
+					if failure == "live_membership" {
+						return &nvkeproto.ExecuteScriptResponse{ExitCode: 1, ErrorMessage: "untrusted output"}, nil
+					}
+					return &nvkeproto.ExecuteScriptResponse{}, nil
+				}
+				if failure == "api_not_ready" && node.ID == store.nodes[1].ID {
+					return nil, errors.New("untrusted output")
+				}
+				return &nvkeproto.ExecuteScriptResponse{Output: "[+]ping ok\n[+]etcd ok\n"}, nil
+			}}
+			err := fenceActivities(store, agent).ValidateEtcdRotationMembership(t.Context(), activities.ValidateEtcdRotationMembershipInput{ClusterID: store.cluster.ID, WorkflowID: "owner", ExpectedNodeIDs: ids})
+			if failure == "" {
+				require.NoError(t, err)
+				require.Len(t, agent.ExecuteScriptNames, 3)
+			} else {
+				require.Error(t, err)
+				require.NotContains(t, err.Error(), "untrusted output")
+			}
+			require.Equal(t, db.OperationTypeEtcdKeyRotation, store.cluster.Conditions.UpdateInProgress.Type)
+			require.Zero(t, store.writes)
 		})
 	}
 }
