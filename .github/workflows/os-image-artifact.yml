@@ -1204,8 +1204,8 @@ jobs:
             too large to attach here.
 
             Each disk has an SPDX 2.3 SBOM attached beside it, named after the
-            disk it describes -- `nke-node-fde-ubuntu-26.04-amd64.spdx.json`
-            for `nke-node-fde-ubuntu-26.04-amd64.qcow2`, and so on. It lists
+            disk it describes -- `nke-node-fde-ubuntu-26.04.1-amd64.spdx.json`
+            for `nke-node-fde-ubuntu-26.04.1-amd64.qcow2`, and so on. It lists
             the image's dpkg package set, read out of the built disk rather
             than derived from the Packer templates.
 
