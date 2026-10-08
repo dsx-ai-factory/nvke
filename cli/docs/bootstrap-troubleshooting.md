@@ -200,12 +200,14 @@ re-run. If a half-created cluster remains, delete it with the command above.
 
 **`nerdctl pull <image>: exit status 1`** with an authentication error
 
-The controller or provider image is in a registry that needs a login, or the
-reference is wrong. Log in on the bootstrap host and re-run:
+The controller or provider image is in a registry that needs a credential, and
+the bootstrap host does not hold a valid one for it, or the image reference is
+wrong. Make sure the correct token is available to `nerdctl` on the bootstrap
+host. `REGISTRY_API_KEY` does not apply here: this pull uses the credentials
+`nerdctl` already holds. Confirm by hand before re-running bootstrap:
 
 ```bash
-nerdctl login <registry>
-nerdctl pull <image>     # confirm by hand before re-running bootstrap
+nerdctl pull <image>
 ```
 
 **`kind load image-archive ...: exit status 1`** or **`want two sha256 digests`**
