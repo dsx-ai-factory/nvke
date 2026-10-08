@@ -31,8 +31,10 @@ const (
 
 // Input keys a caller may pass.
 const (
-	// InputVersionKey asks a git tag strategy for exactly this version, which
-	// must exist.
+	// InputVersionKey asks for exactly this version in place of resolving one.
+	// Each strategy checks the version against what it can know, so a git tag
+	// strategy requires the tag to exist and a locked package requires the
+	// version to be locked.
 	InputVersionKey = "version"
 
 	// InputSelectKey picks how a git tag strategy chooses when no version is

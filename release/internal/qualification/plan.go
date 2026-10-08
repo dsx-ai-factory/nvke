@@ -5,9 +5,15 @@ package qualification
 
 // Plan is what `qualify plan` writes and every later verb reads.
 type Plan struct {
-	Subject      string        `json:"subject"`
-	Version      string        `json:"version"`
-	Scope        string        `json:"scope"`
+	Subject string `json:"subject"`
+	Version string `json:"version"`
+	Scope   string `json:"scope"`
+
+	// Overrides names the components and dependencies whose version a person
+	// chose, in order. Everything else was resolved by its strategy, so a record
+	// never credits a strategy with a human's choice.
+	Overrides []string `json:"overrides,omitempty"`
+
 	Combinations []Combination `json:"combinations"`
 }
 

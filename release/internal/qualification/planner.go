@@ -32,6 +32,11 @@ type Planner struct {
 
 	// Root is the repository root, where subject files are found.
 	Root string
+
+	// Overrides are versions a person chose for components and dependencies,
+	// by name. Each replaces what the strategy would have resolved, and goes
+	// through the same resolver so that it is checked there.
+	Overrides map[string]string
 }
 
 // Plan resolves one subject at one version over one scope.
@@ -47,6 +52,9 @@ func (p *Planner) Plan(subject, version, scope string) (*Plan, error) {
 		return nil, fmt.Errorf("%s describes %q, not %q", SubjectPath(p.Root, subject), s.Spec.Subject, subject)
 	}
 	if err := Check(p.Policy, p.Registry, s); err != nil {
+		return nil, err
+	}
+	if err := checkOverrides(s, p.Overrides); err != nil {
 		return nil, err
 	}
 
@@ -70,10 +78,16 @@ func (p *Planner) Plan(subject, version, scope string) (*Plan, error) {
 		return nil, err
 	}
 
+	var overrides []string
+	if len(p.Overrides) > 0 {
+		overrides = sortedNames(p.Overrides)
+	}
+
 	return &Plan{
 		Subject:      subject,
 		Version:      version,
 		Scope:        scope,
+		Overrides:    overrides,
 		Combinations: combinations,
 	}, nil
 }
@@ -184,13 +198,18 @@ func (p *Planner) combinations(s *Subject, streams []StreamDefinition) ([]Combin
 // resolveComponent turns one component's selectors into the versions to
 // qualify, in selector order and without repeats.
 func (p *Planner) resolveComponent(c SubjectComponent) ([]pick, error) {
+	inputs := map[string]string{}
+	if v, ok := p.Overrides[c.Name]; ok {
+		inputs[resolve.InputVersionKey] = v
+	}
+
 	var out []pick
 	for _, sel := range c.Selectors {
 		if sel != SelectorLatest {
 			return nil, fmt.Errorf("selector %q is not one this understands, the only selector is %q",
 				sel, SelectorLatest)
 		}
-		got, err := p.resolver(c.Name).Resolve(map[string]string{})
+		got, err := p.resolver(c.Name).Resolve(maps.Clone(inputs))
 		if err != nil {
 			return nil, err
 		}
@@ -260,6 +279,9 @@ func (p *Planner) resolveDependencies(s *Subject, base map[string]string, stream
 				return nil, fmt.Errorf("%s: %w", d.Name, err)
 			}
 			inputs[resolve.InputConstraintKey] = constraint
+		}
+		if v, ok := p.Overrides[d.Name]; ok {
+			inputs[resolve.InputVersionKey] = v
 		}
 
 		got, err := p.resolver(d.Name).Resolve(inputs)

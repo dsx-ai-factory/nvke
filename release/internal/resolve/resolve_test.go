@@ -301,3 +301,80 @@ func TestMakeVarMissingFile(t *testing.T) {
 		t.Errorf("err = %v, want it to name the file", err)
 	}
 }
+
+// An override asks for one version in place of resolving. The locked package
+// strategy accepts it only if every architecture locks it, and only if it
+// matches the constraint when there is one, so a person cannot plan a version
+// the image does not carry or put a minor on a stream that is not qualifying it.
+func TestLockedPackageOverride(t *testing.T) {
+	dir := lockRepo(t, "os-image/v0.1.1-rc.1", map[string][]string{
+		"amd64": {"v1.34.2", "v1.35.3", "v1.36.3", "v1.36.9"},
+		"arm64": {"v1.34.2", "v1.35.3", "v1.36.3"},
+	})
+	l := LockedPackage{Dir: dir, LockDir: "pkg/lock", From: "os-image"}
+	ref := "os-image/v0.1.1-rc.1"
+
+	for _, tc := range []struct {
+		name   string
+		inputs map[string]string
+		want   string
+		wantEr string
+	}{
+		{"a locked version", map[string]string{InputVersionKey: "1.35.3", "os-image.ref": ref}, "1.35.3", ""},
+		{"with the leading v", map[string]string{InputVersionKey: "v1.35.3", "os-image.ref": ref}, "1.35.3", ""},
+		{
+			"that matches the constraint",
+			map[string]string{InputVersionKey: "1.36.3", InputConstraintKey: "1.36", "os-image.ref": ref},
+			"1.36.3", "",
+		},
+		{
+			"that does not match the constraint",
+			map[string]string{InputVersionKey: "1.35.3", InputConstraintKey: "1.36", "os-image.ref": ref},
+			"",
+			"1.35.3 does not match the constraint 1.36",
+		},
+		{
+			"that is not locked, and the error says what is",
+			map[string]string{InputVersionKey: "1.36.2", "os-image.ref": ref},
+			"",
+			"does not lock 1.36.2 for every architecture, it locks 1.36.3, 1.35.3, 1.34.2",
+		},
+		{
+			"that is locked for one architecture only",
+			map[string]string{InputVersionKey: "1.36.9", "os-image.ref": ref},
+			"",
+			"does not lock 1.36.9 for every architecture",
+		},
+		{"that is not a version", map[string]string{InputVersionKey: "latest", "os-image.ref": ref}, "", `"latest" is not a version`},
+		{"without a ref to read", map[string]string{InputVersionKey: "1.35.3"}, "", "no os-image.ref given"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := l.Resolve(tc.inputs)
+			if tc.wantEr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantEr) {
+					t.Fatalf("err = %v, want it to contain %q", err, tc.wantEr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got[ResultVersionKey] != tc.want {
+				t.Errorf("version = %q, want %q", got[ResultVersionKey], tc.want)
+			}
+		})
+	}
+}
+
+// A tool pin has no list of valid values, so an override is returned as given
+// and the pin file is not read at all.
+func TestMakeVarOverrideDoesNotReadThePinFile(t *testing.T) {
+	got, err := MakeVar{Dir: t.TempDir(), Path: DefaultToolVersions, Var: "KIND_VERSION"}.
+		Resolve(map[string]string{InputVersionKey: "v0.33.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[ResultVersionKey] != "v0.33.0" {
+		t.Errorf("version = %q, want v0.33.0", got[ResultVersionKey])
+	}
+}

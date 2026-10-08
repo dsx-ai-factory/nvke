@@ -21,6 +21,9 @@ $ go run ./release/cmd/qualify plan --subject nke
 # A specific tag, narrowed to the active scope
 $ go run ./release/cmd/qualify plan --subject nke --version v0.22.0-beta.1 --scope active
 
+# Use a version you choose in place of what resolves
+$ go run ./release/cmd/qualify plan --subject nke --version v0.22.0-beta.1 --version-overrides controller=v0.1.1-rc.11,kube=1.36.3
+
 # Write the plan to a file instead of stdout
 $ go run ./release/cmd/qualify plan --subject nke --output plan.json
 ```
@@ -29,13 +32,20 @@ $ go run ./release/cmd/qualify plan --subject nke --output plan.json
 |---|---|---|
 | `--subject` | required | What to qualify. `nke` is NKE as a whole |
 | `--version` | the latest release candidate | The subject's version, which must be an existing tag |
+| `--version-overrides` | none | Versions to use in place of what resolves, as `name=version` pairs separated by commas |
 | `--scope` | `full` | How much of the matrix to cover, a scope from `policy.yaml` |
 | `--output` | `-` | Where to write the plan. `-` is stdout |
 | `--root`, `--policy`, `--registry` | the enclosing checkout and the files under `release/` | Where to read the repository and the two files from |
 
 `nke` has no release candidate until the first beta tag is cut, so without
 `--version` `plan` stops and says so. Pass `--version` to name a tag that
-exists. The plan looks like this:
+exists.
+
+A version given with `--version-overrides` replaces what that component or dependency
+would have resolved to, and is checked the way a resolved one is: a tag has to
+exist, and a Kubernetes or OVN version has to be one the image locks. The names
+that were overridden are listed under `overrides` in the plan. The plan looks
+like this:
 
 ```console
 $ go run ./release/cmd/qualify plan --subject nke --scope full

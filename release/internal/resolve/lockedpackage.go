@@ -35,15 +35,20 @@ var constraintPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+){0,2}$`)
 // Resolve returns the highest locked version that matches InputConstraintKey and
 // is locked for every architecture.
 //
+// With InputVersionKey it returns that version instead, after checking that it
+// is locked for every architecture and, when a constraint is also given, that it
+// matches it. An override that did not match would put a Kubernetes minor on a
+// stream that is not qualifying it.
+//
 // The ref comes from the input "<From>.ref". A version that exists for one
 // architecture only is not offered, because an image carries both and a plan
 // naming it would fail on the architecture that lacks it.
 func (l LockedPackage) Resolve(inputs map[string]string) (map[string]string, error) {
-	constraint := inputs[InputConstraintKey]
-	if constraint == "" {
+	want, constraint := inputs[InputVersionKey], inputs[InputConstraintKey]
+	if want == "" && constraint == "" {
 		return nil, fmt.Errorf("no %s given for %s", InputConstraintKey, l.LockDir)
 	}
-	if !constraintPattern.MatchString(constraint) {
+	if constraint != "" && !constraintPattern.MatchString(constraint) {
 		return nil, fmt.Errorf("constraint %q is not a version prefix such as 1.34", constraint)
 	}
 
@@ -57,10 +62,15 @@ func (l LockedPackage) Resolve(inputs map[string]string) (map[string]string, err
 	if err != nil {
 		return nil, err
 	}
+	inEvery := everywhere(byArch)
+
+	if want != "" {
+		return l.named(want, constraint, ref, inEvery)
+	}
 
 	var versions []string
-	for v, inEvery := range everywhere(byArch) {
-		if inEvery && matches(v, constraint) {
+	for v, ok := range inEvery {
+		if ok && matches(v, constraint) {
 			versions = append(versions, v)
 		}
 	}
@@ -69,6 +79,42 @@ func (l LockedPackage) Resolve(inputs map[string]string) (map[string]string, err
 			l.LockDir, ref, constraint)
 	}
 	return map[string]string{ResultVersionKey: strings.TrimPrefix(sortDescending(versions)[0], "v")}, nil
+}
+
+// named checks a version that was asked for and returns it.
+func (l LockedPackage) named(want, constraint, ref string, inEvery map[string]bool) (map[string]string, error) {
+	v := normalise(want)
+	if !semver.IsValid(v) {
+		return nil, fmt.Errorf("%q is not a version", want)
+	}
+	if !inEvery[v] {
+		var locked []string
+		for candidate, ok := range inEvery {
+			if ok {
+				locked = append(locked, candidate)
+			}
+		}
+		return nil, fmt.Errorf("%s at %s does not lock %s for every architecture, it locks %s",
+			l.LockDir, ref, strings.TrimPrefix(v, "v"), listed(sortDescending(locked)))
+	}
+	if constraint != "" && !matches(v, constraint) {
+		return nil, fmt.Errorf("%s does not match the constraint %s", strings.TrimPrefix(v, "v"), constraint)
+	}
+	return map[string]string{ResultVersionKey: strings.TrimPrefix(v, "v")}, nil
+}
+
+// listed names the first few versions, newest first, without the leading v.
+func listed(versions []string) string {
+	const show = 5
+	suffix := ""
+	if len(versions) > show {
+		versions, suffix = versions[:show], ", ..."
+	}
+	out := make([]string, len(versions))
+	for i, v := range versions {
+		out[i] = strings.TrimPrefix(v, "v")
+	}
+	return strings.Join(out, ", ") + suffix
 }
 
 // locked lists the versions locked under each architecture at the ref.

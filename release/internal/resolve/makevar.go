@@ -35,7 +35,14 @@ type MakeVar struct {
 // Only a literal is read. A value built from other variables or shell output
 // is not a pin, and returning its unexpanded text would put a make expression
 // in a plan.
-func (m MakeVar) Resolve(map[string]string) (map[string]string, error) {
+//
+// With InputVersionKey the file is not read and the named value is returned. A
+// tool pin has no list of valid values to check it against.
+func (m MakeVar) Resolve(inputs map[string]string) (map[string]string, error) {
+	if v := inputs[InputVersionKey]; v != "" {
+		return map[string]string{ResultVersionKey: v}, nil
+	}
+
 	path := filepath.Join(m.Dir, m.Path)
 	f, err := os.Open(path)
 	if err != nil {

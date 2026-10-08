@@ -19,13 +19,14 @@ import (
 
 func planCmd() *cobra.Command {
 	var (
-		subject    string
-		version    string
-		scope      string
-		output     string
-		root       string
-		policyAt   string
-		registryAt string
+		subject          string
+		version          string
+		versionOverrides string
+		scope            string
+		output           string
+		root             string
+		policyAt         string
+		registryAt       string
 	)
 
 	cmd := &cobra.Command{
@@ -38,7 +39,11 @@ policy, resolves every component and dependency to a version, and expands the
 scope's selector over the stream list. The result is one file naming every
 combination and every stream.
 
-An absent --version means the subject's latest release candidate.`,
+An absent --version means the subject's latest release candidate.
+
+--version-overrides replaces what a component or dependency would have resolved
+to, as comma-separated name=version pairs, the same format the e2e suite takes.
+The names it replaces are listed in the plan under overrides.`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -67,12 +72,17 @@ An absent --version means the subject's latest release candidate.`,
 			if err != nil {
 				return err
 			}
+			overrides, err := qualification.ParseOverrides(versionOverrides)
+			if err != nil {
+				return fmt.Errorf("--version-overrides: %w", err)
+			}
 
 			planner := &qualification.Planner{
 				Policy:    p,
 				Registry:  reg,
 				Resolvers: resolvers,
 				Root:      root,
+				Overrides: overrides,
 			}
 
 			result, err := planner.Plan(subject, version, scope)
@@ -86,6 +96,7 @@ An absent --version means the subject's latest release candidate.`,
 	f := cmd.Flags()
 	f.StringVar(&subject, "subject", "", "subject to qualify (required)")
 	f.StringVar(&version, "version", "", "version of the subject to qualify, empty means its latest release candidate")
+	f.StringVar(&versionOverrides, "version-overrides", "", "versions to use in place of what resolves, as name=version pairs separated by commas")
 	// full is the default because it is the scope that is never wrong. A
 	// narrower default would silently cover less of the matrix than the
 	// person running it believed.
