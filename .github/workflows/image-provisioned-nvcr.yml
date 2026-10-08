@@ -606,12 +606,17 @@ jobs:
           }
 
           ensure_immutable_tag "${image_version}"
-          ensure_immutable_tag "sha-${GITHUB_SHA}"
 
+          # sha-<commit> and edge record what main built. A tag run rebuilds the
+          # same commit with the release version stamped in, so its digest
+          # differs, and asserting the sha tag here would fail on every release
+          # cut from a commit main already promoted.
+          #
           # `edge` moves last: it is the one mutable alias this job writes, and
           # it moves only after the candidate verified and every immutable tag
           # landed with the digest it was supposed to.
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+            ensure_immutable_tag "sha-${GITHUB_SHA}"
             crane tag "${dst}:${image_version}" edge
           fi
 
@@ -623,8 +628,8 @@ jobs:
 
           {
             echo "- \`${dst}:${image_version}\` is \`${source_digest}\`"
-            echo "- \`${dst}:sha-${GITHUB_SHA}\` is \`${source_digest}\`"
             if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+              echo "- \`${dst}:sha-${GITHUB_SHA}\` is \`${source_digest}\`"
               echo "- \`${dst}:edge\` now points at \`${source_digest}\`"
             fi
             echo "- promoted from \`${src}\`, not rebuilt"
