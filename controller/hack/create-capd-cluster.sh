@@ -112,11 +112,6 @@ BODY=$(cat <<EOF
                   {
                     "containerPath": "/var/run/docker.sock",
                     "hostPath": "/var/run/docker.sock"
-                  },
-                  {
-                    "containerPath": "/lib/modules",
-                    "hostPath": "/lib/modules",
-                    "readOnly": true
                   }
                 ]
               }
@@ -150,11 +145,6 @@ BODY=$(cat <<EOF
                   {
                     "containerPath": "/var/run/docker.sock",
                     "hostPath": "/var/run/docker.sock"
-                  },
-                  {
-                    "containerPath": "/lib/modules",
-                    "hostPath": "/lib/modules",
-                    "readOnly": true
                   }
                 ]
               }
