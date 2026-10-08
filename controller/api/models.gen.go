@@ -355,8 +355,8 @@ type CreateClusterControlPlaneConfig struct {
 	// MaxSurge Extra control-plane nodes allowed during a rollout (0 or 1).
 	MaxSurge *int `json:"maxSurge,omitempty"`
 
-	// Nico NICo settings for control-plane nodes at creation. osProfile and configProfile
-	// are required, and exactly one of subnetIDs and vpcPrefixIDs.
+	// Nico NICo settings for control-plane nodes at creation. osProfile is required,
+	// configProfile is optional, and exactly one of subnetIDs and vpcPrefixIDs.
 	Nico *NicoControlPlaneProviderCreate `json:"nico,omitempty"`
 
 	// NodeLabels Labels applied to control-plane nodes, as key=value.
@@ -458,8 +458,8 @@ type CreateNodePoolRequest struct {
 	// Infra Infra provider fields for a node pool. Mutually exclusive with `nico`.
 	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
 
-	// Nico NICo settings for a node pool. instanceTypeID, osProfile and configProfile are
-	// required, and exactly one of subnetIDs and vpcPrefixIDs.
+	// Nico NICo settings for a node pool. instanceTypeID and osProfile are required,
+	// configProfile is optional, and exactly one of subnetIDs and vpcPrefixIDs.
 	Nico *NicoNodePoolProvider `json:"nico,omitempty"`
 
 	// NodeNamePrefix Prefix for generated node names: `<cluster name>-<nodeNamePrefix>-<suffix>`.
@@ -662,10 +662,10 @@ type NicoControlPlaneProvider struct {
 	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
 }
 
-// NicoControlPlaneProviderCreate NICo settings for control-plane nodes at creation. osProfile and configProfile
-// are required, and exactly one of subnetIDs and vpcPrefixIDs.
+// NicoControlPlaneProviderCreate NICo settings for control-plane nodes at creation. osProfile is required,
+// configProfile is optional, and exactly one of subnetIDs and vpcPrefixIDs.
 type NicoControlPlaneProviderCreate struct {
-	// ConfigProfile Config profile name for the control-plane nodes. Required.
+	// ConfigProfile Config profile name for the control-plane nodes. Optional; when omitted the nodes run no config profile hooks or labels.
 	ConfigProfile string `json:"configProfile,omitempty"`
 
 	// InstanceTypePreference Ordered list of acceptable NICo instance types; index 0 is the highest priority.
@@ -706,10 +706,10 @@ type NicoControlPlaneProviderUpdate struct {
 	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
 }
 
-// NicoNodePoolProvider NICo settings for a node pool. instanceTypeID, osProfile and configProfile are
-// required, and exactly one of subnetIDs and vpcPrefixIDs.
+// NicoNodePoolProvider NICo settings for a node pool. instanceTypeID and osProfile are required,
+// configProfile is optional, and exactly one of subnetIDs and vpcPrefixIDs.
 type NicoNodePoolProvider struct {
-	// ConfigProfile Config profile name for the pool's nodes. Required when creating a pool.
+	// ConfigProfile Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks or labels.
 	ConfigProfile string `json:"configProfile,omitempty"`
 
 	// DiskSelectionStrategy Which disk the OS is installed on. Default smallest.
@@ -741,8 +741,8 @@ type NicoNodePoolProvider struct {
 // sent: a request carrying one is rejected with 400. A body echoed from GET must
 // have them stripped.
 type NicoNodePoolProviderUpdate struct {
-	// ConfigProfile Config profile name for the pool's nodes. An empty string is rejected: a pool
-	// always has a config profile.
+	// ConfigProfile Config profile name for the pool's nodes. An empty string clears it; a pool
+	// may have no config profile.
 	ConfigProfile *string `json:"configProfile,omitempty"`
 
 	// DiskSelectionStrategy Which disk the OS is installed on. Default smallest.
@@ -773,7 +773,7 @@ type NicoNodeProvider struct {
 
 // NicoNodeSetProvider NICo settings in a node set (read-only snapshot).
 type NicoNodeSetProvider struct {
-	// ConfigProfile Config profile name for the pool's nodes. Required when creating a pool.
+	// ConfigProfile Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks or labels.
 	ConfigProfile string `json:"configProfile,omitempty"`
 
 	// DiskSelectionStrategy Which disk the OS is installed on. Default smallest.
@@ -986,8 +986,8 @@ type NodePoolCreateConfig struct {
 	// Infra Infra provider fields for a node pool. Mutually exclusive with `nico`.
 	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
 
-	// Nico NICo settings for a node pool. instanceTypeID, osProfile and configProfile are
-	// required, and exactly one of subnetIDs and vpcPrefixIDs.
+	// Nico NICo settings for a node pool. instanceTypeID and osProfile are required,
+	// configProfile is optional, and exactly one of subnetIDs and vpcPrefixIDs.
 	Nico *NicoNodePoolProvider `json:"nico,omitempty"`
 
 	// NodeNamePrefix Prefix for generated node names: `<cluster name>-<nodeNamePrefix>-<suffix>`.

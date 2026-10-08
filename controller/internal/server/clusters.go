@@ -788,7 +788,7 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 	}
 
 	// A PATCH must not clear a required field or persist a spec that create would
-	// reject (Forge instanceTypePreference/osProfile/configProfile or the CAPI
+	// reject (Forge instanceTypePreference/osProfile or the CAPI
 	// capiInfraMachineTemplate). instanceTypePreference is merged above and is not
 	// covered by hasClusterLevelControlPlaneUpdate, so gate on it explicitly;
 	// maxSurge- and k8s-version-only updates leave these fields untouched.

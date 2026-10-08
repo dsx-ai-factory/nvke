@@ -163,9 +163,9 @@ tags:
 
       **OS profiles (`osProfile`).** The OS and first-boot configuration for
       every node come from an OS profile the Operator supplies to the management
-      plane, together with a config profile for the node's role. Control-plane
-      and node pool requests select them by name in `nico.osProfile` and
-      `nico.configProfile`. Changing `osProfile` on a node pool or on the control
+      plane, optionally together with a config profile for the node's role.
+      Control-plane and node pool requests select them by name in
+      `nico.osProfile` and `nico.configProfile`. Changing `osProfile` on a node pool or on the control
       plane triggers a rollout of the affected nodes to the new profile.
   - name: Node pools
     description: |
@@ -219,7 +219,7 @@ paths:
 
         Returns 400 for, among others: a duplicate cluster name; missing
         `nico.orgID`, `siteID` or `vpcID`; an unsupported `cniPlugin`; a
-        missing `controlPlaneConfig.nico.osProfile` or `configProfile`; a
+        missing `controlPlaneConfig.nico.osProfile`; a
         control-plane `maxSurge` greater than 1; a pod CIDR too small for the
         requested nodes plus surge; a `controlPlaneVIP` inside the pod or
         service CIDR.
@@ -508,8 +508,8 @@ paths:
         cluster's Kubernetes version.
 
         Returns 400 for, among others: parent cluster not found; a duplicate
-        pool name in the cluster; missing `nico.instanceTypeID`,
-        `nico.osProfile` or `nico.configProfile`; not exactly one of
+        pool name in the cluster; missing `nico.instanceTypeID`
+        or `nico.osProfile`; not exactly one of
         `subnetIDs` and `vpcPrefixIDs`; a pod CIDR too small for the requested
         nodes.
       requestBody:
@@ -2381,8 +2381,8 @@ components:
       type: object
       additionalProperties: false
       description: |
-        NICo settings for a node pool. instanceTypeID, osProfile and configProfile are
-        required, and exactly one of subnetIDs and vpcPrefixIDs.
+        NICo settings for a node pool. instanceTypeID and osProfile are required,
+        configProfile is optional, and exactly one of subnetIDs and vpcPrefixIDs.
       properties:
         subnetIDs:
           type: array
@@ -2425,7 +2425,7 @@ components:
           x-go-type-skip-optional-pointer: true
         configProfile:
           type: string
-          description: Config profile name for the pool's nodes. Required when creating a pool.
+          description: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks or labels.
           x-go-type-skip-optional-pointer: true
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategyCreate"
@@ -2461,8 +2461,8 @@ components:
         configProfile:
           type: string
           description: |
-            Config profile name for the pool's nodes. An empty string is rejected: a pool
-            always has a config profile.
+            Config profile name for the pool's nodes. An empty string clears it; a pool
+            may have no config profile.
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategy"
 
@@ -2493,7 +2493,7 @@ components:
           x-go-type-skip-optional-pointer: true
         configProfile:
           type: string
-          description: Config profile name for the pool's nodes. Required when creating a pool.
+          description: Config profile name for the pool's nodes. Optional; when omitted the nodes run no config profile hooks or labels.
           x-go-type-skip-optional-pointer: true
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategyCreate"
@@ -2629,8 +2629,8 @@ components:
       type: object
       additionalProperties: false
       description: |
-        NICo settings for control-plane nodes at creation. osProfile and configProfile
-        are required, and exactly one of subnetIDs and vpcPrefixIDs.
+        NICo settings for control-plane nodes at creation. osProfile is required,
+        configProfile is optional, and exactly one of subnetIDs and vpcPrefixIDs.
       properties:
         instanceTypePreference:
           type: array
@@ -2661,7 +2661,7 @@ components:
           x-go-type-skip-optional-pointer: true
         configProfile:
           type: string
-          description: Config profile name for the control-plane nodes. Required.
+          description: Config profile name for the control-plane nodes. Optional; when omitted the nodes run no config profile hooks or labels.
           x-go-type-skip-optional-pointer: true
         sshKeyGroupIDs:
           type: array
