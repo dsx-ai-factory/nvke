@@ -40,4 +40,14 @@
 # A waiver that matches nothing fails the gate. Once the baseline tag has moved
 # past the release that carried the break, the entry has done its job and must
 # be deleted; it cannot sit here outliving its reason.
-waivers: []
+waivers:
+  - change: property_removed
+    path: "$.components.schemas['CreateClusterRequest']"
+    property: required
+    reason: >
+      Create requests may omit cniPlugin. The server selects ovn-kubernetes
+      1.4.0, and an explicit calico or ovn-kubernetes value is unchanged.
+      Clients that still send the field keep working; clients that treated it
+      as required can stop sending it.
+    owner: Alex Greene
+    review: "2027-04-08"
