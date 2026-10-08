@@ -145,7 +145,7 @@ spec:
           {{- end }}
         volumeMounts:
           {{- if .Values.manager.extraVolumeMounts }}
-          {{- toYaml .Values.manager.extraVolumeMounts | nindent 10 }}
+          {{- toYaml .Values.manager.extraVolumeMounts | nindent 8 }}
           {{- end }}
         - mountPath: /etc/management-api
           name: management-api
@@ -162,7 +162,7 @@ spec:
       {{- end }}
       volumes:
         {{- if .Values.manager.extraVolumes }}
-        {{- toYaml .Values.manager.extraVolumes | nindent 8 }}
+        {{- toYaml .Values.manager.extraVolumes | nindent 6 }}
         {{- end }}
       - name: management-api
         secret:

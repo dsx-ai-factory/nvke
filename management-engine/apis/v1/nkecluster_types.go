@@ -21,7 +21,7 @@ type NKEClusterSpec struct {
 	Release        ReleaseSelection       `json:"release"`
 	// ControlPlaneClass names the class that determines control-plane sizing and configuration.
 	ControlPlaneClass ResourceName `json:"controlPlaneClass"`
-	// AcceleratedRuntime selects an accelerated runtime bundle; name "none" opts out.
+	// AcceleratedRuntime selects an accelerated runtime bundle. Use name "none" to opt out.
 	// +optional
 	AcceleratedRuntime *AcceleratedRuntimeSelection `json:"acceleratedRuntime,omitempty"`
 	// Network selects the existing VPC shared by the node pools.
@@ -115,7 +115,7 @@ type ReleaseChannelReference struct {
 // +kubebuilder:validation:XValidation:rule="self.name == 'none' ? !has(self.version) : has(self.version)",message="version is required for a runtime release and must be omitted for none"
 type AcceleratedRuntimeSelection struct {
 	Name ResourceName `json:"name"`
-	// Version is an OCI tag; it need not be a semantic version.
+	// Version is an OCI tag. It need not be a semantic version.
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=128
@@ -129,6 +129,9 @@ type NKEClusterStatus struct {
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Provisioning preserves creation identity across retries and spec changes.
+	// +optional
+	Provisioning *ClusterProvisioningStatus `json:"provisioning,omitempty"`
 	// Conditions report readiness and progress, with details in reason and message.
 	// A missing condition means its state is unknown.
 	// +optional
@@ -145,6 +148,21 @@ type NKEClusterStatus struct {
 	// +listMapKey=name
 	// +kubebuilder:validation:MaxItems=64
 	NodePools []NodePoolStatus `json:"nodePools,omitempty"`
+}
+
+// ClusterProvisioningStatus identifies the creation attempt independently of the latest observed spec.
+type ClusterProvisioningStatus struct {
+	// Endpoint pins the service so configuration changes cannot redirect an existing cluster.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=2048
+	Endpoint string `json:"endpoint"`
+	// ID identifies the created cluster. It is absent until creation is confirmed.
+	// +optional
+	// +kubebuilder:validation:Format=uuid
+	ID string `json:"id,omitempty"`
+	// Generation records the spec used to initiate creation, not merely observed by reconciliation.
+	// +kubebuilder:validation:Minimum=1
+	Generation int64 `json:"generation"`
 }
 
 // NKECluster manages a Kubernetes control plane and its node pools as one cluster.

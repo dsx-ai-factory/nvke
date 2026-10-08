@@ -53,6 +53,12 @@ manifests: manifests-state kustomize kubebuilder ## Generate state, the runtime 
 	mkdir -p dist
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
 	"$(KUBEBUILDER)" edit --plugins=helm/v2-alpha --manifests=./dist/install.yaml --output-dir=.
+	# Kubebuilder v4.15.0 over-indents extra volumes beside existing Kustomize lists.
+	# Keep this correction in generation until the Helm plugin fixes list indentation.
+	sed -e '/toYaml .Values.manager.extraVolumeMounts/s/nindent 10/nindent 8/' \
+		-e '/toYaml .Values.manager.extraVolumes/s/nindent 8/nindent 6/' \
+		chart/templates/manager/manager.yaml > dist/manager-chart.yaml
+	mv dist/manager-chart.yaml chart/templates/manager/manager.yaml
 	rm -f .github/workflows/test-chart.yml
 	@rmdir .github/workflows .github 2>/dev/null || true
 	$(GO) run github.com/google/addlicense@v1.1.1 -f ../hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" chart
@@ -72,11 +78,15 @@ vet: ## Run go vet against code.
 TEST_PROCS ?= 5
 
 .PHONY: test
-test: test-api test-controller ## Run API and controller tests.
+test: test-api test-controller ## Run API, client, startup, and controller tests.
+
+.PHONY: test-unit
+test-unit: fmt vet ## Run client and startup unit tests.
+	@$(COVERAGE_MKDIR)
+	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,unit) -covermode=$(GO_COVER_MODE) ./internal/... ./cmd/...
 
 .PHONY: test-api
-# Two profiles, not one: the API suite and the envtest suite are separate
-# invocations with separate binaries, so they cannot share an output file.
+# Separate test invocations need distinct profiles to avoid overwriting coverage.
 # hack/coverage.sh treats every coverage/management-engine*.out as this
 # module's, and the suffixes come from make/coverage.mk.
 test-api: manifests generate fmt vet ## Run API tests.
@@ -84,7 +94,7 @@ test-api: manifests generate fmt vet ## Run API tests.
 	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,apis) -covermode=$(GO_COVER_MODE) ./apis/...
 
 .PHONY: test-controller
-test-controller: manifests generate fmt vet setup-envtest ginkgo ## Run controller envtest fixtures.
+test-controller: test-unit manifests generate fmt vet setup-envtest ginkgo ## Run controller envtest fixtures.
 	@$(COVERAGE_MKDIR)
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" "$(GINKGO)" --race --procs=$(TEST_PROCS) --cover --covermode=$(GO_COVER_MODE) --output-dir=$(COVERAGE_DIR) --coverprofile=$(call coverprofile_name,controllers) ./controllers/...
 
@@ -120,7 +130,7 @@ run: build ## Run against the management API selected by MANAGER_ARGS.
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build --build-arg VERSION=$(VERSION) -t ${IMG} .
+	$(CONTAINER_TOOL) build -f Dockerfile --build-arg VERSION=$(VERSION) -t ${IMG} ..
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -151,7 +161,9 @@ export DEV_NAME KIND_NODE_IMAGE TILT_PORT
 dev-up: ## Create or reuse the named development environment and prepare credentials.
 	bash hack/dev.sh up
 
-dev: dev-up ## Prepare or reuse the development clusters, then start Tilt.
+dev: ## Check Tilt, prepare or reuse the development clusters, then start Tilt.
+	bash hack/dev.sh check
+	$(MAKE) dev-up
 	bash hack/dev.sh tilt
 
 dev-sync: ## Update datastore CRDs and RBAC without refreshing credentials.
@@ -165,6 +177,22 @@ dev-down: ## Delete this environment's clusters and local credentials; stop Tilt
 
 test-install: ## Test the runtime in the prepared environment; run before Tilt.
 	IMG="$(IMG)" bash hack/dev.sh test
+
+.PHONY: dev-cwe dev-cwe-up dev-cwe-down test-cwe
+dev-cwe dev-cwe-up dev-cwe-down test-cwe: DEV_NAME = nke-cwe
+dev-cwe dev-cwe-up dev-cwe-down test-cwe: TILT_PORT = 10353
+dev-cwe: ## Start CWE and management-engine in one Tilt dashboard on dedicated Kind clusters.
+	CAPI_VERSION="$(CAPI_VERSION)" bash hack/dev.sh cwe-up
+	bash hack/dev.sh cwe-tilt
+
+dev-cwe-up: ## Prepare the dedicated CWE integration environment without starting Tilt.
+	CAPI_VERSION="$(CAPI_VERSION)" bash hack/dev.sh cwe-up
+
+test-cwe: ## Run the Ginkgo integration suite against the running combined environment.
+	bash hack/dev.sh cwe-test
+
+dev-cwe-down: ## Remove the dedicated CWE environment and credentials; stop Tilt first.
+	bash hack/dev.sh cwe-down
 
 .PHONY: install install-state
 install: install-state ## Install the datastore resources using STATE_CONTEXT.
@@ -219,8 +247,8 @@ include ../make/coverage.mk
 kind: $(LOCALBIN) ## Install the pinned Kind CLI for the development environment.
 	$(call go-install-tool,$(KIND),sigs.k8s.io/kind,$(KIND_VERSION))
 
-dev-up dev dev-sync dev-refresh dev-down test-install: kind
-dev-up dev dev-sync dev-refresh dev-down test-install: export PATH := $(LOCALBIN):$(PATH)
+dev-up dev dev-sync dev-refresh dev-down test-install dev-cwe dev-cwe-up dev-cwe-down test-cwe: kind
+dev-up dev dev-sync dev-refresh dev-down test-install dev-cwe dev-cwe-up dev-cwe-down test-cwe: export PATH := $(LOCALBIN):$(PATH)
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -324,3 +352,5 @@ helm-uninstall: require-host-context ## Uninstall the Helm release from the K8s 
 chart-check: manifests ## Lint and render the Helm chart without a cluster.
 	$(HELM) lint chart -f config/samples/runtime-values.yaml
 	$(HELM) template management-engine chart --namespace management-engine-system -f config/samples/runtime-values.yaml > dist/chart-rendered.yaml
+	$(HELM) lint chart -f config/samples/runtime-values.yaml -f config/samples/cwe-values.yaml
+	$(HELM) template management-engine chart --namespace management-engine-system -f config/samples/runtime-values.yaml -f config/samples/cwe-values.yaml > dist/chart-cwe-rendered.yaml

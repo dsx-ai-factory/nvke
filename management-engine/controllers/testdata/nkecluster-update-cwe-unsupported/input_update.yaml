@@ -1,0 +1,21 @@
+apiVersion: internal.nke.nvidia.com/v1
+kind: NKECluster
+metadata:
+  name: cluster-1
+  namespace: default
+spec:
+  apiServerAccess:
+    publicAccessEnabled: true
+    publicAccessCidrs:
+    - cidr: 192.0.2.0/24
+      description: documentation network
+  clusterNetwork:
+    pods:
+      cidrBlocks: [10.244.0.0/16]
+    services:
+      cidrBlocks: [10.96.0.0/12]
+    serviceDomain: cluster.local
+  release:
+    channel:
+      name: stable
+  controlPlaneClass: standard

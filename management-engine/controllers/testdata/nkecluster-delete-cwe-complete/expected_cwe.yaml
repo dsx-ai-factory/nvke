@@ -1,0 +1,25 @@
+calls:
+- DELETE /api/clusters/REMOTE-ID (1 calls; finalizer persisted)
+- POST /api/clusters (1 calls; finalizer persisted)
+createRequest:
+  cniPlugin: ovn-kubernetes
+  controlPlaneConfig:
+    desiredCount: 3
+    infra:
+      machineTemplate:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        kind: DockerMachineTemplate
+        spec:
+          template:
+            spec: {}
+  controlPlaneKubernetesVersion: 1.36.1
+  etcdEncrypted: true
+  infra:
+    cluster:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+      kind: DockerCluster
+      spec: {}
+  name: nke-CLUSTER-UID
+  network:
+    podCIDR: 10.244.0.0/16
+    serviceCIDR: 10.96.0.0/12

@@ -20,6 +20,7 @@ if [[ -n "$existing" ]]; then
 fi
 release="engine-smoke-$$"
 org_namespace="$release-org"
+sample=config/samples/internal_v1_nkecluster.yaml
 umask 077
 scratch=$(mktemp -d)
 forward_pid=""
@@ -53,22 +54,41 @@ host_crds=$("${host[@]}" get --ignore-not-found -f config/crd/bases -o name)
 identity="system:serviceaccount:$state_namespace:management-engine-controller-manager"
 [[ $("${state[@]}" auth can-i get leases --as="$identity" -n "$state_namespace") == yes ]]
 [[ $("${state[@]}" auth can-i get /apis/internal.nke.nvidia.com/v1 --as="$identity") == yes ]]
-[[ $("${state[@]}" auth can-i get secrets --as="$identity" -n "$org_namespace") == no ]]
-[[ $("${state[@]}" auth can-i create nkeclusters.internal.nke.nvidia.com --as="$identity" -n "$org_namespace") == no ]]
+# Metadata patches include finalizers. Status writes use the status subresource.
+for verb in get list watch patch; do
+  [[ $("${state[@]}" auth can-i "$verb" nkeclusters.internal.nke.nvidia.com --as="$identity" -n "$org_namespace") == yes ]]
+done
+for verb in update patch; do
+  [[ $("${state[@]}" auth can-i "$verb" nkeclusters.internal.nke.nvidia.com --subresource=status --as="$identity" -n "$org_namespace") == yes ]]
+done
+for verb in create update delete deletecollection; do
+  [[ $("${state[@]}" auth can-i "$verb" nkeclusters.internal.nke.nvidia.com --as="$identity" -n "$org_namespace") == no ]]
+done
+[[ $("${state[@]}" auth can-i get nkeclusters.internal.nke.nvidia.com --subresource=status --as="$identity" -n "$org_namespace") == no ]]
+[[ $("${state[@]}" auth can-i update nkeclusters.internal.nke.nvidia.com --subresource=finalizers --as="$identity" -n "$org_namespace") == no ]]
+# Credentials and bindings arrive through mounts, so no API access is needed.
+for resource in secrets configmaps; do
+  for verb in get list watch create update patch delete deletecollection; do
+    [[ $("${state[@]}" auth can-i "$verb" "$resource" --as="$identity" -n "$org_namespace") == no ]]
+  done
+done
 [[ $("${state[@]}" auth can-i update leases --as="$identity" -n "$org_namespace") == no ]]
-"${state[@]}" -n "$org_namespace" apply \
-  -f config/samples/internal_v1_nkecluster.yaml -f config/samples/internal_v1_nodepool.yaml
+"${state[@]}" -n "$org_namespace" apply -f "$sample"
 
 # Prove watches and status writes work against the remote API, not just election.
-resources=$("${state[@]}" -n "$org_namespace" get -k config/samples -o name)
+resources=$("${state[@]}" -n "$org_namespace" get -f "$sample" -o name)
 while IFS= read -r resource; do
   generation=$("${state[@]}" -n "$org_namespace" get "$resource" -o jsonpath='{.metadata.generation}')
   "${state[@]}" -n "$org_namespace" wait "$resource" \
     --for="jsonpath={.status.observedGeneration}=$generation" --timeout=60s
+  "${state[@]}" -n "$org_namespace" wait "$resource" \
+    --for='jsonpath={.status.conditions[?(@.type=="Synced")].reason}=ProvisioningNotConfigured' --timeout=60s
+  "${state[@]}" -n "$org_namespace" patch "$resource" --as="$identity" --type=merge --dry-run=server \
+    -p '{"metadata":{"finalizers":["internal.nke.nvidia.com/rbac-check"]}}'
 done <<<"$resources"
 
 # Secure metrics authenticate against the datastore API. Bind a temporary scraper
-# there; its namespace and cluster-scoped binding are removed by cleanup.
+# there. Its namespace and cluster-scoped binding are removed by cleanup.
 "${state[@]}" -n "$org_namespace" create serviceaccount metrics-reader
 "${state[@]}" create clusterrolebinding "$release-metrics" \
   --clusterrole=management-engine-metrics-reader \
@@ -105,6 +125,5 @@ make helm-deploy HOST_CONTEXT="$HOST_CONTEXT" HELM_RELEASE="$release" IMG="$IMG"
 [[ $("${host[@]}" -n "$host_namespace" get "$deployment" -o jsonpath='{.status.readyReplicas}') == 2 ]]
 helm --kube-context "$HOST_CONTEXT" uninstall "$release" -n "$host_namespace" --wait --timeout 90s
 "${state[@]}" get -f config/crd/bases -o name
-"${state[@]}" -n "$org_namespace" get \
-  -f config/samples/internal_v1_nkecluster.yaml -f config/samples/internal_v1_nodepool.yaml -o name
+"${state[@]}" -n "$org_namespace" get -f "$sample" -o name
 echo "Remote reconciliation, leadership/RBAC, metrics, replica upgrade, and state retention passed."

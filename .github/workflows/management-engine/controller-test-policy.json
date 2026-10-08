@@ -1,9 +1,31 @@
 {
   "ginkgoSpecs": {
     "management-engine/controllers/nkecluster_controller_test.go": 7,
-    "management-engine/controllers/suite_test.go": 0
+    "management-engine/controllers/nkecluster_fake_test.go": 0,
+    "management-engine/controllers/suite_test.go": 0,
+    "management-engine/test/integration/cwe_test.go": 1,
+    "management-engine/test/integration/suite_test.go": 0
   },
+  "goTestFiles": [
+    "management-engine/cmd/main_test.go",
+    "management-engine/controllers/nkecluster_resolve_test.go",
+    "management-engine/internal/cwe/client_test.go",
+    "management-engine/test/integration/temporal_test.go"
+  ],
   "ordinaryGoTests": [
-    "TestControllers"
+    "TestCWEIntegration",
+    "TestConfigureCWE",
+    "TestControllers",
+    "TestEndpointConfiguration",
+    "TestHTTPFailures",
+    "TestLoadCWEBindings",
+    "TestLoadCWEInvalidTemplates",
+    "TestRedirectsAreNotFollowed",
+    "TestResolveCWERequest",
+    "TestResolveCWESelection",
+    "TestResolveCWEUnsupportedIntent",
+    "TestResponseValidation",
+    "TestTLSVerificationAndCancellation",
+    "TestTokenRotation"
   ]
 }

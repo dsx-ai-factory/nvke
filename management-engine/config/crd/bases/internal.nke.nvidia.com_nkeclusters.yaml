@@ -51,8 +51,8 @@ spec:
               pools.
             properties:
               acceleratedRuntime:
-                description: AcceleratedRuntime selects an accelerated runtime bundle;
-                  name "none" opts out.
+                description: AcceleratedRuntime selects an accelerated runtime bundle.
+                  Use name "none" to opt out.
                 properties:
                   name:
                     description: ResourceName is a Kubernetes DNS subdomain name,
@@ -62,7 +62,7 @@ spec:
                     pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                     type: string
                   version:
-                    description: Version is an OCI tag; it need not be a semantic
+                    description: Version is an OCI tag. It need not be a semantic
                       version.
                     maxLength: 128
                     minLength: 1
@@ -724,6 +724,31 @@ spec:
                 format: int64
                 minimum: 0
                 type: integer
+              provisioning:
+                description: Provisioning preserves creation identity across retries
+                  and spec changes.
+                properties:
+                  endpoint:
+                    description: Endpoint pins the service so configuration changes
+                      cannot redirect an existing cluster.
+                    maxLength: 2048
+                    minLength: 1
+                    type: string
+                  generation:
+                    description: Generation records the spec used to initiate creation,
+                      not merely observed by reconciliation.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  id:
+                    description: ID identifies the created cluster. It is absent until
+                      creation is confirmed.
+                    format: uuid
+                    type: string
+                required:
+                - endpoint
+                - generation
+                type: object
               resolvedRelease:
                 description: ResolvedRelease identifies the control-plane release
                   selected for this cluster.

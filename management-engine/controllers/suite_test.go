@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+// Envtest setup runs fixture cases against a real API server and controller manager.
+
 package controllers
 
 import (
@@ -84,6 +86,8 @@ func setupWithManager(ctx SpecContext, tc *fixture.Case) {
 		Controller: config.Controller{SkipNameValidation: new(true)},
 	})
 	Expect(err).NotTo(HaveOccurred())
-	Expect((&NKEClusterReconciler{Client: mgr.GetClient(), Scheme: tc.Scheme}).SetupWithManager(mgr)).To(Succeed())
+	reconciler := &NKEClusterReconciler{Client: mgr.GetClient(), PollInterval: pollInterval}
+	setupCWEFixture(ctx, tc, reconciler)
+	Expect(reconciler.SetupWithManager(mgr)).To(Succeed())
 	tc.StartManager(ctx, mgr)
 }

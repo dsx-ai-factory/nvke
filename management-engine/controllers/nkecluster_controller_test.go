@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+// Lifecycle fixtures compare settled cluster state and external writes against goldens.
+
 package controllers
 
 import (
@@ -9,6 +11,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/cluster-api-provider-nico/pkg/test/fixture"
 	internalv1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
@@ -71,6 +74,21 @@ var _ = fixture.DescribeCaseSet(controllerCaseSet(
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
 		})
 		ginkgo.It("reconciles the deleted NKECluster", func(ctx ginkgo.SpecContext) {
+			if input, exists := tc.Input("input_cwe.yaml"); exists {
+				var config cweFixtureConfig
+				gomega.Expect(yaml.UnmarshalStrict([]byte(input), &config)).To(gomega.Succeed())
+				if config.DeletePending {
+					gomega.Eventually(func(g gomega.Gomega) {
+						cluster := &internalv1.NKECluster{}
+						g.Expect(tc.Client.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: testCluster}, cluster)).To(gomega.Succeed())
+						synced := conditions.Get(cluster, internalv1.SyncedCondition)
+						g.Expect(synced).NotTo(gomega.BeNil())
+						g.Expect(cluster.Generation).To(gomega.Equal(int64(2)))
+						g.Expect(synced.ObservedGeneration).To(gomega.Equal(cluster.Generation))
+					}).WithContext(ctx).WithTimeout(timeout).WithPolling(pollInterval).Should(gomega.Succeed())
+					return
+				}
+			}
 			gomega.Eventually(func() bool {
 				err := tc.Client.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: testCluster}, &internalv1.NKECluster{})
 				return apierrors.IsNotFound(err)

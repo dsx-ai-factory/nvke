@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   controller-test-policy:
-    name: Require envtest fixtures only
+    name: Validate controller test policy
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -38,7 +38,7 @@ jobs:
       - name: Install Ginkgo
         run: make -C management-engine ginkgo
 
-      - name: Reject non envtest fixture tests
+      - name: Check fixture and unit-test allowlists
         shell: bash
         run: |
           set -euo pipefail
@@ -47,7 +47,7 @@ jobs:
           test_files="$(find management-engine -path management-engine/apis -prune -o -name '*_test.go' ! -type d -print | sort)"
           while IFS= read -r file; do
             [[ -n "${file}" ]] || continue
-            if ! jq -e --arg file "${file}" '.ginkgoSpecs | has($file)' .github/workflows/management-engine/controller-test-policy.json >/dev/null; then
+            if ! jq -e --arg file "${file}" '(.ginkgoSpecs | has($file)) or (.goTestFiles | index($file) != null)' .github/workflows/management-engine/controller-test-policy.json >/dev/null; then
               echo "::error file=${file}::Test file is not in controller-test-policy.json. Add a YAML fixture instead."
               echo "::error file=${file}::See management-engine/docs/writing-tests.md"
               failed=1
@@ -59,8 +59,8 @@ jobs:
 
           while IFS=$'\t' read -r file expected; do
             actual="$(
-              ./management-engine/bin/ginkgo outline --format csv "${file}" |
-                awk -F, 'NR > 1 && $5 == "true" { count++ } END { print count + 0 }'
+              ./management-engine/bin/ginkgo outline --format json "${file}" |
+                jq '[.. | objects | select(.spec == true)] | length'
             )"
 
             if ((actual != expected)); then
@@ -73,9 +73,9 @@ jobs:
 
           expected_ordinary_tests="$(jq -r '.ordinaryGoTests[]' .github/workflows/management-engine/controller-test-policy.json)"
           actual_ordinary_tests="$(
-            go test ./management-engine/controllers -run '^$' -list '^(Test|Benchmark|Fuzz)' |
+            go test -tags=integration_test ./management-engine/controllers ./management-engine/internal/... ./management-engine/cmd ./management-engine/test/integration -run '^$' -list '^(Test|Benchmark|Fuzz)' |
               awk '/^(Test|Benchmark|Fuzz)[[:alnum:]_]*$/ { print }' |
-              sort
+              LC_ALL=C sort
           )"
           if [[ "${actual_ordinary_tests}" != "${expected_ordinary_tests}" ]]; then
             echo "::error file=management-engine/controllers::The ordinary Go test allowlist changed. Add controller coverage as YAML fixtures under management-engine/controllers/testdata instead."

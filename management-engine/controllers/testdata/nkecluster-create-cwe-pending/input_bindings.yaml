@@ -1,0 +1,31 @@
+[
+  {
+    "namespace": "default",
+    "channel": "stable",
+    "controlPlaneClass": "standard",
+    "template": {
+      "controlPlaneKubernetesVersion": "1.36.1",
+      "infra": {
+        "cluster": {
+          "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
+          "kind": "DockerCluster",
+          "spec": {}
+        }
+      },
+      "controlPlaneConfig": {
+        "desiredCount": 3,
+        "infra": {
+          "machineTemplate": {
+            "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
+            "kind": "DockerMachineTemplate",
+            "spec": {
+              "template": {
+                "spec": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+]
