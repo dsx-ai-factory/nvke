@@ -95,6 +95,11 @@ type metricsSequencer struct {
 	callIdx int
 	err     error
 	onCall  func(idx int) // optional hook (e.g. for WAL ordering checks)
+	// The default fixture models a local apiserver applying the new file on
+	// a successful reload. Explicit identity fixtures bypass this model.
+	configPath string
+	loadedHash string
+	baseline   int
 }
 
 func (s *metricsSequencer) fetch() ([]byte, error) {
@@ -111,23 +116,34 @@ func (s *metricsSequencer) fetch() ([]byte, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
-	return s.values[idx], nil
+	raw := s.values[idx]
+	if s.configPath != "" {
+		if parseEncryptionReloadCount(string(raw)) > s.baseline {
+			if config, err := os.ReadFile(s.configPath); err == nil {
+				s.loadedHash = encryptionConfigContentHash(config)
+			}
+		}
+		raw = append(append([]byte(nil), raw...), []byte(fmt.Sprintf("\nprocess_start_time_seconds 100\n%s{apiserver_id_hash=\"%s\",hash=\"%s\"} 1\n", encryptionLoadedConfigMetric, testApiserverMetricIdentity, s.loadedHash))...)
+	}
+	return raw, nil
 }
 
 // ── test helpers ──────────────────────────────────────────────────────────────
 
+const testApiserverMetricIdentity = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
 func metricsOutput(count int) []byte {
 	return []byte(fmt.Sprintf(
-		`apiserver_encryption_config_controller_automatic_reloads_total{status="success"} %d`, count,
+		`apiserver_encryption_config_controller_automatic_reloads_total{status="success",apiserver_id_hash="%s"} %d`, testApiserverMetricIdentity, count,
 	))
 }
 
-// metricsWithReload: Phase 2 already-confirmed check sees R > baseline → fast exit.
+// metricsWithReload models a successful hot reload and updated loaded identity.
 func metricsWithReload(count int) *metricsSequencer {
 	return &metricsSequencer{values: [][]byte{metricsOutput(count), metricsOutput(count + 1)}}
 }
 
-// metricsWithBlockingWaitPath: Phase 2 sees R == N → Phase 3 runs; first poll confirms.
+// metricsWithBlockingWaitPath retains the old loaded identity for one poll.
 func metricsWithBlockingWaitPath(count int) *metricsSequencer {
 	return &metricsSequencer{values: [][]byte{metricsOutput(count), metricsOutput(count), metricsOutput(count + 1)}}
 }
@@ -207,6 +223,16 @@ func writeEncryptionConfigFixture(t *testing.T, dir string, keys []KeyConfig) {
 
 func newEncryptionServer(t *testing.T, tmpDir, role string, runner nvkeutils.CommandRunner, metrics *metricsSequencer) *NodeAgentServer {
 	t.Helper()
+	if metrics != nil {
+		configPath := filepath.Join(tmpDir, "etc/kubernetes/kube-api-encryption/encryption-config.yaml")
+		if raw, err := os.ReadFile(configPath); err == nil {
+			metrics.configPath = configPath
+			if metrics.loadedHash == "" {
+				metrics.loadedHash = encryptionConfigContentHash(raw)
+			}
+			metrics.baseline = parseEncryptionReloadCount(string(metrics.values[0]))
+		}
+	}
 	return &NodeAgentServer{
 		Runner: runner, Persister: &MockPersister{},
 		NodeStatus: &NodeStatus{Role: role}, RootPath: tmpDir,
@@ -731,8 +757,8 @@ func TestUpdateEncryptionConfig_WritesConfigAndWaits(t *testing.T) {
 	}
 }
 
-// TestUpdateEncryptionConfig_BlockingWaitPath verifies that when Phase 2
-// already-confirmed check sees R==N, the blocking wait (Phase 3) executes.
+// TestUpdateEncryptionConfig_BlockingWaitPath verifies that an old loaded-config
+// identity cannot complete until a later poll observes the intended config.
 func TestUpdateEncryptionConfig_BlockingWaitPath(t *testing.T) {
 	tmpDir := t.TempDir()
 	writeEncryptionConfigFixture(t, tmpDir, []KeyConfig{{Name: "kube-api-encryption-key-1", Secret: testKey1}})
@@ -749,8 +775,8 @@ func TestUpdateEncryptionConfig_BlockingWaitPath(t *testing.T) {
 	seq.mu.Lock()
 	totalCalls := seq.callIdx
 	seq.mu.Unlock()
-	// call 0: baseline, call 1: phase 2 check (no fast exit), call 2: wait-loop poll
-	assert.Equal(t, 3, totalCalls, "expected 3 metrics calls: baseline + phase2-check + wait-loop")
+	// call 0: baseline, call 1: old config, call 2: applied config, call 3: stable confirmation
+	assert.Equal(t, 4, totalCalls, "baseline, pending identity, applied identity and stable confirmation")
 	assert.False(t, walFileExists(srv))
 }
 
@@ -811,17 +837,17 @@ func TestCrashRecovery_S1_StateFileWrittenConfigNotYet(t *testing.T) {
 	assert.False(t, walFileExists(srv))
 }
 
-// S2: crash after config write, before reload confirmation. R==N → blocking wait runs.
+// S2: crash after config write, before the loaded identity has changed.
 func TestCrashRecovery_S2_ConfigWrittenReloadPending(t *testing.T) {
 	tmpDir := t.TempDir()
 	writeEncryptionConfigFixture(t, tmpDir, []KeyConfig{
 		{Name: "kube-api-encryption-key-1", Secret: testKey1},
 		{Name: "kube-api-encryption-key-2", Secret: testKey2},
 	})
-	seq := &metricsSequencer{values: [][]byte{
-		metricsOutput(5), // Phase 2: R == walN → enter blocking wait
-		metricsOutput(6), // wait loop: R > walN → done
-	}}
+	seq := &metricsSequencer{
+		loadedHash: encryptionConfigContentHash([]byte("old loaded config")),
+		values:     [][]byte{metricsOutput(5), metricsOutput(6)},
+	}
 	srv := newEncryptionServer(t, tmpDir, ControlPlaneRole, NewMockK8sEncryptionRunner(), seq)
 	req := &pb.UpdateEncryptionConfigRequest{Operation: &pb.UpdateEncryptionConfigRequest_AddSecondaryKey{
 		AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: testKey2},
@@ -833,7 +859,7 @@ func TestCrashRecovery_S2_ConfigWrittenReloadPending(t *testing.T) {
 	assert.False(t, walFileExists(srv))
 }
 
-// S3: crash after reload confirmed, before WAL deleted. R > walN → skip wait.
+// S3: crash after the desired config is loaded, before WAL cleanup.
 func TestCrashRecovery_S3_ReloadConfirmedStateFileStale(t *testing.T) {
 	tmpDir := t.TempDir()
 	writeEncryptionConfigFixture(t, tmpDir, []KeyConfig{
@@ -844,7 +870,7 @@ func TestCrashRecovery_S3_ReloadConfirmedStateFileStale(t *testing.T) {
 	req := &pb.UpdateEncryptionConfigRequest{Operation: &pb.UpdateEncryptionConfigRequest_AddSecondaryKey{
 		AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: testKey2},
 	}}
-	writeWALFixture(t, srv, 5, req) // R=7 > walN=5
+	writeWALFixture(t, srv, 5, req) // Legacy baseline is not used as completion proof.
 
 	_, err := srv.UpdateEncryptionConfig(context.Background(), req)
 	require.NoError(t, err)

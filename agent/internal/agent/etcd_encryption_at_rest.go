@@ -90,7 +90,7 @@ resources:
     providers:
       - secretbox:
           keys:
-            - name: current-primary-encryption-key
+            - name: {{ .EncryptionKeyName }}
               secret: {{ .EncryptionKey }}
       - identity: {}`
 
@@ -110,7 +110,7 @@ resources:
       - identity: {}
       - secretbox:
           keys:
-            - name: current-primary-encryption-key
+            - name: {{ .EncryptionKeyName }}
               secret: {{ .EncryptionKey }}`
 
 	volumeEntry = `- hostPath:
@@ -222,7 +222,7 @@ func (s *NodeAgentServer) InitializeKubernetesAPIEncryption(
 	// smarter, right now it's really dumb and will duplicate entries causing the pod
 	// to fail
 	if !configured {
-		err = s.createAPIEncryptionConfig(req.EncryptionKey, true, req.ObjectsToEncrypt)
+		err = s.createNamedAPIEncryptionConfig(req.EncryptionKey, req.EncryptionKeyName, true, req.ObjectsToEncrypt)
 		if err != nil {
 			log.Printf("failed to initialize api encryption config: %v\n", err)
 			s.NodeStatus.K8sAPIEncryption.Status = K8sAPIEncryptionErrorStatus
@@ -719,13 +719,42 @@ func (n *NodeAgentServer) modifyAPIServerManifest() error {
 // identityFirst selects the migration template (identity then secretbox). Kubeadm init uses false
 // (secretbox then identity). objects, if non-empty, overrides the default resource kinds list.
 func (n *NodeAgentServer) createAPIEncryptionConfig(encryptionKey string, identityFirst bool, objects []string) error {
+	return n.createNamedAPIEncryptionConfig(encryptionKey, "", identityFirst, objects)
+}
+
+func (n *NodeAgentServer) createNamedAPIEncryptionConfig(encryptionKey, keyName string, identityFirst bool, objects []string) error {
+	n.encryptionMu.Lock()
+	defer n.encryptionMu.Unlock()
+	if keyName == "" {
+		keyName = legacyAPIEncryptionKeyName
+	}
+	if err := validateEncryptionKeyName(keyName); err != nil {
+		return err
+	}
+	// A retry may encounter an existing configuration. Matching key bytes do
+	// not permit changing its live storage name without rewriting the objects.
+	configPath := filepath.Join(n.RootPath, "/etc/kubernetes/kube-api-encryption/encryption-config.yaml")
+	if _, err := os.Stat(configPath); err == nil {
+		cfg, err := n.readEncryptionConfig()
+		if err != nil {
+			return err
+		}
+		if err := cfg.validateMutationIdentity(&pb.UpdateEncryptionConfigRequest{
+			Operation: &pb.UpdateEncryptionConfigRequest_AddSecondaryKey{
+				AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: encryptionKey, KeyName: keyName},
+			},
+		}); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	encryptionDir := filepath.Join(n.RootPath, "/etc/kubernetes/kube-api-encryption")
 	err := os.MkdirAll(encryptionDir, 0o755)
 	if err != nil {
 		return err
 	}
 
-	configPath := filepath.Join(encryptionDir, "encryption-config.yaml")
 	f, err := os.OpenFile(configPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
@@ -748,11 +777,13 @@ func (n *NodeAgentServer) createAPIEncryptionConfig(encryptionKey string, identi
 		objs = objects
 	}
 	templateValues := struct {
-		ObjectsToEncrypt []string
-		EncryptionKey    string
+		ObjectsToEncrypt  []string
+		EncryptionKey     string
+		EncryptionKeyName string
 	}{
-		ObjectsToEncrypt: objs,
-		EncryptionKey:    encryptionKey,
+		ObjectsToEncrypt:  objs,
+		EncryptionKey:     encryptionKey,
+		EncryptionKeyName: keyName,
 	}
 	var encryptionConfig strings.Builder
 	err = tmpl.Execute(&encryptionConfig, templateValues)

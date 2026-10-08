@@ -50,7 +50,10 @@ func (a *Activities) ensurePendingKubeAPIEncryptionKey(ctx context.Context, clus
 				Namespace: a.cfg.PodNamespace,
 				Name:      constants.EtcdEncryptionKeySecretName(clusterID),
 			},
-			Data: map[string][]byte{constants.EtcdEncryptionKeyFieldPending: []byte(key)},
+			Data: map[string][]byte{
+				constants.EtcdEncryptionKeyFieldPending:     []byte(key),
+				constants.EtcdEncryptionKeyFieldPendingName: []byte(constants.LegacyAPIEncryptionKeyName),
+			},
 		}
 		if err := a.k8sClient.Create(ctx, secret); err != nil {
 			return "", fmt.Errorf("creating pending kube-api encryption key secret %s/%s: %w", secret.Namespace, secret.Name, err)
@@ -62,6 +65,7 @@ func (a *Activities) ensurePendingKubeAPIEncryptionKey(ctx context.Context, clus
 		secret.Data = map[string][]byte{}
 	}
 	secret.Data[constants.EtcdEncryptionKeyFieldPending] = []byte(key)
+	secret.Data[constants.EtcdEncryptionKeyFieldPendingName] = []byte(constants.LegacyAPIEncryptionKeyName)
 	if err := a.k8sClient.Update(ctx, secret); err != nil {
 		return "", fmt.Errorf("updating pending kube-api encryption key secret %s/%s: %w", secret.Namespace, secret.Name, err)
 	}
@@ -85,8 +89,19 @@ func (a *Activities) ensurePendingKubeAPIEncryptionRotationKey(ctx context.Conte
 				fmt.Sprintf("kube-api encryption key secret %s/%s has identical active and pending keys", secret.Namespace, secret.Name),
 			)
 		}
+		if err := a.ensureRotationKeyNames(ctx, clusterID, secret); err != nil {
+			return "", err
+		}
 		return pending, nil
 	}
+	activeName, err := a.discoverEncryptionKeyName(ctx, clusterID, active, false)
+	if err != nil {
+		return "", err
+	}
+	if stored := string(secret.Data[constants.EtcdEncryptionKeyFieldActiveName]); stored != "" && stored != activeName {
+		return "", encryptionIdentityError("managed active encryption identity disagrees with the control plane")
+	}
+	secret.Data[constants.EtcdEncryptionKeyFieldActiveName] = []byte(activeName)
 
 	key, err := generateEncryptionKey()
 	if err != nil {
@@ -99,6 +114,7 @@ func (a *Activities) ensurePendingKubeAPIEncryptionRotationKey(ctx context.Conte
 		secret.Data = map[string][]byte{}
 	}
 	secret.Data[constants.EtcdEncryptionKeyFieldPending] = []byte(key)
+	secret.Data[constants.EtcdEncryptionKeyFieldPendingName] = []byte("kube-api-encryption-key-" + uuid.NewString())
 	if err := a.k8sClient.Update(ctx, secret); err != nil {
 		return "", fmt.Errorf("updating pending kube-api encryption rotation key secret %s/%s: %w", secret.Namespace, secret.Name, err)
 	}
@@ -117,12 +133,18 @@ func (a *Activities) finalizePendingKubeAPIEncryptionKey(ctx context.Context, cl
 		}
 		return nil
 	}
+	name, err := a.adoptEncryptionKeyName(ctx, clusterID, secret, constants.EtcdEncryptionKeyFieldPending, constants.EtcdEncryptionKeyFieldPendingName)
+	if err != nil {
+		return err
+	}
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
 	secret.Data[constants.EtcdEncryptionKeyFieldActive] = pending
+	secret.Data[constants.EtcdEncryptionKeyFieldActiveName] = []byte(name)
 	secret.Data[constants.EtcdEncryptionKeyFieldActiveSince] = []byte(strconv.FormatInt(time.Now().Unix(), 10))
 	delete(secret.Data, constants.EtcdEncryptionKeyFieldPending)
+	delete(secret.Data, constants.EtcdEncryptionKeyFieldPendingName)
 	if err := a.k8sClient.Update(ctx, secret); err != nil {
 		return fmt.Errorf("finalizing kube-api encryption key secret %s/%s: %w", secret.Namespace, secret.Name, err)
 	}

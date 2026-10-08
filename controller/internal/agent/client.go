@@ -22,6 +22,7 @@ import (
 type Client interface {
 	GetKubeconfig(ctx context.Context, node db.Node) (string, error)
 	GetAgentVersion(ctx context.Context, node db.Node) (string, error)
+	GetEtcdEncryptionKeyIdentity(ctx context.Context, node db.Node, digest string) (string, error)
 	SupportsKubeadmFiles(ctx context.Context, node db.Node) (bool, error)
 	GetKubeadmStatus(ctx context.Context, node db.Node) (*nvkeproto.KubeadmStatusResponse, error)
 	ScheduleNodeReboot(ctx context.Context, node db.Node) (*nvkeproto.ScheduleNodeRebootResponse, error)
@@ -210,6 +211,9 @@ func (c *NodeAgentClient) ExecuteKubeadmInit(ctx context.Context, node db.Node, 
 	}
 	defer cleanup()
 
+	if err := requireKubeadmEncryptionKeyName(ctx, conn, req.GetApiEncryptionKeyName()); err != nil {
+		return nil, err
+	}
 	resp, err := nvkeproto.NewNodeAgentClient(conn).ExecuteKubeadmInit(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute kubeadm init on node %s: %w", node.Name, err)
@@ -224,6 +228,9 @@ func (c *NodeAgentClient) ExecuteKubeadmJoin(ctx context.Context, node db.Node, 
 	}
 	defer cleanup()
 
+	if err := requireKubeadmEncryptionKeyName(ctx, conn, req.GetApiEncryptionKeyName()); err != nil {
+		return nil, err
+	}
 	// Returns only the RPC execution error; resp.Status is parsed by the caller
 	// via the GetKubeadmStatus poll loop (see Activities.kubeadmJoin). Do not
 	// promote resp.Status to a Go error here: a re-fired join on an already

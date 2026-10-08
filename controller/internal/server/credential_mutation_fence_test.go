@@ -18,9 +18,9 @@ import (
 )
 
 // fenceOwners are the operations whose retained ownership must fence control-plane mutations.
-var fenceOwners = []db.OperationType{db.OperationTypeCertRenewal}
+var fenceOwners = []db.OperationType{db.OperationTypeEtcdKeyRotation, db.OperationTypeCertRenewal}
 
-func TestRenewalFencesControlPlaneNodePoolAPIsAndPreservesWorkerChanges(t *testing.T) {
+func TestCredentialOperationFencesControlPlaneNodePoolAPIsAndPreservesWorkerChanges(t *testing.T) {
 	for _, owner := range fenceOwners {
 		for _, op := range []string{"update_cp", "delete_cp", "update_worker", "delete_worker"} {
 			t.Run(string(owner)+"/"+op, func(t *testing.T) {
@@ -108,7 +108,7 @@ func TestRenewalFencesControlPlaneNodeDelete(t *testing.T) {
 				if controlPlane {
 					blocked, ok := response.(api.DeleteNode409JSONResponse)
 					require.True(t, ok, "expected a 409, got %T", response)
-					require.Contains(t, blocked.Message, "control-plane changes are rejected while etcd encryption or certificate renewal holds the cluster mutation lock; retry after the operation completes, or, if a failed certificate renewal retained the lock, after an operator clears it (see controller/docs/certificate-renewal.md)")
+					require.Contains(t, blocked.Message, "control-plane changes are rejected while etcd encryption, etcd key rotation or certificate renewal holds the cluster mutation lock; retry after the operation completes, or, if a failed certificate renewal retained the lock, after an operator clears it (see controller/docs/certificate-renewal.md)")
 					tx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 					tx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 				} else {
@@ -121,7 +121,7 @@ func TestRenewalFencesControlPlaneNodeDelete(t *testing.T) {
 }
 
 // TestClusterDeletionPreemptsCredentialOwners keeps deletion available while a
-// renewal or encryption cycle holds, or a failed cycle retains, the mutation lock.
+// credential cycle holds, or a failed cycle retains, the mutation lock.
 func TestClusterDeletionPreemptsCredentialOwners(t *testing.T) {
 	for _, owner := range fenceOwners {
 		t.Run(string(owner), func(t *testing.T) {

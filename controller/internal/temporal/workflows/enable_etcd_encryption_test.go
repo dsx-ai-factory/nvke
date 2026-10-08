@@ -5,6 +5,7 @@ package workflows
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,16 +13,25 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
+	pb "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent/agenttest"
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/rollout"
 	rolloutkubevip "github.com/dsx-ai-factory/nvke/controller/internal/rollout/guards/kubevip"
 	rolloutetcd "github.com/dsx-ai-factory/nvke/controller/internal/rollout/operations/etcd"
 	rollouttemporal "github.com/dsx-ai-factory/nvke/controller/internal/rollout/temporal"
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
+	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
 func TestEnableEtcdEncryptionWorkflow_CompletesThroughRolloutExecutor(t *testing.T) {
@@ -80,19 +90,21 @@ func TestEnableEtcdEncryptionWorkflow_ClearsProgressAfterExecutorFailure(t *test
 	env.AssertExpectations(t)
 }
 
-func TestRewriteEtcdEncryptedObjects_ResumesRunningOperation(t *testing.T) {
+func TestRewriteEtcdEncryptedObjects_PollsAcknowledgedOperationID(t *testing.T) {
 	nodeID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
 	env, a := setupEnableEtcdEncryptionWorkflowEnv(t)
+	// Model a recorded result preserved by reset. A fresh Start activity cannot
+	// adopt a different persisted RUNNING operation.
 	env.OnActivity(a.StartEtcdEncryptionRewrite, mock.Anything, mock.Anything).
 		Return(activities.EtcdEncryptionRewriteOperation{
-			OperationID: "rewrite-from-prior-workflow-run",
+			OperationID: "acknowledged-before-reset",
 			Phase:       activities.EtcdEncryptionOperationPhaseRunning,
 		}, nil).Once()
 	env.OnActivity(a.GetEtcdEncryptionRewriteStatus, mock.Anything,
 		mock.MatchedBy(func(input activities.EtcdEncryptionRewriteInput) bool {
-			return input.OperationID == "rewrite-from-prior-workflow-run"
+			return input.OperationID == "acknowledged-before-reset"
 		})).Return(activities.EtcdEncryptionRewriteOperation{
-		OperationID: "rewrite-from-prior-workflow-run",
+		OperationID: "acknowledged-before-reset",
 		Phase:       activities.EtcdEncryptionOperationPhaseSucceeded,
 	}, nil).Once()
 
@@ -101,6 +113,71 @@ func TestRewriteEtcdEncryptedObjects_ResumesRunningOperation(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertExpectations(t)
+}
+
+func TestRewriteEtcdEncryptedObjects_RecoversAcknowledgedOperationAfterAgentRestart(t *testing.T) {
+	node := db.Node{ID: uuid.New(), Name: "cp-0", ControlPlane: true}
+	env, _ := setupEnableEtcdEncryptionWorkflowEnv(t)
+	store := &testutil.MockDB{}
+	store.On("GetNode", mock.Anything, node.ID).Return(node, nil)
+
+	// Model only the remote process loss. Execute the real Start and polling
+	// activities inside the existing workflow, including its timer commands.
+	var mu sync.Mutex
+	var persistedID string
+	var active, processLost bool
+	starts := 0
+	nodeAgent := &agenttest.FakeClient{
+		GetEncryptedObjectsRewriteHook: func(_ db.Node, id string) (*pb.EtcdEncryptionAtRestObjectsRewriteOperation, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			if persistedID != id {
+				return nil, status.Error(codes.NotFound, "not found")
+			}
+			state := pb.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_RUNNING
+			if active && processLost {
+				state = pb.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_SUCCEEDED
+			}
+			return &pb.EtcdEncryptionAtRestObjectsRewriteOperation{OperationId: persistedID, State: state}, nil
+		},
+		StartEncryptedObjectsRewriteHook: func(_ db.Node, id string) (*pb.EtcdEncryptionAtRestObjectsRewriteOperation, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			if persistedID != "" && persistedID != id {
+				return nil, status.Error(codes.FailedPrecondition, "foreign operation")
+			}
+			persistedID, active = id, true
+			starts++
+			return &pb.EtcdEncryptionAtRestObjectsRewriteOperation{
+				OperationId: id,
+				State:       pb.EtcdEncryptionAtRestObjectsRewriteState_ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_RUNNING,
+			}, nil
+		},
+	}
+	a := activities.NewActivities(config.Config{}, store, nil, nodeAgent, "", nil, "")
+	env.RegisterActivity(a.StartEtcdEncryptionRewrite)
+	env.RegisterActivity(a.GetEtcdEncryptionRewriteStatus)
+	env.SetOnActivityCompletedListener(func(info *activity.Info, _ converter.EncodedValue, err error) {
+		if info.ActivityType.Name == "StartEtcdEncryptionRewrite" && err == nil {
+			mu.Lock()
+			active, processLost = false, true // acknowledged RUNNING remains durable
+			mu.Unlock()
+		}
+	})
+
+	env.ExecuteWorkflow(testRewriteEtcdEncryptedObjectsRecoveryWorkflow, node.ID)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.True(t, processLost)
+	require.Equal(t, 2, starts, "polling must restart the acknowledged operation once")
+	require.Len(t, nodeAgent.StartEncryptedObjectsRewriteIDs, 2)
+	require.Equal(t, nodeAgent.StartEncryptedObjectsRewriteIDs[0], nodeAgent.StartEncryptedObjectsRewriteIDs[1])
+	for _, id := range nodeAgent.GetEncryptedObjectsRewriteStatusIDs {
+		require.Equal(t, persistedID, id)
+	}
+	store.AssertNumberOfCalls(t, "GetNode", 3)
+	store.AssertExpectations(t)
 }
 
 func TestRewriteEtcdEncryptedObjects_TimesOut(t *testing.T) {
@@ -233,6 +310,10 @@ func testRewriteEtcdEncryptedObjectsWorkflow(ctx workflow.Context, nodeID uuid.U
 
 func testRewriteEtcdEncryptedObjectsTimeoutWorkflow(ctx workflow.Context, nodeID uuid.UUID) error {
 	return rewriteEtcdEncryptedObjectsWithTimeout(ctx, nodeID, 45*time.Second)
+}
+
+func testRewriteEtcdEncryptedObjectsRecoveryWorkflow(ctx workflow.Context, nodeID uuid.UUID) error {
+	return rewriteEtcdEncryptedObjectsWithTimeout(ctx, nodeID, 2*time.Minute)
 }
 
 type noOpRolloutLoader struct{}

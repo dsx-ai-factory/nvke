@@ -156,6 +156,9 @@ service NodeAgent {
   //   other codes      — unrecoverable; no partial state remains.
   rpc UpdateEncryptionConfig(UpdateEncryptionConfigRequest) returns (UpdateEncryptionConfigResponse) {}
 
+  // Looks up a storage key name in the local configuration without returning key material.
+  rpc GetEtcdEncryptionKeyIdentity(GetEtcdEncryptionKeyIdentityRequest) returns (GetEtcdEncryptionKeyIdentityResponse) {}
+
   // StartEtcdEncryptionAtRestObjectsRewrite starts an asynchronous rewrite of
   // Kubernetes API objects so they are persisted with the current etcd
   // encryption-at-rest configuration. The operation_id is an idempotency key;
@@ -394,6 +397,8 @@ message KubeadmInitRequest {
   // Canonical form uses a leading v. When empty, the agent tries kubeadm version -o short from the binary on PATH.
   // When init_config is non-empty, set kubernetesVersion inside ClusterConfiguration instead (NVKE controller kubeadm templates already do).
   string kubernetes_version = 22;
+  // Empty preserves the legacy bootstrap name. Must match the existing storage identity on joins/replacements.
+  string api_encryption_key_name = 23;
 }
 
 message KubeadmInitStatusRequest {}
@@ -414,6 +419,7 @@ message KubeadmJoinRequest {
   string api_encryption_key = 3;
   string certificate_key = 4;
   repeated File files = 5;
+  string api_encryption_key_name = 6;
 }
 
 message KubeadmJoinStatusRequest {}
@@ -586,6 +592,7 @@ message InitializeKubernetesAPIEncryptionRequest {
   // When empty, a built-in default list is used. Identity is always the first
   // provider (then secretbox); new clusters use kubeadm init encryption instead.
   repeated string objects_to_encrypt = 2;
+  string encryption_key_name = 3;
 }
 
 message InitializeKubernetesAPIEncryptionResponse {
@@ -604,15 +611,18 @@ message PromoteKubernetesAPIEncryptionProvidersResponse {}
 // UpdateEncryptionConfig messages
 
 message AddSecondaryKeyOperation {
-  string new_key = 1; // base64-encoded 32-byte secretbox key; name is auto-derived
+  string new_key = 1; // base64-encoded 32-byte secretbox key
+  string key_name = 2; // empty retains legacy auto-derived naming
 }
 
 message PromotePrimaryKeyOperation {
   string new_key = 1; // base64-encoded key to move to the primary (first) position
+  string key_name = 2; // when supplied, verifies the stored identity; never renames a live key
 }
 
 message RemoveOldKeysOperation {
   string primary_key = 1; // the key to retain; all other keys are removed
+  string key_name = 2; // when supplied, verifies the retained storage identity
 }
 
 message UpdateEncryptionConfigRequest {
@@ -629,6 +639,16 @@ message UpdateEncryptionConfigRequest {
 //                      a reload within the deadline; safe to retry.
 //   other codes      — unrecoverable error; no partial state remains.
 message UpdateEncryptionConfigResponse {}
+
+message GetEtcdEncryptionKeyIdentityRequest {
+  // SHA-256 of the base64 key string, lowercase hex. The raw key is never returned.
+  string key_sha256 = 1;
+}
+
+message GetEtcdEncryptionKeyIdentityResponse {
+  // Empty if this key has not yet been distributed to this node.
+  string key_name = 1;
+}
 
 enum EtcdEncryptionAtRestObjectsRewriteState {
   ETCD_ENCRYPTION_AT_REST_OBJECTS_REWRITE_STATE_UNSPECIFIED = 0;

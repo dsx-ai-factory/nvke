@@ -51,18 +51,19 @@ type fakeEncryptionKeyReader struct {
 	calls         int
 	rotationCalls int
 	clusterID     uuid.UUID
+	name          string
 }
 
-func (r *fakeEncryptionKeyReader) ReadEnablementKey(_ context.Context, clusterID uuid.UUID) (string, error) {
+func (r *fakeEncryptionKeyReader) ReadEnablementKey(_ context.Context, clusterID uuid.UUID) (EncryptionKey, error) {
 	r.calls++
 	r.clusterID = clusterID
-	return r.key, r.err
+	return EncryptionKey{Key: r.key, Name: r.name}, r.err
 }
 
-func (r *fakeEncryptionKeyReader) ReadRotationKey(_ context.Context, clusterID uuid.UUID) (string, error) {
+func (r *fakeEncryptionKeyReader) ReadRotationKey(_ context.Context, clusterID uuid.UUID) (EncryptionKey, error) {
 	r.rotationCalls++
 	r.clusterID = clusterID
-	return r.key, r.err
+	return EncryptionKey{Key: r.key, Name: r.name}, r.err
 }
 
 type fakeEncryptionClient struct {
@@ -74,6 +75,8 @@ type fakeEncryptionClient struct {
 	removeCalls       int
 	updateRequests    []*nvkeproto.UpdateEncryptionConfigRequest
 	updateErr         error
+	identityName      string
+	identityErr       error
 }
 
 func (c *fakeEncryptionClient) InitializeKubernetesAPIEncryption(
@@ -237,7 +240,7 @@ func TestPromoteAndRemoveDispatchTheirNodeAgentRPCs(t *testing.T) {
 
 func TestKeyRotationOperationsReadPendingKeyAndDispatchTheirMutations(t *testing.T) {
 	clusterID := uuid.New()
-	keyReader := &fakeEncryptionKeyReader{key: "new-pending-key"}
+	keyReader := &fakeEncryptionKeyReader{key: "new-pending-key", name: "kube-api-encryption-key-fixture"}
 	client := &fakeEncryptionClient{}
 	dialer := func(context.Context, rollout.Node) (nodeAgentEncryptionClient, func(), error) {
 		return client, func() {}, nil
@@ -263,6 +266,9 @@ func TestKeyRotationOperationsReadPendingKeyAndDispatchTheirMutations(t *testing
 	assert.Equal(t, "new-pending-key", client.updateRequests[0].GetAddSecondaryKey().GetNewKey())
 	assert.Equal(t, "new-pending-key", client.updateRequests[1].GetPromotePrimaryKey().GetNewKey())
 	assert.Equal(t, "new-pending-key", client.updateRequests[2].GetRemoveOldKeys().GetPrimaryKey())
+	assert.Equal(t, keyReader.name, client.updateRequests[0].GetAddSecondaryKey().GetKeyName())
+	assert.Equal(t, keyReader.name, client.updateRequests[1].GetPromotePrimaryKey().GetKeyName())
+	assert.Equal(t, keyReader.name, client.updateRequests[2].GetRemoveOldKeys().GetKeyName())
 	assert.Equal(t, 3, keyReader.rotationCalls)
 	assert.Equal(t, 0, keyReader.calls)
 	assert.Equal(t, clusterID, keyReader.clusterID)
@@ -289,5 +295,71 @@ func TestKeyRotationOperationFailureLeavesNodeStateForRetry(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Equal(t, rollout.OutcomeFailedNotRestored, outcome)
-	assert.ErrorContains(t, err, "reload not confirmed")
+	require.ErrorContains(t, err, "inspect node encryption health")
+	assert.NotContains(t, err.Error(), "reload not confirmed")
+}
+
+// TestRotationErrorsNeverSerializeKeyMaterial simulates unsafe upstream error
+// text and protects both activity failure and rollout outcome boundaries.
+func TestRotationErrorsNeverSerializeKeyMaterial(t *testing.T) {
+	for _, name := range []string{"key lookup", "agent update"} {
+		t.Run(name, func(t *testing.T) {
+			reader := &fakeEncryptionKeyReader{key: "KEY_MATERIAL_SENTINEL"}
+			client := &fakeEncryptionClient{}
+			if name == "key lookup" {
+				reader.err = errors.New("rejected Secret body KEY_MATERIAL_SENTINEL")
+			} else {
+				client.updateErr = errors.New("rejected request KEY_MATERIAL_SENTINEL")
+			}
+			op := NewAddSecondaryKeyOperation(WithEncryptionKeyReader(reader))
+			op.nodeAgentClientDialer = func(context.Context, rollout.Node) (nodeAgentEncryptionClient, func(), error) {
+				return client, func() {}, nil
+			}
+			payload, err := op.BuildApplyToNodePayload(t.Context(), &fakeCluster{id: uuid.New()})
+			require.NoError(t, err)
+			_, err = op.ApplyToNode(t.Context(), fakeNode{role: rollout.NodeRoleControlPlane}, payload)
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), "KEY_MATERIAL_SENTINEL")
+			require.NotContains(t, string(payload), "KEY_MATERIAL_SENTINEL")
+		})
+	}
+}
+
+func (c *fakeEncryptionClient) GetEtcdEncryptionKeyIdentity(context.Context, *nvkeproto.GetEtcdEncryptionKeyIdentityRequest, ...grpc.CallOption) (*nvkeproto.GetEtcdEncryptionKeyIdentityResponse, error) {
+	return &nvkeproto.GetEtcdEncryptionKeyIdentityResponse{KeyName: c.identityName}, c.identityErr
+}
+
+func TestRotationIdentityChecksBeforeMutation(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		storedName   string
+		observedName string
+		err          error
+		wantError    bool
+	}{
+		{name: "supported named key", storedName: "key-7", observedName: "key-7"},
+		{name: "legacy retry adopts live name", observedName: "key-7"},
+		{name: "mismatched names rejected", storedName: "key-7", observedName: "key-8", wantError: true},
+		{name: "older agent rejected", storedName: "key-7", err: errors.New("unsupported identity RPC"), wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			reader := &fakeEncryptionKeyReader{key: "public-fixture-key", name: test.storedName}
+			client := &fakeEncryptionClient{identityName: test.observedName, identityErr: test.err}
+			op := NewAddSecondaryKeyOperation(WithEncryptionKeyReader(reader))
+			op.nodeAgentClientDialer = func(context.Context, rollout.Node) (nodeAgentEncryptionClient, func(), error) {
+				return client, nil, nil
+			}
+			payload, err := op.BuildApplyToNodePayload(context.Background(), &fakeCluster{id: uuid.New()})
+			require.NoError(t, err)
+			_, err = op.ApplyToNode(context.Background(), fakeNode{name: "cp-1", role: rollout.NodeRoleControlPlane}, payload)
+			if test.wantError {
+				require.Error(t, err)
+				require.Empty(t, client.updateRequests)
+			} else {
+				require.NoError(t, err)
+				require.Len(t, client.updateRequests, 1)
+				require.Equal(t, test.observedName, client.updateRequests[0].GetAddSecondaryKey().GetKeyName())
+			}
+		})
+	}
 }

@@ -175,11 +175,7 @@ func (a *Activities) StartEtcdEncryptionRewrite(
 		if op.OperationID == input.OperationID {
 			switch op.Phase {
 			case EtcdEncryptionOperationPhaseRunning:
-				operation, startErr := a.nodeAgentClient.StartEncryptedObjectsRewrite(ctx, node, input.OperationID)
-				if startErr != nil {
-					return EtcdEncryptionRewriteOperation{}, startErr
-				}
-				return etcdEncryptionRewriteOperationFromProto(operation), nil
+				return a.startEtcdEncryptionRewrite(ctx, node, input.OperationID)
 			case EtcdEncryptionOperationPhaseSucceeded, EtcdEncryptionOperationPhaseFailed:
 				return op, nil
 			default:
@@ -192,11 +188,7 @@ func (a *Activities) StartEtcdEncryptionRewrite(
 		}
 	}
 
-	operation, err := a.nodeAgentClient.StartEncryptedObjectsRewrite(ctx, node, input.OperationID)
-	if err != nil {
-		return EtcdEncryptionRewriteOperation{}, err
-	}
-	return etcdEncryptionRewriteOperationFromProto(operation), nil
+	return a.startEtcdEncryptionRewrite(ctx, node, input.OperationID)
 }
 
 func (a *Activities) GetEtcdEncryptionRewriteStatus(
@@ -209,9 +201,49 @@ func (a *Activities) GetEtcdEncryptionRewriteStatus(
 	}
 	operation, err := a.nodeAgentClient.GetEncryptedObjectsRewriteStatus(ctx, node, input.OperationID)
 	if err != nil {
+		return EtcdEncryptionRewriteOperation{}, errors.New("encrypted-object rewrite request failed; inspect node rewrite state")
+	}
+	op, err := etcdEncryptionRewriteOperationForID(operation, input.OperationID)
+	if err != nil {
 		return EtcdEncryptionRewriteOperation{}, err
 	}
-	return etcdEncryptionRewriteOperationFromProto(operation), nil
+	if op.Phase == EtcdEncryptionOperationPhaseRunning {
+		// The acknowledgement is durable, but the agent's rewrite goroutine is
+		// not. Reissuing the same logical Start is a no-op while active and
+		// resumes a persisted RUNNING operation after an agent process restart.
+		// Keep this inside the existing activity so historical workflow command
+		// sequences and the acknowledged operation ID remain unchanged.
+		return a.startEtcdEncryptionRewrite(ctx, node, input.OperationID)
+	}
+	return op, nil
+}
+
+func (a *Activities) startEtcdEncryptionRewrite(
+	ctx context.Context,
+	node db.Node,
+	operationID string,
+) (EtcdEncryptionRewriteOperation, error) {
+	operation, err := a.nodeAgentClient.StartEncryptedObjectsRewrite(ctx, node, operationID)
+	if err != nil {
+		return EtcdEncryptionRewriteOperation{}, errors.New("encrypted-object rewrite request failed; inspect node rewrite state")
+	}
+	return etcdEncryptionRewriteOperationForID(operation, operationID)
+}
+
+func etcdEncryptionRewriteOperationForID(
+	operation *nvkeproto.EtcdEncryptionAtRestObjectsRewriteOperation,
+	operationID string,
+) (EtcdEncryptionRewriteOperation, error) {
+	op := etcdEncryptionRewriteOperationFromProto(operation)
+	if strings.TrimSpace(operationID) == "" || op.OperationID != operationID {
+		return EtcdEncryptionRewriteOperation{}, errors.New("encrypted-object rewrite returned an unexpected operation; inspect node rewrite state")
+	}
+	switch op.Phase {
+	case EtcdEncryptionOperationPhaseRunning, EtcdEncryptionOperationPhaseSucceeded, EtcdEncryptionOperationPhaseFailed:
+		return op, nil
+	default:
+		return EtcdEncryptionRewriteOperation{}, errors.New("encrypted-object rewrite returned an unknown phase; inspect node rewrite state")
+	}
 }
 
 func etcdEncryptionRewriteOperationFromProto(
@@ -233,7 +265,7 @@ func etcdEncryptionRewriteOperationFromProto(
 	return EtcdEncryptionRewriteOperation{
 		OperationID:  operation.GetOperationId(),
 		Phase:        phase,
-		ErrorMessage: operation.GetErrorMessage(),
+		ErrorMessage: "", // upstream rewrite errors can echo rejected Secret bodies
 	}
 }
 
