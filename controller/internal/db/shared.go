@@ -85,6 +85,7 @@ const (
 	OperationTypeCPNodesRecycling  OperationType = "cp_nodes_recycling"
 	OperationTypeOIDCEnable        OperationType = "oidc_enable"
 	OperationTypeSpireServerUpdate OperationType = "spire_server_update"
+	OperationTypeCertRenewal       OperationType = "certificate_renewal"
 )
 
 // UpdateInProgress represents a mutually-exclusive cluster mutation in flight.

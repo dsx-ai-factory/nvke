@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -70,6 +71,24 @@ func nodePoolKeysForNode(_ context.Context, node db.Node) ([]dbreconcile.Key, er
 //   - Update the DesiredCount of non-current NodeSets to 0.
 func (a *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconcile.Result, error) {
 	err := a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		// Discover the parent before taking any row locks. Legacy CP pools share
+		// the same cluster-first admission mutex as the control-plane controller.
+		pool, err := tx.GetNodePool(ctx, key.ID)
+		if err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				return nil
+			}
+			return fmt.Errorf("reading node pool: %w", err)
+		}
+		if pool.ControlPlane {
+			cluster, err := tx.GetClusterForUpdate(ctx, pool.ClusterID)
+			if err != nil {
+				return fmt.Errorf("locking cluster for control-plane node pool: %w", err)
+			}
+			if db.ControlPlaneMutationBlocked(cluster) {
+				return db.ErrControlPlaneMutationBlocked
+			}
+		}
 		nodePool, err := tx.GetNodePoolForUpdate(ctx, key.ID)
 		if err != nil {
 			if errors.Is(err, db.ErrNotFound) {
@@ -81,6 +100,9 @@ func (a *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 
 		return a.reconcileNodePool(ctx, tx, nodePool)
 	})
+	if errors.Is(err, db.ErrControlPlaneMutationBlocked) {
+		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+	}
 	return reconcile.Result{}, err
 }
 

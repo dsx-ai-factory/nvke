@@ -623,6 +623,8 @@ func TestRemediateMachinesRecordsIntentUnderTheController(t *testing.T) {
 	marked.Conditions.MarkedForRecycling = db.NewCondition(true, "Marked")
 
 	mockTx := &testutil.MockTx{}
+	mockTx.On("GetNode", mock.Anything, marked.ID).Return(marked, nil).Maybe()
+	mockTx.On("GetClusterForUpdate", mock.Anything, marked.ClusterID).Return(db.Cluster{ID: marked.ClusterID}, nil).Maybe()
 	mockTx.On("GetNodeForUpdate", mock.Anything, marked.ID).Return(marked, nil)
 	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{a, b, marked}, nil).Maybe()
 

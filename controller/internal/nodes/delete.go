@@ -150,6 +150,19 @@ func DeleteWithTx(ctx context.Context, tx db.Tx, nodeID uuid.UUID, opts ...Delet
 	var dbNode db.Node
 	var err error
 	if options.skipLiveDeleteGuard {
+		unlocked, readErr := tx.GetNode(ctx, nodeID)
+		if readErr != nil {
+			return fmt.Errorf("reading node for deletion: %w", readErr)
+		}
+		if unlocked.ControlPlane {
+			cluster, lockErr := tx.GetClusterForUpdate(ctx, unlocked.ClusterID)
+			if lockErr != nil {
+				return fmt.Errorf("locking cluster for control-plane deletion: %w", lockErr)
+			}
+			if db.ControlPlaneMutationBlocked(cluster) {
+				return db.ErrControlPlaneMutationBlocked
+			}
+		}
 		dbNode, err = tx.GetNodeForUpdate(ctx, nodeID)
 		if err != nil {
 			if errors.Is(err, db.ErrNotFound) {

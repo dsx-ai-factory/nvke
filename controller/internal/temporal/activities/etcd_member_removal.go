@@ -37,6 +37,13 @@ type EtcdMemberRemovalInput struct {
 func (a *Activities) RemoveEtcdMember(ctx context.Context, input EtcdMemberRemovalInput) error {
 	heartbeatCancel := startActivityHeartbeat(ctx)
 	defer heartbeatCancel()
+	target, err := a.db.GetNode(ctx, input.TargetNodeID)
+	if err != nil {
+		return fmt.Errorf("reading etcd member removal target: %w", err)
+	}
+	if err := a.reserveControlPlaneDeletion(ctx, target); err != nil {
+		return err
+	}
 
 	executor, err := a.pickEtcdMemberRemovalExecutor(ctx, input)
 	if err != nil {
