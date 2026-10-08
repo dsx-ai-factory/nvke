@@ -356,7 +356,7 @@ func (s Site) MatchInstanceType(capabilities map[string]string) (InstanceType, e
 // workers cannot run different OS images.
 func (s Site) MatchCPU(arch string) (InstanceType, error) {
 	return s.MatchInstanceType(map[string]string{
-		infra.CapabilityMachineType: "cpu",
+		infra.CapabilityMachineType: infra.MachineTypeCPU,
 		infra.CapabilityArch:        arch,
 	})
 }
@@ -366,7 +366,7 @@ func (s Site) MatchCPU(arch string) (InstanceType, error) {
 // back off the result rather than requested.
 func (s Site) MatchGPU(model string) (InstanceType, error) {
 	return s.MatchInstanceType(map[string]string{
-		infra.CapabilityMachineType: "gpu",
+		infra.CapabilityMachineType: infra.MachineTypeGPU,
 		infra.CapabilityGPU:         model,
 	})
 }

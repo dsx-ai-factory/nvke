@@ -28,6 +28,13 @@ const (
 	CapabilityArch        = "arch"
 	CapabilityGPU         = "gpu"
 
+	// The two values CapabilityMachineType takes. A machine with a GPU
+	// provides both an architecture and a model, so matching on architecture
+	// alone can land on one, and the caller that wanted a plain machine has
+	// to say so.
+	MachineTypeCPU = "cpu"
+	MachineTypeGPU = "gpu"
+
 	// DefaultArch is what a run that named no architecture gets. Every site
 	// onboarded so far has an amd64 shape, so this keeps a run without
 	// -e2e.capabilities resolving as it did before architectures were told

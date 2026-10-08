@@ -374,6 +374,12 @@ func newSiteName() (string, error) {
 // so a run naming neither still resolves. Everything else is carried through
 // untouched: a key no machine answers is ignored when matching, and dropping
 // keys here would mean this function had to know which ones those are.
+//
+// Dropping the GPU is not the same as asking for a machine without one. A GPU
+// shape provides an architecture too, so {arch: arm64} matches both cpu.arm
+// and gpu.gb200, and MatchInstanceType takes the first declared. The site
+// controller lands on the CPU today because of the order they are listed in,
+// which is not something this should depend on.
 func siteCapabilities(run map[string]string) map[string]string {
 	node := make(map[string]string, len(run))
 	for key, value := range run {
@@ -383,6 +389,7 @@ func siteCapabilities(run map[string]string) map[string]string {
 		node[key] = value
 	}
 	node[infra.CapabilityArch] = cmp.Or(node[infra.CapabilityArch], infra.DefaultArch)
+	node[infra.CapabilityMachineType] = infra.MachineTypeCPU
 	return node
 }
 
@@ -896,4 +903,33 @@ func expectSucceed2[A, B any](a A, b B, err error, messages ...any) (A, B) {
 	GinkgoHelper()
 	Expect(err).NotTo(HaveOccurred(), messages...)
 	return a, b
+}
+
+// TestSiteCapabilitiesAskForAMachineWithoutAGPU pins the key that keeps the
+// site controller off GPU hardware.
+//
+// A GPU shape provides an architecture as well as a model, so matching on
+// architecture alone is satisfied by one. ytl declares cpu.arm before
+// gpu.gb200 and MatchInstanceType takes the first, so the site controller
+// lands on the CPU by declaration order. Reordering that file, or adding a
+// second arm64 GPU above it, would put a GB200 under the site controller.
+func TestSiteCapabilitiesAskForAMachineWithoutAGPU(t *testing.T) {
+	for name, run := range map[string]map[string]string{
+		"gpu run":       {infra.CapabilityArch: "arm64", infra.CapabilityGPU: "gb200"},
+		"cpu run":       {infra.CapabilityArch: "amd64"},
+		"no arch named": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			node := siteCapabilities(run)
+			if got := node[infra.CapabilityMachineType]; got != infra.MachineTypeCPU {
+				t.Errorf("machineType = %q, want %q: the site controller must not match a GPU shape", got, infra.MachineTypeCPU)
+			}
+			if _, ok := node[infra.CapabilityGPU]; ok {
+				t.Errorf("the GPU survived into the site's capabilities: %v", node)
+			}
+			if node[infra.CapabilityArch] == "" {
+				t.Errorf("architecture is empty, so matching cannot default it: %v", node)
+			}
+		})
+	}
 }
