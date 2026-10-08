@@ -68,7 +68,7 @@ on:
           - bootstrap
           - full
       controller-version:
-        description: Published CWE tag to qualify, e.g. v0.1.1-rc.8. Leave empty to build the CWE from this checkout, which is the only pairing that currently works -- see the resolve step.
+        description: "Published CWE tag to qualify, e.g. v0.1.1. A qualification run names one, and SITE_E2E_CONTROLLER_VERSION supplies it when this is empty. Empty with no variable falls back to building the image from this checkout, which is a developer path and amd64 only: docker build --load takes one platform, so it cannot produce the image an arm64 site needs."
         type: string
         required: false
       cli-version:
