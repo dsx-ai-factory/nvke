@@ -167,10 +167,6 @@ type Stack struct {
 	// path, which depends on the ref they came from. Zero is LayoutDeploy().
 	Layout Layout
 
-	// DeployPath is the deploy path to install, relative to the assets.
-	// Defaults to the one Layout names.
-	DeployPath string
-
 	Controller Image
 	Profiles   Image
 
@@ -256,7 +252,7 @@ func (d Stack) Deploy(ctx context.Context, s infra.Session, t DeployTarget) erro
 		return err
 	}
 
-	overlay, err := s.Fetch(ctx, path.Join(assetsDir, d.DeployPath, releaseSpire, "overlay.yaml"))
+	overlay, err := s.Fetch(ctx, path.Join(assetsDir, d.Layout.DeployPath, releaseSpire, "overlay.yaml"))
 	if err != nil {
 		return fmt.Errorf("read the deploy path's SPIRE overlay: %w", err)
 	}
@@ -296,9 +292,6 @@ func (d Stack) Deploy(ctx context.Context, s infra.Session, t DeployTarget) erro
 func (d Stack) withDefaults() Stack {
 	if d.Layout.Executor == "" {
 		d.Layout = LayoutDeploy()
-	}
-	if d.DeployPath == "" {
-		d.DeployPath = d.Layout.DeployPath
 	}
 	if d.StorageClassManifest == "" {
 		d.StorageClassManifest = defaultStorageClassManifest
@@ -449,7 +442,7 @@ func (d Stack) commands(t DeployTarget, valuesDir string) []step {
 	// The flag that names the deploy path is the one thing the two executors
 	// spell differently.
 	target := ""
-	for i, arg := range d.Layout.TargetArgs(assetsDir, d.DeployPath) {
+	for i, arg := range d.Layout.TargetArgs(assetsDir) {
 		if i > 0 {
 			target += " "
 		}
@@ -460,7 +453,7 @@ func (d Stack) commands(t DeployTarget, valuesDir string) []step {
 		{"clusterctl init", env + "clusterctl init --wait-providers"},
 		{"default storage class", env + "kubectl apply -f " + shellQuote(d.StorageClassManifest) +
 			" && " + env + "kubectl patch storageclass " + shellQuote(d.StorageClassName) + " -p " + shellQuote(defaultClass)},
-		{"install " + d.DeployPath, env + "bash " + shellQuote(path.Join(assetsDir, d.Layout.Executor)) + " install" +
+		{"install " + d.Layout.DeployPath, env + "bash " + shellQuote(path.Join(assetsDir, d.Layout.Executor)) + " install" +
 			" " + target +
 			" --config " + shellQuote(path.Join(valuesDir, "bootstrap-config.json")) +
 			" " + values(releaseController) +

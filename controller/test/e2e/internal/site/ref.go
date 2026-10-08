@@ -86,15 +86,12 @@ func LayoutBuild() Layout {
 	}
 }
 
-// TargetArgs names deployPath, which is under assets, to this layout's
+// TargetArgs names this layout's deploy path, which is under assets, to its
 // executor. It is the whole command-line difference between the two:
 // `--sbom DIR --target NAME` became `--deploy-path DIR/NAME`. Every other
 // flag they take is spelled the same.
-//
-// deployPath rather than l.DeployPath so a caller that overrides it still
-// gets the right flags.
-func (l Layout) TargetArgs(assets, deployPath string) []string {
-	full := path.Join(assets, deployPath)
+func (l Layout) TargetArgs(assets string) []string {
+	full := path.Join(assets, l.DeployPath)
 	if l.sbomStyleTarget {
 		return []string{"--sbom", path.Dir(full), "--target", path.Base(full)}
 	}
@@ -114,6 +111,13 @@ func ControllerReleasePath(deployPath string) string {
 // move is a property of the tree and a version string only correlates with
 // it: a backport, a branch or a hand-cut tag can carry either shape.
 func ResolveLayout(ctx context.Context, repo, ref string) (Layout, error) {
+	// That ref resolves at all, first. This runs ahead of ExportRef, which
+	// is where that check used to live, and without it a version with a
+	// typo in it reports that the executor moved and a layout is owed --
+	// sending the reader to add an entry for a ref that does not exist.
+	if err := exec.CommandContext(ctx, "git", "-C", repo, "cat-file", "-e", ref+"^{commit}").Run(); err != nil {
+		return Layout{}, fmt.Errorf("resolve layout: %s is not a commit in %s: %w", ref, repo, err)
+	}
 	for _, layout := range []Layout{LayoutDeploy(), LayoutBuild()} {
 		probe := exec.CommandContext(ctx, "git", "-C", repo, "cat-file", "-e", ref+":"+layout.Executor)
 		if probe.Run() == nil {

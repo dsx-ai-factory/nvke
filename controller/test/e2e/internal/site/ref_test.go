@@ -192,19 +192,11 @@ func TestLayoutTargetArgs(t *testing.T) {
 		{LayoutBuild(), []string{"--sbom", "/assets/controller/deploy", "--target", "nke-sbom"}},
 	} {
 		t.Run(tc.layout.Name, func(t *testing.T) {
-			got := tc.layout.TargetArgs("/assets", tc.layout.DeployPath)
+			got := tc.layout.TargetArgs("/assets")
 			if !slices.Equal(got, tc.want) {
 				t.Errorf("TargetArgs = %v, want %v", got, tc.want)
 			}
 		})
-	}
-
-	// An overridden deploy path still gets its own layout's flags, rather
-	// than the layout's default path.
-	got := LayoutBuild().TargetArgs("/assets", "controller/deploy/capd-e2e")
-	want := []string{"--sbom", "/assets/controller/deploy", "--target", "capd-e2e"}
-	if !slices.Equal(got, want) {
-		t.Errorf("an overridden deploy path gives %v, want %v", got, want)
 	}
 }
 
@@ -237,8 +229,18 @@ func TestLayoutsMatchTheReleaseTags(t *testing.T) {
 		t.Skip("no release tags in this clone")
 	}
 
-	var resolved int
+	var resolved, readable int
 	for _, tag := range tags {
+		// A tag ref whose commit was never fetched says nothing about the
+		// table. CI checks out shallow, so this is the common case there
+		// and has to be told apart from a tag that genuinely carries no
+		// executor.
+		if exec.CommandContext(context.Background(), "git", "-C", repo, "cat-file", "-e", tag+"^{commit}").Run() != nil {
+			t.Logf("%s is not in this clone", tag)
+			continue
+		}
+		readable++
+
 		layout, err := ResolveLayout(context.Background(), repo, tag)
 		if err != nil {
 			// Tags older than the SBOM deploy path carry no executor at
@@ -270,10 +272,13 @@ func TestLayoutsMatchTheReleaseTags(t *testing.T) {
 		})
 	}
 
+	if readable == 0 {
+		t.Skip("no release tag in this clone has its commit; CI needs fetch-tags on the checkout")
+	}
 	// A table that resolves nothing passes every assertion above by doing
 	// no work, which is the failure mode this test exists to avoid.
 	if resolved == 0 {
-		t.Errorf("none of the %d release tags resolves to a layout, so the table describes no release that exists", len(tags))
+		t.Errorf("none of the %d readable release tags resolves to a layout, so the table describes no release that exists", readable)
 	}
 }
 
