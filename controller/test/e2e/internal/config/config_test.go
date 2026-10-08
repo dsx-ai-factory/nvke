@@ -27,7 +27,7 @@ func TestLoadAcceptsShippedConfigs(t *testing.T) {
 	}
 }
 
-// The document forge-site-controller-e2e.yml generates. It is written by a
+// The document site-and-tenant-e2e.yml generates. It is written by a
 // heredoc in the workflow rather than from this struct, so nothing but a test
 // keeps the two in step.
 func TestLoadAcceptsTheGeneratedSiteConfig(t *testing.T) {

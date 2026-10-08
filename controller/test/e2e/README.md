@@ -505,7 +505,7 @@ release tag, which has to be fetched in a shallow clone. Set
 Teleport is the intended route. Locally that is a `tsh login` to the cluster
 the jump host is enrolled in. In CI it is a bot identity in `TELEPORT_PROXY`
 and `TELEPORT_IDENTITY_FILE`, which
-`.github/workflows/forge-site-controller-e2e.yml` obtains by joining with the
+`.github/workflows/site-and-tenant-e2e.yml` obtains by joining with the
 repository's GitHub OIDC token — nothing is stored. The bot's login is `root`,
 so the workflow sets `FORGE_TELEPORT_LOGIN=root` and
 `FORGE_YTL_TELEPORT_LOGIN=root`, which each site's `teleportLogin` in
@@ -529,5 +529,5 @@ is reached with the ed25519 key the run generates, never with a password.
 
 This route is for a future site, and the CI lane no longer offers it. There is
 no network path from the ARC fleet to the site's jump host on port 22 at all —
-only the Teleport proxy reaches it — so `forge-site-controller-e2e.yml` always
+only the Teleport proxy reaches it — so `site-and-tenant-e2e.yml` always
 goes through `tsh`.

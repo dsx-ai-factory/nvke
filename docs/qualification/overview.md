@@ -126,5 +126,5 @@ Related, outside this directory:
 | Path | Contents |
 |---|---|
 | `controller/test/e2e/README.md` | running the e2e suite: labels, configuration, and the lane's prerequisites |
-| `.github/workflows/forge-site-controller-e2e.yml` | the workflow itself |
+| `.github/workflows/site-and-tenant-e2e.yml` | the workflow itself |
 | `RELEASE.md` | how a release is cut once a candidate qualifies |

@@ -711,7 +711,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			// cannot fit between -ginkgo.timeout and the go-test backstop --
 			// and that backstop panics without unwinding, which leaks the
 			// site's instance. See the three nested timeouts in
-			// forge-site-controller-e2e.yml.
+			// site-and-tenant-e2e.yml.
 		}, NodeTimeout(15*time.Minute))
 	}
 }

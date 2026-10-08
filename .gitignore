@@ -74,7 +74,7 @@ cli/e2e/bootstrap/.etcd-encryption-key.json
 # nkectl and the three image archives `make site-inputs` stages for the Forge
 # site-controller lane. The lane points SITE_INPUTS here, inside the checkout,
 # so the workspace rather than a $HOME cache owns them -- see the env block in
-# forge-site-controller-e2e.yml. Hundreds of megabytes of docker save output.
+# site-and-tenant-e2e.yml. Hundreds of megabytes of docker save output.
 .site-inputs/
 
 # What the Forge lane's `go test` leaves in the e2e directory. report.json and
