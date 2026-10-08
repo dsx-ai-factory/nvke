@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -475,16 +476,6 @@ func TestInstallCNIPluginSelection(t *testing.T) {
 			cniPluginName:  "calico",
 			expectedPlugin: "calico",
 		},
-		{
-			name:           "empty defaults to ovn",
-			cniPluginName:  "",
-			expectedPlugin: "ovn",
-		},
-		{
-			name:           "unknown defaults to ovn",
-			cniPluginName:  "unknown",
-			expectedPlugin: "ovn",
-		},
 	}
 
 	for _, tc := range tests {
@@ -499,10 +490,20 @@ func TestInstallCNIPluginSelection(t *testing.T) {
 			case "tigera", "calico":
 				expected = "calico"
 			default:
-				expected = "ovn"
+				t.Fatalf("plugin name %q is not a known installCNIPlugin selection", tc.cniPluginName)
 			}
 			assert.Equal(t, tc.expectedPlugin, expected)
 		})
+	}
+}
+
+func TestInstallCNIPluginRejectsUnknownName(t *testing.T) {
+	server := &NodeAgentServer{}
+	for _, name := range []string{"", "flannel"} {
+		req := &pb.InstallCNIPluginRequest{PluginName: name}
+		err := server.installCNIPlugin(req)
+		require.EqualError(t, err, fmt.Sprintf("unsupported CNI plugin %q", name))
+		assert.Equal(t, name, req.GetPluginName())
 	}
 }
 

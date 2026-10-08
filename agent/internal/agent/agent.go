@@ -1171,12 +1171,7 @@ func (s *NodeAgentServer) installCNIPlugin(req *pb.InstallCNIPluginRequest) erro
 		}
 		return s.installCalico(version, req.GetTigeraOperatorManifest(), req.GetTigeraCustomResourceManifest())
 	default:
-		slog.Info("unknown or no CniPlugin specified, will install default ovn-kubernetes", "version", defaultOvnCniChartStream)
-		if req.GetPluginVersion() == "" {
-			req.PluginVersion = defaultOvnCniChartStream
-		}
-		req.PluginName = cniPluginOVN
-		return s.installOvnK8sCNIPlugin(req)
+		return fmt.Errorf("unsupported CNI plugin %q", req.GetPluginName())
 	}
 }
 
