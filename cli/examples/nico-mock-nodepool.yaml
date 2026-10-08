@@ -20,9 +20,9 @@ desiredNodeCount: 1
 controlPlane: false
 systemReservedMemory: "1Gi"
 
-# Applied to the nodes at kubeadm join.
+# Stored on the pool at creation.
 nodeLabels:
-  - tier=compute
+  tier: compute
 
 # A pool carries either infra or nico, never both. This path supplies CAPI
 # manifests directly, matching nico-mock-cluster.yaml; a real site uses nico.

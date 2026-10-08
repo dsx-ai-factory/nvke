@@ -37,8 +37,8 @@ Example — bump the Kubernetes version:
 Example — patch file:
   nkectl patch cluster my-cluster --patch-file patch.yaml
 
-Example — clear a field back to its default:
-  nkectl patch cluster my-cluster --patch 'controlPlaneConfig: {nodeLabels: []}'
+Example — set the control-plane node count:
+  nkectl patch cluster my-cluster --patch 'controlPlaneConfig: {desiredCount: 3}'
 
 The patch document's fields must match the CWE UpdateClusterRequest schema
 exactly. See /api/docs on your site controller.`,
