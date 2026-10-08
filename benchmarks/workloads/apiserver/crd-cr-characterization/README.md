@@ -120,8 +120,10 @@ invocation, so the aggregate CR rate grows with the number running at once.
 ## Environment
 
 The published run used 7 nodes — 3 control plane, 2 workers, 2 monitoring — at
-128 cores and roughly 1 TB of memory each, on Kubernetes 1.34.2. Full version
-block in [scenario.yaml](scenario.yaml).
+128 cores and roughly 1 TB of memory each, on Kubernetes 1.34.2 with
+OVN-Kubernetes as the CNI (a downstream build of upstream commit d5f19be, with
+OVN 25.09 and Open vSwitch 2.17). Full version block in
+[scenario.yaml](scenario.yaml).
 
 Worker count barely matters here. The load is control-plane bound: custom
 resources are API and etcd objects, and almost nothing is scheduled. What

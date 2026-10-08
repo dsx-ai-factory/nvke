@@ -28,8 +28,8 @@ load rather than a property of the kubelet or the scheduler.
 That puts the CNI in the result rather than in the background. The same workload, on the
 same hardware, against a different CNI — or a different version of the same one — is
 exercising a different dataplane, so the numbers are not comparable across them. That is
-why `stack.cni` records the chart, application and OVN core versions rather than just a
-name.
+why `stack.cni` records the upstream commit the build is based on and the OVN and OVS
+versions rather than just a name.
 
 **This is not a maximum-density measurement, by design.** What the scenario exists to
 produce is a repeatable time-to-connectivity at a known density, not a breaking point.
@@ -93,7 +93,8 @@ startup probe, so pin it to a digest for a like-for-like replication.
 The published result records the cluster this scenario was run on: 47 nodes — 3
 control-plane, 42 worker, 2 monitoring — the workers each with 128 cores and roughly 1007 GiB of
 memory, running Kubernetes 1.34.2 on containerd 1.7.28 and Ubuntu 22.04.4, with
-OVN-Kubernetes as the CNI and no kube-proxy.
+OVN-Kubernetes as the CNI (a downstream build of upstream commit d5f19be, with OVN
+25.09 and Open vSwitch 2.17) and no kube-proxy.
 
 Worker kubelets were configured with a
 [max-pods](https://kubernetes.io/docs/reference/config-api/kubelet-config.v1beta1/)

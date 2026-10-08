@@ -82,7 +82,8 @@ be edited, not the pod template.
 The published result records the cluster this scenario was run on: 47 nodes — 3
 control-plane, 42 worker, 2 monitoring — the workers each with 128 cores and roughly 1007 GiB of
 memory, running Kubernetes 1.34.2 on containerd 1.7.28 and Ubuntu 22.04.4, with
-OVN-Kubernetes as the CNI and no kube-proxy.
+OVN-Kubernetes as the CNI (a downstream build of upstream commit d5f19be, with OVN
+25.09 and Open vSwitch 2.17) and no kube-proxy.
 
 The run targeted 105 pods per node against a kubelet
 [max-pods](https://kubernetes.io/docs/reference/config-api/kubelet-config.v1beta1/)

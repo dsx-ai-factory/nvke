@@ -58,9 +58,9 @@ Custom resource update churn and watch/list scalability were not tested.
 | Kubernetes | 1.34.2 |
 | etcd | 3.6.5 |
 | Containerd | 1.7.28 |
-| CNI | OVN-Kubernetes 1.2.0 |
-| OVN | 25.09.1 |
-| Open vSwitch | 3.6.1 |
+| CNI | OVN-Kubernetes, downstream build of upstream commit d5f19be |
+| OVN | 25.09 |
+| Open vSwitch | 2.17 |
 | CoreDNS | 1.12.1 |
 | OS image | Ubuntu 22.04.4 LTS |
 | Kernel | 5.15.0-113-generic |

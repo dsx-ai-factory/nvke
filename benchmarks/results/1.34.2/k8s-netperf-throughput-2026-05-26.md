@@ -74,7 +74,9 @@ the [scenario](../../workloads/cni/k8s-netperf-throughput/scenario.yaml).
 | Worker NIC | 2 × 200 Gb/s = 400 Gb/s aggregate |
 | Host MTU / pod MTU | 9000 / 8940 |
 | Kubernetes | 1.34.2 |
-| CNI | OVN-Kubernetes 25.09.1 (OVS 3.6.1), vendor build |
+| CNI | OVN-Kubernetes, downstream build of upstream commit d5f19be |
+| OVN | 25.09 |
+| Open vSwitch | 2.17 |
 | Container runtime | containerd 1.7.28 |
 | OS / kernel | Ubuntu 22.04.4 LTS / 5.15.0-113-generic |
 | Engine | k8s-netperf v0.1.41, upstream build |

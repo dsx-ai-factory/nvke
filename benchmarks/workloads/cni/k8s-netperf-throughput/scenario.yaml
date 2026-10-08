@@ -80,12 +80,12 @@ stack:
   kubernetes: 1.34.2
   cni:
     name: OVN-Kubernetes
-    version: 25.09.1
+    version: "upstream commit d5f19be (OVN 25.09)"
     # `vendor`: a distribution-specific build, not an upstream release artefact.
     # Results from a vendor build are comparable to another vendor build of the
-    # same version, and should be read with care against an upstream one.
+    # same upstream commit, and should be read with care against an upstream one.
     build: vendor
-    dataplane: OVS 3.6.1
+    dataplane: OVS 2.17
   engine:
     name: k8s-netperf
     version: v0.1.41

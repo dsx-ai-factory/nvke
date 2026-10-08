@@ -78,9 +78,9 @@ stack:
   kubernetes: 1.34.2
   cni:
     name: OVN-Kubernetes
-    version: "1.2.0 (OVN core 25.09.1)"
+    version: "upstream commit d5f19be (OVN 25.09)"
     build: vendor
-    dataplane: OVS 3.6.1
+    dataplane: OVS 2.17
   engine:
     name: ClusterLoader2
     version: 14525e2e2e08a236a2adb6f4f39740c586ed45fe

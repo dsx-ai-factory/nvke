@@ -56,9 +56,9 @@ node count.
 | Containerd | 1.7.28 |
 | OS image | Ubuntu 22.04.4 LTS |
 | Kernel | 5.15.0-113-generic |
-| CNI | OVN-Kubernetes (ovn-k) 1.2.0 |
-| OVN | 25.09.1 |
-| Open vSwitch | 3.6.1 |
+| CNI | OVN-Kubernetes, downstream build of upstream commit d5f19be |
+| OVN | 25.09 |
+| Open vSwitch | 2.17 |
 | CoreDNS | 1.12.1 |
 | etcd | 3.6.5 |
 | kube-proxy mode | n/a — not installed |

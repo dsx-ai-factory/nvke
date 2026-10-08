@@ -251,7 +251,9 @@ scenario.
 | Control-plane / monitoring node | 64 cores, ~377 GiB memory |
 | CPU | AMD EPYC 9004 series |
 | Kubernetes | 1.34.2 |
-| CNI | OVN-Kubernetes 1.2.0 (OVN core 25.09.1, OVS 3.6.1), vendor build |
+| CNI | OVN-Kubernetes, downstream build of upstream commit d5f19be |
+| OVN | 25.09 |
+| Open vSwitch | 2.17 |
 | Container runtime | containerd 1.7.28 |
 | OS / kernel | Ubuntu 22.04.4 LTS / 5.15.0-113-generic |
 | etcd | 3.6.5 |

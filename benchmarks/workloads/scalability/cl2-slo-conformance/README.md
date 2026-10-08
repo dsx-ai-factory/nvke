@@ -147,7 +147,9 @@ scenario.
 | Worker node | 128 cores, ~1007 GiB memory, ~877 GiB disk |
 | CPU | AMD EPYC 9004 series |
 | Kubernetes | 1.34.2 |
-| CNI | OVN-Kubernetes, ovn-k operator 1.2.0 / OVN core 25.09.1 (OVS 3.6.1), vendor build |
+| CNI | OVN-Kubernetes, downstream build of upstream commit d5f19be |
+| OVN | 25.09 |
+| Open vSwitch | 2.17 |
 | Container runtime | containerd 1.7.28 |
 | OS / kernel | Ubuntu 22.04.4 LTS / 5.15.0-113-generic |
 | etcd | 3.6.5 |
@@ -159,7 +161,7 @@ kubelet max-pods on worker nodes at least `PODS_PER_NODE`.
 
 `build: vendor` means a distribution-specific OVN-Kubernetes build, not an
 upstream release artefact. Comparable to another vendor build of the same
-version; read against an upstream build with care.
+upstream commit; read against an upstream build with care.
 
 ## How to replicate
 

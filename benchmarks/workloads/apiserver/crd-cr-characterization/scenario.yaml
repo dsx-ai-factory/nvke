@@ -74,9 +74,9 @@ stack:
   kubernetes: 1.34.2
   cni:
     name: OVN-Kubernetes
-    version: 1.2.0
+    version: "upstream commit d5f19be (OVN 25.09)"
     build: vendor
-    dataplane: OVS 3.6.1
+    dataplane: OVS 2.17
   # Determined rather than observed: the run tracked the latest kube-burner
   # release rather than pinning one, and v2.6.1 was the current release from
   # 2026-04-13 until v2.6.2 on 2026-05-19 -- a window containing the run date.
