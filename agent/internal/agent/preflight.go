@@ -117,7 +117,13 @@ func (s *NodeAgentServer) runCloudInitStatusPreflightCheck() (*pb.NodePreflightR
 		return nil, fmt.Errorf("check_cloud_init_status: command runner not configured")
 	}
 
-	output, runErr := s.Runner.Run("cloud-init", []string{"status"}, nil)
+	// --long because the bare status is one word. Run 37745107586 retried
+	// this check 44 times over 90 minutes and reported "status: error" every
+	// time, which says a node failed cloud-init and not which part of it, and
+	// the node was released before anyone could ask. --long adds the failing
+	// stage and its message, so the report that reaches the controller names
+	// the cause. The status line it already parsed is still the first line.
+	output, runErr := s.Runner.Run("cloud-init", []string{"status", "--long"}, nil)
 	report := strings.TrimSpace(string(output))
 
 	// A non-zero exit only tells us cloud-init recorded errors, not that it
