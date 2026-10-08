@@ -995,15 +995,22 @@ func (t *tenantTest) initCluster(ctx context.Context, b testSpec) {
 
 	By("Waiting for the tenant cluster to be provisioned")
 	start := time.Now()
-	cluster, err = t.lifecycle.WaitForClusterReady(ctx, cluster.ID)
+	// The id, not cluster.ID: WaitForClusterReady returns a nil cluster when
+	// it expires, and assigning that over the one just created leaves the
+	// collector below dereferencing nil. A timed-out provision then panicked
+	// instead of reporting, which cost the diagnostics the wait exists to
+	// produce.
+	id := cluster.ID
+	ready, err := t.lifecycle.WaitForClusterReady(ctx, id)
 	if err != nil {
 		// Here rather than in a post-create spec: when this wait expires the
 		// specs that would have reported anything never run, which is how a
 		// failed provision produced a log naming no node at all. Detached
 		// because the context that just expired is the one that failed.
-		t.collectDiagnostics(context.WithoutCancel(ctx), cluster.ID)
+		t.collectDiagnostics(context.WithoutCancel(ctx), id)
 	}
 	Expect(err).NotTo(HaveOccurred(), "should provision the cluster")
+	cluster = ready
 	t.log.Info("Cluster provisioned", "name", cluster.Name, "duration", time.Since(start).Round(time.Second).String())
 
 	t.cluster = cluster
