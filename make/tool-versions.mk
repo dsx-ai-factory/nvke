@@ -71,6 +71,10 @@ CAPI_VERSION    ?= v1.12.3
 # Kind e2e installs it, and its kubeconform check validates against its CRDs.
 # Move it with CAPI_VERSION.
 CERT_MANAGER_VERSION ?= v1.19.3
+# kind drives it as its container provider in the nkectl bootstrap e2e, which
+# installs the nerdctl-full release for this version. release/ reads this pin
+# for the qualification plan.
+NERDCTL_VERSION ?= 2.3.5
 
 ORAS_VERSION        ?= 1.3.3
 ORAS_SHA256_AMD64   ?= 9ce999f8d2de03fc03968b29d743077a58783e545e5eaa53917ca177352d0e59
