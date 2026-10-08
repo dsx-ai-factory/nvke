@@ -195,6 +195,33 @@ func TestOpenVSwitchNetdevDatapathKeepsManagementUplink(t *testing.T) {
 	assert.Contains(t, runner.calls, "ovs-vsctl --may-exist add-br br-ex -- set bridge br-ex datapath_type=netdev")
 }
 
+func TestOpenVSwitchSystemDatapathKeepsManagementUplink(t *testing.T) {
+	t.Setenv(openVSwitchDatapathTypeEnv, openVSwitchSystemDatapath)
+	runner := newOpenVSwitchTestRunner(t, map[string][]openVSwitchCommandResult{
+		"dpkg-query --show --showformat=${db:Status-Abbrev} openvswitch-switch": {{output: []byte("ii ")}},
+		"systemctl enable --now openvswitch-switch":                             {{}},
+		"ip -j route show default": {{
+			output: []byte(`[{"dst":"default","gateway":"10.0.0.1","dev":"eth0"}]`),
+		}},
+		"ovs-vsctl set Open_vSwitch . external_ids:ovn-bridge-datapath-type=system":   {{}},
+		"ovs-vsctl --may-exist add-br br-ex -- set bridge br-ex datapath_type=system": {{}},
+	})
+	server := &NodeAgentServer{Runner: runner}
+
+	result, plan, err := server.reconcileOpenVSwitchLocked(context.Background())
+	require.NoError(t, err)
+	assert.Nil(t, plan)
+	assert.Equal(t, pb.OpenVSwitchReconciliationResult_OUTCOME_CONFIGURED, result.GetOutcome())
+	assert.Empty(t, result.GetBridgeName())
+	assert.Equal(t, "eth0", result.GetUplinkInterface())
+	assert.Equal(t, pb.OpenVSwitchReconciliationResult_NETWORK_BACKEND_NETPLAN, result.GetNetworkBackend())
+	assert.NotContains(t, runner.calls, "netplan apply")
+	assert.NotContains(t, runner.calls, "ovs-vsctl --may-exist add-br breth0")
+	assert.NotContains(t, runner.calls, "ovs-vsctl set Open_vSwitch . other_config:userspace-tso-enable=true")
+	assert.NotContains(t, runner.calls, "systemctl restart ovs-vswitchd")
+	assert.Contains(t, runner.calls, "ovs-vsctl --may-exist add-br br-ex -- set bridge br-ex datapath_type=system")
+}
+
 func TestOpenVSwitchUserspaceTSO(t *testing.T) {
 	const getTSO = "ovs-vsctl --if-exists get Open_vSwitch . other_config:userspace-tso-enable"
 	const setTSO = "ovs-vsctl set Open_vSwitch . other_config:userspace-tso-enable=true"
@@ -259,11 +286,11 @@ func TestOpenVSwitchUserspaceTSO(t *testing.T) {
 }
 
 func TestPrepareOpenVSwitchRejectsUnsupportedDatapath(t *testing.T) {
-	t.Setenv(openVSwitchDatapathTypeEnv, "system")
+	t.Setenv(openVSwitchDatapathTypeEnv, "dpdk")
 	server := &NodeAgentServer{}
 
 	_, _, err := server.reconcileOpenVSwitchDatapathOverride(context.Background())
-	require.EqualError(t, err, `unsupported Open vSwitch datapath type "system"`)
+	require.EqualError(t, err, `unsupported Open vSwitch datapath type "dpdk"`)
 }
 
 func TestOpenVSwitchReconciliationResumesWrittenNetplanAfterInterruptedApply(t *testing.T) {

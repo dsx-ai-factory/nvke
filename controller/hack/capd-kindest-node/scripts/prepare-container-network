@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Prepare the userspace OVS tunnel uplink and restore it on container boot."""
+"""Describe Docker's uplink in netplan and restore its OVS bridge on boot."""
 
 import json
 from pathlib import Path
@@ -16,18 +16,6 @@ def run(*args: str) -> str:
     return subprocess.check_output(args, text=True)
 
 
-def suppress_duplicate_packets(uplink: str) -> None:
-    # The userspace switch receives physical-port packets alongside the kernel;
-    # deliver them to the kernel only through the bridge's internal port.
-    for chain in ("INPUT", "FORWARD"):
-        rule = ("-i", uplink, "-j", "DROP")
-        result = subprocess.run(("iptables", "-C", chain, *rule), capture_output=True, check=False)
-        if result.returncode == 1:
-            run("iptables", "-I", chain, *rule)
-        else:
-            result.check_returncode()
-
-
 def main() -> None:
     config_path = Path("/etc/netplan/50-nke-container.yaml")
     config = yaml.safe_load(config_path.read_text()) if config_path.exists() else {
@@ -39,15 +27,12 @@ def main() -> None:
     # while Docker's original route still exists on the physical interface.
     physical_routes = [r for r in routes if r["dev"] not in network.get("bridges", {})]
     if not physical_routes and any(r["dev"] in network.get("bridges", {}) for r in routes):
-        for bridge in network["bridges"].values():
-            for uplink in bridge["interfaces"]:
-                suppress_duplicate_packets(uplink)
         return
     if len(physical_routes) != 1 or not physical_routes[0].get("gateway"):
         raise ValueError("expected one Docker IPv4 default route with a gateway")
     route = physical_routes[0]
     uplink = route["dev"]
-    bridge = "br-phy"
+    bridge = "br" + uplink
     link = json.loads(run("ip", "-j", "-4", "address", "show", "dev", uplink))[0]
     addresses = [a for a in link["addr_info"] if a["scope"] == "global"]
     if len(addresses) != 1:
@@ -58,21 +43,23 @@ def main() -> None:
         "routes": [{"to": "default", "via": route["gateway"], "on-link": True}],
         "mtu": link["mtu"],
     }
-    # Userspace Geneve forwarding needs the routed uplink in an OVS bridge.
-    # Refresh Docker's IP and MAC on every boot before the agent or SPIRE starts.
-    mac = json.loads(run("ip", "-j", "link", "show", "dev", uplink))[0]["address"]
-    network["ethernets"][uplink] = {"match": {"macaddress": mac}, "mtu": link["mtu"]}
-    network.setdefault("bridges", {})[bridge] = {**l3, "interfaces": [uplink], "openvswitch": {}}
-    run("ovs-vsctl", "--may-exist", "add-br", bridge, "--", "set", "Bridge", bridge,
-        "datapath_type=netdev", "other_config:hwaddr=" + mac)
+    restoring_bridge = bridge in network.get("bridges", {})
+    if restoring_bridge:
+        # Docker recreates eth0 on every start. Refresh the persisted netplan
+        # with Docker's current IP and MAC before activating the OVS bridge.
+        network["bridges"][bridge].update(l3)
+        mac = json.loads(run("ip", "-j", "link", "show", "dev", uplink))[0]["address"]
+        network["ethernets"][uplink] = {"match": {"macaddress": mac}, "mtu": link["mtu"]}
+    else:
+        network["ethernets"][uplink] = l3
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(yaml.safe_dump(config, sort_keys=False))
     config_path.chmod(0o600)
-    # Remove Docker's IPv4 state so networkd can assign it to the bridge.
-    run("ip", "-4", "route", "del", "default", "via", route["gateway"], "dev", uplink)
-    run("ip", "-4", "address", "flush", "dev", uplink)
+    if restoring_bridge:
+        # Remove Docker's IPv4 state so networkd can assign it to the bridge.
+        run("ip", "-4", "route", "del", "default", "via", route["gateway"], "dev", uplink)
+        run("ip", "-4", "address", "flush", "dev", uplink)
     run("netplan", "apply")
-    suppress_duplicate_packets(uplink)
 
 
 if __name__ == "__main__":

@@ -92,11 +92,12 @@ RUN set -eux; \
 # Docker supplies the initial address, rather than a distro network manager.
 # Give the agent a netplan description of it, and restore its OVS bridge on
 # container restarts before SPIRE or the agent need the network.
+# ovs-vswitchd keeps the distro unit so it can load the host kernel module
+# from the /lib/modules tree mounted into the container.
 # Netplan needs a live udev daemon even with KIND's read-only sysfs. Netplan
 # tolerates the resulting device-trigger warning inside containers.
 COPY scripts/prepare-container-network /usr/local/sbin/prepare-container-network
 COPY scripts/nke-container-network.service /etc/systemd/system/nke-container-network.service
-COPY scripts/ovs-vswitchd-userspace.conf /etc/systemd/system/ovs-vswitchd.service.d/userspace.conf
 RUN set -eux; \
     chmod 0755 /usr/local/sbin/prepare-container-network; \
     mkdir -p /etc/systemd/system/systemd-udevd.service.d; \

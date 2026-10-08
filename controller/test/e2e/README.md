@@ -208,12 +208,11 @@ controller-managed leg (`cp-controller`, deployed with
 light CWE redeploy flips the flag off for the node-pool leg. The node-pool leg
 only starts once the cp-controller leg's tenant cluster is fully torn down.
 
-The CAPD node image uses Open vSwitch's userspace datapath. Its boot fixture
-enables userspace checksum/segmentation offload and moves Docker's uplink into
-`br-phy` before the agent and SPIRE start. This supplies the routed physical
-port needed for Geneve traffic between nodes, while suppressing duplicate
-kernel delivery on the physical port. The existing DNS workload probe and
-networking scenarios exercise this setup in the node-pool leg.
+The CAPD node image uses Open vSwitch's kernel datapath. Geneve leaves through
+the kernel route on Docker's uplink, and `br-ex` stays a dummy gateway so OVN
+does not adopt that interface. `NKE_OVS_DATAPATH_TYPE=netdev` selects the
+userspace datapath instead. The existing DNS workload probe and networking
+scenarios exercise this setup in the node-pool leg.
 
 To iterate faster, run a single leg instead:
 

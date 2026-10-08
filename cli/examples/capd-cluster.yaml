@@ -32,6 +32,9 @@ controlPlaneConfig:
             extraMounts:
               - containerPath: /var/run/docker.sock
                 hostPath: /var/run/docker.sock
+              - containerPath: /lib/modules
+                hostPath: /lib/modules
+                readOnly: true
 
 nodePools:
   - name: worker
@@ -56,6 +59,9 @@ nodePools:
               extraMounts:
                 - containerPath: /var/run/docker.sock
                   hostPath: /var/run/docker.sock
+                - containerPath: /lib/modules
+                  hostPath: /lib/modules
+                  readOnly: true
 
 infra:
   cluster:

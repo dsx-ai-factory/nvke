@@ -21,21 +21,23 @@ import (
 )
 
 const (
-	openVSwitchPackage           = "openvswitch-switch"
-	openVSwitchService           = "openvswitch-switch"
-	openVSwitchDaemonService     = "ovs-vswitchd"
-	openVSwitchSystemIDPath      = "/etc/openvswitch/system-id.conf"
-	openVSwitchInstallUUIDPath   = "/etc/openvswitch/install_uuid.conf"
-	openVSwitchBridgePrefix      = "br"
-	openVSwitchIPCommand         = "ip"
-	openVSwitchDeviceFlag        = "dev"
-	openVSwitchDefaultRoute      = "default"
-	openVSwitchDefaultMTU        = 1500
-	openVSwitchDefaultSettleTime = 2 * time.Second
-	openVSwitchConvergenceDelay  = time.Second
-	openVSwitchDatapathTypeEnv   = "NKE_OVS_DATAPATH_TYPE"
-	openVSwitchNetdevDatapath    = "netdev"
-	openVSwitchUserspaceTSOKey   = "userspace-tso-enable"
+	openVSwitchPackage            = "openvswitch-switch"
+	openVSwitchService            = "openvswitch-switch"
+	openVSwitchDaemonService      = "ovs-vswitchd"
+	openVSwitchSystemIDPath       = "/etc/openvswitch/system-id.conf"
+	openVSwitchInstallUUIDPath    = "/etc/openvswitch/install_uuid.conf"
+	openVSwitchBridgePrefix       = "br"
+	openVSwitchIPCommand          = "ip"
+	openVSwitchDeviceFlag         = "dev"
+	openVSwitchDefaultRoute       = "default"
+	openVSwitchDefaultMTU         = 1500
+	openVSwitchDefaultSettleTime  = 2 * time.Second
+	openVSwitchConvergenceDelay   = time.Second
+	openVSwitchDatapathTypeEnv    = "NKE_OVS_DATAPATH_TYPE"
+	openVSwitchNetdevDatapath     = "netdev"
+	openVSwitchSystemDatapath     = "system"
+	openVSwitchDummyGatewayBridge = "br-ex"
+	openVSwitchUserspaceTSOKey    = "userspace-tso-enable"
 
 	operationTypeOpenVSwitchReconciliation = "open_vswitch_reconciliation"
 )
@@ -239,7 +241,7 @@ func (s *NodeAgentServer) reconcileOpenVSwitchDatapathOverride(
 	if datapathType == "" {
 		return nil, false, nil
 	}
-	if datapathType != openVSwitchNetdevDatapath {
+	if datapathType != openVSwitchNetdevDatapath && datapathType != openVSwitchSystemDatapath {
 		return nil, true, fmt.Errorf("unsupported Open vSwitch datapath type %q", datapathType)
 	}
 	defaultRoute, err := s.readOpenVSwitchDefaultRoute()
@@ -252,12 +254,17 @@ func (s *NodeAgentServer) reconcileOpenVSwitchDatapathOverride(
 	); err != nil {
 		return nil, true, fmt.Errorf("configure Open vSwitch %s datapath: %w", datapathType, err)
 	}
-	if err := s.ensureOpenVSwitchUserspaceTSO(); err != nil {
-		return nil, true, err
+	// The userspace datapath reads offload metadata only when this is set.
+	// The kernel datapath checksums packets itself.
+	if datapathType == openVSwitchNetdevDatapath {
+		if err := s.ensureOpenVSwitchUserspaceTSO(); err != nil {
+			return nil, true, err
+		}
 	}
 	if _, err := s.runOpenVSwitchCommand(
 		"ovs-vsctl",
-		"--may-exist", "add-br", "br-ex", "--", "set", "bridge", "br-ex", "datapath_type="+datapathType,
+		"--may-exist", "add-br", openVSwitchDummyGatewayBridge, "--",
+		"set", "bridge", openVSwitchDummyGatewayBridge, "datapath_type="+datapathType,
 	); err != nil {
 		return nil, true, fmt.Errorf("configure dummy gateway bridge for Open vSwitch %s datapath: %w", datapathType, err)
 	}

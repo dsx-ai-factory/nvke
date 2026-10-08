@@ -667,10 +667,22 @@ func TestOVNKubernetesCNIConfig(t *testing.T) {
 		assert.Equal(t, "--gateway-interface=custom0 --allow-no-uplink", config[ovnGatewayOptsHelmValue])
 	})
 
-	t.Run("system datapath preserves the request", func(t *testing.T) {
+	t.Run("kernel container datapath selects a dummy gateway bridge", func(t *testing.T) {
 		request := map[string]string{"global.image.pullPolicy": "Never"}
 
 		config := ovnKubernetesCNIConfig(request, "system")
+
+		assert.Equal(t, ovnDummyGatewayBridgeEnabled, config[ovnDummyGatewayBridgeHelmValue])
+		assert.Equal(t, ovnLocalGatewayMode, config[ovnGatewayModeHelmValue])
+		assert.Equal(t, ovnDummyGatewayOpts, config[ovnGatewayOptsHelmValue])
+		assert.Equal(t, "Never", config["global.image.pullPolicy"])
+		assert.NotContains(t, request, ovnDummyGatewayBridgeHelmValue)
+	})
+
+	t.Run("empty datapath preserves the request", func(t *testing.T) {
+		request := map[string]string{"global.image.pullPolicy": "Never"}
+
+		config := ovnKubernetesCNIConfig(request, "")
 
 		assert.Equal(t, request, config)
 		assert.NotContains(t, config, ovnDummyGatewayBridgeHelmValue)

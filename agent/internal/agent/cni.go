@@ -68,9 +68,10 @@ const (
 	cniPluginCalico = "calico"
 	cniPluginTigera = "tigera"
 
-	// OVN Helm overrides for OVS netdev nodes (CAPD and NICo containers).
-	// A dummy br-ex with no uplink and local gateway mode preserves Docker's
-	// management eth0 and its BGP connection. These keys are chart values:
+	// OVN Helm overrides for container nodes (CAPD and NICo). A dummy br-ex with
+	// no uplink and local gateway mode preserves Docker's management eth0.
+	// The kernel datapath sends Geneve through the route on that interface.
+	// These keys are chart values:
 	// https://github.com/ovn-kubernetes/ovn-kubernetes/blob/v1.4.0/helm/ovn-kubernetes/values-single-node-zone.yaml
 	ovnDummyGatewayBridgeHelmValue = "global.dummyGatewayBridge"
 	ovnDummyGatewayBridgeEnabled   = "true"
@@ -234,12 +235,11 @@ func ovnImageRepository(registry, upstreamRepo string) string {
 	return strings.TrimRight(registry, "/") + "/" + path
 }
 
-// ovnKubernetesCNIConfig keeps a userspace OVS node's physical management
-// interface out of the OVN gateway bridge. Without a dummy gateway bridge, OVN
-// adopts the Docker veth as its uplink even though a netdev datapath cannot use
-// it as a system port.
+// ovnKubernetesCNIConfig keeps a container node's management interface out of
+// the OVN gateway bridge. Without a dummy gateway bridge, OVN adopts the
+// Docker veth as its uplink.
 func ovnKubernetesCNIConfig(cniConfig map[string]string, datapathType string) map[string]string {
-	if !strings.EqualFold(strings.TrimSpace(datapathType), openVSwitchNetdevDatapath) {
+	if !containerOpenVSwitchDatapath(datapathType) {
 		return cniConfig
 	}
 
@@ -257,6 +257,18 @@ func ovnKubernetesCNIConfig(cniConfig map[string]string, datapathType string) ma
 		config[ovnGatewayOptsHelmValue] = ovnDummyGatewayOpts
 	}
 	return config
+}
+
+// containerOpenVSwitchDatapath reports whether the node is a container whose
+// Open vSwitch datapath must leave the Docker management interface unbridged.
+// "system" is the kernel datapath. "netdev" is the userspace datapath.
+func containerOpenVSwitchDatapath(datapathType string) bool {
+	switch strings.ToLower(strings.TrimSpace(datapathType)) {
+	case openVSwitchNetdevDatapath, openVSwitchSystemDatapath:
+		return true
+	default:
+		return false
+	}
 }
 
 // buildOvnKubernetesHelmInstallArgs returns argv for `helm upgrade --install` for an OVN chart
