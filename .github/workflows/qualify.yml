@@ -28,6 +28,10 @@ on:
   schedule:
     - cron: "0 6 * * *"
   workflow_dispatch: {}
+  # SCRATCH-ONLY: exercises this workflow for real pre-merge, on the PR that
+  # adds it. Never land this on the branch that actually merges.
+  pull_request:
+    types: [opened, synchronize]
 
 permissions:
   contents: read
