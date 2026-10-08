@@ -214,10 +214,10 @@ re-run. If a half-created cluster remains, delete it with the command above.
 **`nerdctl pull <image>: exit status 1`** with an authentication error
 
 The token used in `nerdctl login` for the image's registry is incorrect, or the
-image reference is wrong. Use the correct token for that registry, such as an
-NGC API key for `nvcr.io`. The login is stored per user, so it must be in the
-environment bootstrap runs in: the root login shell (`sudo -n -i`), not plain
-`sudo`. Confirm it works there before re-running bootstrap:
+image reference is wrong. Use the correct token for that registry. The login is
+stored per user, so it must be in the environment bootstrap runs in: the root
+login shell (`sudo -n -i`), not plain `sudo`. Confirm it works there before
+re-running bootstrap:
 
 ```bash
 sudo -n -i nerdctl pull <image>
