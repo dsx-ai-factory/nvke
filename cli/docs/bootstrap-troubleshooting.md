@@ -71,6 +71,10 @@ kubectl -n cloud-workflow-engine logs deploy/cloud-workflow-engine --tail=500
 The workflow engine's logs are the record of what it did to each node. Filter
 them by the cluster or node name from your site spec.
 
+Read [Bootstrap refuses to start](#bootstrap-refuses-to-start) and
+[The encryption key was not saved](#the-encryption-key-was-not-saved) before
+deleting a retained cluster. It may hold the only copy of a key.
+
 When you are done, delete the cluster. The provider prefix is required. Without
 it `kind` looks in Docker, finds nothing, and exits successfully having deleted
 nothing.
@@ -78,10 +82,6 @@ nothing.
 ```bash
 KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nkectl-bootstrap
 ```
-
-Read [Bootstrap refuses to start](#bootstrap-refuses-to-start) and
-[The encryption key was not saved](#the-encryption-key-was-not-saved) before
-deleting a retained cluster. It may hold the only copy of a key.
 
 ### The nodes
 
