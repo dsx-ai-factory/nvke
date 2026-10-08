@@ -667,7 +667,7 @@ capd-image: $(CAPD_IMAGE_DEPS) ## Build the custom CAPD node image for DockerMac
 				[ -n "$${CAPD_HELM_DEB_PATH:-}" ] || CAPD_HELM_DEB_PATH="$$ovn_helm"; \
 				if { [ "$$CAPD_CNI_CHARTS_DEB_PATH" = "$$ovn_charts" ] && { [ ! -f "$$ovn_charts" ] || [ ./hack/ci/prepare-ovn-assets.sh -nt "$$ovn_charts" ]; }; } \
 				   || { [ "$$CAPD_CNI_IMAGES_DEB_PATH" = "$$ovn_images" ] && { [ ! -f "$$ovn_images" ] || [ ./hack/ci/prepare-ovn-assets.sh -nt "$$ovn_charts" ]; }; } \
-				   || { [ "$$CAPD_HELM_DEB_PATH" = "$$ovn_helm" ] && { [ ! -f "$$ovn_helm" ] || [ ./hack/ci/prepare-ovn-assets.sh -nt "$$ovn_charts" ]; }; }; then \
+				   || { [ "$$CAPD_HELM_DEB_PATH" = "$$ovn_helm" ] && { [ ! -f "$$ovn_helm" ] || [ ./hack/ci/prepare-ovn-assets.sh -nt "$$ovn_helm" ]; }; }; then \
 					$(kind-docker-host) BUNDLE_ARCH="$$bundle_arch" bash ./hack/ci/prepare-ovn-assets.sh "$(CURDIR)/.local/cni"; \
 				fi; \
 				test -f "$$CAPD_CNI_CHARTS_DEB_PATH" || { echo "missing OVN charts package: $$CAPD_CNI_CHARTS_DEB_PATH" >&2; exit 1; }; \
