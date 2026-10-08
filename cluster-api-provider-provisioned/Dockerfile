@@ -38,9 +38,9 @@ RUN apk add --no-cache ca-certificates
 
 FROM ${ALPINE_IMAGE}
 # The base tag carries the packages Alpine shipped when the tag was cut, and
-# Alpine patches a branch without always cutting a new tag. Upgrade so
-# libssl3 and libcrypto3 are current at build time. --no-cache keeps the apk
-# index out of the image.
+# Alpine patches a branch without always cutting a new tag. Upgrade so the
+# packages are current at build time. --no-cache keeps the apk index out of
+# the image.
 RUN apk upgrade --no-cache
 COPY --from=certificates /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /out/cluster-api-provider-provisioned /usr/local/bin/cluster-api-provider-provisioned
