@@ -150,24 +150,15 @@ on:
 permissions: {}
 
 concurrency:
-  # Per branch, not per site. The group used to be the shape a run asked for,
-  # on the reasoning that two runs against one site would exhaust it. That
-  # modelled the wrong resource: a run takes two CPU machines, the site node
-  # and the tenant control plane, and one GPU machine for the worker. ytl has
-  # 14 GB200 and 6 CPU, so the ceiling is three concurrent runs and it is set
-  # by the CPU count, while the old key serialised on the GPU shape that was
-  # never scarce.
+  # Per branch, so separate branches run together and a branch cannot race
+  # itself. A run takes two CPU machines and one GPU machine, and ytl has six
+  # CPU, so three concurrent runs is the ceiling. GitHub concurrency is a
+  # mutex rather than a semaphore and cannot express that, so watch the CPU
+  # count: a fourth run exhausts the site and every run in flight fails at
+  # provisioning.
   #
-  # GitHub concurrency is a mutex rather than a semaphore, so it cannot
-  # express "at most three". Keying on the ref lets separate branches run
-  # together, which is the case that kept costing hours, and still stops a
-  # branch racing itself. Watch the CPU count rather than trusting this: a
-  # fourth concurrent run would exhaust the site and every run in flight
-  # would fail at provisioning.
-  #
-  # Never cancelled, unchanged and for the original reason: cancelling one
-  # mid-flight leaks its instance, because teardown is the suite's and the
-  # runner dies with the job.
+  # Never cancelled. Cancelling mid-flight leaks the instance, because
+  # teardown is the suite's and the runner dies with the job.
   group: ${{ github.workflow }} ${{ github.ref }}
   cancel-in-progress: false
 
