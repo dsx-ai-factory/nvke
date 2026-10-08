@@ -358,7 +358,13 @@ log "PASS: all fake nodes are up with TPM and SPIRE services ready"
 # the site spec and runs the command; the next one checks the agents got in.
 
 log "ensuring /dev/vtpmx for the fake nodes' swtpm"
-sudo bash "${CLI_DIR}/../controller/hack/ensure-vtpm-proxy.sh"
+# The arm64 runner executes this job as root, and its sudoers file does not
+# grant root permission to use sudo. The script itself requires root.
+if [ "$(id -u)" -eq 0 ]; then
+  bash "${CLI_DIR}/../controller/hack/ensure-vtpm-proxy.sh"
+else
+  sudo bash "${CLI_DIR}/../controller/hack/ensure-vtpm-proxy.sh"
+fi
 
 log "building the provisioned CAPI provider image (${NKECTL_CAPI_PROVISIONED_IMAGE})"
 # Its Docker Hub bases come through NKE_E2E_DOCKERHUB_MIRROR when set, like
