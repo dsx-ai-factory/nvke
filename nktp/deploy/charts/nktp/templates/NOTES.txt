@@ -5,17 +5,13 @@ SPDX-License-Identifier: Apache-2.0
 {{- $lgtm := index .Values "otel-lgtm" }}
 NKTP {{ .Chart.Version }} is installed in namespace {{ .Release.Namespace }} as {{ .Release.Name }}.
 
-Send telemetry to the gateway for its signal. Each one accepts OTLP on 4317
-(gRPC) and 4318 (HTTP):
-
-  logs     nktp-gateway-logs-collector.{{ .Release.Namespace }}.svc:4317
-  metrics  nktp-gateway-metrics-collector.{{ .Release.Namespace }}.svc:4317
-  traces   nktp-gateway-traces-collector.{{ .Release.Namespace }}.svc:4317
-
-An application can also send to the collector on its own node, on the same two
-ports:
+Send OTLP to the collector on the sender's own node, on 4317 (gRPC) or 4318
+(HTTP):
 
   nktp-daemonset-collector.{{ .Release.Namespace }}.svc
+
+It forwards each signal to its gateway. The gateways accept only NKTP's own
+collectors, over mutual TLS.
 
 Watch the pipeline come up:
 
@@ -33,9 +29,9 @@ Turn it off and point NKTP at your own backend:
 
   --set otel-lgtm.enabled=false
 
-and override the otlp_http exporter of each gateway and of the watchdog, and
-the watchdog's three service.telemetry exporters. The chart README shows the
-values block.
+and override the otlp exporter of each gateway, of the watchdog and of the
+watchdog's sidecar. The NKTP documentation's "Set a backend" shows the values
+block.
 {{- else -}}
 The bundled development backend is disabled, so the gateways and the watchdog
 export to whatever endpoints your values set. Check that they are reachable:

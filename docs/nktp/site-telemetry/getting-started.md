@@ -38,7 +38,7 @@ The deploy path also wires the rest of the management plane into it:
 
 | Component | Signal | How |
 |---|---|---|
-| Cloud Workflow Engine | metrics, logs, traces | ServiceMonitor, pod logs, OTLP traces to the traces gateway; its metrics NetworkPolicy admits `nktp` |
+| NKE controller | metrics, logs, traces | ServiceMonitor, pod logs, OTLP traces to the node Collector; its metrics NetworkPolicy admits `nktp` |
 | Temporal | metrics | a ServiceMonitor per server role, from Temporal's own chart |
 | SPIRE server and agent | metrics | PodMonitors, from SPIRE's own chart |
 | API server, etcd, CoreDNS | metrics | the chart's control-plane monitors |

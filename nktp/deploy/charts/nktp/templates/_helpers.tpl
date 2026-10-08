@@ -35,12 +35,13 @@ Pod has a container named otc-container, which is the name it gives every
 Collector's main container. See docs/nktp/architecture/self-telemetry.md.
 
 The sidecar configuration is passed unchanged, as JSON, to --config=yaml:.
-Environment variables in env (name to fieldRef path) are added to the sidecar's
-env when the list omits them, as daemonset.yaml does for the node Collector.
-Every sidecar configuration uses POD_NAME, so it is always added.
+Environment variables are added to the sidecar's env when the list omits them,
+as daemonset.yaml does for the node Collector. Every sidecar configuration uses
+POD_NAME, so it is always added.
 
 Arguments: name (values key), values (workload values), root (chart root),
-env (optional, more variables to add when missing).
+sidecarEnv (optional, more env entries to add to the sidecar when missing),
+mainEnv (optional, env entries to add to the main Collector when missing).
 */}}
 {{- define "nktp.withSidecar" -}}
 {{- $sidecar := .values.sidecar | default dict -}}
@@ -50,18 +51,53 @@ env (optional, more variables to add when missing).
 {{- end -}}
 {{- $image := include "nktp.image" (dict "imageRegistry" .root.Values.global.imageRegistry "image" ($otelcol.image | default .root.Values.otelcol_image)) -}}
 {{- $container := mustMergeOverwrite (deepCopy ($sidecar.kubernetes | default dict)) (dict "name" "otc-sidecar" "image" $image "restartPolicy" "Always" "args" (list (printf "--config=yaml:%s" (toJson $otelcol.config)))) -}}
-{{- $env := $container.env | default list -}}
-{{- range $name, $field := merge (dict "POD_NAME" "metadata.name") (.env | default dict) -}}
-  {{- $found := false -}}
-  {{- range $env -}}
-    {{- if eq .name $name -}}{{- $found = true -}}{{- end -}}
-  {{- end -}}
-  {{- if not $found -}}
-    {{- $env = append $env (dict "name" $name "valueFrom" (dict "fieldRef" (dict "fieldPath" $field))) -}}
-  {{- end -}}
-{{- end -}}
-{{- $_ := set $container "env" $env -}}
+{{- $podName := dict "name" "POD_NAME" "valueFrom" (dict "fieldRef" (dict "fieldPath" "metadata.name")) -}}
+{{- $sidecarEnv := concat (.sidecarEnv | default list) (list $podName) -}}
+{{- $_ := set $container "env" (include "nktp.addEnv" (dict "env" $container.env "add" $sidecarEnv) | fromYaml).env -}}
 {{- $workload := deepCopy .values.kubernetes -}}
+{{- if .mainEnv -}}
+{{- $_ := set $workload "env" (include "nktp.addEnv" (dict "env" $workload.env "add" .mainEnv) | fromYaml).env -}}
+{{- end -}}
 {{- $_ := set $workload "initContainers" (append ($workload.initContainers | default list) $container) -}}
 {{- toYaml $workload -}}
+{{- end -}}
+
+{{/*
+Return {env: <list>}: env with each entry of add appended when env has no entry
+with the same name. A user's own entry always wins.
+
+Arguments: env (list, may be empty), add (list of env entries).
+*/}}
+{{- define "nktp.addEnv" -}}
+{{- $env := .env | default list -}}
+{{- range $entry := .add -}}
+  {{- $found := false -}}
+  {{- range $env -}}
+    {{- if eq .name $entry.name -}}{{- $found = true -}}{{- end -}}
+  {{- end -}}
+  {{- if not $found -}}
+    {{- $env = append $env $entry -}}
+  {{- end -}}
+{{- end -}}
+{{- toYaml (dict "env" $env) -}}
+{{- end -}}
+
+{{/*
+Return {env: <list>} with K8S_CLUSTER_NAME set to global.clusterName, or an
+empty list when it is not set. The transform/cluster processor in the gateways,
+the watchdog and the watchdog sidecar reads this variable inside an OTTL string,
+so the name must not contain a double quote or a backslash.
+*/}}
+{{- define "nktp.clusterNameEnv" -}}
+{{- $env := list -}}
+{{- $raw := .Values.global.clusterName -}}
+{{- /* Only a missing or empty value is unset. 0 and false are names, not "unset". */}}
+{{- $name := ternary "" (toString $raw) (kindIs "invalid" $raw) -}}
+{{- if ne $name "" -}}
+{{- if or (contains "\"" $name) (contains "\\" $name) -}}
+{{- fail "global.clusterName must not contain double quotes or backslashes" -}}
+{{- end -}}
+{{- $env = list (dict "name" "K8S_CLUSTER_NAME" "value" $name) -}}
+{{- end -}}
+{{- toYaml (dict "env" $env) -}}
 {{- end -}}

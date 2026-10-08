@@ -15,7 +15,7 @@ The allocator has its own security contexts and resource budget under
 `large_target_metrics.kubernetes.targetAllocator`. Size its resources for the
 discovered Kubernetes objects and targets.
 
-Collected metrics go to `http://nktp-gateway-metrics-collector:4318`.
+Collected metrics go to `nktp-gateway-metrics-collector:4317` over OTLP/gRPC.
 Each Collector sends its own telemetry through its
 [sidecar](../architecture/self-telemetry.md) to watchdog.
 Use `large_target_metrics.otelcol.config` for Collector internal configuration and

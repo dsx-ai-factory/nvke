@@ -43,12 +43,12 @@ flowchart LR
 | [Node collector](../components/node-collector.md) | `daemonset` | DaemonSet on every node, including tainted nodes | OTLP from workloads on its node, pod logs, journal, host authentication and audit logs, Kubernetes API audit log, kubelet and cAdvisor metrics, and scrape targets on its node | The gateway for each signal |
 | [Large-target metrics pool](../components/large-target-metrics.md) | `large_target_metrics` | StatefulSet, 2 to 16 replicas | Monitors labeled `nktp.nvidia.io/large-target: "true"` | Metrics gateway |
 | [Cluster event reader](../components/cluster-events.md) | `cluster_events` | StatefulSet, 2 replicas, one elected reader | Kubernetes Events | Logs gateway |
-| [Logs, metrics, and traces gateways](../components/gateways.md) | `gateway_logs`, `gateway_metrics`, `gateway_traces` | One StatefulSet each, 2 to 64 replicas | OTLP over gRPC and HTTP | Backend |
+| [Logs, metrics, and traces gateways](../components/gateways.md) | `gateway_logs`, `gateway_metrics`, `gateway_traces` | One StatefulSet each, 2 to 64 replicas | OTLP over gRPC with mTLS | Backend |
 | [Watchdog](../components/watchdog.md) | `watchdog` | StatefulSet, 2 to 16 replicas | Self-telemetry from NKTP components | Backend |
 
 Each Collector's exporters name the next hop explicitly. For example, the node
-collector's `otlp_http/metrics` exporter sends to
-`http://nktp-gateway-metrics-collector:4318`. To change where a signal goes,
+collector's `otlp/metrics` exporter sends to
+`nktp-gateway-metrics-collector:4317` over OTLP/gRPC. To change where a signal goes,
 change the exporter in that Collector's configuration.
 
 ## Metrics scraping
@@ -92,12 +92,13 @@ flowchart LR
 ```
 
 The watchdog receives the pipeline's own telemetry at
-`http://nktp-watchdog-collector:4318`:
+`nktp-watchdog-collector:4317` over OTLP/gRPC with mTLS, except allocator metrics
+which use plaintext OTLP/gRPC on port 4320:
 
 - Every Collector except the watchdog exports its own metrics, logs and traces
   through `service.telemetry` to the sidecar in its Pod, and the sidecar exports
   them there. See [Self-telemetry sidecars](self-telemetry.md).
-- Every Target Allocator pushes its metrics there.
+- Every Target Allocator pushes its metrics to `nktp-watchdog-collector:4320`.
 - The node collector reads Target Allocator and Operator container logs on its
   node and sends them there through its `logs/targetallocator` and
   `logs/operator` pipelines. Its pod-log reader skips these files and the NKTP

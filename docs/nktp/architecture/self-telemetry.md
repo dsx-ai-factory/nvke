@@ -3,7 +3,8 @@
 Each NKTP Collector Pod runs a sidecar Collector. The main Collector sends its
 [internal telemetry](https://opentelemetry.io/docs/collector/internal-telemetry/)
 to the sidecar at `http://127.0.0.1:4319`, and the sidecar exports it to the
-watchdog. The watchdog's sidecar exports to the backend.
+watchdog over OTLP/gRPC at `nktp-watchdog-collector:4317`. The watchdog's sidecar
+exports to the backend.
 
 The sidecar buffers and retries the main Collector's telemetry, and samples its
 traces.
@@ -108,6 +109,8 @@ watchdog:
     otelcol:
       config:
         exporters:
-          otlp_http:
-            endpoint: https://<backend>
+          otlp:
+            endpoint: <backend>:4317
+            tls:
+              insecure: false
 ```

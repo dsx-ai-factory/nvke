@@ -21,10 +21,10 @@ Provide the following before installing NKTP.
   Kubernetes enables by default from 1.29. The bundled OpenTelemetry Operator
   0.159.0 itself supports 1.25+.
 - **Helm 4.** The repository pins the version in `make/tool-versions.mk`.
-- **cert-manager.** Required with default values. NKTP uses it for the
-  Operator's admission webhook certificate and Collector to Target Allocator
-  mTLS. The documentation describes how to replace each use to install without
-  it.
+- **cert-manager.** Required with default values. NKTP uses it for internal
+  collector TLS, the Operator's admission webhook certificate, and Collector to
+  Target Allocator mTLS. The documentation describes how to replace each use to
+  install without it.
 - **Image registry access** to `docker.io`, `ghcr.io`, `quay.io` and
   `registry.k8s.io`, or mirrors of them. The uninstall hook also pulls
   `rancher/kubectl` from `docker.io`. See [Image registry](#image-registry).
@@ -85,11 +85,19 @@ are silently dropped. Apply the new CRDs before `helm upgrade`.
 | LGTM | `otel-lgtm` | Deployment | Development backend with Grafana, Prometheus, Loki and Tempo. Evaluation only. |
 
 The node collectors, the large-target pool, and the event reader send each
-signal to its gateway, and the gateways export to the backend. Every NKTP
-component sends its own telemetry to the watchdog, which exports it to the
-backend without passing through the gateways. Each Collector Pod runs a sidecar
-Collector that buffers the Collector's own telemetry and samples its traces on
-the way to the watchdog.
+signal to its gateway over OTLP/gRPC with mutual TLS, and the gateways export to
+the backend.
+Each Collector Pod runs a sidecar Collector that buffers the Collector's own
+telemetry and samples its traces. All sidecars except watchdog's send to watchdog
+over OTLP/gRPC with mTLS on port 4317. The DaemonSet also sends collected Operator
+and Target Allocator logs directly to that endpoint. Target Allocators push their
+own metrics to watchdog over plaintext OTLP/gRPC on port 4320. Watchdog exports
+received telemetry to the backend without passing through the gateways; its own
+sidecar exports watchdog's telemetry to the backend.
+
+Gateways and watchdog rotate connections about every five minutes so clients
+can reach newly added replicas while limiting connection churn. Configure the
+interval under each receiver's `otelcol.config`.
 
 ## Sending telemetry to NKTP
 
@@ -132,6 +140,20 @@ The watchdog, node collector, and large-target pool require their Target
 Allocators. Setting `targetAllocator.enabled: false` for any of them fails
 rendering.
 
+### Telemetry redaction
+
+Enabled in the default Collector configurations in `values.yaml`.
+
+- Masks recognized credentials in log bodies, including nested bodies, and in log attributes, metric data point attributes, span attributes and events, and resource/scope attributes. Uses `****`, including for quoted JSON and Basic/Bearer text. Preserves keys and counters such as `token_count`. No hashing.
+- Runs last in the default source and gateway pipelines. Customize rules under `<workload>.otelcol.config.processors`, or disable redaction by removing its references from the relevant pipeline processor lists. Custom pipelines must include redaction explicitly.
+- Basic matching does not cover OTLP `Metric.metadata`, exemplar `filtered_attributes`, span names, span link attributes, recursive key matching inside attribute maps and arrays, unknown credential names, or complex and encoded secrets. Attribute maps and arrays can still match value patterns through their text representation.
+- Watchdog redacts other collectors' diagnostic exports (`service.telemetry`) because internal logs can include samples of rejected data. Sending these exports directly to a backend bypasses redaction.
+- Watchdog's sidecar redacts watchdog's own logs, metrics, and traces, plus its own logs and metrics. Configure it under `watchdog.sidecar.otelcol.config`. Watchdog keeps `basic` tracing and the sidecar's own tracing stays disabled.
+- Redaction changes exported copies. Original log files and container stdout, including `kubectl logs`, can still contain secrets.
+
+Following OWASP logging guidance, exclude sensitive data from logs where possible.
+Omit fields at the source when their names or presence are sensitive.
+
 ### Image registry
 
 Set `global.imageRegistry` to override the image registry of all the components,
@@ -140,17 +162,23 @@ including the Collectors (`otelcol_image`) and the Target Allocators
 uninstall hook's kubectl image (`opentelemetry-kube-stack.cleanupJob.image`) do **not**
 read this setting. Configure their image repositories explicitly when required.
 
+### Cluster name
+
+Set `global.clusterName` to add `k8s.cluster.name` to telemetry as it leaves
+NKTP for the backend. Telemetry that already has `k8s.cluster.name` keeps it.
+When `global.clusterName` is empty, the value is `unknown`.
+
 ## Before production
 
 - **Disable the bundled LGTM backend.** It keeps data in memory, grants
   anonymous admin access to Grafana, and does not scale. Set
   `otel-lgtm.enabled: false`, then set your backend's endpoint in the
-  `otlp_http` exporter of each gateway, the watchdog, and the watchdog's
-  sidecar (`watchdog.sidecar.otelcol.config`). Every Collector's
-  `service.telemetry` exports to its own sidecar at `127.0.0.1:4319`, so leave
-  those exporters unchanged.
+  `otlp` exporter of each gateway, the watchdog, and the watchdog's sidecar.
+  Use `otlp` for gRPC or `otlp_http` for HTTP, matching your backend's supported
+  ingestion protocol. When changing protocol, update each affected pipeline's
+  `exporters` list too.
 - **Secure backend export.** The default LGTM backend uses plaintext OTLP for
-  local development. Configure an HTTPS endpoint before sending gateway traffic
+  local development. Enable TLS before sending gateway traffic
   to a production backend, and mount client certificates into the gateways if
   the backend requires mTLS.
 - **Keep credentials in Secrets.** Add the Secret to the Collector's
@@ -179,7 +207,7 @@ The Collector, Target Allocator, kube-state-metrics, and LGTM images are set in
 | Path | Contents |
 | --- | --- |
 | `values.yaml` | Defaults, including every Collector configuration |
-| `templates/` | One template per component, plus RBAC |
+| `templates/` | One template per component, plus RBAC and certificates |
 | `dashboards/` | Grafana dashboards provisioned into LGTM, and examples |
 
 Run the chart checks from the repository root:

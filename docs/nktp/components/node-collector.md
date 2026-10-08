@@ -18,7 +18,7 @@ sending from another namespace.
 The DaemonSet reads pod logs from `/var/log/pods` and sends them to the logs
 gateway. A dedicated Target Allocator assigns monitored metric endpoints only
 to collectors on the same node. Metrics go to
-`http://nktp-gateway-metrics-collector:4318`, which requires the metrics gateway.
+`nktp-gateway-metrics-collector:4317` over OTLP/gRPC, which requires the metrics gateway.
 Per-process host metrics are not collected by default. Node exporter provides
 host metrics, and the kubelet cAdvisor scrape provides per-container resource
 use. See [Enable host process metrics](../guides/enable-host-process-metrics.md)

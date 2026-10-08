@@ -178,7 +178,7 @@ later items create monitors that need them:
 |---|---|---|
 | `temporal` | a ServiceMonitor per server role | `temporal/overlay.yaml` |
 | `spire` | PodMonitors for the server and the agent | `spire/overlay.yaml` |
-| `controller` | its ServiceMonitor, a metrics NetworkPolicy that admits `nktp`, and traces to the NKTP traces gateway | `controller/overlay.yaml` |
+| `controller` | its ServiceMonitor, a metrics NetworkPolicy that admits `nktp`, and traces to the NKTP node Collector | `controller/overlay.yaml` |
 
 The chart's own control-plane monitors cover the API server, etcd and CoreDNS;
 `nktp/values.yaml` turns off the scheduler, controller manager and kube-proxy

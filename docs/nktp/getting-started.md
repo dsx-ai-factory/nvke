@@ -81,23 +81,24 @@ Everything leaves the cluster through five Collectors: the three gateways, one
 per signal, the watchdog, which carries the other Collectors' own telemetry,
 and the watchdog's [sidecar](architecture/self-telemetry.md), which carries the
 watchdog's own telemetry. Point all of them at your backend and turn off the
-default LGTM backend. Your backend must accept OTLP over HTTP for metrics, logs
-and traces, and accept delta-temporality metrics, which the Target Allocators
-send.
+default LGTM backend. The default exporters use OTLP/gRPC. Check which protocol
+your backend accepts for each signal; see [Secure gateway export](guides/secure-gateway-export.md)
+for HTTP configuration. The metrics backend must also accept delta-temporality
+metrics, which the Target Allocators send.
 
 ```yaml
 otel-lgtm:
   enabled: false
 watchdog:
-  otelcol: {config: {exporters: {otlp_http: {endpoint: https://<backend>}}}}
+  otelcol: {config: {exporters: {otlp: {endpoint: "<backend>:4317", tls: {insecure: false}}}}}
   sidecar:
-    otelcol: {config: {exporters: {otlp_http: {endpoint: https://<backend>}}}}
+    otelcol: {config: {exporters: {otlp: {endpoint: "<backend>:4317", tls: {insecure: false}}}}}
 gateway_logs:
-  otelcol: {config: {exporters: {otlp_http: {endpoint: https://<backend>}}}}
+  otelcol: {config: {exporters: {otlp: {endpoint: "<backend>:4317", tls: {insecure: false}}}}}
 gateway_metrics:
-  otelcol: {config: {exporters: {otlp_http: {endpoint: https://<backend>}}}}
+  otelcol: {config: {exporters: {otlp: {endpoint: "<backend>:4317", tls: {insecure: false}}}}}
 gateway_traces:
-  otelcol: {config: {exporters: {otlp_http: {endpoint: https://<backend>}}}}
+  otelcol: {config: {exporters: {otlp: {endpoint: "<backend>:4317", tls: {insecure: false}}}}}
 ```
 
 - **TLS and mTLS** to the backend: see [Secure gateway export](guides/secure-gateway-export.md).
@@ -105,6 +106,19 @@ gateway_traces:
   `kubernetes.env` and reference it from the exporter with `${env:NAME}`, for
   example in `headers`. `env` is a list, so restate the chart's `GOMEMLIMIT`
   and `GOGC` entries.
+
+## Set the cluster name
+
+Set `global.clusterName` so that telemetry from this cluster carries
+`k8s.cluster.name`. Without it, NKTP sets `unknown`.
+
+```yaml
+global:
+  clusterName: <cluster>
+```
+
+The gateways, the watchdog and the watchdog sidecar add the attribute to
+telemetry that does not already have one.
 
 ## Scraping your services
 
