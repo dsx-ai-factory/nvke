@@ -320,3 +320,93 @@ func mustChecksum(t *testing.T, arch string) string {
 	}
 	return sum
 }
+
+// assetsInstalling is a deploy path whose controller HelmRelease installs
+// under name, which is all AdoptControllerName reads.
+func assetsInstalling(t *testing.T, deployPath, name string) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ControllerReleasePath(deployPath)),
+		"chart:\n  name: nke-controller\nrelease:\n  name: c\n  namespace: "+name+"\n")
+	return dir
+}
+
+// TestAdoptControllerNameTakesTheDeployPaths is the regression for run
+// 37828716287, which stopped before provisioning because the deploy path
+// exported from controller/v0.1.1 installs cloud-workflow-engine while the
+// suite default is nke-controller. The default tracks main; the lane
+// qualifies tags. Nothing configured can be right for both, so the suite
+// reads the name from the thing that installs it.
+func TestAdoptControllerNameTakesTheDeployPaths(t *testing.T) {
+	for _, layout := range []Layout{LayoutDeploy(), LayoutBuild()} {
+		t.Run(layout.Name, func(t *testing.T) {
+			const deployed = "cloud-workflow-engine"
+			// Unset, as CI leaves them: no repository variable supplies either.
+			t.Setenv(controller.EnvNamespace, "")
+			t.Setenv(controller.EnvService, "")
+			t.Setenv(controller.LegacyEnvNamespace, "")
+			t.Setenv(controller.LegacyEnvService, "")
+
+			assets := assetsInstalling(t, layout.DeployPath, deployed)
+			if err := AdoptControllerName(assets, layout.DeployPath); err != nil {
+				t.Fatalf("adopting: %v", err)
+			}
+			if got := controller.Namespace(); got != deployed {
+				t.Errorf("namespace = %q, want the deploy path's %q", got, deployed)
+			}
+			if got := controller.Service(); got != deployed {
+				t.Errorf("service = %q, want the deploy path's %q", got, deployed)
+			}
+			// Named alike, so the SPIFFE ID and the Deployment follow too.
+			if got := controller.ServiceAccount(); got != deployed {
+				t.Errorf("service account = %q, want %q", got, deployed)
+			}
+		})
+	}
+}
+
+// TestAdoptControllerNameRejectsAnExplicitConflict keeps what the old guard
+// was for. Adopting silently over a name someone set on purpose would hide
+// the mismatch instead of reporting it.
+func TestAdoptControllerNameRejectsAnExplicitConflict(t *testing.T) {
+	for _, env := range []string{
+		controller.EnvNamespace, controller.LegacyEnvNamespace,
+		controller.EnvService, controller.LegacyEnvService,
+	} {
+		t.Run(env, func(t *testing.T) {
+			for _, e := range []string{
+				controller.EnvNamespace, controller.LegacyEnvNamespace,
+				controller.EnvService, controller.LegacyEnvService,
+			} {
+				t.Setenv(e, "")
+			}
+			t.Setenv(env, "nke-controller")
+
+			assets := assetsInstalling(t, LayoutBuild().DeployPath, "cloud-workflow-engine")
+			err := AdoptControllerName(assets, LayoutBuild().DeployPath)
+			if err == nil {
+				t.Fatal("an explicit name disagreeing with the deploy path was accepted")
+			}
+			for _, want := range []string{env, "nke-controller", "cloud-workflow-engine"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the error does not name %s: %v", want, err)
+				}
+			}
+		})
+	}
+}
+
+// TestAdoptControllerNameAcceptsAnAgreeingSetting covers the lane that does
+// pin the name: matching is not a conflict.
+func TestAdoptControllerNameAcceptsAnAgreeingSetting(t *testing.T) {
+	const deployed = "cloud-workflow-engine"
+	t.Setenv(controller.EnvNamespace, deployed)
+	t.Setenv(controller.EnvService, deployed)
+	t.Setenv(controller.LegacyEnvNamespace, "")
+	t.Setenv(controller.LegacyEnvService, "")
+
+	assets := assetsInstalling(t, LayoutBuild().DeployPath, deployed)
+	if err := AdoptControllerName(assets, LayoutBuild().DeployPath); err != nil {
+		t.Fatalf("an agreeing setting was rejected: %v", err)
+	}
+}

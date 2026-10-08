@@ -88,7 +88,7 @@ on:
         type: string
         required: false
       cwe-name:
-        description: "Name CWE is installed under, e.g. cloud-workflow-engine. The deploy path decides it and it changed partway through the releases, so it moves with controller-version. Empty leaves the suite on its default, and the run fails early if that disagrees with the deploy path."
+        description: "Name the controller is installed under, e.g. cloud-workflow-engine. Leave empty: the deploy path decides it and the suite reads it from there. Set it only to pin a name deliberately, and the run fails early if it disagrees with the deploy path."
         type: string
         required: false
       os-image-bootloader-amd64:
@@ -241,18 +241,17 @@ jobs:
       # for the component, as CAPI_PROVISIONED_VERSION is; the make variable
       # it feeds keeps the SITE_ prefix.
       CLI_VERSION: ${{ inputs.cli-version || vars.SITE_E2E_CLI_VERSION }}
-      # The name CWE is installed under, which the deploy path decides and the
-      # suite has to be told. The deploy path is exported from
-      # SITE_CONTROLLER_VERSION, and CWE was renamed partway through the
-      # releases: one cut before installs cloud-workflow-engine, one cut after
-      # installs nke-controller. So these two move with that version, and
-      # nothing but care keeps them in step.
+      # The name the controller is installed under, which the deploy path
+      # decides. Normally leave these empty: site.AdoptControllerName reads
+      # the name out of the exported deploy path before a machine is taken
+      # and the suite follows it, so a run qualifying a release cut before
+      # the rename picks up cloud-workflow-engine on its own and one cut
+      # after picks up nke-controller.
       #
-      # Empty leaves the suite on its own default, which is the older name and
-      # what a developer running by hand against a released deploy path gets.
-      # Either way site.CheckControllerName reads the name out of the exported
-      # deploy path before a machine is taken and fails the run when it does
-      # not match, so a stale value here costs a minute rather than an hour.
+      # Set one only to pin a name deliberately. A value that disagrees with
+      # the deploy path fails the run in a minute rather than an hour, which
+      # is the point of setting it at all.
+      #
       # One input for two variables: the deploy path names the namespace and
       # the Service alike in every release, so splitting them here would be two
       # knobs that have to be equal.

@@ -309,32 +309,52 @@ func (d Stack) withDefaults() Stack {
 	return d
 }
 
-// CheckControllerName fails when the deploy path installs CWE under a name the
-// suite is not configured to look for.
+// AdoptControllerName makes the deploy path's choice the suite's.
 //
-// These are two different owners of one string. The deploy path is exported
-// from the controller version under test, so a release cut before CWE was
-// renamed installs cloud-workflow-engine and one cut after installs
-// nke-controller. What the suite looks for comes from CWE_NAMESPACE and
-// CWE_SERVICE, which the lane sets. Nothing makes the two move together.
+// The deploy path installs the controller, so it decides the name, and it is
+// exported from the controller version under test: a release cut before the
+// rename installs cloud-workflow-engine, one cut after installs
+// nke-controller. A configured name is a second place to say the same thing,
+// and nothing keeps the two in step -- the suite default tracks main while
+// the lane's job is qualifying tags, so leaving it alone fails every release
+// cut before the rename.
 //
-// They disagreed once already, and the symptom was expensive: the readiness
-// probe opened a port-forward onto a Service that did not exist, the forwarder
-// retried the NotFound rather than reporting it, and the run spent ten minutes
-// reporting that CWE would not come up while CWE was healthy in the namespace
-// beside it. Checked here, on the runner, before any machine is taken.
-func CheckControllerName(assets, deployPath string) error {
+// Getting it wrong is expensive rather than obvious: the readiness probe
+// opens a port-forward onto a Service that does not exist, the forwarder
+// retries the NotFound rather than reporting it, and the run spends ten
+// minutes reporting that the controller will not come up while it is healthy
+// in the namespace beside it. So this runs on the runner, before any machine
+// is taken.
+//
+// Must be called before any spec reads controller.Namespace(). Nothing reads
+// it at init, and the suite is serial, so newStack in BeforeAll is that
+// point. The environment carries it rather than a package variable because
+// that is how the value already reaches subprocesses.
+func AdoptControllerName(assets, deployPath string) error {
 	deployed, err := controllerNameFromDeployPath(assets, deployPath)
 	if err != nil {
 		return err
 	}
-	if deployed == controller.Namespace() && deployed == controller.Service() {
-		return nil
+	// An explicit setting still wins, and still has to agree. Someone who
+	// names one has a reason, and silently overriding it would hide the
+	// mismatch this used to catch.
+	for _, env := range []string{
+		controller.EnvNamespace, controller.LegacyEnvNamespace,
+		controller.EnvService, controller.LegacyEnvService,
+	} {
+		if set := os.Getenv(env); set != "" && set != deployed {
+			return fmt.Errorf(
+				"%s is set to %q but the deploy path installs the controller as %q: clear it to take the deploy path's name, or qualify a controller whose deploy path matches",
+				env, set, deployed,
+			)
+		}
 	}
-	return fmt.Errorf(
-		"the deploy path installs CWE as %q but the suite looks for %s/%s: set %s and %s to %q, or qualify a controller whose deploy path matches",
-		deployed, controller.Namespace(), controller.Service(), controller.EnvNamespace, controller.EnvService, deployed,
-	)
+	for _, env := range []string{controller.EnvNamespace, controller.EnvService} {
+		if err := os.Setenv(env, deployed); err != nil {
+			return fmt.Errorf("adopting the deploy path's controller name %q: %w", deployed, err)
+		}
+	}
+	return nil
 }
 
 // controllerNameFromDeployPath is the name a set of exported assets installs
@@ -360,15 +380,15 @@ func controllerNameFromDeployPath(assets, deployPath string) (string, error) {
 	return release.Release.Namespace, nil
 }
 
-// controllerName is the namespace, Service and ServiceAccount CWE is installed
-// under, and so the last segment of its SPIFFE ID.
+// controllerName is the namespace, Service and ServiceAccount the controller
+// is installed under, and so the last segment of its SPIFFE ID.
 //
-// Read from the cwe package rather than written out here, because this file
-// does not get to choose it. The deploy path does, and the deploy path is
-// exported from the controller version under test: a release cut before CWE
-// was renamed installs cloud-workflow-engine, one cut after installs
-// nke-controller. The lane says which by setting CWE_NAMESPACE and
-// CWE_SERVICE, and CheckControllerName fails the run when the two disagree.
+// Read from the controller package rather than written out here, because this
+// file does not get to choose it. The deploy path does, and the deploy path is
+// exported from the controller version under test: a release cut before the
+// rename installs cloud-workflow-engine, one cut after installs
+// nke-controller. AdoptControllerName reads it from there and points the whole
+// suite at it before any spec runs.
 func controllerName() string { return controller.Service() }
 
 // spireAdminPath is CWE's SPIFFE ID below the trust domain. A name that does

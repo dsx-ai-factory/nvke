@@ -768,12 +768,12 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 	}
 	DeferCleanup(func() { _ = os.RemoveAll(assets) })
 
-	// Before a machine is taken: the deploy path chooses the name CWE is
-	// installed under, the lane chooses the name the suite looks for, and
-	// nothing else makes the two agree. Checked here rather than beside the
-	// spec because the stack is what exports these assets and so what knows
-	// the name they install.
-	if nameErr := site.CheckControllerName(assets, layout.DeployPath); nameErr != nil {
+	// Before a machine is taken: the deploy path chooses the name the
+	// controller is installed under, so the suite takes it from there rather
+	// than from a setting that has to be remembered. Done here rather than
+	// beside the spec because the stack is what exports these assets and so
+	// what knows the name they install.
+	if nameErr := site.AdoptControllerName(assets, layout.DeployPath); nameErr != nil {
 		return site.Stack{}, nil, nameErr
 	}
 	images := cfg.Site.Images

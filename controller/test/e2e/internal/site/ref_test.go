@@ -278,7 +278,7 @@ func TestLayoutsMatchTheReleaseTags(t *testing.T) {
 }
 
 // TestControllerReleasePathFollowsTheDeployPath pins the one thing both
-// layouts share: the shape inside a deploy path. CheckControllerName reads
+// layouts share: the shape inside a deploy path. AdoptControllerName reads
 // this file to decide the name CWE installs under, and it moved with the
 // directory, not within it.
 func TestControllerReleasePathFollowsTheDeployPath(t *testing.T) {
