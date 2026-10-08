@@ -261,7 +261,9 @@ func ovnKubernetesCNIConfig(cniConfig map[string]string, datapathType string) ma
 
 // containerOpenVSwitchDatapath reports whether the node is a container whose
 // Open vSwitch datapath must leave the Docker management interface unbridged.
-// "system" is the kernel datapath. "netdev" is the userspace datapath.
+// "system" is the kernel datapath. "netdev" is the userspace datapath. Only
+// the container node image sets NKE_OVS_DATAPATH_TYPE, so bare metal and VM
+// nodes never reach this even though they also run the kernel datapath.
 func containerOpenVSwitchDatapath(datapathType string) bool {
 	switch strings.ToLower(strings.TrimSpace(datapathType)) {
 	case openVSwitchNetdevDatapath, openVSwitchSystemDatapath:
