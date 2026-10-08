@@ -161,7 +161,7 @@ func ControlPlaneConfigFromNodePool(np *NodePool) *ControlPlaneConfig {
 	cfg := &ControlPlaneConfig{
 		DesiredCount: np.DesiredCount,
 		ControlPlaneConfigSpec: ControlPlaneConfigSpec{
-			NodeLabels:                  np.NodeLabels,
+			NodeLabels:                  CloneStringMap(np.NodeLabels),
 			SystemReservedMemory:        np.SystemReservedMemory,
 			KubeReservedMemory:          np.KubeReservedMemory,
 			TeleportEnabled:             np.TeleportEnabled,

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -377,6 +378,9 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 	for _, nodePool := range nodePools {
 		if err := naming.ValidateNodeNamePrefix(req.Name, nodePool.NodeNamePrefix); err != nil {
 			return fmt.Errorf("invalid node pool %q: %w", nodePool.Name, err)
+		}
+		if nodePool.ControlPlane && len(nodePool.NodeTaints) > 0 {
+			return fmt.Errorf("invalid node pool %q: nodeTaints are not allowed on a control-plane pool", nodePool.Name)
 		}
 	}
 
@@ -989,7 +993,7 @@ func apiControlPlaneConfigFromDB(cfg db.ControlPlaneConfig) *api.ControlPlaneCon
 		MaxSurge:                    &maxSurge,
 		ProvisioningMonitorDisabled: &provisioningMonitorDisabled,
 		SystemReservedMemory:        cfg.SystemReservedMemory,
-		NodeLabels:                  cfg.NodeLabels,
+		NodeLabels:                  maps.Clone(cfg.NodeLabels),
 		TeleportEnabled:             &teleportEnabled,
 		Nico:                        apiNicoControlPlaneProviderFromDB(cfg.Nico),
 		Infra:                       apiInfraControlPlaneProviderFromDB(cfg.Capi),

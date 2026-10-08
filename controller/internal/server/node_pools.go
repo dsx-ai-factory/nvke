@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 
 	"github.com/google/uuid"
 
@@ -246,6 +247,9 @@ func validateCloudInitFiles(files []api.CloudInitFile) error {
 }
 
 func (s *nodePoolService) validateCreateNodePoolRequest(cluster db.Cluster, req *api.CreateNodePoolRequest) error {
+	if req.ControlPlane && len(req.NodeTaints) > 0 {
+		return newBadRequestErrorf("nodeTaints are not allowed on a control-plane pool")
+	}
 	if err := naming.ValidateNodeNamePrefix(cluster.Name, req.NodeNamePrefix); err != nil {
 		return err
 	}
@@ -776,7 +780,7 @@ func apiNodePoolFromDB(dbNodePool *db.NodePool) api.NodePool {
 		SystemReservedMemory:        &dbNodePool.SystemReservedMemory,
 		KubeReservedMemory:          kubeReservedMemory,
 		ControlPlane:                dbNodePool.ControlPlane,
-		NodeLabels:                  dbNodePool.NodeLabels,
+		NodeLabels:                  maps.Clone(dbNodePool.NodeLabels),
 		NodeTaints:                  apiNodeTaintsFromDB(dbNodePool.NodeTaints),
 		DesiredNodeCount:            dbNodePool.DesiredCount,
 		AutoProvisionDisabled:       dbNodePool.AutoProvisionDisabled,

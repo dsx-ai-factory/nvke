@@ -2184,6 +2184,19 @@ func baseNicoClusterCreateRequest() *api.CreateClusterRequest {
 	}
 }
 
+func TestValidateCreateClusterRequestFields_RejectsTaintsOnControlPlanePool(t *testing.T) {
+	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, false)
+	req := baseNicoClusterCreateRequest()
+	(*req.NodePools)[0].NodeTaints = []api.NodeTaint{{
+		Key:    "dedicated",
+		Effect: api.NodeTaintEffectNoSchedule,
+	}}
+
+	err := svc.ValidateCreateClusterRequestFields(req)
+
+	require.EqualError(t, err, `invalid node pool "cp": nodeTaints are not allowed on a control-plane pool`)
+}
+
 func TestValidateCreateClusterRequestFields_RequiresExactlyOneProvider(t *testing.T) {
 	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, false)
 

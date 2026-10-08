@@ -208,6 +208,22 @@ func TestValidateUpdatedNodePool_CAPIRequiresEmptyDiskSelectionStrategy(t *testi
 	require.EqualError(t, err, "nico.diskSelectionStrategy is not supported")
 }
 
+func TestValidateCreateNodePoolRequest_RejectsTaintsOnControlPlanePool(t *testing.T) {
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
+
+	err := service.validateCreateNodePoolRequest(forgeCluster(), &api.CreateNodePoolRequest{
+		Name:           "cp",
+		NodeNamePrefix: "cp",
+		ControlPlane:   true,
+		NodeTaints: []api.NodeTaint{{
+			Key:    "dedicated",
+			Effect: api.NodeTaintEffectNoSchedule,
+		}},
+	})
+
+	require.EqualError(t, err, "nodeTaints are not allowed on a control-plane pool")
+}
+
 func TestValidateCreateNodePoolRequest_NodeNamePrefixLength(t *testing.T) {
 	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
 	clusterName := "runtime-dgxc-k8s-forge-ytl-dev1"
