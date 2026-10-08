@@ -569,3 +569,9 @@ notices-check: ## Verify THIRD_PARTY_NOTICES.md is up to date. (advisory; not in
 		git diff --name-only -- THIRD_PARTY_NOTICES.md; \
 		exit 1; \
 	fi
+
+##@ Credential monitoring
+
+.PHONY: credential-alerts-check
+credential-alerts-check: ## Validate credential rules, fixtures and chart render with the repository-pinned tools.
+	$(MAKE) -C .. credential-alerts-check

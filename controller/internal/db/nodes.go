@@ -17,7 +17,9 @@ import (
 )
 
 type Node struct {
-	ID uuid.UUID `bun:"type:uuid,pk,default:gen_random_uuid()"`
+	// CertificateInspection retains read-only public observations independently of lifecycle conditions.
+	CertificateInspection *CertificateInspection `bun:"type:jsonb,nullzero"`
+	ID                    uuid.UUID              `bun:"type:uuid,pk,default:gen_random_uuid()"`
 	// Transition contract (especially for control-plane nodes):
 	// - control-plane nodes with non-null node_pool_id/node_set_id are managed by nodepool controller
 	// - control-plane nodes with null node_pool_id/node_set_id are managed by no-nodepool control-plane controller

@@ -79,6 +79,13 @@ func TestRenderedChart(t *testing.T) {
 			})
 			require.NoError(t, err)
 			fromFile.ApplyTo(&cfg)
+			// Explicit zero must survive rendering. The runtime policy only
+			// checks the bounds of an enabled feature, so a zero threshold
+			// under disabled renewal loads. Values the controller refuses are
+			// refused at render, so every render here must validate.
+			if strings.TrimSuffix(filepath.Base(render), ".yaml") == "explicit-false-and-zero" {
+				require.Zero(t, cfg.CertRenewalThresholdDays)
+			}
 			require.NoError(t, cfg.Validate())
 
 			if filepath.Base(render) == "machine-metadata-allowlists.yaml" {

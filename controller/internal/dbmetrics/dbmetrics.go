@@ -239,7 +239,7 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 				labelTenantCluster,
 				labelNode,
 				"node_type",
-				"state",
+				labelState,
 			},
 			nil,
 		),

@@ -574,9 +574,9 @@ scheduledMaintenance:
   certRenewal:
     # -- Enable controller-owned periodic Kubernetes control-plane certificate renewal.
     enabled: true
-    # -- Interval between certificate renewal checks for each cluster.
+    # -- Interval between certificate renewal checks for each cluster (1h through 24h while renewal is enabled; the chart refuses other values).
     interval: 12h
-    # -- Days before expiry that the runbook renews certificates.
+    # -- Days before expiry that the runbook renews certificates (7 through 90 while renewal is enabled; the chart refuses other values).
     thresholdDays: 30
 
 secrets:
@@ -776,3 +776,19 @@ teleport:
   # -- Value of the Teleport "resource-group" label stamped on the tokens and
   # node userdata this controller creates. An existing site pins "nke".
   resourceGroupLabelValue: "nvke"
+
+# Read-only credential inventory is independent of automated renewal.
+credentialMonitoring:
+  # -- Enable read-only node certificate and direct tenant API CSR observations independently of renewal.
+  enabled: true
+  # -- Interval between node certificate inspection attempts (5m through 12h while monitoring is enabled; the chart refuses other values).
+  inspectionInterval: "1h"
+  # -- Maximum usable observation age; always positive, and at least twice inspectionInterval and at most 24h while monitoring is enabled. The chart refuses other values.
+  observationMaxAge: "3h"
+  # -- Warn this many days before expiry; always positive, 9 through 120 while monitoring is enabled, and with renewal also enabled it must exceed the renewal threshold by at least two renewal intervals. The chart refuses other values.
+  warningDays: 45
+  alerts:
+    # -- Install credential PrometheusRules. Requires Prometheus Operator CRDs, a selecting rule evaluator, and Alertmanager routing.
+    enabled: false
+    # -- Additional PrometheusRule labels for the evaluator's rule selector.
+    labels: {}

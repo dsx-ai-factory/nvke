@@ -23,6 +23,7 @@ const _ = grpc.SupportPackageIsVersion8
 
 const (
 	NodeAgent_GetKubeadmStatus_FullMethodName                             = "/proto.NodeAgent/GetKubeadmStatus"
+	NodeAgent_InspectKubernetesCertificates_FullMethodName                = "/proto.NodeAgent/InspectKubernetesCertificates"
 	NodeAgent_ScheduleNodeReboot_FullMethodName                           = "/proto.NodeAgent/ScheduleNodeReboot"
 	NodeAgent_GetNodeBootInfo_FullMethodName                              = "/proto.NodeAgent/GetNodeBootInfo"
 	NodeAgent_ExecuteKubeadmInit_FullMethodName                           = "/proto.NodeAgent/ExecuteKubeadmInit"
@@ -78,6 +79,9 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type NodeAgentClient interface {
 	GetKubeadmStatus(ctx context.Context, in *KubeadmStatusRequest, opts ...grpc.CallOption) (*KubeadmStatusResponse, error)
+	// InspectKubernetesCertificates reads the fixed kubeadm credential inventory.
+	// It never mutates files or returns certificate/key contents or identities.
+	InspectKubernetesCertificates(ctx context.Context, in *InspectKubernetesCertificatesRequest, opts ...grpc.CallOption) (*InspectKubernetesCertificatesResponse, error)
 	// ScheduleNodeReboot waits up to five minutes for apt/dpkg locks to clear,
 	// then starts a detached reboot so the RPC can return before the node exits.
 	ScheduleNodeReboot(ctx context.Context, in *ScheduleNodeRebootRequest, opts ...grpc.CallOption) (*ScheduleNodeRebootResponse, error)
@@ -298,6 +302,16 @@ func (c *nodeAgentClient) GetKubeadmStatus(ctx context.Context, in *KubeadmStatu
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(KubeadmStatusResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_GetKubeadmStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) InspectKubernetesCertificates(ctx context.Context, in *InspectKubernetesCertificatesRequest, opts ...grpc.CallOption) (*InspectKubernetesCertificatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InspectKubernetesCertificatesResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_InspectKubernetesCertificates_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -837,6 +851,9 @@ func (c *nodeAgentClient) PatchAPIServerManifest(ctx context.Context, in *PatchA
 // for forward compatibility
 type NodeAgentServer interface {
 	GetKubeadmStatus(context.Context, *KubeadmStatusRequest) (*KubeadmStatusResponse, error)
+	// InspectKubernetesCertificates reads the fixed kubeadm credential inventory.
+	// It never mutates files or returns certificate/key contents or identities.
+	InspectKubernetesCertificates(context.Context, *InspectKubernetesCertificatesRequest) (*InspectKubernetesCertificatesResponse, error)
 	// ScheduleNodeReboot waits up to five minutes for apt/dpkg locks to clear,
 	// then starts a detached reboot so the RPC can return before the node exits.
 	ScheduleNodeReboot(context.Context, *ScheduleNodeRebootRequest) (*ScheduleNodeRebootResponse, error)
@@ -1053,6 +1070,9 @@ type UnimplementedNodeAgentServer struct {
 func (UnimplementedNodeAgentServer) GetKubeadmStatus(context.Context, *KubeadmStatusRequest) (*KubeadmStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetKubeadmStatus not implemented")
 }
+func (UnimplementedNodeAgentServer) InspectKubernetesCertificates(context.Context, *InspectKubernetesCertificatesRequest) (*InspectKubernetesCertificatesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InspectKubernetesCertificates not implemented")
+}
 func (UnimplementedNodeAgentServer) ScheduleNodeReboot(context.Context, *ScheduleNodeRebootRequest) (*ScheduleNodeRebootResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ScheduleNodeReboot not implemented")
 }
@@ -1224,6 +1244,24 @@ func _NodeAgent_GetKubeadmStatus_Handler(srv interface{}, ctx context.Context, d
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodeAgentServer).GetKubeadmStatus(ctx, req.(*KubeadmStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_InspectKubernetesCertificates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InspectKubernetesCertificatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).InspectKubernetesCertificates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_InspectKubernetesCertificates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).InspectKubernetesCertificates(ctx, req.(*InspectKubernetesCertificatesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2113,6 +2151,10 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetKubeadmStatus",
 			Handler:    _NodeAgent_GetKubeadmStatus_Handler,
+		},
+		{
+			MethodName: "InspectKubernetesCertificates",
+			Handler:    _NodeAgent_InspectKubernetesCertificates_Handler,
 		},
 		{
 			MethodName: "ScheduleNodeReboot",
