@@ -643,7 +643,7 @@ func TestRunBootstrapSiteUsesTheImageFlags(t *testing.T) {
 	startFakeCWEAPI(t, true)
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+	err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 		siteSpec:                 writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:          runner,
 		cweRunner:                fakeCWERunner{},
