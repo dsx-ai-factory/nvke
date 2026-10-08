@@ -296,9 +296,9 @@ func TestValidateUpdateNodePoolRequest_WrongProvider(t *testing.T) {
 	require.EqualError(t, err, "nico is not supported, please use infra")
 }
 
-// Clearing a profile is expressible in the request, and rejected: a Forge node
-// pool always has one.
-func TestValidateUpdateForgeNodePoolRequest_RejectsClearedProfiles(t *testing.T) {
+// Clearing the OS profile is expressible in the request, and rejected: a Forge
+// node pool always has one. The config profile is optional and may be cleared.
+func TestValidateUpdateForgeNodePoolRequest_RejectsClearedOSProfile(t *testing.T) {
 	svc := &nodePoolService{}
 	cases := []struct {
 		name string
@@ -309,11 +309,6 @@ func TestValidateUpdateForgeNodePoolRequest_RejectsClearedProfiles(t *testing.T)
 			name: "osProfile",
 			req:  &api.UpdateNodePoolRequest{Nico: &api.NicoNodePoolProviderUpdate{OSProfile: ptrString("")}},
 			want: "nico.osProfile cannot be cleared for a nico node pool",
-		},
-		{
-			name: "configProfile",
-			req:  &api.UpdateNodePoolRequest{Nico: &api.NicoNodePoolProviderUpdate{ConfigProfile: ptrString("")}},
-			want: "nico.configProfile cannot be cleared for a nico node pool",
 		},
 	}
 	for _, tc := range cases {

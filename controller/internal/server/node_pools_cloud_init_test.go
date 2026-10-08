@@ -82,7 +82,7 @@ func TestValidateCreateNodePoolRequest_ForgeRejectsCAPICloudInitInputs(t *testin
 	require.EqualError(t, err, "infra is not supported, please provide nico")
 }
 
-func TestValidateCreateNodePoolRequest_ForgeRequiresConfigProfile(t *testing.T) {
+func TestValidateCreateNodePoolRequest_ForgeConfigProfileIsOptional(t *testing.T) {
 	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
 
 	req := &api.CreateNodePoolRequest{
@@ -96,7 +96,7 @@ func TestValidateCreateNodePoolRequest_ForgeRequiresConfigProfile(t *testing.T) 
 		},
 	}
 	err := service.validateCreateNodePoolRequest(forgeCluster(), req)
-	require.EqualError(t, err, "nico.configProfile is required when creating a nico node pool")
+	require.NoError(t, err)
 }
 
 func TestValidateUpdatedNodePool_RejectsManagedSpirePathsWhenSpireEnabled(t *testing.T) {

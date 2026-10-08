@@ -303,9 +303,6 @@ func validateCreateNicoNodePoolRequest(req *api.CreateNodePoolRequest) error {
 	if req.Nico.OSProfile == "" {
 		return fmt.Errorf("nico.osProfile is required when creating a nico node pool")
 	}
-	if req.Nico.ConfigProfile == "" {
-		return fmt.Errorf("nico.configProfile is required when creating a nico node pool")
-	}
 
 	if err := validateNicoNetworkSelection(req.Nico.SubnetIDs, req.Nico.VpcPrefixIDs, "nico."); err != nil {
 		return err
@@ -695,15 +692,13 @@ func validateUpdateNicoNodePoolRequest(req *api.UpdateNodePoolRequest) error {
 			return err
 		}
 	}
-	// A profile can be replaced but not cleared. Rejecting the empty value here
-	// rather than after the merge leaves a pool whose stored profile is already
-	// empty patchable in every other respect.
+	// The OS profile can be replaced but not cleared. Rejecting the empty value
+	// here rather than after the merge leaves a pool whose stored profile is
+	// already empty patchable in every other respect. The config profile is
+	// optional and may be cleared.
 	if req.Nico != nil {
 		if req.Nico.OSProfile != nil && *req.Nico.OSProfile == "" {
 			return fmt.Errorf("nico.osProfile cannot be cleared for a nico node pool")
-		}
-		if req.Nico.ConfigProfile != nil && *req.Nico.ConfigProfile == "" {
-			return fmt.Errorf("nico.configProfile cannot be cleared for a nico node pool")
 		}
 	}
 
