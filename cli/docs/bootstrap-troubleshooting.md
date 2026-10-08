@@ -24,7 +24,7 @@ REGISTRY_API_KEY=... nkectl bootstrap site -f sitespec.yaml 2>&1 | tee bootstrap
 
 Every line names the component that wrote it. `bootstrap-site` is the command
 itself, `bootstrapengine` drives the Kind cluster, `cwedeploy` installs the
-charts. `-v` adds debug detail.
+controller and its charts. `-v` adds debug detail.
 
 ### The diagnostics directory
 
@@ -45,7 +45,7 @@ cluster's state before anything is torn down. The default location is
 Start with `all-resources.txt` to see which pods never became ready, then open
 that pod's `logs.txt` and its section in `pods-described.txt`. The namespaces
 that matter are `postgres`, `temporal`, `spire-server`, `capi-system`,
-`provisioned-system` and `cloud-workflow-engine`.
+`provisioned-system` and `nke-controller`.
 
 ### The retained bootstrap cluster
 
@@ -65,10 +65,10 @@ captures:
 ```bash
 export KUBECONFIG=/tmp/nkectl-bootstrap-kubeconfig-.../config
 kubectl get pods -A
-kubectl -n cloud-workflow-engine logs deploy/cloud-workflow-engine --tail=500
+kubectl -n nke-controller logs deploy/nke-controller --tail=500
 ```
 
-The workflow engine's logs are the record of what it did to each node. Filter
+The controller's logs are the record of what it did to each node. Filter
 them by the cluster or node name from your site spec.
 
 Read [Bootstrap refuses to start](#bootstrap-refuses-to-start) and
@@ -106,7 +106,7 @@ Error: deploying cwe: cwedeploy: installing SPIRE CRDs: helm upgrade --install s
 Error: failed to fetch https://spiffe.github.io/helm-charts-hardened/releases/download/spire-crds-0.6.1/spire-crds-0.6.1.tgz : 500 Internal Server Error
 ```
 
-- `deploying cwe` is the phase: installing the engine and its dependencies onto
+- `deploying cwe` is the phase: installing the controller and its dependencies onto
   the Kind cluster.
 - `installing SPIRE CRDs` is the step within it.
 - `helm upgrade --install ...: exit status 1` is the command that failed, with
@@ -157,9 +157,9 @@ its key, the key is in this cluster. Save it before deleting anything:
 umask 077
 export KIND_EXPERIMENTAL_PROVIDER=nerdctl
 kind get kubeconfig --name nkectl-bootstrap > bootstrap.kubeconfig
-kubectl --kubeconfig bootstrap.kubeconfig -n cloud-workflow-engine get secrets | grep etcd-encryption-key-
+kubectl --kubeconfig bootstrap.kubeconfig -n nke-controller get secrets | grep etcd-encryption-key-
 # for each match:
-kubectl --kubeconfig bootstrap.kubeconfig -n cloud-workflow-engine get secret <name> -o json > <name>.json
+kubectl --kubeconfig bootstrap.kubeconfig -n nke-controller get secret <name> -o json > <name>.json
 kind delete cluster --name nkectl-bootstrap
 ```
 
