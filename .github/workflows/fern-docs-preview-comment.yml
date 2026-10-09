@@ -48,12 +48,13 @@ jobs:
         id: generate-docs
         env:
           FERN_TOKEN: ${{ secrets.FERN_TOKEN }}
-          HEAD_REF: ${{ steps.metadata.outputs.head_ref }}
+          PR_NUMBER: ${{ steps.metadata.outputs.pr_number }}
         working-directory: ./fern
         run: |
           set -o pipefail
-          npx -y fern-api@latest generate --docs --preview --id "$HEAD_REF" 2>&1 | tee /tmp/fern-output.log
-          URL=$(grep -oP 'Published docs to \K.*(?= \()' /tmp/fern-output.log || true)
+          PREVIEW_ID=$(printf 'pr-%s' "$PR_NUMBER" | tr -c 'A-Za-z0-9-' '-')
+          npx -y fern-api@latest generate --docs --preview --id "$PREVIEW_ID" 2>&1 | tee /tmp/fern-output.log
+          URL=$(grep -oE 'https://[^[:space:]]+' /tmp/fern-output.log | tail -1 || true)
           if [ -z "$URL" ]; then
             echo "::error::Failed to generate preview URL. See fern output above."
             exit 1
