@@ -58,11 +58,13 @@ metadata:
   controller's own SPIFFE ID by default. It is NOT the same string once
   spiffe.jwtExchangeEndpoint is set: an RFC 8693 exchange re-issues the token under
   its own trust domain and rewrites the path, so the exchanged subject cannot be
-  derived from spiffe.trustDomain and has to be given whole via spiffe.cweSubject.
+  derived from spiffe.trustDomain and has to be given whole via spiffe.controllerSubject.
   Set the two together or the controller authenticates and is then denied everything.
+  spiffe.cweSubject is the older name for the same value and is still read; when
+  both are set, spiffe.controllerSubject wins.
 */}}
-{{- if and .Values.spiffe.jwtExchangeEndpoint (not .Values.spiffe.cweSubject) }}
-{{- fail "spiffe.cweSubject must be set when spiffe.jwtExchangeEndpoint is set: the exchange re-issues the token under its own trust domain and rewrites sub, so the default subject (this controller's SPIFFE ID) would match nothing and every call into a tenant cluster would authenticate and then be denied" }}
+{{- if and .Values.spiffe.jwtExchangeEndpoint (not (or .Values.spiffe.controllerSubject .Values.spiffe.cweSubject)) }}
+{{- fail "spiffe.controllerSubject (or the older spiffe.cweSubject) must be set when spiffe.jwtExchangeEndpoint is set: the exchange re-issues the token under its own trust domain and rewrites sub, so the default subject (this controller's SPIFFE ID) would match nothing and every call into a tenant cluster would authenticate and then be denied" }}
 {{- end }}
 {{- if and .Values.spiffe.jwtExchangeEndpoint (not .Values.spiffe.capiManagerSubject) }}
 {{- fail "spiffe.capiManagerSubject must be set when spiffe.jwtExchangeEndpoint is set: the exchange may rewrite capi-manager's sub claim, so the default subject would not authorize CAPI against tenant clusters" }}
@@ -86,7 +88,7 @@ metadata:
   the effective SA name) never has to be reconciled by hand against this
   value, and jwtExchangeEndpoint remains the only case that does.
 */}}
-{{- $cweSubject := .Values.spiffe.cweSubject | default (printf "spiffe://%s/nke-service/%s" $td (include "controller.serviceAccountName" .)) }}
+{{- $controllerSubject := .Values.spiffe.controllerSubject | default .Values.spiffe.cweSubject | default (printf "spiffe://%s/nke-service/%s" $td (include "controller.serviceAccountName" .)) }}
 {{- $capiManagerSubject := .Values.spiffe.capiManagerSubject | default (printf "spiffe://%s/nke-service/capi-manager" $td) }}
 {{- $capiKubeadmControlPlaneManagerSubject := .Values.spiffe.capiKubeadmControlPlaneManagerSubject | default (printf "spiffe://%s/nke-service/capi-kubeadm-control-plane-manager" $td) }}
 {{- $capiKubeadmBootstrapManagerSubject := .Values.spiffe.capiKubeadmBootstrapManagerSubject | default (printf "spiffe://%s/nke-service/capi-kubeadm-bootstrap-manager" $td) }}
@@ -193,7 +195,7 @@ data:
       name: {{ $tenantRbacName }}
     subjects:
       - kind: User
-        name: {{ $cweSubject | quote }}
+        name: {{ $controllerSubject | quote }}
         apiGroup: rbac.authorization.k8s.io
     roleRef:
       kind: ClusterRole
@@ -207,7 +209,7 @@ data:
       namespace: kube-system
     subjects:
       - kind: User
-        name: {{ $cweSubject | quote }}
+        name: {{ $controllerSubject | quote }}
         apiGroup: rbac.authorization.k8s.io
     roleRef:
       kind: Role
@@ -221,7 +223,7 @@ data:
       namespace: kube-node-lease
     subjects:
       - kind: User
-        name: {{ $cweSubject | quote }}
+        name: {{ $controllerSubject | quote }}
         apiGroup: rbac.authorization.k8s.io
     roleRef:
       kind: Role

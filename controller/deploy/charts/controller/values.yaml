@@ -605,6 +605,9 @@ spiffe:
   # domain and rewrites the path, so give the exchanged subject in full, e.g.
   # spiffe://nke.<site>.cloud-workflow-engine.nvid.id/bm/cwe. A mismatch authenticates
   # and then fails every authorization check.
+  controllerSubject: ""
+  # -- Older name for controllerSubject, still read. When both are set,
+  # controllerSubject wins.
   cweSubject: ""
   # -- Subject the nke:capi-cluster-admin RBAC binding names for capi-manager.
   # Defaults to spiffe://<trustDomain>/nke-service/capi-manager, which is what a

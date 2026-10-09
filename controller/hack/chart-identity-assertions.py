@@ -29,7 +29,7 @@ the ServiceMonitor's selector must still match the Service it is supposed to
 scrape, and the tenant RBAC ClusterRoleBinding's subject must still match the
 SPIFFE ID SPIRE actually issues that renamed ServiceAccount (see
 deploy/k8s/spire-nke-services-spiffe-id.yaml's spiffeIDTemplate), with no
-manual spiffe.cweSubject override required.
+manual spiffe.controllerSubject override required.
 """
 
 import argparse
@@ -139,7 +139,7 @@ def check_greenfield(chart: str) -> list[str]:
             failures.append(
                 f"greenfield nke:cwe ClusterRoleBinding subjects {sorted(got_subjects)} "
                 f"do not include {want_subject!r}; renaming the service account should not "
-                "require a manual spiffe.cweSubject override"
+                "require a manual spiffe.controllerSubject override"
             )
 
     return failures
@@ -198,7 +198,7 @@ def main() -> int:
             print(f"  - {f}")
         return 1
 
-    print("  greenfield identities: ServiceMonitor/Service selectors match, cweSubject self-corrects")
+    print("  greenfield identities: ServiceMonitor/Service selectors match, controller subject self-corrects")
     return 0
 
 
