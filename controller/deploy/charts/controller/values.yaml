@@ -412,10 +412,11 @@ nkeOIDCAuth:
 
 oidc:
   # -- Fleet-wide OIDC providers that clusters trust alongside nkeOIDCAuth; a
-  # cluster keeps the list it was created with. Not yet applied to clusters.
-  # At most five, each with name, issuerURL, audiences, usernameClaim,
-  # usernamePrefix and caBundle (inline PEM), and optionally groupsClaim,
-  # groupsPrefix and requiredClaims (claim name to required value). For example:
+  # cluster keeps the list it was created with, and one created on a
+  # Kubernetes version earlier than 1.34 gets none. At most five, each with
+  # name, issuerURL, audiences, usernameClaim, usernamePrefix and caBundle
+  # (inline PEM), and optionally groupsClaim, groupsPrefix and requiredClaims
+  # (claim name to required value). For example:
   #   - name: corp
   #     issuerURL: https://login.example.com
   #     audiences: [nke]

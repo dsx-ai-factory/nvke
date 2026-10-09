@@ -487,6 +487,9 @@ func (o *OIDCConfig) validate() error {
 		if prev, dup := seenIssuers[issuerURL]; dup {
 			return fmt.Errorf("providers[%d] (%s): duplicate issuerURL %q, already used by providers[%d]", i, name, issuerURL, prev)
 		}
+		if o.ManagementOIDCAuth.Enabled && issuerURL == strings.TrimSpace(o.ManagementOIDCAuth.IssuerURL) {
+			return fmt.Errorf("providers[%d] (%s): duplicate issuerURL %q, already used by managementOIDCAuth", i, name, issuerURL)
+		}
 		seenIssuers[issuerURL] = i
 
 		if strings.TrimSpace(p.UsernameClaim) == "" {

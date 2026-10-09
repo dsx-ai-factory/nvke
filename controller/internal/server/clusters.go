@@ -21,7 +21,9 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/capi"
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig"
 	"github.com/dsx-ai-factory/nke/controller/internal/naming"
 )
 
@@ -78,6 +80,7 @@ type clusterService struct {
 	nodePoolService *nodePoolService
 	teleportCfg     config.TeleportConfig
 	oidcAuthEnabled bool
+	fleetOIDC       *controllerconfig.OIDCConfig
 	providers       providerSupport
 	// useControlPlaneController mirrors the controller feature flag
 	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER. When true, the
@@ -112,12 +115,28 @@ func NewClusterService(
 // applyClusterDefaults fills in server-side defaults for omitted cluster fields.
 func (s *clusterService) applyClusterDefaults(req *api.CreateClusterRequest, cluster *db.Cluster) error {
 	cluster.OIDCAuthEnabled = s.oidcAuthEnabled
+	s.pinFleetOIDCProviders(cluster)
 
 	if req.TeleportEnabled == nil {
 		cluster.TeleportEnabled = s.teleportCfg.DefaultClusterEnabled
 	}
 
 	return nil
+}
+
+// pinFleetOIDCProviders pins none before Kubernetes 1.34, which cannot read the
+// AuthenticationConfiguration NKE renders.
+func (s *clusterService) pinFleetOIDCProviders(cluster *db.Cluster) {
+	if s.fleetOIDC == nil {
+		return
+	}
+	providers := s.fleetOIDC.Providers
+	if len(providers) > 0 && !kubeadmconfig.SupportsAuthenticationConfiguration(cluster.KubernetesVersion) {
+		s.logger.Warn("Creating cluster without the fleet-wide OIDC providers: its Kubernetes version cannot read the AuthenticationConfiguration NKE renders",
+			"cluster", cluster.Name, "kubernetesVersion", cluster.KubernetesVersion, "providers", len(providers))
+		providers = nil
+	}
+	cluster.OIDCProviders = db.ClusterOIDCProvidersFromConfig(providers)
 }
 
 // applyNodePoolDefaults fills in server-side defaults for omitted node pool fields

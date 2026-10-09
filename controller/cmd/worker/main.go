@@ -123,6 +123,7 @@ func main() {
 
 	// Before the SPIFFE wait and the migrations: a bad configuration should cost a
 	// restart, not a migrated schema.
+	var fleetOIDC *controllerconfig.OIDCConfig
 	if cfg.ControllerConfigPath == "" {
 		logger.Info("CONTROLLER_CONFIG_PATH is unset; running without nke-controller-config")
 	} else {
@@ -132,6 +133,7 @@ func main() {
 			os.Exit(1)
 		}
 		logger.Info("Loaded nke-controller-config", "path", cfg.ControllerConfigPath, "oidcProviders", len(controllerCfg.OIDC.Providers))
+		fleetOIDC = &controllerCfg.OIDC
 	}
 
 	authenticator, err := auth.Setup(ctx, auth.Options{
@@ -534,7 +536,7 @@ func main() {
 		logger.Info("Cert renewal controller disabled")
 	}
 
-	httpServer, err := server.NewServer(cfg, serverLogger, dbInstance, temporalClient, authenticator, managementK8sClient)
+	httpServer, err := server.NewServer(cfg, serverLogger, dbInstance, temporalClient, authenticator, managementK8sClient, server.WithFleetOIDC(fleetOIDC))
 	if err != nil {
 		logger.Error("Failed to construct HTTP server", "error", err)
 		os.Exit(1)

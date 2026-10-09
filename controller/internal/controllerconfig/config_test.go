@@ -737,6 +737,42 @@ oidc:
 		assert.Contains(t, err.Error(), "duplicate issuerURL")
 	})
 
+	t.Run("issuerURL of the enabled managementOIDCAuth fails", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := controllerconfig.Load(writeConfig(t, minimalConfig+`
+oidc:
+  managementOIDCAuth:
+    enabled: true
+    issuerURL: https://a.example.com
+  providers:
+    - name: corporate
+      issuerURL: https://a.example.com
+      usernameClaim: sub
+      audiences: ["tenant"]
+      caBundle: pem
+`))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "already used by managementOIDCAuth")
+	})
+
+	t.Run("issuerURL of a disabled managementOIDCAuth passes", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := controllerconfig.Load(writeConfig(t, minimalConfig+`
+oidc:
+  managementOIDCAuth:
+    issuerURL: https://a.example.com
+  providers:
+    - name: corporate
+      issuerURL: https://a.example.com
+      usernameClaim: sub
+      audiences: ["tenant"]
+      caBundle: pem
+`))
+		require.NoError(t, err)
+	})
+
 	t.Run("missing caBundle fails", func(t *testing.T) {
 		t.Parallel()
 

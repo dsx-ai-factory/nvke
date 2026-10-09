@@ -22,6 +22,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/api"
 	"github.com/dsx-ai-factory/nke/controller/internal/auth"
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nke/controller/internal/version"
@@ -30,6 +31,18 @@ import (
 const (
 	ReadHeaderTimeout = 5 * time.Second
 )
+
+// Option configures NewServer and NewServerImpl.
+type Option func(*options)
+
+type options struct {
+	fleetOIDC *controllerconfig.OIDCConfig
+}
+
+// WithFleetOIDC sets the nke-controller-config OIDC section new clusters are pinned from.
+func WithFleetOIDC(oidc *controllerconfig.OIDCConfig) Option {
+	return func(o *options) { o.fleetOIDC = oidc }
+}
 
 // NewServer builds the API's HTTP server. A nil authn leaves the authentication
 // middleware out of the chain rather than installing one that admits everyone.
@@ -40,6 +53,7 @@ func NewServer(
 	temporalClient client.Client,
 	authn *auth.Authenticator,
 	k8sReader ctrlclient.Reader,
+	opts ...Option,
 ) (*http.Server, error) {
 	m := http.NewServeMux()
 
@@ -47,7 +61,7 @@ func NewServer(
 	if err != nil {
 		return nil, fmt.Errorf("failed to load OpenAPI spec: %w", err)
 	}
-	serverImpl := NewServerImpl(cfg, logger, database, temporalClient, k8sReader)
+	serverImpl := NewServerImpl(cfg, logger, database, temporalClient, k8sReader, opts...)
 	strictHandler := api.NewStrictHandlerWithOptions(serverImpl, nil, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			logger.Error("OpenAPI StrictServer request error", "error", err)
@@ -188,7 +202,19 @@ func handleError(w http.ResponseWriter, logger *slog.Logger, message string, sta
 	}
 }
 
-func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, temporalClient client.Client, k8sReader ctrlclient.Reader) *serverImpl {
+func NewServerImpl(
+	cfg config.Config,
+	logger *slog.Logger,
+	database db.DB,
+	temporalClient client.Client,
+	k8sReader ctrlclient.Reader,
+	opts ...Option,
+) *serverImpl {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+
 	nodePoolService := NewNodePoolService(
 		logger,
 		database,
@@ -197,16 +223,19 @@ func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, tempo
 		cfg.UseControlPlaneControllerForControlPlane(),
 	)
 
+	clusterService := NewClusterService(
+		logger,
+		database,
+		nodePoolService,
+		cfg.Teleport,
+		cfg.NkeOIDCAuth.Enabled,
+		cfg.SupportedInfraProviders,
+		cfg.UseControlPlaneControllerForControlPlane(),
+	)
+	clusterService.fleetOIDC = o.fleetOIDC
+
 	return &serverImpl{
-		clusterService: *NewClusterService(
-			logger,
-			database,
-			nodePoolService,
-			cfg.Teleport,
-			cfg.NkeOIDCAuth.Enabled,
-			cfg.SupportedInfraProviders,
-			cfg.UseControlPlaneControllerForControlPlane(),
-		),
+		clusterService:       *clusterService,
 		nodePoolService:      *nodePoolService,
 		nodeSetService:       *NewNodeSetService(logger, database, temporalClient),
 		nodeService:          *NewNodeService(logger, database, cfg.UseControlPlaneControllerForControlPlane()),
