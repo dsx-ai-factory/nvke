@@ -553,3 +553,21 @@ This route is for a future site, and the CI lane no longer offers it. There is
 no network path from the ARC fleet to the site's jump host on port 22 at all —
 only the Teleport proxy reaches it — so `qualify-e2e.yml` always
 goes through `tsh`.
+
+## OIDC acceptance
+
+From `controller/`, run `make test-oidc-reference` to check NVKE's rendered
+authentication config and RBAC against the pinned envtest API server.
+`make test-oidc-acceptance-live` verifies authentication and provider snapshot
+preservation during control-plane joins through CAPD/Tilt; successful runs delete
+their management Kind cluster, and failed runs retain it and artifacts for
+inspection. After changing agent or bundle sources, remove the cached CAPD image
+and CNI packages from `controller/` before rerunning, and delete retained
+management clusters when finished:
+
+```bash
+docker rmi cwe-capd-kindest-node:oidc-acceptance-jointoken
+rm -rf .local/cni
+kind get clusters
+kind delete cluster --name "nke-oidc-live-<run_id>"
+```

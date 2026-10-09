@@ -188,6 +188,9 @@ jobs:
           - name: test/e2e
             dir: controller/test/e2e
             run: go vet ./...
+          - name: test/e2e OIDC acceptance
+            dir: controller/test/e2e
+            run: GOWORK=off go test -c -tags oidc_acceptance -o /tmp/oidc-acceptance.test .
           - name: e2e gofail
             dir: controller
             run: go vet -tags gofail ./e2e/...

@@ -17,6 +17,7 @@ mkdir -p "${state_dir}"
 # share macOS's private /var/folders tree, so a default mktemp directory makes
 # packages created by the Linux OVN builder invisible to the host.
 tmp_dir="$(mktemp -d "${state_dir}/tmp.XXXXXX")"
+tmp_dir="$(cd "${tmp_dir}" && pwd)"
 # Kept as cwe-capi until a follow-up rename: changing it forces every developer to recreate their kind cluster.
 kind_cluster_name="${KIND_CLUSTER_NAME:-cwe-capi}"
 dockerhub_mirror="${NKE_E2E_DOCKERHUB_MIRROR:-}"
@@ -24,7 +25,7 @@ runner_name="cwe-capd-local-e2e-${$}"
 runner_image="${LOCAL_NKE_E2E_RUNNER_IMAGE:-docker:29.1.3-cli@sha256:4fa0ee1f3a7e4354c4ea34558b6d4ee32859baf4973d4c8ccc8e7fe3dd730c04}"
 tilt_config="${repo_root}/tilt_config.json"
 tilt_config_backup="${tmp_dir}/tilt_config.json"
-host_kubeconfig="${tmp_dir}/management-host.kubeconfig"
+host_kubeconfig="${LOCAL_NKE_E2E_KUBECONFIG:-${tmp_dir}/management-host.kubeconfig}"
 internal_kubeconfig="${tmp_dir}/management-internal.kubeconfig"
 e2e_config="${tmp_dir}/e2e-config.json"
 e2e_binary="${tmp_dir}/cwe-e2e.test"
@@ -192,10 +193,16 @@ e2e_host_loads_openvswitch "${ovs_probe_image}" ||
 
 log "ensuring the Kind management cluster exists"
 kind_config_for_mirror "${repo_root}/hack/controller-capi-kind.yaml" "${tmp_dir}/kind-config.yaml"
+[[ "${host_kubeconfig}" == /* ]] || fail "LOCAL_NKE_E2E_KUBECONFIG must be an absolute path"
+mkdir -p "$(dirname "${host_kubeconfig}")"
+existing_kind_clusters="$(kind get clusters)"
+if grep -Fx "${kind_cluster_name}" <<<"${existing_kind_clusters}" >/dev/null; then
+  kind get kubeconfig --name "${kind_cluster_name}" >"${host_kubeconfig}"
+fi
+export KUBECONFIG="${host_kubeconfig}"
 make -C "${repo_root}" kind-up KIND_CLUSTER_CONFIG="${tmp_dir}/kind-config.yaml"
 configure_kind_dockerhub_mirror "${kind_cluster_name}"
 kind get kubeconfig --name "${kind_cluster_name}" >"${host_kubeconfig}"
-export KUBECONFIG="${host_kubeconfig}"
 management_ready=true
 
 log "building the CAPD bundle from public sources"
@@ -244,6 +251,23 @@ if [[ "${LOCAL_NKE_E2E_REUSE_CAPD_SETUP:-false}" == true ]]; then
   kubectl rollout status deployment/capi-controller-manager -n capi-system --timeout=120s
   kubectl rollout status deployment/capd-controller-manager -n capd-system --timeout=120s
   log "reusing the existing CAPD providers and node image ${node_image}"
+elif [[ "${LOCAL_NKE_E2E_REUSE_CAPD_NODE_IMAGE:-false}" == true ]]; then
+  node_image="${CAPD_NODE_IMAGE:-cwe-capd-kindest-node:local}"
+  docker image inspect "${node_image}" >/dev/null || fail "CAPD node image ${node_image} does not exist"
+  export CAPD_KINDEST_NODE_IMAGE_PREBUILT=true
+  make -C "${repo_root}" clusterctl-install
+  make -C "${repo_root}" registry-mirror REGISTRY_MIRROR_IMAGE="$(dockerhub_image registry:2)"
+  capi_core_version="$(make -C "${repo_root}" -s --no-print-directory print-CAPI_CORE_VERSION)"
+  capd_provider_version="$(make -C "${repo_root}" -s --no-print-directory print-CAPD_PROVIDER_VERSION)"
+  PATH="${repo_root}/.local/bin:${PATH}" CLUSTER_TOPOLOGY=true clusterctl init \
+    --core "cluster-api:${capi_core_version}" \
+    --bootstrap "kubeadm:${capi_core_version}" \
+    --control-plane "kubeadm:${capi_core_version}" \
+    --infrastructure "docker:${capd_provider_version}"
+  kubectl rollout status deployment/capi-controller-manager -n capi-system --timeout=300s
+  kubectl rollout status deployment/capd-controller-manager -n capd-system --timeout=300s
+  make -C "${repo_root}" capi-spiffe-exec-auth
+  log "installed CAPD with the cached node image ${node_image}"
 else
   make -C "${repo_root}" capd-up REGISTRY_MIRROR_IMAGE="$(dockerhub_image registry:2)"
 fi
@@ -304,17 +328,38 @@ TILT_DISABLE_ANALYTICS=1 tilt ci \
   --timeout=40m \
   --output-snapshot-on-exit="${state_dir}/tilt-snapshot.json" \
   >"${state_dir}/tilt.log" 2>&1
+if [[ "${LOCAL_NKE_E2E_BUILD_TAGS:-}" =~ (^|[[:space:],])oidc_acceptance($|[[:space:],]) ]]; then
+  log "checking the SPIRE exec-auth plugin in CAPI and CAPD controllers"
+  if [[ "${LOCAL_NKE_E2E_REUSE_CAPD_SETUP:-false}" == true ]]; then
+    make -C "${repo_root}" capi-spiffe-exec-auth
+  fi
+  for controller in \
+    "capi-system capi-controller-manager" \
+    "capi-kubeadm-control-plane-system capi-kubeadm-control-plane-controller-manager" \
+    "capi-kubeadm-bootstrap-system capi-kubeadm-bootstrap-controller-manager" \
+    "capd-system capd-controller-manager"; do
+    read -r namespace deployment <<<"${controller}"
+    kubectl rollout status "deployment/${deployment}" -n "${namespace}" --timeout=5m
+    kubectl exec "deployment/${deployment}" -n "${namespace}" -- \
+      /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth --help >/dev/null 2>&1 || \
+      fail "SPIRE exec-auth plugin is unavailable in ${namespace}/deployment/${deployment}"
+  done
+fi
 
 log "compiling the E2E suite for linux/${host_arch}"
 # `|` makes go fall back to a direct fetch on any proxy error; the default
 # `,` only does so on 404/410. See the same block in hack/ci/backend-e2e.sh.
 export GOPROXY="${GOPROXY:-https://proxy.golang.org|direct}"
 e2e_built=false
+e2e_build_flags=()
+if [[ -n "${LOCAL_NKE_E2E_BUILD_TAGS:-}" ]]; then
+  e2e_build_flags=(-tags="${LOCAL_NKE_E2E_BUILD_TAGS}")
+fi
 for attempt in 1 2 3; do
   if (
     cd "${repo_root}/test/e2e"
     GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH="${host_arch}" \
-      go test -c -o "${e2e_binary}" .
+      go test -c ${e2e_build_flags[@]+"${e2e_build_flags[@]}"} -o "${e2e_binary}" .
   ); then
     e2e_built=true
     break
@@ -350,6 +395,11 @@ docker exec "${runner_name}" mkdir -p /state
 docker cp "${e2e_binary}" "${runner_name}:/state/cwe-e2e.test"
 docker cp "${internal_kubeconfig}" "${runner_name}:/state/management.kubeconfig"
 docker cp "${e2e_config}" "${runner_name}:/state/e2e-config.json"
+oidc_issuer_host=""
+if [[ "${LOCAL_NKE_E2E_BUILD_TAGS:-}" =~ (^|[[:space:],])oidc_acceptance($|[[:space:],]) ]]; then
+  oidc_issuer_host="$(docker inspect --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}' "${runner_name}")"
+  [[ -n "${oidc_issuer_host}" ]] || fail "could not read the E2E runner IP on the Kind network"
+fi
 
 # Tilt builds the controller with `make build`, which bakes BUILD_VERSION in, so ask the
 # Makefile for the same value rather than deriving it again here. Without it the
@@ -359,6 +409,7 @@ cwe_expected_version="$(make -C "${repo_root}" -s --no-print-directory print-BUI
 # Exec adapter for the shared Ginkgo runner: locally the suite runs in a container
 # on the Kind network, reached with `docker exec`.
 local_e2e_exec() {
+  local -a oidc_env=()
   local e2e_bundle_server_url="${BUNDLE_SERVER_URL:-}"
   if [[ "${INSTALL_CNI_AFTER_INIT:-false}" == "true" ]]; then
     e2e_bundle_server_url=""
@@ -367,11 +418,15 @@ local_e2e_exec() {
   if jq -e 'index("dsx-identity-exchange") != null' <<<"${local_e2e_providers}" >/dev/null; then
     exchange_enabled=true
   fi
+  if [[ -n "${oidc_issuer_host}" ]]; then
+    oidc_env=(-e "NKE_E2E_OIDC_ISSUER_HOST=${oidc_issuer_host}")
+  fi
   docker exec \
     -e "NKE_CONTROLLER_EXPECTED_VERSION=${cwe_expected_version}" \
     -e "NKE_E2E_DSX_IDENTITY_EXCHANGE=${exchange_enabled}" \
     -e "NKE_E2E_BUNDLE_SERVER_URL=${e2e_bundle_server_url}" \
     -e E2E_BGP_CONTAINER_NAME=bgp-containers \
+    ${oidc_env[@]+"${oidc_env[@]}"} \
     "${runner_name}" "$@"
 }
 
