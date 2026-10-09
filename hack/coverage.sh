@@ -57,6 +57,7 @@ COVERAGE_MODULES=(
 	controller/test/e2e
 	management-engine
 	os-image
+	release
 )
 
 # Modules with no test files at all, so there is nothing to collect. `check`
