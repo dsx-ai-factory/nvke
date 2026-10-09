@@ -5,7 +5,6 @@ package nodepools
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
