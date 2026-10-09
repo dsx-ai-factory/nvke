@@ -41,6 +41,11 @@ func WithOIDCConfig(oidc *config.NkeOIDCAuth) Option {
 	return func(op *EnableOIDCOperation) { op.oidcConfig = oidc }
 }
 
+// WithTrustDomain injects the management SPIFFE trust domain.
+func WithTrustDomain(trustDomain string) Option {
+	return func(op *EnableOIDCOperation) { op.trustDomain = trustDomain }
+}
+
 // WithMethodSupportChecker injects the reusable agent capability check
 // (gRPC reflection) that Validate uses to confirm every control-plane agent
 // implements the PatchAPIServerManifest RPC before any node is touched — in place

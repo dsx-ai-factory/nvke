@@ -14,6 +14,7 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
 	adaptercontroller "github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/controller"
@@ -69,12 +70,13 @@ func Static(s rollout.RolloutSpec) func(rollout.Cluster) rollout.RolloutSpec {
 // registration to detect impurity. Never reaches an activity.
 type purityCheckCluster struct{}
 
-func (purityCheckCluster) ID() uuid.UUID                     { return uuid.Nil }
-func (purityCheckCluster) Name() string                      { return "purity-check-sentinel" }
-func (purityCheckCluster) KubernetesVersion() string         { return "" }
-func (purityCheckCluster) ControlPlaneVIP() string           { return "" }
-func (purityCheckCluster) ControlPlaneNodes() []rollout.Node { return nil }
-func (purityCheckCluster) Nodes() []rollout.Node             { return nil }
+func (purityCheckCluster) ID() uuid.UUID                                  { return uuid.Nil }
+func (purityCheckCluster) Name() string                                   { return "purity-check-sentinel" }
+func (purityCheckCluster) KubernetesVersion() string                      { return "" }
+func (purityCheckCluster) ControlPlaneVIP() string                        { return "" }
+func (purityCheckCluster) OIDCProviders() []controllerconfig.OIDCProvider { return nil }
+func (purityCheckCluster) ControlPlaneNodes() []rollout.Node              { return nil }
+func (purityCheckCluster) Nodes() []rollout.Node                          { return nil }
 
 // assertSpecDeterministic calls spec twice with the sentinel cluster
 // and panics if outputs diverge. Catches impure effective spec functions at

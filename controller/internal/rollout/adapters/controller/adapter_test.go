@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout/adapters/controller"
@@ -66,4 +67,21 @@ func TestClusterAdapter_MappingAndDeterministicOrder(t *testing.T) {
 		[]string{gotAll[0].Name(), gotAll[1].Name(), gotAll[2].Name()},
 		"all nodes must be name-sorted")
 	assert.Equal(t, rollout.NodeRoleWorker, gotAll[2].Role())
+}
+
+func TestClusterAdapter_OIDCProvidersReturnsPinnedCopy(t *testing.T) {
+	provider := controllerconfig.OIDCProvider{
+		Name: "workforce", IssuerURL: "https://workforce.example.com",
+		Audiences: []string{"tenant"}, UsernameClaim: "sub", UsernamePrefix: "workforce:",
+		GroupsClaim: "groups", GroupsPrefix: "workforce:",
+		RequiredClaims: map[string]string{"organization": "example"}, CABundle: "example public CA bundle",
+	}
+	cluster := controller.NewCluster(db.Cluster{
+		OIDCProviders: db.ClusterOIDCProvidersFromConfig([]controllerconfig.OIDCProvider{provider}),
+	}, nil, nil, "50051")
+	got := cluster.OIDCProviders()
+	assert.Equal(t, []controllerconfig.OIDCProvider{provider}, got)
+	got[0].Audiences[0] = "changed"
+	got[0].RequiredClaims["organization"] = "changed"
+	assert.Equal(t, []controllerconfig.OIDCProvider{provider}, cluster.OIDCProviders())
 }

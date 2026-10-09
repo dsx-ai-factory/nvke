@@ -14,14 +14,22 @@ import (
 // RegisterDefaults wires the enable-OIDC operation into reg with its runtime
 // dependencies: the agent dialer, the reflection-based capability checker
 // (verifies PatchAPIServerManifest support before any node is touched), the
-// management-cluster client (reads the issuer CA bundle), and the site OIDC
-// config.
-func RegisterDefaults(reg *rollout.Registry, dialer nodeagent.Dialer, checker nodeagent.MethodSupportChecker, k8sClient client.Client, oidc config.NkeOIDCAuth) {
+// management-cluster client (reads the issuer CA bundle and nke-rbac), the site
+// OIDC config, and the management SPIFFE trust domain.
+func RegisterDefaults(
+	reg *rollout.Registry,
+	dialer nodeagent.Dialer,
+	checker nodeagent.MethodSupportChecker,
+	k8sClient client.Client,
+	oidc config.NkeOIDCAuth,
+	trustDomain string,
+) {
 	oidcConfig := oidc
 	reg.RegisterOperation(rollout.Compile(NewEnableOIDCOperation(
 		WithDialer(dialer),
 		WithMethodSupportChecker(checker),
 		WithClient(k8sClient),
 		WithOIDCConfig(&oidcConfig),
+		WithTrustDomain(trustDomain),
 	)))
 }

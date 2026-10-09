@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
 )
@@ -87,6 +88,10 @@ func (a *ClusterAdapter) KubernetesVersion() string { return a.cluster.Kubernete
 
 // ControlPlaneVIP returns the cluster's kube-vip control-plane VIP.
 func (a *ClusterAdapter) ControlPlaneVIP() string { return a.cluster.ControlPlaneVIP }
+
+func (a *ClusterAdapter) OIDCProviders() []controllerconfig.OIDCProvider {
+	return db.ClusterOIDCProvidersToConfig(a.cluster.OIDCProviders)
+}
 
 // ControlPlaneNodes returns control-plane nodes sorted by name so the
 // executor's apply order is deterministic.

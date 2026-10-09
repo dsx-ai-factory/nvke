@@ -15,6 +15,7 @@ import (
 
 	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
 )
@@ -37,12 +38,13 @@ type fakeCluster struct {
 	nodes []rollout.Node
 }
 
-func (c *fakeCluster) ID() uuid.UUID                     { return c.id }
-func (c *fakeCluster) Name() string                      { return c.name }
-func (c *fakeCluster) KubernetesVersion() string         { return "v1.30.0" }
-func (c *fakeCluster) ControlPlaneVIP() string           { return "10.0.0.1:6443" }
-func (c *fakeCluster) ControlPlaneNodes() []rollout.Node { return c.nodes }
-func (c *fakeCluster) Nodes() []rollout.Node             { return c.nodes }
+func (c *fakeCluster) ID() uuid.UUID                                  { return c.id }
+func (c *fakeCluster) Name() string                                   { return c.name }
+func (c *fakeCluster) KubernetesVersion() string                      { return "v1.30.0" }
+func (c *fakeCluster) ControlPlaneVIP() string                        { return "10.0.0.1:6443" }
+func (c *fakeCluster) OIDCProviders() []controllerconfig.OIDCProvider { return nil }
+func (c *fakeCluster) ControlPlaneNodes() []rollout.Node              { return c.nodes }
+func (c *fakeCluster) Nodes() []rollout.Node                          { return c.nodes }
 
 type fakeKubeVipClient struct {
 	nkeproto.NodeAgentClient
