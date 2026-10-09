@@ -45,7 +45,7 @@ func (a *Activities) kubeadmReset(ctx context.Context, input KubeadmResetInput) 
 	if err != nil {
 		return KubeadmResetResult{}, fmt.Errorf("failed to get node: %w", err)
 	}
-	if err := a.reserveControlPlaneDeletion(ctx, node); err != nil {
+	if err := a.reserveControlPlaneCleanup(ctx, node); err != nil {
 		return KubeadmResetResult{}, err
 	}
 

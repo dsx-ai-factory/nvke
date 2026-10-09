@@ -41,7 +41,7 @@ func (a *Activities) RemoveEtcdMember(ctx context.Context, input EtcdMemberRemov
 	if err != nil {
 		return fmt.Errorf("reading etcd member removal target: %w", err)
 	}
-	if err := a.reserveControlPlaneDeletion(ctx, target); err != nil {
+	if err := a.reserveControlPlaneCleanup(ctx, target); err != nil {
 		return err
 	}
 
