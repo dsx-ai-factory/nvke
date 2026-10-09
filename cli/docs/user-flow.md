@@ -23,7 +23,7 @@ below is on `main`; the steps the CLI does not cover are marked.
 | `nkectl create nodepool -f spec.yaml` | Adds a node pool to an existing cluster from a `CreateNodePoolRequest` YAML. `-f -` reads stdin. | Available |
 | `nkectl get nodepools [name ...]` | Lists node pools. Names narrow to those pools, `--cluster <name>` to one cluster. `-o json\|yaml` changes the format. | Available |
 | `nkectl delete nodepool <name> --cluster <name>` | Removes a node pool from a cluster. A cluster has a control-plane pool only on a site controller with the control-plane controller off; deleting its last joined one is rejected, so delete the cluster instead. | Available |
-| `nkectl patch nodepool <name> --cluster <name>` | PATCHes a node pool. `--patch` takes an inline YAML document, `--patch-file` a file (or stdin via `-`). `desiredNodeCount` is the only field supported so far. | Available |
+| `nkectl patch nodepool <name> --cluster <name>` | PATCHes a node pool. `--patch` takes an inline YAML document, `--patch-file` a file (or stdin via `-`). `desiredNodeCount` is the only field supported so far; labels and taints are set at create only. | Available |
 | `nkectl version` | Prints version, commit and build date. `-o short\|yaml\|json`. | Available |
 
 `cluster` and `clusters` are aliases on `create`, `get`, `patch` and `delete`,
@@ -212,6 +212,30 @@ through the cluster's `controlPlaneConfig`.
 
 [examples/nico-mock-nodepool.yaml](../examples/nico-mock-nodepool.yaml) is a
 starting point. Provisioning is asynchronous, the same as cluster creation.
+
+A pool can carry `nodeLabels` and `nodeTaints`, on `create nodepool` and on each
+entry of `nodePools` in `create cluster`:
+
+```yaml
+nodeLabels:
+  nvidia.com/gpu.present: "true"
+nodeTaints:
+  - key: nvidia.com/gpu
+    value: "true"        # optional
+    effect: NoSchedule   # NoSchedule, PreferNoSchedule or NoExecute
+```
+
+`nodeLabels` is a map of keys to values; a list of `key=value` strings is
+rejected. A taint takes a key, an optional value, and an effect. Taints are for
+worker pools only, and `controlPlaneConfig` accepts `nodeLabels` alone. The
+site controller validates keys, values and effects and returns its error
+unchanged. `nkectl get nodepools -o yaml` shows what a pool holds.
+
+Labels and taints are set when a pool is created and cannot be changed
+afterwards: `patch nodepool` and `patch cluster` do not accept them. To change
+them, create a new pool. The controller stores and returns them; applying them
+to the Kubernetes nodes is not implemented yet, so they do not appear on a
+node's labels and taints.
 
 ### 12. Scale a node pool
 

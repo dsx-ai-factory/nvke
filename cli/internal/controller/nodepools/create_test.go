@@ -5,11 +5,15 @@ package nodepools
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 
 // writeSpec writes a spec file named name and returns its path.
@@ -32,6 +36,12 @@ nodeNamePrefix: gpu
 desiredNodeCount: 2
 nodeLabels:
   role: gpu
+nodeTaints:
+  - key: nvidia.com/gpu
+    value: "true"
+    effect: NoSchedule
+  - key: dedicated
+    effect: PreferNoSchedule
 `, clusterID)
 
 	out, err := run(t, NewCreateCmd(clientFn), "-f", writeSpec(t, "pool.yaml", spec))
@@ -66,6 +76,13 @@ nodeLabels:
 	labels, ok := body["nodeLabels"].(map[string]any)
 	if !ok || labels["role"] != "gpu" {
 		t.Errorf("nodeLabels = %v, want map[role:gpu]", body["nodeLabels"])
+	}
+	wantTaints := []any{
+		map[string]any{"key": "nvidia.com/gpu", "value": "true", "effect": "NoSchedule"},
+		map[string]any{"key": "dedicated", "effect": "PreferNoSchedule"},
+	}
+	if !reflect.DeepEqual(body["nodeTaints"], wantTaints) {
+		t.Errorf("nodeTaints = %v, want %v", body["nodeTaints"], wantTaints)
 	}
 	if _, present := body["controlPlane"]; present {
 		t.Errorf("controlPlane was sent though the spec omitted it: %v", body)
@@ -219,6 +236,14 @@ func TestCreateNodePoolServerErrors(t *testing.T) {
 			want:   []string{"400", "desiredNodeCount must be positive"},
 		},
 		{
+			// Rules the controller owns, such as no taints on a control-plane
+			// pool, are not repeated in the CLI and reach the user verbatim.
+			name:   "taints on a control-plane pool",
+			status: 400,
+			body:   `{"message": "nodeTaints are not allowed on a control-plane pool"}`,
+			want:   []string{"400", "nodeTaints are not allowed on a control-plane pool"},
+		},
+		{
 			name:   "cluster deleting",
 			status: 409,
 			body:   `{"message": "cluster is in the process of being deleted"}`,
@@ -243,6 +268,94 @@ func TestCreateNodePoolServerErrors(t *testing.T) {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("error = %v, want it to contain %q", err, want)
 				}
+			}
+		})
+	}
+}
+
+// TestCreateNodePoolReadsLabelsAndTaintsBack verifies the labels and taints a
+// create sends are the ones the pool reports afterwards through get, so the
+// two commands agree on the map and list shapes.
+func TestCreateNodePoolReadsLabelsAndTaintsBack(t *testing.T) {
+	fake, clientFn := newFakeCWE(t, seed{clusterName: "alpha", name: "existing", desiredNodeCount: 1})
+	clusterID := fake.clusterIDFor(t, "alpha")
+
+	spec := fmt.Sprintf(`clusterID: %s
+name: gpu-workers
+nodeNamePrefix: gpu
+desiredNodeCount: 1
+nodeLabels:
+  nvidia.com/gpu.present: "true"
+  node-role.kubernetes.io/worker: ""
+nodeTaints:
+  - key: nvidia.com/gpu
+    value: "true"
+    effect: NoExecute
+`, clusterID)
+	if out, err := run(t, NewCreateCmd(clientFn), "-f", writeSpec(t, "pool.yaml", spec)); err != nil {
+		t.Fatalf("create: %v (output %q)", err, out)
+	}
+
+	out, err := run(t, NewGetCmd(clientFn), "gpu-workers", "--cluster", "alpha", "-o", "json")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	var pools []api.NodePool
+	if err := json.Unmarshal([]byte(out), &pools); err != nil {
+		t.Fatalf("decoding get output: %v\n%s", err, out)
+	}
+	if len(pools) != 1 {
+		t.Fatalf("pools = %d, want 1:\n%s", len(pools), out)
+	}
+
+	wantLabels := map[string]string{"nvidia.com/gpu.present": "true", "node-role.kubernetes.io/worker": ""}
+	if !reflect.DeepEqual(pools[0].NodeLabels, wantLabels) {
+		t.Errorf("nodeLabels = %v, want %v", pools[0].NodeLabels, wantLabels)
+	}
+	wantTaints := []api.NodeTaint{{Key: "nvidia.com/gpu", Value: "true", Effect: api.NodeTaintEffectNoExecute}}
+	if !reflect.DeepEqual(pools[0].NodeTaints, wantTaints) {
+		t.Errorf("nodeTaints = %v, want %v", pools[0].NodeTaints, wantTaints)
+	}
+}
+
+// TestCreateNodePoolRejectsInvalidLabelsAndTaints verifies that a spec which
+// cannot decode into the create request fails before any request is sent:
+// nodeLabels is a map of keys to values, so the old key=value list is refused,
+// and a taint carries only key, value and effect. The values themselves, such
+// as a taint effect, are validated by the controller and not repeated here.
+func TestCreateNodePoolRejectsInvalidLabelsAndTaints(t *testing.T) {
+	tests := []struct {
+		name    string
+		fields  string
+		wantErr string
+	}{
+		{
+			name:    "labels as the old key=value list",
+			fields:  "nodeLabels:\n  - role=gpu\n",
+			wantErr: "nodeLabels",
+		},
+		{
+			name:    "taint with an unknown field",
+			fields:  "nodeTaints:\n  - key: dedicated\n    effect: NoSchedule\n    timeAdded: now\n",
+			wantErr: "timeAdded",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fake, clientFn := newFakeCWE(t, seed{clusterName: "alpha", name: "existing", desiredNodeCount: 1})
+			clusterID := fake.clusterIDFor(t, "alpha")
+
+			spec := fmt.Sprintf("clusterID: %s\nname: bad\nnodeNamePrefix: gpu\ndesiredNodeCount: 1\n%s", clusterID, tc.fields)
+
+			out, err := run(t, NewCreateCmd(clientFn), "-f", writeSpec(t, "pool.yaml", spec))
+			if err == nil {
+				t.Fatalf("expected an error, got output %q", out)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error = %v, want it to contain %q", err, tc.wantErr)
+			}
+			if got := fake.seen(); len(got) != 0 {
+				t.Errorf("requests = %v, want none", got)
 			}
 		})
 	}

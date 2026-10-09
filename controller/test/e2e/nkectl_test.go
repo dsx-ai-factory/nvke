@@ -164,11 +164,19 @@ const (
 	// is how the tenant-side readiness assertion finds this pool's nodes: nkectl
 	// has no node-level command to list them with.
 	nkectlPoolNodeNamePrefix = "nkw"
+	// nkectlPoolLabelKey and nkectlPoolTaintKey are the label and taint the pool
+	// is created with, to read back through the CLI. They sit outside the
+	// namespaces the controller reserves for itself.
+	nkectlPoolLabelKey = "example.com/nkectl-e2e"
+	nkectlPoolTaintKey = "example.com/nkectl-e2e"
 )
 
 // validateNkectlNodePoolLifecycle drives a node pool through create, scale up,
 // scale down and delete with nkectl alone, asserting the nodes it adds become
-// Ready in the tenant cluster.
+// Ready in the tenant cluster. The pool is created with a label and a taint, and
+// the spec checks the CLI reports them back. It does not check the tenant Node
+// objects: the controller stores the labels and taints but does not apply them
+// to nodes yet.
 //
 // It runs on the CLI rows of both container-backed lanes, so the commands are
 // covered against CAPD and against NICo.
@@ -181,8 +189,14 @@ func validateNkectlNodePoolLifecycle(test *tenantTest) {
 
 			By("Creating a worker node pool with `nkectl create nodepool -f`")
 			req := expectSucceed(workerNodePoolRequest(test, nkectlPoolName, nkectlPoolNodeNamePrefix))
+			wantLabels := map[string]string{nkectlPoolLabelKey: "true"}
+			wantTaints := []api.NodeTaint{{Key: nkectlPoolTaintKey, Value: "true", Effect: api.NodeTaintEffectNoSchedule}}
+			req.NodeLabels = wantLabels
+			req.NodeTaints = wantTaints
 			pool := expectSucceed(test.nkectlRunner.CreateNodePool(ctx, test.cluster.Name, req))
 			Expect(pool.Name).To(Equal(nkectlPoolName))
+			Expect(pool.NodeLabels).To(Equal(wantLabels), "`nkectl get nodepools -o json` should report the labels the pool was created with")
+			Expect(pool.NodeTaints).To(Equal(wantTaints), "`nkectl get nodepools -o json` should report the taints the pool was created with")
 			Expect(pool.ControlPlane).To(BeFalse(), "the created pool should be a worker pool")
 			Expect(pool.DesiredNodeCount).To(Equal(1))
 			Expect(pool.ClusterID).To(Equal(test.cluster.ID), "the pool should belong to this cluster")

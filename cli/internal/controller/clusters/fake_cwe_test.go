@@ -61,7 +61,7 @@ type fakeCWE struct {
 	requests []string
 	server   *httptest.Server
 
-	// lastBody captures the most recent PATCH request body, so a test can
+	// lastBody captures the most recent create or PATCH request body, so a test can
 	// assert on the literal wire bytes the CLI sent rather than a decoded
 	// struct, which would hide an omitempty regression.
 	lastBody []byte
@@ -120,7 +120,7 @@ func (f *fakeCWE) stored() []api.Cluster {
 	return append([]api.Cluster(nil), f.clusters...)
 }
 
-// lastRequestBody returns the most recent PATCH request's raw body.
+// lastRequestBody returns the most recent create or PATCH request's raw body.
 func (f *fakeCWE) lastRequestBody() []byte {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -183,8 +183,15 @@ func (f *fakeCWE) list(w http.ResponseWriter, name string) {
 // create answers POST /clusters, storing what it was sent so a test can assert
 // the CLI serialised the spec it was given.
 func (f *fakeCWE) create(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, api.GenericError{Message: "reading body: " + err.Error()})
+		return
+	}
+	f.lastBody = body
+
 	var req api.CreateClusterJSONRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(body, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, api.GenericError{Message: "malformed body: " + err.Error()})
 		return
 	}

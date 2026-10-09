@@ -20,9 +20,16 @@ desiredNodeCount: 1
 controlPlane: false
 systemReservedMemory: "1Gi"
 
-# Stored on the pool at creation.
+# Labels and taints are set when the pool is created and cannot be changed
+# afterwards; to change them, create a new pool. Labels are a map of keys to
+# values. Taints are a list of key, optional value, and an effect of
+# NoSchedule, PreferNoSchedule or NoExecute. Taints are for worker pools only.
 nodeLabels:
   tier: compute
+nodeTaints:
+  - key: dedicated
+    value: compute
+    effect: NoSchedule
 
 # A pool carries either infra or nico, never both. This path supplies CAPI
 # manifests directly, matching nico-mock-cluster.yaml; a real site uses nico.

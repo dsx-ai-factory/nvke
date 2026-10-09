@@ -4,8 +4,10 @@
 package clusters
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -139,5 +141,93 @@ etcdEncrypted: false
 	}
 	if !strings.Contains(out, stored[0].ID.String()) {
 		t.Errorf("output omits the new cluster id:\n%s", out)
+	}
+}
+
+// TestCreateClusterSendsNodeLabelsAndTaints verifies that labels and taints in
+// a create spec reach the controller as a map and a list: nodeLabels on the
+// control-plane config and on each worker pool, nodeTaints on the worker pool.
+func TestCreateClusterSendsNodeLabelsAndTaints(t *testing.T) {
+	fake, clientFn := newFakeCWE(t)
+
+	cmd := NewCreateCmd(clientFn)
+	cmd.SetIn(strings.NewReader(`
+name: my-cluster
+controlPlaneKubernetesVersion: "1.30.0"
+cniPlugin: calico
+etcdEncrypted: false
+controlPlaneConfig:
+  desiredCount: 3
+  nodeLabels:
+    tier: control
+nodePools:
+  - name: gpu
+    nodeNamePrefix: g
+    desiredNodeCount: 1
+    nodeLabels:
+      nvidia.com/gpu.present: "true"
+    nodeTaints:
+      - key: nvidia.com/gpu
+        value: "true"
+        effect: NoSchedule
+`))
+	if out, err := run(t, cmd, "-f", "-"); err != nil {
+		t.Fatalf("create cluster: %v (output %q)", err, out)
+	}
+
+	var body struct {
+		ControlPlaneConfig struct {
+			NodeLabels map[string]any `json:"nodeLabels"`
+		} `json:"controlPlaneConfig"`
+		NodePools []struct {
+			NodeLabels map[string]any `json:"nodeLabels"`
+			NodeTaints []any          `json:"nodeTaints"`
+		} `json:"nodePools"`
+	}
+	if err := json.Unmarshal(fake.lastRequestBody(), &body); err != nil {
+		t.Fatalf("decoding the create body: %v", err)
+	}
+
+	wantControlPlane := map[string]any{"tier": "control"}
+	if !reflect.DeepEqual(body.ControlPlaneConfig.NodeLabels, wantControlPlane) {
+		t.Errorf("controlPlaneConfig.nodeLabels = %v, want %v", body.ControlPlaneConfig.NodeLabels, wantControlPlane)
+	}
+	if len(body.NodePools) != 1 {
+		t.Fatalf("nodePools = %d, want 1", len(body.NodePools))
+	}
+	wantLabels := map[string]any{"nvidia.com/gpu.present": "true"}
+	if !reflect.DeepEqual(body.NodePools[0].NodeLabels, wantLabels) {
+		t.Errorf("nodePools[0].nodeLabels = %v, want %v", body.NodePools[0].NodeLabels, wantLabels)
+	}
+	wantTaints := []any{map[string]any{"key": "nvidia.com/gpu", "value": "true", "effect": "NoSchedule"}}
+	if !reflect.DeepEqual(body.NodePools[0].NodeTaints, wantTaints) {
+		t.Errorf("nodePools[0].nodeTaints = %v, want %v", body.NodePools[0].NodeTaints, wantTaints)
+	}
+}
+
+// TestCreateClusterRejectsNodeLabelsAsAList verifies that the old key=value
+// list form of nodeLabels fails before the controller is called.
+func TestCreateClusterRejectsNodeLabelsAsAList(t *testing.T) {
+	fake, clientFn := newFakeCWE(t)
+
+	cmd := NewCreateCmd(clientFn)
+	cmd.SetIn(strings.NewReader(`
+name: my-cluster
+controlPlaneKubernetesVersion: "1.30.0"
+cniPlugin: calico
+controlPlaneConfig:
+  desiredCount: 3
+  nodeLabels:
+    - tier=control
+`))
+	out, err := run(t, cmd, "-f", "-")
+	if err == nil {
+		t.Fatalf("expected an error, got output %q", out)
+	}
+	if !strings.Contains(err.Error(), "nodeLabels") {
+		t.Errorf("error = %v, want it to name nodeLabels", err)
+	}
+	if got := fake.seen(); len(got) != 0 {
+		t.Errorf("requests = %v, want none", got)
 	}
 }

@@ -204,6 +204,21 @@ func TestPatchNodePoolErrors(t *testing.T) {
 			wantErr: `unknown field "maxSurge"; nkectl can set desiredNodeCount`,
 		},
 		{
+			// Labels and taints are set when a pool is created and cannot be
+			// changed afterwards, so patch does not offer them. The controller
+			// would answer 400; refused locally with the supported field named.
+			name:    "patch carries nodeLabels",
+			seeds:   []seed{{clusterName: "alpha", name: "gpu-workers", desiredNodeCount: 3}},
+			args:    []string{"gpu-workers", "-c", "alpha", "--patch", "nodeLabels: {tier: gpu}"},
+			wantErr: `unknown field "nodeLabels"; nkectl can set desiredNodeCount`,
+		},
+		{
+			name:    "patch carries nodeTaints",
+			seeds:   []seed{{clusterName: "alpha", name: "gpu-workers", desiredNodeCount: 3}},
+			args:    []string{"gpu-workers", "-c", "alpha", "--patch", "nodeTaints: []"},
+			wantErr: `unknown field "nodeTaints"; nkectl can set desiredNodeCount`,
+		},
+		{
 			// Left to reach the controller, a null comes back as a validator message
 			// naming a JSON pointer. Refused locally instead.
 			name:    "patch sets a null",
