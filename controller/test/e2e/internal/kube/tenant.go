@@ -30,6 +30,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -219,12 +220,13 @@ func (f *TenantClientFactory) GetAdminClient(ctx context.Context, clusterName st
 func newTenantClient(restConfig *rest.Config, clusterName string) (client.Client, error) {
 	scheme := runtime.NewScheme()
 	for name, addToScheme := range map[string]func(*runtime.Scheme) error{
-		"apps/v1":                appsv1.AddToScheme,
-		"certificates.k8s.io/v1": certificatesv1.AddToScheme,
-		"coordination/v1":        coordinationv1.AddToScheme,
-		"core/v1":                corev1.AddToScheme,
-		"networking.k8s.io/v1":   networkingv1.AddToScheme,
-		"policy/v1":              policyv1.AddToScheme,
+		"apps/v1":                      appsv1.AddToScheme,
+		"certificates.k8s.io/v1":       certificatesv1.AddToScheme,
+		"coordination/v1":              coordinationv1.AddToScheme,
+		"core/v1":                      corev1.AddToScheme,
+		"networking.k8s.io/v1":         networkingv1.AddToScheme,
+		"policy/v1":                    policyv1.AddToScheme,
+		"rbac.authorization.k8s.io/v1": rbacv1.AddToScheme,
 	} {
 		if err := addToScheme(scheme); err != nil {
 			return nil, fmt.Errorf("registering %s tenant scheme: %w", name, err)
