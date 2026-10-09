@@ -352,6 +352,31 @@ func TestEvaluateCloudInitStatus(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "cloud-init error status")
 	})
+
+	// The case this guards: a failed node whose --long detail happens to
+	// contain a success phrase must still fail, not report ready.
+	t.Run("only the status line decides", func(t *testing.T) {
+		report := strings.Join([]string{
+			"status: error",
+			"extended_status: error - done",
+			"detail: previous boot reported status: done",
+		}, "\n")
+		_, _, err := evaluateCloudInitStatus(report)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cloud-init error status")
+	})
+
+	t.Run("extended_status is not the status line", func(t *testing.T) {
+		passed, _, err := evaluateCloudInitStatus("extended_status: done\n")
+		require.NoError(t, err)
+		assert.False(t, passed)
+	})
+
+	t.Run("the status line is read case-insensitively", func(t *testing.T) {
+		passed, _, err := evaluateCloudInitStatus("Status: Done\n")
+		require.NoError(t, err)
+		assert.True(t, passed)
+	})
 }
 
 // cloudInitStatusServer builds a server whose runner answers
