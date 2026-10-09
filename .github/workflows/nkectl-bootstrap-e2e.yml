@@ -158,7 +158,12 @@ jobs:
         run: |
           set -Eeuo pipefail
           for name in NERDCTL_VERSION NERDCTL_FULL_SHA256_AMD64 NERDCTL_FULL_SHA256_ARM64; do
-            echo "${name}=$(make --no-print-directory "print-${name}")" >> "${GITHUB_ENV}"
+            value="$(make --no-print-directory "print-${name}")"
+            if [ -z "${value}" ]; then
+              echo "::error::make print-${name} returned nothing, so make/tool-versions.mk does not set it"
+              exit 1
+            fi
+            echo "${name}=${value}" >> "${GITHUB_ENV}"
           done
 
       # Large toolchains this job does not use, removed before any build
