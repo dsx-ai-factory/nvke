@@ -62,8 +62,7 @@ against the Module column of the index in `controller/THIRD_PARTY_NOTICES.md`.
 The `management-engine` manager image and chart are not part of the initial
 open-source release. No workflow in this repository builds or publishes them, the
 `Dockerfile` and `make docker-build` / `docker-push` targets are for
-development with a caller-supplied image name, and they are not distributed by
-any other means. The module's API types are compiled into the controller and
+development with a caller-supplied image name. The module's API types are compiled into the controller and
 its CRDs ship in the controller chart, so those carry the controller's
 attribution. If the manager image is published, it needs `LICENSE`, `NOTICE`
 and a generated dependency inventory, and a row above.
