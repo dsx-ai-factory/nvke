@@ -15,5 +15,5 @@ func (*Client) ValidateNodePoolPayload(nodePool db.NodePool) error {
 	if err != nil {
 		return err
 	}
-	return validateInfrastructureManifestBytes(capiNodePoolProvider.InfraMachineTemplate)
+	return ValidateInfrastructureManifestBytes(capiNodePoolProvider.InfraMachineTemplate)
 }

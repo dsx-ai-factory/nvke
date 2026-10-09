@@ -19,7 +19,7 @@ func (*Client) ValidateControlPlaneConfigPayload(spec db.ControlPlaneConfigSpec)
 	if err != nil {
 		return err
 	}
-	return validateInfrastructureManifestBytes(firstInfraMachineTemplate(capiProvider.InfraMachineTemplatePreferences))
+	return ValidateInfrastructureManifestBytes(firstInfraMachineTemplate(capiProvider.InfraMachineTemplatePreferences))
 }
 
 // firstInfraMachineTemplate returns the provisioned control-plane machine

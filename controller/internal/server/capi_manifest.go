@@ -7,14 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-
 	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
-)
-
-const (
-	capiInfrastructureGroup = "infrastructure.cluster.x-k8s.io"
 )
 
 func isEmptyManifestObject(obj map[string]interface{}) bool {
@@ -70,37 +63,4 @@ func infraMachineTemplatePrefsFromAPI(obj map[string]interface{}) ([]json.RawMes
 		return nil, nil
 	}
 	return []json.RawMessage{raw}, nil
-}
-
-func validateCAPIInfrastructureManifest(obj map[string]interface{}) error {
-	if isEmptyManifestObject(obj) {
-		return nil
-	}
-
-	manifest := &unstructured.Unstructured{Object: obj}
-	apiVersion := manifest.GetAPIVersion()
-	if apiVersion == "" {
-		return fmt.Errorf("apiVersion is required")
-	}
-	if manifest.GetKind() == "" {
-		return fmt.Errorf("kind is required")
-	}
-
-	groupVersion, err := schema.ParseGroupVersion(apiVersion)
-	if err != nil {
-		return fmt.Errorf("apiVersion %q is invalid: %w", apiVersion, err)
-	}
-	if !isCAPIInfrastructureGroup(groupVersion.Group) {
-		return fmt.Errorf(
-			"apiVersion group %q must be a CAPI infrastructure provider group such as %q",
-			groupVersion.Group,
-			capiInfrastructureGroup,
-		)
-	}
-
-	return nil
-}
-
-func isCAPIInfrastructureGroup(group string) bool {
-	return group == capiInfrastructureGroup
 }

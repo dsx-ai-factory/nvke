@@ -25,11 +25,15 @@ func isEmptyManifestBytes(raw []byte) bool {
 	return len(trimmed) == 0 || bytes.Equal(trimmed, []byte("{}")) || bytes.Equal(trimmed, []byte("null"))
 }
 
-// validateInfrastructureManifestBytes validates a raw CAPI infra machine/
-// cluster manifest: it must carry an apiVersion and kind, and its apiVersion
-// group must be a CAPI infrastructure provider group. An empty manifest is
-// valid — the caller decides whether a manifest is required at all.
-func validateInfrastructureManifestBytes(raw json.RawMessage) error {
+// ValidateInfrastructureManifestBytes validates a raw CAPI infra
+// machine/cluster manifest: it must carry an apiVersion and kind, and its
+// apiVersion group must be a CAPI infrastructure provider group. An empty
+// manifest is valid — the caller decides whether a manifest is required at
+// all. Exported because the cluster-level infra.cluster manifest has no
+// db.NodePool/db.ControlPlaneConfigSpec equivalent to carry it through
+// ValidateNodePoolPayload/ValidateControlPlaneConfigPayload, and no Nico
+// counterpart exists to dispatch against — this check is CAPI-only.
+func ValidateInfrastructureManifestBytes(raw json.RawMessage) error {
 	if isEmptyManifestBytes(raw) {
 		return nil
 	}

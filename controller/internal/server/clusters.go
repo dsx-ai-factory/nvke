@@ -19,6 +19,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
+	capiclient "github.com/dsx-ai-factory/nvke/controller/internal/clients/capi"
 	nicoclient "github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
@@ -414,7 +415,11 @@ func validateCreateCAPIClusterProvider(req *api.CreateClusterRequest) error {
 	if isEmptyManifestObject(req.Infra.Cluster) {
 		return fmt.Errorf("infra.cluster is required")
 	}
-	if err := validateCAPIInfrastructureManifest(req.Infra.Cluster); err != nil {
+	infraCluster, err := rawManifestFromObject(req.Infra.Cluster)
+	if err != nil {
+		return fmt.Errorf("invalid infra.cluster: %w", err)
+	}
+	if err := capiclient.ValidateInfrastructureManifestBytes(infraCluster); err != nil {
 		return fmt.Errorf("invalid infra.cluster: %w", err)
 	}
 	return nil
@@ -953,12 +958,12 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 			if isEmptyManifestObject(req.Infra.MachineTemplate) {
 				capi.InfraMachineTemplatePreferences = nil
 			} else {
-				if err := validateCAPIInfrastructureManifest(req.Infra.MachineTemplate); err != nil {
-					return newBadRequestErrorf("invalid infra.machineTemplate: %s", err)
-				}
 				prefs, err := infraMachineTemplatePrefsFromAPI(req.Infra.MachineTemplate)
 				if err != nil {
 					return newBadRequestErrorf("failed to convert infra.machineTemplate: %v", err)
+				}
+				if err := capiclient.ValidateInfrastructureManifestBytes(prefs[0]); err != nil {
+					return newBadRequestErrorf("invalid infra.machineTemplate: %s", err)
 				}
 				capi.InfraMachineTemplatePreferences = prefs
 			}
