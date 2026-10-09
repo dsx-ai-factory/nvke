@@ -33,11 +33,15 @@
 #   reason    why the break is acceptable, and what a consumer has to do
 #   owner     a person, not a team -- someone to ask in six months
 #   review    YYYY-MM-DD, when this entry is next looked at
+#   baseline  the ref the break was measured against (the failure stub fills
+#             it in), e.g. controller/api/v0.0.28. Optional but recommended.
 #
 # The failure message prints a ready-made stub for every unwaived change, so
 # the three matching fields do not have to be worked out by hand.
 #
 # A waiver that matches nothing fails the gate. Once the baseline tag has moved
-# past the release that carried the break, the entry has done its job and must
-# be deleted; it cannot sit here outliving its reason.
+# past the release that carried the break, the entry has done its job and should
+# be deleted; it cannot sit here outliving its reason. If it records `baseline`
+# and the newest tag is a different one, it reports as expired instead of
+# failing, so branches that rebase past the tag are not blocked by it.
 waivers: []

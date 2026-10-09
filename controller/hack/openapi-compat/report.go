@@ -52,7 +52,7 @@ func (c change) describe() string {
 // waiverStub is the YAML a reviewer can paste into the waiver file, so the
 // failure message carries its own remedy rather than sending them to the
 // schema.
-func (c change) waiverStub() []string {
+func (c change) waiverStub(baseline string) []string {
 	return []string{
 		fmt.Sprintf("- change: %q", c.ChangeText),
 		fmt.Sprintf("  path: %q", c.Path),
@@ -60,6 +60,7 @@ func (c change) waiverStub() []string {
 		`  reason: "<why this break is acceptable, and what consumers must do>"`,
 		`  owner: "<a person, not a team>"`,
 		`  review: "<YYYY-MM-DD>"`,
+		fmt.Sprintf("  baseline: %q", baseline),
 	}
 }
 

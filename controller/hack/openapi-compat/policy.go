@@ -27,6 +27,10 @@ type waiver struct {
 	Reason   string `yaml:"reason"`
 	Owner    string `yaml:"owner"`
 	Review   string `yaml:"review"`
+	// Baseline is the ref the break was measured against when the waiver was
+	// written. Optional: it lets the gate tell a waiver that has done its job
+	// (the baseline moved on and carries the break) from one that never matched.
+	Baseline string `yaml:"baseline"`
 }
 
 type waiverFile struct {
@@ -92,10 +96,17 @@ func (w waiver) validate() error {
 // policyResult is the verdict. Unused is reported, and fails the gate, so a
 // waiver cannot outlive the change it was written for -- the same property the
 // govulncheck waivers are held to.
+//
+// Expired is the one exception: a waiver that matches nothing because the
+// baseline it was written against has since been superseded. The break it
+// accepted has shipped in a newer tag, so the entry is spent rather than wrong,
+// and failing every branch that rebases past that tag would blame the wrong
+// people. It is reported and does not fail the gate.
 type policyResult struct {
 	Unwaived []change
 	Waived   []change
 	Unused   []waiver
+	Expired  []waiver
 }
 
 // evaluate applies the policy: every breaking change the engine reports fails,
@@ -106,7 +117,11 @@ type policyResult struct {
 // the OpenAPI specification, and the two would diverge. What this tool owns is
 // what happens next, and that is the part a repository has to decide for
 // itself.
-func evaluate(changes []change, waivers []waiver) policyResult {
+//
+// baseline is the ref the specification is being compared against. A waiver
+// that matches nothing is Expired, not Unused, when it names a different
+// baseline: the tag has moved past the one it was written for.
+func evaluate(changes []change, waivers []waiver, baseline string) policyResult {
 	used := make([]bool, len(waivers))
 	var result policyResult
 
@@ -129,7 +144,11 @@ func evaluate(changes []change, waivers []waiver) policyResult {
 	}
 
 	for i, w := range waivers {
-		if !used[i] {
+		switch {
+		case used[i]:
+		case w.Baseline != "" && w.Baseline != baseline:
+			result.Expired = append(result.Expired, w)
+		default:
 			result.Unused = append(result.Unused, w)
 		}
 	}

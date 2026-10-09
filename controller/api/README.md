@@ -188,8 +188,10 @@ check whether the deprecation route above applies first — it usually should
 have.
 
 A waiver is deleted once the baseline tag has moved past the release that
-carried the break — the gate fails on a waiver that matches nothing, so it
-cannot be forgotten.
+carried the break. A waiver that matches nothing fails the gate, so it cannot be
+forgotten; if it records the `baseline` it was written against, it merely
+reports as expired once a newer tag exists, so it does not fail unrelated
+branches in the meantime.
 
 ## Rendering the reference
 

@@ -117,11 +117,12 @@ func TestChangeDescribe(t *testing.T) {
 func TestWaiverStubMatchesTheChangeItDescribes(t *testing.T) {
 	c := change{Breaking: true, ChangeText: "property_removed", Path: "$.components.schemas['Cluster']", Property: "required"}
 
-	stub := c.waiverStub()
+	stub := c.waiverStub("controller/api/v0.0.28")
 	require.NotEmpty(t, stub)
 	assert.Contains(t, stub[0], `"property_removed"`)
 	assert.Contains(t, stub[1], `"$.components.schemas['Cluster']"`)
 	assert.Contains(t, stub[2], `"required"`)
+	assert.Contains(t, stub[len(stub)-1], `"controller/api/v0.0.28"`)
 
 	w := waiver{Change: c.ChangeText, Path: c.Path, Property: c.Property}
 	assert.True(t, w.matches(c))

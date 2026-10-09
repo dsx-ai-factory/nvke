@@ -101,7 +101,7 @@ engine writes a report this tool does not recognize.
 	kept, discharged := applyLifecycle(got.report.Changes, life)
 	kept = append(kept, life.Findings...)
 
-	result := evaluate(kept, rules)
+	result := evaluate(kept, rules, got.baseline)
 	writeSummary(stdout, got.baseline, *spec, got.report, result, discharged, *noticeDays)
 
 	switch {
@@ -190,7 +190,7 @@ func writeSummary(w io.Writer, baseline, spec string, rep *report, result policy
 		fmt.Fprintf(w, "\n%d breaking change(s) are not waived:\n\n", len(result.Unwaived))
 		for _, c := range result.Unwaived {
 			fmt.Fprintf(w, "  %s\n", c.describe())
-			fmt.Fprintf(w, "    waive with: %s\n", strings.Join(c.waiverStub(), "\n                "))
+			fmt.Fprintf(w, "    waive with: %s\n", strings.Join(c.waiverStub(baseline), "\n                "))
 		}
 	}
 	if len(result.Waived) > 0 {
@@ -203,6 +203,13 @@ func writeSummary(w io.Writer, baseline, spec string, rep *report, result policy
 		fmt.Fprintf(w, "\n%d waiver(s) match nothing and must be removed:\n", len(result.Unused))
 		for _, waiver := range result.Unused {
 			fmt.Fprintf(w, "  %s | %s | %s (owner %s)\n", waiver.Change, waiver.Path, waiver.Property, waiver.Owner)
+		}
+	}
+
+	if len(result.Expired) > 0 {
+		fmt.Fprintf(w, "\n%d waiver(s) were written against an older baseline and no longer match; delete them when convenient:\n", len(result.Expired))
+		for _, waiver := range result.Expired {
+			fmt.Fprintf(w, "  %s | %s | %s (owner %s, baseline %s)\n", waiver.Change, waiver.Path, waiver.Property, waiver.Owner, waiver.Baseline)
 		}
 	}
 

@@ -104,12 +104,48 @@ func TestEvaluate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := evaluate(tt.changes, tt.waivers)
+			got := evaluate(tt.changes, tt.waivers, "controller/api/v0.0.28")
 			assert.Len(t, got.Unwaived, tt.unwaived, "unwaived")
 			assert.Len(t, got.Waived, tt.waived, "waived")
 			assert.Len(t, got.Unused, tt.unused, "unused")
 		})
 	}
+}
+
+// A waiver that matches nothing fails, unless it names a baseline other than the
+// current one: the tag moved past it, so the break has shipped and the entry is
+// spent rather than wrong.
+func TestEvaluateExpiresWaiversWrittenAgainstAnOlderBaseline(t *testing.T) {
+	const current = "controller/api/v0.0.28"
+	tests := []struct {
+		name     string
+		baseline string
+		unused   int
+		expired  int
+	}{
+		{name: "an older baseline expires", baseline: "controller/api/v0.0.22", expired: 1},
+		{name: "the current baseline still fails", baseline: current, unused: 1},
+		{name: "no recorded baseline still fails", baseline: "", unused: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := waiver{Change: "property_removed", Path: "$.x", Baseline: tt.baseline}
+			got := evaluate(nil, []waiver{w}, current)
+			assert.Len(t, got.Unused, tt.unused, "unused")
+			assert.Len(t, got.Expired, tt.expired, "expired")
+		})
+	}
+}
+
+// An expired waiver is only expired when it matches nothing. One that still
+// covers a break is used, whatever baseline it was written against.
+func TestEvaluateKeepsAMatchingWaiverRegardlessOfBaseline(t *testing.T) {
+	c := change{Breaking: true, ChangeText: "property_removed", Path: "$.x"}
+	w := waiver{Change: c.ChangeText, Path: c.Path, Baseline: "controller/api/v0.0.22"}
+	got := evaluate([]change{c}, []waiver{w}, "controller/api/v0.0.28")
+	assert.Len(t, got.Waived, 1)
+	assert.Empty(t, got.Expired)
+	assert.Empty(t, got.Unused)
 }
 
 func TestParseWaivers(t *testing.T) {

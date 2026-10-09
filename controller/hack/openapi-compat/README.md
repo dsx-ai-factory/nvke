@@ -49,6 +49,12 @@ for checking a change against an older release rather than the latest.
 4. A waiver that matches nothing also fails, so an entry cannot outlive the
    change it was written for. This is the same rule `GOVULNCHECK_WAIVED` is held
    to.
+   The exception is a waiver that records the `baseline` it was written
+   against: once the newest tag is a different one, a waiver that matches
+   nothing is *expired*, not stale. Its break has shipped in a newer tag, so it
+   is reported and the gate still passes, rather than failing every branch that
+   rebases past the tag. A waiver with no `baseline`, or one that matches
+   nothing against the baseline it names, still fails.
 
 The failure message prints a pasteable waiver stub for each unwaived change.
 
