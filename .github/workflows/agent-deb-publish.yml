@@ -561,7 +561,8 @@ jobs:
       id-token: write       # the OIDC token the attestation is signed against
       attestations: write   # writes the provenance attestation
     steps:
-      # Only for agent/THIRD_PARTY_NOTICES.md, which is attached below and
+      # Only for the local verify-release-assets action and
+      # agent/THIRD_PARTY_NOTICES.md, which is attached below and
       # cannot be produced from the build artifacts. It runs BEFORE the download:
       # a first checkout deletes the workspace contents, which `clean: false`
       # does not prevent.
@@ -571,7 +572,9 @@ jobs:
           persist-credentials: false
           clean: false
           ref: ${{ needs.build.outputs.sha }}
-          sparse-checkout: agent/THIRD_PARTY_NOTICES.md
+          sparse-checkout: |
+            agent/THIRD_PARTY_NOTICES.md
+            .github/actions/verify-release-assets
           sparse-checkout-cone-mode: false
 
       - name: Download packages
