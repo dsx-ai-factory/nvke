@@ -19,6 +19,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
+	nicoclient "github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
@@ -786,17 +787,17 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 	}
 	hasInstanceTypePreferences := cluster.ProviderType == db.ProviderTypeNico && req.Nico != nil && req.Nico.InstanceTypePreference != nil
 	if hasInstanceTypePreferences {
-		if err := validateInstanceTypePreferenceIDs(req.Nico.InstanceTypePreference); err != nil {
+		if err := nicoclient.ValidateInstanceTypePreferenceIDs(req.Nico.InstanceTypePreference); err != nil {
 			return newBadRequestErrorf("%s", err)
 		}
-		nico, err := controlPlaneConfigSpec.NicoProvider()
+		nicoProvider, err := controlPlaneConfigSpec.NicoProvider()
 		if err != nil {
 			return err
 		}
-		nico.InstanceTypePreference = dedupeUUIDsPreserveOrder(
+		nicoProvider.InstanceTypePreference = dedupeUUIDsPreserveOrder(
 			uuidSliceFromAPI(req.Nico.InstanceTypePreference),
 		)
-		controlPlaneConfigSpec.SetNico(nico)
+		controlPlaneConfigSpec.SetNico(nicoProvider)
 	}
 
 	// desiredCount and the full control-plane spec are only honored in
@@ -969,19 +970,6 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 
 func uuidSliceFromAPI(ids []openapi_types.UUID) []uuid.UUID {
 	return append([]uuid.UUID(nil), ids...)
-}
-
-// validateInstanceTypePreferenceIDs rejects a nil (all-zero) UUID in the
-// instanceTypePreference list. A nil ID is never a valid instance type and would
-// otherwise be silently dropped by dedupeUUIDsPreserveOrder, leaving the control
-// plane with fewer instance types than requested (or none at all).
-func validateInstanceTypePreferenceIDs(ids []openapi_types.UUID) error {
-	for _, id := range ids {
-		if id == uuid.Nil {
-			return fmt.Errorf("controlPlaneConfig.instanceTypePreference contains an invalid nil instance type ID")
-		}
-	}
-	return nil
 }
 
 // dedupeUUIDsPreserveOrder removes duplicate UUIDs while preserving first-seen order, skipping uuid.Nil.

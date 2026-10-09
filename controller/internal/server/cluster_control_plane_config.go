@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -12,6 +13,8 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
@@ -161,7 +164,7 @@ func validateCreateClusterLevelControlPlane(
 
 	switch providerType {
 	case db.ProviderTypeCAPI:
-		return validateCreateCAPIControlPlaneConfig(ccpc)
+		return validateCreateCAPIControlPlaneConfig(providerType, ccpc)
 	case db.ProviderTypeNico:
 		return validateCreateForgeControlPlaneConfigFields(ccpc)
 	default:
@@ -171,14 +174,24 @@ func validateCreateClusterLevelControlPlane(
 
 // validateCreateCAPIControlPlaneConfig enforces CAPI control-plane config rules:
 // infra.machineTemplate is required and Forge-only fields are rejected.
-func validateCreateCAPIControlPlaneConfig(c *api.CreateClusterControlPlaneConfig) error {
+func validateCreateCAPIControlPlaneConfig(providerType db.ProviderType, c *api.CreateClusterControlPlaneConfig) error {
 	if c.Nico != nil {
 		return fmt.Errorf("controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.infra")
 	}
 	if c.Infra == nil || isEmptyManifestObject(c.Infra.MachineTemplate) {
 		return fmt.Errorf("controlPlaneConfig.infra.machineTemplate is required")
 	}
-	if err := validateCAPIInfrastructureManifest(c.Infra.MachineTemplate); err != nil {
+	infraMachineTemplate, err := rawManifestFromObject(c.Infra.MachineTemplate)
+	if err != nil {
+		return fmt.Errorf("invalid controlPlaneConfig.infra.machineTemplate: %w", err)
+	}
+	var spec db.ControlPlaneConfigSpec
+	spec.SetCapi(db.CAPIControlPlaneProvider{InfraMachineTemplatePreferences: []json.RawMessage{infraMachineTemplate}})
+	validator, err := clients.GetControlPlaneConfigPayloadValidator(db.Cluster{ProviderType: providerType})
+	if err != nil {
+		return err
+	}
+	if err := validator.ValidateControlPlaneConfigPayload(spec); err != nil {
 		return fmt.Errorf("invalid controlPlaneConfig.infra.machineTemplate: %w", err)
 	}
 	return validateCloudInitFiles(c.Infra.BootstrapFiles)
@@ -197,7 +210,7 @@ func validateCreateForgeControlPlaneConfigFields(c *api.CreateClusterControlPlan
 	if len(c.Nico.InstanceTypePreference) == 0 {
 		return fmt.Errorf("controlPlaneConfig.nico.instanceTypePreference must contain at least one instance type ID for a nico cluster control plane")
 	}
-	if err := validateInstanceTypePreferenceIDs(c.Nico.InstanceTypePreference); err != nil {
+	if err := nico.ValidateInstanceTypePreferenceIDs(c.Nico.InstanceTypePreference); err != nil {
 		return err
 	}
 	if c.Nico.OSProfile == "" {
@@ -257,7 +270,7 @@ func validateMergedCAPIControlPlaneSpec(spec db.ControlPlaneConfigSpec) error {
 }
 
 func validateControlPlaneNicoNetworking(subnetIDs, vpcPrefixIDs []uuid.UUID) error {
-	if err := validateNicoNetworkSelection(subnetIDs, vpcPrefixIDs, "controlPlaneConfig.nico."); err != nil {
+	if err := nico.ValidateNetworkSelection(subnetIDs, vpcPrefixIDs, "controlPlaneConfig.nico."); err != nil {
 		return newBadRequestErrorf("%s", err)
 	}
 	return nil

@@ -14,6 +14,8 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/nico"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
@@ -195,32 +197,6 @@ func (s *nodePoolService) CreateNodePool(
 	return api.CreateNodePool201JSONResponse(apiNodePoolFromDB(&createdNodePool)), nil
 }
 
-func isValidDiskSelectionStrategy(s api.DiskSelectionStrategyCreate) bool {
-	switch s {
-	case api.DiskSelectionStrategyCreateSmallest, api.DiskSelectionStrategyCreateLargest:
-		return true
-	default:
-		return false
-	}
-}
-
-func validateForgeDiskSelectionStrategy(s api.DiskSelectionStrategyCreate) error {
-	if s != "" && !isValidDiskSelectionStrategy(s) {
-		return fmt.Errorf("invalid nico.diskSelectionStrategy: %q", s)
-	}
-
-	return nil
-}
-
-func validateNicoNetworkSelection(subnetIDs, vpcPrefixIDs []uuid.UUID, fieldPrefix string) error {
-	hasSubnetIDs := len(subnetIDs) > 0
-	hasVpcPrefixIDs := len(vpcPrefixIDs) > 0
-	if hasSubnetIDs == hasVpcPrefixIDs {
-		return fmt.Errorf("exactly one of %ssubnetIDs or %svpcPrefixIDs must be provided", fieldPrefix, fieldPrefix)
-	}
-	return nil
-}
-
 func clusterIsCAPIBacked(cluster db.Cluster) bool {
 	return cluster.ProviderType == db.ProviderTypeCAPI
 }
@@ -259,18 +235,18 @@ func (s *nodePoolService) validateCreateNodePoolRequest(cluster db.Cluster, req 
 		if err := s.providers.require(config.InfraProviderInfra); err != nil {
 			return err
 		}
-		return validateCreateCAPINodePoolRequest(req)
+		return validateCreateCAPINodePoolRequest(cluster, req)
 	case db.ProviderTypeNico:
 		if err := s.providers.require(config.InfraProviderNico); err != nil {
 			return err
 		}
-		return validateCreateNicoNodePoolRequest(req)
+		return validateCreateNicoNodePoolRequest(cluster, req)
 	default:
 		return fmt.Errorf("unsupported cluster provider")
 	}
 }
 
-func validateCreateCAPINodePoolRequest(req *api.CreateNodePoolRequest) error {
+func validateCreateCAPINodePoolRequest(cluster db.Cluster, req *api.CreateNodePoolRequest) error {
 	if req.Nico != nil {
 		return fmt.Errorf("nico is not supported, please provide infra")
 	}
@@ -280,7 +256,17 @@ func validateCreateCAPINodePoolRequest(req *api.CreateNodePoolRequest) error {
 	if isEmptyManifestObject(req.Infra.MachineTemplate) {
 		return fmt.Errorf("infra.machineTemplate cannot be empty")
 	}
-	if err := validateCAPIInfrastructureManifest(req.Infra.MachineTemplate); err != nil {
+	infraMachineTemplate, err := rawManifestFromObject(req.Infra.MachineTemplate)
+	if err != nil {
+		return fmt.Errorf("invalid infra.machineTemplate: %w", err)
+	}
+	var nodePool db.NodePool
+	nodePool.SetCapi(db.CAPINodePoolProvider{InfraMachineTemplate: infraMachineTemplate})
+	validator, err := clients.GetNodePoolPayloadValidator(cluster)
+	if err != nil {
+		return err
+	}
+	if err := validator.ValidateNodePoolPayload(nodePool); err != nil {
 		return fmt.Errorf("invalid infra.machineTemplate: %w", err)
 	}
 	if err := validateCloudInitFiles(req.Infra.BootstrapFiles); err != nil {
@@ -289,15 +275,12 @@ func validateCreateCAPINodePoolRequest(req *api.CreateNodePoolRequest) error {
 	return nil
 }
 
-func validateCreateNicoNodePoolRequest(req *api.CreateNodePoolRequest) error {
+func validateCreateNicoNodePoolRequest(cluster db.Cluster, req *api.CreateNodePoolRequest) error {
 	if req.Infra != nil {
 		return fmt.Errorf("infra is not supported, please provide nico")
 	}
 	if req.Nico == nil {
 		return fmt.Errorf("nico is required when creating a node pool on a nico cluster")
-	}
-	if err := validateForgeDiskSelectionStrategy(req.Nico.DiskSelectionStrategy); err != nil {
-		return err
 	}
 
 	if req.Nico.InstanceTypeID == uuid.Nil {
@@ -308,11 +291,17 @@ func validateCreateNicoNodePoolRequest(req *api.CreateNodePoolRequest) error {
 		return fmt.Errorf("nico.osProfile is required when creating a nico node pool")
 	}
 
-	if err := validateNicoNetworkSelection(req.Nico.SubnetIDs, req.Nico.VpcPrefixIDs, "nico."); err != nil {
+	var nodePool db.NodePool
+	nodePool.SetNico(db.NicoNodePoolProvider{
+		SubnetIDs:             req.Nico.SubnetIDs,
+		VpcPrefixIDs:          req.Nico.VpcPrefixIDs,
+		DiskSelectionStrategy: db.DiskSelectionStrategy(req.Nico.DiskSelectionStrategy),
+	})
+	validator, err := clients.GetNodePoolPayloadValidator(cluster)
+	if err != nil {
 		return err
 	}
-
-	return nil
+	return validator.ValidateNodePoolPayload(nodePool)
 }
 
 func (s *nodePoolService) GetNodePool(ctx context.Context, req api.GetNodePoolRequestObject) (api.GetNodePoolResponseObject, error) {
@@ -603,13 +592,13 @@ func validateUpdatedNodePool(cluster db.Cluster, dbNodePool *db.NodePool) error 
 	}
 
 	if clusterIsCAPIBacked(cluster) {
-		return validateUpdatedCAPINodePool(dbNodePool)
+		return validateUpdatedCAPINodePool(cluster, dbNodePool)
 	}
 
-	return validateUpdatedForgeNodePool(dbNodePool)
+	return validateUpdatedForgeNodePool(cluster, dbNodePool)
 }
 
-func validateUpdatedCAPINodePool(dbNodePool *db.NodePool) error {
+func validateUpdatedCAPINodePool(cluster db.Cluster, dbNodePool *db.NodePool) error {
 	if dbNodePool.Nico != nil && dbNodePool.Nico.DiskSelectionStrategy != "" {
 		return newBadRequestErrorf("nico.diskSelectionStrategy is not supported")
 	}
@@ -617,11 +606,11 @@ func validateUpdatedCAPINodePool(dbNodePool *db.NodePool) error {
 	if err != nil || capi.IsEmptyManifest(capiNodePoolProvider.InfraMachineTemplate) {
 		return newBadRequestErrorf("infra.machineTemplate is required")
 	}
-	capiInfraMachineTemplate, err := objectFromRawManifest(capiNodePoolProvider.InfraMachineTemplate)
+	validator, err := clients.GetNodePoolPayloadValidator(cluster)
 	if err != nil {
-		return newBadRequestErrorf("failed to parse infra.machineTemplate: %v", err)
+		return err
 	}
-	if err := validateCAPIInfrastructureManifest(capiInfraMachineTemplate); err != nil {
+	if err := validator.ValidateNodePoolPayload(*dbNodePool); err != nil {
 		return newBadRequestErrorf("invalid infra.machineTemplate: %s", err)
 	}
 	for _, file := range capiNodePoolProvider.BootstrapFiles {
@@ -634,12 +623,12 @@ func validateUpdatedCAPINodePool(dbNodePool *db.NodePool) error {
 	return nil
 }
 
-func validateUpdatedForgeNodePool(dbNodePool *db.NodePool) error {
+func validateUpdatedForgeNodePool(_ db.Cluster, dbNodePool *db.NodePool) error {
 	var diskSelectionStrategy db.DiskSelectionStrategy
 	if dbNodePool.Nico != nil {
 		diskSelectionStrategy = dbNodePool.Nico.DiskSelectionStrategy
 	}
-	if err := validateForgeDiskSelectionStrategy(api.DiskSelectionStrategyCreate(diskSelectionStrategy)); err != nil {
+	if err := nico.ValidateDiskSelectionStrategy(diskSelectionStrategy); err != nil {
 		return newBadRequestErrorf("%s", err.Error())
 	}
 	return nil
@@ -654,20 +643,20 @@ func (s *nodePoolService) validateUpdateNodePoolRequest(cluster db.Cluster, req 
 				return err
 			}
 		}
-		return validateUpdateCAPINodePoolRequest(req)
+		return validateUpdateCAPINodePoolRequest(cluster, req)
 	case db.ProviderTypeNico:
 		if req != nil && (req.Nico != nil || req.Infra != nil) {
 			if err := s.providers.require(config.InfraProviderNico); err != nil {
 				return err
 			}
 		}
-		return validateUpdateNicoNodePoolRequest(req)
+		return validateUpdateNicoNodePoolRequest(cluster, req)
 	default:
 		return fmt.Errorf("unsupported cluster provider")
 	}
 }
 
-func validateUpdateCAPINodePoolRequest(req *api.UpdateNodePoolRequest) error {
+func validateUpdateCAPINodePoolRequest(cluster db.Cluster, req *api.UpdateNodePoolRequest) error {
 	if req.Nico != nil {
 		return fmt.Errorf("nico is not supported, please use infra")
 	}
@@ -675,7 +664,17 @@ func validateUpdateCAPINodePoolRequest(req *api.UpdateNodePoolRequest) error {
 		if isEmptyManifestObject(req.Infra.MachineTemplate) {
 			return fmt.Errorf("infra.machineTemplate cannot be empty")
 		}
-		if err := validateCAPIInfrastructureManifest(req.Infra.MachineTemplate); err != nil {
+		infraMachineTemplate, err := rawManifestFromObject(req.Infra.MachineTemplate)
+		if err != nil {
+			return fmt.Errorf("invalid infra.machineTemplate: %w", err)
+		}
+		var nodePool db.NodePool
+		nodePool.SetCapi(db.CAPINodePoolProvider{InfraMachineTemplate: infraMachineTemplate})
+		validator, err := clients.GetNodePoolPayloadValidator(cluster)
+		if err != nil {
+			return err
+		}
+		if err := validator.ValidateNodePoolPayload(nodePool); err != nil {
 			return fmt.Errorf("invalid infra.machineTemplate: %w", err)
 		}
 	}
@@ -687,15 +686,14 @@ func validateUpdateCAPINodePoolRequest(req *api.UpdateNodePoolRequest) error {
 	return nil
 }
 
-func validateUpdateNicoNodePoolRequest(req *api.UpdateNodePoolRequest) error {
+func validateUpdateNicoNodePoolRequest(_ db.Cluster, req *api.UpdateNodePoolRequest) error {
 	if req.Infra != nil {
 		return fmt.Errorf("infra is not supported, please use nico")
 	}
-	if req.Nico != nil && req.Nico.DiskSelectionStrategy != nil {
-		if err := validateForgeDiskSelectionStrategy(api.DiskSelectionStrategyCreate(*req.Nico.DiskSelectionStrategy)); err != nil {
-			return err
-		}
-	}
+	// Disk selection strategy content-validity (and the subnet/VPC-prefix
+	// exclusivity checked below) is re-checked against the full merged
+	// payload by validateUpdatedForgeNodePool once this patch is applied —
+	// no need to duplicate it here against the partial request.
 	// The OS profile can be replaced but not cleared. Rejecting the empty value
 	// here rather than after the merge leaves a pool whose stored profile is
 	// already empty patchable in every other respect. The config profile is

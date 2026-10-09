@@ -20,16 +20,20 @@ type ProviderClient interface {
 	NodeSetProvider() NodeSetProvider
 	ControlPlaneConfigNodeProvider() ControlPlaneConfigNodeProvider
 	NewNodeProvider() NewNodeProvider
+	NodePoolPayloadValidator() NodePoolPayloadValidator
+	ControlPlaneConfigPayloadValidator() ControlPlaneConfigPayloadValidator
 }
 
 type providerClient struct {
-	scaffold         ClusterScaffold
-	machine          MachineMaterialization
-	nodePoolCfg      NodePoolUpgradeConfig
-	kubeVIP          KubeVIPConfig
-	nodeSet          NodeSetProvider
-	controlPlaneNode ControlPlaneConfigNodeProvider
-	newNode          NewNodeProvider
+	scaffold              ClusterScaffold
+	machine               MachineMaterialization
+	nodePoolCfg           NodePoolUpgradeConfig
+	kubeVIP               KubeVIPConfig
+	nodeSet               NodeSetProvider
+	controlPlaneNode      ControlPlaneConfigNodeProvider
+	newNode               NewNodeProvider
+	nodePoolValidator     NodePoolPayloadValidator
+	controlPlaneValidator ControlPlaneConfigPayloadValidator
 }
 
 func (p *providerClient) ClusterScaffold() ClusterScaffold               { return p.scaffold }
@@ -41,6 +45,13 @@ func (p *providerClient) ControlPlaneConfigNodeProvider() ControlPlaneConfigNode
 	return p.controlPlaneNode
 }
 func (p *providerClient) NewNodeProvider() NewNodeProvider { return p.newNode }
+func (p *providerClient) NodePoolPayloadValidator() NodePoolPayloadValidator {
+	return p.nodePoolValidator
+}
+
+func (p *providerClient) ControlPlaneConfigPayloadValidator() ControlPlaneConfigPayloadValidator {
+	return p.controlPlaneValidator
+}
 
 // GetProviderClient resolves every settled capability for cluster's
 // provider type by calling each capability's own factory. Adding a provider
@@ -75,13 +86,23 @@ func GetProviderClient(cluster db.Cluster) (ProviderClient, error) {
 	if err != nil {
 		return nil, err
 	}
+	nodePoolValidator, err := GetNodePoolPayloadValidator(cluster)
+	if err != nil {
+		return nil, err
+	}
+	controlPlaneValidator, err := GetControlPlaneConfigPayloadValidator(cluster)
+	if err != nil {
+		return nil, err
+	}
 	return &providerClient{
-		scaffold:         scaffold,
-		machine:          machine,
-		nodePoolCfg:      nodePoolCfg,
-		kubeVIP:          kubeVIP,
-		nodeSet:          nodeSet,
-		controlPlaneNode: controlPlaneNode,
-		newNode:          newNode,
+		scaffold:              scaffold,
+		machine:               machine,
+		nodePoolCfg:           nodePoolCfg,
+		kubeVIP:               kubeVIP,
+		nodeSet:               nodeSet,
+		controlPlaneNode:      controlPlaneNode,
+		newNode:               newNode,
+		nodePoolValidator:     nodePoolValidator,
+		controlPlaneValidator: controlPlaneValidator,
 	}, nil
 }
