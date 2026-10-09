@@ -123,10 +123,8 @@ func renderUserData(in userDataInputs) (string, error) {
 		// nothing here reads a shell variable.
 		"set -eu",
 
-		// BlueField hosts race cloud-init for the network, and apt fails
-		// without one. Bounded, so a node with no route fails here rather
-		// than silently.
-		`timeout 300s sh -c 'until ip -4 route list default | grep -q .; do echo "waiting for an IPv4 default route"; sleep 5; done'`,
+		// No wait for the network here: NodeCommands opens with one, ahead
+		// of its first download, so the site node and tenant nodes share it.
 
 		// The key is written deferred, after the account exists, into a
 		// directory write_files creates as root. sshd refuses keys in a
