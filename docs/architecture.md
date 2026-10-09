@@ -5,7 +5,7 @@ on NVIDIA infrastructure. The repository is a Go workspace of twelve modules. Th
 of them run in production: the NKE controller, deployed as a Helm chart,
 the node agent, installed on each node as a Debian package and run by systemd,
 and the Cluster API infrastructure provider, deployed into the same cluster as
-the engine. The rest are a CLI, the generated API module, the management engine's
+the controller. The rest are a CLI, the generated API module, the management engine's
 CRD types, and test and development tooling.
 
 ```
