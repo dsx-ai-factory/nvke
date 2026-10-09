@@ -80,7 +80,7 @@ func RegisterNamespace(ctx context.Context, cfg config.Config, logger *slog.Logg
 func NewClient(cfg config.Config, logger *slog.Logger) (client.Client, error) {
 	tlsConfig, err := newTLSConfig(cfg.TemporalTLS)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create CWE Temporal TLS config: %w", err)
+		return nil, fmt.Errorf("unable to create controller Temporal TLS config: %w", err)
 	}
 
 	opts := client.Options{
@@ -91,7 +91,7 @@ func NewClient(cfg config.Config, logger *slog.Logger) (client.Client, error) {
 			TLS:                  tlsConfig,
 		},
 		Logger:         log.NewStructuredLogger(logger.With("temporalClient", "cwe")),
-		MetricsHandler: sdktally.NewMetricsHandler(newPrometheusScope()), // Adding a metrics handler gets the built in temporal metrics for the CWE temporal worker.
+		MetricsHandler: sdktally.NewMetricsHandler(newPrometheusScope()), // Adding a metrics handler gets the built in temporal metrics for the controller temporal worker.
 		DataConverter:  NewDataConverter(),
 	}
 
@@ -274,8 +274,8 @@ func NewDataConverter() converter.DataConverter {
 		converter.NewProtoJSONPayloadConverterWithOptions(converter.ProtoJSONPayloadConverterOptions{
 			// By default, Temporal uses protojson.Unmarshal (not regular json.Unmarshal) when it detects protobuf message types,
 			// and protojson by default has DiscardUnknown: false, which causes it to error on unknown fields.
-			// This means that if another producer adds a new field to a proto, CWE
-			// will fail to unmarshal the data unless CWE is updated first.
+			// This means that if another producer adds a new field to a proto, the controller
+			// will fail to unmarshal the data unless the controller is updated first.
 			// This is unexpected, and behaves differently than regular json.Unmarshal, and protobuf.
 			//
 			// Using the AllowUnknownFields option, we can tell Temporal to ignore unknown fields, for forward/backward compatibility.

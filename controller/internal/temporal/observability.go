@@ -16,7 +16,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-// WorkerOptions returns the options every CWE worker runs with, so production
+// WorkerOptions returns the options every controller worker runs with, so production
 // and tests share one interceptor wiring.
 //
 // The SDK inherits the client's tracing interceptor for its worker side.

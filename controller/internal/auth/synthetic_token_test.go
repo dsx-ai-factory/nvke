@@ -26,7 +26,7 @@ import (
 )
 
 // errUnknownKeyID is deliberately an ordinary error, not auth.ErrKeysStale: an
-// unknown kid means the token is wrong, not that CWE's key set is.
+// unknown kid means the token is wrong, not that the controller's key set is.
 var errUnknownKeyID = errors.New("static key source: unknown key id")
 
 const (

@@ -284,7 +284,7 @@ func migrateNodePools(ctx context.Context, tx bun.Tx) error {
 
 	// This is a course grained check, suitable only for the migration.
 	// If any node pools are deleting, we just fail the migration, giving the currently running
-	// CWE software a chance to complete the deletion, then the following migration attempt should succeed.
+	// controller software a chance to complete the deletion, then the following migration attempt should succeed.
 	for _, existingNodePool := range existingNodePools {
 		if existingNodePool.Conditions.Deleting.Status == db.ConditionStatusTrue {
 			panic(fmt.Sprintf("node pool %s is deleting", existingNodePool.ID))

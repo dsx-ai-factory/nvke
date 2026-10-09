@@ -1,4 +1,4 @@
-# Sanitized fixture index for CWE tests / gofail e2e.
+# Sanitized fixture index for controller tests / gofail e2e.
 # Fleet metadata lives in nke-site-deploy/cwe-profiles.
 
 profiles:

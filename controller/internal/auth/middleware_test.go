@@ -145,7 +145,7 @@ func TestMiddlewareEnforcing(t *testing.T) {
 		token      func(*testing.T, fixture) string
 		wantStatus int
 		wantReason auth.FailureReason
-		// wantIssuer is "unknown" only where CWE matched no configured issuer.
+		// wantIssuer is "unknown" only where the controller matched no configured issuer.
 		wantIssuer string
 	}{
 		{

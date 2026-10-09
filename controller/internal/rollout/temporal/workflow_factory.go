@@ -53,7 +53,7 @@ type WorkflowConfig struct {
 // SpecMutator transforms a RolloutSpec before Execute sees it. MUST
 // be pure — called inside the workflow's deterministic replay region.
 // Adapters supply one at worker startup to layer host-specific defaults
-// onto every spec (e.g. CWE prepends the safety floor). It is captured
+// onto every spec (e.g. the controller prepends the safety floor). It is captured
 // into the workflow's specFn at registration time (see
 // RegisterRolloutWorkflow), so there is no mutable process-wide state to
 // reassign mid-flight.
@@ -186,7 +186,7 @@ func wrapWithMutator(
 }
 
 // withRolloutOptions installs the default rollout activity budget on ctx.
-// It is the CWE with<X>Options idiom (see internal/temporal/workflows/
+// It is the controller's with<X>Options idiom (see internal/temporal/workflows/
 // shared.go). Operations whose per-node RPC blocks on apiserver readiness
 // override it via WorkflowConfig.ActivityOptions with
 // WithRolloutNodeAgentApplyOptions.
@@ -229,7 +229,7 @@ func WithRolloutNodeAgentApplyOptions(ctx workflow.Context) workflow.Context {
 
 // withLoaderOptions installs the fast-DB activity budget used by the
 // workflow-side cluster load: 10s StartToClose, 2m ScheduleToClose, in the
-// CWE with<X>Options idiom.
+// controller's with<X>Options idiom.
 func withLoaderOptions(ctx workflow.Context) workflow.Context {
 	return workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout:    10 * time.Second,
@@ -313,7 +313,7 @@ func (w *factoryWorkflow) Execute(ctx workflow.Context, req *SimpleRequest) (*Si
 }
 
 // LoadClusterForWorkflow dispatches ActivityLoadClusterForRollout and rewraps its
-// serializable inventory into a rollout.Cluster via the CWE adapter. A
+// serializable inventory into a rollout.Cluster via the controller adapter. A
 // rollout.Cluster is an interface and cannot cross the activity boundary,
 // so the activity ships raw db rows and this helper rewraps them. Custom
 // workflows use the same helper as factory-generated rollout workflows.
@@ -338,7 +338,7 @@ type LoadClusterForRolloutRequest struct {
 	ClusterID uuid.UUID
 }
 
-// LoadClusterForRolloutResponse carries serializable CWE inventory: the
+// LoadClusterForRolloutResponse carries serializable controller inventory: the
 // cluster row, all of its nodes, and its control-plane subset. The workflow
 // rewraps it via adaptercontroller.NewCluster. NodeAgentPort rides along so the
 // workflow — which must stay free of process globals for replay determinism —
@@ -366,7 +366,7 @@ type ClusterLoaderActivity struct {
 }
 
 // NewClusterLoaderActivity builds the load activity over a clusterDataLoader
-// (the CWE adapters/controller.Loader) and the agent port applied to every
+// (the controller's adapters/controller.Loader) and the agent port applied to every
 // node's endpoint.
 func NewClusterLoaderActivity(loader clusterDataLoader, nodeAgentPort string) *ClusterLoaderActivity {
 	return &ClusterLoaderActivity{loader: loader, nodeAgentPort: nodeAgentPort}

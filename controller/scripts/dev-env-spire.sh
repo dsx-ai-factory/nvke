@@ -353,7 +353,7 @@ EOF
     success "✅ Join token generated"
 
     # Create workload entry
-    echo "Creating workload entry for CWE..."
+    echo "Creating workload entry for the controller..."
     if spire_apply_cluster_static_entry "${trust_domain}"; then
         success "✅ ClusterStaticEntry applied"
     else
@@ -364,7 +364,7 @@ EOF
     success "✅ Setup complete!"
     echo ""
     echo "📋 Next steps:"
-    echo "  3. Run CWE with SPIRE: SPIFFE_ENDPOINT_SOCKET=unix:///tmp/spire-agent/agent.sock make run"
+    echo "  3. Run the controller with SPIRE: SPIFFE_ENDPOINT_SOCKET=unix:///tmp/spire-agent/agent.sock make run"
     echo ""
 }
 

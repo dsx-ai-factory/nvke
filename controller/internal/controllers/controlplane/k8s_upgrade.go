@@ -308,7 +308,7 @@ func (r *reconciler) updateKubeadmConfigMap(ctx context.Context, cluster db.Clus
 	)
 
 	if r.controllerTemporalClient == nil {
-		return false, fmt.Errorf("CWE Temporal client not available")
+		return false, fmt.Errorf("controller Temporal client not available")
 	}
 
 	// Use a stable workflow ID to track across reconciles
@@ -446,7 +446,7 @@ func (r *reconciler) upgradeAddons(
 
 	// Require controllerTemporalClient to be configured
 	if r.controllerTemporalClient == nil {
-		return false, fmt.Errorf("CWE Temporal client not available")
+		return false, fmt.Errorf("controller Temporal client not available")
 	}
 
 	// Note: Temporal allows multiple runs with the same workflow ID.
@@ -497,7 +497,7 @@ func (r *reconciler) upgradeAddons(
 	return false, nil
 }
 
-// startUpdateKubeadmConfigMapWorkflow starts the CWE-owned UpdateKubeadmConfigMap workflow.
+// startUpdateKubeadmConfigMapWorkflow starts the controller-owned UpdateKubeadmConfigMap workflow.
 func (r *reconciler) startUpdateKubeadmConfigMapWorkflow(ctx context.Context, cluster db.Cluster, workflowID string, logger *slog.Logger) error {
 	logger.Info("Starting UpdateKubeadmConfigMap workflow")
 
@@ -527,7 +527,7 @@ func (r *reconciler) startUpdateKubeadmConfigMapWorkflow(ctx context.Context, cl
 	return nil
 }
 
-// startKubeadmAddOnUpgradeWorkflow starts the CWE-owned UpgradeControlPlaneAddons
+// startKubeadmAddOnUpgradeWorkflow starts the controller-owned UpgradeControlPlaneAddons
 // workflow, which runs kubeadm upgrade apply through the node agent on a healthy
 // control-plane node selected by the activity.
 func (r *reconciler) startKubeadmAddOnUpgradeWorkflow(ctx context.Context, cluster db.Cluster, workflowID string, logger *slog.Logger) error {

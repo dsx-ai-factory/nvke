@@ -118,8 +118,8 @@ func (c *NicoProviderIDController) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, fmt.Errorf("failed to create tenant cluster client: %w", err)
 	}
 
-	// In the current NKE CAPI path, CWE creates Machine.Name from db.Node.Name
-	// and CWE passes that same value to kubeadm as nodeRegistration.name.
+	// In the current NKE CAPI path, the controller creates Machine.Name from db.Node.Name
+	// and the controller passes that same value to kubeadm as nodeRegistration.name.
 	node := &corev1.Node{}
 	if err := tenantClient.Get(ctx, client.ObjectKey{Name: machine.Name}, node); err != nil {
 		if apierrors.IsNotFound(err) {

@@ -34,7 +34,7 @@ const (
 var ErrTenantClientNotReady = errors.New("tenant client not ready")
 
 // TenantClientProvider gives CAPI controllers, which are driven by CAPI objects
-// rather than CWE cluster rows, a way to reach the corresponding tenant cluster.
+// rather than controller cluster rows, a way to reach the corresponding tenant cluster.
 type TenantClientProvider interface {
 	ClientForCluster(ctx context.Context, cluster *clusterv1.Cluster) (client.Client, error)
 }
@@ -77,7 +77,7 @@ func NewClientFromRESTConfig(restConfig *rest.Config, addToSchemes ...AddToSchem
 }
 
 // DBClusterTenantClientProvider returns shared tenant-cluster Kubernetes clients
-// for CWE DB clusters. CAPI clusters, and Nico clusters when tenant-access
+// for controller DB clusters. CAPI clusters, and Nico clusters when tenant-access
 // consume is enabled, read nke-system/<name>-kubeconfig (TenantAccess). Nico
 // keeps the node-agent path as the disabled-state rollout fallback.
 type DBClusterTenantClientProvider struct {
@@ -141,12 +141,12 @@ func (p *DBClusterTenantClientProvider) ClientForDBCluster(ctx context.Context, 
 	}
 }
 
-// ClientForCluster resolves the CWE cluster row a CAPI Cluster stands for and
+// ClientForCluster resolves the controller cluster row a CAPI Cluster stands for and
 // returns that row's tenant client. The row is what carries the provider type
 // that decides where the kubeconfig comes from, so CAPI controllers go through
 // it rather than reading a kubeconfig out of the Cluster's namespace directly.
 //
-// clusters.name is uniquely indexed, and every CAPI Cluster CWE creates is named
+// clusters.name is uniquely indexed, and every CAPI Cluster the controller creates is named
 // after its row, so the name is an unambiguous key.
 func (p *DBClusterTenantClientProvider) ClientForCluster(ctx context.Context, cluster *clusterv1.Cluster) (client.Client, error) {
 	clusters, err := p.database.ListClusters(ctx, db.ClusterFilters{Name: &cluster.Name})
@@ -233,7 +233,7 @@ func (p *DBClusterTenantClientProvider) clientFromSecretVersion(
 
 // clientFromControlPlaneNodeAgent gets kubeconfigs from joined control-plane
 // node-agents and returns the first one whose apiserver endpoint is reachable
-// from the CWE process. This path remains available while tenant access is
+// from the controller process. This path remains available while tenant access is
 // disabled so the producer and consumer can be enabled with one rollout flag.
 func (p *DBClusterTenantClientProvider) clientFromControlPlaneNodeAgent(ctx context.Context, cluster db.Cluster, nodes []db.Node) (client.Client, error) {
 	var errs []error

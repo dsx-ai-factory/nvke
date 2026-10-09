@@ -259,7 +259,7 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 	}
 
 	// Record the type the infra provider settled on for templateless Nico nodes
-	// (which carry no CWE-selected type). Only authoritative once ready, and must
+	// (which carry no controller-selected type). Only authoritative once ready, and must
 	// never block provisioning; CAPD and template-backed nodes are unaffected.
 	var observedInstanceTypeID uuid.UUID
 	if node.NicoInstanceTypeID() == uuid.Nil {
@@ -288,7 +288,7 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 		}
 		nodeForUpdate.IP = ipAddress
 		// Sticky: only stamp the type when the node has no type yet, so we never
-		// clobber a CWE-selected (Forge) type or an already-recorded value.
+		// clobber a controller-selected (Forge) type or an already-recorded value.
 		stampInstanceType := observedInstanceTypeID != uuid.Nil && nodeForUpdate.NicoInstanceTypeID() == uuid.Nil
 		// Stamp only when there is something to record or nico already exists.
 		// Empty CAPD lookups must not invent a nico payload.

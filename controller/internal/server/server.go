@@ -104,7 +104,7 @@ func NewServer(
 		}
 	})
 
-	m.Handle("/api/docs/", v5emb.New("CWE API", "/openapi.yaml", "/api/docs/"))
+	m.Handle("/api/docs/", v5emb.New("Controller API", "/openapi.yaml", "/api/docs/"))
 
 	// Serve a simple page at /docs with a message that the swagger UI is now at /api/docs
 	m.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {

@@ -20,7 +20,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/temporal/activities"
 )
 
-// EnableOIDCInput is the brownfield OIDC migration input. ClusterID is the CWE
+// EnableOIDCInput is the brownfield OIDC migration input. ClusterID is the controller
 // cluster UUID.
 type EnableOIDCInput struct {
 	ClusterID uuid.UUID `json:"clusterID"`

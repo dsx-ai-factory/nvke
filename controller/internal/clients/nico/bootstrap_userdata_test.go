@@ -488,7 +488,7 @@ func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
 }
 
 // releaseUserDataTemplate reads the first-boot template out of a release
-// fixture, so these cases cover the templates CWE actually renders rather
+// fixture, so these cases cover the templates the controller actually renders rather
 // than a copy of them.
 func releaseUserDataTemplate(t *testing.T, path string) string {
 	t.Helper()

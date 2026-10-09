@@ -99,7 +99,7 @@ func rotateNicoMachineNetworkCandidate(ctx context.Context, k8sClient client.Cli
 	}
 
 	currentInterface := nicoMachine.Spec.Interfaces[0]
-	// Template-backed CAPI owns its network config inside the infra template; CWE only
+	// Template-backed CAPI owns its network config inside the infra template; the controller only
 	// rotates candidates when the template-less Forge-CAPI path supplied them.
 	if currentInterface.VPCPrefixID != "" {
 		if len(nicoNodeSetProvider.VpcPrefixIDs) == 0 {
@@ -181,7 +181,7 @@ func rotateNicoMachineSubnet(ctx context.Context, k8sClient client.Client, nicoM
 
 // shouldRotateNicoMachineInstanceType reports whether a template-less Forge-CAPI
 // NicoMachine failed because its selected instance type has no capacity or does
-// not exist, in which case CWE should rotate to the next instance type in the
+// not exist, in which case the controller should rotate to the next instance type in the
 // node's pinned control plane preference list. Nico surfaces this in the
 // NicoMachine Ready condition via a preflight capacity check it runs before
 // creating any backing instance, so rotation is an in-place Spec.InstanceTypeID
@@ -195,7 +195,7 @@ func shouldRotateNicoMachineInstanceType(ctx context.Context, k8sClient client.C
 		return false, fmt.Errorf("failed to get NicoMachine %s/%s: %w", machine.Namespace, machine.Spec.InfrastructureRef.Name, err)
 	}
 
-	// Only template-less machines carry a CWE-selected instance type to rotate;
+	// Only template-less machines carry a controller-selected instance type to rotate;
 	// template-backed machines get their instance type from the infra template.
 	if nicoMachine.Spec.InstanceTypeID == "" {
 		return false, nil
@@ -227,7 +227,7 @@ func isNicoInstanceTypeUnavailableReason(reason string) bool {
 // in the node's pinned preference list. The walk is cyclic (wraps after the last
 // entry) and the caller re-probes every poll, so it converges on the
 // highest-preference type once that type has capacity rather than sticking on a
-// lower-preference fallback. CWE only patches the NicoMachine spec; Nico owns
+// lower-preference fallback. The controller only patches the NicoMachine spec; Nico owns
 // availability (its preflight surfaces the Ready condition reacted to here), so
 // the walk reads the live spec and needs no node-side bookkeeping. Returns
 // whether it actually patched the NicoMachine.

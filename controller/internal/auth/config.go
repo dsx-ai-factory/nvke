@@ -148,7 +148,7 @@ func (i Issuer) EffectiveAudiences(deploymentAudiences []string) []string {
 
 // Load reads and validates the configuration at path. An unreadable file is an
 // error, never "authentication is disabled", or a typo'd mountPath would produce
-// a CWE that starts cleanly and authenticates nobody. Only an unset
+// a controller that starts cleanly and authenticates nobody. Only an unset
 // AUTH_CONFIG_PATH disables authentication.
 func Load(path string) (*Config, error) {
 	if strings.TrimSpace(path) == "" {

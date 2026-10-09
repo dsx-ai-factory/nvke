@@ -473,7 +473,7 @@ type CreateNodePoolRequest struct {
 	Nico *NicoNodePoolProvider `json:"nico,omitempty"`
 
 	// NodeNamePrefix Prefix for generated node names: `<cluster name>-<nodeNamePrefix>-<suffix>`.
-	// CWE assigns suffix as a 4-digit decimal number (0000–9999).
+	// The controller assigns suffix as a 4-digit decimal number (0000–9999).
 	// Generated names must fit within 63 characters (Kubernetes Node name limit).
 	// Maximum prefix length depends on cluster name length.
 	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
@@ -885,7 +885,7 @@ type NodeConditions struct {
 }
 
 // NodeNamePrefix Prefix for generated node names: `<cluster name>-<nodeNamePrefix>-<suffix>`.
-// CWE assigns suffix as a 4-digit decimal number (0000–9999).
+// The controller assigns suffix as a 4-digit decimal number (0000–9999).
 // Generated names must fit within 63 characters (Kubernetes Node name limit).
 // Maximum prefix length depends on cluster name length.
 type NodeNamePrefix = string
@@ -1007,7 +1007,7 @@ type NodePoolCreateConfig struct {
 	Nico *NicoNodePoolProvider `json:"nico,omitempty"`
 
 	// NodeNamePrefix Prefix for generated node names: `<cluster name>-<nodeNamePrefix>-<suffix>`.
-	// CWE assigns suffix as a 4-digit decimal number (0000–9999).
+	// The controller assigns suffix as a 4-digit decimal number (0000–9999).
 	// Generated names must fit within 63 characters (Kubernetes Node name limit).
 	// Maximum prefix length depends on cluster name length.
 	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`

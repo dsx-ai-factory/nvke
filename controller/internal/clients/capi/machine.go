@@ -118,7 +118,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 	return nil
 }
 
-// applyNicoMachineInstanceLabels merges CWE's identity labels onto a
+// applyNicoMachineInstanceLabels merges the controller's identity labels onto a
 // rendered infra machine, for the edge case where a CAPI-provider cluster's
 // own template happens to render a NicoMachine. A no-op for any other kind.
 func applyNicoMachineInstanceLabels(node db.Node, cluster db.Cluster, nodePoolID uuid.UUID, infraMachine *unstructured.Unstructured) error {

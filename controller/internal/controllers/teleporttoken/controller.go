@@ -338,7 +338,7 @@ func (c *Controller) isNodeRegistered(ctx context.Context, siteID, nodeID uuid.U
 	return registeredNodeIDs[nodeID.String()], nil
 }
 
-// fetchRegisteredNodeIDs queries Teleport for registered CWE-managed nodes matching
+// fetchRegisteredNodeIDs queries Teleport for registered controller-managed nodes matching
 // the given labels and returns a set of node IDs (by UUID string) for O(1) lookup.
 func (c *Controller) fetchRegisteredNodeIDs(ctx context.Context, labels map[string]string) (map[string]bool, error) {
 	registeredNodes, err := c.teleportClient.ListNodes(ctx, TeleportNamespace, teleport.WithLabels(labels))

@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package preflights provides the reusable safety floor every CWE-driven
+// Package preflights provides the reusable safety floor every controller-driven
 // rollout operation should run before mutating a cluster. The checks are
 // agent-flavored — they reach the cluster over a nodeagent.Dialer
-// (the CWE binding is adapters/controller.NewSPIFFEDialer) and run kubectl locally
+// (the controller binding is adapters/controller.NewSPIFFEDialer) and run kubectl locally
 // on each CP rather than from the worker directly. They depend only on the
-// rollout core and the nodeagent transport contract, not on the CWE data
+// rollout core and the nodeagent transport contract, not on the controller data
 // model.
 //
 // # What's here
@@ -57,7 +57,7 @@
 //
 // # Why "kubectl on the CP" instead of an in-process Kubernetes client
 //
-// CWE has no direct TLS material for tenant apiservers. Existing
+// The controller has no direct TLS material for tenant apiservers. Existing
 // activities either talk to the Site Controller's OWN apiserver via the
 // worker's in-cluster ServiceAccount, or fetch the tenant kubeconfig via
 // the agent (GetKubeconfig) and use it for narrow CA extraction.
@@ -65,7 +65,7 @@
 //
 // The /readyz family is local-only ("localhost:6443") which makes it
 // the right place to ask "is this CP's apiserver healthy" without
-// needing the CWE worker to hold tenant TLS material. Reuses the same
+// needing the controller worker to hold tenant TLS material. Reuses the same
 // dialer + ExecuteScript path rollout operations already use, so
 // there's no new auth path to manage.
 package preflights

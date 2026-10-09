@@ -165,7 +165,7 @@ func (a *Activities) StartEtcdEncryptionRewrite(
 		return EtcdEncryptionRewriteOperation{}, fmt.Errorf("failed to get rewrite node %s: %w", input.NodeID, err)
 	}
 
-	// A Temporal retry may arrive after agent accepted Start but before CWE
+	// A Temporal retry may arrive after agent accepted Start but before the controller
 	// received the response. Probe the intended operation ID first and resume it
 	// when it is already recorded, instead of treating a missing response as a
 	// fresh start that the agent would reject.

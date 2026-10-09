@@ -4,8 +4,8 @@
 // Package nodeagent is the rollout subsystem's agent transport
 // contract: how to reach an agent (Dialer) and the kubeadm status
 // values it reports. It depends only on the agent proto, so both the
-// concrete preflights/operations and the CWE adapter can share it without
-// coupling to the CWE data model.
+// concrete preflights/operations and the controller adapter can share it without
+// coupling to the controller data model.
 package nodeagent
 
 import (
@@ -18,7 +18,7 @@ import (
 )
 
 // Dialer opens an agent gRPC client for node and returns a cleanup the
-// caller must invoke. The node identity is part of the contract because CWE's
+// caller must invoke. The node identity is part of the contract because the controller's
 // SPIFFE authorization uses the node UUID; an IP address alone is not unique
 // when clusters use overlapping private networks.
 type Dialer func(ctx context.Context, node rollout.Node) (client nkeproto.NodeAgentClient, cleanup func(), err error)

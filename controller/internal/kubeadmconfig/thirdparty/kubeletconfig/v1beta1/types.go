@@ -32,7 +32,7 @@ limitations under the License.
 //   - APIVersion, Kind constant and upstream type aliases are added
 //   - doc comment spelling is normalised
 //   - top-level json tags are adjusted to use omitzero; map and slice fields
-//     also retain omitempty so empty collections are omitted from CWE-rendered
+//     also retain omitempty so empty collections are omitted from controller-rendered
 //     YAML unless explicitly set
 //
 // Refresh process:

@@ -24,7 +24,7 @@ type RotateEtcdEncryptionKeyInput struct {
 }
 
 // RotateEtcdEncryptionKey is an operator-initiated Temporal workflow. It is
-// registered on the CWE worker but intentionally has no public NKE API route.
+// registered on the controller worker but intentionally has no public NKE API route.
 func RotateEtcdEncryptionKey(ctx workflow.Context, input RotateEtcdEncryptionKeyInput) error {
 	if input.ClusterID == uuid.Nil {
 		return errors.New("clusterID is required")

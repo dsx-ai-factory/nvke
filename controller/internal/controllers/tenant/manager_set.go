@@ -82,7 +82,7 @@ type tenantManagerGeneration struct {
 	waitFor <-chan struct{}
 }
 
-// ManagerSet owns the lifecycle of all tenant controller managers in this CWE
+// ManagerSet owns the lifecycle of all tenant controller managers in this controller
 // process. SecretReconciler calls Upsert, RemoveKubeconfigSecret, or
 // RemoveCluster; ManagerSet itself does not watch Kubernetes. Each generation
 // independently starts, retries, runs, and stops one tenant manager.
@@ -98,20 +98,20 @@ type ManagerSet struct {
 	options ManagerSetOptions
 
 	// startSlots is a semaphore. It limits concurrent calls to factory.Start so
-	// many tenant clusters becoming available together do not overwhelm CWE or
+	// many tenant clusters becoming available together do not overwhelm the controller or
 	// their API servers.
 	startSlots chan struct{}
 
 	// mu protects all fields below it.
 	mu sync.Mutex
-	// generations maps the stable CWE cluster UUID to that cluster's current
+	// generations maps the stable controller cluster UUID to that cluster's current
 	// kubeconfig generation. A generation may be waiting, starting, retrying, or
 	// running.
 	generations map[uuid.UUID]*tenantManagerGeneration
 	// kubeconfigSecretOwners is the reverse lookup used when a Secret deletion
 	// event contains namespace/name but the deleted object can no longer be read.
 	kubeconfigSecretOwners map[types.NamespacedName]uuid.UUID
-	// closed rejects new Upserts after CWE shutdown begins.
+	// closed rejects new Upserts after controller shutdown begins.
 	closed bool
 	// wg tracks every runGeneration goroutine so shutdown waits for all managers
 	// to finish stopping.

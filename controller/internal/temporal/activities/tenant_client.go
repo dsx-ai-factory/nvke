@@ -12,7 +12,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
-// TenantClientProvider returns Kubernetes clients for CWE-managed clusters.
+// TenantClientProvider returns Kubernetes clients for controller-managed clusters.
 type TenantClientProvider interface {
 	ClientForDBCluster(ctx context.Context, cluster db.Cluster) (client.Client, error)
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
 )
 
-// Loader builds a rollout.Cluster from CWE's inventory. It implements the
+// Loader builds a rollout.Cluster from the controller's inventory. It implements the
 // rollout executor's loader contract:
 //
 //	LoadCluster(ctx context.Context, clusterID uuid.UUID) (rollout.Cluster, error)
@@ -23,7 +23,7 @@ type Loader struct {
 	cfg config.Config
 }
 
-// NewLoader returns a Loader over the CWE database. cfg supplies NodeAgent.Port,
+// NewLoader returns a Loader over the controller database. cfg supplies NodeAgent.Port,
 // which each node's AgentEndpoint is built from.
 func NewLoader(database db.DB, cfg config.Config) *Loader {
 	return &Loader{db: database, cfg: cfg}

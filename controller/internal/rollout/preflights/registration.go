@@ -33,7 +33,7 @@ func DefaultNodePreflights() []rollout.NodePreflightRef {
 	return nil
 }
 
-// PrependDefaults is the SpecMutator the CWE worker installs to
+// PrependDefaults is the SpecMutator the controller worker installs to
 // prepend DefaultClusterPreflights + DefaultNodePreflights so the
 // floor runs ahead of consumer-supplied entries. Returns a fresh
 // spec; the caller's slices are not mutated.

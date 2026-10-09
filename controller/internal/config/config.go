@@ -133,16 +133,16 @@ type Config struct {
 	// Set to 0.0.0.0:9090 (paired with a NetworkPolicy) to allow scraping.
 	MetricsListenAddress string `env:"METRICS_LISTEN_ADDRESS" default:"127.0.0.1:9090"`
 
-	// TemporalHostPort is the host and port of the Temporal server to use for CWE workflows
+	// TemporalHostPort is the host and port of the Temporal server to use for controller workflows
 	TemporalHostPort string `env:"TEMPORAL_HOST_PORT" default:"localhost:7233"`
 
-	// TemporalNamespace is the Temporal namespace to use for CWE workflows
+	// TemporalNamespace is the Temporal namespace to use for controller workflows
 	TemporalNamespace string `env:"TEMPORAL_NAMESPACE" default:"cloud-workflow-engine"`
 
-	// TemporalTaskQueue is the Temporal task queue to use for CWE workflows
+	// TemporalTaskQueue is the Temporal task queue to use for controller workflows
 	TemporalTaskQueue string `env:"TEMPORAL_TASK_QUEUE" default:"cloud-workflow-engine-tasks"`
 
-	// TemporalTLS configures optional mTLS for CWE's Temporal client.
+	// TemporalTLS configures optional mTLS for the controller's Temporal client.
 	TemporalTLS TemporalTLSConfig `envPrefix:"TEMPORAL_MTLS_"`
 
 	// OutboxPollingInterval is the interval to wait between polling the workflow outbox for new entries
@@ -162,7 +162,7 @@ type Config struct {
 	NodeHealthCheckTimeout time.Duration `env:"NODE_HEALTH_CHECK_TIMEOUT" default:"2m"`
 
 	// NicoControllersEnabled enables controllers that watch NICo infrastructure
-	// resources. Disable it when CWE manages only provisioned infrastructure.
+	// resources. Disable it when the controller manages only provisioned infrastructure.
 	NicoControllersEnabled bool `env:"NICO_CONTROLLERS_ENABLED" default:"true"`
 	// KubeVipFMDSEndpoint is the full Forge Metadata Service URL used to resolve
 	// the per-node DPU ASN on native-networking sites. When empty, CAPI and
@@ -172,7 +172,7 @@ type Config struct {
 	// ProfilesDir is the directory from which to read osProfiles and configProfiles
 	ProfilesDir string `env:"PROFILES_DIR" default:"./profiles"`
 
-	// SupportedInfraProviders is the list of provider payload keys this CWE
+	// SupportedInfraProviders is the list of provider payload keys this controller
 	// deployment advertises for cluster specs.
 	SupportedInfraProviders []string `env:"SUPPORTED_INFRA_PROVIDERS" envSeparator:"," default:"nico"`
 
@@ -205,7 +205,7 @@ type Config struct {
 	// automatic timeout-based provisioning remediation.
 	NodeProvisioningTimeout time.Duration `env:"NODE_PROVISIONING_TIMEOUT" default:"2h"`
 
-	// CertRenewalControllerEnabled enables CWE-owned periodic Kubernetes control-plane certificate renewal.
+	// CertRenewalControllerEnabled enables controller-owned periodic Kubernetes control-plane certificate renewal.
 	CertRenewalControllerEnabled bool `env:"CERT_RENEWAL_CONTROLLER_ENABLED" default:"true"`
 
 	// CertRenewalInterval is the interval between certificate renewal checks for each cluster.
@@ -259,7 +259,7 @@ type Config struct {
 	// Leave it empty to present the JWT-SVID from the local SPIRE server directly,
 	// which is the behavior every site has today. Set it only where the tenant
 	// clusters trust the exchange's issuer rather than that SPIRE server's, or
-	// CWE's calls to them will start failing authentication.
+	// the controller's calls to them will start failing authentication.
 	SpiffeJWTExchangeEndpoint string `env:"SPIFFE_JWT_EXCHANGE_ENDPOINT"`
 
 	// SpireServerNamespace is the namespace of the SPIRE server.
@@ -280,7 +280,7 @@ type Config struct {
 	SpireServerPort string `env:"SPIRE_SERVER_PORT" default:"9091"`
 
 	// SpireServerAPIAddress is the SPIRE server API address used for server-side operations such as issuing join tokens.
-	// This should be reachable from CWE. By default we assume SPIRE server is running in-cluster in the spire-server namespace.
+	// This should be reachable from the controller. By default we assume SPIRE server is running in-cluster in the spire-server namespace.
 	SpireServerAPIAddress string `env:"SPIRE_SERVER_API_ADDRESS" default:"spire-server.spire-server.svc.cluster.local:8081"`
 
 	// SpireJoinTokenTTL is the TTL used when creating SPIRE join tokens via the server API.
@@ -296,7 +296,7 @@ type Config struct {
 	// DgxcTenantUser is the DGXC tenant SSH username injected into OS profile userData templates.
 	DgxcTenantUser string `env:"DGXC_TENANT_USER"`
 
-	// DgxcTenantPassword is the DGXC tenant SSH plaintext password. CWE hashes it at provision time
+	// DgxcTenantPassword is the DGXC tenant SSH plaintext password. The controller hashes it at provision time
 	// before embedding in cloud-init user-data, so the hash varies per node (unique random salt).
 	DgxcTenantPassword string `env:"DGXC_TENANT_PASSWORD"`
 
@@ -335,7 +335,7 @@ type Config struct {
 	// deliberately, so a regression has one obvious cause.
 	InstallCNIAfterInit bool `env:"INSTALL_CNI_AFTER_INIT" default:"false"`
 
-	// PodNamespace is the namespace the CWE worker runs in.
+	// PodNamespace is the namespace the controller worker runs in.
 	PodNamespace string `env:"POD_NAMESPACE" default:"cloud-workflow-engine"`
 
 	// KubeadmImageRepository is the OCI registry kubeadm uses for control-plane
@@ -376,7 +376,7 @@ type Config struct {
 	PermissiveMode bool `env:"PERMISSIVE_MODE" default:"false"`
 
 	// Tracing configures OpenTelemetry distributed tracing. When Enabled and
-	// Endpoint are set, CWE exports OTLP gRPC spans. Endpoint and related OTEL_*
+	// Endpoint are set, the controller exports OTLP gRPC spans. Endpoint and related OTEL_*
 	// vars may be injected by the OpenTelemetry Operator (inject-sdk + sidecar);
 	// do not hardcode collector URLs in application code.
 	Tracing TracingConfig `envPrefix:"OTEL_"`

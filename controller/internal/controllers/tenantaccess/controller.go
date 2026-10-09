@@ -44,13 +44,13 @@ const (
 	// SecretsNamespace is the management-cluster namespace that holds the
 	// per-cluster Secrets this controller owns (kubeconfig + trust bundle). It is
 	// exported because the teardown activity deletes those Secrets on cluster
-	// removal. The chart creates the namespace and scopes CWE's Secret grant to
+	// removal. The chart creates the namespace and scopes the controller's Secret grant to
 	// it, so this is a constant rather than a config knob.
 	SecretsNamespace = constants.NamespaceNKESystem
 )
 
 // KubeconfigSecretName returns the Secret name that holds the per-cluster
-// kubeconfig CWE consumes to access tenant clusters.
+// kubeconfig the controller consumes to access tenant clusters.
 func KubeconfigSecretName(clusterName string) string { return clusterName + "-kubeconfig" }
 
 // AdminKubeconfigSecretName returns the Secret name that always holds the
@@ -59,7 +59,7 @@ func AdminKubeconfigSecretName(clusterName string) string {
 	return clusterName + "-admin-kubeconfig"
 }
 
-// IsControllerKubeconfigSecretName reports whether name is the CWE-consumed kubeconfig secret.
+// IsControllerKubeconfigSecretName reports whether name is the controller-consumed kubeconfig secret.
 func IsControllerKubeconfigSecretName(name string) bool {
 	return strings.HasSuffix(name, "-kubeconfig") && !strings.HasSuffix(name, "-admin-kubeconfig")
 }
@@ -352,7 +352,7 @@ func (c *Controller) applyRBAC(ctx context.Context, cluster db.Cluster, adminCon
 //
 // The REST timeout is set explicitly because node-agent serves admin.conf
 // verbatim without rewriting its server URL, so the endpoint it names is not
-// guaranteed to be routable from CWE. Both client construction (which performs
+// guaranteed to be routable from the controller. Both client construction (which performs
 // discovery) and every subsequent apply would otherwise block on the
 // long-lived reconcile context.
 func newTenantClient(adminConf []byte) (ctrlclient.Client, error) {

@@ -301,7 +301,7 @@ func TestInitialFetchFailureIsFatalWhenEnforcingAndNotWhenPermissive(t *testing.
 		srv.Serve([]byte("nope"), http.StatusServiceUnavailable)
 
 		sources, err := sourcesAt(t, srv, newFakeClock(), ModeEnforcing)
-		require.Error(t, err, "enforcing CWE must not open its listener without keys")
+		require.Error(t, err, "enforcing controller must not open its listener without keys")
 		assert.Nil(t, sources)
 		assert.Contains(t, err.Error(), "local-kubernetes")
 		assert.Contains(t, err.Error(), "503")
@@ -314,12 +314,12 @@ func TestInitialFetchFailureIsFatalWhenEnforcingAndNotWhenPermissive(t *testing.
 		srv.Serve([]byte("nope"), http.StatusServiceUnavailable)
 
 		sources, err := sourcesAt(t, srv, newFakeClock(), ModePermissive)
-		require.NoError(t, err, "permissive CWE rejects nobody, so a missing key set costs only a counter")
+		require.NoError(t, err, "permissive controller rejects nobody, so a missing key set costs only a counter")
 		require.NotNil(t, sources)
 
 		_, err = sources[testIssuerName].KeyFor(context.Background(), "kid-a")
 		require.ErrorIs(t, err, ErrKeysStale,
-			"never having had keys is jwks_stale, so the metric blames CWE and not the caller's token")
+			"never having had keys is jwks_stale, so the metric blames the controller and not the caller's token")
 		require.NotErrorIs(t, err, ErrKeyNotFound)
 	})
 }
@@ -338,7 +338,7 @@ func TestForbiddenFetchNamesTheMissingClusterRole(t *testing.T) {
 
 // The first fetch and a later refresh share fetchAndStore, but only the refresh
 // has a cache to fall back on. The log has to say which one failed: the no-cache
-// case is the one that stops an enforcing CWE from starting.
+// case is the one that stops an enforcing controller from starting.
 func TestFetchFailureSaysWhetherAnythingIsCached(t *testing.T) {
 	t.Parallel()
 
@@ -488,7 +488,7 @@ func TestHTTPJWKSRejectsAnUnusableCABundle(t *testing.T) {
 }
 
 // The token file is usually a projected service account volume, which the kubelet
-// rotates well inside CWE's lifetime, so it must be re-read per request.
+// rotates well inside the controller's lifetime, so it must be re-read per request.
 func TestHTTPJWKSBearerTokenIsRereadPerRequest(t *testing.T) {
 	t.Parallel()
 

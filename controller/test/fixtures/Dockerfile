@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Minimal CWE profiles image for CI (capd-e2e) and local Tilt runs.
+# Minimal controller profiles image for CI (capd-e2e) and local Tilt runs.
 #
 # The Tiltfile builds this with build context test/fixtures/ and the chart's
 # materialize-profiles initContainer copies /profiles into the shared volume

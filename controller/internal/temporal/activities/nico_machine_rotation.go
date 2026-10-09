@@ -44,7 +44,7 @@ func (a *Activities) controlPlaneInstanceTypePreference(ctx context.Context, nod
 }
 
 // seedControlPlaneInstanceType fills the initial instance type for a templateless
-// control-plane NicoMachine when none is resolved yet. On the Nico path CWE does
+// control-plane NicoMachine when none is resolved yet. On the Nico path the controller does
 // not pre-fill/persist a type onto the node, so this seeds the first pinned
 // preference; Nico then owns availability and rotateNicoMachineInstanceType walks
 // the rest in place. No-op for nodes that already carry a type or that carry no

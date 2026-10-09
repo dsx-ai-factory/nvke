@@ -178,14 +178,14 @@ dev-start-local: dev-check dev-postgres-start dev-temporal-start ## Start local-
 	@echo "  • Temporal UI:     http://localhost:8233"
 	@echo ""
 	@echo "📝 Next steps:"
-	@echo "  To start CWE worker:"
+	@echo "  To start the controller worker:"
 	@echo "     make run"
 	@echo ""
 	@echo "  Or use the all-in-one command next time:"
 	@echo "     make run-local"
 	@echo ""
 	@echo "  Once running, access:"
-	@echo "     • CWE UI:     http://localhost:8080"
+	@echo "     • Controller: http://localhost:8080"
 	@echo "     • Swagger:    http://localhost:8080/api/docs"
 	@echo "     • Temporal:   http://localhost:8233"
 	@echo ""
@@ -217,21 +217,21 @@ dev-start-remote: dev-check dev-postgres-start ## Start remote development (conn
 	@echo "  • Remote Temporal UI:  http://localhost:$(TEMPORAL_UI_PORT)"
 	@echo ""
 	@echo "📝 Next steps:"
-	@echo "  To start CWE worker with remote Temporal:"
+	@echo "  To start the controller worker with remote Temporal:"
 	@echo "     TEMPORAL_HOST_PORT=localhost:$(TEMPORAL_FRONTEND_PORT) make run"
 	@echo ""
 	@echo "  Or use the all-in-one command next time:"
 	@echo "     TARGET_CLUSTER=nke-site-forge-az24-dev6 make run-remote"
 	@echo ""
 	@echo "  Once running, access:"
-	@echo "     • CWE UI:           http://localhost:8080"
+	@echo "     • Controller:       http://localhost:8080"
 	@echo "     • Swagger:          http://localhost:8080/api/docs"
 	@echo "     • Remote Temporal:  http://localhost:$(TEMPORAL_UI_PORT)"
 	@echo ""
 	@echo "✅ Connected to remote Temporal via Teleport"
 
 .PHONY: run-local
-run-local: dev-start-local ## Start local services and run CWE (sources .env.local if present)
+run-local: dev-start-local ## Start local services and run the controller (sources .env.local if present)
 	@echo ""
 	@bash -c '\
 		[ -f .env.local ] && echo "📄 Loading .env.local..." && set -a && source .env.local && set +a; \
@@ -239,7 +239,7 @@ run-local: dev-start-local ## Start local services and run CWE (sources .env.loc
 		echo "📦 Installing the release CRDs and the fixture releases (RELEASES_DIR=$${releases_dir})..."; \
 		$(MAKE) releases-install RELEASES_DIR="$${releases_dir}" || exit $$?; \
 		echo ""; \
-		echo "🚀 Starting CWE worker..."; \
+		echo "🚀 Starting the controller worker..."; \
 		export PROFILES_DIR="$${PROFILES_DIR:-$(CURDIR)/test/fixtures/profiles}"; \
 		export RUNBOOKS_DIR="$${RUNBOOKS_DIR:-$(CURDIR)/test/fixtures/runbooks}"; \
 		echo ""; \
@@ -247,9 +247,9 @@ run-local: dev-start-local ## Start local services and run CWE (sources .env.loc
 	'
 
 .PHONY: run-remote
-run-remote: dev-start-remote ## Start remote services and run CWE (sources .env.local if present)
+run-remote: dev-start-remote ## Start remote services and run the controller (sources .env.local if present)
 	@echo ""
-	@echo "🚀 Starting CWE worker with remote Temporal..."
+	@echo "🚀 Starting the controller worker with remote Temporal..."
 	@bash -c '\
 		[ -f .env.local ] && echo "📄 Loading .env.local..." && set -a && source .env.local && set +a; \
 		export TEMPORAL_HOST_PORT=localhost:$(TEMPORAL_FRONTEND_PORT); \
@@ -259,7 +259,7 @@ run-remote: dev-start-remote ## Start remote services and run CWE (sources .env.
 
 .PHONY: dev-start
 dev-start: ## Start development environment (prompts for mode selection)
-	@echo "🛠️  CWE Development Environment Setup"
+	@echo "🛠️  Controller Development Environment Setup"
 	@echo ""
 	@echo "Choose your workflow:"
 	@echo ""
@@ -333,7 +333,7 @@ dev-logs: ## Show logs from all development services
 .PHONY: dev-env-local
 dev-env-local: ## Print environment variables for local mode
 	@echo "# Local Development Mode Environment Variables"
-	@echo "# CWE will use local Temporal by default (localhost:7233)"
+	@echo "# The controller will use local Temporal by default (localhost:7233)"
 
 .PHONY: dev-env-remote
 dev-env-remote: ## Print environment variables for remote mode
@@ -389,7 +389,7 @@ host-up: ## Prepare the Docker host for local clusters (Colima on macOS, vTPM pr
 	esac
 
 .PHONY: colima-up
-colima-up: ## Start Colima with CWE-friendly defaults
+colima-up: ## Start Colima with controller-friendly defaults
 	@./hack/colima-start.sh
 
 .PHONY: colima-down

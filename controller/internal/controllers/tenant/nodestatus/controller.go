@@ -25,7 +25,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
-// Reconciler reconciles tenant Kubernetes Node status into CWE nodes.
+// Reconciler reconciles tenant Kubernetes Node status into controller nodes.
 type Reconciler struct {
 	clusterID uuid.UUID
 	db        *dbwrapper.DB
@@ -83,7 +83,7 @@ func nodeRequestsForDBNode(_ context.Context, node db.Node) ([]reconcile.Request
 func (r *Reconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	nodes, err := r.db.ListNodes(ctx, db.NodeFilters{ClusterID: &r.clusterID, Name: &request.Name})
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("listing CWE node %s for cluster %s: %w", request.Name, r.clusterID, err)
+		return reconcile.Result{}, fmt.Errorf("listing controller node %s for cluster %s: %w", request.Name, r.clusterID, err)
 	}
 	if len(nodes) == 0 {
 		return reconcile.Result{}, nil

@@ -26,7 +26,7 @@ const (
 	agentReadinessResyncInterval = 2 * time.Minute
 )
 
-// AgentReadinessController reconciles node-agent reachability for CWE nodes.
+// AgentReadinessController reconciles node-agent reachability for controller-managed nodes.
 type AgentReadinessController struct {
 	cfg             config.Config
 	db              *dbwrapper.DB

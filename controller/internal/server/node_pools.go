@@ -46,7 +46,7 @@ type nodePoolService struct {
 	db          db.DB
 	teleportCfg config.TeleportConfig
 	providers   providerSupport
-	// useControlPlaneController mirrors the CWE feature flag
+	// useControlPlaneController mirrors the controller feature flag
 	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER. When true,
 	// control-plane node pools are rejected on create/update because the control
 	// plane is provisioned from the cluster-level controlPlaneConfig instead.
@@ -236,7 +236,7 @@ func validateCloudInitFiles(files []api.CloudInitFile) error {
 		}
 		switch file.Path {
 		case constants.CAPISpireAgentConfigPath, constants.CAPISpireTrustBundlePath:
-			return fmt.Errorf("file path %q is managed by CWE and must not be provided", file.Path)
+			return fmt.Errorf("file path %q is managed by the controller and must not be provided", file.Path)
 		}
 		if _, exists := seenPaths[file.Path]; exists {
 			return fmt.Errorf("duplicate file path %q", file.Path)
@@ -627,7 +627,7 @@ func validateUpdatedCAPINodePool(dbNodePool *db.NodePool) error {
 	for _, file := range capiNodePoolProvider.BootstrapFiles {
 		switch file.Path {
 		case constants.CAPISpireAgentConfigPath, constants.CAPISpireTrustBundlePath:
-			return newBadRequestErrorf("file path %q is managed by CWE and must not be provided", file.Path)
+			return newBadRequestErrorf("file path %q is managed by the controller and must not be provided", file.Path)
 		}
 	}
 

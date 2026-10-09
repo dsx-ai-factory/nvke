@@ -15,7 +15,7 @@
 #
 #   go-licenses — like `go list` and golang.org/x/tools/go/packages beneath it —
 #   resolves the dependency graph for a SINGLE platform: the host's GOOS/GOARCH
-#   unless told otherwise. For CWE the *module* set turns out to be identical
+#   unless told otherwise. For the controller the *module* set turns out to be identical
 #   across linux/amd64, linux/arm64 and darwin/arm64 (verified against
 #   `go list -deps`), so the choice does not affect which dependencies are
 #   attributed.
@@ -33,7 +33,7 @@
 #
 #   AICR loops over four platforms instead, because it releases a darwin CLI as
 #   well as linux daemons (see its .goreleaser.yaml), so for that project the
-#   dependency set itself genuinely varies by GOOS. CWE ships one linux
+#   dependency set itself genuinely varies by GOOS. The controller ships one linux
 #   container, so a single pinned target is sufficient.
 #
 # Requires: go, go-licenses (installed by the Makefile's notices target).
@@ -106,7 +106,7 @@ fi
 # matches by string prefix, not path component, so the entry "go" — which
 # `go list std | cut -d/ -f1` produces, from go/ast and go/build — swallows
 # every module whose path merely begins with those two letters. It cost 29 of
-# CWE's 140 dependencies here, with no error and no warning.
+# the controller's 140 dependencies here, with no error and no warning.
 #
 # No stdlib list is needed anyway: go-licenses already excludes the standard
 # library, verified by it emitting zero packages whose first path component
@@ -146,7 +146,7 @@ echo "Generating dependency index..." >&2
 # A replace directive is honoured, and reported as the replacement rather than
 # the original: it is the replacement that is compiled in and whose license text
 # is reproduced, so naming the original would attribute a version the binary
-# does not contain. CWE pins sigs.k8s.io/controller-runtime back to v0.22.5 that
+# does not contain. The controller pins sigs.k8s.io/controller-runtime back to v0.22.5 that
 # way, where .Module.Version still reads v0.23.3. The key stays .Module.Path
 # because package import paths are unaffected by the replacement.
 go list -deps -buildvcs=false \

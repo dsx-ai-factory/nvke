@@ -3,8 +3,8 @@
 
 // Package controller adapts internal/db inventory so it satisfies rollout.Cluster
 // and rollout.Node. It is the sole bridge from the rollout framework into
-// CWE's own cluster/node model, letting the ported engine drive rollouts on
-// CWE-managed clusters.
+// the controller's own cluster/node model, letting the ported engine drive rollouts on
+// controller-managed clusters.
 package controller
 
 import (
@@ -40,7 +40,7 @@ func (a *NodeAdapter) ID() uuid.UUID { return a.node.ID }
 
 func (a *NodeAdapter) Name() string { return a.node.Name }
 
-// Role maps the db.Node.ControlPlane flag to a rollout.NodeRole. CWE has no
+// Role maps the db.Node.ControlPlane flag to a rollout.NodeRole. The controller has no
 // NodePool.Role enum: the ControlPlane bool is the source of truth, and
 // no-nodepool control-plane nodes carry ControlPlane=true as well.
 func (a *NodeAdapter) Role() rollout.NodeRole {

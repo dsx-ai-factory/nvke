@@ -79,7 +79,7 @@ type clusterService struct {
 	teleportCfg     config.TeleportConfig
 	oidcAuthEnabled bool
 	providers       providerSupport
-	// useControlPlaneController mirrors the CWE feature flag
+	// useControlPlaneController mirrors the controller feature flag
 	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER. When true, the
 	// cluster-level controlPlaneConfig is authoritative: it is required on
 	// create, control-plane node pools are rejected, and the config is persisted

@@ -60,7 +60,7 @@ func firstInfraMachineTemplateObject(prefs []json.RawMessage) map[string]interfa
 }
 
 // infraMachineTemplatePrefsFromAPI stores a single API MachineTemplate as the
-// control-plane preference list CWE persists internally.
+// control-plane preference list the controller persists internally.
 func infraMachineTemplatePrefsFromAPI(obj map[string]interface{}) ([]json.RawMessage, error) {
 	raw, err := rawManifestFromObject(obj)
 	if err != nil {

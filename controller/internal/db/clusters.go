@@ -30,10 +30,10 @@ var (
 type ProviderType string
 
 const (
-	// When ProviderType is Nico, the caller gives OS profile / instance-type preference / subnets / etc/ and CWE generates the infra machine template for each node.
+	// When ProviderType is Nico, the caller gives OS profile / instance-type preference / subnets / etc/ and the controller generates the infra machine template for each node.
 	ProviderTypeNico ProviderType = "nico"
 
-	// When ProviderType is CAPI, the user specifies the infra machine template and CWE clones it for each node.
+	// When ProviderType is CAPI, the user specifies the infra machine template and the controller clones it for each node.
 	ProviderTypeCAPI ProviderType = "capi"
 )
 

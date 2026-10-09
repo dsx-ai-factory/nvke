@@ -17,7 +17,7 @@ import (
 
 // MachineMaterialization builds and creates the provider-specific
 // infrastructure machine for a node: a generic CAPI infra machine rendered
-// from a caller-supplied template, or a NicoMachine CWE builds itself. Each
+// from a caller-supplied template, or a NicoMachine the controller builds itself. Each
 // provider type has its own implementation, selected by
 // GetMachineMaterialization.
 type MachineMaterialization interface {
