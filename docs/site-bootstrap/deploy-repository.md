@@ -129,7 +129,7 @@ requires:
 
 ### `argocd` — ArgoCD Applications
 
-ArgoCD items must contain an `application.yaml` file with a valid `argoproj.io/v1alpha1` Application manifest. The application is created via `argocd app create -f &lt;path&gt; --upsert`.
+ArgoCD items must contain an `application.yaml` file with a valid `argoproj.io/v1alpha1` Application manifest. The application is created via `argocd app create -f <path> --upsert`.
 
 | Field | Requirement |
 |-------|-------------|

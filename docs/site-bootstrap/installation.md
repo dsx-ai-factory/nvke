@@ -7,35 +7,12 @@ Releases are published under `cli/v*` tags at https://github.com/dsx-ai-factory/
 ## Download
 
 ```bash
-# linux/amd64
+# Detects linux/darwin and amd64/arm64 (uname reports x86_64, aarch64, or arm64)
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 curl -fsSL -o nvkectl \
-  https://github.com/dsx-ai-factory/nvke/releases/latest/download/nvkectl-linux-amd64
-chmod +x nvkectl
-sudo mv nvkectl /usr/local/bin/
-```
-
-```bash
-# linux/arm64
-curl -fsSL -o nvkectl \
-  https://github.com/dsx-ai-factory/nvke/releases/latest/download/nvkectl-linux-arm64
-chmod +x nvkectl
-sudo mv nvkectl /usr/local/bin/
-```
-
-```bash
-# macOS (Apple Silicon)
-curl -fsSL -o nvkectl \
-  https://github.com/dsx-ai-factory/nvke/releases/latest/download/nvkectl-darwin-arm64
-chmod +x nvkectl
-sudo mv nvkectl /usr/local/bin/
-```
-
-```bash
-# macOS (Intel)
-curl -fsSL -o nvkectl \
-  https://github.com/dsx-ai-factory/nvke/releases/latest/download/nvkectl-darwin-amd64
-chmod +x nvkectl
-sudo mv nvkectl /usr/local/bin/
+  "https://github.com/dsx-ai-factory/nvke/releases/latest/download/nvkectl-${OS}-${ARCH}"
+chmod +x nvkectl && sudo mv nvkectl /usr/local/bin/
 ```
 
 Verify the download with `checksums.txt` from the same release.
