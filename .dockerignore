@@ -5,9 +5,9 @@
 # does not apply to it and this file is what governs that build.
 #
 # Keep this conservative. `COPY . /workspace` feeds a Go workspace build, so
-# every module directory, go.work, go.work.sum and the committed vendor/ tree
-# must reach the builder. LICENSE and NOTICE are copied into the final image.
-# Exclude only what the build cannot use.
+# every module directory, go.work and go.work.sum must reach the builder.
+# LICENSE and NOTICE are copied into the final image. Exclude only what the
+# build cannot use.
 
 # Version control.
 .git
@@ -54,6 +54,18 @@ cobertura.xml
 .env.*
 **/.env
 **/.env.*
+
+# A root vendor/ tree puts the whole Go workspace into -mod=vendor. Nothing is
+# vendored any more: .gitignore sanctions a local /vendor/ for offline work but
+# does not commit it, so a developer-local one must not reach the builder.
+#
+# Root-anchored on purpose. These builds run in workspace mode (go.work reaches
+# the builder), and in workspace mode the toolchain ignores module-level vendor
+# directories outright, so only the workspace root one can change a build. A
+# `**/vendor/` here would buy nothing and would exclude committed, unrelated
+# trees such as controller/nico-sim/ui/vendor/ (JS assets the simulator serves
+# from disk).
+vendor/
 
 # CI definitions and documentation. Neither is read by any image build.
 .github/
