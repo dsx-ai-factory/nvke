@@ -82,7 +82,7 @@ NVSentinel is a break-fix system for node health. It watches nodes for hardware 
 
 1. **NICo** is deployed and the bare-metal site is stood up — BMC access, switches configured, hosts ingested.
 2. **NKE** bootstraps the site controller cluster onto a set of pre-provisioned nodes.
-3. The **NKE SBOM** (CWE, NICo, Temporal, Postgres, SPIRE, CAPNICo) is deployed onto the site controller cluster via GitOps.
+3. The **NKE SBOM** (the NKE controller, NICo, Temporal, Postgres, SPIRE, CAPNICo) is deployed onto the site controller cluster via GitOps.
 4. The site is ingested: NKE is connected to NICo and can now drive tenant cluster operations.
 5. A tenant cluster is created via `nkectl create cluster`.
 6. An **AICR recipe bundle** is deployed to the tenant cluster, installing Nodewright, GPU Operator, and the full validated software stack.

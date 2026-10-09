@@ -2,7 +2,7 @@
 
 nke (NVIDIA Kubernetes Engine) orchestrates the lifecycle of Kubernetes clusters
 on NVIDIA infrastructure. The repository is a Go workspace of twelve modules. Three
-of them run in production: the Cloud Workflow Engine, deployed as a Helm chart,
+of them run in production: the NKE controller, deployed as a Helm chart,
 the node agent, installed on each node as a Debian package and run by systemd,
 and the Cluster API infrastructure provider, deployed into the same cluster as
 the engine. The rest are a CLI, the generated API module, the management engine's
@@ -12,7 +12,7 @@ CRD types, and test and development tooling.
               ┌──────────────────────────────────────────────┐
               │   site controller cluster                    │
               │                                              │
-   client ───▶│  Cloud Workflow Engine (controller/)         │
+   client ───▶│  NKE controller (controller/)                │
   REST/HTTP   │                                              │
               │   REST API ──▶ Postgres ──▶ outbox processor │
               │                  ▲                │          │
@@ -20,8 +20,8 @@ CRD types, and test and development tooling.
               │   (controller-runtime)            ▼          │
               └───────────────────────────────┬──────────────┘
                           │                   │
-                          │ gRPC              │ starts workflows
-                          │ (CWE dials out)   ▼
+                          │ gRPC, dialed by   │ starts workflows
+                          │ the controller    ▼
                           │            ┌─────────────┐
                           │            │  Temporal   │
                           │            └──────┬──────┘
@@ -38,7 +38,7 @@ CRD types, and test and development tooling.
 
 | Module | Binary | What it is |
 |---|---|---|
-| `controller/` | `controller` | The Cloud Workflow Engine: REST API, Temporal workflows, Postgres, reconcilers. Source is `cmd/worker/` |
+| `controller/` | `controller` | The NKE controller: REST API, Temporal workflows, Postgres, reconcilers. Source is `cmd/worker/` |
 | `agent/` | `agent` | The node agent, a gRPC server that runs on every managed node |
 | `cluster-api-provider-provisioned/` | `manager` | Cluster API infrastructure provider for hosts NKE provisions before CAPI bootstraps them |
 | `cli/` | `nkectl` | The command line client |
@@ -54,7 +54,7 @@ CRD types, and test and development tooling.
 `go.work` is the list of record. See [go-workspace.md](go-workspace.md) for how
 the workspace fits together and how public dependencies are resolved.
 
-## controller (Cloud Workflow Engine)
+## controller
 
 | Component | Description |
 |---|---|
@@ -81,7 +81,7 @@ they first read the handlers.
 3. `OutboxProcessor` polls that table, starts the matching Temporal workflow,
    and marks the row processed (`internal/temporal/outbox_processor.go`).
 4. The workflow creates Cluster API resources. The configured infrastructure
-   provider provisions or adopts the nodes, then CWE bootstraps Kubernetes with
+   provider provisions or adopts the nodes, then the controller bootstraps Kubernetes with
    kubeadm.
 5. The engine dials `nke-agent` on each node over gRPC to drive the node side of
    the bootstrap (`internal/agent/client.go`).
@@ -105,7 +105,7 @@ incomplete picture of what reacts to a change.
 ## nke-agent
 
 The agent runs as a systemd service on each managed node. It is a **gRPC
-server**: it listens, and the Cloud Workflow Engine dials it
+server**: it listens, and the controller dials it
 (`agent/cmd/agent/main.go`, `controller/internal/agent/client.go`). It does not
 call home, and the engine has no node-registration endpoint for it to call.
 
@@ -121,7 +121,7 @@ that is where the agent runs.
 
 ## Deployment
 
-The Cloud Workflow Engine is deployed as a Helm chart
+The controller is deployed as a Helm chart
 (`controller/deploy/charts/controller`) onto a *site controller*
 cluster, a dedicated Kubernetes cluster that manages the NKE tenant fleet for a
 site.
@@ -141,7 +141,7 @@ provisioned so that Cluster API can bootstrap them.
 - `docs/go-workspace.md` — the workspace and dependency-management workflow
 - `controller/docs/authenticating-to-the-api.md` — API authentication
 - `controller/docs/byo-os.md` — bring your own OS image
-- `controller/AGENTS.md` — AI agent development guide for CWE
+- `controller/AGENTS.md` — AI agent development guide for the controller
 - `agent/docs/DESIGN.md` — node agent architecture and API surface
 - `agent/docs/SECURITY.md` — node agent security context
 - `agent/AGENTS.md` — AI agent development guide for the node agent

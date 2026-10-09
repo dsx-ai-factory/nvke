@@ -266,7 +266,7 @@ all 4 checks passed
 ## From nkectl
 
 `nkectl` is a caller of this API. After `nkectl config set-site --kubeconfig`,
-every CWE command mints the same identity this page uses (`nke-clients/nke-client`)
+every controller API command mints the same identity this page uses (`nke-clients/nke-client`)
 with the audience from ConfigMap `nke-auth-config`, read from namespace
 `nke-controller`, or from `cloud-workflow-engine` when that is absent. There
 is no `NKECTL_DEV_TOKEN` and no `hack/nke-token.sh` step.

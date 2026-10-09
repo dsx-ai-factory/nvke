@@ -51,7 +51,7 @@ flowchart TB
     S1["1 — Infrastructure<br/>a bare machine, booted and reachable"]
     S2K["2a — Kubernetes<br/>nkectl bootstrap site"]
     S2N["2b — the NKE stack<br/>deployed from the staged assets"]
-    S3["3 — Tenant cluster<br/>created through CWE, not through Forge"]
+    S3["3 — Tenant cluster<br/>created through the controller, not through Forge"]
     S4["4 — Node pools<br/>the machines that cluster runs on"]
 
     S1 --> S2K --> S2N --> S3 --> S4
@@ -69,7 +69,7 @@ hardware without spending the rest of the run on the product.
 |---|---|---|
 | [Infrastructure](#1-forge-infrastructure) | `internal/infra/forge` | One bare machine, booted and reachable |
 | [Site controller](#2-the-site-controller) | `internal/site` | Kubernetes plus the NKE stack on that machine |
-| [Tenant cluster](#3-tenant-clusters) | `tenant_test.go`, CWE | A tenant cluster created through the product API |
+| [Tenant cluster](#3-tenant-clusters) | `tenant_test.go`, the controller | A tenant cluster created through the product API |
 | [Node pools](#4-node-pools) | `forgeNodePoolSpecs` | The machines that tenant cluster runs on |
 
 ## 1. Forge infrastructure
@@ -196,7 +196,7 @@ brings SPIRE and TPM attestation up in the management-plane install rather than
 at bootstrap.
 
 **Verification is not "nkectl exited 0".** The admin kubeconfig is forwarded
-off the node to the runner, CWE is polled on `/healthz` and then `/api/version`,
+off the node to the runner, the controller is polled on `/healthz` and then `/api/version`,
 and the reported version is compared against the candidate's expected version.
 
 **Evidence.** On failure `CollectDiagnostics` tars nkectl's diagnostics
@@ -219,15 +219,15 @@ place is not covered.
 ## 3. Tenant clusters
 
 The architectural point worth stating plainly: **tenant clusters are created
-through CWE on the site controller, not through the Forge API.** The suite
+through the controller's API on the site node, not through the Forge API.** The suite
 posts an `nke.ClusterSpec` with `Backend: BackendNicoForge` naming the org,
 site and VPC; CAPNico inside the cluster is what calls Forge. That keeps the
 lane on the product's own front door rather than a test-only path.
 
 ```mermaid
 flowchart LR
-    SUITE["the suite<br/>posts an nke.ClusterSpec with<br/>Backend: BackendNicoForge"] --> CWE["CWE<br/>on the site controller"]
-    CWE --> CAPN["CAPNico<br/>inside that cluster"]
+    SUITE["the suite<br/>posts an nke.ClusterSpec with<br/>Backend: BackendNicoForge"] --> CTRL["the controller<br/>on the site node"]
+    CTRL --> CAPN["CAPNico<br/>inside that cluster"]
     CAPN --> FORGE["the Forge API"]
     SUITE --x FORGE
 ```
@@ -249,7 +249,7 @@ provisioning workflow when it is not, so installing it afterwards does not
 recover the run.
 
 **No control-plane VIP, and what follows from it.** The spec leaves
-`ControlPlaneVIP` empty, which CWE reads as "do not configure kube-vip". The
+`ControlPlaneVIP` empty, which the controller reads as "do not configure kube-vip". The
 simulator backends advertise a VIP through a BGP speaker the runner hosts, and
 a real site has no equivalent to borrow. So a tenant's API server lives on its
 control-plane node's own address — reachable from the site node, and not from a
@@ -282,7 +282,7 @@ The blocked arrow from the runner is why the relay exists at all, and the
 dotted edge is the relay: a local address on the runner whose traffic comes out
 of the site node.
 
-**Teardown.** Before the site node is released, `SweepTenants` asks CWE to
+**Teardown.** Before the site node is released, `SweepTenants` asks the controller to
 delete every tenant cluster it knows about and waits for each to go, so a
 tenant's Forge instances are not left allocated by the site node going away
 first. The sweep is an attempt, not a guarantee: it runs inside a 20-minute
@@ -318,7 +318,7 @@ nico-vms, but none are enabled for `nico-forge`.
 
 **Site controller upgrade and scale.** There are no specs for either. The site
 is a single node, and the upgrade specs act on a tenant cluster's control-plane
-version through CWE.
+version through the controller.
 
 **GPUs.** A run names the accelerator its workers need with `-e2e.capabilities
 gpu=<model>`, and the lane has qualified a GB200 tenant at ytl on both amd64
