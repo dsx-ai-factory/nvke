@@ -77,7 +77,7 @@ Never hand-edit `*.gen.go` files — they will be overwritten.
 ### Run locally
 
 ```bash
-kind create cluster                       # the controller watches a cluster
+kind create cluster                       # the NKE controller watches a cluster
 make -C controller run-local              # Postgres, Temporal, then the controller
 ```
 

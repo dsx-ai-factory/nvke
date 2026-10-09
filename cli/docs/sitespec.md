@@ -276,7 +276,7 @@ The differences from tier-0 are deliberate and make the file open-sourceable:
   `registry.sweImageTag` become the registry-agnostic `registry.apiKey`,
   `registry.bootstrapRepo`, and `registry.bootstrapChart`. The image/chart tag
   is baked into the `nkectl` build rather than set in the file.
-- **No deploy-time fields.** `argocd`, `repos`, `skipDeploy`, Forge/baremetal,
+- **No deploy-time fields.** `argocd`, `repos`, `skipDeploy`, NICo/baremetal,
   and node-injection blocks are out of scope for the M0 bootstrap and are not
   part of this schema.
 

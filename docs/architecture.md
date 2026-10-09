@@ -25,10 +25,10 @@ CRD types, and test and development tooling.
                           │            ┌─────────────┐
                           │            │  Temporal   │
                           │            └──────┬──────┘
-                          │                   │ Forge API
+                          │                   │ NICo API
                           ▼                   ▼
               ┌──────────────────────┐  ┌─────────────┐
-              │  nke-agent (agent/)  │  │    Forge    │
+              │  nke-agent (agent/)  │  │    NICo     │
               │  gRPC server on each │  │ (bare-metal │
               │  node, systemd unit  │  │  lifecycle) │
               └──────────────────────┘  └─────────────┘
@@ -44,7 +44,7 @@ CRD types, and test and development tooling.
 | `cli/` | `nkectl` | The command line client |
 | `controller/api/` | none | The OpenAPI spec and the generated server and client types |
 | `controller/deploy/charts/` | none | The controller and postgresql Helm charts, embedded so `nkectl` installs the charts of its own commit |
-| `controller/nico-sim/` | `nico-sim`, `nico-simctl` | Forge-compatible VM and Docker-container simulator used by tests and development |
+| `controller/nico-sim/` | `nico-sim`, `nico-simctl` | NICo-compatible VM and Docker-container simulator used by tests and development |
 | `controller/test/e2e/` | none | The end to end suite |
 | `controller/hack/capd-reboot-controller/` | `capd-reboot-controller` | Test helper for CAPD reboot behaviour |
 | `management-engine/` | none | The management engine, including NKECluster and NodePool |
