@@ -17,7 +17,7 @@
 # Installing it first also means the rest of the install is observed.
 chart:
   name: nktp
-  version: "0.1.0-rc.2"
+  version: "0.1.0"
   path: ../../nktp/deploy/charts/nktp
 release:
   name: nktp
