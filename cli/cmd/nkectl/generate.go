@@ -153,7 +153,7 @@ to a file instead.`,
     --output-file ./oidc.kubeconfig
 
   nkectl config set-site --name my-tier0-site \
-    --url https://cwe.my-tier0-site.example.com \
+    --url https://controller.my-tier0-site.example.com \
     --kubeconfig ./oidc.kubeconfig`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,

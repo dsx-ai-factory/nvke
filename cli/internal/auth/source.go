@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package auth mints CWE bearer tokens from the management-cluster kubeconfig.
+// Package auth mints controller API bearer tokens from the management-cluster kubeconfig.
 package auth
 
 import (
@@ -39,9 +39,9 @@ const (
 	tokenRenewBefore    = time.Minute
 )
 
-// TokenSource supplies bearer tokens for nkectl's CWE calls. Mint returns the
+// TokenSource supplies bearer tokens for nkectl's controller API calls. Mint returns the
 // oidc-login plugin's bearer token, a TokenRequest for nke-clients/nke-client,
-// or no credential when the management cluster has no CWE auth ConfigMap in
+// or no credential when the management cluster has no controller auth ConfigMap in
 // either controller namespace.
 type TokenSource struct {
 	client     kubernetes.Interface
@@ -105,7 +105,7 @@ func usesOIDCLogin(exec *clientcmdapi.ExecConfig) bool {
 	return len(exec.Args) > 0 && exec.Args[0] == "oidc-login"
 }
 
-// Mint returns a bearer token for the next CWE request.
+// Mint returns a bearer token for the next controller API request.
 func (s *TokenSource) Mint(ctx context.Context) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -213,7 +213,7 @@ func (s *TokenSource) audience(ctx context.Context) (string, bool, error) {
 			continue
 		}
 		if err != nil {
-			return "", false, fmt.Errorf("reading CWE authentication ConfigMap %s/%s: %w",
+			return "", false, fmt.Errorf("reading controller authentication ConfigMap %s/%s: %w",
 				candidate, authConfigMap, err)
 		}
 		configMap, namespace = found, candidate
@@ -225,7 +225,7 @@ func (s *TokenSource) audience(ctx context.Context) (string, bool, error) {
 
 	raw, ok := configMap.Data[authConfigKey]
 	if !ok {
-		return "", false, fmt.Errorf("CWE authentication ConfigMap %s/%s has no %q key",
+		return "", false, fmt.Errorf("controller authentication ConfigMap %s/%s has no %q key",
 			namespace, authConfigMap, authConfigKey)
 	}
 
@@ -233,11 +233,11 @@ func (s *TokenSource) audience(ctx context.Context) (string, bool, error) {
 		Audiences []string `yaml:"audiences"`
 	}
 	if err := yaml.Unmarshal([]byte(raw), &config); err != nil {
-		return "", false, fmt.Errorf("parsing %q from CWE authentication ConfigMap %s/%s: %w",
+		return "", false, fmt.Errorf("parsing %q from controller authentication ConfigMap %s/%s: %w",
 			authConfigKey, namespace, authConfigMap, err)
 	}
 	if len(config.Audiences) == 0 || config.Audiences[0] == "" {
-		return "", false, fmt.Errorf("CWE authentication ConfigMap %s/%s sets no audiences",
+		return "", false, fmt.Errorf("controller authentication ConfigMap %s/%s sets no audiences",
 			namespace, authConfigMap)
 	}
 	return config.Audiences[0], true, nil

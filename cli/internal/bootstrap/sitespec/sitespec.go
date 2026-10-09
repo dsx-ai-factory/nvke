@@ -554,7 +554,7 @@ func (v *validator) checkControlPlaneVIP(c Cluster) {
 		v.addf("%s %q is not a valid IP address", pathControlPlaneVIP, c.ControlPlaneVIP)
 		return
 	}
-	// Match CWE's rejection of IPv4-mapped IPv6 addresses.
+	// Match the controller's rejection of IPv4-mapped IPv6 addresses.
 	if !vip.Is4() {
 		v.addf("%s %q must be an IPv4 address", pathControlPlaneVIP, c.ControlPlaneVIP)
 		return

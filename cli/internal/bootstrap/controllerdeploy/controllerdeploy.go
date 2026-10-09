@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package controllerdeploy stands up Postgres, Temporal, SPIRE, and the CWE worker onto a
+// Package controllerdeploy stands up Postgres, Temporal, SPIRE, and the controller worker onto a
 // Kubernetes cluster (the ephemeral bootstrap Kind cluster
-// cli/internal/bootstrap/engine creates), then waits for CWE to report
+// cli/internal/bootstrap/engine creates), then waits for the controller to report
 // healthy on /readyz.
 //
 // It installs the controller and Postgres charts embedded in nkectl
@@ -54,10 +54,10 @@ const (
 	// controller-nodeport.yaml carry it too and must change with it.
 	cweNamespace = "nke-controller"
 
-	// tenantSecretsNamespace is where CWE publishes each cluster's kubeconfig
+	// tenantSecretsNamespace is where the controller publishes each cluster's kubeconfig
 	// and where it puts the cluster's CAPI objects. It matches
 	// controller/internal/constants.NamespaceNKESystem, which the chart creates
-	// and scopes CWE's Secret grant to, so it is a constant on both sides.
+	// and scopes the controller's Secret grant to, so it is a constant on both sides.
 	tenantSecretsNamespace = "nke-system"
 
 	postgresReleaseName  = "postgres"
@@ -68,9 +68,9 @@ const (
 
 	// spireServerPort is the port the SPIRE server is reached on inside the
 	// cluster: the port its Service listens on, the port its own agents dial,
-	// and the port CWE is told to dial.
+	// and the port the controller is told to dial.
 	//
-	// 8081 rather than the chart's own default of 443, so that CWE's
+	// 8081 rather than the chart's own default of 443, so that the controller's
 	// SPIRE_SERVER_API_ADDRESS -- the address it uses for join-token
 	// operations, which it reads separately from the address above -- is
 	// correct without being configured at all: it defaults to
@@ -90,16 +90,16 @@ const (
 	spireServerPort = "8081"
 
 	// spireControllerManagerClass is the class the SPIRE controller manager
-	// claims objects under, and the class CWE stamps on the ClusterStaticEntry
+	// claims objects under, and the class the NKE controller stamps on the ClusterStaticEntry
 	// objects it writes. The two have to be the same string: the controller
 	// manager ignores an entry whose class is not its own, so a mismatch means
-	// CWE writes entries nobody acts on and a node never gets its identity.
+	// the NKE controller writes entries nobody acts on and a node never gets its identity.
 	//
 	// Neither side's default gets there on its own. The chart derives
 	// <namespace>-<release> when className is empty, which here would be
-	// "spire-server-spire", while CWE defaults to "spire-mgmt-spire". So both
+	// "spire-server-spire", while the NKE controller defaults to "spire-mgmt-spire". So both
 	// are set explicitly, from this one constant, rather than left to agree by
-	// coincidence. The value is CWE's default, which keeps it the same string
+	// coincidence. The value is the NKE controller's default, which keeps it the same string
 	// a site controller already uses.
 	spireControllerManagerClass = "spire-mgmt-spire"
 
@@ -118,7 +118,7 @@ const (
 	spireTPMDirectAMD64Checksum = "46d0caad8c25a027dd11c93e18b58a8bc6fbd9f1fe2e36fa2a0dd440986de4dc"
 	spireTPMDirectARM64Checksum = "b69d0153c8241383f24da138bc85429a620d9f962a2f10abb314aa0e39046d16"
 
-	// DefaultCWEPort is the port the CWE API uses at every layer: the Helm
+	// DefaultCWEPort is the port the controller API uses at every layer: the Helm
 	// Service, the external NodePort Service, and both sides of Kind's host port
 	// mapping.
 	//
@@ -137,12 +137,12 @@ const (
 
 	// readyzPath is polled through the API server's service proxy rather
 	// than a port-forward, so no local port has to be reserved or cleaned
-	// up. controller/internal/server/health.go serves it from the CWE pod
+	// up. controller/internal/server/health.go serves it from the controller pod
 	// itself: DB Ping + Temporal CheckHealth both have to succeed.
 	readyzPath = "/readyz"
 	cweSvcPort = "http"
 
-	// profilesPath is where CWE reads OS and config profiles from
+	// profilesPath is where the controller reads OS and config profiles from
 	// (PROFILES_DIR). Set explicitly rather than left to the chart's empty
 	// default, so PROFILES_DIR names the empty /profiles the controller image
 	// ships rather than resolving somewhere else. nkectl deploys no profiles
@@ -161,7 +161,7 @@ var tenantKubeconfigPollInterval = 2 * time.Second
 
 const defaultTenantKubeconfigTimeout = 2 * time.Minute
 
-// Config describes a CWE deployment.
+// Config describes a controller deployment.
 type Config struct {
 	// CWEImage is the image reference to deploy. Defaults to nke-controller:latest,
 	// the local build's tag, from the bootstrap manifest. NKECTL_CONTROLLER_IMAGE
@@ -174,7 +174,7 @@ type Config struct {
 	// Empty defaults to "nkectl-bootstrap", matching bootstrapengine's default.
 	SPIFFEClusterName string
 
-	// SPIFFETrustDomain is the trust domain used for CWE's workload identity.
+	// SPIFFETrustDomain is the trust domain used for the controller's workload identity.
 	// Empty defaults to <SPIFFEClusterName>.nke.local.
 	SPIFFETrustDomain string
 
@@ -201,7 +201,7 @@ type Config struct {
 	TPMEKFingerprints []string
 
 	// DisableMTLS stands the site up without SPIFFE: no SPIRE is installed, and
-	// CWE dials each node agent in plaintext. The agent has to be running with
+	// the controller dials each node agent in plaintext. The agent has to be running with
 	// --disable-mtls for that to connect.
 	//
 	// For bring-up debugging. Everything else about a site is all-or-nothing on
@@ -218,17 +218,17 @@ type Config struct {
 	// pulled, because the bootstrap cluster has no pull secret.
 	ProvisionedProviderImage string
 
-	// NodeAgentPort is the port CWE dials nke-agent on. Empty leaves CWE's own
+	// NodeAgentPort is the port the controller dials nke-agent on. Empty leaves the controller's own
 	// default (15005) alone. It comes from the site spec, because it describes
 	// how the site's hosts were configured long before this cluster existed.
 	NodeAgentPort string
 
-	// CWEPort is the port the CWE API uses for its Helm Service, Kubernetes
+	// CWEPort is the port the controller API uses for its Helm Service, Kubernetes
 	// NodePort, Kind host mapping, and host client. Zero uses DefaultCWEPort.
 	CWEPort int32
 
 	// PostgresPassword is the Postgres superuser password shared by the
-	// Postgres, Temporal, and CWE releases. Generated if empty.
+	// Postgres, Temporal, and controller releases. Generated if empty.
 	PostgresPassword string
 
 	// HelmTimeout bounds each `helm upgrade --install --wait` call.
@@ -342,7 +342,7 @@ func (ExecCommandRunner) Run(ctx context.Context, name string, args ...string) (
 	return string(out), err
 }
 
-// Engine deploys CWE and waits for it to report healthy.
+// Engine deploys the controller and waits for it to report healthy.
 type Engine struct {
 	Runner CommandRunner
 	log    *slog.Logger
@@ -357,26 +357,26 @@ func New(runner CommandRunner, log *slog.Logger) *Engine {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Engine{Runner: runner, log: log.With("component", "cwedeploy")}
+	return &Engine{Runner: runner, log: log.With("component", "controllerdeploy")}
 }
 
-// Deploy installs Postgres, Temporal, SPIRE, Cluster API, and CWE (in that
+// Deploy installs Postgres, Temporal, SPIRE, Cluster API, and the controller (in that
 // order -- each depends on the one before it) onto the cluster kubeconfigPath
 // points at, waiting for each Helm release to report ready before moving to
-// the next. It does not wait for CWE's own /readyz; call WaitReady for that
+// the next. It does not wait for the controller's own /readyz; call WaitReady for that
 // once Deploy returns, so callers can log "helm release installed" and
-// "CWE reports healthy" as distinct, separately-timed steps.
+// "controller reports healthy" as distinct, separately-timed steps.
 func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) error {
 	if kubeconfigPath == "" {
-		return errors.New("cwedeploy: kubeconfigPath is required")
+		return errors.New("controllerdeploy: kubeconfigPath is required")
 	}
 	if cfg.CWEImage == "" {
-		return errors.New("cwedeploy: Config.CWEImage is required " +
+		return errors.New("controllerdeploy: Config.CWEImage is required " +
 			"(e.g. nvcr.io/<org>/nke-controller:edge -- see .github/workflows/image-nvcr.yml)")
 	}
 	if cfg.ProvisionedProviderImage == "" {
-		return errors.New("cwedeploy: Config.ProvisionedProviderImage is required; the CAPI " +
-			"objects CWE writes for a site cluster have no controller without it " +
+		return errors.New("controllerdeploy: Config.ProvisionedProviderImage is required; the CAPI " +
+			"objects the NKE controller writes for a site cluster go unreconciled without it " +
 			"(see Config.ProvisionedProviderImage)")
 	}
 
@@ -385,19 +385,19 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	// written out for the length of the deploy.
 	chartPath, err := os.MkdirTemp("", "nkectl-controller-chart-*")
 	if err != nil {
-		return fmt.Errorf("cwedeploy: creating a directory for the controller chart: %w", err)
+		return fmt.Errorf("controllerdeploy: creating a directory for the controller chart: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(chartPath) }()
 	if err := charts.Extract(charts.NKEController, chartPath); err != nil {
-		return fmt.Errorf("cwedeploy: writing out the controller chart: %w", err)
+		return fmt.Errorf("controllerdeploy: writing out the controller chart: %w", err)
 	}
 	postgresChartPath, err := os.MkdirTemp("", "nkectl-postgres-chart-*")
 	if err != nil {
-		return fmt.Errorf("cwedeploy: creating a directory for the postgres chart: %w", err)
+		return fmt.Errorf("controllerdeploy: creating a directory for the postgres chart: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(postgresChartPath) }()
 	if err := charts.Extract(charts.Postgresql, postgresChartPath); err != nil {
-		return fmt.Errorf("cwedeploy: writing out the postgres chart: %w", err)
+		return fmt.Errorf("controllerdeploy: writing out the postgres chart: %w", err)
 	}
 
 	password := cfg.PostgresPassword
@@ -405,7 +405,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		var err error
 		password, err = randomPassword()
 		if err != nil {
-			return fmt.Errorf("cwedeploy: generating postgres password: %w", err)
+			return fmt.Errorf("controllerdeploy: generating postgres password: %w", err)
 		}
 	}
 
@@ -441,7 +441,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "auth.password="+password,
 		"--wait", "--timeout", helmTimeout.String(),
 	); err != nil {
-		return fmt.Errorf("cwedeploy: installing postgres: %w", err)
+		return fmt.Errorf("controllerdeploy: installing postgres: %w", err)
 	}
 
 	temporalValues, cleanup, err := writeEmbeddedFile(temporalValuesFile)
@@ -481,13 +481,13 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--wait", "--timeout", helmTimeout.String(),
 	)
 	if _, err := e.helm(ctx, kubeconfigPath, temporalArgs...); err != nil {
-		return fmt.Errorf("cwedeploy: installing temporal: %w", err)
+		return fmt.Errorf("controllerdeploy: installing temporal: %w", err)
 	}
 
 	// --disable-mtls stands the site up without SPIFFE, so nothing needs SPIRE
-	// and CWE dials each agent in plaintext. Bring-up debugging only.
+	// and the controller dials each agent in plaintext. Bring-up debugging only.
 	if cfg.DisableMTLS {
-		e.log.Warn("SPIFFE is disabled: skipping SPIRE, and CWE will dial node agents in plaintext")
+		e.log.Warn("SPIFFE is disabled: skipping SPIRE, and the controller will dial node agents in plaintext")
 	} else {
 		spireCRDsChartArgs := chartArgs(cfg.SPIRECRDsChartRef, spireCRDsChart.Name, spireCRDsChart.Repo)
 		e.log.Info("installing SPIRE CRDs", "namespace", spireNamespace, "version", spireCRDsChart.Version, "chart", spireCRDsChartArgs[0])
@@ -498,7 +498,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 			"--wait", "--timeout", helmTimeout.String(),
 		)
 		if _, err := e.helm(ctx, kubeconfigPath, spireCRDsArgs...); err != nil {
-			return fmt.Errorf("cwedeploy: installing SPIRE CRDs: %w", err)
+			return fmt.Errorf("controllerdeploy: installing SPIRE CRDs: %w", err)
 		}
 
 		spireValues, cleanup, err := writeEmbeddedFile(spireValuesFile)
@@ -507,7 +507,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		}
 		defer cleanup()
 
-		// CWE uses SPIFFE workload identity even when the site spec contains no
+		// The controller uses SPIFFE workload identity even when the site spec contains no
 		// external TPM nodes, so the SPIRE deployment is always required.
 		e.log.Info("installing SPIRE", "namespace", spireNamespace, "version", spireChart.Version,
 			"clusterName", spireClusterName, "trustDomain", spireTrustDomain,
@@ -515,10 +515,10 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		if _, err := e.helm(ctx, kubeconfigPath,
 			spireInstallArgs(cfg, spireChart, spireValues, spireClusterName, spireTrustDomain, helmTimeout)...,
 		); err != nil {
-			return fmt.Errorf("cwedeploy: installing SPIRE: %w", err)
+			return fmt.Errorf("controllerdeploy: installing SPIRE: %w", err)
 		}
 
-		// Only external TPM nodes need the NodePort. CWE and the in-cluster agents
+		// Only external TPM nodes need the NodePort. The controller and the in-cluster agents
 		// use SPIRE's ClusterIP service.
 		if len(cfg.TPMEKFingerprints) > 0 {
 			if err := e.publishSpireExternally(ctx, kubeconfigPath); err != nil {
@@ -527,7 +527,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		}
 	}
 
-	// Before CWE, not after: CWE starts writing CAPI objects as soon as a
+	// Before the controller, not after: the controller starts writing CAPI objects as soon as a
 	// cluster is created, and an object written before its controller exists
 	// simply sits there.
 	if err := e.installCAPI(ctx, kubeconfigPath, cfg, helmTimeout); err != nil {
@@ -543,7 +543,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	// tag and digest are always set, empty when unused: the chart reads an
 	// empty tag as "use appVersion" and an empty digest as "pull by tag".
 	imageRepo, imageTag, imageDigest := splitImageRef(cfg.CWEImage)
-	e.log.Info("installing cwe", "namespace", cweNamespace, "image", cfg.CWEImage,
+	e.log.Info("installing the controller", "namespace", cweNamespace, "image", cfg.CWEImage,
 		"chart", chartPath)
 	cweArgs := []string{
 		"upgrade", "--install", cweReleaseName, chartPath,
@@ -567,7 +567,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	cweArgs = append(cweArgs, cweEnvArgs(cfg)...)
 	cweArgs = append(cweArgs, "--wait", "--timeout", helmTimeout.String())
 	if _, err := e.helm(ctx, kubeconfigPath, cweArgs...); err != nil {
-		return fmt.Errorf("cwedeploy: installing cwe: %w", err)
+		return fmt.Errorf("controllerdeploy: installing the controller: %w", err)
 	}
 
 	// The API has to be reachable from the host that ran this command: it is
@@ -575,13 +575,13 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	return e.publishCWEExternally(ctx, kubeconfigPath, cwePort)
 }
 
-// cweEnvArgs renders the settings CWE reads from its own environment as helm
+// cweEnvArgs renders the settings the controller reads from its own environment as helm
 // arguments over the chart's generic `env` list. A setting left at its zero
-// value is omitted, leaving CWE's own default in place.
+// value is omitted, leaving the controller's own default in place.
 func cweEnvArgs(cfg Config) []string {
 	vars := [][2]string{
 		// Unconditional: sitecluster.ClusterRequest builds only the cluster-level
-		// control plane, which CWE rejects without this.
+		// control plane, which the controller rejects without this.
 		{"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER", "true"},
 	}
 	if cfg.NodeAgentPort != "" {
@@ -599,7 +599,7 @@ func cweEnvArgs(cfg Config) []string {
 	return args
 }
 
-// publishCWEExternally applies the NodePort Service the CLI reaches the CWE API
+// publishCWEExternally applies the NodePort Service the CLI reaches the controller API
 // through. Same second-Service shape as publishSpireExternally, and applied for
 // the same reason: the chart owns its own Service and this does not touch it.
 func (e *Engine) publishCWEExternally(
@@ -615,10 +615,10 @@ func (e *Engine) publishCWEExternally(
 	}
 	defer cleanup()
 
-	e.log.Info("publishing the cwe api for the host", "namespace", cweNamespace, "port", port)
+	e.log.Info("publishing the controller api for the host", "namespace", cweNamespace, "port", port)
 	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"-n", cweNamespace, "apply", "-f", manifest); err != nil {
-		return fmt.Errorf("cwedeploy: publishing the cwe api with %s: %w\n%s", cweNodePortFile, err, out)
+		return fmt.Errorf("controllerdeploy: publishing the controller api with %s: %w\n%s", cweNodePortFile, err, out)
 	}
 	return nil
 }
@@ -630,7 +630,7 @@ type readyzResponse struct {
 	Checks map[string]string `json:"checks,omitempty"`
 }
 
-// WaitReady polls CWE's /readyz endpoint through the Kubernetes API server's
+// WaitReady polls the controller's /readyz endpoint through the Kubernetes API server's
 // service proxy (no port-forward needed) until it reports healthy or timeout
 // elapses. Returns an error naming the last observed state on timeout, so a
 // failure is diagnosable from CI output alone.
@@ -652,7 +652,7 @@ func (e *Engine) WaitReady(ctx context.Context, kubeconfigPath string, timeout t
 		if err == nil {
 			var resp readyzResponse
 			if jsonErr := json.Unmarshal([]byte(out), &resp); jsonErr == nil && resp.Status == "ok" {
-				e.log.Info("cwe reports healthy", "checks", resp.Checks)
+				e.log.Info("controller reports healthy", "checks", resp.Checks)
 				return nil
 			}
 		}
@@ -663,7 +663,7 @@ func (e *Engine) WaitReady(ctx context.Context, kubeconfigPath string, timeout t
 			if lastErr != nil {
 				lastErrStr = lastErr.Error()
 			}
-			return fmt.Errorf("cwedeploy: cwe did not report healthy on %s within %s: last error=%s last response=%q",
+			return fmt.Errorf("controllerdeploy: the controller did not report healthy on %s within %s: last error=%s last response=%q",
 				readyzPath, timeout, lastErrStr, strings.TrimSpace(lastOut))
 		case <-time.After(waitReadyPollInterval):
 		}
@@ -686,7 +686,7 @@ func (e *Engine) helm(ctx context.Context, kubeconfigPath string, args ...string
 func writeEmbeddedFile(name string) (path string, cleanup func(), err error) {
 	body, err := manifestsFS.ReadFile(name)
 	if err != nil {
-		return "", func() {}, fmt.Errorf("cwedeploy: reading embedded %s: %w", name, err)
+		return "", func() {}, fmt.Errorf("controllerdeploy: reading embedded %s: %w", name, err)
 	}
 	return writeTempFile("nkectl-cwedeploy-*.yaml", body)
 }
@@ -695,15 +695,15 @@ func writeEmbeddedFile(name string) (path string, cleanup func(), err error) {
 func writeEmbeddedTemplate(name string, data any) (path string, cleanup func(), err error) {
 	body, err := manifestsFS.ReadFile(name)
 	if err != nil {
-		return "", func() {}, fmt.Errorf("cwedeploy: reading embedded %s: %w", name, err)
+		return "", func() {}, fmt.Errorf("controllerdeploy: reading embedded %s: %w", name, err)
 	}
 	tmpl, err := template.New(name).Parse(string(body))
 	if err != nil {
-		return "", func() {}, fmt.Errorf("cwedeploy: parsing embedded %s: %w", name, err)
+		return "", func() {}, fmt.Errorf("controllerdeploy: parsing embedded %s: %w", name, err)
 	}
 	var rendered bytes.Buffer
 	if err := tmpl.Execute(&rendered, data); err != nil {
-		return "", func() {}, fmt.Errorf("cwedeploy: rendering embedded %s: %w", name, err)
+		return "", func() {}, fmt.Errorf("controllerdeploy: rendering embedded %s: %w", name, err)
 	}
 	return writeTempFile("nkectl-cwedeploy-*.yaml", rendered.Bytes())
 }
@@ -715,18 +715,18 @@ func writeEmbeddedTemplate(name string, data any) (path string, cleanup func(), 
 func writeTempFile(pattern string, body []byte) (path string, cleanup func(), err error) {
 	f, err := os.CreateTemp("", pattern)
 	if err != nil {
-		return "", func() {}, fmt.Errorf("cwedeploy: creating %s: %w", pattern, err)
+		return "", func() {}, fmt.Errorf("controllerdeploy: creating %s: %w", pattern, err)
 	}
 	tmpName := f.Name()
 	cleanup = func() { _ = os.Remove(tmpName) }
 	if _, err := f.Write(body); err != nil {
 		_ = f.Close()
 		cleanup()
-		return "", func() {}, fmt.Errorf("cwedeploy: writing %s: %w", tmpName, err)
+		return "", func() {}, fmt.Errorf("controllerdeploy: writing %s: %w", tmpName, err)
 	}
 	if err := f.Close(); err != nil {
 		cleanup()
-		return "", func() {}, fmt.Errorf("cwedeploy: closing %s: %w", tmpName, err)
+		return "", func() {}, fmt.Errorf("controllerdeploy: closing %s: %w", tmpName, err)
 	}
 	return tmpName, cleanup, nil
 }
@@ -792,7 +792,7 @@ func effectiveCWEPort(cfg Config) int32 {
 	return cfg.CWEPort
 }
 
-// spireServiceHost is the in-cluster address CWE dials the SPIRE server on.
+// spireServiceHost is the in-cluster address the controller dials the SPIRE server on.
 // The Service is named after the release.
 func spireServiceHost() string {
 	return spireReleaseName + "-server." + spireNamespace + ".svc.cluster.local"
@@ -823,7 +823,7 @@ func defaultImage(component, image string) string {
 func manifestChart(component string) (manifest.Chart, error) {
 	comp, ok := manifest.Load().Components[component]
 	if !ok || comp.Chart == nil {
-		return manifest.Chart{}, fmt.Errorf("cwedeploy: the embedded bootstrap manifest pins no chart for %q", component)
+		return manifest.Chart{}, fmt.Errorf("controllerdeploy: the embedded bootstrap manifest pins no chart for %q", component)
 	}
 	return *comp.Chart, nil
 }
@@ -845,7 +845,7 @@ func chartArgs(override, name, repo string) []string {
 //
 // Everything static about the deployment is in spire-values.yaml. Only what
 // nkectl cannot know ahead of time is computed here — the trust domain and
-// cluster name, CWE's admin identity, the CA to chain to, and the thumbprints
+// cluster name, the controller's admin identity, the CA to chain to, and the thumbprints
 // allowed to attest.
 func spireInstallArgs(cfg Config, chart manifest.Chart, valuesPath, clusterName, trustDomain string, timeout time.Duration) []string {
 	prefix := spireServerValuesPrefix
@@ -858,7 +858,7 @@ func spireInstallArgs(cfg Config, chart manifest.Chart, valuesPath, clusterName,
 		"--set-string", "global.spire.clusterName="+clusterName,
 		"--set-string", "global.spire.trustDomain="+trustDomain,
 		"--set-string", prefix+".adminIDs[0]=spiffe://"+trustDomain+"/nke-service/"+cweReleaseName,
-		// Both halves of the two agreements CWE depends on. See the constants.
+		// Both halves of the two agreements the controller depends on. See the constants.
 		"--set-string", prefix+".controllerManager.className="+spireControllerManagerClass,
 		// --set, not --set-string: the chart's schema types these as integers.
 		"--set", prefix+".service.port="+spireServerPort,
@@ -942,7 +942,7 @@ func (e *Engine) publishSpireExternally(ctx context.Context, kubeconfigPath stri
 	e.log.Info("publishing SPIRE for out-of-cluster hosts", "namespace", spireNamespace)
 	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"-n", spireNamespace, "apply", "-f", manifest); err != nil {
-		return fmt.Errorf("cwedeploy: publishing SPIRE with %s: %w\n%s", spireNodePortFile, err, out)
+		return fmt.Errorf("controllerdeploy: publishing SPIRE with %s: %w\n%s", spireNodePortFile, err, out)
 	}
 	return nil
 }
@@ -951,12 +951,12 @@ func (e *Engine) publishSpireExternally(ctx context.Context, kubeconfigPath stri
 // kubeconfig for clusterName and returns it. A non-positive timeout uses the
 // package default.
 //
-// CWE writes it as a Secret in nke-system, which is also the namespace it puts
+// The controller writes it as a Secret in nke-system, which is also the namespace it puts
 // the cluster's CAPI objects in — so this is the same Secret Cluster API
 // resolves by name for the cluster, and the one
 // cluster-api-provider-provisioned reads to set each Node's provider ID.
 //
-// It is the plain admin kubeconfig. CWE only rewrites it to a SPIRE exec-auth
+// It is the plain admin kubeconfig. The controller only rewrites it to a SPIRE exec-auth
 // kubeconfig when OIDC authentication is enabled on the cluster, which a
 // bootstrap does not turn on (see nkeOIDCAuth in manifests/controller-values.yaml).
 func (e *Engine) TenantKubeconfig(
@@ -980,7 +980,7 @@ func (e *Engine) TenantKubeconfig(
 
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("cwedeploy: tenant kubeconfig for %q was not published within %s: %w",
+			return nil, fmt.Errorf("controllerdeploy: tenant kubeconfig for %q was not published within %s: %w",
 				clusterName, timeout, lastErr)
 		case <-time.After(tenantKubeconfigPollInterval):
 		}
@@ -993,14 +993,14 @@ func (e *Engine) tenantKubeconfigOnce(ctx context.Context, kubeconfigPath, clust
 		"-n", tenantSecretsNamespace, "get", "secret", secret,
 		"-o", "jsonpath={.data.value}")
 	if err != nil {
-		return nil, fmt.Errorf("cwedeploy: reading %s/%s: %w\n%s", tenantSecretsNamespace, secret, err, out)
+		return nil, fmt.Errorf("controllerdeploy: reading %s/%s: %w\n%s", tenantSecretsNamespace, secret, err, out)
 	}
 	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(out))
 	if err != nil {
-		return nil, fmt.Errorf("cwedeploy: decoding %s/%s: %w", tenantSecretsNamespace, secret, err)
+		return nil, fmt.Errorf("controllerdeploy: decoding %s/%s: %w", tenantSecretsNamespace, secret, err)
 	}
 	if len(decoded) == 0 {
-		return nil, fmt.Errorf("cwedeploy: %s/%s holds an empty kubeconfig", tenantSecretsNamespace, secret)
+		return nil, fmt.Errorf("controllerdeploy: %s/%s holds an empty kubeconfig", tenantSecretsNamespace, secret)
 	}
 	return decoded, nil
 }
@@ -1011,7 +1011,7 @@ func (e *Engine) tenantKubeconfigOnce(ctx context.Context, kubeconfigPath, clust
 // It runs before the cluster is torn down, which is the only moment it can:
 // `bootstrap site` removes the cluster on every exit path, so by the time a
 // caller sees the error the evidence is gone. That is fine when the failure
-// explains itself and useless when it does not — "CWE never reported healthy"
+// explains itself and useless when it does not — "the controller never reported healthy"
 // can be a crash-looping pod, an unschedulable one, an image that never pulled
 // or a webhook refusing admission, and the timeout alone tells those apart not
 // at all.

@@ -6,7 +6,7 @@ package controllerdeploy
 import "embed"
 
 // manifestsFS embeds the Helm values files this package installs Temporal,
-// SPIRE, and CWE with, and the rendered manifest of the provisioned
+// SPIRE, and the controller with, and the rendered manifest of the provisioned
 // infrastructure provider. Embedded rather than read from controller/ at
 // runtime: cli is a separate Go module from controller, and nkectl ships as a
 // standalone binary that may run far from a monorepo checkout. See the

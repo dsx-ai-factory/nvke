@@ -40,7 +40,7 @@ Example — patch file:
 Example — set the control-plane node count:
   nkectl patch cluster my-cluster --patch 'controlPlaneConfig: {desiredCount: 3}'
 
-The patch document's fields must match the CWE UpdateClusterRequest schema
+The patch document's fields must match the controller UpdateClusterRequest schema
 exactly. See /api/docs on your site controller.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

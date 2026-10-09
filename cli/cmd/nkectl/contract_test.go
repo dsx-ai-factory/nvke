@@ -318,7 +318,7 @@ func TestMachineReadableOutputIsParseable(t *testing.T) {
 }
 
 // TestGetClustersOutputFormats covers the flagship read journey against a stub
-// CWE, which is the only way to reach the printing path from outside the
+// controller, which is the only way to reach the printing path from outside the
 // process. Both structured formats are exercised, because a caller selecting
 // `.[0].name` out of either is depending on the shape asserted here.
 func TestGetClustersOutputFormats(t *testing.T) {

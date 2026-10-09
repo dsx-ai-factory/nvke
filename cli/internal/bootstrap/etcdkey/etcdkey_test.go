@@ -24,7 +24,7 @@ func testData() map[string][]byte {
 	}
 }
 
-// TestManifest pins the shape a later controller install depends on: CWE's
+// TestManifest pins the shape a later controller install depends on: the controller's
 // own name for the Secret, no namespace, the cluster name where an operator
 // can find it, and every data field carried through — not just the active
 // key, since rotation state travels with it.

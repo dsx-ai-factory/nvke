@@ -91,7 +91,7 @@ func (f *fakeCWE) failPatchWith(status int, body string) {
 
 // failDeleteWith makes the fake reject every DELETE with status and body
 // instead of removing the pool, while still answering the list lookup
-// normally. Used to pin CWE rejections (e.g. last control-plane pool)
+// normally. Used to pin controller rejections (e.g. last control-plane pool)
 // verbatim through the CLI.
 func (f *fakeCWE) failDeleteWith(status int, body string) {
 	f.mu.Lock()
@@ -110,7 +110,7 @@ type seed struct {
 	conditions *api.NodePoolConditions
 }
 
-// newFakeCWE starts a fake CWE holding a node pool per seed, and returns it
+// newFakeCWE starts a fake controller API holding a node pool per seed, and returns it
 // together with a ControllerClientFn wired to it.
 func newFakeCWE(t *testing.T, seeds ...seed) (*fakeCWE, ControllerClientFn) {
 	t.Helper()
@@ -284,7 +284,7 @@ func (f *fakeCWE) listClusters(w http.ResponseWriter, name string) {
 }
 
 // update answers PATCH /nodePools/{id}, applying desiredNodeCount and echoing
-// the stored pool back the way CWE does.
+// the stored pool back the way the controller does.
 func (f *fakeCWE) update(w http.ResponseWriter, r *http.Request, id string) {
 	var raw map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
@@ -312,7 +312,7 @@ func (f *fakeCWE) update(w http.ResponseWriter, r *http.Request, id string) {
 	writeJSON(w, http.StatusNotFound, api.GenericError{Message: "node pool " + id + " not found"})
 }
 
-// create answers POST /nodePools, enforcing the required fields the way CWE
+// create answers POST /nodePools, enforcing the required fields the way the controller
 // does and storing the pool so a later list returns it.
 func (f *fakeCWE) create(w http.ResponseWriter, r *http.Request) {
 	var raw map[string]any
@@ -359,7 +359,7 @@ func (f *fakeCWE) create(w http.ResponseWriter, r *http.Request) {
 }
 
 // delete answers DELETE /nodePools/{id}, removing the pool from the store on
-// success. CWE's real response carries no body on 202.
+// success. The controller's real response carries no body on 202.
 func (f *fakeCWE) delete(w http.ResponseWriter, id string) {
 	if f.deleteStatus != 0 {
 		writeJSON(w, f.deleteStatus, json.RawMessage(f.deleteBody))

@@ -69,7 +69,7 @@ func TestGetNodePoolsPrintsATable(t *testing.T) {
 	}
 }
 
-// TestGetNodePoolsSendsFiltersAsQueryParams pins that the filters go to CWE.
+// TestGetNodePoolsSendsFiltersAsQueryParams pins that the filters go to the controller.
 // Filtering locally would pass these assertions while fetching every pool.
 func TestGetNodePoolsSendsFiltersAsQueryParams(t *testing.T) {
 	seeds := []seed{
@@ -306,7 +306,7 @@ func TestGetNodePoolsReportsAnAPIError(t *testing.T) {
 		t.Fatal("get nodepools succeeded, want an error")
 	}
 	if !strings.Contains(err.Error(), "boom") {
-		t.Errorf("error = %v, want it to carry the message CWE sent", err)
+		t.Errorf("error = %v, want it to carry the message the controller sent", err)
 	}
 }
 
@@ -321,7 +321,7 @@ func TestGetNodePoolsReportsAClusterLookupError(t *testing.T) {
 		t.Fatal("get nodepools succeeded, want an error")
 	}
 	if !strings.Contains(err.Error(), "clusters unavailable") {
-		t.Errorf("error = %v, want it to carry the message CWE sent", err)
+		t.Errorf("error = %v, want it to carry the message the controller sent", err)
 	}
 }
 
@@ -460,7 +460,7 @@ func TestGetNodePoolsAcceptsSeveralNames(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("rows = %d, want a header and two pools:\n%s", len(got), out)
 	}
-	// Argument order, not the order CWE returns them in.
+	// Argument order, not the order the controller returns them in.
 	for i, want := range []string{"gpu-workers", "control-plane"} {
 		if name := fields(got[i+1])[0]; name != want {
 			t.Errorf("row %d = %q, want %q", i, name, want)
@@ -472,7 +472,7 @@ func TestGetNodePoolsAcceptsSeveralNames(t *testing.T) {
 		if strings.Contains(req, "/nodePools") {
 			lists++
 			if !strings.Contains(req, "name=") {
-				t.Errorf("request %q fetches every pool; each name is filtered by CWE", req)
+				t.Errorf("request %q fetches every pool; each name is filtered by the controller", req)
 			}
 		}
 	}

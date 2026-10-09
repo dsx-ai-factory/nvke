@@ -72,7 +72,7 @@ type bootstrapSiteOptions struct {
 	// disableMTLS stands the site up without SPIFFE, for bring-up debugging.
 	disableMTLS bool
 
-	// clusterTimeout bounds the wait for CWE to finish provisioning the
+	// clusterTimeout bounds the wait for the controller to finish provisioning the
 	// cluster, from the create call to every node having joined.
 	clusterTimeout time.Duration
 
@@ -191,7 +191,7 @@ site spec file format.`,
 		"Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. "+
 			"Overrides NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR.")
 	cmd.Flags().BoolVar(&opts.disableMTLS, "disable-mtls", false,
-		"Stand the site up without SPIFFE: no SPIRE, and CWE dials node agents in plaintext. "+
+		"Stand the site up without SPIFFE: no SPIRE, and the controller dials node agents in plaintext. "+
 			"The agents must be running with --disable-mtls too. Development only.")
 	cmd.Flags().BoolVar(&opts.keepBootstrapKind, "keep-bootstrap-cluster", false,
 		"Leave the ephemeral bootstrap Kind cluster running after the command exits, for debugging")
@@ -252,7 +252,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		return err
 	}
 
-	// Step 2: stand up the ephemeral bootstrap Kind cluster CWE will run on.
+	// Step 2: stand up the ephemeral bootstrap Kind cluster the controller will run on.
 	// It is normally torn down on exit. After site-cluster creation starts, a
 	// later failure retains it so the operator does not lose the controllers and
 	// credentials needed for recovery.
@@ -266,7 +266,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		return err
 	}
 
-	// The CWE API has to be reachable from this host: this command deploys it
+	// The controller API has to be reachable from this host: this command deploys it
 	// and then calls it. A host port mapping rather than the node container's
 	// own address, because that address is not routable from the host on
 	// every platform this runs on.
@@ -368,14 +368,14 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		}
 	}()
 
-	// Step 3: deploy Postgres, Temporal, SPIRE, Cluster API, and CWE onto the bootstrap
-	// cluster and wait for CWE to report healthy on /readyz before going any
+	// Step 3: deploy Postgres, Temporal, SPIRE, Cluster API, and the controller onto the bootstrap
+	// cluster and wait for the controller to report healthy on /readyz before going any
 	// further — there is nothing to dispatch a workflow to otherwise.
 	if err := deployAndWaitForCWE(ctx, engine, cluster, cweCfg, opts.cweRunner, logger); err != nil {
 		return err
 	}
 
-	// Step 4: create the cluster. CWE owns everything from here — it drives
+	// Step 4: create the cluster. The controller owns everything from here — it drives
 	// kubeadm on each host through nke-agent and reconciles the Cluster API
 	// objects that the provisioned infrastructure provider binds to the
 	// site spec's hosts.
@@ -484,13 +484,13 @@ func dumpSpireBootstrapEntries(
 	return dumper.Dump(ctx, outputDir)
 }
 
-// createSiteCluster posts the cluster to CWE, waits for it to come up, and
+// createSiteCluster posts the cluster to the controller, waits for it to come up, and
 // writes out its kubeconfig and etcd encryption key. The boolean reports
-// whether CWE accepted the create request, after which callers must preserve
+// whether the controller accepted the create request, after which callers must preserve
 // the management cluster on failure so the in-progress site cluster remains
 // recoverable.
 //
-// The CWE client is built here rather than being passed in because its address
+// The controller client is built here rather than being passed in because its address
 // is only settled once the bootstrap cluster exists: it is the host port the
 // NodePort Service was mapped to.
 func createSiteCluster(
@@ -504,7 +504,7 @@ func createSiteCluster(
 	cweURL := fmt.Sprintf("http://127.0.0.1:%d", cwePort)
 	client, err := clients.New(config.SiteConfig{URL: cweURL})
 	if err != nil {
-		return false, fmt.Errorf("building the CWE client for %s: %w", cweURL, err)
+		return false, fmt.Errorf("building the controller client for %s: %w", cweURL, err)
 	}
 	created, err := sitecluster.Create(ctx, client, inv, logger)
 	if err != nil {
@@ -548,7 +548,7 @@ func createSiteCluster(
 	}
 
 	// Every control-plane node holds the key now, and this is the last moment
-	// the copy CWE keeps is reachable: it lives in the bootstrap cluster, which
+	// the copy the controller keeps is reachable: it lives in the bootstrap cluster, which
 	// goes when the command does.
 	if inv.Cluster.EtcdEncryptionEnabled() {
 		if err := saveEtcdEncryptionKey(ctx, bootstrapCluster, created.ID, inv.ClusterName,
@@ -585,7 +585,7 @@ func requireNoKeyFile(path string) error {
 	}
 }
 
-// saveEtcdEncryptionKey copies the key Secret CWE holds for the cluster out of
+// saveEtcdEncryptionKey copies the key Secret the controller holds for the cluster out of
 // the bootstrap cluster and onto disk, as a manifest a controller installed
 // later can be given.
 //
@@ -790,7 +790,7 @@ func envOrDefault(key, fallback string) string {
 	return fallback
 }
 
-// cweDeployConfig assembles everything the CWE deploy needs into one value,
+// cweDeployConfig assembles everything the controller deploy needs into one value,
 // from the site spec, the flags and the environment, before any of it is used.
 //
 // It is separate from deployAndWaitForCWE so that the two questions stay apart:
@@ -853,12 +853,12 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 	return cfg, nil
 }
 
-// deployAndWaitForCWE installs Postgres, Temporal, SPIRE, Cluster API, and CWE onto cluster
-// and polls CWE's /readyz until it reports healthy or a bounded timeout
+// deployAndWaitForCWE installs Postgres, Temporal, SPIRE, Cluster API, and the controller onto cluster
+// and polls the controller's /readyz until it reports healthy or a bounded timeout
 // elapses. What to install is decided by cweDeployConfig; this only carries it
 // out.
 //
-// The CWE and provisioned-provider images are loaded into the kind cluster
+// The controller and provisioned-provider images are loaded into the kind cluster
 // from the host's image store (Engine.LoadImage) rather than pulled from
 // inside it: the cluster is ephemeral and has no pull secret. A reference
 // with a registry host is pulled onto the host first when it is not cached;
@@ -882,20 +882,20 @@ func deployAndWaitForCWE(
 	}
 
 	cwe := controllerdeploy.New(cweRunner, logger)
-	logger.Info("deploying cwe onto bootstrap kind cluster", "cluster", cluster.Name, "image", cweCfg.CWEImage)
+	logger.Info("deploying the controller onto bootstrap kind cluster", "cluster", cluster.Name, "image", cweCfg.CWEImage)
 	if err := cwe.Deploy(ctx, cluster.KubeconfigPath, cweCfg); err != nil {
-		return fmt.Errorf("deploying cwe: %w", err)
+		return fmt.Errorf("deploying the controller: %w", err)
 	}
 
-	logger.Info("waiting for cwe to report healthy", "timeout", cweCfg.ReadyTimeout)
+	logger.Info("waiting for the controller to report healthy", "timeout", cweCfg.ReadyTimeout)
 	if err := cwe.WaitReady(ctx, cluster.KubeconfigPath, cweCfg.ReadyTimeout); err != nil {
-		return fmt.Errorf("waiting for cwe to become healthy: %w", err)
+		return fmt.Errorf("waiting for the controller to become healthy: %w", err)
 	}
 	cweURL := fmt.Sprintf("http://127.0.0.1:%d", cweCfg.CWEPort)
 	if err := waitForCWEHostEndpoint(ctx, cweURL, cweCfg.ReadyTimeout); err != nil {
-		return fmt.Errorf("waiting for the published cwe api: %w", err)
+		return fmt.Errorf("waiting for the published controller api: %w", err)
 	}
-	logger.Info("cwe deployment healthy")
+	logger.Info("controller deployment healthy")
 	return nil
 }
 

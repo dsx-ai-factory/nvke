@@ -166,7 +166,7 @@ CAPD_HELM_DEB_PATH ?=
 
 # Builds nke-agent from this checkout's own agent/ module rather than
 # downloading a published bundle. The image gets no bundle server. The E2E
-# supplies local OVN chart, image, and Helm packages for CWE's post-init CNI
+# supplies local OVN chart, image, and Helm packages for the controller's post-init CNI
 # path. A no-op once the image exists locally.
 ensure-capd-image:
 	@nerdctl image inspect $(CAPD_KINDEST_NODE_IMAGE) >/dev/null 2>&1 || \

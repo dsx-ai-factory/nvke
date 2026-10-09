@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package command holds the nkectl subcommands that read the management
-// cluster directly rather than the CWE API.
+// cluster directly rather than the controller API.
 package command
 
 import (

@@ -329,7 +329,7 @@ func TestDeploy_PublishesCWEAfterTheRelease(t *testing.T) {
 		}
 	}
 	if nodePort < cwe {
-		t.Errorf("the CWE NodePort (%d) was applied before CWE itself (%d)", nodePort, cwe)
+		t.Errorf("the controller NodePort (%d) was applied before the controller itself (%d)", nodePort, cwe)
 	}
 	if want := fmt.Sprintf("nodePort: %d", DefaultCWEPort); !strings.Contains(runner.applied[len(runner.applied)-1], want) {
 		t.Errorf("the published Service does not carry %q:\n%s", want, runner.applied[len(runner.applied)-1])
@@ -346,7 +346,7 @@ func TestDeploy_ConfiguresCWEPort(t *testing.T) {
 
 	cwe := helmCalls(runner)[4]
 	if !strings.Contains(cwe, "service.port=30181") {
-		t.Errorf("CWE helm call = %q, want configured service port", cwe)
+		t.Errorf("controller helm call = %q, want configured service port", cwe)
 	}
 	manifest := runner.applied[len(runner.applied)-1]
 	for _, want := range []string{"port: 30181", "nodePort: 30181"} {
@@ -364,7 +364,7 @@ func TestDeploy_EnablesPostInitCNI(t *testing.T) {
 
 	cwe := helmCalls(runner)[4]
 	if !strings.Contains(cwe, "cni.installAfterInit=true") {
-		t.Errorf("CWE helm call = %q, want post-init CNI enabled", cwe)
+		t.Errorf("controller helm call = %q, want post-init CNI enabled", cwe)
 	}
 }
 
@@ -418,7 +418,7 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 
 	releases := helmCalls(runner)
 	if len(releases) != 5 {
-		t.Fatalf("expected 5 helm calls (postgres, temporal, SPIRE CRDs, SPIRE, cwe), got %d: %+v",
+		t.Fatalf("expected 5 helm calls (postgres, temporal, SPIRE CRDs, SPIRE, controller), got %d: %+v",
 			len(releases), releases)
 	}
 
@@ -457,31 +457,31 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 		!strings.Contains(spire, "global.spire.clusterName=test-kind") ||
 		!strings.Contains(spire, "global.spire.trustDomain=test-kind.nke.local") ||
 		!strings.Contains(spire, "spire-server.adminIDs[0]=spiffe://test-kind.nke.local/nke-service/nke-controller") {
-		t.Errorf("SPIRE call = %q, want the pinned chart and CWE identity", spire)
+		t.Errorf("SPIRE call = %q, want the pinned chart and controller identity", spire)
 	}
 
 	if !strings.Contains(cwe, "upgrade --install "+cweReleaseName+" ") {
-		t.Errorf("cwe call = %q, want the cwe release and its chart directory", cwe)
+		t.Errorf("controller call = %q, want the controller release and its chart directory", cwe)
 	}
 	if !strings.Contains(cwe, "--set-string supportedInfraProviders=infra") {
-		t.Errorf("cwe call = %q, want infra provider support enabled", cwe)
+		t.Errorf("controller call = %q, want infra provider support enabled", cwe)
 	}
 	if !strings.Contains(cwe, "image.repository=nvcr.io/org/controller") || !strings.Contains(cwe, "image.tag=edge") {
-		t.Errorf("cwe call = %q, want the image split into repository/tag", cwe)
+		t.Errorf("controller call = %q, want the image split into repository/tag", cwe)
 	}
 	// PROFILES_DIR only. nkectl deploys no profiles content, so the chart's
 	// profiles.image stays disabled and nothing should turn it on.
 	if !strings.Contains(cwe, "profiles.path="+profilesPath) {
-		t.Errorf("cwe call = %q, want PROFILES_DIR pointed at %s", cwe, profilesPath)
+		t.Errorf("controller call = %q, want PROFILES_DIR pointed at %s", cwe, profilesPath)
 	}
 	if strings.Contains(cwe, "profiles.image") {
-		t.Errorf("cwe call = %q, want no profiles.image setting", cwe)
+		t.Errorf("controller call = %q, want no profiles.image setting", cwe)
 	}
 	if !strings.Contains(cwe, "spiffe.enabled=true") ||
 		!strings.Contains(cwe, "spiffe.trustDomain=test-kind.nke.local") ||
 		!strings.Contains(cwe, "spiffe.spire.serverAddress="+spireServiceHost()) ||
 		!strings.Contains(cwe, "spiffe.spire.serverPort="+spireServerPort) {
-		t.Errorf("cwe call = %q, want SPIFFE enabled with the SPIRE trust domain", cwe)
+		t.Errorf("controller call = %q, want SPIFFE enabled with the SPIRE trust domain", cwe)
 	}
 }
 
@@ -662,7 +662,7 @@ func TestDeploy_PinsImageByDigest(t *testing.T) {
 	cwe := releases[len(releases)-1]
 	if !strings.Contains(cwe, "image.repository=ghcr.io/nvidia/nke/controller") ||
 		!strings.Contains(cwe, "image.digest="+digest) {
-		t.Errorf("cwe call = %q, want the digest split into repository/digest", cwe)
+		t.Errorf("controller call = %q, want the digest split into repository/digest", cwe)
 	}
 }
 
@@ -809,25 +809,25 @@ func TestTPMPluginChecksum(t *testing.T) {
 }
 
 // TestSpireAndCWEAgreeOnTheClassName is the guard for a mismatch neither side
-// reports. CWE stamps its ClusterStaticEntry objects with its configured class
+// reports. The NKE controller stamps its ClusterStaticEntry objects with its configured class
 // and the SPIRE controller manager only acts on objects carrying its own, so
-// two different strings mean CWE writes entries nobody reads and a node never
+// two different strings mean the NKE controller writes entries nobody reads and a node never
 // gets an identity -- with both components healthy and nothing logged.
 //
 // Neither default reaches the same string on its own: the chart derives
-// <namespace>-<release>, CWE defaults to spire-mgmt-spire.
+// <namespace>-<release>, the NKE controller defaults to spire-mgmt-spire.
 //
 // The expected class is spelled out rather than taken from the constant, for
 // the same reason the port test spells out its address: asserting the constant
 // against itself would survive any drift. This pins our value to the literal
-// CWE's SPIRE_CLASS_NAME defaults to. It cannot catch CWE changing that default
+// the NKE controller's SPIRE_CLASS_NAME defaults to. It cannot catch the NKE controller changing that default
 // -- that lives in another module -- but it does catch this side moving.
 func TestSpireAndCWEAgreeOnTheClassName(t *testing.T) {
 	const cweClassNameDefault = "spire-mgmt-spire"
 
 	if spireControllerManagerClass != cweClassNameDefault {
-		t.Errorf("the class is %q, but CWE's SPIRE_CLASS_NAME defaults to %q; "+
-			"CWE would write ClusterStaticEntry objects the controller manager ignores",
+		t.Errorf("the class is %q, but the NKE controller's SPIRE_CLASS_NAME defaults to %q; "+
+			"the NKE controller would write ClusterStaticEntry objects the controller manager ignores",
 			spireControllerManagerClass, cweClassNameDefault)
 	}
 
@@ -850,7 +850,7 @@ func TestSpireAndCWEAgreeOnTheClassName(t *testing.T) {
 		}
 	}
 	if spire == "" || cwe == "" {
-		t.Fatalf("expected both installs; spire=%q cwe=%q", spire, cwe)
+		t.Fatalf("expected both installs; spire=%q controller=%q", spire, cwe)
 	}
 
 	if !strings.Contains(spire,
@@ -858,21 +858,21 @@ func TestSpireAndCWEAgreeOnTheClassName(t *testing.T) {
 		t.Errorf("SPIRE install does not pin the controller-manager class: %s", spire)
 	}
 	if !strings.Contains(cwe, "spiffe.spire.className="+spireControllerManagerClass) {
-		t.Errorf("CWE install does not pin the same class: %s", cwe)
+		t.Errorf("controller install does not pin the same class: %s", cwe)
 	}
 }
 
-// TestSpireServesThePortCWEExpects covers the other silent mismatch: CWE reads
+// TestSpireServesThePortCWEExpects covers the other silent mismatch: the controller reads
 // SPIRE_SERVER_API_ADDRESS for join-token calls and nkectl never sets it, so
 // the Service has to listen where that default already points. The literal is
 // spelled out rather than built from spireServerPort, because the thing under
-// test is that our constant still matches CWE's default -- writing both sides
+// test is that our constant still matches the controller's default -- writing both sides
 // from the same constant would assert nothing.
 func TestSpireServesThePortCWEExpects(t *testing.T) {
 	const cweAPIAddressDefault = "spire-server.spire-server.svc.cluster.local:8081"
 
 	if got := spireServiceHost() + ":" + spireServerPort; got != cweAPIAddressDefault {
-		t.Errorf("the SPIRE Service is at %q, but CWE's SPIRE_SERVER_API_ADDRESS defaults to %q; "+
+		t.Errorf("the SPIRE Service is at %q, but the controller's SPIRE_SERVER_API_ADDRESS defaults to %q; "+
 			"join-token operations would dial a port nothing serves", got, cweAPIAddressDefault)
 	}
 
@@ -892,7 +892,7 @@ func TestSpireServesThePortCWEExpects(t *testing.T) {
 }
 
 // DisableMTLS stands the site up without SPIFFE: no SPIRE release at all, and
-// CWE installed with spiffe.enabled=false, which is what makes it dial each
+// the controller installed with spiffe.enabled=false, which is what makes it dial each
 // node agent in plaintext.
 func TestDeploy_DisableMTLSSkipsSpire(t *testing.T) {
 	runner := &fakeRunner{}
@@ -912,7 +912,7 @@ func TestDeploy_DisableMTLSSkipsSpire(t *testing.T) {
 		t.Errorf("calls = %q, want no TPM attestor when mTLS is disabled", all)
 	}
 	if !strings.Contains(all, "spiffe.enabled=false") {
-		t.Errorf("calls = %q, want CWE installed with spiffe.enabled=false", all)
+		t.Errorf("calls = %q, want the controller installed with spiffe.enabled=false", all)
 	}
 }
 
@@ -954,7 +954,7 @@ func TestDeploy_PullsTemporalAndSPIREChartsFromTheConfiguredRef(t *testing.T) {
 	for _, tt := range []struct {
 		name  string
 		set   func(*Config, string)
-		call  int // index into helmCalls: postgres, temporal, SPIRE CRDs, SPIRE, cwe
+		call  int // index into helmCalls: postgres, temporal, SPIRE CRDs, SPIRE, controller
 		chart string
 		repo  string
 	}{

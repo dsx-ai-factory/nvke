@@ -19,7 +19,7 @@ import (
 )
 
 // NewGetCmd returns the "nkectl get nodepools" subcommand. Both filters are
-// applied by CWE, not locally.
+// applied by the controller, not locally.
 func NewGetCmd(clientFn ControllerClientFn) *cobra.Command {
 	var (
 		outputFormat string

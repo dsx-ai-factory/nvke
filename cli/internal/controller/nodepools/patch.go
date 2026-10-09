@@ -15,7 +15,7 @@ import (
 )
 
 // NewPatchCmd returns the "nkectl patch nodepool <name>" subcommand.
-// It sends the patch document to CWE, leaving every field the document does
+// It sends the patch document to the controller, leaving every field the document does
 // not carry unchanged.
 func NewPatchCmd(clientFn ControllerClientFn) *cobra.Command {
 	var (
@@ -46,7 +46,7 @@ Example — scale a pool:
 Example — patch file:
   nkectl patch nodepool gpu-workers --cluster my-cluster --patch-file patch.yaml
 
-The patch document's fields must match the CWE UpdateNodePoolRequest schema
+The patch document's fields must match the controller UpdateNodePoolRequest schema
 exactly. See /api/docs on your site controller.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -87,7 +87,7 @@ exactly. See /api/docs on your site controller.`,
 }
 
 // supportedFields is the subset of UpdateNodePoolRequest this command can
-// change. UpdateNodePoolRequest carries more, and CWE accepts them, but only
+// change. UpdateNodePoolRequest carries more, and the controller accepts them, but only
 // what is declared here is supported through nkectl today.
 //
 // The patch document is validated against this rather than against the full
@@ -122,7 +122,7 @@ func loadPatchNodePoolRequest(cmd *cobra.Command, patch, patchFile string) ([]by
 	if len(patchMap) == 0 {
 		return nil, fmt.Errorf("nothing to patch: the patch document is empty")
 	}
-	// CWE declares no field of the request nullable, so a null would come back
+	// The controller declares no field of the request nullable, so a null would come back
 	// as a validator message naming a JSON pointer. Refuse it here instead.
 	for field, value := range patchMap {
 		if value == nil {

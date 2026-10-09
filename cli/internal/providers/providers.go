@@ -7,7 +7,7 @@
 // It is a setting rather than a registry: nothing registers into it, the set is
 // fixed when nkectl is compiled, and supporting another provider means editing
 // Supported() and its test. Being supported means only that nkectl knows how to
-// find and describe the provider — CWE accepts any infra.cluster manifest, so
+// find and describe the provider — the controller accepts any infra.cluster manifest, so
 // a provider absent from this file can still be used by writing one by hand.
 //
 // The values are read from each provider's own source. They are a snapshot:

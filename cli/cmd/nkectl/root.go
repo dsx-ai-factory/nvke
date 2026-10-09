@@ -53,7 +53,7 @@ func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
 	return root
 }
 
-// loadClient is the shared client factory injected into all CWE-backed commands.
+// loadClient is the shared client factory injected into all commands backed by the controller API.
 // It is called lazily (when a command runs, not at startup) so that --help and
 // non-API commands work without a configured site. If --site was passed, it
 // overrides the active site for this invocation only, without touching the
@@ -71,7 +71,7 @@ func loadClient() (*clients.ControllerClient, error) {
 }
 
 // loadSite is the shared site-config factory injected into commands that talk
-// to the site controller's Kubernetes API rather than to CWE. Like loadClient
+// to the site controller's Kubernetes API rather than to the controller API. Like loadClient
 // it is called lazily, so --help works without a configured site.
 func loadSite() (config.SiteConfig, error) {
 	cfg, err := config.Load()

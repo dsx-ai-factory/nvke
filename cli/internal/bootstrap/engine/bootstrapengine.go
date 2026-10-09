@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package engine drives the lifecycle of the ephemeral Kind cluster
-// that `nkectl bootstrap site` runs CWE on: create it, wait for it to be
+// that `nkectl bootstrap site` runs the controller on: create it, wait for it to be
 // Ready, load images into it, and tear it down.
 //
 // Every `kind`/`kubectl` invocation goes through the CommandRunner seam so
@@ -81,7 +81,7 @@ type PortMapping struct {
 type Config struct {
 	// ClusterName is the kind cluster name (not the Kubernetes cluster name
 	// in the site spec file — this is purely the kind/kubectl-context handle
-	// for the ephemeral host cluster CWE itself runs on).
+	// for the ephemeral host cluster the controller itself runs on).
 	ClusterName string
 
 	// NodeImage overrides the kindest/node image kind uses for the

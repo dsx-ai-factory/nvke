@@ -39,8 +39,8 @@ func testSiteSpec() *sitespec.SiteSpec {
 	}
 }
 
-// TestClusterRequest_IsACAPICluster pins the two things that make CWE treat
-// this as a CAPI cluster rather than a Forge one. CWE rejects the request
+// TestClusterRequest_IsACAPICluster pins the two things that make the controller treat
+// this as a CAPI cluster rather than a Forge one. The controller rejects the request
 // outright if either is wrong, but it rejects it at the far end of a
 // bootstrap that has already built a Kind cluster and deployed five releases.
 func TestClusterRequest_IsACAPICluster(t *testing.T) {
@@ -50,13 +50,13 @@ func TestClusterRequest_IsACAPICluster(t *testing.T) {
 	}
 
 	if req.Nico != nil {
-		t.Errorf("nico = %#v, want nil: CWE rejects it for CAPI clusters", req.Nico)
+		t.Errorf("nico = %#v, want nil: the controller rejects it for CAPI clusters", req.Nico)
 	}
 	if req.Infra == nil {
-		t.Fatal("infra is nil; supplying it is how CWE selects CAPI mode")
+		t.Fatal("infra is nil; supplying it is how the controller selects CAPI mode")
 	}
 	if len(req.Infra.Cluster) == 0 {
-		t.Fatal("infra.cluster is empty; CWE requires it for a CAPI cluster")
+		t.Fatal("infra.cluster is empty; the controller requires it for a CAPI cluster")
 	}
 }
 
@@ -129,7 +129,7 @@ func TestClusterRequest_ControlPlaneSizedToTheSiteSpec(t *testing.T) {
 	}
 }
 
-// TestClusterRequest_SendsNoControlPlaneNodePool: CWE rejects a control-plane
+// TestClusterRequest_SendsNoControlPlaneNodePool: the controller rejects a control-plane
 // node pool once control-plane controller provisioning is enabled, and a site
 // cluster has no workers, so the request should carry no pools at all.
 func TestClusterRequest_SendsNoControlPlaneNodePool(t *testing.T) {
@@ -144,7 +144,7 @@ func TestClusterRequest_SendsNoControlPlaneNodePool(t *testing.T) {
 }
 
 // TestClusterRequest_PassesTheNetworkThrough covers both states: CIDRs named in
-// the site spec reach CWE, and a site spec that names none leaves CWE's own
+// the site spec reach the controller, and a site spec that names none leaves the controller's own
 // defaults in place rather than sending empty strings.
 func TestClusterRequest_PassesTheNetworkThrough(t *testing.T) {
 	req, err := ClusterRequest(testSiteSpec())
@@ -162,7 +162,7 @@ func TestClusterRequest_PassesTheNetworkThrough(t *testing.T) {
 		t.Fatalf("ClusterRequest returned error: %v", err)
 	}
 	if req.Network != nil {
-		t.Errorf("network = %#v, want nil so CWE applies its own defaults", req.Network)
+		t.Errorf("network = %#v, want nil so the controller applies its own defaults", req.Network)
 	}
 }
 
@@ -185,7 +185,7 @@ func TestClusterRequest_RejectsDuplicateHosts(t *testing.T) {
 
 // TestClusterRequest_SerialisesToTheAPIShape: the manifests are built as
 // map[string]interface{} because that is what the generated API takes, so
-// nothing type-checks them. Round-tripping through JSON is what the CWE client
+// nothing type-checks them. Round-tripping through JSON is what the controller client
 // actually does, and it is the only check that the nesting is right.
 func TestClusterRequest_SerialisesToTheAPIShape(t *testing.T) {
 	req, err := ClusterRequest(testSiteSpec())

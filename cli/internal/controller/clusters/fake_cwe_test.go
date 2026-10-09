@@ -35,7 +35,7 @@ func run(t *testing.T, cmd *cobra.Command, args ...string) (string, error) {
 
 // clientFnErr is a clientFn that always returns an error. Commands that pass
 // arg/flag validation will reach the API call and return this error — used to
-// confirm a command is wired correctly without a real CWE deployment.
+// confirm a command is wired correctly without a real controller deployment.
 func clientFnErr() (*clients.ControllerClient, error) {
 	return nil, &notConfiguredError{}
 }
@@ -74,7 +74,7 @@ type fakeCWE struct {
 	patchFailMessage string
 }
 
-// newFakeCWE starts a fake CWE seeded with clusters, and returns it together
+// newFakeCWE starts a fake controller API seeded with clusters, and returns it together
 // with a ControllerClientFn wired to it.
 func newFakeCWE(t *testing.T, seed ...api.Cluster) (*fakeCWE, ControllerClientFn) {
 	t.Helper()

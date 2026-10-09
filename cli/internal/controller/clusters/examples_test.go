@@ -15,7 +15,7 @@ import (
 // TestExampleClusterSpecsDecode checks that every bundled example spec still
 // decodes into the request the API generates, and describes its control plane
 // as a cluster-level controlPlaneConfig with no control-plane node pool, the
-// shape CWE accepts by default. YAMLToRequest disallows unknown fields, so a
+// shape the controller accepts by default. YAMLToRequest disallows unknown fields, so a
 // field renamed in openapi.yaml fails here rather than in a user's first create.
 func TestExampleClusterSpecsDecode(t *testing.T) {
 	t.Parallel()

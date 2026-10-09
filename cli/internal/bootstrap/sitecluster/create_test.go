@@ -128,7 +128,7 @@ func TestCreate_PropagatesTheAPIError(t *testing.T) {
 		t.Fatal("expected Create to propagate the API error")
 	}
 	if !strings.Contains(err.Error(), "orgID must be omitted") {
-		t.Errorf("error %q does not carry what CWE said", err)
+		t.Errorf("error %q does not carry what the controller said", err)
 	}
 }
 
@@ -154,7 +154,7 @@ func TestWaitProvisioned_ReturnsWhenProvisioned(t *testing.T) {
 	}
 }
 
-// TestWaitProvisioned_SurvivesAFailedRead: CWE restarting mid-bootstrap is a
+// TestWaitProvisioned_SurvivesAFailedRead: the controller restarting mid-bootstrap is a
 // read failure, not a cluster failure. Giving up on it would fail a bootstrap
 // that is going fine.
 func TestWaitProvisioned_SurvivesAFailedRead(t *testing.T) {
@@ -187,7 +187,7 @@ func TestWaitProvisioned_StopsOnADeletingCluster(t *testing.T) {
 	}
 }
 
-// TestWaitProvisioned_StopsOnProvisioningFailed: CWE reports a dead
+// TestWaitProvisioned_StopsOnProvisioningFailed: the controller reports a dead
 // provisioning workflow as Provisioning=False with the cause in the message.
 func TestWaitProvisioned_StopsOnProvisioningFailed(t *testing.T) {
 	shortPollInterval(t)
@@ -305,7 +305,7 @@ func TestWaitControlPlaneJoined_DoesNotReturnOnTheFirstNodeAlone(t *testing.T) {
 	}
 }
 
-// TestWaitControlPlaneJoined_WaitsForNodesCWEHasNotCreatedYet: a node CWE has
+// TestWaitControlPlaneJoined_WaitsForNodesCWEHasNotCreatedYet: a node the controller has
 // no record of yet is outstanding too. Counting only the records that exist
 // would let a one-node list satisfy a three-node control plane.
 func TestWaitControlPlaneJoined_WaitsForNodesCWEHasNotCreatedYet(t *testing.T) {
@@ -323,7 +323,7 @@ func TestWaitControlPlaneJoined_WaitsForNodesCWEHasNotCreatedYet(t *testing.T) {
 	}
 }
 
-// TestWaitControlPlaneJoined_SurvivesAFailedRead: as in WaitProvisioned, CWE
+// TestWaitControlPlaneJoined_SurvivesAFailedRead: as in WaitProvisioned, the controller
 // being briefly unreachable is not a cluster that failed to come up.
 func TestWaitControlPlaneJoined_SurvivesAFailedRead(t *testing.T) {
 	shortPollInterval(t)
@@ -340,7 +340,7 @@ func TestWaitControlPlaneJoined_SurvivesAFailedRead(t *testing.T) {
 }
 
 // TestWaitControlPlaneJoined_TimeoutReportsTheReadFailure: a wait that ran out
-// because CWE was never reachable must not look like a wait that ran out
+// because the controller was never reachable must not look like a wait that ran out
 // because the nodes were slow.
 func TestWaitControlPlaneJoined_TimeoutReportsTheReadFailure(t *testing.T) {
 	shortPollInterval(t)
@@ -375,7 +375,7 @@ func TestWaitControlPlaneJoined_NothingToWaitFor(t *testing.T) {
 
 // TestWaitControlPlaneJoined_TimeoutForgetsARecoveredReadFailure: the last
 // error is there to say why a wait ran out. A read that failed once and
-// recovered is not that reason, and reporting it sends the operator after CWE
+// recovered is not that reason, and reporting it sends the operator after the controller
 // while the node that never joined goes unlooked-at.
 func TestWaitControlPlaneJoined_TimeoutForgetsARecoveredReadFailure(t *testing.T) {
 	shortPollInterval(t)

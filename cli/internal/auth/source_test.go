@@ -458,7 +458,7 @@ func newExecSource(t *testing.T, opts execSourceOpts) *TokenSource {
 		t.Fatalf("write kubeconfig: %v", err)
 	}
 
-	source, err := NewTokenSource(kcPath, "https://cwe.example")
+	source, err := NewTokenSource(kcPath, "https://controller.example")
 	if err != nil {
 		t.Fatalf("NewTokenSource: %v", err)
 	}

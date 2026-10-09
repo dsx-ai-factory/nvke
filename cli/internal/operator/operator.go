@@ -3,7 +3,7 @@
 
 // Package operator is the nkectl operator interface to a site's machine images
 // and releases: the MachineImage, ClusterRelease and NodePoolRelease resources
-// that CWE resolves every osProfile from.
+// that the controller resolves every osProfile from.
 //
 // Operators describe a resource with a portable document that carries only a
 // metadata and a spec. The package supplies the group, version and kind, and

@@ -40,7 +40,7 @@ func Status(cl *api.Cluster) string {
 // IsProvisioned reports whether the cluster finished provisioning.
 func IsProvisioned(cl *api.Cluster) bool { return IsTrue(&cl.Conditions.Provisioned) }
 
-// IsProvisioningFailed reports whether the provisioning workflow died: CWE
+// IsProvisioningFailed reports whether the provisioning workflow died: the controller
 // flips Provisioning to False without ever setting Provisioned.
 func IsProvisioningFailed(cl *api.Cluster) bool {
 	c := cl.Conditions
