@@ -123,15 +123,13 @@ PRIVATE_MODULES :=
 
 # Every place an artefact ships LICENSE and NOTICE from.
 #
-# The root files cannot be COPYed into the controller image directly: that image
-# builds with `controller/` as its context, and Docker cannot reach outside a
-# build context. So the files are copied to a location inside it. The Helm chart
-# has the same constraint and the same answer.
+# `helm package` includes only files inside the chart directory, so the root
+# files are copied into the chart. The controller image does not need a copy:
+# it builds with the repository root as its context and COPYs them directly.
 #
 # The chart copies existed before this and nothing maintained them -- they were
 # committed by hand and happened to match. `licenses-check` now enforces it.
-LICENSE_DESTS := controller/licenses \
-                 controller/deploy/charts/controller
+LICENSE_DESTS := controller/deploy/charts/controller
 
 # Chart directories that ship the root LICENSE but keep a NOTICE of their own,
 # which `make licenses` must not overwrite.
