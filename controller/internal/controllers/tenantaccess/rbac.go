@@ -10,20 +10,20 @@ import (
 	"fmt"
 	"io"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/types"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/dsx-ai-factory/nke/controller/internal/nkerbac"
 )
 
 const (
 	// rbacConfigMapName is the operator-managed ConfigMap holding the tenant RBAC
 	// manifest that gets applied into OIDC tenant clusters.
-	rbacConfigMapName = "nke-rbac"
+	rbacConfigMapName = nkerbac.ConfigMapName
 	// rbacConfigMapKey is the ConfigMap data key containing the multi-document
 	// tenant RBAC manifest.
-	rbacConfigMapKey = "manifest.yaml"
+	rbacConfigMapKey = nkerbac.ConfigMapKey
 	// rbacFieldManager is the Server-Side Apply field owner used when applying the
 	// RBAC manifest into a tenant cluster.
 	rbacFieldManager = "nke"
@@ -32,23 +32,7 @@ const (
 // readRBACManifest reads the operator-managed nke-rbac ConfigMap from the
 // management cluster and returns the multi-document tenant RBAC manifest.
 func (c *Controller) readRBACManifest(ctx context.Context) ([]byte, error) {
-	var cm corev1.ConfigMap
-	key := types.NamespacedName{Namespace: SecretsNamespace, Name: rbacConfigMapName}
-	if err := c.k8sClient.Get(ctx, key, &cm); err != nil {
-		return nil, fmt.Errorf("getting NKE RBAC ConfigMap %s/%s: %w", SecretsNamespace, rbacConfigMapName, err)
-	}
-
-	manifest, ok := cm.Data[rbacConfigMapKey]
-	if !ok {
-		return nil, fmt.Errorf("NKE RBAC ConfigMap %s/%s missing required key %q", SecretsNamespace, rbacConfigMapName, rbacConfigMapKey)
-	}
-
-	result := bytes.TrimSpace([]byte(manifest))
-	if len(result) == 0 {
-		return nil, fmt.Errorf("NKE RBAC ConfigMap %s/%s key %q is empty", SecretsNamespace, rbacConfigMapName, rbacConfigMapKey)
-	}
-
-	return result, nil
+	return nkerbac.ReadManifest(ctx, c.k8sClient)
 }
 
 // applyManifestSSA splits a multi-document YAML manifest and Server-Side-Applies
