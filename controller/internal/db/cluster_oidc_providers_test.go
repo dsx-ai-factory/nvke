@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -17,10 +16,11 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
 )
 
-func newOIDCProvidersTestCluster(ctx context.Context, t *testing.T) (db.DB, db.Cluster) {
+func newOIDCProvidersTestCluster(ctx context.Context, t *testing.T, providers []db.ClusterOIDCProvider) (db.DB, db.Cluster) {
 	t.Helper()
 	q := db.NewDB(testutil.SetupDB(ctx, t, (*db.Cluster)(nil), (*db.ControlPlaneConfiguration)(nil)))
 	cluster := newControlPlaneConfigTestCluster()
+	cluster.OIDCProviders = providers
 	created, err := q.CreateCluster(ctx, &cluster)
 	require.NoError(t, err)
 	return q, created
@@ -92,57 +92,59 @@ func TestClusterOIDCProvidersFromConfig(t *testing.T) {
 	})
 }
 
-func TestPinClusterOIDCProviders(t *testing.T) {
+func TestClusterOIDCProvidersToConfig(t *testing.T) {
+	in := []controllerconfig.OIDCProvider{{
+		Name:           "corp",
+		IssuerURL:      "https://issuer.example.com",
+		Audiences:      []string{"nke"},
+		UsernameClaim:  "sub",
+		UsernamePrefix: "corp:",
+		GroupsClaim:    "groups",
+		GroupsPrefix:   "corp:",
+		RequiredClaims: map[string]string{"tenant": "a"},
+		CABundle:       "pem",
+	}}
+	stored := db.ClusterOIDCProvidersFromConfig(in)
+	got := db.ClusterOIDCProvidersToConfig(stored)
+	assert.Equal(t, in, got)
+	assert.Empty(t, db.ClusterOIDCProvidersToConfig(nil))
+
+	got[0].Audiences[0] = "changed"
+	got[0].RequiredClaims["tenant"] = "changed"
+	assert.Equal(t, in, db.ClusterOIDCProvidersToConfig(stored), "the result must not alias the stored providers")
+}
+
+func TestClusterOIDCProvidersAtCreation(t *testing.T) {
 	ctx := context.Background()
+	tests := []struct {
+		name      string
+		providers []db.ClusterOIDCProvider
+	}{
+		{name: "none pinned stays nil", providers: nil},
+		{name: "an empty list stays empty, not nil", providers: []db.ClusterOIDCProvider{}},
+		{name: "providers read back as created", providers: []db.ClusterOIDCProvider{corpProvider(), otherProvider()}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q, cluster := newOIDCProvidersTestCluster(ctx, t, tt.providers)
+			got, err := q.GetCluster(ctx, cluster.ID)
+			require.NoError(t, err)
+			assert.Equal(t, tt.providers, got.OIDCProviders)
+		})
+	}
+}
 
-	t.Run("a new cluster has none pinned", func(t *testing.T) {
-		q, cluster := newOIDCProvidersTestCluster(ctx, t)
-		got, err := q.GetCluster(ctx, cluster.ID)
-		require.NoError(t, err)
-		assert.Nil(t, got.OIDCProviders)
-	})
+// The Postgres check constraint accepts SQL NULL or an array, not JSON null.
+func TestClusterWithoutOIDCProvidersStoresNull(t *testing.T) {
+	ctx := context.Background()
+	bunDB := testutil.SetupDB(ctx, t, (*db.Cluster)(nil), (*db.ControlPlaneConfiguration)(nil))
+	cluster := newControlPlaneConfigTestCluster()
+	created, err := db.NewDB(bunDB).CreateCluster(ctx, &cluster)
+	require.NoError(t, err)
 
-	t.Run("pins and reads back the providers", func(t *testing.T) {
-		q, cluster := newOIDCProvidersTestCluster(ctx, t)
-
-		pinned, err := q.PinClusterOIDCProviders(ctx, cluster.ID, []db.ClusterOIDCProvider{corpProvider()})
-		require.NoError(t, err)
-		assert.Equal(t, []db.ClusterOIDCProvider{corpProvider()}, pinned)
-
-		got, err := q.GetCluster(ctx, cluster.ID)
-		require.NoError(t, err)
-		assert.Equal(t, pinned, got.OIDCProviders)
-	})
-
-	t.Run("a second pin returns the first", func(t *testing.T) {
-		q, cluster := newOIDCProvidersTestCluster(ctx, t)
-
-		first, err := q.PinClusterOIDCProviders(ctx, cluster.ID, []db.ClusterOIDCProvider{corpProvider()})
-		require.NoError(t, err)
-		second, err := q.PinClusterOIDCProviders(ctx, cluster.ID, []db.ClusterOIDCProvider{otherProvider()})
-		require.NoError(t, err)
-		assert.Equal(t, first, second)
-	})
-
-	t.Run("no providers pins an empty list that a later pin keeps", func(t *testing.T) {
-		q, cluster := newOIDCProvidersTestCluster(ctx, t)
-
-		pinned, err := q.PinClusterOIDCProviders(ctx, cluster.ID, nil)
-		require.NoError(t, err)
-		assert.NotNil(t, pinned)
-		assert.Empty(t, pinned)
-
-		again, err := q.PinClusterOIDCProviders(ctx, cluster.ID, []db.ClusterOIDCProvider{corpProvider()})
-		require.NoError(t, err)
-		assert.NotNil(t, again)
-		assert.Empty(t, again)
-	})
-
-	t.Run("an unknown cluster is not found", func(t *testing.T) {
-		q, _ := newOIDCProvidersTestCluster(ctx, t)
-		_, err := q.PinClusterOIDCProviders(ctx, uuid.New(), nil)
-		assert.ErrorIs(t, err, db.ErrNotFound)
-	})
+	var isNull int
+	require.NoError(t, bunDB.NewRaw("SELECT oidc_providers IS NULL FROM clusters WHERE id = ?", created.ID).Scan(ctx, &isNull))
+	assert.Equal(t, 1, isNull)
 }
 
 func TestUpdateClusterKeepsPinnedOIDCProviders(t *testing.T) {
@@ -151,17 +153,14 @@ func TestUpdateClusterKeepsPinnedOIDCProviders(t *testing.T) {
 		name  string
 		stale []db.ClusterOIDCProvider
 	}{
-		{name: "stale copy read before the pin", stale: nil},
-		{name: "stale copy holding other providers", stale: []db.ClusterOIDCProvider{otherProvider()}},
+		{name: "a copy with no providers", stale: nil},
+		{name: "a copy holding other providers", stale: []db.ClusterOIDCProvider{otherProvider()}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			q, cluster := newOIDCProvidersTestCluster(ctx, t)
+			q, cluster := newOIDCProvidersTestCluster(ctx, t, []db.ClusterOIDCProvider{corpProvider()})
 			stale, err := q.GetCluster(ctx, cluster.ID)
-			require.NoError(t, err)
-
-			_, err = q.PinClusterOIDCProviders(ctx, cluster.ID, []db.ClusterOIDCProvider{corpProvider()})
 			require.NoError(t, err)
 
 			stale.OIDCProviders = tt.stale

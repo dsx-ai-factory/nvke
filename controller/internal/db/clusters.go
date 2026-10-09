@@ -66,8 +66,7 @@ type Cluster struct {
 	Nico         *NicoClusterProvider `bun:"nico,type:jsonb"`
 	Capi         *CAPIClusterProvider `bun:"capi,type:jsonb"`
 
-	// OIDCProviders is nil until PinClusterOIDCProviders sets it, and does not
-	// change after that: UpdateCluster neither writes it nor keeps a stale value.
+	// OIDCProviders is set only at creation; UpdateCluster never writes it.
 	OIDCProviders []ClusterOIDCProvider `bun:"oidc_providers,type:jsonb,nullzero"`
 
 	// ControlPlaneConfig keeps the API/business shape while persisting these
@@ -469,9 +468,6 @@ type ClusterQueries interface {
 	CreateCluster(ctx context.Context, cluster *Cluster) (Cluster, error)
 	UpdateCluster(ctx context.Context, cluster *Cluster) (Cluster, error)
 	UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID uuid.UUID, nextDue time.Time) error
-	// PinClusterOIDCProviders sets the cluster's OIDC providers unless they are
-	// already set, and returns what is set, so a retry gets its first attempt's.
-	PinClusterOIDCProviders(ctx context.Context, clusterID uuid.UUID, providers []ClusterOIDCProvider) ([]ClusterOIDCProvider, error)
 	DeleteCluster(ctx context.Context, id uuid.UUID) error
 	// SyncClusterControlPlaneConfigFromCPNodePools sets control_plane_config from all control-plane
 	// node pools for the cluster that are not marked deleting.
