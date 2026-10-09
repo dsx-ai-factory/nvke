@@ -168,3 +168,49 @@ func TestNewestTagFailsWhenNothingMatches(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no baseline to compare against")
 }
+
+// The glob is fnmatch, so `[0-9]*` lets `controller/api/v0.0.29-rc1` through,
+// and `--sort=-version:refname` would rank it above the release it precedes.
+// A prerelease baseline cannot be ordered by supersedes, so an older-baseline
+// waiver would stay Unused and fail instead of expiring.
+func TestNewestReleaseSkipsPrereleasesAndNonReleaseTags(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		tags []string
+		want string
+	}{
+		{
+			name: "prerelease of a later version loses to the stable release",
+			tags: []string{"controller/api/v0.0.29-rc1", "controller/api/v0.0.28"},
+			want: "controller/api/v0.0.28",
+		},
+		{
+			name: "ordering is numeric, not lexical",
+			tags: []string{"controller/api/v0.0.9", "controller/api/v0.0.10"},
+			want: "controller/api/v0.0.10",
+		},
+		{
+			name: "build metadata is not a consumable release either",
+			tags: []string{"controller/api/v0.1.0+build.5", "controller/api/v0.0.28"},
+			want: "controller/api/v0.0.28",
+		},
+		{
+			name: "tags outside the release prefix are ignored",
+			tags: []string{"controller/v9.9.9", "  controller/api/v1.2.3  ", ""},
+			want: "controller/api/v1.2.3",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := newestRelease(tc.tags)
+			require.True(t, ok)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// Matching only prereleases is the same situation as matching nothing: there is
+// no baseline a break could have shipped in.
+func TestNewestReleaseRejectsAPrereleaseOnlySet(t *testing.T) {
+	_, ok := newestRelease([]string{"controller/api/v0.0.29-rc1", "controller/api/v0.0.30-rc2"})
+	assert.False(t, ok)
+}

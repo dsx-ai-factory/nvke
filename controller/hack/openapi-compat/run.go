@@ -28,9 +28,11 @@ const (
 	// glob below and the ordering in policy.go both read it, so a tag either
 	// selects as a baseline and orders against a waiver, or does neither.
 	releaseTagPrefix = "controller/api/v"
-	// defaultTagGlob matches the tags controller-api-tag.yml publishes. The
-	// digit classes keep release-candidate and other suffixed tags out: a
-	// baseline has to be a stable, consumable version.
+	// defaultTagGlob matches the tags controller-api-tag.yml publishes. It is a
+	// cheap narrowing only: git matches it with fnmatch, so `[0-9]*` is a digit
+	// followed by anything and a release candidate slips through. newestRelease
+	// does the real filtering, because a baseline has to be a stable,
+	// consumable version.
 	defaultTagGlob = releaseTagPrefix + "[0-9]*.[0-9]*.[0-9]*"
 	// defaultDiffer is the change engine. It is invoked with `go run`, pinned
 	// by --differ-version, so nothing has to be installed and the classification

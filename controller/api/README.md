@@ -189,9 +189,14 @@ have.
 
 A waiver is deleted once the baseline tag has moved past the release that
 carried the break. A waiver that matches nothing fails the gate, so it cannot be
-forgotten; if it records the `baseline` it was written against, it merely
-reports as expired once the check runs against a later release tag, so it does
-not fail unrelated branches in the meantime.
+forgotten. Recording the `baseline` it was written against is the one
+exemption: when the check runs against a stable `controller/api/vX.Y.Z` tag
+*later* than that one, the waiver reports as expired instead of failing, so a
+break that has since shipped does not fail unrelated branches. Any other
+relation leaves it failing — the same tag, an earlier one, or a baseline that
+is not an orderable release tag at all (a commit SHA, a branch, a release
+candidate). Checking against an older or unorderable ref therefore does not
+retire a waiver.
 
 ## Rendering the reference
 
