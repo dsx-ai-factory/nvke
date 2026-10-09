@@ -214,6 +214,10 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 	if err != nil {
 		return "", err
 	}
+	provider, err := clients.GetProviderClient(cluster)
+	if err != nil {
+		return "", err
+	}
 
 	machine := &clusterv1.Machine{}
 	if err := a.k8sClient.Get(ctx, client.ObjectKey{
@@ -244,15 +248,11 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 		}
 	}
 	if ipAddress == "" {
-		machineClient, clientErr := clients.GetMachineMaterialization(cluster)
-		if clientErr != nil {
-			return "", clientErr
-		}
 		advanceDeps := shared.MachineAdvanceDeps{
 			K8sClient:                  a.k8sClient,
 			ControlPlaneConfigSnapshot: a.controlPlaneConfigSnapshot,
 		}
-		if _, err := machineClient.TryAdvanceStuckMachine(ctx, advanceDeps, node, nodeSet, machine); err != nil {
+		if _, err := provider.MachineMaterialization().TryAdvanceStuckMachine(ctx, advanceDeps, node, nodeSet, machine); err != nil {
 			return "", err
 		}
 
