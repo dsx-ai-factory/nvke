@@ -512,41 +512,115 @@ func TestFailCertificateRenewalCannotClearAnotherOwner(t *testing.T) {
 	}
 }
 
-func TestBeginCertificateRenewalRefusesAgentUpgradeAndNodeRemoval(t *testing.T) {
-	for _, reason := range []string{"agent upgrade", "repair", "recycling", "delete"} {
-		t.Run(reason, func(t *testing.T) {
+// TestBeginCertificateRenewalRecordsClusterStateRefusals records each refusal
+// as a failed cycle without the mutation lock, so the controller backs off
+// instead of dispatching the same cycle every minute. Two voters get their own
+// phase, which the controller does not retry while the desired count stays two.
+func TestBeginCertificateRenewalRecordsClusterStateRefusals(t *testing.T) {
+	for _, test := range []struct {
+		reason    string
+		wantPhase string
+	}{
+		{"agent upgrade", db.CertificateRenewalPhaseAdmission},
+		{"control-plane upgrade", db.CertificateRenewalPhaseAdmission},
+		{"repair", db.CertificateRenewalPhaseAdmission},
+		{"recycling", db.CertificateRenewalPhaseAdmission},
+		{"delete", db.CertificateRenewalPhaseAdmission},
+		{"unjoined", db.CertificateRenewalPhaseAdmission},
+		{"two voters", db.CertificateRenewalPhaseTwoControlPlaneVoters},
+	} {
+		t.Run(test.reason, func(t *testing.T) {
 			clusterID := uuid.New()
-			cluster := db.Cluster{ID: clusterID, Conditions: db.ClusterConditions{Provisioned: db.NewCondition(true, "")}}
+			due := time.Now().Add(-time.Hour).UTC()
+			cluster := db.Cluster{ID: clusterID, Conditions: db.ClusterConditions{
+				Provisioned: db.NewCondition(true, ""),
+				CertificateRenewal: &db.CertificateRenewalStatus{
+					CycleID: "previous-cycle", State: db.CertificateRenewalStateSucceeded, Outcome: db.CertificateRenewalOutcomeRenewed,
+				},
+			}}
 			node := db.Node{IP: "10.0.0.1", ControlPlane: true, Conditions: db.NodeConditions{
 				Joined: db.NewCondition(true, ""), Provisioned: db.NewCondition(true, ""),
 			}}
-			switch reason {
+			nodes := []db.Node{node}
+			switch test.reason {
 			case "agent upgrade":
 				cluster.NodeAgentUpgrade = &db.NodeAgentUpgrade{NodeID: uuid.New()}
+			case "control-plane upgrade":
+				cluster.Conditions.ControlPlaneUpgrading = db.NewCondition(true, "")
 			case "repair":
-				node.Conditions.MarkedForRepair = db.NewCondition(true, "")
+				nodes[0].Conditions.MarkedForRepair = db.NewCondition(true, "")
 			case "recycling":
-				node.Conditions.MarkedForRecycling = db.NewCondition(true, "")
+				nodes[0].Conditions.MarkedForRecycling = db.NewCondition(true, "")
 			case "delete":
-				node.Conditions.DeleteRequested = db.NewCondition(true, "")
+				nodes[0].Conditions.DeleteRequested = db.NewCondition(true, "")
+			case "unjoined":
+				nodes[0].Conditions.Joined = db.NewCondition(false, "")
+			case "two voters":
+				nodes = append(nodes, node)
 			}
 			tx := &testutil.MockTx{}
 			database := &testutil.MockDB{GetTx: func() db.Tx { return tx }}
 			database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
 			tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(cluster, nil).Once()
-			if reason != "agent upgrade" {
+			if test.reason != "agent upgrade" && test.reason != "control-plane upgrade" {
 				tx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Once()
-				tx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{node}, nil).Once()
+				tx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
 			}
+			tx.On("UpdateCluster", mock.Anything, mock.MatchedBy(func(updated *db.Cluster) bool {
+				status := updated.Conditions.CertificateRenewal
+				return updated.Conditions.UpdateInProgress == nil && updated.NextCertRenewalDue == nil &&
+					status != nil && status.CycleID == "new-cycle" && status.State == db.CertificateRenewalStateFailed &&
+					status.CompletedAt != nil && status.Phase == test.wantPhase && status.Message != "" &&
+					status.ScheduledFor != nil && status.ScheduledFor.Equal(due) && status.Outcome == ""
+			})).Return(db.Cluster{}, nil).Once()
 			a := &Activities{db: database}
-			_, err := a.BeginCertificateRenewal(t.Context(), BeginCertificateRenewalInput{ClusterID: clusterID, CycleID: "new-cycle"})
+
+			_, err := a.BeginCertificateRenewal(t.Context(), BeginCertificateRenewalInput{ClusterID: clusterID, CycleID: "new-cycle", ScheduledFor: &due})
+
 			var appErr *temporal.ApplicationError
 			require.ErrorAs(t, err, &appErr)
 			require.Equal(t, "CertificateRenewalPrecondition", appErr.Type())
 			require.True(t, appErr.NonRetryable())
-			tx.AssertNotCalled(t, "UpdateCluster", mock.Anything, mock.Anything)
 			tx.AssertExpectations(t)
 			database.AssertExpectations(t)
+		})
+	}
+}
+
+// TestBeginCertificateRenewalLeavesOwnedStateUntouched does not record refusals
+// that concern another owner or this cycle's own earlier record.
+func TestBeginCertificateRenewalLeavesOwnedStateUntouched(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		conditions db.ClusterConditions
+	}{
+		{"another operation holds the lock", db.ClusterConditions{
+			Provisioned:      db.NewCondition(true, ""),
+			UpdateInProgress: &db.UpdateInProgress{Type: db.OperationTypeEtcdEncryption},
+		}},
+		{"cycle already failed", db.ClusterConditions{
+			Provisioned:        db.NewCondition(true, ""),
+			CertificateRenewal: &db.CertificateRenewalStatus{CycleID: "new-cycle", State: db.CertificateRenewalStateFailed},
+		}},
+		{"cluster is deleting", db.ClusterConditions{
+			Provisioned: db.NewCondition(true, ""),
+			Deleting:    db.NewCondition(true, ""),
+		}},
+		{"cluster is not provisioned", db.ClusterConditions{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clusterID := uuid.New()
+			tx := &testutil.MockTx{}
+			database := &testutil.MockDB{GetTx: func() db.Tx { return tx }}
+			database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
+			tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, Conditions: test.conditions}, nil).Once()
+			a := &Activities{db: database}
+
+			_, err := a.BeginCertificateRenewal(t.Context(), BeginCertificateRenewalInput{ClusterID: clusterID, CycleID: "new-cycle"})
+
+			require.Error(t, err)
+			tx.AssertNotCalled(t, "UpdateCluster", mock.Anything, mock.Anything)
+			tx.AssertExpectations(t)
 		})
 	}
 }

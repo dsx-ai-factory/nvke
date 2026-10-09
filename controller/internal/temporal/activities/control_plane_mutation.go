@@ -29,7 +29,8 @@ func (a *Activities) reserveControlPlaneDeletion(ctx context.Context, node db.No
 
 // reserveControlPlaneCleanup covers etcd removal and kubeadm reset, which are
 // also used before a first/retried join. Classify lifecycle only after taking
-// the cluster and node locks: teardown intent wins over an unfinished join.
+// the cluster and node locks. A queued delete is not started teardown: leave
+// its promotion and outbox entry to the serialized requested-delete reconciler.
 // Retain the reservation on uncertain RPC outcomes; normal join completion
 // clears Provisioning, while real deletion remains reserved until node removal.
 func (a *Activities) reserveControlPlaneCleanup(ctx context.Context, node db.Node) error {
@@ -45,7 +46,6 @@ func (a *Activities) reserveControlPlaneCleanup(ctx context.Context, node db.Nod
 			return fmt.Errorf("locking control-plane cleanup node: %w", err)
 		}
 		if locked.Conditions.Joined.Status != db.ConditionStatusTrue &&
-			locked.Conditions.DeleteRequested.Status != db.ConditionStatusTrue &&
 			locked.Conditions.Deleting.Status != db.ConditionStatusTrue {
 			db.SetCondition(&locked.Conditions.Provisioning, db.NewCondition(true, "Control-plane pre-join cleanup is in progress"))
 		} else {

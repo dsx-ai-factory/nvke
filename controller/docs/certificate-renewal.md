@@ -26,9 +26,10 @@ A cycle acquires the cluster's mutually exclusive update lock, snapshots the
 control-plane nodes, and then runs. Acceptance refuses unfinished control-plane
 membership work (joins, provisioning/upgrades, accepted deletes, teardown, and
 reboots). While the lock is held, or retained by a failed cycle, API requests
-to delete a control-plane node or pool (HTTP 409) or to patch a control-plane
-pool (HTTP 400) are rejected and nothing is recorded, so they must be
-resubmitted after the lock clears. Controller-driven membership work
+to delete a control-plane node or pool are rejected with HTTP 409 and nothing is
+recorded, so they must be resubmitted after the lock clears. (Patching a
+control-plane pool is always rejected with HTTP 400, lock or not; configure the
+control plane through the cluster's `controlPlaneConfig`.) Controller-driven membership work
 (creation, remediation, upgrades, joins, and deletes accepted earlier) waits
 and resumes once the lock clears; worker-only changes and health observations
 continue. Cluster deletion is the exception: it is always accepted, teardown is
@@ -40,7 +41,7 @@ cluster health → node renewal → cluster health → next node
 
 The health gate requires stable control-plane membership, joined and Ready
 nodes, reachable node agents, for multi-node clusters enough etcd voters to
-tolerate losing one (two voters are refused), every local kube-apiserver `/readyz` check needed
+tolerate losing one, every local kube-apiserver `/readyz` check needed
 for quorum-plus-one safety, and healthy static mirror pods after each node. The
 typed node-agent operation also verifies that all local control-plane
 components are running, etcd has the exact expected voting membership, its
@@ -73,6 +74,14 @@ other node for workers to fail over to. An agent that predates the drain RPCs
 (`Unimplemented`) fails the cycle, as it does for the etcd-encryption and OIDC
 rollouts, so upgrade such agents before renewal.
 
+Renewal supports clusters with one or with three or more control-plane nodes.
+Two etcd voters cannot lose one, so a cluster with exactly two control-plane
+nodes is never renewed. Acceptance refuses it and records the cycle as `failed`
+with `phase` `two-control-plane-voters`, without the mutation lock. The
+controller does not retry that cycle while `controlPlaneConfig.desiredCount`
+stays at 2; changing it to 1 or to 3 or more lets the hourly retry resume.
+Scale such a cluster before its leaf certificates expire.
+
 A single-control-plane cluster has no peer quorum to protect, so the
 lose-one-voter requirement does not apply to it; every other gate, including
 exactly one voting etcd member and no learners, still does. Renewing its only
@@ -99,7 +108,16 @@ pods again) and in the runbook's additional lock and CA fingerprint checks.
 
 `nextCertRenewalDue` advances by `certRenewal.interval` only after the workflow
 succeeds. A failed scheduled cycle leaves the old due time intact and therefore
-remains overdue.
+remains overdue until a fresh cycle succeeds. If the failure released the
+mutation lock, the controller retries with a new workflow ID after a fixed
+one-hour backoff. A retained `certificate_renewal` lock prevents automatic retry.
+When acceptance refuses a cycle because of cluster state (unfinished
+control-plane membership, upgrade or recycling work, a node-agent installation,
+or two control-plane nodes), the cycle is recorded as `failed` with `phase`
+`admission` (or `two-control-plane-voters`) and the lock is not taken, so the
+same backoff applies. Such a record replaces the previous cycle's status.
+Refusals because another operation holds the lock, or because the cluster is
+being deleted, record nothing; the controller waits for the lock to clear.
 
 ## Forced renewal
 
@@ -175,15 +193,25 @@ block overlapping cluster mutations. The due time is not advanced. Legacy status
 checks always use the embedded status-only implementation, not a configured
 runbook override that might ignore the status-only mode.
 
-The controller does not automatically relaunch the same failed scheduled cycle.
+The controller never reopens the same failed cycle ID. Released failures retry
+automatically after one hour with a fresh ID; retained-lock failures stay halted.
 For a retained lock, first establish that the reported operation and all its
 attempts have stopped, including any legacy manifest restoration, and repair the
 reported node/health problem. An operator must then clear only that cycle's
 `certificate_renewal` mutation lock with an ownership-checked database transaction
-(check both the failed cycle ID and lock type under the cluster row lock). There
-is no automatic retained-lock release or dedicated recovery API. Do not clear
-the lock based only on cluster health or workflow completion. Once ownership is
-safely released, start a uniquely named forced workflow.
+on the cluster's row in the `clusters` table: under the row lock, check that the
+`conditions` jsonb column has `updateInProgress.type` = `certificate_renewal`,
+`certificateRenewal.cycleID` = the failed cycle ID and `certificateRenewal.state`
+= `failed`, then remove only the `updateInProgress` key. There is no automatic
+retained-lock release or dedicated recovery API. Do not clear the lock based
+only on cluster health or workflow completion.
+
+Clearing the lock leaves a released failure, and the controller then starts
+its own non-forced `-retry-` cycle once `certificateRenewal.completedAt` is more
+than an hour old (usually at its next reconcile). That retry takes the lock, so
+a forced workflow started meanwhile is refused. Wait for the automatic retry and
+inspect its result; start a uniquely named forced workflow only when forced
+semantics are needed, after that retry has finished.
 
 ## Validation evidence
 
