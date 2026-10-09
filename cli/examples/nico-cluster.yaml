@@ -60,6 +60,13 @@ nodePools:
     desiredNodeCount: 2
     controlPlane: false
     systemReservedMemory: "1Gi"
+    # Labels and taints can be set at create only and cannot be updated.
+    nodeLabels:
+      tier: compute
+    # nodeTaints:
+    #   - key: dedicated
+    #     value: compute
+    #     effect: NoSchedule
     nico:
       instanceTypeID: 00000000-0000-0000-0000-000000000000
       vpcPrefixIDs:
