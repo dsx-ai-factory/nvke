@@ -51,8 +51,8 @@ have notices of their own yet:
   provider's 67 modules, the same set for `linux/amd64` and `linux/arm64`;
   `k8s.io/cluster-bootstrap` is not in it. The provider needs notices generated
   from its own import closure.
-- **The `management-engine` manager image and chart** are outside the release
-  scope. No workflow in this repository builds or publishes them, the
+- **The `management-engine` manager image and chart** are not part of the initial
+  open-source release. No workflow in this repository builds or publishes them, the
   `Dockerfile` and `make docker-build` / `docker-push` targets are for
   development with a caller-supplied image name, and they are not distributed by
   any other means. The module's API types are compiled into the controller and
