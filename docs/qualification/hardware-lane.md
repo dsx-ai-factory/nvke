@@ -226,7 +226,7 @@ lane on the product's own front door rather than a test-only path.
 
 ```mermaid
 flowchart LR
-    SUITE["the suite<br/>posts an nke.ClusterSpec with<br/>Backend: BackendNicoForge"] --> CTRL["the controller<br/>on the site node"]
+    SUITE["the suite<br/>posts an nke.ClusterSpec with<br/>Backend: BackendNicoForge"] --> CTRL["the controller<br/>on the site controller"]
     CTRL --> CAPN["CAPNico<br/>inside that cluster"]
     CAPN --> NICO["the NICo API"]
     SUITE --x NICO
