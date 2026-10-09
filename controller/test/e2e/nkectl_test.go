@@ -14,8 +14,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -24,9 +22,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nke/controller/api"
@@ -99,32 +94,21 @@ func validateNkectlPostCreate(test *tenantTest) {
 				"the nkectl runner should still be open; it is closed in AfterAll, after these specs")
 		})
 
-		// The gap this entry exists to close. `get kubeconfig` reads
-		// nke-system/<cluster>-admin-kubeconfig through the site's own
-		// kubeconfig rather than the controller API, and that Secret appears only after
-		// provisioning -- which the smoke lane's cluster never does.
-		It("prints a usable admin kubeconfig", func(ctx context.Context) {
+		// The gap this entry exists to close. `get kubeconfig` reads the cluster
+		// server and CA from nke-system/<cluster>-admin-kubeconfig through the
+		// site's own kubeconfig rather than the controller API, and that Secret
+		// appears only after provisioning -- which the smoke lane's cluster never
+		// does. The printed file is an oidc-login kubeconfig, so it is not a
+		// credential this spec can use to list nodes.
+		It("prints an oidc kubeconfig", func(ctx context.Context) {
 			raw, err := test.nkectlRunner.GetKubeconfig(ctx, test.cluster.Name)
-			Expect(err).NotTo(HaveOccurred(), "should fetch the tenant admin kubeconfig")
+			Expect(err).NotTo(HaveOccurred(), "should fetch the tenant oidc kubeconfig")
 
-			// Assert the shape, not just that bytes came back: an empty Secret
-			// value would otherwise pass.
-			Expect(string(raw)).To(ContainSubstring("apiVersion:"), "should look like a kubeconfig")
-			Expect(string(raw)).To(ContainSubstring("clusters:"), "should name the tenant cluster")
-
-			By("Using the kubeconfig to reach the tenant API server")
-			path := filepath.Join(GinkgoT().TempDir(), "tenant.kubeconfig")
-			Expect(os.WriteFile(path, raw, 0o600)).To(Succeed())
-
-			restCfg, err := clientcmd.BuildConfigFromFlags("", path)
-			Expect(err).NotTo(HaveOccurred(), "the printed kubeconfig should parse")
-
-			clientset, err := kubernetes.NewForConfig(restCfg)
-			Expect(err).NotTo(HaveOccurred())
-
-			nodes, err := clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
-			Expect(err).NotTo(HaveOccurred(), "the printed kubeconfig should authenticate to the tenant cluster")
-			Expect(nodes.Items).NotTo(BeEmpty(), "the tenant cluster should report at least one node")
+			got := string(raw)
+			Expect(got).To(ContainSubstring("apiVersion:"), "should look like a kubeconfig")
+			Expect(got).To(ContainSubstring("clusters:"), "should name the tenant cluster")
+			Expect(got).To(ContainSubstring("oidc-login"), "should authenticate with oidc-login")
+			Expect(got).NotTo(ContainSubstring("client-key-data"), "should not copy the admin key")
 		}, SpecTimeout(5*time.Minute))
 
 		// The CLI's unit tests cover the flag surface; what is left to e2e is a

@@ -154,5 +154,8 @@ Port-forward the Temporal Web UI from the site controller cluster and look for w
 ### How do I get a tenant cluster's kubeconfig?
 
 ```bash
-nkectl get kubeconfig <cluster-name> --output-file tenant.kubeconfig
+nkectl get kubeconfig <cluster-name> \
+  --oidc-issuer-url <issuer> \
+  --oidc-client-id <client-id> \
+  --output-file tenant.kubeconfig
 ```

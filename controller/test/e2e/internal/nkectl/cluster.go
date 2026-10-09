@@ -168,14 +168,20 @@ func (r *Runner) WaitForClusterReady(ctx context.Context, id openapi_types.UUID)
 	}
 }
 
-// GetKubeconfig returns the tenant admin kubeconfig `nkectl get kubeconfig`
+// GetKubeconfig returns the oidc-login kubeconfig `nkectl get kubeconfig`
 // prints for the named cluster.
 //
-// The command reads the nke-system/<cluster>-admin-kubeconfig Secret through the
-// site's own kubeconfig rather than the controller API. That Secret is published only
-// once the cluster has provisioned, so this fails against one that has not.
+// The command reads the cluster server and CA from
+// nke-system/<cluster>-admin-kubeconfig through the site's own kubeconfig
+// rather than the controller API. That Secret is published only once the
+// cluster has provisioned, so this fails against one that has not. The issuer
+// and client id are fixed stand-ins: the printed file is not a credential
+// that can call the tenant API.
 func (r *Runner) GetKubeconfig(ctx context.Context, name string) ([]byte, error) {
-	out, err := r.Run(ctx, "get", "kubeconfig", name)
+	out, err := r.Run(ctx, "get", "kubeconfig", name,
+		"--oidc-issuer-url", "https://idp.example/realms/nke",
+		"--oidc-client-id", "nke-e2e",
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -11,8 +11,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/sitespec"
+	"github.com/dsx-ai-factory/nke/cli/internal/filesystem"
 	"github.com/dsx-ai-factory/nke/cli/internal/oidckubeconfig"
-	"github.com/dsx-ai-factory/nke/cli/internal/util"
 )
 
 // newGenerateCmd is the "generate" command group.
@@ -184,14 +184,5 @@ func runGenerateOIDCKubeconfig(cmd *cobra.Command, opts *generateOIDCKubeconfigO
 		return err
 	}
 
-	if opts.outputFile != "" {
-		if err := util.WritePrivateFile(opts.outputFile, data); err != nil {
-			return err
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "kubeconfig written to %s\n", opts.outputFile)
-		return nil
-	}
-
-	_, err = cmd.OutOrStdout().Write(data)
-	return err
+	return filesystem.WriteKubeconfig(cmd.OutOrStdout(), opts.outputFile, data)
 }

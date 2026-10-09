@@ -32,6 +32,7 @@ import (
 	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/untaint"
 	"github.com/dsx-ai-factory/nke/cli/internal/clients"
 	"github.com/dsx-ai-factory/nke/cli/internal/config"
+	"github.com/dsx-ai-factory/nke/cli/internal/filesystem"
 )
 
 const (
@@ -665,8 +666,8 @@ func (e *keyCaptureError) Unwrap() error { return e.err }
 // writeTenantKubeconfig saves the finished cluster's admin kubeconfig beside
 // the operator and returns its path.
 //
-// 0o600: it is an admin credential for the cluster that was just created. A
-// plain write, unlike the etcd key's: a kubeconfig can be issued again from
+// The file is mode 0600: it is an admin credential for the cluster that was
+// just created. Unlike the etcd key, a kubeconfig can be issued again from
 // the cluster, so losing or overwriting this file is recoverable.
 func writeTenantKubeconfig(
 	ctx context.Context,
@@ -682,8 +683,8 @@ func writeTenantKubeconfig(
 	if err != nil {
 		return "", fmt.Errorf("reading the kubeconfig of cluster %q: %w", clusterName, err)
 	}
-	if err := os.WriteFile(path, kubeconfig, 0o600); err != nil {
-		return "", fmt.Errorf("writing %s: %w", path, err)
+	if err := filesystem.WritePrivateFile(path, kubeconfig); err != nil {
+		return "", err
 	}
 
 	logger.Info("wrote the cluster kubeconfig", "path", path)

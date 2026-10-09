@@ -17,7 +17,7 @@ below is on `main`; the steps the CLI does not cover are marked.
 | `nkectl get providers` | Lists the Cluster API infrastructure providers the site controller can use, with their state. Alpha. | Available |
 | `nkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
 | `nkectl get clusters [name ...]` | Lists tenant clusters. Names narrow to those clusters. `-o json\|yaml` changes the format. | Available |
-| `nkectl get kubeconfig <name>` | Fetches a tenant cluster's admin kubeconfig. `--output-file` writes it to a file instead of stdout. | Available |
+| `nkectl get kubeconfig <name>` | Writes an oidc-login kubeconfig for a tenant cluster. `--oidc-issuer-url` and `--oidc-client-id` are required. The cluster server and CA come from the site cluster; the admin client certificate is not copied. `--output-file` writes the file instead of stdout. | Available |
 | `nkectl delete cluster <name>` | Deletes a tenant cluster. | Available |
 | `nkectl patch cluster <name>` | PATCHes a mutable cluster property (Kubernetes version, etcd encryption, remote access, control plane config). `--patch` takes an inline YAML document, `--patch-file` a file (or stdin via `-`). | Available |
 | `nkectl create nodepool -f spec.yaml` | Adds a node pool to an existing cluster from a `CreateNodePoolRequest` YAML. `-f -` reads stdin. | Available |
@@ -173,12 +173,16 @@ nkectl get clusters <cluster-name> -o yaml
 ### 9. Get the tenant cluster's kubeconfig
 
 ```bash
-nkectl get kubeconfig <cluster-name> --output-file ./tenant.kubeconfig
+nkectl get kubeconfig <cluster-name> \
+  --oidc-issuer-url https://idp.example/realms/nke \
+  --oidc-client-id nke-cli \
+  --output-file ./tenant.kubeconfig
 ```
 
 Without `--output-file`, the kubeconfig is written to stdout. This reads the
-site cluster directly, the same as `get providers`, so it needs the site
-kubeconfig from step 5.
+cluster server and CA from the site cluster, the same as `get providers` reads
+the site, so it needs the site kubeconfig from step 5. The printed user is
+`kubectl oidc-login get-token`.
 
 ### 10. Patch the tenant cluster
 

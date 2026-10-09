@@ -77,7 +77,9 @@ nkectl get clusters <name>... -o yaml  # full detail for named clusters
 nkectl create cluster -f <spec-file>   # or: cat spec.yaml | nkectl create cluster -f -
 nkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: 1.31.0'
 nkectl patch cluster my-cluster --patch-file patch.yaml
-nkectl get kubeconfig <name> --output-file ./tenant.kubeconfig   # admin kubeconfig, read from the site cluster
+nkectl get kubeconfig <name> \
+  --oidc-issuer-url <issuer> --oidc-client-id <client-id> \
+  --output-file ./tenant.kubeconfig   # oidc-login kubeconfig; server and CA from the site cluster
 nkectl delete cluster <name>           # deletes immediately; there is no prompt
 
 # Node pools
@@ -120,7 +122,8 @@ The kubeconfig identity needs:
 
 - `create` on `serviceaccounts/token` for `nke-client` in `nke-clients`
 - `get` on `secrets` in `nke-system`, for `nkectl get kubeconfig`, which reads
-  the `<cluster>-admin-kubeconfig` Secret there directly rather than through CWE
+  the cluster server and CA from the `<cluster>-admin-kubeconfig` Secret there
+  directly rather than through the controller and writes an oidc-login kubeconfig
 - `list` on `customresourcedefinitions`, `list` on `deployments` across
   namespaces, and `get` on `secrets` in each provider manager's namespace
   (`capnico-system` and `capll-system` by default), for `nkectl get providers`

@@ -1,9 +1,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package util
+package filesystem
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -75,5 +76,40 @@ func TestWritePrivateFileErrorsWhenDirectoryMissing(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "missing", "file")
 	if err := WritePrivateFile(path, []byte("x")); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestWriteKubeconfigWritesStdout(t *testing.T) {
+	var out bytes.Buffer
+	if err := WriteKubeconfig(&out, "", []byte("kubeconfig")); err != nil {
+		t.Fatalf("WriteKubeconfig: %v", err)
+	}
+	if out.String() != "kubeconfig" {
+		t.Errorf("stdout = %q", out.String())
+	}
+}
+
+func TestWriteKubeconfigWritesFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tenant.kubeconfig")
+	var out bytes.Buffer
+	if err := WriteKubeconfig(&out, path, []byte("kubeconfig")); err != nil {
+		t.Fatalf("WriteKubeconfig: %v", err)
+	}
+	if out.String() != "kubeconfig written to "+path+"\n" {
+		t.Errorf("stdout = %q", out.String())
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %o, want 0600", info.Mode().Perm())
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "kubeconfig" {
+		t.Errorf("contents = %q", got)
 	}
 }

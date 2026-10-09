@@ -63,6 +63,6 @@ Check the NICo site independently. See the [NICo documentation](https://docs.nvi
 
 ## Tenant Clusters
 
-Tenant clusters are standard Kubernetes clusters. Use `kubectl` with the cluster's admin kubeconfig (obtained with `nkectl get kubeconfig <name>`) to inspect node and workload health.
+Tenant clusters are standard Kubernetes clusters. Use `kubectl` with the oidc-login kubeconfig from `nkectl get kubeconfig <name> --oidc-issuer-url <issuer> --oidc-client-id <client-id>` to inspect node and workload health.
 
 For node-level health integration with NKE's lifecycle APIs, see [Node Lifecycle](../tenant-clusters/node-lifecycle.md) and [NVSentinel](https://github.com/NVIDIA/NVSentinel).

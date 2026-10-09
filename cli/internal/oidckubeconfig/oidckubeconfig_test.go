@@ -304,3 +304,44 @@ func TestGenerateRejects(t *testing.T) {
 		})
 	}
 }
+
+func TestFromKubeconfigCopiesClusterAndDropsAdminUser(t *testing.T) {
+	data, err := clientcmd.Write(*adminConfig())
+	if err != nil {
+		t.Fatalf("clientcmd.Write: %v", err)
+	}
+	out, err := FromKubeconfig(data, Options{
+		IssuerURL: "https://idp.example/realms/nke",
+		ClientID:  "nke-cli",
+	})
+	if err != nil {
+		t.Fatalf("FromKubeconfig: %v", err)
+	}
+	cfg, err := clientcmd.Load(out)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Clusters["site"].Server != "https://10.10.50.2:6443" {
+		t.Errorf("server = %q", cfg.Clusters["site"].Server)
+	}
+	if _, ok := cfg.AuthInfos["kubernetes-admin"]; ok {
+		t.Error("input user was copied")
+	}
+	if cfg.AuthInfos["oidc"] == nil || cfg.AuthInfos["oidc"].Exec == nil {
+		t.Fatal("generated kubeconfig has no oidc exec user")
+	}
+}
+
+func TestFromKubeconfigRejectsCertificateAuthorityPath(t *testing.T) {
+	cfg := adminConfig()
+	cfg.Clusters["site"].CertificateAuthorityData = nil
+	cfg.Clusters["site"].CertificateAuthority = "/etc/kubernetes/pki/ca.crt"
+	data, err := clientcmd.Write(*cfg)
+	if err != nil {
+		t.Fatalf("clientcmd.Write: %v", err)
+	}
+	_, err = FromKubeconfig(data, Options{IssuerURL: "https://idp.example", ClientID: "nke-cli"})
+	if err == nil || !strings.Contains(err.Error(), "certificate-authority-data") {
+		t.Fatalf("FromKubeconfig() = %v, want an error about certificate-authority-data", err)
+	}
+}

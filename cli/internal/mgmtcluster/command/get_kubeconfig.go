@@ -12,7 +12,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dsx-ai-factory/nke/cli/internal/config"
-	"github.com/dsx-ai-factory/nke/cli/internal/util"
+	"github.com/dsx-ai-factory/nke/cli/internal/filesystem"
+	"github.com/dsx-ai-factory/nke/cli/internal/oidckubeconfig"
 )
 
 // SiteFn is a factory that resolves the active site's configuration.
@@ -35,21 +36,33 @@ type MgmtClientFactory func(kubeconfigPath string) (KubeconfigFetcher, error)
 
 // NewGetKubeconfigCmd returns "nkectl get kubeconfig <cluster-name>".
 //
-// It reads the admin kubeconfig for the named tenant cluster directly from
-// the management cluster, using the active site's configured kubeconfig
-// (--site overrides which site is active, the same as every other command).
+// It reads the tenant cluster's server and certificate authority from the
+// management cluster, then writes an oidc-login kubeconfig. The admin client
+// certificate in that Secret is not copied. The active site's kubeconfig
+// selects the management cluster (--site overrides which site is active, the
+// same as every other command).
 func NewGetKubeconfigCmd(siteFn SiteFn, newMgmtClient MgmtClientFactory) *cobra.Command {
-	var outputFile string
+	var (
+		outputFile  string
+		issuerURL   string
+		clientID    string
+		extraScopes []string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "kubeconfig <cluster-name>",
-		Short: "Get the admin kubeconfig for a tenant cluster",
-		Long: `Get the admin kubeconfig for a tenant cluster from the management cluster.
+		Short: "Get an oidc-login kubeconfig for a tenant cluster",
+		Long: `Get an oidc-login kubeconfig for a tenant cluster.
 
-The kubeconfig is read from the Secret that the NKE tenantaccess controller
-publishes into the management cluster at:
+The cluster server and certificate authority are read from the Secret that
+the NKE tenantaccess controller publishes into the management cluster at:
 
   nke-system/<cluster-name>-admin-kubeconfig  (key: value)
+
+The admin client certificate in that Secret is not copied. The generated
+user is an exec plugin:
+
+  kubectl oidc-login get-token --oidc-issuer-url ... --oidc-client-id ...
 
 The management cluster kubeconfig is the active site's configured kubeconfig
 (see 'nkectl config set-site --kubeconfig'); use --site to target a
@@ -59,9 +72,16 @@ By default the kubeconfig is printed to stdout. Use --output-file to write it
 to a file instead.
 
 Example:
-  nkectl get kubeconfig my-cluster
-  nkectl get kubeconfig my-cluster --output-file ~/.kube/my-cluster.yaml
-  nkectl get kubeconfig my-cluster --site prod`,
+  nkectl get kubeconfig my-cluster \
+    --oidc-issuer-url https://idp.example/realms/nke \
+    --oidc-client-id nke-cli
+  nkectl get kubeconfig my-cluster \
+    --oidc-issuer-url https://idp.example/realms/nke \
+    --oidc-client-id nke-cli \
+    --output-file ~/.kube/my-cluster.yaml
+  nkectl get kubeconfig my-cluster --site prod \
+    --oidc-issuer-url https://idp.example/realms/nke \
+    --oidc-client-id nke-cli`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clusterName := args[0]
@@ -76,25 +96,30 @@ Example:
 				return err
 			}
 
-			data, err := mc.GetClusterKubeconfig(cmd.Context(), clusterName)
+			admin, err := mc.GetClusterKubeconfig(cmd.Context(), clusterName)
 			if err != nil {
 				return err
 			}
 
-			if outputFile != "" {
-				if err := util.WritePrivateFile(outputFile, data); err != nil {
-					return err
-				}
-				fmt.Fprintf(cmd.OutOrStdout(), "kubeconfig written to %s\n", outputFile)
-				return nil
+			data, err := oidckubeconfig.FromKubeconfig(admin, oidckubeconfig.Options{
+				IssuerURL:   issuerURL,
+				ClientID:    clientID,
+				ExtraScopes: extraScopes,
+			})
+			if err != nil {
+				return fmt.Errorf("building oidc kubeconfig for %q: %w", clusterName, err)
 			}
 
-			_, err = cmd.OutOrStdout().Write(data)
-			return err
+			return filesystem.WriteKubeconfig(cmd.OutOrStdout(), outputFile, data)
 		},
 	}
 
+	cmd.Flags().StringVar(&issuerURL, "oidc-issuer-url", "", "OIDC issuer URL (required)")
+	cmd.Flags().StringVar(&clientID, "oidc-client-id", "", "OIDC client ID (required)")
+	cmd.Flags().StringArrayVar(&extraScopes, "oidc-extra-scope", nil, "Extra OIDC scope. Repeatable.")
 	cmd.Flags().StringVar(&outputFile, "output-file", "", "Write kubeconfig to file instead of stdout")
+	_ = cmd.MarkFlagRequired("oidc-issuer-url")
+	_ = cmd.MarkFlagRequired("oidc-client-id")
 
 	return cmd
 }

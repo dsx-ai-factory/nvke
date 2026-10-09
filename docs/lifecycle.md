@@ -56,7 +56,7 @@ Once the site is ingested, day-2 operations go through NKE:
 |---|---|
 | Create a tenant cluster | `nkectl create cluster -f spec.yaml` |
 | List tenant clusters | `nkectl get clusters` |
-| Get a tenant kubeconfig | `nkectl get kubeconfig <name>` |
+| Get a tenant kubeconfig | `nkectl get kubeconfig <name> --oidc-issuer-url <issuer> --oidc-client-id <client-id>` |
 | Add a node pool | `nkectl create nodepool -f spec.yaml` |
 | Scale a node pool | `nkectl patch nodepool <name> --cluster <cluster> --patch 'desiredNodeCount: N'` |
 | Upgrade a cluster's Kubernetes version | `nkectl patch cluster <name> --patch 'controlPlaneKubernetesVersion: "1.34.0"'` |
