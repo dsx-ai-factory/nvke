@@ -29,7 +29,6 @@ func TestRemoveEtcdMemberUsesSurvivingNode(t *testing.T) {
 	database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
 	database.On("GetNode", mock.Anything, target.ID).Return(target, nil).Once()
 	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
-	database.MockTx.On("GetNode", mock.Anything, target.ID).Return(target, nil).Once()
 	database.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID}, nil).Once()
 	database.MockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil).Once()
 	database.MockTx.On("UpdateNode", mock.Anything, mock.Anything).Return(target, nil).Once()
@@ -69,7 +68,6 @@ func TestRemoveEtcdMemberFallsBackOnlyOnUnimplemented(t *testing.T) {
 			database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
 			database.On("GetNode", mock.Anything, target.ID).Return(target, nil).Once()
 			database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
-			database.MockTx.On("GetNode", mock.Anything, target.ID).Return(target, nil).Once()
 			database.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID}, nil).Once()
 			database.MockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil).Once()
 			database.MockTx.On("UpdateNode", mock.Anything, mock.Anything).Return(target, nil).Once()
