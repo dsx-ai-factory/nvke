@@ -1,30 +1,22 @@
 # Configure cert-manager
 
-NKTP depends on cert-manager to reap the benefits of following features. These features are not explicitly required, but are enabled by default and represent the best-practices for deploying NKTP.
+Choose how NKTP obtains its TLS certificates:
 
-## Installing NKTP without cert-manager
+- **Use cert-manager (default and recommended).** cert-manager issues and renews
+  certificates for internal Collector mTLS, the Operator's admission webhook,
+  and Collector-to-Target-Allocator mTLS. These features are enabled by default
+  and follow best practices for deploying NKTP.
+- **Run without cert-manager.** Provide and renew your own certificates for
+  internal Collector and Target Allocator mTLS. For the admission webhook, use
+  your own certificates or let Helm generate them. Replace all three
+  integrations before installing.
 
-cert-manager has three uses in NKTP. The following values disable internal
-certificate creation and switch the admission webhook to Helm-generated
-certificates. Before installing, also configure user-provided Target Allocator
-certificates as described below and complete the internal plaintext migration
-at the end of this guide.
+## Installing NKTP with cert-manager
 
-```yaml
-certManager:
-  internalTLS:
-    enabled: false
-opentelemetry-kube-stack:
-  opentelemetry-operator:
-    admissionWebhooks:
-      certManager:
-        enabled: false
-      autoGenerateCert:
-        enabled: true
-        recreate: false
-```
-
-## Usages
+Install cert-manager before installing NKTP with default values, following the
+[cert-manager installation instructions](https://cert-manager.io/docs/installation/).
+NKTP does not bundle or install cert-manager. The following sections describe
+its three uses and the settings available when using it.
 
 ### Target Allocators
 
@@ -33,61 +25,12 @@ and its Target Allocator. The Operator provisions a CA plus server and client
 certificates for each pair, as described in
 [With cert-manager (default)](https://github.com/open-telemetry/opentelemetry-operator/blob/main/docs/target-allocator/README.md#with-cert-manager-default).
 
-As an alternative, set `useCertManager: false` and reference certificates that
-already exist in the release namespace. Apply the same `mtls` block under each
-enabled allocator at `watchdog.kubernetes.targetAllocator`,
-`daemonset.kubernetes.targetAllocator`, and
-`large_target_metrics.kubernetes.targetAllocator`. For example:
-
-```yaml
-daemonset:
-  kubernetes:
-    targetAllocator:
-      mtls:
-        enabled: true
-        useCertManager: false
-        tls:
-          certificateAuthorityCertificate:
-            configMap:
-              name: target-allocator-ca
-          serverCertificate:
-            certificateSecret:
-              name: target-allocator-server
-            keySecret:
-              name: target-allocator-server
-          clientCertificate:
-            certificateSecret:
-              name: target-allocator-client
-            keySecret:
-              name: target-allocator-client
-```
-
-See the Operator's
-[user-provided certificate documentation](https://github.com/open-telemetry/opentelemetry-operator/blob/main/docs/target-allocator/README.md#without-cert-manager-user-provided-certificates)
-for the accepted Secret and ConfigMap references, default keys, and certificate
-rotation behavior.
-
 ### Admission Webhook
 
 NKTP uses an existing cert-manager installation to issue and renew the
 Operator's admission webhook certificate by default. The upstream Operator
 chart documents the available approaches under
 [TLS Certificate Requirement](https://github.com/open-telemetry/opentelemetry-helm-charts/blob/opentelemetry-operator-0.123.0/charts/opentelemetry-operator/README.md#tls-certificate-requirement).
-
-As an alternative, disable cert-manager integration and let Helm generate a
-self-signed certificate. This configuration reuses that certificate on
-upgrades; it expires after 365 days by default and is not renewed automatically.
-
-```yaml
-opentelemetry-kube-stack:
-  opentelemetry-operator:
-    admissionWebhooks:
-      certManager:
-        enabled: false
-      autoGenerateCert:
-        enabled: true
-        recreate: false
-```
 
 ### Internal mTLS
 
@@ -144,8 +87,89 @@ certificate.cert-manager.io/nktp-watchdog-server                       True    n
 
 **NOTE:** Gateway-to-backend is **not** included as part of this feature. Users must configure this communication separately.
 
-#### Switching internal traffic to plaintext
+## Installing NKTP without cert-manager
+
+Replace all three cert-manager integrations before installing. The following
+values stop internal certificate creation and use Helm-generated admission
+webhook certificates. Also provide internal Collector and Target Allocator
+certificates as described below; these values alone are not sufficient.
+
+```yaml
+certManager:
+  internalTLS:
+    enabled: false
+opentelemetry-kube-stack:
+  opentelemetry-operator:
+    admissionWebhooks:
+      certManager:
+        enabled: false
+      autoGenerateCert:
+        enabled: true
+        recreate: false
+```
+
+### User-provided internal Collector certificates
+
+Set `certManager.internalTLS.enabled: false` and create the TLS Secrets
+referenced by the Collectors' and sidecars' `kubernetes.volumes` values in the
+release namespace. Supply `ca.crt`, `tls.crt`, and `tls.key` with certificates
+valid for the configured services and peers. Keeping the default Secret names,
+mounts, and Collector TLS settings preserves internal mTLS. If you change names
+or paths, update the volume references, mounts, and Collector configurations
+together. You are responsible for issuing and renewing these certificates.
+
+### User-provided Target Allocator certificates
+
+Set `useCertManager: false` and reference certificates that
+already exist in the release namespace. Apply the same `mtls` block under each
+enabled allocator at `watchdog.kubernetes.targetAllocator`,
+`daemonset.kubernetes.targetAllocator`, and
+`large_target_metrics.kubernetes.targetAllocator`. For example:
+
+```yaml
+daemonset:
+  kubernetes:
+    targetAllocator:
+      mtls:
+        enabled: true
+        useCertManager: false
+        tls:
+          certificateAuthorityCertificate:
+            configMap:
+              name: target-allocator-ca
+          serverCertificate:
+            certificateSecret:
+              name: target-allocator-server
+            keySecret:
+              name: target-allocator-server
+          clientCertificate:
+            certificateSecret:
+              name: target-allocator-client
+            keySecret:
+              name: target-allocator-client
+```
+
+See the Operator's
+[user-provided certificate documentation](https://github.com/open-telemetry/opentelemetry-operator/blob/main/docs/target-allocator/README.md#without-cert-manager-user-provided-certificates)
+for the accepted Secret and ConfigMap references, default keys, and certificate
+rotation behavior.
+
+### Webhook certificates without cert-manager
+
+The values above let Helm generate a self-signed webhook certificate. This
+configuration reuses that certificate on upgrades; it expires after 365 days by
+default and is not renewed automatically.
+
+To provide your own webhook certificate instead, also set
+`admissionWebhooks.autoGenerateCert.enabled: false` and supply the upstream
+chart's `admissionWebhooks.certFile`, `keyFile`, and `caFile` values under
+`opentelemetry-kube-stack.opentelemetry-operator`. See the upstream chart's
+[TLS Certificate Requirement](https://github.com/open-telemetry/opentelemetry-helm-charts/blob/opentelemetry-operator-0.123.0/charts/opentelemetry-operator/README.md#tls-certificate-requirement).
+
+### Switching internal traffic to plaintext
 
 Set `certManager.internalTLS.enabled: false` only with the matching configuration
-and mount changes below. This flag stops certificate creation; it does not change
-Collector configurations. For a detailed example of the overrides required, look at the [example](../examples/disable-internal-mtls.values.yaml).
+and mount overrides in the [plaintext example](../examples/disable-internal-mtls.values.yaml).
+This flag stops certificate creation; it does not change Collector configurations.
+The example changes internal traffic only; apply the webhook and Target Allocator
+overrides above as well to remove the cert-manager dependency.

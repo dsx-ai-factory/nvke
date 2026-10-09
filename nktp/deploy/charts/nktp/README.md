@@ -21,10 +21,12 @@ Provide the following before installing NKTP.
   Kubernetes enables by default from 1.29. The bundled OpenTelemetry Operator
   0.159.0 itself supports 1.25+.
 - **Helm 4.** The repository pins the version in `make/tool-versions.mk`.
-- **cert-manager.** Required with default values. NKTP uses it for internal
-  collector TLS, the Operator's admission webhook certificate, and Collector to
-  Target Allocator mTLS. The documentation describes how to replace each use to
-  install without it.
+- **cert-manager.** Required with default values; install it separately.
+  NKTP does not bundle or install it. It issues certificates for internal
+  Collector mTLS, the Operator's admission webhook, and
+  Collector-to-Target-Allocator mTLS. Running without it requires replacing all
+  three integrations. See [More information](#more-information) for the
+  documentation covering installation and configuration.
 - **Image registry access** to `docker.io`, `ghcr.io`, `quay.io` and
   `registry.k8s.io`, or mirrors of them. The uninstall hook also pulls
   `rancher/kubectl` from `docker.io`. See [Image registry](#image-registry).
