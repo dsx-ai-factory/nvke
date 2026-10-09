@@ -118,7 +118,7 @@ on:
         type: string
         required: false
       keep-site:
-        description: Keep the node after the run, for debugging. Remember to delete it by hand.
+        description: Keep the site node after the run, and a failed tenant's nodes, for debugging. Remember to delete them by hand.
         type: boolean
         required: false
         default: false
@@ -823,6 +823,12 @@ jobs:
                 tag: local
                 archive: ${SITE_INPUTS}/profiles.tar
           EOF
+          # -e2e.keep-site holds only the site node. The tenant's own cleanup
+          # still deletes a failed tenant's cluster, which releases the very
+          # instances the site was kept to look at.
+          if [ "${KEEP_SITE}" = "true" ]; then
+            printf 'lifecycle:\n  preserveOnFailure: true\n' >> controller/test/e2e/e2e-config.yaml
+          fi
           echo "--- e2e-config.yaml ---"
           cat controller/test/e2e/e2e-config.yaml
 
@@ -1057,7 +1063,7 @@ jobs:
           keep=()
           if [ "${KEEP_SITE}" = "true" ]; then
             keep=(-e2e.keep-site)
-            echo "::warning::-e2e.keep-site is set; the Forge instance survives this run and must be deleted by hand"
+            echo "::warning::-e2e.keep-site is set; the site node, and a failed tenant's nodes, survive this run and must be deleted by hand"
           fi
           # -v so a green run keeps its output. Without it `go test` buffers a
           # passing package's stdout and throws it away, which is what run
