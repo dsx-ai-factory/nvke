@@ -18,9 +18,10 @@ metadata:
   description: The streams a release can be qualified against and the scopes over them.
 spec:
   scopes:
-    # Only Ubuntu 24.04, on every arch and minor that has a stream for it.
+    # Only Ubuntu 24.04 on GB200, on every arch and minor that has a stream for
+    # it.
     golden-path:
-      selector: {ubuntu: "24.04"}
+      selector: {ubuntu: "24.04", gpu: gb200}
     # No selector, so every stream. What the weekly run covers. Adding a minor
     # is adding streams, not editing scopes.
     full: {}

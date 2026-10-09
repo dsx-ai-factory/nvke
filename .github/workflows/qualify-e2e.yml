@@ -1282,9 +1282,8 @@ jobs:
       #
       # environments/forge.yaml declares one site, so the suite resolves it
       # without being told which.
-      # Named for what it does in this run, so a dry run's log does not claim
-      # the suite ran.
-      - name: ${{ env.DRY_RUN == 'true' && 'Print the e2e suite invocation' || 'Run the e2e suite' }}
+      # Marked in a dry run, as the job name is, because the suite is not run.
+      - name: Run the e2e suite${{ env.DRY_RUN == 'true' && ' (dry run)' || '' }}
         shell: bash
         working-directory: controller/test/e2e
         env:

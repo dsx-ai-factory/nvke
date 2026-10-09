@@ -238,7 +238,7 @@ node images a run needs.
 
 A **scope** is a named selection over the streams, matched on capabilities.
 `full` carries no selector so it matches everything, and `golden-path` narrows to
-Ubuntu 24.04. The set of supported Kubernetes minors is not declared anywhere,
+Ubuntu 24.04 on GB200. The set of supported Kubernetes minors is not declared anywhere,
 it is whichever minors have streams, so adding one means adding streams and
 nothing else.
 
