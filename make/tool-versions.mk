@@ -75,6 +75,10 @@ CERT_MANAGER_VERSION ?= v1.19.3
 # installs the nerdctl-full release for this version. release/ reads this pin
 # for the qualification plan.
 NERDCTL_VERSION ?= 2.3.5
+# Both from that release's SHA256SUMS, for the nerdctl-full archive. They move
+# with NERDCTL_VERSION.
+NERDCTL_FULL_SHA256_AMD64 ?= b697295c623639734aaab737523c808fd3cc8d3046039fd94fff1744e4c317aa
+NERDCTL_FULL_SHA256_ARM64 ?= 6e4b687f1d138e750a3c8372abc0f81d3d7490b6359c48c0562fc7dfe98859b2
 
 ORAS_VERSION        ?= 1.3.3
 ORAS_SHA256_AMD64   ?= 9ce999f8d2de03fc03968b29d743077a58783e545e5eaa53917ca177352d0e59

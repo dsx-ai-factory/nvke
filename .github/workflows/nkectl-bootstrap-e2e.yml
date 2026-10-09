@@ -129,13 +129,6 @@ jobs:
       # run.sh writes it into the site inventory and uses it for every fixture
       # host's pre-provisioned SPIRE agent configuration.
       NKECTL_E2E_SPIRE_TRUST_DOMAIN: nkectl-e2e.example.test
-      # nerdctl >= 1.7.0 is kind's stated minimum for its nerdctl provider.
-      # nerdctl-full bundles a matching containerd, runc and CNI plugins, so
-      # nothing here depends on the containerd shipped with the image's Docker.
-      NERDCTL_VERSION: 2.3.5
-      # Both, from the release's SHA256SUMS. The script picks by host arch.
-      NERDCTL_FULL_SHA256_AMD64: b697295c623639734aaab737523c808fd3cc8d3046039fd94fff1744e4c317aa
-      NERDCTL_FULL_SHA256_ARM64: 6e4b687f1d138e750a3c8372abc0f81d3d7490b6359c48c0562fc7dfe98859b2
       # A standalone socket and data root. Docker's containerd.io package owns
       # a unit also named `containerd.service`, on
       # /run/containerd/containerd.sock; reusing it would mean this job is
@@ -153,6 +146,20 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # The nerdctl release and its checksums, read from make/tool-versions.mk,
+      # which owns every tool pin. nerdctl >= 1.7.0 is kind's stated minimum for
+      # its nerdctl provider. nerdctl-full bundles a matching containerd, runc
+      # and CNI plugins, so nothing here depends on the containerd shipped with
+      # the image's Docker. Both checksums are from the release's SHA256SUMS,
+      # and the script picks by host arch.
+      - name: Read the nerdctl pin
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for name in NERDCTL_VERSION NERDCTL_FULL_SHA256_AMD64 NERDCTL_FULL_SHA256_ARM64; do
+            echo "${name}=$(make --no-print-directory "print-${name}")" >> "${GITHUB_ENV}"
+          done
 
       # Large toolchains this job does not use, removed before any build
       # writes more data. A no-op on an image without them, and it still logs

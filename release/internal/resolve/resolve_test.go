@@ -258,12 +258,12 @@ func TestLockedPackageRejects(t *testing.T) {
 func TestMakeVarResolve(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, map[string]string{"make/tool-versions.mk": `
-KIND_VERSION    ?= v0.32.0
-CAPI_VERSION    ?= v1.12.3  # one pin for the binary and its providers
-NERDCTL_VERSION := 2.3.5
+ALPHA_VERSION   ?= v0.32.0
+BETA_VERSION    ?= v1.12.3  # one pin for the binary and its providers
+GAMMA_VERSION   := 2.3.5
 GO_VERSION      ?= $(shell awk '/^go /{print $$2}' go.work)
 EMPTY           ?=
-KIND_VERSION_EXTRA ?= nope
+ALPHA_VERSION_EXTRA ?= nope
 `})
 
 	for _, tc := range []struct {
@@ -272,9 +272,9 @@ KIND_VERSION_EXTRA ?= nope
 		want   string
 		wantEr string
 	}{
-		{"conditional assignment", "KIND_VERSION", "v0.32.0", ""},
-		{"trailing comment", "CAPI_VERSION", "v1.12.3", ""},
-		{"simple assignment", "NERDCTL_VERSION", "2.3.5", ""},
+		{"conditional assignment", "ALPHA_VERSION", "v0.32.0", ""},
+		{"trailing comment", "BETA_VERSION", "v1.12.3", ""},
+		{"simple assignment", "GAMMA_VERSION", "2.3.5", ""},
 		{"computed value", "GO_VERSION", "", "computed rather than a pin"},
 		{"empty value", "EMPTY", "", "is empty"},
 		{"not set", "MISSING_VERSION", "", "does not set MISSING_VERSION"},
