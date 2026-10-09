@@ -269,15 +269,49 @@ jobs:
 
           go run ./release/cmd/qualify "${args[@]}"
 
-          {
-            echo "### Qualification plan"
-            echo
-            echo "- nke: \`$(jq -r .version plan.json)\`"
-            echo "- scope: \`${SCOPE}\`"
-            echo "- overrides: \`$(jq -r '(.overrides // []) | join(", ") | if . == "" then "none" else . end' plan.json)\`"
-            echo
-            jq -r '.combinations[] | "- combination \(.id): " + ([.streams[].name] | join(", "))' plan.json
-          } >> "${GITHUB_STEP_SUMMARY}"
+      # The plan as tables on the run page, so what will be qualified can be
+      # read without opening plan.json. An entry shows its url when it has one
+      # and its version when it does not, and says when a person's override
+      # chose it. The streams are one row each, with a column for every value
+      # resolved per stream.
+      - name: Summarise the plan
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          jq -r --arg run "${GITHUB_RUN_ID}" '
+            (.overrides // []) as $over
+            | def cell($e): if $e.url then ($e.url | sub("^https?://[^/]+/"; "")) else ($e.version // "") end;
+              def short($e): if $e.url then ($e.url | split("/") | last) else ($e.version // "") end;
+              def row($e): "| \($e.name) | `\(cell($e))` | \(if ($over | index($e.name)) then "yes" else "" end) |";
+              "### Qualification plan",
+              "",
+              "| | |",
+              "|---|---|",
+              "| nke | `\(.version)` |",
+              "| scope | `\(.scope)` |",
+              "| overrides | \(if ($over | length) == 0 then "none" else ($over | map("`" + . + "`") | join(", ")) end) |",
+              "| combinations | \(.combinations | length) |",
+              "| streams | \([.combinations[].streams | length] | add) |",
+              "| plan | artifact `qualify-plan-\($run)` |",
+              "",
+              (.combinations[] |
+                ([.streams[].dependencies[].name] | reduce .[] as $n ([]; if index($n) then . else . + [$n] end)) as $cols
+                | "#### Combination `\(.id)`",
+                "",
+                "| Component | Version | Overridden |",
+                "|---|---|---|",
+                (.components[] | row(.)),
+                "",
+                "| Dependency | Value | Overridden |",
+                "|---|---|---|",
+                (.dependencies[] | row(.)),
+                "",
+                "| Stream | Arch | GPU | Ubuntu | Kubernetes minor | \($cols | join(" | ")) |",
+                "|---|---|---|---|---|\($cols | map("---|") | join(""))",
+                (.streams[] as $s
+                  | "| \($s.name) | \($s.capabilities.arch) | \($s.capabilities.gpu // "") | \($s.capabilities.ubuntu // "") | \($s.capabilities.kube // "") | \($cols | map(. as $c | ([$s.dependencies[] | select(.name == $c)] | first) as $e | if $e then "`\(short($e))`" else "" end) | join(" | ")) |"),
+                "")
+          ' plan.json >> "${GITHUB_STEP_SUMMARY}"
 
       # One entry per stream of every combination, carrying what that lane
       # needs. A value is the url when the entry has one and the version when
