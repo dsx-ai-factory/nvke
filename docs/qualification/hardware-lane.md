@@ -33,7 +33,7 @@ inside it. What distinguishes it is not the specs, which are identical, but
 that its environment has to be acquired and given back.
 
 So three words, three jobs. The **hardware lane** is the whole CI path. The
-**`nico-forge` lane** is its only implementation today. **Provision** is the first
+**Forge lane** is its only implementation today. **Provision** is the first
 step alone, not the whole thing.
 
 Everything below describes the `nico-forge` path, the only backend that touches
@@ -51,7 +51,7 @@ flowchart TB
     S1["1 — Infrastructure<br/>a bare machine, booted and reachable"]
     S2K["2a — Kubernetes<br/>nkectl bootstrap site"]
     S2N["2b — the NKE stack<br/>deployed from the staged assets"]
-    S3["3 — Tenant cluster<br/>created through the NKE controller, not through NICo"]
+    S3["3 — Tenant cluster<br/>created through the NKE controller, not through Forge"]
     S4["4 — Node pools<br/>the machines that cluster runs on"]
 
     S1 --> S2K --> S2N --> S3 --> S4
@@ -67,12 +67,12 @@ hardware without spending the rest of the run on the product.
 
 | Step | Owned by | What it produces |
 |---|---|---|
-| [Infrastructure](#1-nico-infrastructure) | `internal/infra/forge` | One bare machine, booted and reachable |
+| [Infrastructure](#1-forge-infrastructure) | `internal/infra/forge` | One bare machine, booted and reachable |
 | [Site controller](#2-the-site-controller) | `internal/site` | Kubernetes plus the NKE stack on that machine |
 | [Tenant cluster](#3-tenant-clusters) | `tenant_test.go`, the controller | A tenant cluster created through the product API |
 | [Node pools](#4-node-pools) | `forgeNodePoolSpecs` | The machines that tenant cluster runs on |
 
-## 1. NICo infrastructure
+## 1. Forge infrastructure
 
 `internal/infra/forge` provisions the machine through the
 `ncx-infra-controller-rest` SDK against NGC, with `cfg.SetAPIName("forge")`
@@ -85,7 +85,7 @@ it:
 sequenceDiagram
     autonumber
     participant R as the runner
-    participant F as the NICo API
+    participant F as the Forge API
     participant M as the machine
     participant J as the jump host
 
@@ -108,7 +108,7 @@ step 1's `phoneHomeEnabled=false`.
 **Where the identifiers come from.** `environments/forge.yaml` declares the
 org, site, VPC, subnet, SSH key group and instance types. Nothing secret is in
 it, and the jump host is deliberately absent too, so the access path is not
-published alongside the site. The NICo API key and the Teleport join come from
+published alongside the site. The Forge API key and the Teleport join come from
 the environment.
 
 **Choosing a machine.** A run asks for capabilities rather than naming a type.
@@ -136,7 +136,7 @@ endpoint caps at twenty rows and ignores every filter, so a new instance often
 is not in it. It keeps polling past the Ready status until an interface
 actually reports an address, because Ready can be reported before one is
 assigned. Then `waitReachable` dials until sshd answers, which is much later:
-Ready means NICo handed the machine over, not that the image is written and
+Ready means Forge handed the machine over, not that the image is written and
 booted.
 
 **Reaching it.** The nodes are not Teleport-enrolled, so every connection goes
@@ -208,7 +208,7 @@ exist and are being lost.
 
 The archive is uploaded as a workflow artifact, so it outlives both the node
 and the scope of the credentials the run put there. Every such value — the
-NICo API key, the registry token, the generated tenant and database
+Forge API key, the registry token, the generated tenant and database
 passwords — is substituted out of the archive on the runner before it is
 written, in its plain and base64 forms, because a journal line or a dumped
 Secret is a plausible place for one to surface. Redaction works by exact
@@ -219,21 +219,21 @@ place is not covered.
 ## 3. Tenant clusters
 
 The architectural point worth stating plainly: **tenant clusters are created
-through the controller's API on the site node, not through the NICo API.** The suite
+through the controller's API on the site controller machine, not through the Forge API.** The suite
 posts an `nke.ClusterSpec` with `Backend: BackendNicoForge` naming the org,
-site and VPC; CAPNico inside the cluster is what calls NICo. That keeps the
+site and VPC; CAPNico inside the cluster is what calls Forge. That keeps the
 lane on the product's own front door rather than a test-only path.
 
 ```mermaid
 flowchart LR
-    SUITE["the suite<br/>posts an nke.ClusterSpec with<br/>Backend: BackendNicoForge"] --> CTRL["the controller<br/>on the site controller"]
+    SUITE["the suite<br/>posts an nke.ClusterSpec with<br/>Backend: BackendNicoForge"] --> CTRL["the NKE controller<br/>on the site controller machine"]
     CTRL --> CAPN["CAPNico<br/>inside that cluster"]
-    CAPN --> NICO["the NICo API"]
-    SUITE --x NICO
+    CAPN --> FORGE["the Forge API"]
+    SUITE --x FORGE
 ```
 
 The blocked arrow is the point. The suite *could* create tenant machines
-through NICo directly, and a lane that did would pass while the product's own
+through Forge directly, and a lane that did would pass while the product's own
 path was broken.
 
 What the suite passes down is `NodePayloads` — the iPXE script and
@@ -252,13 +252,13 @@ recover the run.
 `ControlPlaneVIP` empty, which the controller reads as "do not configure kube-vip". The
 simulator backends advertise a VIP through a BGP speaker the runner hosts, and
 a real site has no equivalent to borrow. So a tenant's API server lives on its
-control-plane node's own address — reachable from the site node, and not from a
+control-plane node's own address — reachable from the site controller machine, and not from a
 CI runner outside the site.
 
 That is what the endpoint relay solves. `tenantRESTConfigAs` is the single
 point at which both tenant client paths resolve an endpoint, so one hook there
 covers every tenant spec. It substitutes a local forward address carried
-through the site node and pins `tls-server-name` to the published host, because
+through the site controller machine and pins `tls-server-name` to the published host, because
 the API server certificate has no `127.0.0.1` SAN. Lanes that share a network
 with their clusters set no relay and talk to the published address directly.
 
@@ -268,7 +268,7 @@ Every hop, since this is the part that reads as magic until you have seen it:
 flowchart LR
     RUN["the CI runner<br/>outside the site entirely"]
     JH["the jump host<br/>the only Teleport-enrolled hop"]
-    SN["the site node<br/>not enrolled, so reachable only through the jump host"]
+    SN["the site controller machine<br/>not enrolled, so reachable only through the jump host"]
     TCP["a tenant's API server<br/>on its own control-plane node, no VIP to borrow"]
 
     RUN -->|Teleport| JH
@@ -280,16 +280,16 @@ flowchart LR
 
 The blocked arrow from the runner is why the relay exists at all, and the
 dotted edge is the relay: a local address on the runner whose traffic comes out
-of the site node.
+of the site controller machine.
 
-**Teardown.** Before the site node is released, `SweepTenants` asks the controller to
+**Teardown.** Before the site controller machine is released, `SweepTenants` asks the controller to
 delete every tenant cluster it knows about and waits for each to go, so a
-tenant's NICo instances are not left allocated by the site node going away
+tenant's Forge instances are not left allocated by the site controller machine going away
 first. The sweep is an attempt, not a guarantee: it runs inside a 20-minute
-budget, and when it fails the site node is released anyway. The run log then
+budget, and when it fails the site controller machine is released anyway. The run log then
 carries `tenant sweep failed; releasing the site anyway` with the tenants it
 could not delete, and the instances of their tenant control-plane pools and
-tenant worker pools have to be released by hand in the NICo site.
+tenant worker pools have to be released by hand in the Forge site.
 
 ## 4. Node pools
 
@@ -299,13 +299,13 @@ and 16Gi of reserved system memory against the 1Gi the container simulator
 uses. A pool naming its own `InstanceTypeID` keeps it, which is how a table
 entry asks for a shape the capability match would not have chosen.
 
-The `nico-forge` shape today is the smallest that still proves something: one
+The Forge shape today is the smallest that still proves something: one
 control-plane pool and one worker pool, each of one node, with
 `provisioningOnly` — create, both nodes report Ready, delete.
 
 Timeouts are much larger than the simulator lanes because they cover a bare
 machine booting an OS image over the network and installing packages. Delete in
-particular is generous: NICo takes 20 to 40 minutes to genuinely release a
+particular is generous: Forge takes 20 to 40 minutes to genuinely release a
 machine, and the cluster is not gone until both of its machines are.
 
 ## What this lane does not cover

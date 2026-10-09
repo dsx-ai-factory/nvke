@@ -79,7 +79,7 @@ kubectl delete node <node-name>
 
 - Check the controller logs for capacity allocation errors.
 - Verify the configured subnet has available IP space.
-- Confirm the infrastructure provider (NICo) has matching capacity.
+- Confirm the infrastructure provider (NICo/Forge) has matching capacity.
 
 **Node not joining after provisioning:**
 
