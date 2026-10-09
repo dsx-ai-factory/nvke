@@ -42,6 +42,7 @@
 # A waiver that matches nothing fails the gate. Once the baseline tag has moved
 # past the release that carried the break, the entry has done its job and should
 # be deleted; it cannot sit here outliving its reason. If it records `baseline`
-# and the newest tag is a different one, it reports as expired instead of
-# failing, so branches that rebase past the tag are not blocked by it.
+# and the check is running against a later release tag, it reports as expired
+# instead of failing, so branches that rebase past the tag are not blocked by
+# it.
 waivers: []

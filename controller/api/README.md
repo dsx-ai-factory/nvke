@@ -190,8 +190,8 @@ have.
 A waiver is deleted once the baseline tag has moved past the release that
 carried the break. A waiver that matches nothing fails the gate, so it cannot be
 forgotten; if it records the `baseline` it was written against, it merely
-reports as expired once a newer tag exists, so it does not fail unrelated
-branches in the meantime.
+reports as expired once the check runs against a later release tag, so it does
+not fail unrelated branches in the meantime.
 
 ## Rendering the reference
 

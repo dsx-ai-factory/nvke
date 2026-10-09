@@ -112,9 +112,11 @@ func TestEvaluate(t *testing.T) {
 	}
 }
 
-// A waiver that matches nothing fails, unless it names a baseline other than the
-// current one: the tag moved past it, so the break has shipped and the entry is
-// spent rather than wrong.
+// A waiver that matches nothing fails, unless the baseline being compared
+// against is a later release than the one it names: the tag moved past it, so
+// the break has shipped and the entry is spent rather than wrong. Only that one
+// relation expires it -- a baseline is caller-supplied, and anything that
+// cannot be ordered against a published release tag must keep failing.
 func TestEvaluateExpiresWaiversWrittenAgainstAnOlderBaseline(t *testing.T) {
 	const current = "controller/api/v0.0.28"
 	tests := []struct {
@@ -124,8 +126,13 @@ func TestEvaluateExpiresWaiversWrittenAgainstAnOlderBaseline(t *testing.T) {
 		expired  int
 	}{
 		{name: "an older baseline expires", baseline: "controller/api/v0.0.22", expired: 1},
+		{name: "ordering is numeric, not lexical", baseline: "controller/api/v0.0.9", expired: 1},
 		{name: "the current baseline still fails", baseline: current, unused: 1},
 		{name: "no recorded baseline still fails", baseline: "", unused: 1},
+		{name: "a later baseline still fails", baseline: "controller/api/v0.0.29", unused: 1},
+		{name: "a prerelease does not order", baseline: "controller/api/v0.0.22-rc1", unused: 1},
+		{name: "a commit sha does not order", baseline: "9c7c2d09a8c2180b0d33a38b0809b0132f68d665", unused: 1},
+		{name: "a fully-qualified ref does not order", baseline: "refs/tags/controller/api/v0.0.22", unused: 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -135,6 +142,17 @@ func TestEvaluateExpiresWaiversWrittenAgainstAnOlderBaseline(t *testing.T) {
 			assert.Len(t, got.Expired, tt.expired, "expired")
 		})
 	}
+}
+
+// Checking against an older release is a supported mode (--baseline,
+// API_COMPAT_BASELINE). It must not expire the waivers written for the current
+// one: that is the run a reviewer reaches for, and it is the wrong run in which
+// to stop enforcing the matches-nothing rule.
+func TestEvaluateDoesNotExpireWaiversWhenCheckingAgainstAnOlderRelease(t *testing.T) {
+	w := waiver{Change: "property_removed", Path: "$.x", Baseline: "controller/api/v0.0.28"}
+	got := evaluate(nil, []waiver{w}, "controller/api/v0.0.22")
+	assert.Len(t, got.Unused, 1)
+	assert.Empty(t, got.Expired)
 }
 
 // An expired waiver is only expired when it matches nothing. One that still

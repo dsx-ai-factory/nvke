@@ -24,10 +24,14 @@ const (
 	defaultSpecInRepo = "controller/api/openapi.yaml"
 	// defaultWaivers holds the accepted breaking changes. See README.md.
 	defaultWaivers = "api/openapi-compat-waivers.yaml"
+	// releaseTagPrefix is what every published baseline tag starts with. The
+	// glob below and the ordering in policy.go both read it, so a tag either
+	// selects as a baseline and orders against a waiver, or does neither.
+	releaseTagPrefix = "controller/api/v"
 	// defaultTagGlob matches the tags controller-api-tag.yml publishes. The
 	// digit classes keep release-candidate and other suffixed tags out: a
 	// baseline has to be a stable, consumable version.
-	defaultTagGlob = "controller/api/v[0-9]*.[0-9]*.[0-9]*"
+	defaultTagGlob = releaseTagPrefix + "[0-9]*.[0-9]*.[0-9]*"
 	// defaultDiffer is the change engine. It is invoked with `go run`, pinned
 	// by --differ-version, so nothing has to be installed and the classification
 	// cannot drift with whatever is on PATH.
