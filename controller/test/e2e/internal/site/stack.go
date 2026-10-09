@@ -317,8 +317,9 @@ const (
 // These are two different owners of one string. The deploy path is exported
 // from the controller version under test, so a release cut before CWE was
 // renamed installs cloud-workflow-engine and one cut after installs
-// nke-controller. What the suite looks for comes from CWE_NAMESPACE and
-// CWE_SERVICE, which the lane sets. Nothing makes the two move together.
+// nke-controller. What the suite looks for comes from NKE_CONTROLLER_NAMESPACE
+// and NKE_CONTROLLER_SERVICE, which the lane sets. Nothing makes the two move
+// together.
 //
 // They disagreed once already, and the symptom was expensive: the readiness
 // probe opened a port-forward onto a Service that did not exist, the forwarder
@@ -368,8 +369,9 @@ func controllerNameFromDeployPath(assets string) (string, error) {
 // does not get to choose it. The deploy path does, and the deploy path is
 // exported from the controller version under test: a release cut before CWE
 // was renamed installs cloud-workflow-engine, one cut after installs
-// nke-controller. The lane says which by setting CWE_NAMESPACE and
-// CWE_SERVICE, and CheckControllerName fails the run when the two disagree.
+// nke-controller. The lane says which by setting NKE_CONTROLLER_NAMESPACE and
+// NKE_CONTROLLER_SERVICE, and CheckControllerName fails the run when the two
+// disagree.
 func controllerName() string { return controller.Service() }
 
 // spireAdminPath is CWE's SPIFFE ID below the trust domain. A name that does

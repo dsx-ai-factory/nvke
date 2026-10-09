@@ -27,7 +27,9 @@ import (
 )
 
 const (
-	CWEGofailWorkerBinaryEnv = "CWE_GOFAIL_E2E_WORKER_BINARY"
+	CWEGofailWorkerBinaryEnv = "NKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY"
+	// legacyWorkerBinaryEnv is a deprecated alias; nke#1399 removes it.
+	legacyWorkerBinaryEnv    = "CWE_GOFAIL_E2E_WORKER_BINARY"
 	CWEGofailFailpointName   = "CWERunbookWorkerCrash"
 	CWEGofailWorkerCrashLine = "cwe-gofail-runbook-worker-crash"
 
@@ -67,7 +69,7 @@ type CWEWorkerBinaryConfig struct {
 func CWEWorkerBinary(t testing.TB) string {
 	t.Helper()
 
-	binaryPath := os.Getenv(CWEGofailWorkerBinaryEnv)
+	binaryPath := getenvWithLegacy(CWEGofailWorkerBinaryEnv, legacyWorkerBinaryEnv)
 	require.NotEmpty(t, binaryPath, "%s must point to the worker built by make e2e-gofail", CWEGofailWorkerBinaryEnv)
 	_, err := os.Stat(binaryPath)
 	require.NoError(t, err, "CWE worker binary does not exist")

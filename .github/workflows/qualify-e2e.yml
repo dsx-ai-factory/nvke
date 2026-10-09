@@ -111,8 +111,12 @@ on:
         description: "Overrides the OVN CNI version the plan resolves, e.g. 1.4.0. It selects the nke-cni-ovn-images and -charts packages."
         type: string
         required: false
+      controller-name:
+        description: "Name the controller is installed under, e.g. cloud-workflow-engine. The deploy path decides it and it changed partway through the releases, so it moves with controller-version. Empty leaves the suite on its default, and the run fails early if that disagrees with the deploy path."
+        type: string
+        required: false
       cwe-name:
-        description: "Name CWE is installed under, e.g. cloud-workflow-engine. The deploy path decides it and it changed partway through the releases, so it moves with controller-version. Empty leaves the suite on its default, and the run fails early if that disagrees with the deploy path."
+        description: "Deprecated alias for controller-name, read when controller-name is empty; nke#1399 removes it."
         type: string
         required: false
       os-image-version:
@@ -474,8 +478,11 @@ jobs:
       # One input for two variables: the deploy path names the namespace and
       # the Service alike in every release, so splitting them here would be two
       # knobs that have to be equal.
-      CWE_NAMESPACE: ${{ inputs.cwe-name || vars.CWE_NAMESPACE }}
-      CWE_SERVICE: ${{ inputs.cwe-name || vars.CWE_SERVICE }}
+      #
+      # The cwe-name input and the CWE_NAMESPACE and CWE_SERVICE variables are
+      # deprecated aliases, read after the new names; nke#1399 removes them.
+      NKE_CONTROLLER_NAMESPACE: ${{ inputs.controller-name || inputs.cwe-name || vars.NKE_CONTROLLER_NAMESPACE || vars.CWE_NAMESPACE }}
+      NKE_CONTROLLER_SERVICE: ${{ inputs.controller-name || inputs.cwe-name || vars.NKE_CONTROLLER_SERVICE || vars.CWE_SERVICE }}
       # One pair per architecture. A run boots as many as its shapes need: a
       # GB200 tenant is arm64 workers behind a control plane of whatever
       # `arch` asked for, so it needs both pairs, while a single-architecture
@@ -1074,6 +1081,7 @@ jobs:
           IN_CAPI_PROVISIONED_VERSION: ${{ inputs.capi-provisioned-version }}
           IN_KUBERNETES_VERSION: ${{ inputs.kubernetes-version }}
           IN_CNI_OVN_VERSION: ${{ inputs.cni-ovn-version }}
+          IN_CONTROLLER_NAME: ${{ inputs.controller-name }}
           IN_CWE_NAME: ${{ inputs.cwe-name }}
           IN_OS_IMAGE_VERSION: ${{ inputs.os-image-version }}
           VAR_OS_IMAGE_VERSION: ${{ vars.QUALIFY_E2E_OS_IMAGE_VERSION }}
@@ -1095,8 +1103,13 @@ jobs:
           VAR_CAPI_PROVISIONED_VERSION: ${{ vars.QUALIFY_E2E_CAPI_PROVISIONED_VERSION }}
           VAR_KUBERNETES_VERSION: ${{ vars.QUALIFY_E2E_KUBERNETES_VERSION }}
           VAR_CNI_OVN_VERSION: ${{ vars.QUALIFY_E2E_CNI_OVN_VERSION }}
-          VAR_CWE_NAMESPACE: ${{ vars.CWE_NAMESPACE }}
-          VAR_CWE_SERVICE: ${{ vars.CWE_SERVICE }}
+          VAR_CONTROLLER_NAMESPACE: ${{ vars.NKE_CONTROLLER_NAMESPACE }}
+          VAR_CONTROLLER_SERVICE: ${{ vars.NKE_CONTROLLER_SERVICE }}
+          # The names those two replaced, read separately so the summary can
+          # say a deprecated one answered instead of hiding it behind the
+          # value it supplied. nke#1399 removes them.
+          WAS_CONTROLLER_NAMESPACE: ${{ vars.CWE_NAMESPACE }}
+          WAS_CONTROLLER_SERVICE: ${{ vars.CWE_SERVICE }}
           VAR_OS_IMAGE_BOOTLOADER_AMD64: ${{ vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
           VAR_OS_IMAGE_AMD64: ${{ vars.QUALIFY_E2E_OS_IMAGE_AMD64 }}
           VAR_OS_IMAGE_BOOTLOADER_ARM64: ${{ vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
@@ -1114,7 +1127,12 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          # label | resolved | dispatch input | repository variable | variable name
+          # label | resolved | dispatch input | repository variable | variable name |
+          #   deprecated variable | deprecated variable name
+          #
+          # The last two are set only for the two renamed away from CWE_, and
+          # left out everywhere else. They exist so a run on an old name says
+          # so rather than reporting the new one it did not read.
           rows=(
             "stage|SITE_STAGE|IN_STAGE|VAR_STAGE|QUALIFY_E2E_STAGE"
             "controller version|SITE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|QUALIFY_E2E_CONTROLLER_VERSION"
@@ -1139,8 +1157,8 @@ jobs:
             "kind version|KIND_VERSION|||"
             "clusterctl version|CLUSTERCTL_VERSION|||"
             "nerdctl version|NERDCTL_VERSION|||"
-            "CWE namespace|CWE_NAMESPACE|IN_CWE_NAME|VAR_CWE_NAMESPACE|CWE_NAMESPACE"
-            "CWE service|CWE_SERVICE|IN_CWE_NAME|VAR_CWE_SERVICE|CWE_SERVICE"
+            "controller namespace|NKE_CONTROLLER_NAMESPACE|IN_CONTROLLER_NAME|VAR_CONTROLLER_NAMESPACE|NKE_CONTROLLER_NAMESPACE|WAS_CONTROLLER_NAMESPACE|CWE_NAMESPACE"
+            "controller service|NKE_CONTROLLER_SERVICE|IN_CONTROLLER_NAME|VAR_CONTROLLER_SERVICE|NKE_CONTROLLER_SERVICE|WAS_CONTROLLER_SERVICE|CWE_SERVICE"
             "os-image release|OS_IMAGE_RELEASE|IN_OS_IMAGE_VERSION|VAR_OS_IMAGE_VERSION|QUALIFY_E2E_OS_IMAGE_VERSION"
             "amd64 OS image bootloader|OS_IMAGE_BOOTLOADER_AMD64|IN_OS_IMAGE_BOOTLOADER_AMD64|VAR_OS_IMAGE_BOOTLOADER_AMD64|QUALIFY_E2E_OS_IMAGE_BOOTLOADER_AMD64"
             "amd64 OS image|OS_IMAGE_AMD64|IN_OS_IMAGE_AMD64|VAR_OS_IMAGE_AMD64|QUALIFY_E2E_OS_IMAGE_AMD64"
@@ -1175,20 +1193,24 @@ jobs:
           # renamed out of that prefix would have dropped out of this check
           # silently -- no failure, just less coverage, which is the one
           # thing this step exists to prevent. Every prefix in use is listed,
-          # and a new one has to be added here too. CWE_ is here because the
-          # name CWE is installed under is read by the suite from the
-          # environment variables it already honours, so it carries no
-          # QUALIFY_E2E_ prefix of its own.
+          # and a new one has to be added here too. NKE_CONTROLLER_ is here
+          # because the name the controller is installed under is read by the
+          # suite from the environment variables it already honours, so it
+          # carries no QUALIFY_E2E_ prefix of its own. CWE_ is its deprecated
+          # alias; nke#1399 removes it.
           missing=()
           while read -r name; do
-            printf '%s\n' "${rows[@]}" | cut -d'|' -f5 | grep -qx "${name}" || missing+=("vars.${name}")
-          done < <(grep -oE 'vars\.(FORGE|QUALIFY_E2E|CWE)_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
+            printf '%s\n' "${rows[@]}" | cut -d'|' -f5,7 | tr '|' '\n' | grep -qx "${name}" || missing+=("vars.${name}")
+          done < <(grep -oE 'vars\.(FORGE|QUALIFY_E2E|NKE_CONTROLLER|CWE)_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
           while read -r name; do
             printf '%s\n' "${rows[@]}" | cut -d'|' -f3 |
               grep -qx "IN_$(printf '%s' "${name}" | tr 'a-z-' 'A-Z_')" || missing+=("inputs.${name}")
           # The leading [^a-z-] keeps this off its own artifact name: a bare
           # `inputs\.` also matches the `run-inputs.txt` two lines above.
-          done < <(grep -oE '[^a-z-]inputs\.[a-z0-9-]+' "${WORKFLOW}" | sed 's/.*inputs\.//' | sort -u)
+          # cwe-name is a deprecated alias for controller-name; nke#1399
+          # removes it. The summary below names it as the controller rows'
+          # source when it answered.
+          done < <(grep -oE '[^a-z-]inputs\.[a-z0-9-]+' "${WORKFLOW}" | sed 's/.*inputs\.//' | grep -vx 'cwe-name' | sort -u)
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "::error::the resolved-inputs table does not cover ${missing[*]}; add a row"
             exit 1
@@ -1203,7 +1225,7 @@ jobs:
             printf '  %-22s = %s\n' "run"         "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo
             for row in "${rows[@]}"; do
-              IFS='|' read -r label resolved input var varname <<<"${row}"
+              IFS='|' read -r label resolved input var varname wasvar wasvarname <<<"${row}"
               value="${!resolved:-}"
               [ -n "${value}" ] || value="<unset>"
               # The rows whose values are withheld. This file is an artifact
@@ -1220,8 +1242,12 @@ jobs:
               fi
               if [ -n "${input}" ] && [ -n "${!input:-}" ]; then
                 source="dispatch input"
+              elif [ "${input}" = IN_CONTROLLER_NAME ] && [ -n "${IN_CWE_NAME:-}" ]; then
+                source="dispatch input cwe-name (deprecated, rename to controller-name)"
               elif [ -n "${var}" ] && [ -n "${!var:-}" ]; then
                 source="repository variable ${varname}"
+              elif [ -n "${wasvar}" ] && [ -n "${!wasvar:-}" ]; then
+                source="repository variable ${wasvarname} (deprecated, rename to ${varname})"
               else
                 source="workflow default"
               fi

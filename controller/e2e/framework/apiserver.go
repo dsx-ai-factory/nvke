@@ -46,9 +46,14 @@ func setControllerRuntimeLogger() {
 // binaries envtest runs. `make e2e-gofail` sets it from setup-envtest.
 const kubebuilderAssetsEnv = "KUBEBUILDER_ASSETS"
 
+// The legacy names are deprecated aliases, read when the new name is unset or
+// empty; nke#1399 removes them.
 const (
-	clusterCRDsEnv = "CWE_GOFAIL_E2E_CLUSTER_CRDS"
-	nicoCRDsEnv    = "CWE_GOFAIL_E2E_CAPNICO_CRDS"
+	clusterCRDsEnv = "NKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS"
+	nicoCRDsEnv    = "NKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS"
+
+	legacyClusterCRDsEnv = "CWE_GOFAIL_E2E_CLUSTER_CRDS"
+	legacyNicoCRDsEnv    = "CWE_GOFAIL_E2E_CAPNICO_CRDS"
 )
 
 // StartAPIServer runs a local kube-apiserver and etcd, and returns a kubeconfig
@@ -112,8 +117,8 @@ func gofailCRDDirectoryPaths(t testing.TB) []string {
 	t.Helper()
 
 	paths := []string{
-		os.Getenv(clusterCRDsEnv),
-		os.Getenv(nicoCRDsEnv),
+		getenvWithLegacy(clusterCRDsEnv, legacyClusterCRDsEnv),
+		getenvWithLegacy(nicoCRDsEnv, legacyNicoCRDsEnv),
 	}
 	for _, path := range paths {
 		require.NotEmpty(t, path, "CRD directory environment variable must be set")

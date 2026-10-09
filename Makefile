@@ -116,7 +116,9 @@ cmd_ldflags = -X 'main.version=$(call cmd_version,$(1))' \
 RELEASE_LDFLAGS ?= -s -w -buildid= -extldflags -static
 
 # Must match WORKER_BIN_NAME in controller/Makefile. `build` fails if it does not.
-CWE_BIN_NAME ?= controller
+# NKE_CONTROLLER_BIN_NAME overrides it. An empty value counts as unset.
+# CWE_BIN_NAME is a deprecated alias for NKE_CONTROLLER_BIN_NAME; nke#1399 removes it.
+controller_bin_name = $(or $(NKE_CONTROLLER_BIN_NAME),$(CWE_BIN_NAME),controller)
 
 # No module is excluded from the workspace any more; kept (empty) because
 # work-check accounts for every go.mod in the tree against these two lists.
@@ -525,8 +527,8 @@ build: ## Build every workspace package, and the released commands into bin/.
 	@# delegate rather than repeat either here. See CMD_MODULES above.
 	@echo "- building controller"
 	@$(MAKE) --no-print-directory -C controller build >/dev/null || exit 1
-	@cp controller/bin/$(CWE_BIN_NAME) $(BIN_DIR)/ \
-		|| { echo "ERROR: controller/Makefile no longer produces bin/$(CWE_BIN_NAME). Update CWE_BIN_NAME here to match its WORKER_BIN_NAME."; exit 1; }
+	@cp controller/bin/$(controller_bin_name) $(BIN_DIR)/ \
+		|| { echo "ERROR: controller/Makefile no longer produces bin/$(controller_bin_name). Update controller_bin_name here to match its WORKER_BIN_NAME."; exit 1; }
 	@# Same reason as controller: cli/Makefile owns nkectl's
 	@# version ldflags, and it asserts the stamp took.
 	@echo "- building cli"

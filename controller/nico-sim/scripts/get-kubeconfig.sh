@@ -15,7 +15,8 @@
 # Options:
 #   --cluster-name  NAME    Cluster name (looked up via CWE API)
 #   --cluster-id    UUID    Cluster ID (direct lookup)
-#   --cwe-api       URL     CWE API base URL        (default: http://localhost:8080/api)
+#   --controller-api URL    Controller API base URL (env NKE_CONTROLLER_API_URL; default: http://localhost:8080/api)
+#   --cwe-api       URL     Deprecated alias for --controller-api; nke#1399 removes it
 #   --ssh-user      USER    SSH user on CP nodes     (default: nico-diag)
 #   --ssh-key       PATH    SSH private key          (default: ~/.ssh/id_rsa)
 #   --ssh-password          Use password auth instead of key (reads SSHPASS env var)
@@ -34,7 +35,8 @@ set -euo pipefail
 DIAG_SSH_USER="nico-diag"
 DIAG_SSH_PASSWORD="nico-diag"
 
-CWE_API="${CWE_API:-http://localhost:8080/api}"
+# CWE_API is a deprecated alias for NKE_CONTROLLER_API_URL; nke#1399 removes it.
+NKE_CONTROLLER_API_URL="${NKE_CONTROLLER_API_URL:-${CWE_API:-http://localhost:8080/api}}"
 SSH_USER="${SSH_USER:-}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_rsa}"
 SSH_PASSWORD=false
@@ -52,7 +54,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --cluster-name) CLUSTER_NAME="$2"; shift 2 ;;
     --cluster-id)   CLUSTER_ID="$2";   shift 2 ;;
-    --cwe-api)      CWE_API="$2";      shift 2 ;;
+    --controller-api) NKE_CONTROLLER_API_URL="$2"; shift 2 ;;
+    --cwe-api)      NKE_CONTROLLER_API_URL="$2"; shift 2 ;; # deprecated alias for --controller-api; nke#1399 removes it
     --ssh-user)     SSH_USER="$2";      shift 2 ;;
     --ssh-key)      SSH_KEY="$2";       shift 2 ;;
     --ssh-password) SSH_PASSWORD=true;  shift   ;;
@@ -89,7 +92,7 @@ if [[ -z "$SSH_USER" ]]; then
 fi
 
 api_get() {
-  local url="${CWE_API}$1"
+  local url="${NKE_CONTROLLER_API_URL}$1"
   local resp http_code body
 
   resp=$(curl -sf --write-out '\n%{http_code}' "$url") || die "API call failed: GET $url"
