@@ -107,7 +107,7 @@ incomplete picture of what reacts to a change.
 The agent runs as a systemd service on each managed node. It is a **gRPC
 server**: it listens, and the controller dials it
 (`agent/cmd/agent/main.go`, `controller/internal/agent/client.go`). It does not
-call home, and the engine has no node-registration endpoint for it to call.
+call home, and the controller has no node-registration endpoint for it to call.
 
 Responsibilities:
 
