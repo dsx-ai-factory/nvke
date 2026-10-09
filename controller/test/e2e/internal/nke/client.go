@@ -85,7 +85,7 @@ func NewClientWithTokenSource(restConfig *rest.Config, opts Options, tokens Toke
 		return nil, fmt.Errorf("building NKE port-forward: %w", err)
 	}
 
-	clientOpts := []api.ClientOption{api.WithHTTPClient(forwarder.HTTPClient())}
+	clientOpts := []api.ClientOption{api.WithHTTPClient(labelShapeCompat{next: forwarder.HTTPClient()})}
 	if tokens != nil {
 		clientOpts = append(clientOpts, api.WithRequestEditorFn(bearerToken(tokens)))
 	}
