@@ -166,7 +166,7 @@ jobs:
   #     because it needs a controller on port 8080.
   #
   # go vet rather than `go build`: it type-checks test files, which is the
-  # point, and it is the cheapest thing that does. All five are green today.
+  # point, and it is the cheapest thing that does.
   compile:
     name: Compile (${{ matrix.name }})
     runs-on: ubuntu-latest
@@ -194,6 +194,9 @@ jobs:
             # refused connection to localhost:8080. Vet has to pass the tag,
             # or it matches no packages and exits non-zero.
             run: go vet -tags integration_test ./integration-test/...
+          - name: OIDC reference
+            dir: controller
+            run: go vet -tags oidc_integration ./test/oidctest/...
           - name: kubeadm bringup
             dir: controller/test/kubeadm
             # The 2-VM nico-vms bringup driver, behind `kubeadm_bringup`. It

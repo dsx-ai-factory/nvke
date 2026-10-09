@@ -90,6 +90,7 @@ untested_packages() {
 		controller/e2e/tracing	behind `-tags gofail`; runs with the gofail suite in gofail-e2e.yml
 		controller/test/kubeadm	behind `-tags kubeadm_bringup`; needs two QEMU VMs on a self-hosted runner
 		controller/test/kubeadm/internal/cloudinit	behind `-tags kubeadm_bringup`, with the suite above
+		controller/test/oidctest/envtest/cases	behind `-tags oidc_integration`; runs with pinned Kubernetes envtest assets via `make -C controller test-oidc-reference`
 		controller/nico-sim/test/integration/libvirt	behind `-tags integration`; needs libvirt and a node image
 		controller/nico-sim/test/integration/qemu	behind `-tags integration`; needs QEMU and a node image
 		management-engine/test/integration	behind `-tags integration_test`; run by `make test-cwe` against the local Kind stack

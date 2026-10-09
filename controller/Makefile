@@ -281,6 +281,25 @@ test-e2e-capd: ## Run CAPD happy-path e2e tests
 test-e2e-capd-local: ## Run all CAPD e2e tests with local CWE and agent source. macOS bootstraps Colima; Linux uses the host Docker daemon.
 	./hack/local-backend-e2e.sh
 
+.PHONY: oidc-envtest-assets test-oidc-reference
+oidc-envtest-assets: ## Install the pinned setup-envtest and resolve the pinned Kubernetes assets.
+	@mkdir -p "$(dir $(SETUP_ENVTEST))" "$(ENVTEST_BIN_DIR)"
+	@GOBIN="$(dir $(SETUP_ENVTEST))" go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION)
+	@"$(SETUP_ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(ENVTEST_BIN_DIR)" -p path
+
+test-oidc-reference: oidc-envtest-assets ## Run the production-rendered OIDC config against envtest.
+	@set -euo pipefail; \
+	KUBEBUILDER_ASSETS="$$($(SETUP_ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir "$(ENVTEST_BIN_DIR)" -p path)"; \
+	test -n "$$KUBEBUILDER_ASSETS" || { echo "setup-envtest selected no Kubernetes $(ENVTEST_K8S_VERSION) assets" >&2; exit 1; }; \
+	output_file="$$(mktemp)"; \
+	trap 'rm -f "$$output_file"' EXIT; \
+	status=0; \
+	ENVTEST_K8S_VERSION="$(ENVTEST_K8S_VERSION)" KUBEBUILDER_ASSETS="$$KUBEBUILDER_ASSETS" go test -v -tags=oidc_integration -count=1 ./test/oidctest/... 2>&1 | tee "$$output_file" || status=$$?; \
+	test "$$status" -eq 0 || exit "$$status"; \
+	grep -Fq -- "--- PASS: TestReferenceOIDCAuthenticationMatrix (" "$$output_file" && \
+		grep -Eq -- "--- PASS: TestReferenceOIDCAuthenticationMatrix/[^/]+/[^/]+ [(]" "$$output_file" || \
+		{ echo "OIDC reference matrix and its cases must run and pass" >&2; exit 1; }
+
 .PHONY: test-e2e-nico-vms
 test-e2e-nico-vms: ## Run NICo VMs happy-path e2e tests
 	make test-e2e ARGS='--label-filter="nico-vms && happy-path && (lifecycle || readiness) && !scale && !upgrade && !reboot"'
