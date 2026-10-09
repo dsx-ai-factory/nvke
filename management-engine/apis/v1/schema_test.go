@@ -161,18 +161,6 @@ func (s resourceSchema) runCreate(t *testing.T, resource string, cases []fieldCa
 	}
 }
 
-// runUpdate applies each case to a copy of old and admits it as an update.
-func (s resourceSchema) runUpdate(t *testing.T, old map[string]any, cases []fieldCase) {
-	t.Helper()
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			obj := runtime.DeepCopyJSON(old)
-			c.apply(obj)
-			s.check(t, c.invalid, obj, runtime.DeepCopyJSON(old))
-		})
-	}
-}
-
 // Minimal resources that pass admission: every required field and nothing else.
 var baseResources = map[string]string{
 	"nkeclusters": `{

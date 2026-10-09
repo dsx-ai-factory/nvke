@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: internal.nke.nvidia.com/v1
+kind: ClusterReleaseChannel
+metadata:
+  labels:
+    app.kubernetes.io/name: management-engine
+    app.kubernetes.io/managed-by: kustomize
+  name: pinned
+spec:
+  releases:
+    "1.35":
+    - name: example-release
+      minimumUpgradeAge: 168h

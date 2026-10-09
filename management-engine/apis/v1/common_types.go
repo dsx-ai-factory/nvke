@@ -3,7 +3,10 @@
 
 package v1
 
-import "k8s.io/apimachinery/pkg/types"
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+)
 
 // ResourceName is a Kubernetes DNS subdomain name, not a provider identifier.
 // +kubebuilder:validation:MinLength=1
@@ -28,7 +31,6 @@ type ReleaseReference struct {
 }
 
 // ClusterReference pins a NodePool to one NKECluster in the same namespace.
-// Neither the namespace nor the resource kind is caller-selectable.
 type ClusterReference struct {
 	Name ResourceName `json:"name"`
 	// +kubebuilder:validation:Type=string
@@ -38,7 +40,7 @@ type ClusterReference struct {
 }
 
 // MachineImageReference names a cluster-scoped MachineImage. Only the name is
-// selectable; the kind and scope are fixed.
+// selectable
 type MachineImageReference struct {
 	Name ResourceName `json:"name"`
 }
@@ -67,6 +69,13 @@ type ReleaseLifecycle struct {
 	// +optional
 	// +kubebuilder:default=false
 	Deprecated bool `json:"deprecated"`
+	// SupportedUntil is the time at which support for this release ends.
+	// +optional
+	SupportedUntil *metav1.Time `json:"supportedUntil,omitempty"`
+	// Hidden defines if the release is visible in a given channel
+	// +optional
+	// +kubebuilder:default=false
+	Hidden bool `json:"hidden"`
 }
 
 const (

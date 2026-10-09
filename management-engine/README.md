@@ -114,6 +114,7 @@ projections; do not expose internal structs directly.
 | NKECluster | Org namespace | [Cluster configuration](apis/v1/nkecluster_types.go), [sample](config/samples/internal_v1_nkecluster.yaml) |
 | MachineImage | Cluster | [Immutable image identity and NICo boot contract](apis/v1/machineimage_types.go) |
 | ClusterRelease | Cluster | [Control-plane image and initialization](apis/v1/clusterrelease_types.go) |
+| ClusterReleaseChannel | Cluster | [Release catalog](apis/v1/clusterreleasechannel_types.go), [sample](config/samples/internal_v1_clusterreleasechannel.yaml) |
 | NodePoolRelease | Cluster | [Worker image and initialization](apis/v1/nodepoolrelease_types.go) |
 
 | Concern | Contract |
