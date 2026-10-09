@@ -27,11 +27,13 @@ type reconciler struct {
 	k8sClient                ctrlclient.Client
 	k8sReader                ctrlclient.Reader
 
-	// nodePoolUpgradeConfig resolves the NodePoolUpgradeConfig client for a
-	// cluster. Defaults to clients.GetNodePoolUpgradeConfig; tests override it
-	// with a stub so updateNodePoolKubeVersion's own error handling can be
-	// exercised without going through real NICo/CAPI resolution.
-	nodePoolUpgradeConfig func(db.Cluster) (clients.NodePoolUpgradeConfig, error)
+	// providerClient resolves the composed ProviderClient for a cluster.
+	// Defaults to clients.GetProviderClient; tests override it with a stub so
+	// a function's own error handling can be exercised without going through
+	// real NICo/CAPI resolution. reconcile resolves it once per call and
+	// passes the specific capability each downstream function needs, rather
+	// than each one resolving its own.
+	providerClient func(db.Cluster) (clients.ProviderClient, error)
 }
 
 func newReconciler(
@@ -49,7 +51,7 @@ func newReconciler(
 		controllerTemporalClient: controllerTemporalClient,
 		k8sClient:                k8sClient,
 		k8sReader:                k8sReader,
-		nodePoolUpgradeConfig:    clients.GetNodePoolUpgradeConfig,
+		providerClient:           clients.GetProviderClient,
 	}
 }
 
@@ -58,6 +60,14 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	// reconciling scale-up here would keep recreating them and deadlock teardown.
 	if cluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
 		return nil
+	}
+
+	// Resolved once here, as early as cluster is known, and passed down to
+	// whatever needs a capability from it -- not a fresh resolve at each spot
+	// that needs one.
+	provider, err := r.providerClient(cluster)
+	if err != nil {
+		return fmt.Errorf("resolving provider client: %w", err)
 	}
 
 	controlPlane, err := readControlPlane(ctx, r.db, cluster, r.cfg.UseControlPlaneControllerForControlPlane())
@@ -88,7 +98,7 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 
 	// Host creation only. A pending or in-flight delete must not stall it: the
 	// replacement host is exactly what lets the control plane shrink safely.
-	if err := r.reconcileControlPlaneScaleUp(ctx, cluster, controlPlane, allocator); err != nil {
+	if err := r.reconcileControlPlaneScaleUp(ctx, cluster, controlPlane, allocator, provider.NewNodeProvider()); err != nil {
 		return fmt.Errorf("reconciling control plane scale-up: %w", err)
 	}
 
@@ -98,14 +108,14 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	}
 
 	// ConfigMap changes only.
-	if err := r.reconcileK8sUpgrade(ctx, cluster, controlPlane); err != nil {
+	if err := r.reconcileK8sUpgrade(ctx, cluster, controlPlane, provider.NodePoolUpgradeConfig()); err != nil {
 		return fmt.Errorf("reconciling k8s upgrade: %w", err)
 	}
 
 	// FIXME: https://github.com/dsx-ai-factory/nke/issues/784 - reconcileNodesNeedingRollout
 	// still tears a node down directly instead of recording intent and letting the
 	// promotion below start it, so rollout teardowns bypass the serialized path.
-	if err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane, allocator); err != nil {
+	if err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane, allocator, provider.NewNodeProvider()); err != nil {
 		return fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
 	}
 
@@ -174,6 +184,7 @@ func (r *reconciler) reconcileControlPlaneScaleUp(
 	cluster db.Cluster,
 	controlPlane *controlPlane,
 	allocator domainAllocator,
+	newNodeProvider clients.NewNodeProvider,
 ) error {
 	if !r.cfg.UseControlPlaneControllerForControlPlane() {
 		return nil
@@ -188,7 +199,7 @@ func (r *reconciler) reconcileControlPlaneScaleUp(
 	// selection and Forge capacity checks are the control plane node scheduler's job: it picks
 	// each node's Forge instance type from the pinned InstanceTypePreference at
 	// schedule time and persists it back onto the node row.
-	created, err := r.scaleUp(ctx, cluster, deficit, "control-plane scale-up", allocator)
+	created, err := r.scaleUp(ctx, cluster, deficit, "control-plane scale-up", allocator, newNodeProvider)
 	if err != nil {
 		return fmt.Errorf("scaling up control-plane nodes: %w", err)
 	}

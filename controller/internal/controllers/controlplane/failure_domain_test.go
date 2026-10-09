@@ -198,6 +198,7 @@ func TestControllerReturnsErrorWhileClusterInfrastructureIsNotReady(t *testing.T
 		ID:                clusterID,
 		Name:              "test-cluster",
 		KubernetesVersion: "1.34.2",
+		ProviderType:      db.ProviderTypeCAPI,
 		ControlPlaneConfig: db.ControlPlaneConfig{
 			DesiredCount: 2,
 		},

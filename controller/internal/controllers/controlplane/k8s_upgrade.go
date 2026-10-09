@@ -15,6 +15,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/temporal/workflows"
@@ -32,7 +33,12 @@ func isWorkflowNotFoundError(err error) bool {
 
 // reconcileK8sUpgrade handles Kubernetes version upgrades for a cluster.
 // It orchestrates the kubeadm ConfigMap update, OSProfile updates, and kubeadm upgrade apply.
-func (r *reconciler) reconcileK8sUpgrade(ctx context.Context, cluster db.Cluster, cp *controlPlane) error {
+func (r *reconciler) reconcileK8sUpgrade(
+	ctx context.Context,
+	cluster db.Cluster,
+	cp *controlPlane,
+	nodePoolUpgradeConfig clients.NodePoolUpgradeConfig,
+) error {
 	logger := r.logger.With(
 		"clusterID", cluster.ID,
 		"clusterName", cluster.Name,
@@ -48,7 +54,7 @@ func (r *reconciler) reconcileK8sUpgrade(ctx context.Context, cluster db.Cluster
 	// If K8s upgrade is needed and not yet started
 	isK8sVersionUpgradeNeeded := r.isK8sVersionUpgradeNeeded(cluster, cp, logger)
 	if isK8sVersionUpgradeNeeded {
-		return r.startK8sUpgrade(ctx, cluster, cp, logger)
+		return r.startK8sUpgrade(ctx, cluster, cp, nodePoolUpgradeConfig, logger)
 	}
 
 	return nil
@@ -98,6 +104,7 @@ func (r *reconciler) startK8sUpgrade(
 	ctx context.Context,
 	cluster db.Cluster,
 	cp *controlPlane,
+	nodePoolUpgradeConfig clients.NodePoolUpgradeConfig,
 	logger *slog.Logger,
 ) error {
 	// Update kubeadm configmap version to the cluster's Kubernetes version
@@ -116,7 +123,7 @@ func (r *reconciler) startK8sUpgrade(
 	// Skipped under the control-plane-controller path: no CP node pools, and the new
 	// version already lives in the cluster snapshot.
 	if !r.cfg.UseControlPlaneControllerForControlPlane() {
-		if err := r.updateNodePoolsKubeVersion(ctx, cluster, cp.nodePools, logger); err != nil {
+		if err := r.updateNodePoolsKubeVersion(ctx, cluster, cp.nodePools, nodePoolUpgradeConfig, logger); err != nil {
 			logger.Error("Failed to update OSProfile", "error", err)
 			return err
 		}
@@ -178,6 +185,7 @@ func (r *reconciler) updateNodePoolsKubeVersion(
 	ctx context.Context,
 	cluster db.Cluster,
 	cpNodePools []nodePool,
+	nodePoolUpgradeConfig clients.NodePoolUpgradeConfig,
 	logger *slog.Logger,
 ) error {
 	for _, nodePool := range cpNodePools {
@@ -198,7 +206,7 @@ func (r *reconciler) updateNodePoolsKubeVersion(
 		nplogger.Info("Updating NodePool KubernetesVersion with cluster version")
 
 		// Update this nodepool's KubernetesVersion
-		if err := r.updateNodePoolKubeVersion(ctx, cluster, nodePool); err != nil {
+		if err := r.updateNodePoolKubeVersion(ctx, cluster, nodePool, nodePoolUpgradeConfig); err != nil {
 			return fmt.Errorf("failed to sync OSProfile with cluster version: %s: %w", nodePool.ID, err)
 		}
 	}
@@ -362,6 +370,7 @@ func (r *reconciler) updateNodePoolKubeVersion(
 	ctx context.Context,
 	cluster db.Cluster,
 	nodePool nodePool,
+	nodePoolUpgradeConfig clients.NodePoolUpgradeConfig,
 ) error {
 	logger := r.logger.With(
 		"clusterID", cluster.ID,
@@ -387,11 +396,7 @@ func (r *reconciler) updateNodePoolKubeVersion(
 		return fmt.Errorf("failed to get node pool: %w", err)
 	}
 
-	upgradeConfig, err := r.nodePoolUpgradeConfig(cluster)
-	if err != nil {
-		return err
-	}
-	np, err = upgradeConfig.ResolveNodePoolUpgrade(ctx, r.k8sReader, np, cluster.KubernetesVersion, logger)
+	np, err = nodePoolUpgradeConfig.ResolveNodePoolUpgrade(ctx, r.k8sReader, np, cluster.KubernetesVersion, logger)
 	if err != nil {
 		return err
 	}

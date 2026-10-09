@@ -107,11 +107,11 @@ func (a *Activities) configureKubeVip(ctx context.Context, input ConfigureKubeVi
 		bgpPeerASN = 0
 		bgpPeerASNSource = nkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS
 	} else {
-		kubeVIPConfig, err := clients.GetKubeVIPConfig(cluster)
+		provider, err := clients.GetProviderClient(cluster)
 		if err != nil {
 			return ConfigureKubeVipResult{}, err
 		}
-		useFMDS, err := kubeVIPConfig.UsesFMDSBGPPeerASN(nodePool)
+		useFMDS, err := provider.KubeVIPConfig().UsesFMDSBGPPeerASN(nodePool)
 		if err != nil {
 			return ConfigureKubeVipResult{}, err
 		}

@@ -50,7 +50,7 @@ type DeleteCAPIMachineRebootAnnotationInput struct {
 }
 
 // CreateCAPIInfraMachineForNode resolves the node's provider client via
-// clients.GetMachineMaterialization — the only place this flow decides which
+// clients.GetProviderClient — the only place this flow decides which
 // provider it's dealing with — and delegates the entire create (render,
 // apply, SPIRE token, bootstrap, generic CAPI Machine) to that client's
 // CreateMachine. Provider-specific behavior lives in internal/clients/capi
@@ -69,10 +69,11 @@ func (a *Activities) CreateCAPIInfraMachineForNode(ctx context.Context, input Cr
 		return err
 	}
 
-	machineClient, err := clients.GetMachineMaterialization(cluster)
+	provider, err := clients.GetProviderClient(cluster)
 	if err != nil {
 		return err
 	}
+	machineClient := provider.MachineMaterialization()
 
 	deps := shared.MachineCreateDeps{
 		K8sClient:                    a.k8sClient,

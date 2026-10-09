@@ -214,12 +214,12 @@ func (a *Controller) createNodeSetIfChanged(
 		return nodePool, currentNodeSet, nil
 	}
 
-	nodeSetProvider, err := clients.GetNodeSetProvider(cluster)
+	provider, err := clients.GetProviderClient(cluster)
 	if err != nil {
 		return nodePool, currentNodeSet, err
 	}
 	newNodeSet := buildBaseNodeSet(nodePool)
-	if err := nodeSetProvider.ApplyNodeSetProvider(nodePool, newNodeSet); err != nil {
+	if err := provider.NodeSetProvider().ApplyNodeSetProvider(nodePool, newNodeSet); err != nil {
 		return nodePool, currentNodeSet, err
 	}
 	return applyNewNodeSet(ctx, tx, cluster, nodePool, currentNodeSet, newNodeSet, logger)
