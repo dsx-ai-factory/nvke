@@ -51,12 +51,14 @@ have notices of their own yet:
   provider's 67 modules, the same set for `linux/amd64` and `linux/arm64`;
   `k8s.io/cluster-bootstrap` is not in it. The provider needs notices generated
   from its own import closure.
-- **`management-engine`** is outside the release scope. No workflow in this
-  repository builds or publishes its image or chart, its `Dockerfile` and
-  `make docker-build` / `docker-push` targets are for development with a
-  caller-supplied image name, and it is not distributed by any other means. If
-  it is published, its image needs `LICENSE`, `NOTICE` and a generated
-  dependency inventory, and a row above.
+- **The `management-engine` manager image and chart** are outside the release
+  scope. No workflow in this repository builds or publishes them, the
+  `Dockerfile` and `make docker-build` / `docker-push` targets are for
+  development with a caller-supplied image name, and they are not distributed by
+  any other means. The module's API types are compiled into the controller and
+  its CRDs ship in the controller chart, so those carry the controller's
+  attribution. If the manager image is published, it needs `LICENSE`, `NOTICE`
+  and a generated dependency inventory, and a row above.
 
 `capd-reboot-controller` is built by `make build` but shipped nowhere — no
 image, no artifact, no package. If it starts shipping, it needs a row above and
