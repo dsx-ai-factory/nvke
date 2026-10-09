@@ -199,38 +199,13 @@ branches use these rows for bounded feedback. Runs on `main`, scheduled runs,
 and manual runs keep the comprehensive backend rows, including the extended
 lifecycle validations.
 
-The CAPD `cp-controller` row advertises two control-plane failure domains and
-one worker-only domain through `DockerCluster.spec.failureDomains`. Its create,
-1-to-3 scale, and rolling-update validations inspect the live CAPI Cluster and
-Machines and CAPD node containers: requested domains and container placement
-must be eligible and agree, placement must remain balanced, and no control-plane
-Machine may use the worker-only domain. Create also checks exact per-domain
-counts; scale-up checks only balance, because KCP's tie-break decides which
-domain receives the extra Machine. The quorum-safe scale-down and
-unreachable-node delete validations check that placement stays balanced and the
-replacement refills the deleted Machine's domain. A second, provisioning-only
-`cp-controller` row advertises just a worker-only domain and checks that its
-control-plane Machine has no requested domain. The provisioning-only `no-vip`
-`cp-controller` row advertises the same domains as the main row and checks its
-single Machine's placement. The full CAPD backend E2E job runs all three rows.
+The CAPD `cp-controller` rows advertise failure domains through
+`DockerCluster.spec.failureDomains` and check that control-plane Machines land
+only in eligible domains and stay balanced through create, scale, rolling
+update, and delete. These rows reject `lifecycle.reuseCluster`, since each
+needs its own set of domains.
 
-These CAPD controller fixtures reject `lifecycle.reuseCluster`: each row needs
-its own advertised domain set. Each placement poll snapshots all running
-containers in one Docker call, and the delete scenario reuses the validated
-node-to-domain snapshot when selecting its victim and checking its replacement.
-
-Local and CI lanes read the CAPI core and CAPD pin from `make/tool-versions.mk`
-(v1.13.6). The kubeadm bootstrap and control-plane providers use that same
-release. CAPD records placement on the Docker container label and publishes
-status.failureDomain, which CAPI propagates to the Machine. The test compares
-any published status with container placement and also supports explicitly
-selected older providers that leave the field empty.
-CAPD cannot exercise the status-over-spec preference when those values differ;
-the control-plane `TestReadFailureDomains` unit test covers that case. An E2E
-drift scenario needs a backend where observed placement can differ from the
-request, such as CapNICo.
-
-To run only these scenarios against a local deployment, use:
+To run only these scenarios locally:
 
 ```bash
 make test-e2e ARGS='--label-filter="capd && cp-controller"'
