@@ -4,7 +4,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Generates THIRD_PARTY_NOTICES.md: every third-party Go module linked into the
-# released cloud-workflow-engine worker binary, with the verbatim text of each
+# released cloud-workflow-engine worker binary and, for the controller's file, the
+# cluster-api-provider-provisioned manager binary, with the verbatim text of each
 # module's license.
 #
 # Adapted from NVIDIA/aicr's tools/generate-notices, which produces the same

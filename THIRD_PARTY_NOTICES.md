@@ -14,7 +14,7 @@ where those notices are, and which do not yet — and why.
 | Component | Notices | Generated from | Enforced by |
 |---|---|---|---|
 | `agent/` — the node agent | [agent/THIRD_PARTY_NOTICES.md](agent/THIRD_PARTY_NOTICES.md) | the import closure of `./cmd/...` for `linux/amd64` and `linux/arm64` | the `Third-Party Notices` workflow, on every push |
-| `controller/` — the Cloud Workflow Engine | [controller/THIRD_PARTY_NOTICES.md](controller/THIRD_PARTY_NOTICES.md) — **151 modules** | the import closures of `./cmd/worker` and the provider's `./cmd/manager` for `linux/amd64`, read from the committed `vendor/` tree | the `Third-Party Notices` workflow, on every push |
+| `controller/` — the Cloud Workflow Engine | [controller/THIRD_PARTY_NOTICES.md](controller/THIRD_PARTY_NOTICES.md) — **151 modules** | the import closures of `./cmd/worker` and the provider's `./cmd/manager` for `linux/amd64` | the `Third-Party Notices` workflow, on every push |
 | `cli/` — the `nkectl` CLI | [cli/THIRD_PARTY_NOTICES.md](cli/THIRD_PARTY_NOTICES.md) — **24 modules** | the import closure of `./cmd/nkectl` for `linux/amd64` | the `Third-Party Notices` workflow, on every push |
 | `os-image/` — the `nke-os-image-check` binary | [os-image/THIRD_PARTY_NOTICES.md](os-image/THIRD_PARTY_NOTICES.md) — **9 modules** | the import closure of `./cmd/nke-os-image-check` for `linux/amd64` | the `Third-Party Notices` workflow, on every push |
 
@@ -28,11 +28,9 @@ cd os-image   && make notices
 ```
 
 ⚠️ **The controller, nkectl and os-image generators need the workspace on** (do
-not set `GOWORK=off`), for two different reasons. The controller and nkectl read
-the committed `vendor/` tree, which is a workspace-level construct — that is what
-lets them run without downloading anything at all.
-`os-image` requires `github.com/dsx-ai-factory/nke/agent`, which resolves only through
-the workspace's `use` directive; with the workspace off, `go-licenses` fails with
+not set `GOWORK=off`), because `os-image` requires
+`github.com/dsx-ai-factory/nke/agent`, which resolves only through the workspace's
+`use` directive; with the workspace off, `go-licenses` fails with
 `go.mod file not found` before it collects anything.
 
 `make notices-check` regenerates the file and fails if the result differs from

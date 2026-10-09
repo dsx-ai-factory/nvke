@@ -484,12 +484,12 @@ license-policy-check: $(GO_LICENSES) ## Verify every third-party dependency uses
 	@# --ignore= plus seven stray positional arguments that go-licenses reads as
 	@# package patterns. GOWORK=off narrows it to this module, and the siblings
 	@# that genuinely need ignoring are named explicitly.
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO_LICENSES) check ./cmd/worker \
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO_LICENSES) check ./cmd/worker ../cluster-api-provider-provisioned/cmd/manager \
 		--allowed_licenses=$(ALLOWED_LICENSES) \
-		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nke/agent,github.com/dsx-ai-factory/nke/management-engine,github.com/dsx-ai-factory/cluster-api-provider-nico"
+		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nke/agent,github.com/dsx-ai-factory/nke/management-engine,github.com/dsx-ai-factory/nke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
 
 .PHONY: notices
-notices: $(GO_LICENSES) ## Regenerate THIRD_PARTY_NOTICES.md for the released worker binary.
+notices: $(GO_LICENSES) ## Regenerate THIRD_PARTY_NOTICES.md for the released worker and provider manager binaries.
 	@GO_LICENSES="$(GO_LICENSES)" ./hack/generate-notices
 
 # Not declared as depending on `notices`: the tracked-file gate below is cheap
