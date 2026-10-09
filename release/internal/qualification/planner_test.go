@@ -43,14 +43,14 @@ func byConstraint(patch string) *fake {
 }
 
 // subjectFake resolves the subject the way the git tag strategy does: the
-// named version if there is one, else the latest candidate.
+// named version if there is one, else the highest version.
 func subjectFake() *fake {
 	return &fake{answer: func(in map[string]string) (map[string]string, error) {
 		if v := in[resolve.InputOverrideKey]; v != "" {
 			return map[string]string{resolve.ResultVersionKey: v}, nil
 		}
-		if in[resolve.InputSelectKey] != resolve.SelectCandidate {
-			return nil, fmt.Errorf("asked for something other than a candidate")
+		if in[resolve.InputSelectKey] != "" {
+			return nil, fmt.Errorf("asked for a selection, the subject takes the default")
 		}
 		return map[string]string{resolve.ResultVersionKey: "v0.22.0-beta.1"}, nil
 	}}
@@ -287,7 +287,7 @@ func TestPlanNarrowsToSubjectStreams(t *testing.T) {
 }
 
 func TestPlanSubjectVersion(t *testing.T) {
-	t.Run("absent means the latest candidate", func(t *testing.T) {
+	t.Run("absent means the highest version, as for any component", func(t *testing.T) {
 		r := newResolvers()
 		got, err := newPlanner(t, testSubject, r).Plan("nke", "", "full")
 		if err != nil {
@@ -296,7 +296,7 @@ func TestPlanSubjectVersion(t *testing.T) {
 		if got.Version != "v0.22.0-beta.1" {
 			t.Errorf("got %q", got.Version)
 		}
-		if in := r["nke"].calls[0]; in[resolve.InputSelectKey] != resolve.SelectCandidate || in[resolve.InputOverrideKey] != "" {
+		if in := r["nke"].calls[0]; in[resolve.InputSelectKey] != "" || in[resolve.InputOverrideKey] != "" {
 			t.Errorf("the subject was asked for %v", in)
 		}
 	})
@@ -315,13 +315,13 @@ func TestPlanSubjectVersion(t *testing.T) {
 		}
 	})
 
-	t.Run("a candidate that cannot resolve names the subject", func(t *testing.T) {
+	t.Run("a subject that cannot resolve is named", func(t *testing.T) {
 		r := newResolvers()
 		r["nke"] = &fake{answer: func(map[string]string) (map[string]string, error) {
-			return nil, fmt.Errorf("the repository has no release candidate")
+			return nil, fmt.Errorf("the repository has no tagged versions")
 		}}
 		_, err := newPlanner(t, testSubject, r).Plan("nke", "", "full")
-		wantError(t, err, "resolving nke: the repository has no release candidate")
+		wantError(t, err, "resolving nke: the repository has no tagged versions")
 	})
 
 	t.Run("a named version that does not exist names both", func(t *testing.T) {

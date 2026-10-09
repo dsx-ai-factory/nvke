@@ -39,7 +39,7 @@ policy, resolves every component and dependency to a version, and expands the
 scope's selector over the stream list. The result is one file naming every
 combination and every stream.
 
-An absent --version means the subject's latest release candidate.
+An absent --version means the subject's highest version.
 
 --overrides replaces what a component or dependency would have resolved
 to, as comma-separated name=value pairs, the format the e2e suite's -e2e.versions takes.
@@ -101,7 +101,7 @@ not, so plan needs a network that can reach it.`,
 
 	f := cmd.Flags()
 	f.StringVar(&subject, "subject", "", "subject to qualify (required)")
-	f.StringVar(&version, "version", "", "version of the subject to qualify, empty means its latest release candidate")
+	f.StringVar(&version, "version", "", "version of the subject to qualify, empty means its highest version")
 	f.StringVar(&overrides, "overrides", "", "values to use in place of what resolves, as name=value pairs separated by commas")
 	// full is the default because it is the scope that is never wrong. A
 	// narrower default would silently cover less of the matrix than the

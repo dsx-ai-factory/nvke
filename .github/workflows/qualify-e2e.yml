@@ -76,7 +76,7 @@ on:
           - bootstrap
           - full
       nke-version:
-        description: "The nke tag to qualify, e.g. v0.22.0-beta.1. It must be an existing tag. QUALIFY_E2E_NKE_VERSION supplies it when this is empty, and the plan stops when neither is set and the repository has no release candidate."
+        description: "The nke tag to qualify, e.g. v0.22.0-beta.1. It must be an existing tag. QUALIFY_E2E_NKE_VERSION supplies it when this is empty, and the plan takes the highest nke version when neither is set."
         type: string
         required: false
       scope:
@@ -258,7 +258,7 @@ jobs:
           add os-image-bootloader-arm64 "${OVERRIDE_OS_IMAGE_BOOTLOADER_ARM64}"
 
           args=(plan --subject nke --scope "${SCOPE}" --output plan.json)
-          # Left off when unset, so the plan says there is no release candidate
+          # Left off when unset, so the plan takes the highest nke version
           # rather than this workflow choosing a tag.
           if [ -n "${NKE_VERSION}" ]; then
             args+=(--version "${NKE_VERSION}")

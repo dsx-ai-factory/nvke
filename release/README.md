@@ -15,7 +15,7 @@ qualification run would cover.
 repository root:
 
 ```console
-# The latest release candidate of nke, over every stream
+# The highest version of nke, over every stream
 $ go run ./release/cmd/qualify plan --subject nke
 
 # A specific tag, narrowed to the golden-path scope
@@ -31,15 +31,14 @@ $ go run ./release/cmd/qualify plan --subject nke --output plan.json
 | Flag | Default | Meaning |
 |---|---|---|
 | `--subject` | required | What to qualify. `nke` is NKE as a whole |
-| `--version` | the latest release candidate | The subject's version, which must be an existing tag |
+| `--version` | the highest version | The subject's version, which must be an existing tag |
 | `--overrides` | none | Values to use in place of what resolves, as `name=value` pairs separated by commas |
 | `--scope` | `full` | How much of the matrix to cover, a scope from `policy.yaml` |
 | `--output` | `-` | Where to write the plan. `-` is stdout |
 | `--root`, `--policy`, `--registry` | the enclosing checkout and the files under `release/` | Where to read the repository and the two files from |
 
-`nke` has no release candidate until the first beta tag is cut, so without
-`--version` `plan` stops and says so. Pass `--version` to name a tag that
-exists.
+Without `--version` the subject resolves the way every component does, to the
+highest version of any kind. Pass `--version` to name a tag that exists.
 
 A value given with `--overrides` replaces what that component or dependency
 would have resolved to, and is checked the way a resolved one is: a tag has to

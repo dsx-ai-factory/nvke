@@ -41,8 +41,8 @@ type Planner struct {
 
 // Plan resolves one subject at one version over one scope.
 //
-// An empty version means the subject's own latest release candidate, which is
-// what a nightly wants: the thing just built is the thing to qualify.
+// An empty version means the subject's own highest version, which resolves the
+// way every other component does.
 func (p *Planner) Plan(subject, version, scope string) (*Plan, error) {
 	s, err := LoadSubject(SubjectPath(p.Root, subject))
 	if err != nil {
@@ -93,11 +93,9 @@ func (p *Planner) Plan(subject, version, scope string) (*Plan, error) {
 }
 
 // subjectVersion resolves the subject through the registry exactly as any
-// other component resolves. An empty version is the latest release candidate,
-// not the highest version, because a release would already have been
-// qualified on its way to becoming one.
+// other component resolves. An empty version is the highest version of any kind.
 func (p *Planner) subjectVersion(subject, version string) (string, error) {
-	inputs := map[string]string{resolve.InputSelectKey: resolve.SelectCandidate}
+	inputs := map[string]string{}
 	if version != "" {
 		inputs = map[string]string{resolve.InputOverrideKey: version}
 	}
