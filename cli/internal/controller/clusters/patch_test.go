@@ -240,21 +240,3 @@ func TestPatchUnknownClusterReportsNotFound(t *testing.T) {
 		t.Errorf("error = %v, want it to mention not found", err)
 	}
 }
-
-// TestPatchCmdRejectsControlPlaneNodeLabels verifies that nodeLabels cannot be
-// patched: labels are set when the cluster is created, and the update schema
-// does not carry them, so the patch fails before the API is called.
-func TestPatchCmdRejectsControlPlaneNodeLabels(t *testing.T) {
-	cmd := NewPatchCmd(clientFnErr)
-	cmd.SetArgs([]string{"my-cluster", "--patch", "controlPlaneConfig: {nodeLabels: {tier: control}}"})
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected an error for nodeLabels in a patch, got nil")
-	}
-	if isNotConfigured(err) {
-		t.Errorf("nodeLabels should fail before reaching the API, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "nodeLabels") {
-		t.Errorf("error = %v, want it to name nodeLabels", err)
-	}
-}

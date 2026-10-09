@@ -27,22 +27,8 @@ CreateNodePoolRequest schema exactly. See /api/docs on your site controller.
 
 Pass a file path or '-' to read from stdin (e.g. via a pipe or heredoc).
 
-A pool can carry nodeLabels, a map of keys to values, and nodeTaints, a list of
-key, optional value and effect (NoSchedule, PreferNoSchedule or NoExecute).
-Taints are for worker pools only. Labels and taints are set here and cannot be
-changed afterwards; to change them, create a new pool. The site controller
-validates them and its error is shown unchanged.
-
 Example:
   nkectl create nodepool -f pool.yaml
-
-Example — a spec with labels and taints:
-  nodeLabels:
-    nvidia.com/gpu.present: "true"
-  nodeTaints:
-    - key: nvidia.com/gpu
-      value: "true"
-      effect: NoSchedule
 
 Example — stdin via pipe:
   cat pool.yaml | nkectl create nodepool -f -`,

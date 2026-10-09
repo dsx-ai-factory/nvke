@@ -174,9 +174,8 @@ const (
 // validateNkectlNodePoolLifecycle drives a node pool through create, scale up,
 // scale down and delete with nkectl alone, asserting the nodes it adds become
 // Ready in the tenant cluster. The pool is created with a label and a taint, and
-// the spec checks the CLI reports them back. It does not check the tenant Node
-// objects: the controller stores the labels and taints but does not apply them
-// to nodes yet.
+// the spec checks that `nkectl get nodepools` reports them. It does not check the
+// labels and taints on the tenant Node objects.
 //
 // It runs on the CLI rows of both container-backed lanes, so the commands are
 // covered against CAPD and against NICo.

@@ -27,11 +27,6 @@ CreateClusterRequest schema exactly. See /api/docs on your site controller.
 
 Pass a file path or '-' to read from stdin (e.g. via a pipe or heredoc).
 
-Each entry of nodePools can carry nodeLabels (a map of keys to values) and
-nodeTaints (a list of key, optional value and effect), and controlPlaneConfig
-can carry nodeLabels. They are set at creation and cannot be changed
-afterwards.
-
 Example:
   nkectl create cluster -f examples/capd-cluster.yaml
 

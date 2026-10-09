@@ -125,6 +125,13 @@ func newFakeCWE(t *testing.T, seeds ...seed) (*fakeCWE, ControllerClientFn) {
 			clusterIDs[s.clusterName] = clusterID
 			f.clusterNames[clusterID] = s.clusterName
 		}
+		labels, taints := map[string]string{}, []api.NodeTaint{}
+		if s.nodeLabels != nil {
+			labels = s.nodeLabels
+		}
+		if s.nodeTaints != nil {
+			taints = s.nodeTaints
+		}
 		f.nodePools = append(f.nodePools, api.NodePool{
 			ID:                uuid.New(),
 			ClusterID:         clusterID,
@@ -132,8 +139,8 @@ func newFakeCWE(t *testing.T, seeds ...seed) (*fakeCWE, ControllerClientFn) {
 			NodeNamePrefix:    s.name,
 			KubernetesVersion: "1.30.0",
 			DesiredNodeCount:  s.desiredNodeCount,
-			NodeLabels:        labelsOrEmpty(s.nodeLabels),
-			NodeTaints:        taintsOrEmpty(s.nodeTaints),
+			NodeLabels:        labels,
+			NodeTaints:        taints,
 			ControlPlane:      s.controlPlane,
 			Conditions:        conditionsFor(s),
 		})
@@ -349,10 +356,22 @@ func (f *fakeCWE) create(w http.ResponseWriter, r *http.Request) {
 	name, _ := raw["name"].(string)
 	prefix, _ := raw["nodeNamePrefix"].(string)
 	count, _ := raw["desiredNodeCount"].(float64)
-	labels, taints, err := labelsAndTaintsFrom(raw)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, api.GenericError{Message: err.Error()})
+	// An omitted map or list reads back empty, as the controller answers, not null.
+	labels, taints := map[string]string{}, []api.NodeTaint{}
+	var fields struct {
+		NodeLabels map[string]string `json:"nodeLabels"`
+		NodeTaints []api.NodeTaint   `json:"nodeTaints"`
+	}
+	body, _ := json.Marshal(raw)
+	if err := json.Unmarshal(body, &fields); err != nil {
+		writeJSON(w, http.StatusBadRequest, api.GenericError{Message: "malformed labels or taints: " + err.Error()})
 		return
+	}
+	if fields.NodeLabels != nil {
+		labels = fields.NodeLabels
+	}
+	if fields.NodeTaints != nil {
+		taints = fields.NodeTaints
 	}
 	pool := api.NodePool{
 		ID:               uuid.New(),
@@ -384,38 +403,6 @@ func (f *fakeCWE) delete(w http.ResponseWriter, id string) {
 		return
 	}
 	writeJSON(w, http.StatusNotFound, api.GenericError{Message: "node pool " + id + " not found"})
-}
-
-// labelsAndTaintsFrom reads the node labels and taints out of a create body,
-// answering them back the way the controller does: an omitted field reads back
-// as an empty map and an empty list, never as null.
-func labelsAndTaintsFrom(raw map[string]any) (map[string]string, []api.NodeTaint, error) {
-	var fields struct {
-		NodeLabels map[string]string `json:"nodeLabels"`
-		NodeTaints []api.NodeTaint   `json:"nodeTaints"`
-	}
-	body, err := json.Marshal(raw)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := json.Unmarshal(body, &fields); err != nil {
-		return nil, nil, err
-	}
-	return labelsOrEmpty(fields.NodeLabels), taintsOrEmpty(fields.NodeTaints), nil
-}
-
-func labelsOrEmpty(labels map[string]string) map[string]string {
-	if labels == nil {
-		return map[string]string{}
-	}
-	return labels
-}
-
-func taintsOrEmpty(taints []api.NodeTaint) []api.NodeTaint {
-	if taints == nil {
-		return []api.NodeTaint{}
-	}
-	return taints
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
