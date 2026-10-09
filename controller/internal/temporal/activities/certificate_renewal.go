@@ -48,6 +48,7 @@ func (a *Activities) BeginCertificateRenewal(
 	input BeginCertificateRenewalInput,
 ) (BeginCertificateRenewalResult, error) {
 	var result BeginCertificateRenewalResult
+	var rejection error
 	err := a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		cluster, err := tx.GetClusterForUpdate(ctx, input.ClusterID)
 		if err != nil {
@@ -84,25 +85,15 @@ func (a *Activities) BeginCertificateRenewal(
 				fmt.Sprintf("cannot renew certificates while %s is in progress", update.Type),
 			)
 		}
-		if cluster.Conditions.ControlPlaneUpgrading.Status == db.ConditionStatusTrue {
-			return certificateRenewalPreconditionError("cannot renew certificates while a control-plane upgrade is in progress")
-		}
-		if cluster.Conditions.CPNodesRecycling.Status == db.ConditionStatusTrue {
-			return certificateRenewalPreconditionError("cannot renew certificates while control-plane node recycling is in progress")
-		}
-		if cluster.NodeAgentUpgrade != nil {
-			return certificateRenewalPreconditionError("cannot renew certificates while a node-agent installation is in progress")
-		}
-		// Admission writers check ownership under this lock, so work they accepted
-		// earlier is visible here and must finish before renewal takes ownership.
-		nodes, err := stableControlPlane(ctx, tx, cluster.ID, certificateRenewalPreconditionError)
-		if err != nil {
+		// Refusals for cluster state are recorded as a failed cycle without the
+		// lock, so the controller applies its retry backoff instead of
+		// dispatching the same cycle again every minute.
+		var refusal *certificateRenewalRefusalError
+		if err := admitCertificateRenewal(ctx, tx, cluster); errors.As(err, &refusal) {
+			rejection = certificateRenewalPreconditionError(refusal.message)
+			return recordCertificateRenewalRefusal(ctx, tx, &cluster, input, refusal)
+		} else if err != nil {
 			return err
-		}
-		for _, node := range nodes {
-			if nodeAgentRemovalRequested(node) {
-				return certificateRenewalPreconditionError("cannot renew certificates while control-plane node removal or repair is requested")
-			}
 		}
 
 		startedAt := time.Now().UTC()
@@ -119,10 +110,88 @@ func (a *Activities) BeginCertificateRenewal(
 		}
 		return nil
 	})
+	if err == nil {
+		err = rejection
+	}
 	if err != nil {
 		return BeginCertificateRenewalResult{}, err
 	}
 	return result, nil
+}
+
+// certificateRenewalRefusalError is a cluster-state refusal that Begin records as a
+// failed cycle; Phase tells the controller how to retry it.
+type certificateRenewalRefusalError struct {
+	phase   string
+	message string
+}
+
+func (r *certificateRenewalRefusalError) Error() string {
+	return r.message
+}
+
+// admitCertificateRenewal checks the cluster state that must settle before a
+// cycle may take the lock. Other errors are retryable lookup failures.
+func admitCertificateRenewal(ctx context.Context, tx db.Tx, cluster db.Cluster) error {
+	refuse := func(message string) error {
+		return &certificateRenewalRefusalError{phase: db.CertificateRenewalPhaseAdmission, message: message}
+	}
+	if cluster.Conditions.ControlPlaneUpgrading.Status == db.ConditionStatusTrue {
+		return refuse("cannot renew certificates while a control-plane upgrade is in progress")
+	}
+	if cluster.Conditions.CPNodesRecycling.Status == db.ConditionStatusTrue {
+		return refuse("cannot renew certificates while control-plane node recycling is in progress")
+	}
+	if cluster.NodeAgentUpgrade != nil {
+		return refuse("cannot renew certificates while a node-agent installation is in progress")
+	}
+	// Admission writers check ownership under this lock, so work they accepted
+	// earlier is visible here and must finish before renewal takes ownership.
+	nodes, err := stableControlPlane(ctx, tx, cluster.ID, refuse)
+	if err != nil {
+		return err
+	}
+	for _, node := range nodes {
+		if nodeAgentRemovalRequested(node) {
+			return refuse("cannot renew certificates while control-plane node removal or repair is requested")
+		}
+	}
+	// Two etcd voters cannot lose one, so renewal can never pass its health
+	// gate; the controller waits for a different control-plane size instead.
+	if len(nodes) == 2 {
+		return &certificateRenewalRefusalError{
+			phase:   db.CertificateRenewalPhaseTwoControlPlaneVoters,
+			message: "cannot renew certificates with exactly two control-plane nodes; scale the control plane to one or three or more nodes",
+		}
+	}
+	return nil
+}
+
+// recordCertificateRenewalRefusal records the refused cycle as failed without
+// taking the mutation lock and leaves the due time unchanged. Begin reaches it
+// only when no operation holds the lock, so no owning cycle is overwritten.
+func recordCertificateRenewalRefusal(
+	ctx context.Context,
+	tx db.Tx,
+	cluster *db.Cluster,
+	input BeginCertificateRenewalInput,
+	refusal *certificateRenewalRefusalError,
+) error {
+	now := time.Now().UTC()
+	cluster.Conditions.CertificateRenewal = &db.CertificateRenewalStatus{
+		CycleID:      input.CycleID,
+		State:        db.CertificateRenewalStateFailed,
+		Forced:       input.Forced,
+		ScheduledFor: input.ScheduledFor,
+		StartedAt:    now,
+		CompletedAt:  &now,
+		Phase:        refusal.phase,
+		Message:      truncateCertificateRenewalMessage(refusal.message),
+	}
+	if _, err := tx.UpdateCluster(ctx, cluster); err != nil {
+		return fmt.Errorf("failed to record refused certificate renewal: %w", err)
+	}
+	return nil
 }
 
 func certificateRenewalPreconditionError(message string) error {

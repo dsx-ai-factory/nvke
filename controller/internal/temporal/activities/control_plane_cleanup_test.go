@@ -44,7 +44,11 @@ func preJoinCleanupStore() *fenceStore {
 	target.Conditions.Joined = db.NewCondition(false, "not joined")
 	target.Conditions.Provisioned = db.NewCondition(false, "not provisioned")
 	target.Conditions.ReadyToJoin = db.NewCondition(true, "host ready")
-	s.nodes = append(s.nodes, target)
+	// A third stable voter keeps renewal admissible once the target has joined:
+	// two control-plane voters are refused regardless of cleanup.
+	peer := stableRenewalNode(s.cluster.ID)
+	peer.Name = "cp-1"
+	s.nodes = append(s.nodes, target, peer)
 	return s
 }
 
@@ -163,7 +167,7 @@ func (s *staleCleanupStore) GetNode(context.Context, uuid.UUID) (db.Node, error)
 
 func TestControlPlaneCleanupReadsLockedLifecycle(t *testing.T) {
 	for _, op := range []string{"remove_member", "reset"} {
-		for _, state := range []string{"pre_join", "joined", "delete_requested", "deleting"} {
+		for _, state := range []string{"pre_join", "joined", "delete_requested", "deleting", "requested_and_deleting", "stale_deleting"} {
 			for _, uncertain := range []bool{false, true} {
 				t.Run(op+"/"+state+map[bool]string{false: "/success", true: "/unknown"}[uncertain], func(t *testing.T) {
 					store := preJoinCleanupStore()
@@ -175,9 +179,16 @@ func TestControlPlaneCleanupReadsLockedLifecycle(t *testing.T) {
 						store.nodes[1].Conditions.Joined = db.NewCondition(true, "joined")
 					case "delete_requested":
 						store.nodes[1].Conditions.DeleteRequested = db.NewCondition(true, "accepted")
-					case "deleting":
+					case "deleting", "requested_and_deleting":
 						store.nodes[1].Conditions.Deleting = db.NewCondition(true, "teardown")
+						if state == "requested_and_deleting" {
+							store.nodes[1].Conditions.DeleteRequested = db.NewCondition(true, "accepted")
+						}
+					case "stale_deleting":
+						snapshot.Conditions.Deleting = db.NewCondition(true, "stale")
+						store.nodes[1].Conditions.DeleteRequested = db.NewCondition(true, "accepted")
 					}
+					requested := store.nodes[1].Conditions.DeleteRequested
 					agent := &cleanupAgent{}
 					if uncertain {
 						agent.RemoveEtcdMemberError = errors.New("RPC outcome unknown")
@@ -191,7 +202,8 @@ func TestControlPlaneCleanupReadsLockedLifecycle(t *testing.T) {
 						require.NoError(t, err)
 					}
 					require.Equal(t, []string{"cluster", "node"}, store.lockOrder)
-					if state == "pre_join" {
+					require.Equal(t, requested, store.nodes[1].Conditions.DeleteRequested, "cleanup must not promote or erase queued intent")
+					if state == "pre_join" || state == "delete_requested" || state == "stale_deleting" {
 						require.NotEqual(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Deleting.Status)
 						require.Equal(t, db.ConditionStatusTrue, store.nodes[1].Conditions.Provisioning.Status)
 					} else {

@@ -6,6 +6,7 @@ package activities_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -30,6 +31,7 @@ type fenceStore struct {
 	pools     []db.NodePool
 	writes    int
 	lockOrder []string
+	cycles    int
 }
 
 func (s *fenceStore) RunInTx(ctx context.Context, fn func(context.Context, db.Tx) error) error {
@@ -97,9 +99,11 @@ func fenceActivities(store *fenceStore, agent *agenttest.FakeClient) *activities
 }
 
 // beginFenceOwner accepts ownership for either credential operation through its production activity.
+// Each call is a new cycle, as the controller's retries are: a refused cycle is recorded as failed.
 func beginFenceOwner(t *testing.T, a *activities.Activities, store *fenceStore) error {
 	t.Helper()
-	_, err := a.BeginCertificateRenewal(t.Context(), activities.BeginCertificateRenewalInput{ClusterID: store.cluster.ID, CycleID: "cycle"})
+	store.cycles++
+	_, err := a.BeginCertificateRenewal(t.Context(), activities.BeginCertificateRenewalInput{ClusterID: store.cluster.ID, CycleID: fmt.Sprintf("cycle-%d", store.cycles)})
 	return err
 }
 
@@ -128,7 +132,9 @@ func TestRenewalBeginRejectsPreviouslyAcceptedMembershipWork(t *testing.T) {
 			}
 			require.Error(t, beginFenceOwner(t, fenceActivities(store, nil), store))
 			require.Nil(t, store.cluster.Conditions.UpdateInProgress)
-			require.Zero(t, store.writes)
+			// The refusal is recorded as a failed cycle, never as ownership.
+			require.Equal(t, 1, store.writes)
+			require.Equal(t, db.CertificateRenewalStateFailed, store.cluster.Conditions.CertificateRenewal.State)
 		})
 	}
 }
@@ -294,7 +300,7 @@ func TestRetainedFailedRenewalKeepsFencingUntilReleased(t *testing.T) {
 			a := fenceActivities(store, nil)
 			require.NoError(t, beginFenceOwner(t, a, store))
 			_, err := a.FailCertificateRenewal(t.Context(), activities.FailCertificateRenewalInput{
-				ClusterID: store.cluster.ID, CycleID: "cycle", RetainMutationLock: retain, Phase: "renew", Message: "outcome unknown",
+				ClusterID: store.cluster.ID, CycleID: store.cluster.Conditions.CertificateRenewal.CycleID, RetainMutationLock: retain, Phase: "renew", Message: "outcome unknown",
 			})
 			require.NoError(t, err)
 			require.Equal(t, db.CertificateRenewalStateFailed, store.cluster.Conditions.CertificateRenewal.State)

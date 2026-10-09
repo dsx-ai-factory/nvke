@@ -95,14 +95,31 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 
 	status := cluster.Conditions.CertificateRenewal
 	if status != nil && status.State == db.CertificateRenewalStateFailed {
+		var failedNodeID any
+		if status.FailedNodeID != nil {
+			failedNodeID = *status.FailedNodeID
+		}
 		c.logger.Error(
 			"Certificate renewal failed and remains overdue",
 			"clusterID", cluster.ID,
-			"failedNodeID", status.FailedNodeID,
+			"failedNodeID", failedNodeID,
 			"phase", status.Phase,
 			"message", status.Message,
 		)
-		return reconcile.Result{RequeueAfter: 15 * time.Minute}, nil
+		if update := cluster.Conditions.UpdateInProgress; (update != nil && update.Type == db.OperationTypeCertRenewal) || status.CompletedAt == nil {
+			return reconcile.Result{RequeueAfter: 15 * time.Minute}, nil
+		}
+		// Two voters always fail the renewal health gate. Wait for a different
+		// desired control-plane size; that cluster update reconciles again.
+		if status.Phase == db.CertificateRenewalPhaseTwoControlPlaneVoters && cluster.ControlPlaneConfig.DesiredCount == 2 {
+			return reconcile.Result{}, nil
+		}
+		if retryAt := status.CompletedAt.Add(time.Hour); retryAt.After(now) {
+			return reconcile.Result{RequeueAfter: retryAt.Sub(now)}, nil
+		}
+		// Keep the due-time identity, but never reopen the failed cycle's ID.
+		// CompletedAt is durable, so observations before Begin commits deduplicate.
+		workflowID = fmt.Sprintf("%s-retry-%d", workflowID, status.CompletedAt.UTC().UnixNano())
 	}
 	if scheduledCycleMatches(status, cluster.NextCertRenewalDue) {
 		switch status.State {
@@ -181,7 +198,8 @@ func scheduledWorkflowID(clusterID uuid.UUID, scheduledFor time.Time) string {
 }
 
 // scheduledCycleMatches excludes forced cycles, whose nil ScheduledFor must not
-// be mistaken for acceptance of the initial scheduled cycle.
+// be mistaken for acceptance of the initial scheduled cycle. Retry IDs keep the
+// same ScheduledFor, so an accepted retry also suppresses duplicate dispatch.
 func scheduledCycleMatches(status *db.CertificateRenewalStatus, scheduledFor *time.Time) bool {
 	if status == nil || status.Forced {
 		return false

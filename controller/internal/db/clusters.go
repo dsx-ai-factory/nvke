@@ -483,6 +483,14 @@ const (
 	CertificateRenewalStateFailed    CertificateRenewalState = "failed"
 )
 
+// Phases recorded for a cycle that Begin refused without taking the mutation lock.
+const (
+	CertificateRenewalPhaseAdmission = "admission"
+	// CertificateRenewalPhaseTwoControlPlaneVoters is not retried while the
+	// cluster's desired control-plane count stays at two.
+	CertificateRenewalPhaseTwoControlPlaneVoters = "two-control-plane-voters"
+)
+
 // CertificateRenewalOutcome reports whether a successful cycle changed leaf
 // certificates or was a no-op.
 type CertificateRenewalOutcome string
