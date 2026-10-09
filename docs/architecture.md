@@ -83,7 +83,7 @@ they first read the handlers.
 4. The workflow creates Cluster API resources. The configured infrastructure
    provider provisions or adopts the nodes, then the controller bootstraps Kubernetes with
    kubeadm.
-5. The engine dials `nke-agent` on each node over gRPC to drive the node side of
+5. The controller dials `nke-agent` on each node over gRPC to drive the node side of
    the bootstrap (`internal/agent/client.go`).
 6. The cluster reaches `Ready` and the kubeconfig becomes available.
 
