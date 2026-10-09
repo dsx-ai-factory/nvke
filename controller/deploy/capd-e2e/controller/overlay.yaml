@@ -10,8 +10,8 @@ apiAuth:
   enabled: true
   permissive: false
 
-# CWE reconciles CAPI objects, so it needs the RBAC for them.
-# CWE accepts only the API provider blocks named here, and the chart defaults
+# The controller reconciles CAPI objects, so it needs the RBAC for them.
+# The controller accepts only the API provider blocks named here, and the chart defaults
 # to nico. This lane submits Infra blocks against CAPD, so without it every
 # create is rejected with "infra provider is not supported by this
 # deployment" -- which is what the first real run of this deploy path hit.
@@ -52,7 +52,7 @@ env:
 # used to read off disk and pass as a second --values file. It is static
 # configuration -- the same on every run -- so it belongs in the overlay: a
 # deploy path that does not carry it under-describes the deployment, and a
-# reader of the generated tree could not tell how CWE was configured.
+# reader of the generated tree could not tell how the controller was configured.
 #
 # The Tiltfile still reads that file (controller/Tiltfile:1018,1197), so this
 # is a second copy and the two can drift. Verified equivalent at the time of

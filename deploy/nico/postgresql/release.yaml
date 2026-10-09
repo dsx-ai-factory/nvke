@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Postgres, backing both CWE's own database and Temporal's persistence store.
+# Postgres, backing both the controller's own database and Temporal's persistence store.
 #
 # The BITNAMI chart, not this repository's controller/deploy/charts/postgresql,
 # because that is what a site actually runs: a live site installs

@@ -3,7 +3,7 @@
 
 # CAPNICo's CRDs, and only its CRDs -- not its controller.
 #
-# CWE watches nicoclusters and nicomachines whatever the backend: the chart's
+# The controller watches nicoclusters and nicomachines whatever the backend: the chart's
 # rbac-capi.yaml grants them unconditionally, so on a CAPD lane the kinds have
 # to exist or its controllers log against a kind the API server does not know.
 # The nico lane gets them from CAPNICo's own install instead, which is why the

@@ -9,7 +9,7 @@
 # Absent deliberately:
 #   cert-manager   clusterctl init installs it before this runs, so a second
 #                  owner would fail on CRDs it cannot adopt.
-#   the CAPD items this lane has no use for -- the reboot test double and CWE's
+#   the CAPD items this lane has no use for -- the reboot test double and the controller's
 #   RBAC over dockerclusters -- and nke-spire-client, whose authn-spire specs
 #   the nico lane does not run.
 #   CAPNICo itself. It is built from the checkout controller/go.mod pins and

@@ -420,7 +420,7 @@ spec:
                   optional: true
             {{- end }}
             {{- if .Values.secrets.cnpgDbPasswordsSecretName }}
-            # CNPG database passwords. Required (optional=false): CWE fails
+            # CNPG database passwords. Required (optional=false): the controller fails
             # closed at startup if these are unset (see
             # cloud-workflow-engine!772 Validate()), so a missing key here
             # should surface as a clear Kubernetes secretKeyRef error rather

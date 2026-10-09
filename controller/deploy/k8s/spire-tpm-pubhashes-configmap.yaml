@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Mounted into spire-server to provide trusted TPM pubhashes to the SPIRE TPM attestor.
-# Contents are managed dynamically by CWE.
+# Contents are managed dynamically by the controller.
 apiVersion: v1
 kind: ConfigMap
 metadata:

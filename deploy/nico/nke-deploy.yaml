@@ -9,7 +9,7 @@
 # That order in turn follows the management-software phases:
 #
 #   untaint -> storage class -> cert-manager -> CAPI core -> CAPNICo
-#            -> NKTP -> Postgres -> Temporal -> CWE
+#            -> NKTP -> Postgres -> Temporal -> controller
 #
 # Outside this deploy path, and before it:
 #   untaint        a bootstrap cluster is all control-plane. Nothing schedules

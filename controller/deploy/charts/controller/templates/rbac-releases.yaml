@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "controller.labels" . | nindent 4 }}
 rules:
-  # Read the releases. CWE resolves osProfile names from these
+  # Read the releases. The controller resolves osProfile names from these
   # cluster-scoped resources and does not write them.
   - apiGroups:
       - internal.nke.nvidia.com

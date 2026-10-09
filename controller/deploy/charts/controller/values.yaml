@@ -24,7 +24,7 @@ deploymentAnnotations: {}
 # the package public in its own settings. So this removes the NGC dependency; it
 # does not by itself make the chart installable by the public.
 image:
-  # -- Repository, including registry, for the nke-controller image (the CWE
+  # -- Repository, including registry, for the nke-controller image (the controller
   # service) that this chart deploys. Override to pull it from a different
   # registry (e.g. a private mirror); pair any change with a matching
   # `imagePullSecrets` entry. Not to be confused with
@@ -234,7 +234,7 @@ metrics:
     additionalNamespaces: []
 
 tracing:
-  # -- Enable OpenTelemetry tracing in the CWE binary (TracerProvider + transport hooks).
+  # -- Enable OpenTelemetry tracing in the controller binary (TracerProvider + transport hooks).
   # Keep false in chart defaults; enable per environment against an OTLP collector.
   enabled: false
   # OpenTelemetry Operator injection. When enabled (with tracing.enabled), add
@@ -306,10 +306,10 @@ resources: {}
   #   cpu: 100m
   #   memory: 128Mi
 
-# -- Comma-separated API provider blocks accepted by mutating cluster and node-pool requests. The chart defaults deployed CWE to Nico only; set to "nico,infra" only for deployments that should accept generic CAPI-backed provider payloads.
+# -- Comma-separated API provider blocks accepted by mutating cluster and node-pool requests. The chart defaults the deployed controller to Nico only; set to "nico,infra" only for deployments that should accept generic CAPI-backed provider payloads.
 supportedInfraProviders: "nico"
 
-# -- Additional environment variables to inject into the CWE container. A
+# -- Additional environment variables to inject into the controller container. A
 # variable nke-controller-config carries is refused; set its chart value instead.
 env: []
 # - name: EXAMPLE
@@ -370,7 +370,7 @@ releaseCRDs:
 
 capi:
   rbac:
-    # -- Create RBAC for CWE to watch and patch CAPI/NICo resources.
+    # -- Create RBAC for the controller to watch and patch CAPI/NICo resources.
     create: false
 
 kubeadm:
@@ -495,7 +495,7 @@ apiAuth:
 
 scheduledMaintenance:
   certRenewal:
-    # -- Enable CWE-owned periodic Kubernetes control-plane certificate renewal.
+    # -- Enable controller-owned periodic Kubernetes control-plane certificate renewal.
     enabled: true
     # -- Interval between certificate renewal checks for each cluster.
     interval: 12h
@@ -551,7 +551,7 @@ temporal:
     queue: cloud-workflow-engine-tasks
 
 profiles:
-  # Directory CWE reads OS/config profiles from (PROFILES_DIR) and profile-hook
+  # Directory the controller reads OS/config profiles from (PROFILES_DIR) and profile-hook
   # scripts from its runbooks/ child (RUNBOOKS_DIR).
   # When image.enabled is true, an initContainer copies /profiles from the
   # profiles content image into an emptyDir mounted at this path.
@@ -647,7 +647,7 @@ spiffe:
     joinTokenTTL: "1h"
 
 teleport:
-  # -- Enable Teleport identity for CWE to manage Teleport resources (tokens, nodes)
+  # -- Enable Teleport identity for the controller to manage Teleport resources (tokens, nodes)
   enabled: false
   # -- Teleport proxy address (site-specific, must be set per environment)
   proxyAddress: ""

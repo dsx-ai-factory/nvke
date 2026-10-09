@@ -36,7 +36,7 @@ spire-server:
     identities:
       clusterSPIFFEIDs:
         default:
-          # CWE workloads use the dedicated nke-service identity deployed by
+          # Controller workloads use the dedicated nke-service identity deployed by
           # Tilt. Keep the fallback from racing it during pod reconciliation.
           namespaceSelector:
             matchExpressions:
@@ -48,7 +48,7 @@ spire-server:
     tpmDirect:
       enabled: true
   # Mount the Tilt-managed tpm-pubhashes ConfigMap into the SPIRE server so
-  # the TPM attestor can look up CWE-populated EK public-key hashes at runtime.
+  # the TPM attestor can look up controller-populated EK public-key hashes at runtime.
   extraVolumes:
     - name: tpm-pubhashes
       configMap:

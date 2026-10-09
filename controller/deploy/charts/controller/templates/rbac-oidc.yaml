@@ -1,9 +1,9 @@
 {{- with .Values.nkeOIDCAuth.caBundleSecret }}
 {{- if and $.Values.nkeOIDCAuth.enabled .namespace .name }}
-# CWE reads the OIDC discovery provider's upstream CA at kubeadm-render time
+# The controller reads the OIDC discovery provider's upstream CA at kubeadm-render time
 # (readOIDCCABundle) and embeds it into the tenant apiserver AuthenticationConfiguration.
 # resourceName-scoped `get` on the single CA Secret, in whatever namespace the CA lives
-# (spire-server for Forge). Wired to the same caBundleSecret values CWE reads, so the
+# (spire-server for Forge). Wired to the same caBundleSecret values the controller reads, so the
 # grant can't drift from the target.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
