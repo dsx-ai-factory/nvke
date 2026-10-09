@@ -41,8 +41,22 @@ the dependency tree without the build going red.
 
 ## Not yet covered
 
-**Nothing.** Every binary this repository redistributes now carries generated
-attribution, and CI regenerates and compares all four on every push.
+The agent, controller, CLI and os-image binaries carry generated attribution,
+and CI regenerates and compares all four on every push. Two components do not
+have notices of their own yet:
+
+- **`cluster-api-provider-provisioned`.** Its image, published by
+  `image-provisioned-nvcr.yml`, ships `controller/THIRD_PARTY_NOTICES.md`. That is
+  the inventory for the CWE worker, a different executable. It covers 66 of the
+  provider's 67 modules, the same set for `linux/amd64` and `linux/arm64`;
+  `k8s.io/cluster-bootstrap` is not in it. The provider needs notices generated
+  from its own import closure.
+- **`management-engine`** is outside the release scope. No workflow in this
+  repository builds or publishes its image or chart, its `Dockerfile` and
+  `make docker-build` / `docker-push` targets are for development with a
+  caller-supplied image name, and it is not distributed by any other means. If
+  it is published, its image needs `LICENSE`, `NOTICE` and a generated
+  dependency inventory, and a row above.
 
 `capd-reboot-controller` is built by `make build` but shipped nowhere — no
 image, no artifact, no package. If it starts shipping, it needs a row above and
