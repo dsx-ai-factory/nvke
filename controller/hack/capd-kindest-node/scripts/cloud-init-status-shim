@@ -10,12 +10,24 @@
 # write a status file to track the progress of the simulated cloud-init
 # process. From this script we just read that file and print it
 # following the `cloud-init status` contract.
+#
+# The node agent runs `cloud-init status --long`, so that form has to be
+# answered too: rejecting it fails NodePreflight on every container node.
 
 set -eu
 
-if [ "$#" -ne 1 ] || [ "$1" != "status" ]; then
-    echo "only 'cloud-init status' is supported" >&2
+usage() {
+    echo "only 'cloud-init status [--long]' is supported" >&2
     exit 2
+}
+
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ] || [ "$1" != "status" ]; then
+    usage
+fi
+long=false
+if [ "$#" -eq 2 ]; then
+    [ "$2" = "--long" ] || usage
+    long=true
 fi
 
 status_file="${NICO_CONTAINERS_CLOUD_INIT_STATUS_FILE:-/var/lib/nico-containers/cloud-init/status}"
@@ -27,11 +39,16 @@ else
 fi
 
 case "$state" in
-    running|done|error)
-        printf 'status: %s\n' "$state"
-        ;;
+    running|done|error) ;;
     *)
         # Fail closed through the same output contract consumed by node-agent.
-        printf 'status: error\n'
+        state=error
         ;;
 esac
+
+printf 'status: %s\n' "$state"
+if [ "$long" = true ]; then
+    printf 'extended_status: %s\n' "$state"
+    printf 'boot_status_code: enabled-by-generator\n'
+    printf 'detail: nico-containers cloud-init shim; no stage detail is simulated\n'
+fi
