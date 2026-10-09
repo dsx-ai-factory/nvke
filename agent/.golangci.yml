@@ -79,7 +79,7 @@ linters:
     - misspell       # 10 issues - spelling errors
     - musttag        # 1 issue - struct tag requirements
     - protogetter    # 124 issues - proto field access
-    - staticcheck    # 16 issues - deprecated proto fields + style
+    - staticcheck    # 16 issues - deprecated proto fields + style; QF1001/QF1003/QF1007 already clean (no findings)
     - tagliatelle    # 5 issues - would change public JSON field names
     - unparam        # 12 issues - unused parameters
     - wastedassign   # 1 issue - wasted assignments
@@ -114,9 +114,6 @@ linters:
     staticcheck:
       checks:
         - "all"
-        - "-QF1001"  # TODO: fix and re-enable - De Morgan's law
-        - "-QF1003"  # TODO: fix and re-enable - tagged switch
-        - "-QF1007"  # TODO: fix and re-enable - merge conditional assignment
     govet:
       disable:
         - fieldalignment
