@@ -1946,7 +1946,7 @@ func TestCWEImages(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := cwedeploy.Config{CWEImage: "cwe:1", ProvisionedProviderImage: "prov:1", NicoInfrastructure: tt.nico}
+			cfg := controllerdeploy.Config{CWEImage: "cwe:1", ProvisionedProviderImage: "prov:1", NicoInfrastructure: tt.nico}
 			if got := cweImages(cfg); !slices.Equal(got, tt.want) {
 				t.Errorf("cweImages = %v, want %v", got, tt.want)
 			}

@@ -989,7 +989,7 @@ func deployAndWaitForCWE(
 // cweImages lists the images this repository builds that the bootstrap loads
 // into the Kind cluster. The provisioned provider is among them only when it is
 // the infrastructure provider in use.
-func cweImages(cfg cwedeploy.Config) []string {
+func cweImages(cfg controllerdeploy.Config) []string {
 	if cfg.NicoInfrastructure {
 		return []string{cfg.CWEImage}
 	}
