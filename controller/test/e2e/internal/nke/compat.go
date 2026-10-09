@@ -135,6 +135,5 @@ func labelListToObject(value any) (map[string]string, bool) {
 // [run 37854934923]: https://github.com/dsx-ai-factory/nke/actions/runs/37854934923
 func SchemaMismatch(err error) bool {
 	var typeErr *json.UnmarshalTypeError
-	var syntaxErr *json.SyntaxError
-	return errors.As(err, &typeErr) || errors.As(err, &syntaxErr)
+	return errors.As(err, &typeErr)
 }

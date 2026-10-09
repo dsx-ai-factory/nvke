@@ -161,7 +161,9 @@ func TestSchemaMismatchIsOnlyTheDisagreement(t *testing.T) {
 	}{
 		{"the shape disagreement", decodeErr, true},
 		{"it, wrapped the way the client wraps it", fmt.Errorf("listing node pools: %w", decodeErr), true},
-		{"truncated JSON", json.Unmarshal([]byte(`{"nodePools":`), &labelsAsMap), true},
+		// A response cut short is worth another poll; only a type the client
+		// cannot hold says the two will never agree.
+		{"truncated JSON", json.Unmarshal([]byte(`{"nodePools":`), &labelsAsMap), false},
 		{"a node that is not ready yet", fmt.Errorf("node w-1 is not KubernetesReady"), false},
 		{"nothing wrong", nil, false},
 	} {

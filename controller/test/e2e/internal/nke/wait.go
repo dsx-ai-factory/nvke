@@ -94,6 +94,7 @@ func (c *Client) WaitForClusterReady(ctx context.Context, id openapi_types.UUID)
 
 	stall := stallWindow(c.opts.Provision)
 	progress, changed := noLastError, time.Now()
+	var lastNodes []api.Node
 
 	for {
 		select {
@@ -114,9 +115,14 @@ func (c *Client) WaitForClusterReady(ctx context.Context, id openapi_types.UUID)
 				if cluster.Conditions.Provisioning.Status == api.ConditionStatusFalse {
 					return nil, fmt.Errorf("cluster %s provisioning failed: %s", cluster.Name, cluster.Conditions.Provisioning.Message)
 				}
+				// A failed list keeps the last nodes seen rather than skipping
+				// the poll, so failures neither hide a stall nor look like
+				// progress when the next list succeeds.
 				nodes, err := c.ListClusterNodes(ctx, id)
 				if err != nil {
-					continue
+					nodes = lastNodes
+				} else {
+					lastNodes = nodes
 				}
 				if current := provisioningProgress(cluster.Conditions.Provisioning.Message, nodes); current != progress {
 					progress, changed = current, time.Now()

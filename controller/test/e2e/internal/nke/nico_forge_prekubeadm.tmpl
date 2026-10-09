@@ -62,10 +62,9 @@ The amd64 kernel line in nico_forge_ipxe.tmpl does not carry ip=dhcp the way
 the arm64 one does, so amd64 nodes reach this point earlier relative to their
 network. Run 37873467928 is that case: an amd64 control plane failed
 cloud-init while an arm64 worker running these same commands passed, and the
-amd64 site node beside them passed only because it used to get this wait from
-its own user data. It lives here now, so the site node and every tenant node
-get it from one place. Bounded, so a node that never gets a route fails here
-with a line saying so rather than hanging the boot.
+amd64 site node beside them passed only because its own user data waits for
+a route first. Bounded, so a node that never gets a route fails here with a
+line saying so rather than hanging the boot.
 */ -}}
 set -eu
 timeout 300s sh -c 'until ip -4 route list default | grep -q .; do echo "waiting for an IPv4 default route"; sleep 5; done'
