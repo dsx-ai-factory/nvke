@@ -258,6 +258,11 @@ work-check: ## Verify go.work and go.work.sum are complete and current. (run by 
 	   printf '%s\n' "$$gone" | sed 's/^/    /'; exit 1; \
 	 fi
 	@echo "- Checking the workspace, go.work.sum and every go.mod agree..."
+	@# This refreshes the manifests in place, then compares a hash of the diff
+	@# before and after, so it asserts that the refresh changed nothing rather
+	@# than that the tree is clean. A tree already dirty in these paths passes,
+	@# and a refresh that creates a previously absent go.sum shows no diff and
+	@# passes too. dependabot-fixup.yml keeps an untracked-file check for that.
 	@before=$$(git diff --binary -- go.work go.work.sum '*/go.mod' '*/go.sum' | shasum); \
 		$(GO) work sync || exit 1; \
 		for m in $(WORK_MODULES); do \
