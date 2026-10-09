@@ -1,3 +1,4 @@
+#!/bin/sh
 set -eu
 counts="$(kubectl --kubeconfig /kubeconfig/value get pods -n kube-system \
   -l component=kube-apiserver \

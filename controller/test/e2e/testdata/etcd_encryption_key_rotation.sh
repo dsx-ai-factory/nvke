@@ -1,3 +1,4 @@
+#!/bin/sh
 set -eu
 if ! temporal workflow execute \
   --address "$E2E_TEMPORAL_ADDRESS" \

@@ -1,3 +1,4 @@
+#!/bin/sh
 set -eu
 kubeconfig_path="${E2E_KUBECONFIG_PATH:-/kubeconfig/value}"
 termination_log="${E2E_TERMINATION_LOG:-/dev/termination-log}"
