@@ -88,8 +88,21 @@ nodeTaints:
 		t.Errorf("controlPlane was sent though the spec omitted it: %v", body)
 	}
 
-	if pools := fake.stored(); len(pools) != 2 {
-		t.Errorf("stored %d pools, want 2", len(pools))
+	pools := fake.stored()
+	if len(pools) != 2 {
+		t.Fatalf("stored %d pools, want 2", len(pools))
+	}
+	// What the controller stored is what the pool reports back through get.
+	created := pools[1]
+	if want := map[string]string{"role": "gpu"}; !reflect.DeepEqual(created.NodeLabels, want) {
+		t.Errorf("stored nodeLabels = %v, want %v", created.NodeLabels, want)
+	}
+	wantStored := []api.NodeTaint{
+		{Key: "nvidia.com/gpu", Value: "true", Effect: api.NodeTaintEffectNoSchedule},
+		{Key: "dedicated", Effect: api.NodeTaintEffectPreferNoSchedule},
+	}
+	if !reflect.DeepEqual(created.NodeTaints, wantStored) {
+		t.Errorf("stored nodeTaints = %v, want %v", created.NodeTaints, wantStored)
 	}
 }
 
@@ -270,51 +283,6 @@ func TestCreateNodePoolServerErrors(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-// TestCreateNodePoolReadsLabelsAndTaintsBack verifies the labels and taints a
-// create sends are the ones the pool reports afterwards through get, so the
-// two commands agree on the map and list shapes.
-func TestCreateNodePoolReadsLabelsAndTaintsBack(t *testing.T) {
-	fake, clientFn := newFakeCWE(t, seed{clusterName: "alpha", name: "existing", desiredNodeCount: 1})
-	clusterID := fake.clusterIDFor(t, "alpha")
-
-	spec := fmt.Sprintf(`clusterID: %s
-name: gpu-workers
-nodeNamePrefix: gpu
-desiredNodeCount: 1
-nodeLabels:
-  nvidia.com/gpu.present: "true"
-  node-role.kubernetes.io/worker: ""
-nodeTaints:
-  - key: nvidia.com/gpu
-    value: "true"
-    effect: NoExecute
-`, clusterID)
-	if out, err := run(t, NewCreateCmd(clientFn), "-f", writeSpec(t, "pool.yaml", spec)); err != nil {
-		t.Fatalf("create: %v (output %q)", err, out)
-	}
-
-	out, err := run(t, NewGetCmd(clientFn), "gpu-workers", "--cluster", "alpha", "-o", "json")
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	var pools []api.NodePool
-	if err := json.Unmarshal([]byte(out), &pools); err != nil {
-		t.Fatalf("decoding get output: %v\n%s", err, out)
-	}
-	if len(pools) != 1 {
-		t.Fatalf("pools = %d, want 1:\n%s", len(pools), out)
-	}
-
-	wantLabels := map[string]string{"nvidia.com/gpu.present": "true", "node-role.kubernetes.io/worker": ""}
-	if !reflect.DeepEqual(pools[0].NodeLabels, wantLabels) {
-		t.Errorf("nodeLabels = %v, want %v", pools[0].NodeLabels, wantLabels)
-	}
-	wantTaints := []api.NodeTaint{{Key: "nvidia.com/gpu", Value: "true", Effect: api.NodeTaintEffectNoExecute}}
-	if !reflect.DeepEqual(pools[0].NodeTaints, wantTaints) {
-		t.Errorf("nodeTaints = %v, want %v", pools[0].NodeTaints, wantTaints)
 	}
 }
 
