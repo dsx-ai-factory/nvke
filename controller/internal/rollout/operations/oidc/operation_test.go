@@ -15,12 +15,15 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	apiserverv1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/yaml"
 
 	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
@@ -39,17 +42,19 @@ func (f fakeNode) Role() rollout.NodeRole { return f.role }
 func (f fakeNode) AgentEndpoint() string  { return f.endpoint }
 
 type fakeCluster struct {
-	name string
-	k8s  string
-	cps  []rollout.Node
+	name      string
+	k8s       string
+	cps       []rollout.Node
+	providers []controllerconfig.OIDCProvider
 }
 
-func (f fakeCluster) ID() uuid.UUID                     { return uuid.New() }
-func (f fakeCluster) Name() string                      { return f.name }
-func (f fakeCluster) KubernetesVersion() string         { return f.k8s }
-func (f fakeCluster) ControlPlaneVIP() string           { return "10.0.0.1" }
-func (f fakeCluster) ControlPlaneNodes() []rollout.Node { return f.cps }
-func (f fakeCluster) Nodes() []rollout.Node             { return f.cps }
+func (f fakeCluster) ID() uuid.UUID                                  { return uuid.New() }
+func (f fakeCluster) Name() string                                   { return f.name }
+func (f fakeCluster) KubernetesVersion() string                      { return f.k8s }
+func (f fakeCluster) ControlPlaneVIP() string                        { return "10.0.0.1" }
+func (f fakeCluster) OIDCProviders() []controllerconfig.OIDCProvider { return f.providers }
+func (f fakeCluster) ControlPlaneNodes() []rollout.Node              { return f.cps }
+func (f fakeCluster) Nodes() []rollout.Node                          { return f.cps }
 
 type fakeClient struct {
 	patchResp *nkeproto.PatchAPIServerManifestResponse
@@ -301,6 +306,37 @@ func TestBuildApplyToNodePayload_DeterministicAndNonEmpty(t *testing.T) {
 	assert.Equal(t, "/etc/kubernetes/oidc/auth-config.yaml", parsed.AuthConfigPath)
 	assert.Equal(t, parsed.AuthConfigPath, parsed.Files[0].Path)
 	assert.NotEmpty(t, parsed.Files[0].Content)
+}
+
+func TestBuildApplyToNodePayload_KeepsPinnedProviders(t *testing.T) {
+	op := NewEnableOIDCOperation(
+		WithClient(fakeK8sClient()),
+		WithOIDCConfig(&config.NkeOIDCAuth{Enabled: true, IssuerURL: "https://issuer.example"}),
+		WithTrustDomain("management.example.test"),
+	)
+	cluster := fakeCluster{name: "tenant-1", k8s: "1.34.1", cps: []rollout.Node{cpNode()}, providers: []controllerconfig.OIDCProvider{{
+		Name:           "corp",
+		IssuerURL:      "https://login.example.test",
+		Audiences:      []string{"nke"},
+		UsernameClaim:  "email",
+		UsernamePrefix: "corp:",
+		CABundle:       "corp CA",
+	}}}
+
+	payload, err := op.BuildApplyToNodePayload(context.Background(), cluster)
+	require.NoError(t, err)
+	parsed, err := parsePayload(payload)
+	require.NoError(t, err)
+	var auth apiserverv1.AuthenticationConfiguration
+	require.NoError(t, yaml.Unmarshal(parsed.Files[0].Content, &auth))
+	require.Len(t, auth.JWT, 2)
+	assert.Equal(t, "https://issuer.example", auth.JWT[0].Issuer.URL)
+	assert.Equal(t, "https://login.example.test", auth.JWT[1].Issuer.URL)
+	expressions := make([]string, 0, len(auth.JWT[1].UserValidationRules))
+	for _, rule := range auth.JWT[1].UserValidationRules {
+		expressions = append(expressions, rule.Expression)
+	}
+	assert.Contains(t, expressions, `!user.username.startsWith("spiffe://management.example.test/")`)
 }
 
 func TestBuildPatchRequests_MultipleFiles(t *testing.T) {

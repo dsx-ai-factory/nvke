@@ -50,6 +50,7 @@ type EnableOIDCOperation struct {
 	nodeAgentClientDialer nodeAgentClientDialer
 	k8sClient             client.Client
 	oidcConfig            *config.NkeOIDCAuth
+	trustDomain           string
 	// methodChecker verifies each control-plane agent implements the OIDC
 	// RPCs (gRPC reflection) before any node is touched — the reusable capability
 	// gate in place of an agent version floor.
@@ -173,16 +174,14 @@ func (op *EnableOIDCOperation) BuildApplyToNodePayload(ctx context.Context, clus
 		return nil, errors.New("enable-oidc operation OIDC config is not configured")
 	}
 
-	var caBundle []byte
-	if ref := op.oidcConfig.CABundleSecret; !ref.Empty() {
-		var err error
-		caBundle, err = kubeadmconfig.ReadOIDCCABundle(ctx, op.k8sClient, ref)
-		if err != nil {
-			return nil, fmt.Errorf("read OIDC CA bundle for cluster %s: %w", cluster.Name(), err)
-		}
-	}
-
-	cfg, err := kubeadmconfig.BuildOIDCAuthenticationConfig(cluster.Name(), *op.oidcConfig, caBundle)
+	// Same inputs as init and join, so the cluster keeps its pinned providers.
+	cfg, err := kubeadmconfig.BuildClusterAuthenticationConfig(ctx, op.k8sClient, kubeadmconfig.ClusterAuthentication{
+		ClusterName:   cluster.Name(),
+		Shared:        *op.oidcConfig,
+		SharedEnabled: true,
+		Providers:     cluster.OIDCProviders(),
+		TrustDomain:   op.trustDomain,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("build OIDC authentication config for cluster %s: %w", cluster.Name(), err)
 	}

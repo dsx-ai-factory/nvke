@@ -16,6 +16,7 @@ import (
 
 	nkeproto "github.com/dsx-ai-factory/nke/agent/pkg/agent/proto"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout/preflights"
@@ -40,12 +41,13 @@ type fakeCluster struct {
 	cps  []rollout.Node
 }
 
-func (c *fakeCluster) ID() uuid.UUID                     { return c.id }
-func (c *fakeCluster) Name() string                      { return c.name }
-func (c *fakeCluster) KubernetesVersion() string         { return "v1.30.0" }
-func (c *fakeCluster) ControlPlaneVIP() string           { return "10.0.0.1:6443" }
-func (c *fakeCluster) ControlPlaneNodes() []rollout.Node { return c.cps }
-func (c *fakeCluster) Nodes() []rollout.Node             { return c.cps }
+func (c *fakeCluster) ID() uuid.UUID                                  { return c.id }
+func (c *fakeCluster) Name() string                                   { return c.name }
+func (c *fakeCluster) KubernetesVersion() string                      { return "v1.30.0" }
+func (c *fakeCluster) ControlPlaneVIP() string                        { return "10.0.0.1:6443" }
+func (c *fakeCluster) OIDCProviders() []controllerconfig.OIDCProvider { return nil }
+func (c *fakeCluster) ControlPlaneNodes() []rollout.Node              { return c.cps }
+func (c *fakeCluster) Nodes() []rollout.Node                          { return c.cps }
 
 // scriptedAgent is a raw nkeproto.NodeAgentClient that returns scripted
 // responses per script name. It embeds the proto client interface so the
