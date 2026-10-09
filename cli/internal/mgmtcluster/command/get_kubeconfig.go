@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/config"
+	"github.com/dsx-ai-factory/nvke/cli/internal/oidckubeconfig"
 	"github.com/dsx-ai-factory/nvke/cli/internal/util"
 )
 
@@ -35,23 +36,32 @@ type MgmtClientFactory func(kubeconfigPath string) (KubeconfigFetcher, error)
 
 // NewGetKubeconfigCmd returns "nvkectl get kubeconfig <cluster-name>".
 //
-// It reads the admin kubeconfig for the named tenant cluster directly from
-// the management cluster, using the active site's configured kubeconfig
-// (--site overrides which site is active, the same as every other command).
+// It builds an oidc-login kubeconfig for the named tenant cluster. The cluster
+// server and CA come from the admin.conf Secret on the site cluster. The admin
+// client certificate is not written.
 func NewGetKubeconfigCmd(siteFn SiteFn, newMgmtClient MgmtClientFactory) *cobra.Command {
-	var outputFile string
+	var (
+		outputFile  string
+		issuerURL   string
+		clientID    string
+		extraScopes []string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "kubeconfig <cluster-name>",
-		Short: "Get the admin kubeconfig for a tenant cluster",
-		Long: `Get the admin kubeconfig for a tenant cluster from the management cluster.
+		Short: "Write an oidc-login kubeconfig for a tenant cluster",
+		Long: `Write an oidc-login kubeconfig for a tenant cluster.
 
-The kubeconfig is read from the Secret that the NVKE tenantaccess controller
-publishes into the management cluster at:
+The cluster server and CA are read from the admin.conf Secret on the site cluster:
 
   nke-system/<cluster-name>-admin-kubeconfig  (key: value)
 
-The management cluster kubeconfig is the active site's configured kubeconfig
+The admin client certificate and key are not copied. The generated user is an
+exec plugin:
+
+  kubectl oidc-login get-token --oidc-issuer-url ... --oidc-client-id ...
+
+The site cluster kubeconfig is the active site's configured kubeconfig
 (see 'nvkectl config set-site --kubeconfig'); use --site to target a
 different, previously configured site for this invocation.
 
@@ -59,13 +69,16 @@ By default the kubeconfig is printed to stdout. Use --output-file to write it
 to a file instead.
 
 Example:
-  nvkectl get kubeconfig my-cluster
-  nvkectl get kubeconfig my-cluster --output-file ~/.kube/my-cluster.yaml
-  nvkectl get kubeconfig my-cluster --site prod`,
-		Args: cobra.ExactArgs(1),
+  nvkectl get kubeconfig my-cluster \
+    --oidc-issuer-url https://idp.example/realms/nke \
+    --oidc-client-id nke-cli
+  nvkectl get kubeconfig my-cluster \
+    --oidc-issuer-url https://idp.example/realms/nke \
+    --oidc-client-id nke-cli \
+    --output-file ~/.kube/my-cluster.yaml`,
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			clusterName := args[0]
-
 			siteCfg, err := siteFn()
 			if err != nil {
 				return err
@@ -76,7 +89,16 @@ Example:
 				return err
 			}
 
-			data, err := mc.GetClusterKubeconfig(cmd.Context(), clusterName)
+			admin, err := mc.GetClusterKubeconfig(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+
+			data, err := oidckubeconfig.GenerateFromKubeconfig(admin, oidckubeconfig.Options{
+				IssuerURL:   issuerURL,
+				ClientID:    clientID,
+				ExtraScopes: extraScopes,
+			})
 			if err != nil {
 				return err
 			}
@@ -95,6 +117,11 @@ Example:
 	}
 
 	cmd.Flags().StringVar(&outputFile, "output-file", "", "Write kubeconfig to file instead of stdout")
+	cmd.Flags().StringVar(&issuerURL, "oidc-issuer-url", "", "OIDC issuer URL (required)")
+	cmd.Flags().StringVar(&clientID, "oidc-client-id", "", "OIDC client ID (required)")
+	cmd.Flags().StringArrayVar(&extraScopes, "oidc-extra-scope", nil, "Extra OIDC scope. Repeatable.")
+	_ = cmd.MarkFlagRequired("oidc-issuer-url")
+	_ = cmd.MarkFlagRequired("oidc-client-id")
 
 	return cmd
 }

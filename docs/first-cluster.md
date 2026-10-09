@@ -176,12 +176,17 @@ ConfigMap and sends requests unauthenticated.
 ### Getting a tenant kubeconfig
 
 ```bash
-nvkectl get kubeconfig <cluster> --output-file tenant.kubeconfig
+nvkectl get kubeconfig <cluster> \
+  --oidc-issuer-url https://idp.example/realms/nke \
+  --oidc-client-id nke-cli \
+  --output-file tenant.kubeconfig
 ```
 
-This reads the `<cluster>-admin-kubeconfig` Secret in `nke-system`, which
-holds the verbatim `admin.conf`. The `-kubeconfig` Secret beside it is the one
-CWE consumes, and it becomes a SPIRE exec-auth kubeconfig when OIDC is on.
+This builds an oidc-login kubeconfig from the `<cluster>-admin-kubeconfig`
+Secret in `nke-system`. The cluster server and CA are copied from that
+admin.conf. The admin client certificate is not written.
+The `-kubeconfig` Secret beside those is the one CWE consumes, and it becomes
+a SPIRE exec-auth kubeconfig when OIDC is on.
 
 ## Real Site
 

@@ -25,18 +25,17 @@ otherwise.
 
 | Principal | Authentication | Authorization | Network path | Credential lifetime |
 |---|---|---|---|---|
-| Tenant operator | The operator obtains the kubeadm `admin.conf` with `nvkectl get kubeconfig`. It contains an X.509 client certificate and private key. | The certificate identifies `kubernetes-admin` in the `kubeadm:cluster-admins` group, which has `cluster-admin`. | The operator connects directly to the tenant API endpoint from an approved private network. | One year. See [Alpha Operator Access](#alpha-operator-access) for renewal and retrieval details. |
+| Tenant operator | The operator writes an oidc-login kubeconfig with `nvkectl get kubeconfig`. It runs `kubectl oidc-login get-token` and does not contain the kubeadm admin client certificate. | The identity provider token is mapped by the tenant API server. NVKE grants no default tenant-user role. | The operator connects directly to the tenant API endpoint from an approved private network. | The OIDC token lifetime. See [Alpha Operator Access](#alpha-operator-access). |
 | Tenant user | NVKE alpha does not deliver a distinct, individually attributable tenant-user credential. A tenant operator must establish the user's authentication outside NVKE. | A tenant operator creates the required Kubernetes RBAC bindings. NVKE grants no default tenant-user role. | The user connects directly to the tenant API endpoint from an approved private network. | Determined by the tenant's chosen authentication mechanism. |
 | Tenant automation | A tenant operator creates a Kubernetes ServiceAccount and uses a TokenRequest token, or configures another Kubernetes-supported authenticator. NVKE does not distribute a separate automation credential. | A tenant operator binds the ServiceAccount or other identity to a workload-specific Role or ClusterRole. NVKE grants no default role. | The automation connects directly to the tenant API endpoint, normally from the tenant network or from inside the cluster. | TokenRequest tokens are time limited. Their requested and maximum lifetimes are deployment policy rather than an NVKE tenant-access setting. |
 | NVKE Controller | The NVKE Controller's SPIFFE workload identity obtains a short-lived JWT-SVID, optionally exchanges it through the configured token-exchange service, and presents the resulting bearer token to the tenant API server. | The token's `sub` claim maps to a Kubernetes user. NVKE binds that user to the `nke:cwe` ClusterRole and namespace-scoped Roles needed for lifecycle operations. | The NVKE Controller connects from the Site Controller cluster directly to the tenant API endpoint over the site's private network. | JWT expiry is set by the issuing identity system. The client obtains a new token rather than storing a long-lived bearer token. |
 | Cluster API controllers | Each controller uses its SPIFFE workload identity and the same JWT authentication path as the NVKE Controller. | The current NVKE manifest binds the CAPI manager identities to `cluster-admin`. | The controllers connect from the Site Controller cluster directly to the tenant API endpoint. | JWT expiry is set by the issuing identity system, and clients obtain replacement tokens as needed. |
 | Break-fix system | NVKE alpha defines no generic break-fix credential. A break-fix deployment must use a dedicated ServiceAccount or workload identity rather than the operator admin kubeconfig. | The deployer creates RBAC matching the repair operations the system performs. NVKE grants no default break-fix role. | The system connects directly to the private tenant API endpoint from its approved runtime network. | Determined by the selected ServiceAccount or workload-identity mechanism. |
-| Break-glass operator | The operator obtains the same kubeadm `admin.conf` used by the alpha tenant-operator path. Access to the management-cluster Secret is the delivery control. | `cluster-admin`. | The operator must have both management-cluster access to retrieve the kubeconfig and private network reachability to the tenant API endpoint. | The same one-year certificate and renewal behavior apply. The exported copy does not refresh or gain the renewed certificate automatically. Treat every downloaded copy as sensitive until its certificate expires or the cluster CA and credentials are replaced. |
+| Break-glass operator | `nvkectl get kubeconfig` does not return `admin.conf`. A break-glass deployment must use a dedicated credential rather than this command. | Determined by that credential. | The operator must have both management-cluster access and private network reachability to the tenant API endpoint. | Determined by the selected credential. |
 
-The overlap between routine tenant-operator access and break-glass access is an
-alpha limitation: both use the same highly privileged, non-attributable
-credential. Do not share this kubeconfig with applications or commit it to a
-repository.
+Routine tenant-operator access uses the oidc-login kubeconfig from
+`nvkectl get kubeconfig`. That command does not deliver a break-glass admin
+credential. Do not commit the kubeconfig to a repository.
 
 ## Alpha Operator Access
 
@@ -49,27 +48,22 @@ nvkectl config set-site --name "$SITE_NAME" \
   --url "$NKE_CONTROLLER_URL" \
   --kubeconfig site-controller.kubeconfig
 
-nvkectl get kubeconfig "$CLUSTER_NAME" --output-file tenant.kubeconfig
+nvkectl get kubeconfig "$CLUSTER_NAME" \
+  --oidc-issuer-url "$OIDC_ISSUER_URL" \
+  --oidc-client-id "$OIDC_CLIENT_ID" \
+  --output-file tenant.kubeconfig
 kubectl --kubeconfig tenant.kubeconfig get nodes
 ```
 
-`nvkectl get kubeconfig` reads
-`nke-system/<cluster>-admin-kubeconfig` from the Site Controller cluster. The
-Secret contains the verbatim `admin.conf` fetched from a tenant control-plane
-node. The resulting `kubectl` process then connects directly to the server URL
-inside that kubeconfig.
+`nvkectl get kubeconfig` reads `nke-system/<cluster>-admin-kubeconfig` from
+the Site Controller cluster. The cluster server and CA come from that
+admin.conf. The command writes an oidc-login kubeconfig and does not copy the
+admin client certificate or key. `kubectl` then connects directly to the
+server URL inside that file, and `kubectl oidc-login` obtains the token.
 
-Retrieving the kubeconfig proves access to the management-cluster Secret; it
+Retrieving the kubeconfig proves access to those management-cluster Secrets; it
 does not prove that the operator's workstation can route to the tenant API
 endpoint.
-
-The kubeadm client certificate embedded in `admin.conf` is valid for one year.
-With the NVKE defaults, the NVKE Controller checks certificate expiration every
-12 hours and renews control-plane certificates when their remaining lifetime is
-less than 30 days. Renewal creates a new certificate valid for another year.
-It updates the control-plane copy, not kubeconfig files that operators have
-already downloaded. Operators must retrieve a refreshed kubeconfig before the
-certificate in their local copy expires.
 
 ## Service Identity and Tenant OIDC
 
@@ -181,7 +175,10 @@ logs.
    }
    trap cleanup_validation EXIT
 
-   nvkectl get kubeconfig "$CLUSTER_NAME" --output-file "$TENANT_KUBECONFIG"
+   nvkectl get kubeconfig "$CLUSTER_NAME" \
+     --oidc-issuer-url "$OIDC_ISSUER_URL" \
+     --oidc-client-id "$OIDC_CLIENT_ID" \
+     --output-file "$TENANT_KUBECONFIG"
    chmod 0600 "$TENANT_KUBECONFIG"
    ```
 
@@ -193,15 +190,18 @@ logs.
    printf '%s\n' "$TENANT_API_SERVER"
    ```
 
-   Inspect the embedded client certificate's exact validity window:
+   Confirm the user is oidc-login and the admin client certificate was not copied:
 
    ```bash
    kubectl --kubeconfig "$TENANT_KUBECONFIG" \
-     config view --raw --flatten --minify \
-     -o jsonpath='{.users[0].user.client-certificate-data}' \
-     | openssl base64 -d -A \
-     | openssl x509 -noout -subject -dates
+     config view --minify -o jsonpath='{.users[0].user.exec.args[0]}'
+   printf '\n'
+   kubectl --kubeconfig "$TENANT_KUBECONFIG" \
+     config view --raw --minify -o yaml \
+     | grep -c client-certificate-data || true
    ```
+
+   The first command should print `oidc-login`. The grep should print `0`.
 
 3. From an approved network, verify authenticated API access and identity:
 
@@ -211,8 +211,9 @@ logs.
    kubectl --kubeconfig "$TENANT_KUBECONFIG" auth can-i '*' '*'
    ```
 
-   The alpha admin kubeconfig must reach the API, identify the kubeadm admin
-   user, and report that all actions are allowed.
+   After `kubectl oidc-login` obtains a token, the kubeconfig must reach the
+   API. What `auth whoami` reports depends on the identity provider and the
+   tenant's RBAC.
 
 4. Verify that an unauthenticated request cannot list tenant resources. Use the
    tenant CA but do not supply a client certificate or bearer token:
@@ -318,7 +319,10 @@ keys for access to it.
    [Alpha Operator Access](#alpha-operator-access):
 
    ```bash
-   nvkectl get kubeconfig "$CLUSTER_NAME" --output-file tenant.kubeconfig
+   nvkectl get kubeconfig "$CLUSTER_NAME" \
+     --oidc-issuer-url "$OIDC_ISSUER_URL" \
+     --oidc-client-id "$OIDC_CLIENT_ID" \
+     --output-file tenant.kubeconfig
    chmod 0600 tenant.kubeconfig
    ```
 
@@ -375,7 +379,10 @@ keys for access to it.
 
    ```bash
    ssh "$BASTION_USER@$BASTION_HOST"
-   nvkectl get kubeconfig "$CLUSTER_NAME" --output-file tenant.kubeconfig
+   nvkectl get kubeconfig "$CLUSTER_NAME" \
+     --oidc-issuer-url "$OIDC_ISSUER_URL" \
+     --oidc-client-id "$OIDC_CLIENT_ID" \
+     --output-file tenant.kubeconfig
    chmod 0600 tenant.kubeconfig
    ```
 
@@ -384,7 +391,10 @@ keys for access to it.
    destination file:
 
    ```bash
-   nvkectl get kubeconfig "$CLUSTER_NAME" --output-file tenant.kubeconfig
+   nvkectl get kubeconfig "$CLUSTER_NAME" \
+     --oidc-issuer-url "$OIDC_ISSUER_URL" \
+     --oidc-client-id "$OIDC_CLIENT_ID" \
+     --output-file tenant.kubeconfig
    scp tenant.kubeconfig "${BASTION_USER}@${BASTION_HOST}:tenant.kubeconfig"
    ssh "$BASTION_USER@$BASTION_HOST" 'chmod 0600 tenant.kubeconfig'
    ```

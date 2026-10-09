@@ -84,20 +84,24 @@ func newWithClient(kube kubernetes.Interface) *Client {
 // into nke-system/<cluster-name>-admin-kubeconfig.
 func (c *Client) GetClusterKubeconfig(ctx context.Context, clusterName string) ([]byte, error) {
 	secretName := clusterName + adminKubeconfigSecretSuffix
+	return c.secretData(ctx, secretName, kubeconfigSecretKey, "admin kubeconfig", "check the cluster name, or the cluster may not be provisioned yet")
+}
+
+func (c *Client) secretData(ctx context.Context, secretName, key, what, notFound string) ([]byte, error) {
 	secret, err := c.kube.CoreV1().Secrets(secretsNamespace).Get(ctx, secretName, metav1.GetOptions{})
 	if err != nil {
 		switch {
 		case apierrors.IsNotFound(err):
-			return nil, fmt.Errorf("admin kubeconfig secret nke-system/%s not found -- check the cluster name, or the cluster may not be provisioned yet: %w", secretName, err)
+			return nil, fmt.Errorf("%s secret nke-system/%s not found -- %s: %w", what, secretName, notFound, err)
 		case apierrors.IsForbidden(err):
 			return nil, fmt.Errorf("not allowed to read secret nke-system/%s -- the site kubeconfig identity needs 'get' on secrets in nke-system: %w", secretName, err)
 		default:
-			return nil, fmt.Errorf("reading admin kubeconfig secret nke-system/%s: %w", secretName, err)
+			return nil, fmt.Errorf("reading %s secret nke-system/%s: %w", what, secretName, err)
 		}
 	}
-	data, ok := secret.Data[kubeconfigSecretKey]
+	data, ok := secret.Data[key]
 	if !ok || len(data) == 0 {
-		return nil, fmt.Errorf("admin kubeconfig secret nke-system/%s has no %q key", secretName, kubeconfigSecretKey)
+		return nil, fmt.Errorf("%s secret nke-system/%s has no %q key", what, secretName, key)
 	}
 	return data, nil
 }

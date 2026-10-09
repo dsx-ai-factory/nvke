@@ -36,11 +36,8 @@ func Generate(kubeconfigPath string, opts Options) ([]byte, error) {
 	if kubeconfigPath == "" {
 		return nil, fmt.Errorf("kubeconfig must not be empty")
 	}
-	if opts.IssuerURL == "" {
-		return nil, fmt.Errorf("oidc-issuer-url must not be empty")
-	}
-	if opts.ClientID == "" {
-		return nil, fmt.Errorf("oidc-client-id must not be empty")
+	if err := checkOptions(opts); err != nil {
+		return nil, err
 	}
 
 	cfg, err := clientcmd.LoadFromFile(kubeconfigPath)
@@ -57,9 +54,51 @@ func Generate(kubeconfigPath string, opts Options) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return writeOIDC(clusterName, outCluster, opts)
+}
 
+// GenerateFromKubeconfig writes an oidc-login kubeconfig from kubeconfig bytes.
+// The cluster server and certificate-authority-data come from the current
+// context. The input user is not copied. A certificate-authority file path
+// cannot be read, because these bytes have no directory.
+func GenerateFromKubeconfig(kubeconfig []byte, opts Options) ([]byte, error) {
+	if err := checkOptions(opts); err != nil {
+		return nil, err
+	}
+	if len(kubeconfig) == 0 {
+		return nil, fmt.Errorf("kubeconfig must not be empty")
+	}
+
+	cfg, err := clientcmd.Load(kubeconfig)
+	if err != nil {
+		return nil, fmt.Errorf("parsing kubeconfig: %w", err)
+	}
+	clusterName, cluster, err := currentCluster(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if len(cluster.CertificateAuthorityData) == 0 && cluster.CertificateAuthority != "" {
+		return nil, fmt.Errorf("kubeconfig cluster %q certificate-authority is a file path", clusterName)
+	}
+
+	outCluster := clusterWithoutCA(cluster)
+	outCluster.CertificateAuthorityData = slices.Clone(cluster.CertificateAuthorityData)
+	return writeOIDC(clusterName, outCluster, opts)
+}
+
+func checkOptions(opts Options) error {
+	if opts.IssuerURL == "" {
+		return fmt.Errorf("oidc-issuer-url must not be empty")
+	}
+	if opts.ClientID == "" {
+		return fmt.Errorf("oidc-client-id must not be empty")
+	}
+	return nil
+}
+
+func writeOIDC(clusterName string, cluster *clientcmdapi.Cluster, opts Options) ([]byte, error) {
 	out := clientcmdapi.NewConfig()
-	out.Clusters[clusterName] = outCluster
+	out.Clusters[clusterName] = cluster
 	out.AuthInfos[oidcUser] = &clientcmdapi.AuthInfo{
 		Exec: &clientcmdapi.ExecConfig{
 			APIVersion:      execAPI,
@@ -80,6 +119,16 @@ func Generate(kubeconfigPath string, opts Options) ([]byte, error) {
 		return nil, fmt.Errorf("serializing oidc kubeconfig: %w", err)
 	}
 	return data, nil
+}
+
+func clusterWithoutCA(cluster *clientcmdapi.Cluster) *clientcmdapi.Cluster {
+	return &clientcmdapi.Cluster{
+		Server:                cluster.Server,
+		TLSServerName:         cluster.TLSServerName,
+		InsecureSkipTLSVerify: cluster.InsecureSkipTLSVerify,
+		ProxyURL:              cluster.ProxyURL,
+		DisableCompression:    cluster.DisableCompression,
+	}
 }
 
 func currentCluster(cfg *clientcmdapi.Config) (string, *clientcmdapi.Cluster, error) {
@@ -104,14 +153,8 @@ func currentCluster(cfg *clientcmdapi.Config) (string, *clientcmdapi.Cluster, er
 }
 
 func copyCluster(kubeconfigPath string, cluster *clientcmdapi.Cluster) (*clientcmdapi.Cluster, error) {
-	out := &clientcmdapi.Cluster{
-		Server:                   cluster.Server,
-		TLSServerName:            cluster.TLSServerName,
-		InsecureSkipTLSVerify:    cluster.InsecureSkipTLSVerify,
-		CertificateAuthorityData: slices.Clone(cluster.CertificateAuthorityData),
-		ProxyURL:                 cluster.ProxyURL,
-		DisableCompression:       cluster.DisableCompression,
-	}
+	out := clusterWithoutCA(cluster)
+	out.CertificateAuthorityData = slices.Clone(cluster.CertificateAuthorityData)
 	if len(out.CertificateAuthorityData) == 0 && cluster.CertificateAuthority != "" {
 		caPath := cluster.CertificateAuthority
 		if !filepath.IsAbs(caPath) {

@@ -340,14 +340,19 @@ nvkectl_smoke_local_commands() {
   fi
 }
 
-# get kubeconfig reaches the management cluster directly, not the controller: site
-# kubeconfig -> Secret nke-system/<cluster>-admin-kubeconfig. Nothing else here
-# exercises that path, and the not-found message is the only proof the CLI
-# looked in the right namespace under the right name.
+# get kubeconfig reaches the management cluster directly, not the controller.
+# With the required OIDC flags it reads nke-system/<cluster>-admin-kubeconfig
+# first. Nothing else here exercises that path, and the not-found message is
+# the only proof the CLI looked in the right namespace under the right name.
+nvkectl_smoke_kubeconfig_flags=(
+  --oidc-issuer-url http://idp.example/realms/nke
+  --oidc-client-id nke-cli
+)
+
 nvkectl_smoke_kubeconfig_negatives() {
   local out
 
-  if out="$(nvkectl_exec get kubeconfig "${NVKECTL_SMOKE_ABSENT}" 2>&1)"; then
+  if out="$(nvkectl_exec get kubeconfig "${NVKECTL_SMOKE_ABSENT}" "${nvkectl_smoke_kubeconfig_flags[@]}" 2>&1)"; then
     log "nvkectl smoke: 'get kubeconfig ${NVKECTL_SMOKE_ABSENT}' succeeded against a cluster that does not exist" >&2
     return 1
   fi
@@ -361,9 +366,10 @@ nvkectl_smoke_kubeconfig_negatives() {
     return 1
   fi
 
-  # user-flow.md step 8 documents --output-file. A failed fetch must not leave
+  # user-flow.md documents --output-file. A failed fetch must not leave
   # a file behind for a later step to read as a kubeconfig.
   if out="$(nvkectl_exec get kubeconfig "${NVKECTL_SMOKE_ABSENT}" \
+    "${nvkectl_smoke_kubeconfig_flags[@]}" \
     --output-file "$(nvkectl_smoke_spec_path kubeconfig)" 2>&1)"; then
     log "nvkectl smoke: 'get kubeconfig --output-file' succeeded for an absent cluster" >&2
     return 1
@@ -730,14 +736,14 @@ EOF
 
   # A real cluster name, so this resolves further than the absent-name case. The
   # control plane is really provisioning, so the Secret appears once it is up:
-  # either a kubeconfig or the missing-Secret message is correct, depending on
-  # timing.
-  if out="$(nvkectl_exec get kubeconfig "${name}" 2>&1)"; then
-    if ! grep -q 'kind: Config' <<<"${out}"; then
-      log "nvkectl smoke: 'get kubeconfig ${name}' succeeded without printing a kubeconfig" >&2
+  # either an oidc kubeconfig or the missing-Secret message is correct,
+  # depending on timing. A printed file must not be admin.conf.
+  if out="$(nvkectl_exec get kubeconfig "${name}" "${nvkectl_smoke_kubeconfig_flags[@]}" 2>&1)"; then
+    if ! grep -q 'oidc-login' <<<"${out}" || grep -q 'client-certificate-data' <<<"${out}"; then
+      log "nvkectl smoke: 'get kubeconfig ${name}' did not print an oidc kubeconfig: ${out}" >&2
       return 1
     fi
-    log "nvkectl smoke: ${name}'s control plane was already up; 'get kubeconfig' returned its kubeconfig"
+    log "nvkectl smoke: ${name}'s admin Secret was already published; 'get kubeconfig' wrote an oidc kubeconfig"
   elif ! grep -q "nke-system/${name}-admin-kubeconfig" <<<"${out}"; then
     log "nvkectl smoke: 'get kubeconfig ${name}' named the wrong secret: ${out}" >&2
     return 1

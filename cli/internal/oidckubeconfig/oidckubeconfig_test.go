@@ -198,6 +198,58 @@ func TestGenerateAppendsOptionalExecArgs(t *testing.T) {
 	}
 }
 
+func TestGenerateFromKubeconfigCopiesClusterCAAndDropsAdminUser(t *testing.T) {
+	admin, err := clientcmd.Write(*adminConfig())
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	data, err := GenerateFromKubeconfig(admin, Options{
+		IssuerURL: "https://idp.example/realms/nke",
+		ClientID:  "nke-cli",
+	})
+	if err != nil {
+		t.Fatalf("GenerateFromKubeconfig: %v", err)
+	}
+	out, err := clientcmd.Load(data)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	cluster := out.Clusters["site"]
+	if cluster == nil {
+		t.Fatal("generated kubeconfig has no cluster \"site\"")
+	}
+	if cluster.Server != "https://10.10.50.2:6443" {
+		t.Errorf("server = %q", cluster.Server)
+	}
+	if string(cluster.CertificateAuthorityData) != "CA CERT" {
+		t.Errorf("certificate-authority-data = %q", cluster.CertificateAuthorityData)
+	}
+	if _, ok := out.AuthInfos["kubernetes-admin"]; ok {
+		t.Error("admin user was copied")
+	}
+	if strings.Contains(string(data), "CLIENT CERT") || strings.Contains(string(data), "CLIENT KEY") {
+		t.Error("admin client material leaked into the oidc kubeconfig")
+	}
+	if out.AuthInfos["oidc"] == nil || out.AuthInfos["oidc"].Exec == nil {
+		t.Fatal("generated kubeconfig has no oidc exec user")
+	}
+}
+
+func TestGenerateFromKubeconfigRejectsCAFilePath(t *testing.T) {
+	cfg := adminConfig()
+	cfg.Clusters["site"].CertificateAuthorityData = nil
+	cfg.Clusters["site"].CertificateAuthority = "/etc/kubernetes/pki/ca.crt"
+	admin, err := clientcmd.Write(*cfg)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	_, err = GenerateFromKubeconfig(admin, Options{IssuerURL: "https://idp.example", ClientID: "nke-cli"})
+	if err == nil || !strings.Contains(err.Error(), "file path") {
+		t.Fatalf("GenerateFromKubeconfig() = %v, want a file-path error", err)
+	}
+}
+
 func TestGenerateRejects(t *testing.T) {
 	valid := writeAdminKubeconfig(t, adminConfig())
 	tests := map[string]struct {

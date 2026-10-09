@@ -17,7 +17,7 @@ below is on `main`; the steps the CLI does not cover are marked.
 | `nvkectl get providers` | Lists the Cluster API infrastructure providers the site controller can use, with their state. Alpha. | Available |
 | `nvkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
 | `nvkectl get clusters [name ...]` | Lists tenant clusters. Names narrow to those clusters. `-o json\|yaml` changes the format. | Available |
-| `nvkectl get kubeconfig <name>` | Fetches a tenant cluster's admin kubeconfig. `--output-file` writes it to a file instead of stdout. | Available |
+| `nvkectl get kubeconfig <name>` | Writes an oidc-login kubeconfig for a tenant cluster. `--oidc-issuer-url` and `--oidc-client-id` are required. `--output-file` writes it to a file instead of stdout. | Available |
 | `nvkectl delete cluster <name>` | Deletes a tenant cluster. | Available |
 | `nvkectl patch cluster <name>` | PATCHes a mutable cluster property (Kubernetes version, etcd encryption, remote access, control plane config). `--patch` takes an inline YAML document, `--patch-file` a file (or stdin via `-`). | Available |
 | `nvkectl create nodepool -f spec.yaml` | Adds a node pool to an existing cluster from a `CreateNodePoolRequest` YAML. `-f -` reads stdin. | Available |
@@ -173,12 +173,16 @@ nvkectl get clusters <cluster-name> -o yaml
 ### 9. Get the tenant cluster's kubeconfig
 
 ```bash
-nvkectl get kubeconfig <cluster-name> --output-file ./tenant.kubeconfig
+nvkectl get kubeconfig <cluster-name> \
+  --oidc-issuer-url https://idp.example/realms/nke \
+  --oidc-client-id nke-cli \
+  --output-file ./tenant.kubeconfig
 ```
 
-Without `--output-file`, the kubeconfig is written to stdout. This reads the
-site cluster directly, the same as `get providers`, so it needs the site
-kubeconfig from step 5.
+Without `--output-file`, the kubeconfig is written to stdout. The cluster
+server and CA come from `nke-system/<cluster>-admin-kubeconfig`. The admin
+client certificate is not included. This reads the site cluster directly, the
+same as `get providers`, so it needs the site kubeconfig from step 5.
 
 ### 10. Patch the tenant cluster
 

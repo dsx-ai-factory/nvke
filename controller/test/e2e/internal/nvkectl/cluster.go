@@ -168,16 +168,15 @@ func (r *Runner) WaitForClusterReady(ctx context.Context, id openapi_types.UUID)
 	}
 }
 
-// GetKubeconfig returns the tenant admin kubeconfig `nvkectl get kubeconfig`
-// prints for the named cluster.
-//
-// The command reads the nke-system/<cluster>-admin-kubeconfig Secret through the
-// site's own kubeconfig rather than the controller API. That Secret is published only
-// once the cluster has provisioned, so this fails against one that has not.
+// GetKubeconfig runs `nvkectl get kubeconfig` for the named cluster with the
+// required OIDC flags. The printed file is an oidc-login kubeconfig built from
+// the admin.conf Secret.
 func (r *Runner) GetKubeconfig(ctx context.Context, name string) ([]byte, error) {
-	out, err := r.Run(ctx, "get", "kubeconfig", name)
+	out, err := r.Run(ctx, "get", "kubeconfig", name,
+		"--oidc-issuer-url", "https://idp.example/realms/nke",
+		"--oidc-client-id", "nke-cli")
 	if err != nil {
-		return nil, err
+		return []byte(out), err
 	}
 	return []byte(out), nil
 }

@@ -4,6 +4,7 @@
 package mgmtcluster
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -17,6 +18,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+
+	"github.com/dsx-ai-factory/nvke/cli/internal/config"
+	"github.com/dsx-ai-factory/nvke/cli/internal/mgmtcluster/command"
 )
 
 // validKubeconfig is a syntactically valid, minimal kubeconfig. New() never
@@ -136,5 +142,89 @@ func TestNewBuildsClientFromValidKubeconfig(t *testing.T) {
 	}
 	if c == nil || c.kube == nil {
 		t.Fatal("New returned a Client with no underlying client")
+	}
+}
+
+// TestGetKubeconfigCommandUsesAdminClusterStanza is the merge-gate coverage for
+// nvkectl get kubeconfig. It reads the admin.conf Secret and checks the
+// oidc-login file. A live issuer is a later cluster change.
+func TestGetKubeconfigCommandUsesAdminClusterStanza(t *testing.T) {
+	adminCfg := clientcmdapi.NewConfig()
+	adminCfg.Clusters["tenant"] = &clientcmdapi.Cluster{
+		Server:                   "https://10.10.50.2:6443",
+		TLSServerName:            "kubernetes",
+		CertificateAuthorityData: []byte("ADMIN CA"),
+	}
+	adminCfg.AuthInfos["kubernetes-admin"] = &clientcmdapi.AuthInfo{
+		ClientCertificateData: []byte("CLIENT CERT"),
+		ClientKeyData:         []byte("CLIENT KEY"),
+	}
+	adminCfg.Contexts["kubernetes-admin@tenant"] = &clientcmdapi.Context{
+		Cluster:  "tenant",
+		AuthInfo: "kubernetes-admin",
+	}
+	adminCfg.CurrentContext = "kubernetes-admin@tenant"
+	admin, err := clientcmd.Write(*adminCfg)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	c := newWithClient(fake.NewSimpleClientset(
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-cluster-admin-kubeconfig", Namespace: secretsNamespace},
+			Data:       map[string][]byte{kubeconfigSecretKey: admin},
+		},
+	))
+
+	cmd := command.NewGetKubeconfigCmd(
+		func() (config.SiteConfig, error) {
+			return config.SiteConfig{Kubeconfig: "/dev/null"}, nil
+		},
+		func(string) (command.KubeconfigFetcher, error) { return c, nil },
+	)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"my-cluster",
+		"--oidc-issuer-url", "https://idp.example/realms/nke",
+		"--oidc-client-id", "nke-cli",
+		"--oidc-extra-scope", "groups",
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	got, err := clientcmd.Load(out.Bytes())
+	if err != nil {
+		t.Fatalf("Load: %v\n%s", err, out.String())
+	}
+	cluster := got.Clusters["tenant"]
+	if cluster == nil {
+		t.Fatal("generated kubeconfig has no cluster \"tenant\"")
+	}
+	if cluster.Server != "https://10.10.50.2:6443" || cluster.TLSServerName != "kubernetes" {
+		t.Errorf("cluster = server %q tls %q", cluster.Server, cluster.TLSServerName)
+	}
+	if string(cluster.CertificateAuthorityData) != "ADMIN CA" {
+		t.Errorf("CA = %q, want the CA from admin.conf", cluster.CertificateAuthorityData)
+	}
+	if _, ok := got.AuthInfos["kubernetes-admin"]; ok || bytes.Contains(out.Bytes(), []byte("CLIENT CERT")) {
+		t.Error("admin client material leaked")
+	}
+	user := got.AuthInfos["oidc"]
+	if user == nil || user.Exec == nil {
+		t.Fatal("generated kubeconfig has no oidc exec user")
+	}
+	args := strings.Join(user.Exec.Args, " ")
+	for _, want := range []string{
+		"oidc-login",
+		"--oidc-issuer-url=https://idp.example/realms/nke",
+		"--oidc-client-id=nke-cli",
+		"--oidc-extra-scope=groups",
+	} {
+		if !strings.Contains(args, want) {
+			t.Errorf("exec args missing %q: %s", want, args)
+		}
 	}
 }

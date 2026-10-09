@@ -56,7 +56,7 @@ Once the site is ingested, day-2 operations go through NVKE:
 |---|---|
 | Create a tenant cluster | `nvkectl create cluster -f spec.yaml` |
 | List tenant clusters | `nvkectl get clusters` |
-| Get a tenant kubeconfig | `nvkectl get kubeconfig <name>` |
+| Get a tenant kubeconfig | `nvkectl get kubeconfig <name> --oidc-issuer-url <url> --oidc-client-id <id>` |
 | Add a node pool | `nvkectl create nodepool -f spec.yaml` |
 | Scale a node pool | `nvkectl patch nodepool <name> --cluster <cluster> --patch 'desiredNodeCount: N'` |
 | Upgrade a cluster's Kubernetes version | `nvkectl patch cluster <name> --patch 'controlPlaneKubernetesVersion: "1.34.0"'` |
