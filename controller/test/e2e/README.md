@@ -204,14 +204,15 @@ one worker-only domain through `DockerCluster.spec.failureDomains`. Its create,
 1-to-3 scale, and rolling-update validations inspect the live CAPI Cluster and
 Machines and CAPD node containers: requested domains and container placement
 must be eligible and agree, placement must remain balanced, and no control-plane
-Machine may use the worker-only domain. The quorum-safe scale-down and
+Machine may use the worker-only domain. Create also checks exact per-domain
+counts; scale-up checks only balance, because KCP's tie-break decides which
+domain receives the extra Machine. The quorum-safe scale-down and
 unreachable-node delete validations check that placement stays balanced and the
 replacement refills the deleted Machine's domain. A second, provisioning-only
 `cp-controller` row advertises just a worker-only domain and checks that its
 control-plane Machine has no requested domain. The provisioning-only `no-vip`
 `cp-controller` row advertises the same domains as the main row and checks its
-single Machine's placement. The full CAPD backend E2E job runs all three rows in
-its controller-managed leg.
+single Machine's placement. The full CAPD backend E2E job runs all three rows.
 
 These CAPD controller fixtures reject `lifecycle.reuseCluster`: each row needs
 its own advertised domain set. Each placement poll snapshots all running
@@ -229,7 +230,7 @@ the control-plane `TestReadFailureDomains` unit test covers that case. An E2E
 drift scenario needs a backend where observed placement can differ from the
 request, such as CapNICo.
 
-To run these scenarios against a flag-on local deployment, use:
+To run only these scenarios against a local deployment, use:
 
 ```bash
 make test-e2e ARGS='--label-filter="capd && cp-controller"'

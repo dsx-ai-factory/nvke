@@ -77,7 +77,7 @@ func validateControllerManagedControlPlaneUpdate(test *tenantTest) {
 		By("Asserting the tenant cluster reports Ready for the updated control-plane nodes")
 		assertControlPlaneNodesReadyInTenant(ctx, test, desired)
 		By("Verifying scale-up balanced CAPI Machines across the eligible failure domains")
-		assertCAPDControlPlaneFailureDomains(ctx, test, desired, expectedControlPlaneFailureDomainCounts(test.spec, desired))
+		assertCAPDControlPlaneFailureDomains(ctx, test, desired, nil)
 	}, Label("cp-controller", "update"), NodeTimeout(90*time.Minute))
 }
 
