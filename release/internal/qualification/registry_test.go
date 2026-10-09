@@ -4,6 +4,7 @@
 package qualification
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -62,6 +63,68 @@ func TestLoadRegistryRejects(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := LoadRegistry(write(t, "registry.yaml", tc.body))
+			wantError(t, err, tc.want)
+		})
+	}
+}
+
+const sourcedRegistry = `
+apiVersion: nke.nvidia.com/v1alpha1
+kind: Registry
+spec:
+  sources:
+    - {name: artifacts, url: "https://cdn.example"}
+  components:
+    - {name: image, resolve: {strategy: osImage, with: {source: artifacts, path: p, from: os-image, arch: amd64, variant: non-fde}}}
+    - {name: loader, resolve: {strategy: url, with: {source: artifacts}}}
+    - {name: kind, resolve: {strategy: makeVar, with: {var: KIND_VERSION}}}
+    - {name: bare, resolve: {strategy: gitTag}}
+`
+
+// A source is stated once and expanded into the flat base the strategies take.
+func TestRegistryExpandsASourceIntoABase(t *testing.T) {
+	r, err := LoadRegistry(write(t, "registry.yaml", sourcedRegistry))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		want map[string]string
+	}{
+		{"image", map[string]string{"base": "https://cdn.example", "path": "p", "from": "os-image", "arch": "amd64", "variant": "non-fde"}},
+		{"loader", map[string]string{"base": "https://cdn.example"}},
+		{"kind", map[string]string{"var": "KIND_VERSION"}},
+		{"bare", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := r.Component(tc.name)
+			got := r.StrategyConfig(c)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("config is %v, want %v", got, tc.want)
+			}
+			if _, ok := c.Resolve.With["source"]; tc.name == "loader" && !ok {
+				t.Error("expanding changed the registry's own entry")
+			}
+		})
+	}
+}
+
+func TestLoadRegistryRejectsBadSources(t *testing.T) {
+	for _, tc := range []struct{ name, from, to, want string }{
+		{
+			"a duplicate source",
+			`    - {name: artifacts, url: "https://cdn.example"}`,
+			"    - {name: artifacts, url: \"https://cdn.example\"}\n    - {name: artifacts, url: \"https://other.example\"}",
+			`source "artifacts" is listed twice`,
+		},
+		{"a source with no name", `{name: artifacts, url: "https://cdn.example"}`, `{name: "", url: "https://cdn.example"}`, "a source has no name"},
+		{"a source that is not a URL", `url: "https://cdn.example"`, `url: "cdn.example"`, `has url "cdn.example", which is not a URL`},
+		{"a component naming a source that is not listed", "{source: artifacts}", "{source: elsewhere}", `names source "elsewhere", which is not listed`},
+		{"a source beside a base", "{source: artifacts}", "{source: artifacts, base: https://x.example}", "names both a source and a base"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadRegistry(write(t, "registry.yaml", strings.Replace(sourcedRegistry, tc.from, tc.to, 1)))
 			wantError(t, err, tc.want)
 		})
 	}

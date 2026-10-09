@@ -18,11 +18,11 @@ repository root:
 # The latest release candidate of nke, over every stream
 $ go run ./release/cmd/qualify plan --subject nke
 
-# A specific tag, narrowed to the active scope
-$ go run ./release/cmd/qualify plan --subject nke --version v0.22.0-beta.1 --scope active
+# A specific tag, narrowed to the golden-path scope
+$ go run ./release/cmd/qualify plan --subject nke --version v0.22.0-beta.1 --scope golden-path
 
 # Use a version you choose in place of what resolves
-$ go run ./release/cmd/qualify plan --subject nke --version v0.22.0-beta.1 --version-overrides controller=v0.1.1-rc.11,kube=1.36.3
+$ go run ./release/cmd/qualify plan --subject nke --version v0.22.0-beta.1 --overrides controller=v0.1.1-rc.11,kube=1.36.3
 
 # Write the plan to a file instead of stdout
 $ go run ./release/cmd/qualify plan --subject nke --output plan.json
@@ -32,7 +32,7 @@ $ go run ./release/cmd/qualify plan --subject nke --output plan.json
 |---|---|---|
 | `--subject` | required | What to qualify. `nke` is NKE as a whole |
 | `--version` | the latest release candidate | The subject's version, which must be an existing tag |
-| `--version-overrides` | none | Versions to use in place of what resolves, as `name=version` pairs separated by commas |
+| `--overrides` | none | Values to use in place of what resolves, as `name=value` pairs separated by commas |
 | `--scope` | `full` | How much of the matrix to cover, a scope from `policy.yaml` |
 | `--output` | `-` | Where to write the plan. `-` is stdout |
 | `--root`, `--policy`, `--registry` | the enclosing checkout and the files under `release/` | Where to read the repository and the two files from |
@@ -41,10 +41,17 @@ $ go run ./release/cmd/qualify plan --subject nke --output plan.json
 `--version` `plan` stops and says so. Pass `--version` to name a tag that
 exists.
 
-A version given with `--version-overrides` replaces what that component or dependency
+A value given with `--overrides` replaces what that component or dependency
 would have resolved to, and is checked the way a resolved one is: a tag has to
-exist, and a Kubernetes or OVN version has to be one the image locks. The names
-that were overridden are listed under `overrides` in the plan. The plan looks
+exist, and a Kubernetes or OVN version has to be one the image locks. An image or
+a bootloader such as `os-image-amd64` is a dependency whose override is a URL, so
+it is overridden by name too. The names that were overridden are listed under
+`overrides` in the plan.
+
+Every image and bootloader URL is asked for with `HEAD` and has to answer 200.
+The bucket is private, so a missing artifact and a network that is not allowed
+both answer 403, and `plan` needs a network that can reach it. The check can
+confirm that an artifact exists and cannot say that it does not. The plan looks
 like this:
 
 ```console
@@ -63,21 +70,49 @@ $ go run ./release/cmd/qualify plan --subject nke --scope full
         { "name": "capi-provisioned", "version": "v0.1.0" }
       ],
       "dependencies": [
-        { "name": "nke-cni-ovn", "version": "1.4.0" },
-        { "name": "kind",        "version": "v0.32.0" },
-        { "name": "clusterctl",  "version": "v1.12.3" },
-        { "name": "nerdctl",     "version": "2.3.5" }
+        { "name": "nke-cni-ovn",               "version": "1.4.0" },
+        { "name": "os-image-bootloader-amd64", "url": "https://cdn.example/nke-isos/qcow/efi/x86_64/qcow-imager.efi" },
+        { "name": "os-image-bootloader-arm64", "url": "https://cdn.example/nke-isos/qcow/efi/aarch64/qcow-imager.efi" },
+        { "name": "kind",                      "version": "v0.32.0" },
+        { "name": "clusterctl",                "version": "v1.12.3" },
+        { "name": "nerdctl",                   "version": "2.3.5" }
       ],
       "streams": [
         {
-          "name": "forge-amd64-ubuntu-24.04-kube-1.36",
+          "name": "forge-gb200-amd64-ubuntu-24.04-kube-1.36",
           "capabilities": { "arch": "amd64", "gpu": "gb200", "kube": "1.36", "provider": "forge", "ubuntu": "24.04" },
-          "dependencies": [{ "name": "kube", "version": "1.36.3" }]
+          "dependencies": [
+            { "name": "kube",           "version": "1.36.3" },
+            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nke-packages/os-image/releases/v0.1.0/amd64/nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2" },
+            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nke-packages/os-image/releases/v0.1.0/arm64/nke-node-non-fde-ubuntu-24.04.5-arm64.qcow2" }
+          ]
         },
         {
-          "name": "forge-arm64-ubuntu-24.04-kube-1.36",
+          "name": "forge-gb200-arm64-ubuntu-24.04-kube-1.36",
           "capabilities": { "arch": "arm64", "gpu": "gb200", "kube": "1.36", "provider": "forge", "ubuntu": "24.04" },
-          "dependencies": [{ "name": "kube", "version": "1.36.3" }]
+          "dependencies": [
+            { "name": "kube",           "version": "1.36.3" },
+            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nke-packages/os-image/releases/v0.1.0/amd64/nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2" },
+            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nke-packages/os-image/releases/v0.1.0/arm64/nke-node-non-fde-ubuntu-24.04.5-arm64.qcow2" }
+          ]
+        },
+        {
+          "name": "forge-gb200-amd64-ubuntu-26.04-kube-1.36",
+          "capabilities": { "arch": "amd64", "gpu": "gb200", "kube": "1.36", "provider": "forge", "ubuntu": "26.04" },
+          "dependencies": [
+            { "name": "kube",           "version": "1.36.3" },
+            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nke-packages/os-image/releases/v0.1.0/amd64/nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2" },
+            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nke-packages/os-image/releases/v0.1.0/arm64/nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2" }
+          ]
+        },
+        {
+          "name": "forge-gb200-arm64-ubuntu-26.04-kube-1.36",
+          "capabilities": { "arch": "arm64", "gpu": "gb200", "kube": "1.36", "provider": "forge", "ubuntu": "26.04" },
+          "dependencies": [
+            { "name": "kube",           "version": "1.36.3" },
+            { "name": "os-image-amd64", "version": "v0.1.0", "url": "https://cdn.example/nke-packages/os-image/releases/v0.1.0/amd64/nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2" },
+            { "name": "os-image-arm64", "version": "v0.1.0", "url": "https://cdn.example/nke-packages/os-image/releases/v0.1.0/arm64/nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2" }
+          ]
         }
       ]
     }
@@ -111,7 +146,7 @@ publications; it does not replace them.
 
 | Path | Contents |
 |---|---|
-| [`registry.yaml`](registry.yaml) | How each component resolves to a version. It holds the rule that finds a version, never a version |
+| [`registry.yaml`](registry.yaml) | How each component resolves to a version, and the named locations artifacts are published under. It holds the rule that finds a version, never a version |
 | [`policy.yaml`](policy.yaml) | The streams that exist and the scopes over them |
 | [`qualification.yaml`](qualification.yaml) | What is qualified when NKE is qualified as a whole: the components tested together, and the other versions a run needs |
 | [`cmd/qualify/`](cmd/qualify/) | The binary. `plan` is the only verb |
@@ -138,18 +173,38 @@ version to take, and today the only selector is `latest`, the highest release,
 else the highest candidate. One choice of versions for all four is a
 **combination**, which is what a plan is organised by.
 
-`dependencies` are the other versions a run needs: Kubernetes, the OVN CNI and
-the tools. They have no selectors, because the components determine them or a
-pin file does. A dependency with no constraint, or a literal one such as
-`"1.4"`, is resolved once for the combination. One whose constraint names a
-stream capability, `{capability: kube}`, is resolved once per stream with that
-stream's value. Which of the two it is comes from that constraint and nothing
-else.
+`dependencies` are the other versions a run needs: Kubernetes, the OVN CNI, the
+tools, and the node image and its bootloader for every architecture, whatever the
+stream's own. Each image or bootloader is named by the key the e2e suite reads.
+They have no selectors, because the components determine them or a pin file does.
+A dependency says what to resolve with four fields, each with one meaning:
+
+| Field | Meaning |
+|---|---|
+| `constraint` | A literal version constraint, such as `"1.4"` |
+| `constraintFrom` | The constraint is the stream's value of a capability, `{capability: kube}` |
+| `releases` | The versions to choose from, for a strategy that cannot list them itself. An image's Ubuntu point releases are one. The highest the constraint matches is used, so series `24.04` picks `24.04.5` |
+| `value` | A declared answer that nothing derives, such as a bootloader's path |
+
+A dependency with no `constraintFrom` is resolved once for the combination. One
+with a `constraintFrom` is resolved once per stream, with that stream's value.
+Which of the two it is comes from that field and nothing else. So the images are
+per stream and the bootloaders are per combination.
+
+A resolved entry in the plan has a `version`, a `url`, or both. A `version` is
+always a version and a `url` is always a location. An image carries the
+`os-image` release it was built from and the URL of the qcow, and a bootloader
+carries only its URL.
+
+Quote a version in the file. YAML reads an unquoted `1.40` as a number and the
+constraint becomes `1.4`.
 
 | Component | Where its version comes from |
 |---|---|
 | `nke`, `controller`, `cli`, `capi-provisioned`, `os-image` | Git tags, under each component's tag prefix |
 | `kube`, `nke-cni-ovn` | The lock files the image's packages commit, read at the `os-image` tag the combination resolved. A node installs these from the image's own apt repository, so the lock files are the versions it can offer |
+| `os-image-amd64`, `os-image-arm64` | Built from the `os-image` tag, the architecture and the Ubuntu point release the stream's series picks from `releases` |
+| `os-image-bootloader-amd64`, `os-image-bootloader-arm64` | A path declared in `qualification.yaml` under the registry's `artifact-cdn` source, because nothing derives it |
 | `kind`, `clusterctl`, `nerdctl` | `make/tool-versions.mk`, which owns every tool pin |
 
 The resolvers know none of this vocabulary. They receive plain values and return
@@ -169,8 +224,8 @@ the architecture of the site and control-plane node, so it does not say which
 node images a run needs.
 
 A **scope** is a named selection over the streams, matched on capabilities.
-`full` carries no selector so it matches everything, and `active` narrows to the
-current minor. The set of supported Kubernetes minors is not declared anywhere,
+`full` carries no selector so it matches everything, and `golden-path` narrows to
+Ubuntu 24.04. The set of supported Kubernetes minors is not declared anywhere,
 it is whichever minors have streams, so adding one means adding streams and
 nothing else.
 

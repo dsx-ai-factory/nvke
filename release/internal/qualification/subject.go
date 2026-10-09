@@ -4,10 +4,12 @@
 package qualification
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strings"
+
+	"github.com/dsx-ai-factory/nke/release/internal/resolve"
 )
 
 // SubjectNKE is the subject that stands for the release as a whole. Its
@@ -55,58 +57,82 @@ type SubjectComponent struct {
 	Selectors []string `json:"selectors"`
 }
 
-// SubjectDependency is one component resolved around the combination.
+// SubjectDependency is one component resolved around the combination. Its
+// fields are the inputs its strategy is given, each with one meaning.
 type SubjectDependency struct {
 	Name string `json:"name"`
 
-	// Constraint narrows what the strategy may resolve to. Empty means the
-	// strategy decides alone.
-	Constraint *Constraint `json:"constraint,omitempty"`
+	// Constraint is a literal version constraint, such as a minor "1.4". Empty
+	// means the strategy decides alone.
+	Constraint string `json:"constraint,omitempty"`
+
+	// ConstraintFrom takes the constraint from the stream instead. It makes the
+	// dependency per stream, because its value is the stream's.
+	ConstraintFrom *ConstraintFrom `json:"constraintFrom,omitempty"`
+
+	// Releases are the versions a strategy that cannot list them itself may
+	// choose from, such as the Ubuntu point releases an image is published for.
+	// The strategy picks the highest one the constraint matches.
+	Releases []string `json:"releases,omitempty"`
+
+	// Value is a declared answer that nothing derives, such as the path of a
+	// bootloader.
+	Value string `json:"value,omitempty"`
 }
 
-// Constraint is either a literal or a reference to a stream capability. A
-// reference makes the dependency per stream, because its value is the
-// stream's. A literal is the same for every stream.
-type Constraint struct {
-	Literal    string
-	Capability string
+// ConstraintFrom names the stream capability a constraint is taken from.
+type ConstraintFrom struct {
+	Capability string `json:"capability"`
 }
 
-// UnmarshalJSON reads a string as a literal and {capability: name} as a
-// reference, and rejects anything else.
-func (c *Constraint) UnmarshalJSON(b []byte) error {
-	var literal string
-	if err := json.Unmarshal(b, &literal); err == nil {
-		if literal == "" {
-			return fmt.Errorf("a constraint is empty")
+// releasePattern is a dotted version of numbers, such as 24.04.5.
+var releasePattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*$`)
+
+func (d SubjectDependency) validate(path string) error {
+	switch {
+	case d.Constraint != "" && d.ConstraintFrom != nil:
+		return fmt.Errorf("%s: dependency %q has both constraint and constraintFrom", path, d.Name)
+	case d.ConstraintFrom != nil && d.ConstraintFrom.Capability == "":
+		return fmt.Errorf("%s: dependency %q has a constraintFrom that names no capability", path, d.Name)
+	case d.Value != "" && (d.Constraint != "" || d.ConstraintFrom != nil || len(d.Releases) > 0):
+		return fmt.Errorf("%s: dependency %q has a value, which is an answer and takes no constraint or releases", path, d.Name)
+	}
+	for _, r := range d.Releases {
+		if !releasePattern.MatchString(r) {
+			return fmt.Errorf("%s: dependency %q has release %q, which is not a dotted version such as 24.04.5", path, d.Name, r)
 		}
-		*c = Constraint{Literal: literal}
-		return nil
 	}
-
-	var ref struct {
-		Capability string `json:"capability"`
-	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&ref); err != nil {
-		return fmt.Errorf("a constraint is a string or {capability: <name>}: %w", err)
-	}
-	if ref.Capability == "" {
-		return fmt.Errorf("a constraint names no capability")
-	}
-	*c = Constraint{Capability: ref.Capability}
 	return nil
 }
 
-// MarshalJSON writes the form UnmarshalJSON reads.
-func (c Constraint) MarshalJSON() ([]byte, error) {
-	if c.Capability != "" {
-		return json.Marshal(struct {
-			Capability string `json:"capability"`
-		}{c.Capability})
+// perStream reports whether the dependency's inputs come from a stream.
+func (d SubjectDependency) perStream() bool { return d.ConstraintFrom != nil }
+
+// inputs are what the dependency declares, as the plain values its strategy is
+// given, for one stream. A literal ignores the stream, and a constraintFrom is
+// the stream's value of the capability it names. A dependency that declares
+// nothing has no inputs.
+func (d SubjectDependency) inputs(stream *StreamDefinition) (map[string]string, error) {
+	in := map[string]string{}
+	switch {
+	case d.ConstraintFrom != nil && stream == nil:
+		return nil, fmt.Errorf("constraint comes from capability %q but there is no stream", d.ConstraintFrom.Capability)
+	case d.ConstraintFrom != nil:
+		v, ok := stream.Capabilities[d.ConstraintFrom.Capability]
+		if !ok {
+			return nil, fmt.Errorf("stream %s does not declare capability %q", stream.Name, d.ConstraintFrom.Capability)
+		}
+		in[resolve.InputConstraintKey] = v
+	case d.Constraint != "":
+		in[resolve.InputConstraintKey] = d.Constraint
 	}
-	return json.Marshal(c.Literal)
+	if len(d.Releases) > 0 {
+		in[resolve.InputReleasesKey] = strings.Join(d.Releases, ",")
+	}
+	if d.Value != "" {
+		in[resolve.InputValueKey] = d.Value
+	}
+	return in, nil
 }
 
 // SubjectPath is where a subject's file lives. The release as a whole sits
@@ -169,6 +195,9 @@ func (s *Subject) validate(path string) error {
 	}
 	for _, d := range s.Spec.Dependencies {
 		if err := claim(d.Name, "dependencies"); err != nil {
+			return err
+		}
+		if err := d.validate(path); err != nil {
 			return err
 		}
 	}

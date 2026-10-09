@@ -63,7 +63,7 @@ func TestPlanOverridesReplaceWhatResolves(t *testing.T) {
 	// The overridden component reports its own ref, as a git tag strategy does,
 	// so a later strategy can be seen reading it.
 	r["os-image"] = &fake{answer: func(in map[string]string) (map[string]string, error) {
-		v := in[resolve.InputVersionKey]
+		v := in[resolve.InputOverrideKey]
 		if v == "" {
 			v = "v0.1.0"
 		}
@@ -72,7 +72,7 @@ func TestPlanOverridesReplaceWhatResolves(t *testing.T) {
 	// Strategies return a version they were asked for, as the real ones do.
 	asked := func(otherwise string) *fake {
 		return &fake{answer: func(in map[string]string) (map[string]string, error) {
-			if v := in[resolve.InputVersionKey]; v != "" {
+			if v := in[resolve.InputOverrideKey]; v != "" {
 				return map[string]string{resolve.ResultVersionKey: v}, nil
 			}
 			return map[string]string{resolve.ResultVersionKey: otherwise}, nil
@@ -111,13 +111,13 @@ func TestPlanOverridesReplaceWhatResolves(t *testing.T) {
 	// The override goes to the resolver as the version asked for, so the
 	// strategy can check it, and what the overridden component returned is what
 	// later strategies read.
-	if in := r["os-image"].calls[0]; in[resolve.InputVersionKey] != "v0.1.0-rc.3" {
+	if in := r["os-image"].calls[0]; in[resolve.InputOverrideKey] != "v0.1.0-rc.3" {
 		t.Errorf("os-image was given %v", in)
 	}
-	if in := r["kube"].calls[0]; in[resolve.InputVersionKey] != "1.34.2" || in["os-image.ref"] != "os-image/v0.1.0-rc.3" {
+	if in := r["kube"].calls[0]; in[resolve.InputOverrideKey] != "1.34.2" || in["os-image.ref"] != "os-image/v0.1.0-rc.3" {
 		t.Errorf("kube was given %v", in)
 	}
-	if in := r["nke-cni-ovn"].calls[0]; in[resolve.InputVersionKey] != "" {
+	if in := r["nke-cni-ovn"].calls[0]; in[resolve.InputOverrideKey] != "" {
 		t.Errorf("nke-cni-ovn was not overridden but was given %v", in)
 	}
 }

@@ -4,6 +4,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -35,5 +37,31 @@ func TestBuildResolversNamesTheComponentThatFails(t *testing.T) {
 	_, err := buildResolvers(reg, ".")
 	if err == nil || !strings.Contains(err.Error(), "component kube: strategy") {
 		t.Errorf("err = %v, want it to name the component", err)
+	}
+}
+
+// A component that names a source is built with the base the source stands for,
+// and one that names a source nobody listed is a registry error before this.
+func TestBuildResolversExpandsSources(t *testing.T) {
+	cdn := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	t.Cleanup(cdn.Close)
+
+	reg := &qualification.Registry{Spec: qualification.RegistrySpec{
+		Sources: []qualification.Source{{Name: "artifacts", URL: cdn.URL}},
+		Components: []qualification.Component{
+			{Name: "loader", Resolve: qualification.Resolve{Strategy: "url", With: map[string]string{"source": "artifacts"}}},
+		},
+	}}
+
+	got, err := buildResolvers(reg, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := got["loader"].Resolve(map[string]string{"value": "efi/x.efi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["url"] != cdn.URL+"/efi/x.efi" {
+		t.Errorf("the loader resolved to %q, want the path under the source", out["url"])
 	}
 }

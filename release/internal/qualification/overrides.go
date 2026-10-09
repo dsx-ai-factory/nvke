@@ -40,14 +40,8 @@ func ParseOverrides(s string) (map[string]string, error) {
 	return out, nil
 }
 
-// checkOverrides holds every override to the subject. An override can only
-// replace something the subject lists, and never the subject itself, whose
-// version is named with --version.
-func checkOverrides(s *Subject, overrides map[string]string) error {
-	if len(overrides) == 0 {
-		return nil
-	}
-
+// listedNames are the components then the dependencies of the subject.
+func listedNames(s *Subject) []string {
 	var listed []string
 	for _, c := range s.Spec.Components {
 		listed = append(listed, c.Name)
@@ -55,7 +49,14 @@ func checkOverrides(s *Subject, overrides map[string]string) error {
 	for _, d := range s.Spec.Dependencies {
 		listed = append(listed, d.Name)
 	}
+	return listed
+}
 
+// checkOverrides holds every override to the subject. An override can replace a
+// component or a dependency the subject lists, and never the subject itself,
+// whose version is named with --version.
+func checkOverrides(s *Subject, overrides map[string]string) error {
+	listed := listedNames(s)
 	for _, name := range sortedNames(overrides) {
 		switch {
 		case name == s.Spec.Subject:

@@ -35,7 +35,7 @@ var constraintPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+){0,2}$`)
 // Resolve returns the highest locked version that matches InputConstraintKey and
 // is locked for every architecture.
 //
-// With InputVersionKey it returns that version instead, after checking that it
+// With InputOverrideKey it returns that version instead, after checking that it
 // is locked for every architecture and, when a constraint is also given, that it
 // matches it. An override that did not match would put a Kubernetes minor on a
 // stream that is not qualifying it.
@@ -44,7 +44,10 @@ var constraintPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+){0,2}$`)
 // architecture only is not offered, because an image carries both and a plan
 // naming it would fail on the architecture that lacks it.
 func (l LockedPackage) Resolve(inputs map[string]string) (map[string]string, error) {
-	want, constraint := inputs[InputVersionKey], inputs[InputConstraintKey]
+	if inputs[InputReleasesKey] != "" {
+		return nil, fmt.Errorf("%s reads its versions from lock files, so it takes no %s", l.LockDir, InputReleasesKey)
+	}
+	want, constraint := inputs[InputOverrideKey], inputs[InputConstraintKey]
 	if want == "" && constraint == "" {
 		return nil, fmt.Errorf("no %s given for %s", InputConstraintKey, l.LockDir)
 	}
@@ -160,20 +163,17 @@ func everywhere(byArch map[string][]string) map[string]bool {
 	return out
 }
 
-// matches reports whether a version starts with the constraint's numeric
-// parts. The comparison is on parts, so 1.3 matches 1.3.9 and not 1.34.2.
-func matches(version, constraint string) bool {
-	core := strings.TrimPrefix(semver.Canonical(version), "v")
-	core, _, _ = strings.Cut(core, "-")
-	got := strings.Split(core, ".")
-	want := strings.Split(constraint, ".")
-	if len(want) > len(got) {
-		return false
+// Validate requires a constraint that is a version prefix, and takes nothing
+// else, since the versions are read from the lock files.
+func (LockedPackage) Validate(inputs map[string]string) error {
+	if err := takesOnly(inputs, InputConstraintKey); err != nil {
+		return err
 	}
-	for i, w := range want {
-		if got[i] != w {
-			return false
-		}
+	if err := needs(inputs, InputConstraintKey); err != nil {
+		return err
 	}
-	return true
+	if c := inputs[InputConstraintKey]; !constraintPattern.MatchString(c) {
+		return fmt.Errorf("constraint %q is not a version prefix such as 1.34", c)
+	}
+	return nil
 }

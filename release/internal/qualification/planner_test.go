@@ -46,7 +46,7 @@ func byConstraint(patch string) *fake {
 // named version if there is one, else the latest candidate.
 func subjectFake() *fake {
 	return &fake{answer: func(in map[string]string) (map[string]string, error) {
-		if v := in[resolve.InputVersionKey]; v != "" {
+		if v := in[resolve.InputOverrideKey]; v != "" {
 			return map[string]string{resolve.ResultVersionKey: v}, nil
 		}
 		if in[resolve.InputSelectKey] != resolve.SelectCandidate {
@@ -93,7 +93,7 @@ spec:
     - {name: os-image, selectors: [latest]}
     - {name: cli, selectors: [latest]}
   dependencies:
-    - {name: kube, constraint: {capability: kube}}
+    - {name: kube, constraintFrom: {capability: kube}}
     - {name: nke-cni-ovn, constraint: "1.4"}
     - {name: kind}
 `
@@ -135,7 +135,9 @@ func newPlanner(t *testing.T, subject string, r resolvers) *Planner {
 func versionsOf(es []ComponentVersion) string {
 	parts := make([]string, len(es))
 	for i, e := range es {
-		parts[i] = e.Name + "=" + e.Version
+		// A location is what a run is handed, so it stands in for the version
+		// where there is one.
+		parts[i] = e.Name + "=" + cmpOr(e.URL, e.Version)
 	}
 	return strings.Join(parts, " ")
 }
@@ -294,7 +296,7 @@ func TestPlanSubjectVersion(t *testing.T) {
 		if got.Version != "v0.22.0-beta.1" {
 			t.Errorf("got %q", got.Version)
 		}
-		if in := r["nke"].calls[0]; in[resolve.InputSelectKey] != resolve.SelectCandidate || in[resolve.InputVersionKey] != "" {
+		if in := r["nke"].calls[0]; in[resolve.InputSelectKey] != resolve.SelectCandidate || in[resolve.InputOverrideKey] != "" {
 			t.Errorf("the subject was asked for %v", in)
 		}
 	})
@@ -308,7 +310,7 @@ func TestPlanSubjectVersion(t *testing.T) {
 		if got.Version != "v0.22.0-beta.3" {
 			t.Errorf("got %q", got.Version)
 		}
-		if in := r["nke"].calls[0]; in[resolve.InputVersionKey] != "v0.22.0-beta.3" {
+		if in := r["nke"].calls[0]; in[resolve.InputOverrideKey] != "v0.22.0-beta.3" {
 			t.Errorf("the subject was asked for %v", in)
 		}
 	})
@@ -475,16 +477,16 @@ func TestCombinationID(t *testing.T) {
 	}{
 		{
 			"sorted by name",
-			[]ComponentVersion{{"os-image", "v0.1.1-rc.1"}, {"controller", "v0.1.1-rc.11"}, {"cli", "v0.1.0-rc.7"}, {"capi-provisioned", "v0.1.0"}},
+			[]ComponentVersion{{Name: "os-image", Version: "v0.1.1-rc.1"}, {Name: "controller", Version: "v0.1.1-rc.11"}, {Name: "cli", Version: "v0.1.0-rc.7"}, {Name: "capi-provisioned", Version: "v0.1.0"}},
 			"capi-provisioned-v0.1.0_cli-v0.1.0-rc.7_controller-v0.1.1-rc.11_os-image-v0.1.1-rc.1",
 		},
 		{
 			"the same set in another order",
-			[]ComponentVersion{{"capi-provisioned", "v0.1.0"}, {"cli", "v0.1.0-rc.7"}, {"os-image", "v0.1.1-rc.1"}, {"controller", "v0.1.1-rc.11"}},
+			[]ComponentVersion{{Name: "capi-provisioned", Version: "v0.1.0"}, {Name: "cli", Version: "v0.1.0-rc.7"}, {Name: "os-image", Version: "v0.1.1-rc.1"}, {Name: "controller", Version: "v0.1.1-rc.11"}},
 			"capi-provisioned-v0.1.0_cli-v0.1.0-rc.7_controller-v0.1.1-rc.11_os-image-v0.1.1-rc.1",
 		},
-		{"build metadata is made path-safe", []ComponentVersion{{"cli", "v1.0.0+build.5"}}, "cli-v1.0.0-build.5"},
-		{"slashes cannot reach a path", []ComponentVersion{{"a/b", "v1"}}, "a-b-v1"},
+		{"build metadata is made path-safe", []ComponentVersion{{Name: "cli", Version: "v1.0.0+build.5"}}, "cli-v1.0.0-build.5"},
+		{"slashes cannot reach a path", []ComponentVersion{{Name: "a/b", Version: "v1"}}, "a-b-v1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := combinationID(tc.components); got != tc.want {
@@ -514,4 +516,11 @@ func TestPlanIDDoesNotDependOnComponentOrder(t *testing.T) {
 	if a.Combinations[0].ID != b.Combinations[0].ID {
 		t.Errorf("ids differ: %q and %q", a.Combinations[0].ID, b.Combinations[0].ID)
 	}
+}
+
+func cmpOr(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }

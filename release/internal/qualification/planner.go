@@ -51,7 +51,7 @@ func (p *Planner) Plan(subject, version, scope string) (*Plan, error) {
 	if s.Spec.Subject != subject {
 		return nil, fmt.Errorf("%s describes %q, not %q", SubjectPath(p.Root, subject), s.Spec.Subject, subject)
 	}
-	if err := Check(p.Policy, p.Registry, s); err != nil {
+	if err := Check(p.Policy, p.Registry, s, p.Resolvers); err != nil {
 		return nil, err
 	}
 	if err := checkOverrides(s, p.Overrides); err != nil {
@@ -99,7 +99,7 @@ func (p *Planner) Plan(subject, version, scope string) (*Plan, error) {
 func (p *Planner) subjectVersion(subject, version string) (string, error) {
 	inputs := map[string]string{resolve.InputSelectKey: resolve.SelectCandidate}
 	if version != "" {
-		inputs = map[string]string{resolve.InputVersionKey: version}
+		inputs = map[string]string{resolve.InputOverrideKey: version}
 	}
 
 	got, err := p.resolver(subject).Resolve(inputs)
@@ -200,7 +200,7 @@ func (p *Planner) combinations(s *Subject, streams []StreamDefinition) ([]Combin
 func (p *Planner) resolveComponent(c SubjectComponent) ([]pick, error) {
 	inputs := map[string]string{}
 	if v, ok := p.Overrides[c.Name]; ok {
-		inputs[resolve.InputVersionKey] = v
+		inputs[resolve.InputOverrideKey] = v
 	}
 
 	var out []pick
@@ -272,45 +272,27 @@ func (p *Planner) resolveDependencies(s *Subject, base map[string]string, stream
 			continue
 		}
 
-		inputs := maps.Clone(base)
-		if d.Constraint != nil {
-			constraint, err := d.Constraint.value(stream)
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w", d.Name, err)
-			}
-			inputs[resolve.InputConstraintKey] = constraint
+		declared, err := d.inputs(stream)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", d.Name, err)
 		}
+		inputs := maps.Clone(base)
+		maps.Copy(inputs, declared)
 		if v, ok := p.Overrides[d.Name]; ok {
-			inputs[resolve.InputVersionKey] = v
+			inputs[resolve.InputOverrideKey] = v
 		}
 
 		got, err := p.resolver(d.Name).Resolve(inputs)
 		if err != nil {
 			return nil, fmt.Errorf("resolving %s for %s: %w", d.Name, s.Spec.Subject, err)
 		}
-		out = append(out, ComponentVersion{Name: d.Name, Version: got[resolve.ResultVersionKey]})
+		out = append(out, ComponentVersion{
+			Name:    d.Name,
+			Version: got[resolve.ResultVersionKey],
+			URL:     got[resolve.ResultURLKey],
+		})
 	}
 	return out, nil
-}
-
-// perStream reports whether the dependency's inputs come from a stream.
-func (d SubjectDependency) perStream() bool {
-	return d.Constraint != nil && d.Constraint.Capability != ""
-}
-
-// value is the constraint's text for one stream. A literal ignores the stream.
-func (c Constraint) value(stream *StreamDefinition) (string, error) {
-	if c.Capability == "" {
-		return c.Literal, nil
-	}
-	if stream == nil {
-		return "", fmt.Errorf("constraint takes capability %q but there is no stream", c.Capability)
-	}
-	v, ok := stream.Capabilities[c.Capability]
-	if !ok {
-		return "", fmt.Errorf("stream %s does not declare capability %q", stream.Name, c.Capability)
-	}
-	return v, nil
 }
 
 // resolver returns the resolver for a component. A missing one is a wiring

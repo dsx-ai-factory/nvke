@@ -34,10 +34,13 @@ type Combination struct {
 	Streams []Stream `json:"streams"`
 }
 
-// ComponentVersion is a component with the version it resolved to.
+// ComponentVersion is a component with what it resolved to. A version is always
+// a version and a URL is always a location. An image has both, the release it
+// was built from and where it is, and a bootloader has only a location.
 type ComponentVersion struct {
 	Name    string `json:"name"`
-	Version string `json:"version"`
+	Version string `json:"version,omitempty"`
+	URL     string `json:"url,omitempty"`
 }
 
 // Stream is one stream of a combination, with what resolved for it.

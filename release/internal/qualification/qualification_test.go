@@ -55,15 +55,20 @@ func TestRepositoryFilesAreValid(t *testing.T) {
 		t.Fatalf("release/qualification.yaml: %v", err)
 	}
 
-	if err := Check(p, r, s); err != nil {
-		t.Error(err)
-	}
-
 	// Every registry entry has to build, which holds its strategy to the set
 	// that exists and its configuration to the keys that strategy takes.
+	resolvers := map[string]resolve.Resolver{}
 	for _, c := range r.Spec.Components {
-		if _, err := resolve.New(c.Resolve.Strategy, c.Resolve.With, repoRoot); err != nil {
+		built, err := resolve.New(c.Resolve.Strategy, r.StrategyConfig(c), repoRoot)
+		if err != nil {
 			t.Errorf("registry component %s: %v", c.Name, err)
+			continue
 		}
+		resolvers[c.Name] = built
+	}
+
+	// What the subject declares has to suit each strategy it is declared for.
+	if err := Check(p, r, s, resolvers); err != nil {
+		t.Error(err)
 	}
 }

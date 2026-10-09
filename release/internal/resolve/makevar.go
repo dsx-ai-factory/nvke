@@ -36,10 +36,10 @@ type MakeVar struct {
 // is not a pin, and returning its unexpanded text would put a make expression
 // in a plan.
 //
-// With InputVersionKey the file is not read and the named value is returned. A
+// With InputOverrideKey the file is not read and the named value is returned. A
 // tool pin has no list of valid values to check it against.
 func (m MakeVar) Resolve(inputs map[string]string) (map[string]string, error) {
-	if v := inputs[InputVersionKey]; v != "" {
+	if v := inputs[InputOverrideKey]; v != "" {
 		return map[string]string{ResultVersionKey: v}, nil
 	}
 
@@ -72,3 +72,6 @@ func (m MakeVar) Resolve(inputs map[string]string) (map[string]string, error) {
 	}
 	return nil, fmt.Errorf("%s does not set %s", m.Path, m.Var)
 }
+
+// Validate accepts no declared input, because the pin is read from the file.
+func (MakeVar) Validate(inputs map[string]string) error { return takesOnly(inputs) }

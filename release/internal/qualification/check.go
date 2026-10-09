@@ -3,7 +3,11 @@
 
 package qualification
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/dsx-ai-factory/nke/release/internal/resolve"
+)
 
 // Check holds the three files to each other. Each is valid alone, and this is
 // where a name one of them uses is required to exist in another.
@@ -11,8 +15,9 @@ import "fmt"
 // Every name a subject lists has to be a registered component, because one
 // that is not could never be resolved. Every constraint that takes a stream's
 // capability has to name one that every stream declares, because a stream
-// without it would have nothing to resolve against.
-func Check(p *Policy, r *Registry, s *Subject) error {
+// without it would have nothing to resolve against. What a dependency declares
+// is then held to its resolver, which knows what its strategy takes and needs.
+func Check(p *Policy, r *Registry, s *Subject, resolvers map[string]resolve.Resolver) error {
 	if _, ok := r.Component(s.Spec.Subject); !ok {
 		return fmt.Errorf("subject %q is not a component in the registry", s.Spec.Subject)
 	}
@@ -28,17 +33,12 @@ func Check(p *Policy, r *Registry, s *Subject) error {
 		}
 	}
 	for _, d := range s.Spec.Dependencies {
-		if _, ok := r.Component(d.Name); !ok {
+		c, ok := r.Component(d.Name)
+		if !ok {
 			return fmt.Errorf("%s depends on %q, which is not a component in the registry", s.Spec.Subject, d.Name)
 		}
-		if !d.perStream() {
-			continue
-		}
-		for _, stream := range p.Spec.Streams {
-			if _, ok := stream.Capabilities[d.Constraint.Capability]; !ok {
-				return fmt.Errorf("%s: %q takes capability %q, which stream %q does not declare",
-					s.Spec.Subject, d.Name, d.Constraint.Capability, stream.Name)
-			}
+		if err := checkInputs(p, s.Spec.Subject, d, c.Resolve.Strategy, resolvers[d.Name]); err != nil {
+			return err
 		}
 	}
 
@@ -51,6 +51,39 @@ func Check(p *Policy, r *Registry, s *Subject) error {
 	for _, want := range s.Spec.Streams {
 		if !known[want] {
 			return fmt.Errorf("%s names stream %q, which the policy does not define", s.Spec.Subject, want)
+		}
+	}
+	return nil
+}
+
+// checkInputs asks the dependency's resolver whether what the subject declares
+// for it is something it can resolve, once for each stream when the dependency
+// is per stream. A resolver that was not built is left to the planner, which
+// reports it where it is used.
+func checkInputs(p *Policy, subject string, d SubjectDependency, strategy string, r resolve.Resolver) error {
+	streams := []*StreamDefinition{nil}
+	if d.perStream() {
+		streams = streams[:0]
+		for i := range p.Spec.Streams {
+			streams = append(streams, &p.Spec.Streams[i])
+		}
+	}
+
+	for _, stream := range streams {
+		where := ""
+		if stream != nil {
+			where = fmt.Sprintf(", stream %q", stream.Name)
+		}
+
+		in, err := d.inputs(stream)
+		if err != nil {
+			return fmt.Errorf("%s: %q%s: %w", subject, d.Name, where, err)
+		}
+		if r == nil {
+			continue
+		}
+		if err := resolve.Validate(r, in); err != nil {
+			return fmt.Errorf("%s: %q (%s)%s: %w", subject, d.Name, strategy, where, err)
 		}
 	}
 	return nil

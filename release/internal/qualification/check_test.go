@@ -38,7 +38,7 @@ func TestCheck(t *testing.T) {
 		{
 			name:    "a capability a stream lacks",
 			subject: strings.Replace(testSubject, "{capability: kube}", "{capability: ubuntu}", 1),
-			want:    `takes capability "ubuntu", which stream "amd64-1.34" does not declare`,
+			want:    `stream amd64-1.34 does not declare capability "ubuntu"`,
 		},
 		{
 			name:    "a stream the policy does not define",
@@ -51,7 +51,7 @@ func TestCheck(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = Check(testPolicy(), testRegistry(), s)
+			err = Check(testPolicy(), testRegistry(), s, nil)
 			if tc.want == "" {
 				if err != nil {
 					t.Fatal(err)

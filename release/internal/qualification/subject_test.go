@@ -4,7 +4,6 @@
 package qualification
 
 import (
-	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,7 +20,7 @@ spec:
     - {name: controller, selectors: [latest]}
     - {name: cli, selectors: [latest]}
   dependencies:
-    - {name: kube, constraint: {capability: kube}}
+    - {name: kube, constraintFrom: {capability: kube}}
     - {name: nke-cni-ovn, constraint: "1.4"}
     - {name: kind}
 `
@@ -37,14 +36,14 @@ func TestLoadSubjectAccepts(t *testing.T) {
 	}
 
 	kube, ovn, kind := s.Spec.Dependencies[0], s.Spec.Dependencies[1], s.Spec.Dependencies[2]
-	if kube.Constraint == nil || kube.Constraint.Capability != "kube" || !kube.perStream() {
-		t.Errorf("kube takes %+v, want the kube capability", kube.Constraint)
+	if kube.ConstraintFrom == nil || kube.ConstraintFrom.Capability != "kube" || kube.Constraint != "" || !kube.perStream() {
+		t.Errorf("kube takes %+v, want the kube capability", kube)
 	}
-	if ovn.Constraint == nil || ovn.Constraint.Literal != "1.4" || ovn.perStream() {
-		t.Errorf("ovn takes %+v, want the literal 1.4", ovn.Constraint)
+	if ovn.Constraint != "1.4" || ovn.ConstraintFrom != nil || ovn.perStream() {
+		t.Errorf("ovn takes %+v, want the literal 1.4", ovn)
 	}
-	if kind.Constraint != nil || kind.perStream() {
-		t.Errorf("kind takes %+v, want no constraint", kind.Constraint)
+	if kind.Constraint != "" || kind.ConstraintFrom != nil || kind.perStream() {
+		t.Errorf("kind takes %+v, want no constraint", kind)
 	}
 }
 
@@ -89,48 +88,55 @@ func TestLoadSubjectRejects(t *testing.T) {
 			"the combination has no key",
 		},
 		{
-			"constraint naming no capability",
+			"constraintFrom naming no capability",
 			strings.Replace(validSubject, "{capability: kube}", "{capability: \"\"}", 1),
 			"names no capability",
 		},
 		{
-			"constraint with another key",
+			"constraintFrom with another key",
 			strings.Replace(validSubject, "{capability: kube}", "{cap: kube}", 1),
-			"a string or {capability: <name>}",
+			"unknown field",
 		},
 		{
-			"empty literal constraint",
-			strings.Replace(validSubject, `constraint: "1.4"`, `constraint: ""`, 1),
-			"a constraint is empty",
+			"constraintFrom that is a string",
+			strings.Replace(validSubject, "constraintFrom: {capability: kube}", "constraintFrom: kube", 1),
+			"constraintFrom",
 		},
 		{
-			"constraint that is a number",
-			strings.Replace(validSubject, `constraint: "1.4"`, `constraint: 1.4`, 1),
-			"a string or {capability: <name>}",
+			"constraint that is a map",
+			strings.Replace(validSubject, `constraint: "1.4"`, `constraint: {capability: kube}`, 1),
+			"constraint",
+		},
+		{
+			"constraint and constraintFrom together",
+			strings.Replace(validSubject, `{name: nke-cni-ovn, constraint: "1.4"}`, `{name: nke-cni-ovn, constraint: "1.4", constraintFrom: {capability: kube}}`, 1),
+			"both constraint and constraintFrom",
+		},
+		{
+			"value with a constraint",
+			strings.Replace(validSubject, `{name: kind}`, `{name: kind, value: x, constraint: "1"}`, 1),
+			"a value, which is an answer and takes no constraint or releases",
+		},
+		{
+			"value with releases",
+			strings.Replace(validSubject, `{name: kind}`, `{name: kind, value: x, releases: ["1.0"]}`, 1),
+			"a value, which is an answer and takes no constraint or releases",
+		},
+		{
+			"a release that is not a dotted version",
+			strings.Replace(validSubject, `{name: kind}`, `{name: kind, releases: ["24.04.x"]}`, 1),
+			`release "24.04.x", which is not a dotted version`,
+		},
+		{
+			"releases that is a string",
+			strings.Replace(validSubject, `{name: kind}`, `{name: kind, releases: "24.04.5"}`, 1),
+			"releases",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := LoadSubject(write(t, "qualification.yaml", tc.body))
 			wantError(t, err, tc.want)
 		})
-	}
-}
-
-// A subject written back out reads back as the same subject, so a record that
-// carries one is not changed by passing through JSON.
-func TestConstraintRoundTrips(t *testing.T) {
-	for _, c := range []Constraint{{Literal: "1.4"}, {Capability: "kube"}} {
-		b, err := json.Marshal(c)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var got Constraint
-		if err := json.Unmarshal(b, &got); err != nil {
-			t.Fatalf("%s: %v", b, err)
-		}
-		if got != c {
-			t.Errorf("%s read back as %+v, want %+v", b, got, c)
-		}
 	}
 }
 

@@ -101,13 +101,13 @@ func TestGitTagResolve(t *testing.T) {
 	}{
 		{"highest release wins over a newer candidate", "controller/", nil, "v0.1.0", ""},
 		{"candidates only", "controller/", map[string]string{InputSelectKey: SelectCandidate}, "v0.1.2-rc.1", ""},
-		{"named version", "controller/", map[string]string{InputVersionKey: "v0.1.1-rc.10"}, "v0.1.1-rc.10", ""},
-		{"named version without v", "controller/", map[string]string{InputVersionKey: "0.1.0"}, "v0.1.0", ""},
-		{"rc.10 sorts above rc.2", "controller/", map[string]string{InputVersionKey: "v0.1.1-rc.10"}, "v0.1.1-rc.10", ""},
+		{"named version", "controller/", map[string]string{InputOverrideKey: "v0.1.1-rc.10"}, "v0.1.1-rc.10", ""},
+		{"named version without v", "controller/", map[string]string{InputOverrideKey: "0.1.0"}, "v0.1.0", ""},
+		{"rc.10 sorts above rc.2", "controller/", map[string]string{InputOverrideKey: "v0.1.1-rc.10"}, "v0.1.1-rc.10", ""},
 		{"unprefixed tags", "", nil, "v0.21.0", ""},
 		{"unprefixed candidate", "", map[string]string{InputSelectKey: SelectCandidate}, "v0.22.0-beta.1", ""},
-		{"named version that does not exist", "controller/", map[string]string{InputVersionKey: "v0.9.9"}, "", "has no version v0.9.9"},
-		{"not a version", "controller/", map[string]string{InputVersionKey: "rc1"}, "", "is not a version"},
+		{"named version that does not exist", "controller/", map[string]string{InputOverrideKey: "v0.9.9"}, "", "has no version v0.9.9"},
+		{"not a version", "controller/", map[string]string{InputOverrideKey: "rc1"}, "", "is not a version"},
 		{"unknown select", "controller/", map[string]string{InputSelectKey: "oldest"}, "", "is not one this understands"},
 		{"no tags under the prefix", "os-image/", nil, "", "has no tagged versions"},
 		{"no candidate under the prefix", "cli/", map[string]string{InputSelectKey: SelectCandidate}, "", "has no release candidate"},
@@ -320,33 +320,33 @@ func TestLockedPackageOverride(t *testing.T) {
 		want   string
 		wantEr string
 	}{
-		{"a locked version", map[string]string{InputVersionKey: "1.35.3", "os-image.ref": ref}, "1.35.3", ""},
-		{"with the leading v", map[string]string{InputVersionKey: "v1.35.3", "os-image.ref": ref}, "1.35.3", ""},
+		{"a locked version", map[string]string{InputOverrideKey: "1.35.3", "os-image.ref": ref}, "1.35.3", ""},
+		{"with the leading v", map[string]string{InputOverrideKey: "v1.35.3", "os-image.ref": ref}, "1.35.3", ""},
 		{
 			"that matches the constraint",
-			map[string]string{InputVersionKey: "1.36.3", InputConstraintKey: "1.36", "os-image.ref": ref},
+			map[string]string{InputOverrideKey: "1.36.3", InputConstraintKey: "1.36", "os-image.ref": ref},
 			"1.36.3", "",
 		},
 		{
 			"that does not match the constraint",
-			map[string]string{InputVersionKey: "1.35.3", InputConstraintKey: "1.36", "os-image.ref": ref},
+			map[string]string{InputOverrideKey: "1.35.3", InputConstraintKey: "1.36", "os-image.ref": ref},
 			"",
 			"1.35.3 does not match the constraint 1.36",
 		},
 		{
 			"that is not locked, and the error says what is",
-			map[string]string{InputVersionKey: "1.36.2", "os-image.ref": ref},
+			map[string]string{InputOverrideKey: "1.36.2", "os-image.ref": ref},
 			"",
 			"does not lock 1.36.2 for every architecture, it locks 1.36.3, 1.35.3, 1.34.2",
 		},
 		{
 			"that is locked for one architecture only",
-			map[string]string{InputVersionKey: "1.36.9", "os-image.ref": ref},
+			map[string]string{InputOverrideKey: "1.36.9", "os-image.ref": ref},
 			"",
 			"does not lock 1.36.9 for every architecture",
 		},
-		{"that is not a version", map[string]string{InputVersionKey: "latest", "os-image.ref": ref}, "", `"latest" is not a version`},
-		{"without a ref to read", map[string]string{InputVersionKey: "1.35.3"}, "", "no os-image.ref given"},
+		{"that is not a version", map[string]string{InputOverrideKey: "latest", "os-image.ref": ref}, "", `"latest" is not a version`},
+		{"without a ref to read", map[string]string{InputOverrideKey: "1.35.3"}, "", "no os-image.ref given"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := l.Resolve(tc.inputs)
@@ -370,7 +370,7 @@ func TestLockedPackageOverride(t *testing.T) {
 // and the pin file is not read at all.
 func TestMakeVarOverrideDoesNotReadThePinFile(t *testing.T) {
 	got, err := MakeVar{Dir: t.TempDir(), Path: DefaultToolVersions, Var: "KIND_VERSION"}.
-		Resolve(map[string]string{InputVersionKey: "v0.33.0"})
+		Resolve(map[string]string{InputOverrideKey: "v0.33.0"})
 	if err != nil {
 		t.Fatal(err)
 	}

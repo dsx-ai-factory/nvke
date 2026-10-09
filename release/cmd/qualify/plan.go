@@ -19,14 +19,14 @@ import (
 
 func planCmd() *cobra.Command {
 	var (
-		subject          string
-		version          string
-		versionOverrides string
-		scope            string
-		output           string
-		root             string
-		policyAt         string
-		registryAt       string
+		subject    string
+		version    string
+		overrides  string
+		scope      string
+		output     string
+		root       string
+		policyAt   string
+		registryAt string
 	)
 
 	cmd := &cobra.Command{
@@ -41,9 +41,15 @@ combination and every stream.
 
 An absent --version means the subject's latest release candidate.
 
---version-overrides replaces what a component or dependency would have resolved
-to, as comma-separated name=version pairs, the same format the e2e suite takes.
-The names it replaces are listed in the plan under overrides.`,
+--overrides replaces what a component or dependency would have resolved
+to, as comma-separated name=value pairs, the format the e2e suite's -e2e.versions takes.
+The names it replaces are listed in the plan under overrides. An image or a
+bootloader such as os-image-amd64 is a dependency, and its override is a URL.
+
+An image or a bootloader URL is asked for with HEAD and must answer 200. The
+bucket is private, so a missing artifact and a network that is not allowed both
+answer 403, and the check can confirm that something exists but not that it does
+not, so plan needs a network that can reach it.`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -72,9 +78,9 @@ The names it replaces are listed in the plan under overrides.`,
 			if err != nil {
 				return err
 			}
-			overrides, err := qualification.ParseOverrides(versionOverrides)
+			chosen, err := qualification.ParseOverrides(overrides)
 			if err != nil {
-				return fmt.Errorf("--version-overrides: %w", err)
+				return fmt.Errorf("--overrides: %w", err)
 			}
 
 			planner := &qualification.Planner{
@@ -82,7 +88,7 @@ The names it replaces are listed in the plan under overrides.`,
 				Registry:  reg,
 				Resolvers: resolvers,
 				Root:      root,
-				Overrides: overrides,
+				Overrides: chosen,
 			}
 
 			result, err := planner.Plan(subject, version, scope)
@@ -96,7 +102,7 @@ The names it replaces are listed in the plan under overrides.`,
 	f := cmd.Flags()
 	f.StringVar(&subject, "subject", "", "subject to qualify (required)")
 	f.StringVar(&version, "version", "", "version of the subject to qualify, empty means its latest release candidate")
-	f.StringVar(&versionOverrides, "version-overrides", "", "versions to use in place of what resolves, as name=version pairs separated by commas")
+	f.StringVar(&overrides, "overrides", "", "values to use in place of what resolves, as name=value pairs separated by commas")
 	// full is the default because it is the scope that is never wrong. A
 	// narrower default would silently cover less of the matrix than the
 	// person running it believed.
@@ -110,13 +116,13 @@ The names it replaces are listed in the plan under overrides.`,
 	return cmd
 }
 
-// buildResolvers makes one resolver for each registry component. This is the
-// one place that names a strategy, which is what lets the planner be tested
-// with fakes.
+// buildResolvers makes one resolver for each registry component. This is the one
+// place that names a strategy, which is what lets the planner be tested with
+// fakes.
 func buildResolvers(reg *qualification.Registry, root string) (map[string]resolve.Resolver, error) {
 	resolvers := make(map[string]resolve.Resolver, len(reg.Spec.Components))
 	for _, c := range reg.Spec.Components {
-		r, err := resolve.New(c.Resolve.Strategy, c.Resolve.With, root)
+		r, err := resolve.New(c.Resolve.Strategy, reg.StrategyConfig(c), root)
 		if err != nil {
 			return nil, fmt.Errorf("component %s: %w", c.Name, err)
 		}

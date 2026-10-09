@@ -18,24 +18,30 @@ import (
 )
 
 // Result keys. Most strategies return one value under ResultVersionKey. A
-// strategy that can name more than one thing about the same version returns the
-// rest under their own keys, and the caller passes them on to later strategies
-// as "<component>.<key>".
+// strategy whose answer is a location returns it under ResultURLKey, and one
+// that can name more than one thing about the same version returns the rest
+// under their own keys. The caller passes them on to later strategies as
+// "<component>.<key>".
 const (
 	// ResultVersionKey holds the resolved version, without any component prefix.
 	ResultVersionKey = "version"
 
 	// ResultRefKey holds the git ref the version was read from.
 	ResultRefKey = "ref"
+
+	// ResultURLKey holds a location, for a strategy whose answer is something to
+	// fetch and not a version.
+	ResultURLKey = "url"
 )
 
 // Input keys a caller may pass.
 const (
-	// InputVersionKey asks for exactly this version in place of resolving one.
-	// Each strategy checks the version against what it can know, so a git tag
-	// strategy requires the tag to exist and a locked package requires the
-	// version to be locked.
-	InputVersionKey = "version"
+	// InputOverrideKey asks for exactly this in place of resolving. What it is
+	// depends on the strategy, and each checks it against what it can know. A git
+	// tag strategy reads it as a tag that must exist, a locked package as a
+	// version that must be locked, and a URL strategy as a whole URL that must
+	// exist.
+	InputOverrideKey = "override"
 
 	// InputSelectKey picks how a git tag strategy chooses when no version is
 	// named. Empty means the highest release, else the highest candidate.
@@ -45,6 +51,15 @@ const (
 	// InputConstraintKey is the major, minor or patch prefix a locked package
 	// must match, such as "1.34".
 	InputConstraintKey = "constraint"
+
+	// InputReleasesKey lists, separated by commas, the versions a strategy that
+	// cannot list them itself may choose from, such as the Ubuntu point
+	// releases an image is published for.
+	InputReleasesKey = "releases"
+
+	// InputValueKey is a declared answer that nothing derives, such as the path
+	// of a bootloader.
+	InputValueKey = "value"
 )
 
 // SelectCandidate asks for the highest release candidate and ignores releases.
@@ -55,6 +70,8 @@ const (
 	StrategyGitTag        = "gitTag"
 	StrategyLockedPackage = "lockedPackage"
 	StrategyMakeVar       = "makeVar"
+	StrategyOSImage       = "osImage"
+	StrategyURL           = "url"
 )
 
 // Resolver turns inputs into the values a plan records.
@@ -62,6 +79,48 @@ type Resolver interface {
 	// Resolve returns the resolved values. A resolver that needs an input it
 	// was not given fails, it never guesses.
 	Resolve(inputs map[string]string) (map[string]string, error)
+}
+
+// Validator is implemented by a resolver that can say, without doing any I/O,
+// whether the inputs a subject declares for it are ones it can resolve. The
+// inputs are the declared ones only: the constraint, the releases and the value.
+// A strategy knows what it takes and what it needs, so nothing else has to.
+type Validator interface {
+	Validate(inputs map[string]string) error
+}
+
+// Validate asks a resolver whether the declared inputs suit it. A resolver that
+// does not validate accepts them.
+func Validate(r Resolver, inputs map[string]string) error {
+	if v, ok := r.(Validator); ok {
+		return v.Validate(inputs)
+	}
+	return nil
+}
+
+// declared are the inputs a subject can declare for a dependency.
+var declared = []string{InputConstraintKey, InputReleasesKey, InputValueKey}
+
+// takesOnly rejects a declared input that is not among those allowed. One handed
+// to a strategy that ignores it would resolve by a rule nobody wrote.
+func takesOnly(inputs map[string]string, allowed ...string) error {
+	for _, k := range declared {
+		if inputs[k] != "" && !slices.Contains(allowed, k) {
+			return fmt.Errorf("takes no %s", k)
+		}
+	}
+	return nil
+}
+
+// needs rejects a missing input. One missing would only fail when a plan is
+// made.
+func needs(inputs map[string]string, keys ...string) error {
+	for _, k := range keys {
+		if inputs[k] == "" {
+			return fmt.Errorf("needs %s", k)
+		}
+	}
+	return nil
 }
 
 // New builds the resolver a registry entry names. repo is the repository root
@@ -90,6 +149,19 @@ func New(strategy string, with map[string]string, repo string) (Resolver, error)
 			path = DefaultToolVersions
 		}
 		return MakeVar{Dir: repo, Path: path, Var: with["var"]}, nil
+	case StrategyOSImage:
+		if err := checkWith(strategy, with, []string{"base", "from", "arch", "variant"}, []string{"path"}); err != nil {
+			return nil, err
+		}
+		return OSImage{
+			Base: with["base"], Path: with["path"], From: with["from"],
+			Arch: with["arch"], Variant: with["variant"],
+		}, nil
+	case StrategyURL:
+		if err := checkWith(strategy, with, nil, []string{"base"}); err != nil {
+			return nil, err
+		}
+		return URL{Base: with["base"]}, nil
 	case "":
 		return nil, fmt.Errorf("no strategy named")
 	default:
@@ -98,7 +170,7 @@ func New(strategy string, with map[string]string, repo string) (Resolver, error)
 }
 
 func strategies() []string {
-	return []string{StrategyGitTag, StrategyLockedPackage, StrategyMakeVar}
+	return []string{StrategyGitTag, StrategyLockedPackage, StrategyMakeVar, StrategyOSImage, StrategyURL}
 }
 
 // checkWith rejects a with map that lacks a required key or carries a key the

@@ -27,7 +27,7 @@ type GitTag struct {
 
 // Resolve returns the version and the tag it was read from.
 //
-// With InputVersionKey it checks that the version exists and returns it. With no
+// With InputOverrideKey it checks that the version exists and returns it. With no
 // version it returns the highest release, else the highest candidate, or only
 // the highest candidate under SelectCandidate. Release candidates are not
 // preferred over a release by default, because a release can be a hotfix cut
@@ -46,7 +46,7 @@ func (g GitTag) Resolve(inputs map[string]string) (map[string]string, error) {
 }
 
 func (g GitTag) pick(versions []string, inputs map[string]string) (string, error) {
-	if want := inputs[InputVersionKey]; want != "" {
+	if want := inputs[InputOverrideKey]; want != "" {
 		return g.exists(versions, want)
 	}
 
@@ -132,3 +132,6 @@ func (g GitTag) name() string {
 	}
 	return strings.TrimSuffix(g.TagPrefix, "/")
 }
+
+// Validate accepts no declared input, because a tag is found by prefix alone.
+func (GitTag) Validate(inputs map[string]string) error { return takesOnly(inputs) }
