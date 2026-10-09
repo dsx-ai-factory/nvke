@@ -163,22 +163,18 @@ type Tenant struct {
 // not from this suite, so the suite follows whatever deploy path the checkout
 // it stages carries.
 type Stack struct {
-	// Layout is where the exported assets keep the executor and the deploy
-	// path, which depends on the ref they came from. Zero is LayoutDeploy().
-	Layout Layout
-
-	Controller Image
-	Profiles   Image
-
-	// Assets is a checkout on the runner. AssetPaths, relative to it, are
-	// staged to the node with their layout intact, which the deploy path
-	// depends on: a release reaches its chart by relative path.
+	// Assets are the deploy path and the scripts that apply it, staged to
+	// the node with their layout intact, which the deploy path depends on: a
+	// release reaches its chart by relative path. ExportDeployAssets builds
+	// them.
 	//
 	// Nothing in the bootstrap reads them: nkectl pulls its charts from their
 	// repositories and embeds its values. These are the deploy's own
 	// installer, tree and scripts.
-	Assets     string
-	AssetPaths []string
+	Assets DeployAssets
+
+	Controller Image
+	Profiles   Image
 
 	// Provider is how the installed Cluster API provider reaches its
 	// infrastructure. Required: a stack with no way to create machines
@@ -205,10 +201,46 @@ type Stack struct {
 	ControllerEnv map[string]string
 }
 
+// DeployAssets are a ref's deploy path and the scripts that apply it,
+// exported onto the runner.
+type DeployAssets struct {
+	// Dir is the export. Layout.Export, relative to it, is what is staged.
+	Dir string
+	// Layout is where Dir keeps the executor and the deploy path, which
+	// depends on the ref it came from. Zero is CurrentLayout().
+	Layout DeployLayout
+}
+
+// ExportDeployAssets exports ref's deploy assets from repo in whichever
+// layout ref carries, and points the suite at the controller name they
+// install. cleanup removes the export; the caller owns when it runs.
+//
+// Call it before any machine is taken, not at deploy time. Reading the
+// controller's name is part of it, and a release that disagrees with an
+// explicitly set name should fail here on the runner rather than after a
+// node has been provisioned, and before any spec reads
+// controller.Namespace().
+func ExportDeployAssets(ctx context.Context, repo, ref string) (DeployAssets, func(), error) {
+	layout, err := ResolveLayout(ctx, repo, ref)
+	if err != nil {
+		return DeployAssets{}, nil, err
+	}
+	dir, err := ExportRef(ctx, repo, ref, layout.Export)
+	if err != nil {
+		return DeployAssets{}, nil, err
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	if err := AdoptControllerName(dir, layout.DeployPath); err != nil {
+		cleanup()
+		return DeployAssets{}, nil, err
+	}
+	return DeployAssets{Dir: dir, Layout: layout}, cleanup, nil
+}
+
 // stageAssets copies the deploy path onto the node, with the layout the
 // scripts in it expect.
 func (d Stack) stageAssets(ctx context.Context, s infra.Session) error {
-	archive, err := archiveAssets(d.Assets, d.AssetPaths)
+	archive, err := archiveAssets(d.Assets.Dir, d.Assets.Layout.Export)
 	if err != nil {
 		return err
 	}
@@ -252,7 +284,7 @@ func (d Stack) Deploy(ctx context.Context, s infra.Session, t DeployTarget) erro
 		return err
 	}
 
-	overlay, err := s.Fetch(ctx, path.Join(assetsDir, d.Layout.DeployPath, releaseSpire, "overlay.yaml"))
+	overlay, err := s.Fetch(ctx, path.Join(assetsDir, d.Assets.Layout.DeployPath, releaseSpire, "overlay.yaml"))
 	if err != nil {
 		return fmt.Errorf("read the deploy path's SPIRE overlay: %w", err)
 	}
@@ -290,8 +322,8 @@ func (d Stack) Deploy(ctx context.Context, s infra.Session, t DeployTarget) erro
 }
 
 func (d Stack) withDefaults() Stack {
-	if d.Layout.Executor == "" {
-		d.Layout = LayoutDeploy()
+	if d.Assets.Layout.Executor == "" {
+		d.Assets.Layout = CurrentLayout()
 	}
 	if d.StorageClassManifest == "" {
 		d.StorageClassManifest = defaultStorageClassManifest
@@ -397,12 +429,12 @@ func (d Stack) validate() error {
 	if !d.Profiles.valid() {
 		problems = append(problems, "profiles image needs a repository and a tag")
 	}
-	if d.Assets == "" {
+	if d.Assets.Dir == "" {
 		problems = append(problems, "no assets")
-	} else if _, err := os.Stat(d.Assets); err != nil {
+	} else if _, err := os.Stat(d.Assets.Dir); err != nil {
 		problems = append(problems, fmt.Sprintf("assets: %v", err))
 	}
-	for _, rel := range d.AssetPaths {
+	for _, rel := range d.Assets.Layout.Export {
 		if filepath.IsAbs(rel) || strings.HasPrefix(filepath.Clean(rel), "..") {
 			problems = append(problems, fmt.Sprintf("asset path %q is not inside the checkout", rel))
 		}
@@ -442,7 +474,7 @@ func (d Stack) commands(t DeployTarget, valuesDir string) []step {
 	// The flag that names the deploy path is the one thing the two executors
 	// spell differently.
 	target := ""
-	for i, arg := range d.Layout.TargetArgs(assetsDir) {
+	for i, arg := range d.Assets.Layout.TargetArgs(assetsDir) {
 		if i > 0 {
 			target += " "
 		}
@@ -453,7 +485,7 @@ func (d Stack) commands(t DeployTarget, valuesDir string) []step {
 		{"clusterctl init", env + "clusterctl init --wait-providers"},
 		{"default storage class", env + "kubectl apply -f " + shellQuote(d.StorageClassManifest) +
 			" && " + env + "kubectl patch storageclass " + shellQuote(d.StorageClassName) + " -p " + shellQuote(defaultClass)},
-		{"install " + d.Layout.DeployPath, env + "bash " + shellQuote(path.Join(assetsDir, d.Layout.Executor)) + " install" +
+		{"install " + d.Assets.Layout.DeployPath, env + "bash " + shellQuote(path.Join(assetsDir, d.Assets.Layout.Executor)) + " install" +
 			" " + target +
 			" --config " + shellQuote(path.Join(valuesDir, "bootstrap-config.json")) +
 			" " + values(releaseController) +

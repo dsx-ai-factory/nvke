@@ -72,7 +72,7 @@ func TestExportRefMissingCommit(t *testing.T) {
 	git(t, repo, "init", "-q")
 	// An empty repository has no HEAD commit, so DeployPathRef does not
 	// resolve and the error has to name the ref rather than the git plumbing.
-	_, err := ExportRef(context.Background(), repo, DeployPathRef, LayoutDeploy().Export)
+	_, err := ExportRef(context.Background(), repo, DeployPathRef, CurrentLayout().Export)
 	if err == nil || !strings.Contains(err.Error(), DeployPathRef) || !strings.Contains(err.Error(), "is not a commit") {
 		t.Fatalf("err = %v", err)
 	}
@@ -107,10 +107,10 @@ func TestExtractRefusesEscapes(t *testing.T) {
 func TestResolveLayout(t *testing.T) {
 	for _, tc := range []struct {
 		name, executor string
-		want           Layout
+		want           DeployLayout
 	}{
-		{"a release from #1291 onwards", LayoutDeploy().Executor, LayoutDeploy()},
-		{"a release before it", LayoutBuild().Executor, LayoutBuild()},
+		{"a release from #1291 onwards", CurrentLayout().Executor, CurrentLayout()},
+		{"a release before it", LegacyLayout().Executor, LegacyLayout()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := t.TempDir()
@@ -140,7 +140,7 @@ func TestResolveLayout(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected an error")
 		}
-		for _, want := range []string{LayoutDeploy().Executor, LayoutBuild().Executor} {
+		for _, want := range []string{CurrentLayout().Executor, LegacyLayout().Executor} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("the error does not name %s: %v", want, err)
 			}
@@ -155,7 +155,7 @@ func TestResolveLayout(t *testing.T) {
 // exports one tree and runs an executor from another cannot work, so each
 // one has to carry its own export list.
 func TestLayoutsExportWhatTheirExecutorNeeds(t *testing.T) {
-	for _, layout := range []Layout{LayoutDeploy(), LayoutBuild()} {
+	for _, layout := range []DeployLayout{CurrentLayout(), LegacyLayout()} {
 		t.Run(layout.Name, func(t *testing.T) {
 			root := strings.SplitN(layout.Executor, "/", 2)[0]
 			if !slices.Contains(layout.Export, root) {
@@ -175,8 +175,8 @@ func TestLayoutsExportWhatTheirExecutorNeeds(t *testing.T) {
 
 	// The specific mistake: main's list requested deploy/ from tags that
 	// have never had it.
-	if slices.Contains(LayoutBuild().Export, "deploy") {
-		t.Errorf("the build layout exports deploy/, which no tag before #1291 has: %v", LayoutBuild().Export)
+	if slices.Contains(LegacyLayout().Export, "deploy") {
+		t.Errorf("the build layout exports deploy/, which no tag before #1291 has: %v", LegacyLayout().Export)
 	}
 }
 
@@ -185,11 +185,11 @@ func TestLayoutsExportWhatTheirExecutorNeeds(t *testing.T) {
 // passing either form to the other executor is rejected as an unknown flag.
 func TestLayoutTargetArgs(t *testing.T) {
 	for _, tc := range []struct {
-		layout Layout
+		layout DeployLayout
 		want   []string
 	}{
-		{LayoutDeploy(), []string{"--deploy-path", "/assets/deploy/nico"}},
-		{LayoutBuild(), []string{"--sbom", "/assets/controller/deploy", "--target", "nke-sbom"}},
+		{CurrentLayout(), []string{"--deploy-path", "/assets/deploy/nico"}},
+		{LegacyLayout(), []string{"--sbom", "/assets/controller/deploy", "--target", "nke-sbom"}},
 	} {
 		t.Run(tc.layout.Name, func(t *testing.T) {
 			got := tc.layout.TargetArgs("/assets")
@@ -288,8 +288,8 @@ func TestLayoutsMatchTheReleaseTags(t *testing.T) {
 // directory, not within it.
 func TestControllerReleasePathFollowsTheDeployPath(t *testing.T) {
 	for _, tc := range []struct{ deployPath, want string }{
-		{LayoutDeploy().DeployPath, "deploy/nico/controller/release.yaml"},
-		{LayoutBuild().DeployPath, "controller/deploy/nke-sbom/controller/release.yaml"},
+		{CurrentLayout().DeployPath, "deploy/nico/controller/release.yaml"},
+		{LegacyLayout().DeployPath, "controller/deploy/nke-sbom/controller/release.yaml"},
 	} {
 		if got := ControllerReleasePath(tc.deployPath); got != tc.want {
 			t.Errorf("ControllerReleasePath(%q) = %q, want %q", tc.deployPath, got, tc.want)

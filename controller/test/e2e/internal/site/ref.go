@@ -36,7 +36,7 @@ const (
 	nktpChartDir = "nktp/deploy/charts/nktp"
 )
 
-// Layout is where a ref keeps the deploy assets, and how the executor it
+// DeployLayout is where a ref keeps the deploy assets, and how the executor it
 // ships is called. The lane exports from the release tag under
 // qualification, so it reads trees older than itself and cannot assume they
 // are shaped like the checkout it was built from.
@@ -45,7 +45,7 @@ const (
 // path moved to a top-level deploy/ in #1291; every tag cut before that
 // keeps them under build/ and controller/deploy/nke-sbom. A new entry is
 // owed to this list whenever they move again.
-type Layout struct {
+type DeployLayout struct {
 	// Name identifies the layout in errors, as the directory it is built
 	// around.
 	Name string
@@ -57,17 +57,17 @@ type Layout struct {
 	DeployPath string
 	// Export is what to pull out of the ref.
 	Export []string
-	// sbomStyleTarget selects the deploy path the way the older executor
+	// legacyTargetFlags selects the deploy path the way the older executor
 	// does. See TargetArgs.
-	sbomStyleTarget bool
+	legacyTargetFlags bool
 }
 
-// LayoutDeploy() is the layout from #1291 onwards.
+// CurrentLayout() is the layout from #1291 onwards.
 //
 // A function and not a package variable, so each caller gets its own Export
 // and appending to one cannot reshape the other's.
-func LayoutDeploy() Layout {
-	return Layout{
+func CurrentLayout() DeployLayout {
+	return DeployLayout{
 		Name:       "deploy",
 		Executor:   "deploy/nke-deploy.sh",
 		DeployPath: "deploy/nico",
@@ -75,14 +75,14 @@ func LayoutDeploy() Layout {
 	}
 }
 
-// LayoutBuild() is the layout every release tag before #1291 carries.
-func LayoutBuild() Layout {
-	return Layout{
-		Name:            "build",
-		Executor:        "build/use-nke-sbom.sh",
-		DeployPath:      deployDir + "/nke-sbom",
-		Export:          []string{"build", deployDir, hackDir, nktpChartDir},
-		sbomStyleTarget: true,
+// LegacyLayout() is the layout every release tag before #1291 carries.
+func LegacyLayout() DeployLayout {
+	return DeployLayout{
+		Name:              "build",
+		Executor:          "build/use-nke-sbom.sh",
+		DeployPath:        deployDir + "/nke-sbom",
+		Export:            []string{"build", deployDir, hackDir, nktpChartDir},
+		legacyTargetFlags: true,
 	}
 }
 
@@ -90,9 +90,9 @@ func LayoutBuild() Layout {
 // executor. It is the whole command-line difference between the two:
 // `--sbom DIR --target NAME` became `--deploy-path DIR/NAME`. Every other
 // flag they take is spelled the same.
-func (l Layout) TargetArgs(assets string) []string {
+func (l DeployLayout) TargetArgs(assets string) []string {
 	full := path.Join(assets, l.DeployPath)
-	if l.sbomStyleTarget {
+	if l.legacyTargetFlags {
 		return []string{"--sbom", path.Dir(full), "--target", path.Base(full)}
 	}
 	return []string{"--deploy-path", full}
@@ -110,24 +110,24 @@ func ControllerReleasePath(deployPath string) string {
 // It probes for each executor rather than reading the version, because the
 // move is a property of the tree and a version string only correlates with
 // it: a backport, a branch or a hand-cut tag can carry either shape.
-func ResolveLayout(ctx context.Context, repo, ref string) (Layout, error) {
+func ResolveLayout(ctx context.Context, repo, ref string) (DeployLayout, error) {
 	// That ref resolves at all, first. This runs ahead of ExportRef, which
 	// is where that check used to live, and without it a version with a
 	// typo in it reports that the executor moved and a layout is owed --
 	// sending the reader to add an entry for a ref that does not exist.
 	if err := exec.CommandContext(ctx, "git", "-C", repo, "cat-file", "-e", ref+"^{commit}").Run(); err != nil {
-		return Layout{}, fmt.Errorf("resolve layout: %s is not a commit in %s: %w", ref, repo, err)
+		return DeployLayout{}, fmt.Errorf("resolve layout: %s is not a commit in %s: %w", ref, repo, err)
 	}
-	for _, layout := range []Layout{LayoutDeploy(), LayoutBuild()} {
+	for _, layout := range []DeployLayout{CurrentLayout(), LegacyLayout()} {
 		probe := exec.CommandContext(ctx, "git", "-C", repo, "cat-file", "-e", ref+":"+layout.Executor)
 		if probe.Run() == nil {
 			return layout, nil
 		}
 	}
-	return Layout{}, fmt.Errorf(
+	return DeployLayout{}, fmt.Errorf(
 		"%s in %s carries neither %s nor %s, so the deploy assets cannot be placed: "+
 			"if the executor moved again, add the layout it moved to",
-		ref, repo, LayoutDeploy().Executor, LayoutBuild().Executor,
+		ref, repo, CurrentLayout().Executor, LegacyLayout().Executor,
 	)
 }
 

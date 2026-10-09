@@ -47,7 +47,7 @@ func deployPath(t *testing.T) string {
 	if exec.CommandContext(context.Background(), "git", "-C", repo, "cat-file", "-e", DeployPathRef+"^{commit}").Run() != nil {
 		t.Skipf("%s does not resolve in this clone", DeployPathRef)
 	}
-	dir, err := ExportRef(context.Background(), repo, DeployPathRef, LayoutDeploy().Export)
+	dir, err := ExportRef(context.Background(), repo, DeployPathRef, CurrentLayout().Export)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 	// that deploy path installs, not whatever a lane is configured for. The
 	// two are the same thing read from the same file, which is the point of
 	// controllerNameFromDeployPath.
-	name, err := controllerNameFromDeployPath(assets, LayoutDeploy().DeployPath)
+	name, err := controllerNameFromDeployPath(assets, CurrentLayout().DeployPath)
 	if err != nil {
 		t.Fatalf("reading the deploy path's controller name: %v", err)
 	}

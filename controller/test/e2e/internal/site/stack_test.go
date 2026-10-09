@@ -56,9 +56,10 @@ var stackCheckout = func() string {
 }()
 
 func testSBOM() Stack {
+	layout := CurrentLayout()
+	layout.Export = []string{"deploy"}
 	return Stack{
-		Assets:     stackCheckout,
-		AssetPaths: []string{"deploy"},
+		Assets:     DeployAssets{Dir: stackCheckout, Layout: layout},
 		Controller: Image{Repository: "nvcr.io/nke/cwe", Tag: "v1.2.3"},
 		Profiles:   Image{Repository: "nvcr.io/nke/profiles", Tag: "run-42"},
 		Provider:   NewNico("https://forge.example", "org", "tok"),
@@ -338,7 +339,7 @@ func assetsInstalling(t *testing.T, deployPath, name string) string {
 // qualifies tags. Nothing configured can be right for both, so the suite
 // reads the name from the thing that installs it.
 func TestAdoptControllerNameTakesTheDeployPaths(t *testing.T) {
-	for _, layout := range []Layout{LayoutDeploy(), LayoutBuild()} {
+	for _, layout := range []DeployLayout{CurrentLayout(), LegacyLayout()} {
 		t.Run(layout.Name, func(t *testing.T) {
 			const deployed = "cloud-workflow-engine"
 			// Unset, as CI leaves them: no repository variable supplies either.
@@ -382,8 +383,8 @@ func TestAdoptControllerNameRejectsAnExplicitConflict(t *testing.T) {
 			}
 			t.Setenv(env, "nke-controller")
 
-			assets := assetsInstalling(t, LayoutBuild().DeployPath, "cloud-workflow-engine")
-			err := AdoptControllerName(assets, LayoutBuild().DeployPath)
+			assets := assetsInstalling(t, LegacyLayout().DeployPath, "cloud-workflow-engine")
+			err := AdoptControllerName(assets, LegacyLayout().DeployPath)
 			if err == nil {
 				t.Fatal("an explicit name disagreeing with the deploy path was accepted")
 			}
@@ -405,8 +406,8 @@ func TestAdoptControllerNameAcceptsAnAgreeingSetting(t *testing.T) {
 	t.Setenv(controller.LegacyEnvNamespace, "")
 	t.Setenv(controller.LegacyEnvService, "")
 
-	assets := assetsInstalling(t, LayoutBuild().DeployPath, deployed)
-	if err := AdoptControllerName(assets, LayoutBuild().DeployPath); err != nil {
+	assets := assetsInstalling(t, LegacyLayout().DeployPath, deployed)
+	if err := AdoptControllerName(assets, LegacyLayout().DeployPath); err != nil {
 		t.Fatalf("an agreeing setting was rejected: %v", err)
 	}
 }

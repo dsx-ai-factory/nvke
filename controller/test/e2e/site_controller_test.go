@@ -755,27 +755,15 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 	if err != nil {
 		return site.Stack{}, nil, err
 	}
-	// Which directories to export, and what the executor in them is called,
-	// are properties of ref rather than of this checkout: the lane qualifies
-	// release tags, and the deploy assets have moved between releases.
-	layout, err := site.ResolveLayout(context.Background(), repo, ref)
+	// Here, in BeforeAll, rather than when the stack deploys: this also
+	// takes the controller's name from the release, which has to happen
+	// before a machine is taken and before any spec reads it.
+	assets, cleanupAssets, err := site.ExportDeployAssets(context.Background(), repo, ref)
 	if err != nil {
 		return site.Stack{}, nil, err
 	}
-	assets, err := site.ExportRef(context.Background(), repo, ref, layout.Export)
-	if err != nil {
-		return site.Stack{}, nil, err
-	}
-	DeferCleanup(func() { _ = os.RemoveAll(assets) })
+	DeferCleanup(cleanupAssets)
 
-	// Before a machine is taken: the deploy path chooses the name the
-	// controller is installed under, so the suite takes it from there rather
-	// than from a setting that has to be remembered. Done here rather than
-	// beside the spec because the stack is what exports these assets and so
-	// what knows the name they install.
-	if nameErr := site.AdoptControllerName(assets, layout.DeployPath); nameErr != nil {
-		return site.Stack{}, nil, nameErr
-	}
 	images := cfg.Site.Images
 	profiles := site.Image{Repository: images.Profiles.Repository, Tag: images.Profiles.Tag}
 	user, token := os.Getenv(envRegistryUser), os.Getenv(envRegistryToken)
@@ -794,8 +782,6 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 	GinkgoLogr.Info("deploying the stack", "controller", controller.Ref(), "profiles", profiles.Ref())
 	return site.Stack{
 		Assets:     assets,
-		AssetPaths: layout.Export,
-		Layout:     layout,
 		Controller: controller,
 		Profiles:   profiles,
 		Provider:   deployConfig,
