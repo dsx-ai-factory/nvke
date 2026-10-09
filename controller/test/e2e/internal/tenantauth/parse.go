@@ -33,7 +33,7 @@ func parseOutput(output string) VerifyResult {
 		case "CANI":
 			if len(fields) >= 5 {
 				check := Check{Verb: fields[1], Resource: fields[2], Namespace: decodeNsout(fields[3])}
-				result.CanI[check] = fields[4] == "yes"
+				result.CanI[check] = fields[4] == resultYes
 			}
 		case "LISTNODES":
 			if len(fields) >= 2 {

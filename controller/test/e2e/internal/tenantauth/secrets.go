@@ -5,11 +5,13 @@ package tenantauth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -19,6 +21,40 @@ const (
 	trustBundleSecretKey = "ca.crt"
 )
 
+// spireRejectionKubeconfig uses admin trust to probe clusters that do not publish SPIRE credentials.
+func spireRejectionKubeconfig(ctx context.Context, c client.Client, clusterName string) ([]byte, error) {
+	var secret corev1.Secret
+	secretName := adminKubeconfigSecretName(clusterName)
+	if err := c.Get(ctx, client.ObjectKey{Namespace: secretsNamespace, Name: secretName}, &secret); err != nil {
+		return nil, fmt.Errorf("getting admin kubeconfig secret %s/%s: %w", secretsNamespace, secretName, err)
+	}
+	config, err := clientcmd.Load(secret.Data[kubeconfigSecretKey])
+	if err != nil {
+		// Parser errors can quote admin credentials, so omit them from probe errors.
+		return nil, fmt.Errorf("parsing admin kubeconfig from secret %s/%s", secretsNamespace, secretName)
+	}
+	current := config.Contexts[config.CurrentContext]
+	if current == nil {
+		return nil, errors.New("admin kubeconfig has no current context")
+	}
+	cluster := config.Clusters[current.Cluster]
+	if cluster == nil || cluster.Server == "" || len(cluster.CertificateAuthorityData) == 0 || cluster.InsecureSkipTLSVerify {
+		return nil, errors.New("admin kubeconfig has invalid cluster trust")
+	}
+	probe := clientcmdapi.NewConfig()
+	probe.Clusters["tenant"] = &clientcmdapi.Cluster{
+		Server: cluster.Server, CertificateAuthorityData: cluster.CertificateAuthorityData, TLSServerName: cluster.TLSServerName,
+	}
+	probe.AuthInfos["spiffe"] = &clientcmdapi.AuthInfo{}
+	probe.Contexts["tenant"] = &clientcmdapi.Context{Cluster: "tenant", AuthInfo: "spiffe"}
+	probe.CurrentContext = "tenant"
+	raw, err := clientcmd.Write(*probe)
+	if err != nil {
+		return nil, fmt.Errorf("serializing SPIRE rejection kubeconfig: %w", err)
+	}
+	return raw, nil
+}
+
 // AssertKubeconfigAndTrustBundle checks that the OIDC kubeconfig and trust-bundle
 // secrets exist on the management cluster. Their presence proves the OIDC
 // reconcile ran for this cluster.
@@ -27,6 +63,43 @@ func AssertKubeconfigAndTrustBundle(ctx context.Context, c client.Client, cluste
 		return err
 	}
 	return assertSecretKey(ctx, c, trustBundleSecretName(clusterName), trustBundleSecretKey)
+}
+
+// AssertSPIREKubeconfigHasNoFallback checks that the published kubeconfig can
+// authenticate only through the SPIRE exec plugin.
+func AssertSPIREKubeconfigHasNoFallback(ctx context.Context, c client.Client, clusterName string) error {
+	var secret corev1.Secret
+	secretName := kubeconfigSecretName(clusterName)
+	if err := c.Get(ctx, client.ObjectKey{Namespace: secretsNamespace, Name: secretName}, &secret); err != nil {
+		return fmt.Errorf("getting secret %s/%s: %w", secretsNamespace, secretName, err)
+	}
+	config, err := clientcmd.Load(secret.Data[kubeconfigSecretKey])
+	if err != nil {
+		// Parser errors can quote credentials, so report only the secret location.
+		return fmt.Errorf("parsing kubeconfig from secret %s/%s", secretsNamespace, secretName)
+	}
+	if len(config.Contexts) != 1 || len(config.Clusters) != 1 || len(config.AuthInfos) != 1 {
+		return fmt.Errorf("published SPIRE kubeconfig must contain exactly one context, cluster, and user")
+	}
+	contextConfig := config.Contexts[config.CurrentContext]
+	if contextConfig == nil {
+		return fmt.Errorf("kubeconfig current context %q does not exist", config.CurrentContext)
+	}
+	cluster := config.Clusters[contextConfig.Cluster]
+	authInfo := config.AuthInfos[contextConfig.AuthInfo]
+	if cluster == nil || cluster.Server == "" || len(cluster.CertificateAuthorityData) == 0 || cluster.InsecureSkipTLSVerify {
+		return fmt.Errorf("published SPIRE kubeconfig has invalid cluster trust")
+	}
+	if authInfo == nil || authInfo.Exec == nil || authInfo.Exec.Command != pluginInstallPath {
+		return fmt.Errorf("published SPIRE kubeconfig does not select the SPIRE exec plugin")
+	}
+	if authInfo.Token != "" || authInfo.TokenFile != "" || authInfo.Username != "" || authInfo.Password != "" ||
+		authInfo.ClientCertificate != "" || len(authInfo.ClientCertificateData) != 0 ||
+		authInfo.ClientKey != "" || len(authInfo.ClientKeyData) != 0 || authInfo.AuthProvider != nil ||
+		authInfo.Impersonate != "" || authInfo.ImpersonateUID != "" || len(authInfo.ImpersonateGroups) != 0 || len(authInfo.ImpersonateUserExtra) != 0 {
+		return fmt.Errorf("published SPIRE kubeconfig contains fallback or impersonation credentials")
+	}
+	return nil
 }
 
 // KubeconfigExecEnv returns one environment value from the SPIRE exec
@@ -43,7 +116,8 @@ func KubeconfigExecEnv(ctx context.Context, c client.Client, clusterName, name s
 	}
 	config, err := clientcmd.Load(raw)
 	if err != nil {
-		return "", fmt.Errorf("parsing kubeconfig from secret %s/%s: %w", secretsNamespace, secretName, err)
+		// Parser errors can quote credentials, so report only the secret location.
+		return "", fmt.Errorf("parsing kubeconfig from secret %s/%s", secretsNamespace, secretName)
 	}
 	contextConfig, ok := config.Contexts[config.CurrentContext]
 	if !ok {
