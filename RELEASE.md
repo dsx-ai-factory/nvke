@@ -247,7 +247,7 @@ gh release download agent/v0.2.0 --repo dsx-ai-factory/nke \
   --pattern '*.spdx.json'
 
 gh release download os-image/v0.2.0 --repo dsx-ai-factory/nke \
-  --pattern 'nke-node-fde-ubuntu-26.04-amd64.spdx.json'
+  --pattern 'nke-node-fde-ubuntu-26.04.1-amd64.spdx.json'
 ```
 
 Each is named in that release's `checksums.txt`, and `checksums.txt` carries a

@@ -653,6 +653,19 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
+      # The SBOM pin lives in make/tool-versions.mk, so this job needs the tree
+      # to read it. Only the make files are used here; no build runs.
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Version pins come from make/versions.mk, so `make show-versions` and CI
+      # cannot disagree.
+      - name: Read the pinned syft version
+        id: versions
+        run: echo "syft_version=$(make --no-print-directory print-SYFT_VERSION)" >> "${GITHUB_OUTPUT}"
+
       # `$oauthtoken` is NGC's literal username, not a variable reference.
       - name: Log in to NVCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -688,6 +701,9 @@ jobs:
         with:
           image: ${{ steps.target.outputs.ref }}
           format: spdx-json
+          # Without this the action uses its own bundled syft, which would
+          # drift from the pin the other three SBOM workflows honour.
+          syft-version: ${{ steps.versions.outputs.syft_version }}
           artifact-name: cluster-api-provider-provisioned-sbom-linux-${{ matrix.arch }}.spdx.json
           upload-artifact: true
           # No release exists to attach to yet. Flip this when one does.
