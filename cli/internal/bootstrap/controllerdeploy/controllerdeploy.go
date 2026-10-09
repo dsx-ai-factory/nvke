@@ -423,14 +423,21 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	}
 	cwePort := effectiveCWEPort(cfg)
 
-	// No values file and no version flag: the chart carries its own defaults
-	// -- the databases CWE and Temporal expect, the Service name both dial,
-	// and the image pinned by digest -- and its version is the binary's.
-	// Only the password is supplied per run.
+	// No version flag: the chart's version is the binary's. The chart carries
+	// its own defaults -- the Temporal databases, the Service name both dial,
+	// and the image pinned by digest -- and the values file renames only the
+	// controller's database. The password is supplied per run.
+	postgresValues, postgresCleanup, err := writeEmbeddedFile(postgresValuesFile)
+	if err != nil {
+		return err
+	}
+	defer postgresCleanup()
+
 	e.log.Info("installing postgres", "namespace", postgresNamespace, "chart", postgresChartPath)
 	if _, err := e.helm(ctx, kubeconfigPath,
 		"upgrade", "--install", postgresReleaseName, postgresChartPath,
 		"--namespace", postgresNamespace, "--create-namespace",
+		"--values", postgresValues,
 		"--set-string", "auth.password="+password,
 		"--wait", "--timeout", helmTimeout.String(),
 	); err != nil {

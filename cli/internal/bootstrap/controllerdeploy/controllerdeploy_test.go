@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -41,6 +42,10 @@ type fakeRunner struct {
 	// chartFiles holds, per release, the files present in the chart directory
 	// that release's helm install was pointed at. See captureChart.
 	chartFiles map[string]map[string]bool
+
+	// valuesFiles holds, per release, the contents of the --values file its
+	// helm install was pointed at. See captureValues.
+	valuesFiles map[string]string
 }
 
 type fakeOutput struct {
@@ -109,10 +114,42 @@ func (f *fakeRunner) captureChart(name string, args []string) {
 	}
 }
 
+// captureValues records the contents of the --values file each helm install
+// was pointed at, for the same reason captureApply exists: Deploy removes the
+// file as soon as the install returns.
+func (f *fakeRunner) captureValues(name string, args []string) {
+	if name != "helm" {
+		return
+	}
+	release := ""
+	for i, arg := range args {
+		if arg == "--install" && i+1 < len(args) {
+			release = args[i+1]
+		}
+	}
+	if release == "" {
+		return
+	}
+	for i, arg := range args {
+		if arg == "--values" && i+1 < len(args) {
+			body, err := os.ReadFile(args[i+1])
+			if err != nil {
+				return
+			}
+			if f.valuesFiles == nil {
+				f.valuesFiles = map[string]string{}
+			}
+			f.valuesFiles[release] = string(body)
+			return
+		}
+	}
+}
+
 func (f *fakeRunner) Run(_ context.Context, name string, args ...string) (string, error) {
 	f.calls = append(f.calls, fakeCall{name: name, args: args})
 	f.captureApply(name, args)
 	f.captureChart(name, args)
+	f.captureValues(name, args)
 	idx := len(f.calls) - 1
 	if idx < len(f.outputs) {
 		return f.outputs[idx].output, f.outputs[idx].err
@@ -332,9 +369,10 @@ func TestDeploy_EnablesPostInitCNI(t *testing.T) {
 }
 
 // TestDeploy_InstallsPostgresFromTheEmbeddedChart: Postgres comes from the
-// binary, like the controller chart. Nothing is pulled, so the call carries
-// neither a chart version nor a values file -- the chart's own values hold the
-// databases, the Service name both consumers dial, and the pinned image.
+// binary, like the controller chart. Nothing is pulled, so the call carries no
+// chart version. Its one values file renames the controller's database; the
+// chart's own values hold the Temporal databases, the Service name both
+// consumers dial, and the pinned image.
 func TestDeploy_InstallsPostgresFromTheEmbeddedChart(t *testing.T) {
 	runner := &fakeRunner{}
 	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", testConfig(t)); err != nil {
@@ -349,10 +387,18 @@ func TestDeploy_InstallsPostgresFromTheEmbeddedChart(t *testing.T) {
 	if !runner.chartFiles[postgresReleaseName]["templates/postgresql.yaml"] {
 		t.Errorf("the chart installed for postgres is not the embedded one: %v", runner.chartFiles[postgresReleaseName])
 	}
-	for _, unwanted := range []string{"--version", "--values"} {
-		if strings.Contains(postgres, unwanted+" ") {
-			t.Errorf("postgres call passes %s, but nothing is pulled and the chart carries its own values: %q", unwanted, postgres)
-		}
+	if strings.Contains(postgres, "--version ") {
+		t.Errorf("postgres call passes --version, but nothing is pulled: %q", postgres)
+	}
+	if !strings.Contains(postgres, "--values ") {
+		t.Errorf("postgres call = %q, want the values file that names the controller's database", postgres)
+	}
+	want, err := fs.ReadFile(manifestsFS, postgresValuesFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := runner.valuesFiles[postgresReleaseName]; got != string(want) {
+		t.Errorf("postgres --values file = %q, want the embedded %s", got, postgresValuesFile)
 	}
 	if !strings.Contains(postgres, "auth.password=test-password") {
 		t.Errorf("postgres call = %q, want the password supplied per run", postgres)

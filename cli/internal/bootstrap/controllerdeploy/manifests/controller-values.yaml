@@ -54,7 +54,7 @@ readinessProbe:
 
 appDb:
   url: postgres-postgresql.postgres.svc.cluster.local:5432
-  dbName: cloud-workflow
+  dbName: nke-controller
   postgresUser: postgres
   sslMode: disable
 

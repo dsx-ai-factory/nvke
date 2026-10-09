@@ -16,6 +16,7 @@ import "embed"
 var manifestsFS embed.FS
 
 const (
+	postgresValuesFile = "manifests/postgres-values.yaml"
 	temporalValuesFile = "manifests/temporal-values.yaml"
 	spireValuesFile    = "manifests/spire-values.yaml"
 	spireNodePortFile  = "manifests/spire-server-nodeport.yaml"
