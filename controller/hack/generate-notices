@@ -52,6 +52,14 @@ OUTPUT="${OUTPUT:-${MODULE_ROOT}/THIRD_PARTY_NOTICES.md}"
 # PACKAGES entries are relative to this module.
 read -r -a PACKAGES <<< "${PACKAGES:-./cmd/worker ../cluster-api-provider-provisioned/cmd/manager}"
 
+# What the header says the file covers. cli and os-image share this script and
+# keep the original text; only a file that also covers the provider manager names it.
+SCOPE=$'the released\n`cloud-workflow-engine` worker binary'
+case " ${PACKAGES[*]} " in
+    *cluster-api-provider-provisioned/cmd/manager*)
+        SCOPE=$'the released\n`cloud-workflow-engine` worker binary and the\n`cluster-api-provider-provisioned` manager binary' ;;
+esac
+
 # Pinned, not inherited from the host — see the header. Matches the primary
 # architecture of the published image; the Dockerfile builds GOOS=linux.
 export GOOS=linux
@@ -311,9 +319,9 @@ DRAFT_FILE="$(mktemp "${TMPDIR:-/tmp}/cwe-notices-out.XXXXXX")"
 
 NVIDIA Cloud Workflow Engine (CWE)
 
-This file lists every third-party Go module statically linked into the released
-`cloud-workflow-engine` worker binary and the `cluster-api-provider-provisioned`
-manager binary, along with the verbatim text of each module's license.
+EOF
+    printf 'This file lists every third-party Go module statically linked into %s, along with the verbatim text of each\nmodule'\''s license.\n' "${SCOPE}"
+    cat <<'EOF'
 
 Standard library packages are excluded — their license is covered by the Go
 distribution. First-party NVIDIA modules are excluded as they are not

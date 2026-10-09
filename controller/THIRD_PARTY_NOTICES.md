@@ -3,8 +3,9 @@
 NVIDIA Cloud Workflow Engine (CWE)
 
 This file lists every third-party Go module statically linked into the released
-`cloud-workflow-engine` worker binary and the `cluster-api-provider-provisioned`
-manager binary, along with the verbatim text of each module's license.
+`cloud-workflow-engine` worker binary and the
+`cluster-api-provider-provisioned` manager binary, along with the verbatim text of each
+module's license.
 
 Standard library packages are excluded — their license is covered by the Go
 distribution. First-party NVIDIA modules are excluded as they are not
