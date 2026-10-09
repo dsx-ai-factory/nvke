@@ -224,7 +224,7 @@ func detectAuthnEnforcement(ctx context.Context, clientset kubernetes.Interface)
 		return "", fmt.Errorf("getting Deployment %s/%s: %w", controller.Namespace(), controller.Deployment(), err)
 	}
 
-	container := cweContainer(deployment)
+	container := controllerContainer(deployment)
 	if container == nil {
 		return "", fmt.Errorf("deployment %s/%s has no container named %s", controller.Namespace(), controller.Deployment(), controller.Deployment())
 	}
@@ -238,9 +238,9 @@ func detectAuthnEnforcement(ctx context.Context, clientset kubernetes.Interface)
 	return authnModeEnforcing, nil
 }
 
-// cweContainer picks the NKE container by name: a scan over all of them would
+// controllerContainer picks the NKE container by name: a scan over all of them would
 // read a sidecar's PERMISSIVE_MODE as NKE's.
-func cweContainer(deployment *appsv1.Deployment) *corev1.Container {
+func controllerContainer(deployment *appsv1.Deployment) *corev1.Container {
 	for i := range deployment.Spec.Template.Spec.Containers {
 		if deployment.Spec.Template.Spec.Containers[i].Name == controller.Deployment() {
 			return &deployment.Spec.Template.Spec.Containers[i]

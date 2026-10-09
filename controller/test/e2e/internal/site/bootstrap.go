@@ -54,7 +54,7 @@ type Cluster struct {
 // the runner.
 //
 // It stops there. Installing the NKE stack is a Deployer's job and checking
-// the controller is ProbeCWE's, and a caller that wants neither simply does not call
+// the controller is ProbeController's, and a caller that wants neither simply does not call
 // them. That is what lets a run stop after Kubernetes without a do-nothing
 // deployer to express it.
 //

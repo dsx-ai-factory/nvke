@@ -274,9 +274,9 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			if !deployed {
 				Skip("the stack was not deployed")
 			}
-			version, err := site.ProbeCWE(ctx, cluster.Kubeconfig, 0, 0)
+			version, err := site.ProbeController(ctx, cluster.Kubeconfig, 0, 0)
 			Expect(err).NotTo(HaveOccurred(), "the controller should become healthy")
-			GinkgoLogr.Info("site controller", "cweVersion", version)
+			GinkgoLogr.Info("site controller", "controllerVersion", version)
 			Expect(version).To(Equal(stack.Controller.Tag),
 				"the controller should report the version the run deployed")
 		}, NodeTimeout(15*time.Minute))

@@ -120,7 +120,7 @@ func TestClusterStateSurvivesANewlineEatingTransport(t *testing.T) {
 // The suite's own default is nke-controller, so the test configures the
 // legacy name a site like that one runs under: only then does reading
 // nke-controller mean the collector ignored the configuration.
-func TestClusterStateReadsTheNamespaceCWEIsDeployedInto(t *testing.T) {
+func TestClusterStateReadsTheNamespaceControllerIsDeployedInto(t *testing.T) {
 	t.Setenv(controller.EnvNamespace, "cloud-workflow-engine")
 	t.Setenv(controller.EnvService, "cloud-workflow-engine")
 	script := clusterStateScript()

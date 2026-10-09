@@ -27,33 +27,33 @@ import (
 )
 
 const (
-	CWEGofailWorkerBinaryEnv = "NKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY"
+	ControllerGofailWorkerBinaryEnv = "NKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY"
 	// legacyWorkerBinaryEnv is a deprecated alias; nke#1399 removes it.
-	legacyWorkerBinaryEnv    = "CWE_GOFAIL_E2E_WORKER_BINARY"
-	CWEGofailFailpointName   = "CWERunbookWorkerCrash"
-	CWEGofailWorkerCrashLine = "cwe-gofail-runbook-worker-crash"
+	legacyWorkerBinaryEnv           = "CWE_GOFAIL_E2E_WORKER_BINARY"
+	ControllerGofailFailpointName   = "CWERunbookWorkerCrash"
+	ControllerGofailWorkerCrashLine = "cwe-gofail-runbook-worker-crash"
 
-	// CWEGofailExecutionErrorFailpoint fails the named runbook immediately
+	// ControllerGofailExecutionErrorFailpoint fails the named runbook immediately
 	// instead of hanging it, for scenarios about retry budgets rather than
 	// heartbeat loss.
-	CWEGofailExecutionErrorFailpoint = "CWERunbookExecutionError"
-	cweWorkerReadyTimeout            = 20 * time.Second
-	cweGofailRequestTimeout          = 5 * time.Second
-	cweWorkerReadyLog                = "Starting Temporal worker"
+	ControllerGofailExecutionErrorFailpoint = "CWERunbookExecutionError"
+	controllerWorkerReadyTimeout            = 20 * time.Second
+	controllerGofailRequestTimeout          = 5 * time.Second
+	controllerWorkerReadyLog                = "Starting Temporal worker"
 )
 
 var (
-	CWEGofailNodeID      = uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	CWEGofailClusterID   = uuid.MustParse("33333333-3333-3333-3333-333333333333")
-	cweGofailSiteID      = uuid.MustParse("22222222-2222-2222-2222-222222222222")
-	cweGofailNodePoolID  = uuid.MustParse("44444444-4444-4444-4444-444444444444")
-	cweGofailNodeSetID   = uuid.MustParse("55555555-5555-5555-5555-555555555555")
-	cweGofailInstanceID  = uuid.MustParse("66666666-6666-6666-6666-666666666666")
-	cweGofailControlNode = "cwe-gofail-cp-0"
+	ControllerGofailNodeID      = uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	ControllerGofailClusterID   = uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	controllerGofailSiteID      = uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	controllerGofailNodePoolID  = uuid.MustParse("44444444-4444-4444-4444-444444444444")
+	controllerGofailNodeSetID   = uuid.MustParse("55555555-5555-5555-5555-555555555555")
+	controllerGofailInstanceID  = uuid.MustParse("66666666-6666-6666-6666-666666666666")
+	controllerGofailControlNode = "cwe-gofail-cp-0"
 )
 
-// CWEWorkerBinaryConfig describes the production worker and its e2e dependencies.
-type CWEWorkerBinaryConfig struct {
+// ControllerWorkerBinaryConfig describes the production worker and its e2e dependencies.
+type ControllerWorkerBinaryConfig struct {
 	BinaryPath         string
 	DBConnectionString string
 	KubeconfigPath     string
@@ -65,12 +65,12 @@ type CWEWorkerBinaryConfig struct {
 	Env                []string
 }
 
-// CWEWorkerBinary returns the production worker binary built by make e2e-gofail.
-func CWEWorkerBinary(t testing.TB) string {
+// ControllerWorkerBinary returns the production worker binary built by make e2e-gofail.
+func ControllerWorkerBinary(t testing.TB) string {
 	t.Helper()
 
-	binaryPath := getenvWithLegacy(CWEGofailWorkerBinaryEnv, legacyWorkerBinaryEnv)
-	require.NotEmpty(t, binaryPath, "%s must point to the worker built by make e2e-gofail", CWEGofailWorkerBinaryEnv)
+	binaryPath := getenvWithLegacy(ControllerGofailWorkerBinaryEnv, legacyWorkerBinaryEnv)
+	require.NotEmpty(t, binaryPath, "%s must point to the worker built by make e2e-gofail", ControllerGofailWorkerBinaryEnv)
 	_, err := os.Stat(binaryPath)
 	require.NoError(t, err, "CWE worker binary does not exist")
 	return binaryPath
@@ -104,8 +104,8 @@ func FreeLocalhostAddress(t testing.TB) string {
 	return ln.Addr().String()
 }
 
-// StartCWEWorkerBinary starts the production CWE command against e2e-owned dependencies.
-func StartCWEWorkerBinary(t testing.TB, cfg CWEWorkerBinaryConfig) *Process {
+// StartControllerWorkerBinary starts the production CWE command against e2e-owned dependencies.
+func StartControllerWorkerBinary(t testing.TB, cfg ControllerWorkerBinaryConfig) *Process {
 	t.Helper()
 
 	require.NotEmpty(t, cfg.DBConnectionString)
@@ -150,8 +150,8 @@ func StartCWEWorkerBinary(t testing.TB, cfg CWEWorkerBinaryConfig) *Process {
 		Command:       cfg.BinaryPath,
 		WorkingDir:    RepoRoot(t),
 		Env:           env,
-		ReadyContains: cweWorkerReadyLog,
-		ReadyTimeout:  cweWorkerReadyTimeout,
+		ReadyContains: controllerWorkerReadyLog,
+		ReadyTimeout:  controllerWorkerReadyTimeout,
 	})
 }
 
@@ -167,7 +167,7 @@ func WriteKubeconfig(t testing.TB) string {
 func SetGofail(t testing.TB, addr, name, term string) {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), cweGofailRequestTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), controllerGofailRequestTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, "http://"+addr+"/"+name, strings.NewReader(term))
@@ -182,8 +182,8 @@ func SetGofail(t testing.TB, addr, name, term string) {
 	require.Equal(t, http.StatusNoContent, resp.StatusCode, "gofail response: %s", body)
 }
 
-// SeedCWEGofailDB inserts the production workflow's minimum database state.
-func SeedCWEGofailDB(t testing.TB, dsn string) {
+// SeedControllerGofailDB inserts the production workflow's minimum database state.
+func SeedControllerGofailDB(t testing.TB, dsn string) {
 	t.Helper()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -196,22 +196,22 @@ func SeedCWEGofailDB(t testing.TB, dsn string) {
 	defer func() {
 		require.NoError(t, bunDB.Close())
 	}()
-	require.NoError(t, seedCWEGofailDB(context.Background(), db.NewDB(bunDB)))
+	require.NoError(t, seedControllerGofailDB(context.Background(), db.NewDB(bunDB)))
 }
 
-// seedCWEGofailDB inserts the seed rows in one transaction. The worker is
+// seedControllerGofailDB inserts the seed rows in one transaction. The worker is
 // already running, and its node-pool controller deletes any non-current node
 // set that has no nodes, so a set committed on its own can be gone before the
 // node insert lands. Same reason as seedTeardownScenario.
-func seedCWEGofailDB(ctx context.Context, database db.DB) error {
+func seedControllerGofailDB(ctx context.Context, database db.DB) error {
 	return database.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
-		return seedCWEGofailDBTx(ctx, tx)
+		return seedControllerGofailDBTx(ctx, tx)
 	})
 }
 
-func seedCWEGofailDBTx(ctx context.Context, database db.Tx) error {
+func seedControllerGofailDBTx(ctx context.Context, database db.Tx) error {
 	cluster := db.Cluster{
-		ID:                CWEGofailClusterID,
+		ID:                ControllerGofailClusterID,
 		Name:              "cwe-gofail-cluster",
 		KubernetesVersion: "1.30.0",
 		Conditions: db.ClusterConditions{
@@ -220,7 +220,7 @@ func seedCWEGofailDBTx(ctx context.Context, database db.Tx) error {
 	}
 	cluster.SetNicoProvider(db.NicoClusterProvider{
 		OrgID:  "cwe-gofail-org",
-		SiteID: cweGofailSiteID,
+		SiteID: controllerGofailSiteID,
 		VpcID:  uuid.New(),
 	})
 	if _, err := database.CreateCluster(ctx, &cluster); err != nil {
@@ -228,8 +228,8 @@ func seedCWEGofailDBTx(ctx context.Context, database db.Tx) error {
 	}
 
 	nodePool := db.NodePool{
-		ID:                   cweGofailNodePoolID,
-		ClusterID:            CWEGofailClusterID,
+		ID:                   controllerGofailNodePoolID,
+		ClusterID:            ControllerGofailClusterID,
 		Name:                 "cwe-gofail-cp",
 		NodeNamePrefix:       "cwe-gofail-cp",
 		ControlPlane:         true,
@@ -241,7 +241,7 @@ func seedCWEGofailDBTx(ctx context.Context, database db.Tx) error {
 		},
 	}
 	nodePool.SetNico(db.NicoNodePoolProvider{
-		InstanceTypeID:        cweGofailInstanceID,
+		InstanceTypeID:        controllerGofailInstanceID,
 		OSProfile:             "test",
 		ConfigProfile:         "test",
 		SubnetIDs:             []uuid.UUID{},
@@ -254,8 +254,8 @@ func seedCWEGofailDBTx(ctx context.Context, database db.Tx) error {
 	}
 
 	nodeSet := db.NodeSet{
-		ID:                   cweGofailNodeSetID,
-		NodePoolID:           cweGofailNodePoolID,
+		ID:                   controllerGofailNodeSetID,
+		NodePoolID:           controllerGofailNodePoolID,
 		DesiredCount:         1,
 		KubernetesVersion:    "1.30.0",
 		SystemReservedMemory: "16Gi",
@@ -272,12 +272,12 @@ func seedCWEGofailDBTx(ctx context.Context, database db.Tx) error {
 	}
 
 	node := db.Node{
-		ID:                     CWEGofailNodeID,
-		ClusterID:              CWEGofailClusterID,
-		NodePoolID:             cweGofailNodePoolID,
-		NodeSetID:              cweGofailNodeSetID,
+		ID:                     ControllerGofailNodeID,
+		ClusterID:              ControllerGofailClusterID,
+		NodePoolID:             controllerGofailNodePoolID,
+		NodeSetID:              controllerGofailNodeSetID,
 		ControlPlane:           true,
-		Name:                   cweGofailControlNode,
+		Name:                   controllerGofailControlNode,
 		IP:                     "127.0.0.1",
 		SpireAttestationMethod: db.SpireAttestationMethodTPM,
 		Conditions: db.NodeConditions{
@@ -287,7 +287,7 @@ func seedCWEGofailDBTx(ctx context.Context, database db.Tx) error {
 		},
 	}
 	node.SetNico(db.NicoNodeProvider{
-		InstanceTypeID: cweGofailInstanceID,
+		InstanceTypeID: controllerGofailInstanceID,
 	})
 	if _, err := database.CreateNode(ctx, &node); err != nil {
 		return fmt.Errorf("create node: %w", err)

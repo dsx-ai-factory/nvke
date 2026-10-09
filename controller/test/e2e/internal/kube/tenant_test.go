@@ -530,7 +530,7 @@ func TestGetAdminClientReportsMissingKubeconfig(t *testing.T) {
 // On an OIDC cluster the published kubeconfig authenticates as the controller
 // identity, which is deliberately not cluster-admin. GetAdminClient must mint
 // the capi-manager identity instead, or every caller gets a 403 on test setup.
-func TestAdminAndCWEPathsMintDistinctIdentities(t *testing.T) {
+func TestAdminAndControllerPathsMintDistinctIdentities(t *testing.T) {
 	objects := []runtime.Object{
 		spireServerConfigMapObject(`{"server":{"trust_domain":"test.nke.local"}}`),
 		spireServerPod("spire-server-1", true, spireServerSelector()),
@@ -583,11 +583,11 @@ func TestAdminAndCWEPathsMintDistinctIdentities(t *testing.T) {
 
 	// The GetClient path must keep minting the controller identity. Pointing it at the
 	// admin identity would silently give every tenant read cluster-admin.
-	cweConfig, err := factory.tenantRESTConfig(context.Background(), "tenant-a")
+	controllerConfig, err := factory.tenantRESTConfig(context.Background(), "tenant-a")
 	if err != nil {
 		t.Fatalf("tenantRESTConfig() error = %v", err)
 	}
-	command := mintedFor(t, cweConfig)
+	command := mintedFor(t, controllerConfig)
 	if want := "spiffe://test.nke.local" + controllerSPIFFEPath(); !slices.Contains(command, want) {
 		t.Fatalf("GetClient path did not mint %q, got %#v", want, command)
 	}

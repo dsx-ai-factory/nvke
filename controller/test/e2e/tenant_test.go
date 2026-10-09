@@ -865,7 +865,7 @@ func setupTenantTest(ctx context.Context, mgmt managementCluster, timeouts nke.O
 		return tenantTest{}, fmt.Errorf("building management cluster client: %w", err)
 	}
 
-	cweClient, err := nke.NewClient(ctx, restConfig, timeouts)
+	controllerClient, err := nke.NewClient(ctx, restConfig, timeouts)
 	if err != nil {
 		return tenantTest{}, fmt.Errorf("building controller API client: %w", err)
 	}
@@ -901,7 +901,7 @@ func setupTenantTest(ctx context.Context, mgmt managementCluster, timeouts nke.O
 
 	pingCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	resp, err := cweClient.API().GetClusterWithResponse(pingCtx, uuid.New())
+	resp, err := controllerClient.API().GetClusterWithResponse(pingCtx, uuid.New())
 	if err != nil {
 		return tenantTest{}, fmt.Errorf("reaching NKE over the port-forward: %w", err)
 	}
@@ -915,8 +915,8 @@ func setupTenantTest(ctx context.Context, mgmt managementCluster, timeouts nke.O
 		mgmt:          mgmt,
 		k8sClient:     k8sClient,
 		tenantClients: tenantClients,
-		nke:           cweClient,
-		lifecycle:     cweClient,
+		nke:           controllerClient,
+		lifecycle:     controllerClient,
 		timeouts:      timeouts,
 		trustDomain:   trustDomain,
 	}, nil
@@ -1261,11 +1261,11 @@ func TestUnit_ApplyControlPlaneMode(t *testing.T) {
 	}
 }
 
-// cweDefaultKubeReservedMemory is what the controller reserves for the kubelet when a
+// controllerDefaultKubeReservedMemory is what the controller reserves for the kubelet when a
 // node's config sets nothing (controller/internal/kubeadmconfig/render.go). A
 // controller-managed control plane always gets it, because the create API's
 // controlPlaneConfig has no kubeReservedMemory.
-const cweDefaultKubeReservedMemory = "2Gi"
+const controllerDefaultKubeReservedMemory = "2Gi"
 
 func TestUnit_NicoVMSControlPlaneFitsKubeletReservation(t *testing.T) {
 	fits := func(t *testing.T, instanceTypeID, systemReserved string) bool {
@@ -1275,7 +1275,7 @@ func TestUnit_NicoVMSControlPlaneFitsKubeletReservation(t *testing.T) {
 			t.Fatalf("instance type %q has no memory in nicoVMSInstanceMemory", instanceTypeID)
 		}
 		capacity := resource.MustParse(memory)
-		reserved := resource.MustParse(cweDefaultKubeReservedMemory)
+		reserved := resource.MustParse(controllerDefaultKubeReservedMemory)
 		reserved.Add(resource.MustParse(systemReserved))
 		return reserved.Cmp(capacity) < 0
 	}
@@ -1292,7 +1292,7 @@ func TestUnit_NicoVMSControlPlaneFitsKubeletReservation(t *testing.T) {
 			}
 			if !fits(t, cp.InstanceTypeID, cp.SystemReservedMemory) {
 				t.Fatalf("instance %s cannot hold %s kube-reserved plus %s system-reserved",
-					cp.InstanceTypeID, cweDefaultKubeReservedMemory, cp.SystemReservedMemory)
+					cp.InstanceTypeID, controllerDefaultKubeReservedMemory, cp.SystemReservedMemory)
 			}
 		})
 	}

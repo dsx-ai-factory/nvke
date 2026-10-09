@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	// defaultReadyTimeout and defaultPollInterval bound ProbeCWE when a caller
+	// defaultReadyTimeout and defaultPollInterval bound ProbeController when a caller
 	// states neither.
 	defaultReadyTimeout = 10 * time.Minute
 	defaultPollInterval = 10 * time.Second
@@ -32,19 +32,19 @@ const (
 	defaultProbeTimeout = 30 * time.Second
 )
 
-// ProbeCWE polls until the controller answers /healthz through kubeconfig, then returns
+// ProbeController polls until the controller answers /healthz through kubeconfig, then returns
 // the version it reports.
 //
 // Only a run that deployed the controller has one to ask. A run that stopped at
 // Kubernetes asserts against the API server instead, and expresses that by not
 // calling this.
-func ProbeCWE(ctx context.Context, kubeconfig string, within, poll time.Duration) (string, error) {
+func ProbeController(ctx context.Context, kubeconfig string, within, poll time.Duration) (string, error) {
 	return waitHealthy(ctx, within, poll, defaultProbeTimeout, func(ctx context.Context) (string, error) {
-		return probeCWE(ctx, kubeconfig)
+		return probeController(ctx, kubeconfig)
 	})
 }
 
-// waitHealthy is ProbeCWE's retry, with the probe as a parameter so the timing
+// waitHealthy is ProbeController's retry, with the probe as a parameter so the timing
 // can be tested without an API server. Unexported: the injection is this
 // package's to use, not something a caller should have to supply.
 //
@@ -87,7 +87,7 @@ func probeOnce(ctx context.Context, each time.Duration, probe func(context.Conte
 
 var errUnhealthy = errors.New("controller unhealthy")
 
-func probeCWE(ctx context.Context, kubeconfig string) (string, error) {
+func probeController(ctx context.Context, kubeconfig string) (string, error) {
 	restConfig, err := kube.RESTConfig(kubeconfig, "")
 	if err != nil {
 		return "", err

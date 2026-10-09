@@ -68,8 +68,8 @@ func TestGofailTeardownHookBlocksUnlessForceUnreachable(t *testing.T) {
 	taskQueue := framework.TaskQueueName("cwe-gofail-teardown-hook", t.Name())
 	gofailAddr := framework.FreeLocalhostAddress(t)
 
-	worker := framework.StartCWEWorkerBinary(t, framework.CWEWorkerBinaryConfig{
-		BinaryPath:         framework.CWEWorkerBinary(t),
+	worker := framework.StartControllerWorkerBinary(t, framework.ControllerWorkerBinaryConfig{
+		BinaryPath:         framework.ControllerWorkerBinary(t),
 		DBConnectionString: databaseDSN,
 		KubeconfigPath:     kubeconfigPath,
 		NodeAgent:          config.NodeAgentConfig{Port: nodeAgent.Port(t)},
@@ -84,10 +84,10 @@ func TestGofailTeardownHookBlocksUnlessForceUnreachable(t *testing.T) {
 	// Fail the hook runbook outright rather than hanging it: the behavior under
 	// test is the retry budget, and a hang would cost a two-minute heartbeat
 	// timeout per attempt.
-	framework.SetGofail(t, gofailAddr, framework.CWEGofailExecutionErrorFailpoint,
+	framework.SetGofail(t, gofailAddr, framework.ControllerGofailExecutionErrorFailpoint,
 		`return("`+framework.TeardownHookRunbook+`")`)
 	t.Logf("failpoint %s will fail runbook %q on every attempt",
-		framework.CWEGofailExecutionErrorFailpoint, framework.TeardownHookRunbook)
+		framework.ControllerGofailExecutionErrorFailpoint, framework.TeardownHookRunbook)
 
 	blocked := framework.SeedTeardownScenario(t, databaseDSN, "blocked")
 	forced := framework.SeedTeardownScenario(t, databaseDSN, "forced")

@@ -8,7 +8,7 @@ profiles:
     architecture: amd64
     build_date: "2026-01-01"
     ubuntu_version: "24.04"
-  # Used by e2e/gofail SeedCWEGofailDB node pool/set rows. The generated
+  # Used by e2e/gofail SeedControllerGofailDB node pool/set rows. The generated
   # releases in ../../releases need a release of this name for those rows to resolve.
   test:
     kubernetes_version: "1.30.0"
