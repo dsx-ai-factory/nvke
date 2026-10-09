@@ -31,8 +31,10 @@ Install in this order:
 chart's own label rather than a hardcoded name, since the deployment name
 depends on the Helm release name your CWE install used:
 
+On an existing site, where the controller runs as `cloud-workflow-engine`, use `cloud-workflow-engine` for both the namespace and the label in the command below.
+
 ```bash
-kubectl rollout restart deployment -n <cwe-namespace> -l app.kubernetes.io/name=cloud-workflow-engine
+kubectl rollout restart deployment -n nke-controller -l app.kubernetes.io/name=nke-controller
 ```
 
 ## 1. Check the Control-Plane Taint Is Gone

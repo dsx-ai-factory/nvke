@@ -36,10 +36,14 @@ CHART=...   # your NKE chart reference
 helm show values "$CHART" | grep apiAuth
 ```
 
+On an existing site, where the controller runs as `cloud-workflow-engine`,
+replace `nke-controller` with `cloud-workflow-engine` in every command on this
+page.
+
 The commands below use `$NS` for the namespace NKE runs in:
 
 ```bash
-NS=cloud-workflow-engine   # your release namespace
+NS=nke-controller   # your release namespace
 ```
 
 ## Recipe: your cluster's own API server
@@ -83,8 +87,12 @@ kubectl -n nke-clients create serviceaccount nke-client
 ```
 
 `nkectl` mints this pair and no other. The names `nke-clients` /
-`nke-client` and ConfigMap `cloud-workflow-engine/nke-auth-config` are fixed in
-the CLI. Other names work for `curl` and `hack/nke-token.sh` if you override
+`nke-client` and ConfigMap `nke-auth-config` are fixed in the CLI. It reads
+that ConfigMap from namespace `nke-controller`, or from `cloud-workflow-engine`
+when `nke-controller` has none. Any other error reading it, such as a
+permission denial, stops the command. In any other namespace, `nkectl` finds
+no ConfigMap and sends no token.
+Other names work for `curl` and `hack/nke-token.sh` if you override
 them; they will not work for `nkectl`. One account per caller is still easier
 to revoke when those callers are not the CLI.
 
@@ -178,7 +186,7 @@ Set one or the other. Setting `config` without `create`, or `create` without
 ### 5. Check it came up
 
 ```bash
-kubectl -n "$NS" logs deploy/cloud-workflow-engine | grep 'API authentication'
+kubectl -n "$NS" logs deploy/nke-controller | grep 'API authentication'
 ```
 
 ```json
@@ -309,7 +317,7 @@ Watch the counter, not the log. Successful reads are logged at debug level,
 so the log will undercount them:
 
 ```bash
-kubectl -n "$NS" exec deploy/cloud-workflow-engine -- \
+kubectl -n "$NS" exec deploy/nke-controller -- \
   curl -s http://127.0.0.1:9090/metrics | grep '^nke_auth_requests_total'
 ```
 
@@ -323,7 +331,7 @@ label says what each one needs: usually a token, or a subject added to your
 allow-list. Rejections are also logged in full:
 
 ```bash
-kubectl -n "$NS" logs deploy/cloud-workflow-engine | grep '"logger":"auth"'
+kubectl -n "$NS" logs deploy/nke-controller | grep '"logger":"auth"'
 ```
 
 When `would_reject` stops climbing, set `apiAuth.permissive: false`.
@@ -352,7 +360,7 @@ The file is read once at startup. The chart restarts NKE when the config
 changes; if yours does not, restart it yourself:
 
 ```bash
-kubectl -n "$NS" rollout restart deploy/cloud-workflow-engine
+kubectl -n "$NS" rollout restart deploy/nke-controller
 ```
 
 Values are matched exactly: leading or trailing whitespace is an error, not
@@ -427,7 +435,7 @@ It is read once at startup. Restart the deployment.
 Read it off the deployment rather than probing the API:
 
 ```bash
-kubectl -n "$NS" get deploy cloud-workflow-engine \
+kubectl -n "$NS" get deploy nke-controller \
   -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="AUTH_CONFIG_PATH")].value}{"\n"}'
 ```
 
