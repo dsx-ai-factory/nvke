@@ -221,17 +221,17 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 
 		svc := find(t, docs, "Service", controllerName())
 		if ns := dig(t, svc, "metadata", "namespace"); ns != controllerName() {
-			t.Errorf("CWE Service namespace = %v, want %s: the health probe would miss it", ns, controllerName())
+			t.Errorf("controller Service namespace = %v, want %s: the health probe would miss it", ns, controllerName())
 		}
 
 		deployment := find(t, docs, "Deployment", controllerName())
 		containers, _ := dig(t, deployment, "spec", "template", "spec", "containers").([]any)
 		if len(containers) == 0 {
-			t.Fatal("CWE Deployment has no containers")
+			t.Fatal("controller Deployment has no containers")
 		}
 		container, _ := containers[0].(map[string]any)
 		if got := container["image"]; got != "nvcr.io/nke/cwe:v1.2.3" {
-			t.Errorf("CWE image = %v", got)
+			t.Errorf("controller image = %v", got)
 		}
 		env := map[string]any{}
 		for _, e := range container["env"].([]any) {
@@ -253,7 +253,7 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 			"TELEPORT_TOKEN_NAME_PREFIX":        controllerName() + "-",
 		} {
 			if env[name] != want {
-				t.Errorf("CWE env %s = %v, want %s", name, env[name], want)
+				t.Errorf("controller env %s = %v, want %s", name, env[name], want)
 			}
 		}
 		if got, _ := env["DB_CONNECTION_STRING"].(string); !strings.Contains(got, "/"+controllerName()+"?") {

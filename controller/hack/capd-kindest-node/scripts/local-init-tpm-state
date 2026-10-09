@@ -4,7 +4,7 @@
 #
 # Leave an EK certificate on disk for Forge/NICo-style APIs. `nico-containers`
 # reads `/var/lib/swtpm/ek.cert` directly and returns it via
-# `tpmEkCertificate`, which lets CWE keep its normal TPM pubhash
+# `tpmEkCertificate`, which lets the controller keep its normal TPM pubhash
 # reconciliation flow without duplicating TPM state outside the
 # container.
 #

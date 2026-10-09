@@ -37,7 +37,7 @@ CAPD_NODE_IMAGE="cwe-capd-kindest-node:run-${RUN_ID}"
 BGP_CONTAINER_NAME="bgp-containers-${RUN_ID}"
 DIAGNOSTICS_MARKER="${STATE_DIR}/SAFE_TO_UPLOAD"
 # Sequential two-mode run: the cp-controller and node-pool provisioning modes run
-# back to back on one kind cluster. The cp-controller leg runs first, so CWE is
+# back to back on one kind cluster. The cp-controller leg runs first, so the controller is
 # brought up flag-on here and the node-pool leg flips the deployment-wide flag
 # off between the legs. A caller that drives the flag itself leaves this unset
 # and takes the single-mode path below.
@@ -54,15 +54,15 @@ NKECTL_SMOKE="${NKE_E2E_NKECTL_SMOKE:-false}"
 NKECTL_SMOKE_RUNNER="${RUNNER_NAME}"
 # Resolve the control-plane mode to a concrete value exactly once, here. The
 # sequential path drives the flag per leg, so it starts flag-on for the
-# cp-controller leg. The single-mode path deploys one CWE and never redeploys,
-# so it has to state the mode rather than inherit it: CWE's own default is now
+# cp-controller leg. The single-mode path deploys one controller and never redeploys,
+# so it has to state the mode rather than inherit it: the controller's own default is now
 # true (#1054), and an unset flag used to mean "node-pool control plane". Left
-# unset, the node-pool specs would get a flag-on CWE, which rejects
+# unset, the node-pool specs would get a flag-on controller, which rejects
 # control-plane node pools outright -- `control-plane node pools are not
 # allowed when control-plane controller provisioning is enabled`. Defaulted,
 # not forced, so an explicit
 # PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true still selects the
-# cp-controller specs. Every use below is then unconditional: the CWE deploy
+# cp-controller specs. Every use below is then unconditional: the controller deploy
 # and the e2e spec selection cannot diverge.
 if [[ "${SINGLE_RUNNER_CONTROL_PLANE_MODES}" == "true" ]]; then
   PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true
@@ -105,7 +105,7 @@ if [[ "${RUNNER_DOCKER_HOST}" == "unix:///var/run/docker.sock" ]]; then
 fi
 
 # Mirrors local-backend-e2e.sh's detection: this runner's own architecture,
-# used to build the CWE image, the E2E binary, and the CAPD node image for
+# used to build the controller image, the E2E binary, and the CAPD node image for
 # the platform actually running them, instead of the amd64 this script used
 # to hardcode everywhere.
 case "$(uname -m)" in
@@ -141,7 +141,7 @@ else
 fi
 
 # Which deploy path nke-deploy.sh installs, one per backend. The trees are not
-# interchangeable: capd-e2e carries the reboot test double, CWE's RBAC over
+# interchangeable: capd-e2e carries the reboot test double, the controller's RBAC over
 # dockerclusters and nke-spire-client, while capnico-e2e carries the
 # nico-credentials Secret instead. deploy-stack.sh defaults to capd-e2e, so the
 # NICo lane has to name its own or it would install the wrong management plane
@@ -357,7 +357,7 @@ start_state_monitor() {
   start_cwe_log_follower
 }
 
-# CWE is the one deployment this run rolls: redeploy_cwe flips the
+# The controller is the one deployment this run rolls: redeploy_cwe flips the
 # control-plane-controller flag between the legs, and it rolls again near the
 # end. `kubectl logs deployment/...` at teardown only reaches the pod that
 # survived, so every line before the last roll is gone. Run 35364887944
@@ -429,10 +429,10 @@ run_ginkgo_leg() {
 
 # Cleanup gate between the two sequential legs: the cp-controller leg's delete
 # spec should have removed every tenant cluster before the node-pool leg starts.
-# Count CAPI Cluster objects directly with kubectl rather than the CWE API: the
+# Count CAPI Cluster objects directly with kubectl rather than the controller API: the
 # apiserver service proxy authenticates the caller to the apiserver but does not
-# forward a bearer token to CWE, so a flag-on, auth-enforcing CWE 401s the raw
-# /api/clusters probe. Every tenant owns a cluster.cluster.x-k8s.io object CWE
+# forward a bearer token to the controller, so a flag-on, auth-enforcing controller 401s the raw
+# /api/clusters probe. Every tenant owns a cluster.cluster.x-k8s.io object the controller
 # deletes on teardown, so zero of them is a faithful, auth-free "cluster is clean"
 # signal (no DB access needed).
 ci_kubectl() { runner_exec kubectl "$@"; }
@@ -450,7 +450,7 @@ wait_for_zero_tenant_clusters() {
 # already does, so a forwarding regression fails here rather than mid-leg.
 redeploy_cwe() {
   local value="$1"
-  log "redeploying CWE with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
+  log "redeploying the controller with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
   runner_exec kubectl -n "${CONTROLLER_NAME}" set env "deployment/${CONTROLLER_NAME}" \
     "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
   runner_exec kubectl -n "${CONTROLLER_NAME}" rollout status "deployment/${CONTROLLER_NAME}" --timeout=5m
@@ -1098,7 +1098,7 @@ fi
 # runtime.Caller names a directory that does not exist where the binary runs,
 # and without this the matrix soft-skips and 21 specs never register.
 #
-# fleet-releases, not releases. The latter is the set the CWE deployment
+# fleet-releases, not releases. The latter is the set the controller deployment
 # installs, and it omits the releases the matrix documents as exclusions, so
 # building the matrix from it panics the suite.
 #
@@ -1183,7 +1183,7 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
   # from the checkout controller/go.mod pins and installed by the same script
   # Tilt's nico provider runs, so the two paths deploy the provider identically.
   #
-  # Before the install, not after: CWE watches the NICo CRDs this chart brings,
+  # Before the install, not after: the controller watches the NICo CRDs this chart brings,
   # and the controller item is the last thing nke-deploy.sh installs.
   # nico-credentials is the other way round -- the deploy path renders it as
   # part of nke-base-config -- which is fine, because CAPNICo reads that Secret
@@ -1301,13 +1301,13 @@ for env_name in TENANT_ACCESS_ENABLED NKE_OIDC_AUTH_ENABLED; do
   fi
 done
 # When the caller asked for control-plane-controller provisioning, confirm the
-# flag actually reached the CWE deployment. This catches a Tiltfile forwarding
+# flag actually reached the controller deployment. This catches a Tiltfile forwarding
 # regression before the cp-controller specs would mis-fail at cluster create.
 if [[ "${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER}" == "true" ]]; then
   cp_flag_value="$(runner_exec kubectl -n "${CONTROLLER_NAME}" get "deployment/${CONTROLLER_NAME}" \
     -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER\")].value}")"
   if [[ "${cp_flag_value}" != "true" ]]; then
-    log "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER must be true in the CWE deployment, got ${cp_flag_value:-<empty>}"
+    log "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER must be true in the controller deployment, got ${cp_flag_value:-<empty>}"
     exit 1
   fi
 fi
@@ -1319,11 +1319,11 @@ NKE_E2E_FOCUS="${NKE_E2E_FOCUS:-}"
 
 if [[ "${SINGLE_RUNNER_CONTROL_PLANE_MODES}" == "true" ]]; then
   # Two provisioning modes, one cluster, back to back. cp-controller runs first,
-  # against the flag-on CWE the Tilt deploy just verified, so a regression in the
+  # against the flag-on controller the Tilt deploy just verified, so a regression in the
   # newer control-plane-controller path fails fast -- before the long node-pool
   # leg spends a runner on a feature the first leg already showed is broken.
   #
-  # `health` rides along with the cp-controller leg so CWE's /healthz, /readyz and
+  # `health` rides along with the cp-controller leg so the controller's /healthz, /readyz and
   # version endpoints are probed against a flag-on deployment too.
   start_state_monitor
   leg_rc=0
@@ -1340,7 +1340,7 @@ if [[ "${SINGLE_RUNNER_CONTROL_PLANE_MODES}" == "true" ]]; then
   fi
   redeploy_cwe false
   # Node-pool control plane (flag off): the long-standing CAPD lane. `!cp-controller`
-  # keeps the flag-on spec out of this flag-off CWE. `health` and the authn specs
+  # keeps the flag-on spec out of this flag-off controller. `health` and the authn specs
   # ride along here -- both need a deployed, enforcing NKE, which this leg has;
   # authn-spire is excluded (needs SPIRE pod attestation not yet wired in CAPD).
   leg_rc=0
@@ -1363,7 +1363,7 @@ fi
 # The default is the CAPD lane's filter, for a local run with nothing set. A
 # caller passes its own; the NICo lane passes nico-containers.
 #
-# `health` rides along with `capd`. Those specs need a cluster running CWE in
+# `health` rides along with `capd`. Those specs need a cluster running the controller in
 # namespace ${CONTROLLER_NAME} on port 8080, which this script has already
 # built and waited on above. They are three HTTP probes through a service proxy,
 # so they cost seconds rather than minutes.

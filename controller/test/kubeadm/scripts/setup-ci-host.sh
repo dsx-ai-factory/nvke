@@ -590,7 +590,7 @@ fi
 # http://carbide-pxe.forge/api/v0/cloud-init/ for their NoCloud seed and run
 # kube-vip on a hardcoded BGP port 179. D7 boots vanilla noble from a local
 # seed ISO and D5 drops CNI, so no guest here asks for any of them. With
-# NKE_CI_HOST_FDE=true all three are added above, because a CWE-driven tenant
+# NKE_CI_HOST_FDE=true all three are added above, because a controller-driven tenant
 # runs kube-vip and its control plane reaches the metadata server.
 
 # ── 6b. vTPM and console logs for the FDE image ─────────────────────────────

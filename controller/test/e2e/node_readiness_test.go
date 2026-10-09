@@ -19,7 +19,7 @@ import (
 )
 
 // validateNodeReadinessPostCreate checks that the complete desired topology is
-// Ready through both user-facing surfaces: CWE's API and the tenant Kubernetes
+// Ready through both user-facing surfaces: the controller's API and the tenant Kubernetes
 // API itself.
 func validateNodeReadinessPostCreate(test *tenantTest) {
 	It("brings every desired node to Ready", func(ctx context.Context) {
@@ -42,10 +42,10 @@ func validateNodeReadinessPostCreate(test *tenantTest) {
 			test.collectDiagnostics(detached, test.cluster.ID)
 		})
 
-		By("Asserting CWE reports KubernetesReady for every desired node")
+		By("Asserting the controller reports KubernetesReady for every desired node")
 		Eventually(test.nodesReadyWithProgress(readinessProgressEvery)).WithContext(ctx).
 			WithTimeout(test.timeouts.Provision).WithPolling(1*time.Second).
-			Should(Succeed(), "all desired nodes should become ready in CWE")
+			Should(Succeed(), "all desired nodes should become ready in the controller")
 
 		By("Asserting the tenant cluster reports Ready for every desired node")
 		test.log.Info("Building an authenticated client for the tenant cluster")
@@ -152,7 +152,7 @@ func (t *tenantTest) nodesReadyWithProgress(every time.Duration) func(context.Co
 	}
 }
 
-// assertDesiredNodesReady checks that CWE reports every desired node of the
+// assertDesiredNodesReady checks that the controller reports every desired node of the
 // cluster KubernetesReady, including a controller-managed control plane. The
 // caller controls retries.
 func (t *tenantTest) assertDesiredNodesReady(ctx context.Context) error {
@@ -193,7 +193,7 @@ func validateNodesReadyInCluster(
 			return nil, err
 		}
 		if len(controlPlaneNames) != desired {
-			return nil, fmt.Errorf("CWE reports %d controller-managed control-plane nodes; want %d", len(controlPlaneNames), desired)
+			return nil, fmt.Errorf("controller reports %d controller-managed control-plane nodes; want %d", len(controlPlaneNames), desired)
 		}
 		expectedNodeNames = append(expectedNodeNames, controlPlaneNames...)
 	}

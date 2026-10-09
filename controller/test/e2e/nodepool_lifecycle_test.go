@@ -25,7 +25,7 @@ const (
 
 // validateClusterConfig verifies the cluster and its initial control-plane and
 // worker node pools report the configuration they were created with (spec
-// round-trip). NOTE: CWE's API Cluster type exposes no CNI-version field, so
+// round-trip). NOTE: the controller's API Cluster type exposes no CNI-version field, so
 // unlike the nke-e2e reference this cannot assert the CNI version.
 func validateClusterConfig(test *tenantTest) {
 	It("reports the cluster and initial node-pool configuration it was created with", func(ctx context.Context) {
@@ -68,7 +68,7 @@ func validateClusterConfig(test *tenantTest) {
 	}, Label("lifecycle", "nodepool", "config"), NodeTimeout(5*time.Minute))
 }
 
-// validateNodeReplacement verifies CWE's auto-heal contract: with the desired
+// validateNodeReplacement verifies the controller's auto-heal contract: with the desired
 // count unchanged, deleting a worker provisions a replacement while the
 // surviving node is preserved. Runs at desired=2 (scales the worker pool up
 // first) so "heal back with the survivor intact" is actually exercised, not

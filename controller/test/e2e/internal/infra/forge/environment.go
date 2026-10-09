@@ -74,7 +74,7 @@ type Site struct {
 	// teleport.SSHJumpHost for how to read one.
 	JumpHostKeyFingerprint string `json:"jumpHostKeyFingerprint"`
 
-	// No control-plane VIP. CWE treats an empty one as "do not configure
+	// No control-plane VIP. The controller treats an empty one as "do not configure
 	// kube-vip", which is what create-forge-nico-cluster.sh relies on: it
 	// sends no VIP at all. The simulator backends need one because their BGP
 	// speakers advertise it, and a real site does not work that way.

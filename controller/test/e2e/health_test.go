@@ -84,7 +84,7 @@ func envOrDefault(key, def string) string {
 // they carry no NKE credential and need none: all three paths are on the
 // anonymous surface in internal/auth/routes.go. If /api/version ever stops
 // being anonymous, this file goes red before anything else does.
-var _ = Describe("CWE management-plane health", Label("health"), func() {
+var _ = Describe("controller management-plane health", Label("health"), func() {
 	var (
 		hc        healthConfig
 		forwarder *kube.ServiceForwarder

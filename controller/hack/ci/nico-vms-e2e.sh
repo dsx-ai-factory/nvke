@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# nico-vms E2E lane: CWE on kind, CAPNICo from source, nico-vms on the host,
+# nico-vms E2E lane: the controller on kind, CAPNICo from source, nico-vms on the host,
 # tenant nodes as KVM guests booted from the NKE FDE image.
 #
 # Runs on the host, not in ci/backend-e2e.sh's container: nico-vms needs
@@ -62,7 +62,7 @@ NKECTL_BIN="${STATE_DIR}/nkectl"
 NKECTL_SMOKE_KUBECONFIG="${E2E_KUBECONFIG}"
 TMP_DIR="${STATE_DIR}"
 BACKEND=nico-vms
-# CWE runs with NKE_OIDC_AUTH_ENABLED here, so the smoke's no-token control is
+# The controller runs with NKE_OIDC_AUTH_ENABLED here, so the smoke's no-token control is
 # valid: a call without a token must fail.
 export NKE_E2E_REQUIRE_AUTHN=true
 TILT_PGID=""
@@ -374,11 +374,11 @@ export TILT_DISABLE_ANALYTICS=1
 # Read by the Tiltfile. The agent then installs the CNI from the charts deb
 # rather than fetching a bundle, as local-entrypoint-e2e already does.
 export INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-true}"
-# Resolve the control-plane mode to a concrete value here. CWE now defaults
+# Resolve the control-plane mode to a concrete value here. The controller now defaults
 # control-plane-controller provisioning on (#1054), and both the Tiltfile and
 # deploy-stack.sh only set the container env when this is non-empty, so an unset
-# flag would deploy CWE flag-on. The nico-vms specs still describe the control
-# plane as a control-plane node pool, which a flag-on CWE rejects at create
+# flag would deploy the controller flag-on. The nico-vms specs still describe the control
+# plane as a control-plane node pool, which a flag-on controller rejects at create
 # ("control-plane node pools are not allowed ..."). Deploy flag-off so those
 # specs are accepted; an explicit value still wins. Migrating the nico-vms specs
 # to controlPlaneConfig and flipping this lane flag-on is a follow-up.
@@ -532,7 +532,7 @@ fi
 rm -rf "${NICO_SIM_DIR}/.dev"
 
 # ── Images Tilt must not build ──────────────────────────────────────────────
-# Tilt's own CWE build watches bin/ and rewrites bin/cloud-workflow-engine, so
+# Tilt's own controller build watches bin/ and rewrites bin/cloud-workflow-engine, so
 # it re-queues itself forever. Prebuild both images, as ci/backend-e2e.sh does.
 git_sha="$(git -C "${WORKSPACE_ROOT}" rev-parse HEAD)"
 git_short_sha="$(git -C "${WORKSPACE_ROOT}" rev-parse --short=12 HEAD)"
@@ -575,7 +575,7 @@ kind get kubeconfig --name "${KIND_CLUSTER_NAME}" >"${E2E_KUBECONFIG}"
 log "loading ${NKE_CONTROLLER_IMAGE} and ${NKE_CONTROLLER_PROFILES_TILT_IMAGE} into the kind cluster"
 kind load docker-image --name "${KIND_CLUSTER_NAME}" "${NKE_CONTROLLER_IMAGE}" "${NKE_CONTROLLER_PROFILES_TILT_IMAGE}"
 
-# ── Tilt: CWE, SPIRE, nico-vms, CAPNICo ─────────────────────────────────────
+# ── Tilt: controller, SPIRE, nico-vms, CAPNICo ─────────────────────────────────────
 # No site_controller_vip: the kind node's container address is not routable
 # from the VM bridge (SPIRE dials time out). Without the override the Tiltfile
 # binds the SPIRE and OIDC NodePorts on the kind gateway with port-forwards,
@@ -665,13 +665,13 @@ kubectl -n nke-controller rollout status deployment/nke-controller --timeout=5m
 for env_name in TENANT_ACCESS_ENABLED NKE_OIDC_AUTH_ENABLED; do
   env_value="$(kubectl -n nke-controller get deployment/nke-controller \
     -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"${env_name}\")].value}")"
-  [[ "${env_value}" == "true" ]] || fail "${env_name} must be true in the CWE deployment, got ${env_value:-<empty>}"
+  [[ "${env_value}" == "true" ]] || fail "${env_name} must be true in the controller deployment, got ${env_value:-<empty>}"
 done
 kubectl -n capnico-system rollout status deployment/controller-manager --timeout=5m
 curl -fsS --max-time 5 http://localhost:18080/healthz >/dev/null || fail "nico-vms does not answer on localhost:18080"
 curl -fsS --max-time 5 "http://localhost:18080/${AGENT_URL_PATH}" >/dev/null ||
   fail "nico-vms does not serve the branch-built nke-agent at /${AGENT_URL_PATH}"
-log "management plane is up: CWE, CAPNICo and nico-vms all answer"
+log "management plane is up: the controller, CAPNICo and nico-vms all answer"
 
 # ── The suite ───────────────────────────────────────────────────────────────
 # Through go.work: dependencies resolve from public modules and the Go cache.
@@ -737,7 +737,7 @@ fi
 log "nico-vms E2E passed: ${LABEL_FILTER}"
 
 # After the suite, like the CAPD and NICo lanes: drive the real binary against
-# the CWE this lane deployed. Called bare so errexit and the EXIT trap turn a
+# the controller this lane deployed. Called bare so errexit and the EXIT trap turn a
 # non-zero into a failed job with diagnostics intact.
 if [[ "${NKECTL_SMOKE}" == "true" ]]; then
   nkectl_smoke_build "$(go env GOARCH)"

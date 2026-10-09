@@ -169,7 +169,7 @@ func TestBuildNicoForgeRequestCarriesThePayloads(t *testing.T) {
 		t.Fatal("nico-forge should build CAPI infrastructure manifests")
 	}
 	if req.Nico != nil {
-		t.Error("nico-forge should not also set the Forge-native provider: CWE accepts exactly one")
+		t.Error("nico-forge should not also set the Forge-native provider: the controller accepts exactly one")
 	}
 
 	if req.NodePools == nil || len(*req.NodePools) != 1 {
@@ -265,7 +265,7 @@ func TestBuildNicoForgeRequestRoutesEachRoleItsOwnPayload(t *testing.T) {
 }
 
 // ipxeScriptOf digs the script out of the pool's NicoMachineTemplate, which is
-// an untyped map because that is how CWE takes a CAPI manifest.
+// an untyped map because that is how the controller takes a CAPI manifest.
 func ipxeScriptOf(t *testing.T, pool api.NodePoolCreateConfig) string {
 	t.Helper()
 	spec, ok := pool.Infra.MachineTemplate[capiSpecKey].(map[string]any)

@@ -83,7 +83,7 @@ NICO_SIM_URL="${NICO_SIM_URL:-http://localhost:18080}"
 NICO_SIM_TOKEN="${NICO_SIM_TOKEN:-nico-simctl-token}"
 
 # cluster.x-k8s.io/v1beta1 is still served on the pinned CAPI v1.12.3 and
-# matches CWE's own nico_machine_builders output, but the CRDs mark it
+# matches the controller's own nico_machine_builders output, but the CRDs mark it
 # deprecated (applying it prints a deprecation warning) and v1beta2 is the
 # storage version. v1beta2 is the current-generation form: it references infra
 # via apiGroup, not apiVersion.
@@ -165,7 +165,7 @@ esac
 # Render the release's iPXE script.
 # ---------------------------------------------------------------------------
 
-# The script is read from the releases in the cluster, the same place CWE
+# The script is read from the releases in the cluster, the same place the controller
 # resolves it: the NodePoolRelease named NODEPOOL_RELEASE points at a MachineImage,
 # which carries the iPXE script. Nothing here reads a profiles directory.
 IMAGE_NAME="$(kubectl get nodepoolrelease "${NODEPOOL_RELEASE}" -o jsonpath='{.spec.machineImageRef.name}' 2>/dev/null || true)"

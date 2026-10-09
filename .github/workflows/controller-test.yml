@@ -87,7 +87,7 @@ jobs:
       matrix:
         include:
           # `make test` here already drops ./integration-test, which needs a
-          # running CWE on port 8080.
+          # running controller on port 8080.
           # test-integration-local adds the two `integration`-tagged packages.
           # Neither needs a service, and until now nothing ran either: the
           # tagged file in ./internal/agent was not even type-checked, because
@@ -161,7 +161,7 @@ jobs:
   #     internal/agent suites carry the same tag but need nothing, so the test
   #     job above runs them for real rather than vetting them here.
   #   - controller/integration-test is dropped from `make test` by a grep,
-  #     because it needs a CWE on port 8080.
+  #     because it needs a controller on port 8080.
   #
   # go vet rather than `go build`: it type-checks test files, which is the
   # point, and it is the cheapest thing that does. All five are green today.

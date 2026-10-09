@@ -6,8 +6,8 @@
 #
 # The suite stands up everything it needs: fake node containers
 # (cli/e2e/bootstrap/substrate) and a real ephemeral Kind cluster that the
-# command creates, deploys Postgres, Temporal and CWE onto, and tears down.
-# CWE is built from this checkout, so the CLI and controller changes under
+# command creates, deploys Postgres, Temporal and the controller onto, and tears down.
+# The controller is built from this checkout, so the CLI and controller changes under
 # test stay compatible.
 #
 # All of it runs on one containerd, which the "Install nerdctl" step below
@@ -49,7 +49,7 @@ on:
     paths:
       - 'cli/**'
       - 'agent/**'
-      # The suite builds CWE from controller/Dockerfile, so a controller-only
+      # The suite builds the controller from controller/Dockerfile, so a controller-only
       # change has to run it too.
       - 'controller/**'
       # The controller image uses the root Go workspace, so changes to its
@@ -101,7 +101,7 @@ jobs:
             # mount an upperdir. Fixed by pinning nerdctl's data root.
             runner: arc-arm64-vtpm
     # A full run takes 12-17 minutes on this pool, most of it the node image
-    # build and CWE's three sequential control-plane joins. The margin covers
+    # build and the controller's three sequential control-plane joins. The margin covers
     # a cold image cache and a slow mirror; queue time does not count.
     timeout-minutes: 45
     permissions:
@@ -304,7 +304,7 @@ jobs:
       # from there, so a Docker-built one would be invisible to it.
       # The base images come through the mirror too: configureDockerHubMirror
       # covers the bootstrap cluster's node, not this host's containerd.
-      - name: Build CWE image
+      - name: Build controller image
         shell: bash
         run: |
           source controller/hack/backend-e2e-lib.sh

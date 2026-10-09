@@ -68,7 +68,7 @@ type ControlPlane struct {
 	// Config, when non-nil, provisions the control plane through the cluster-level
 	// control-plane controller (CreateClusterControlPlaneConfig) with no
 	// control-plane node pool. It is mutually exclusive with Pools and requires
-	// CWE with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER on (its default).
+	// a controller with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER on (its default).
 	Config *ControlPlaneConfigSpec
 }
 
@@ -91,7 +91,7 @@ type ControlPlaneConfigSpec struct {
 
 // ClusterNetworkSpec describes the non-default network configuration to pass
 // to cluster creation. ExpectedPodCIDRs is test-only metadata used by e2e
-// validations and is not sent to the CWE API.
+// validations and is not sent to the controller API.
 type ClusterNetworkSpec struct {
 	PodCIDR          string
 	ServiceCIDR      string
@@ -99,7 +99,7 @@ type ClusterNetworkSpec struct {
 }
 
 // ClusterSpec is the backend-parameterized, N-pool description of a tenant
-// cluster to create through the CWE API.
+// cluster to create through the controller API.
 type ClusterSpec struct {
 	Name              string // base name; CreateCluster appends a timestamp for uniqueness
 	Backend           Backend

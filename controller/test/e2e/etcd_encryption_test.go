@@ -123,7 +123,7 @@ func validateEtcdEncryptionKeyRotation(test *tenantTest) {
 }
 
 func validateEtcdEncryptionPostDelete(test *tenantTest) {
-	It("removes the CWE etcd encryption key secret during cleanup", func(ctx context.Context) {
+	It("removes the controller etcd encryption key secret during cleanup", func(ctx context.Context) {
 		key := client.ObjectKey{
 			Namespace: controller.Namespace(),
 			Name:      "etcd-encryption-key-" + test.cluster.ID.String(),

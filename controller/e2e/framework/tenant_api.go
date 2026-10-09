@@ -88,7 +88,7 @@ users:
 `, s.server.URL)
 }
 
-// WriteKubeconfig writes client configuration for CWE's management-client bootstrap.
+// WriteKubeconfig writes client configuration for the controller's management-client bootstrap.
 func (s *TenantAPIServer) WriteKubeconfig(t testing.TB) string {
 	t.Helper()
 

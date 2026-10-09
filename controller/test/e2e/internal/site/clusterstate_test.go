@@ -15,8 +15,8 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/controller"
 )
 
-// The collector's whole value is that it separates "CWE is not ready" from
-// "CWE is ready and the probe could not reach it", so the section that
+// The collector's whole value is that it separates "the controller is not ready" from
+// "the controller is ready and the probe could not reach it", so the section that
 // answers that has to be present and has to come first.
 func TestClusterStateCollectsEndpointsFirst(t *testing.T) {
 	script := clusterStateScript()
@@ -41,7 +41,7 @@ func TestClusterStateOnlyReads(t *testing.T) {
 	}
 }
 
-// Every command is tolerated individually. A cluster with no CWE Deployment
+// Every command is tolerated individually. A cluster with no controller Deployment
 // still has events worth reading, and the first failure must not stop them
 // being collected.
 func TestClusterStateToleratesEachCommand(t *testing.T) {
@@ -106,9 +106,9 @@ func TestClusterStateSurvivesANewlineEatingTransport(t *testing.T) {
 	}
 }
 
-// The collector has to read the namespace CWE is deployed into, which on a
+// The collector has to read the namespace the controller is deployed into, which on a
 // site cluster is controller.Namespace(). Run 37582097398 dumped every namespace and
-// found CWE running there, and found nke-controller empty.
+// found the controller running there, and found nke-controller empty.
 //
 // nke-controller is where nkectl's own bootstrap cluster puts it
 // (cli/internal/bootstrap/controllerdeploy), so it is the plausible wrong answer, and

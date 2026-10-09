@@ -35,8 +35,8 @@ on:
       - .github/workflows/capd-e2e.yml
       - .github/workflows/backend-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml
-      # The CWE-facing CLI. hack/ci/nkectl-smoke.sh drives nkectl against this
-      # lane's CWE, so a change here has something to break. Keep in step with
+      # The controller-facing CLI. hack/ci/nkectl-smoke.sh drives nkectl against this
+      # lane's controller, so a change here has something to break. Keep in step with
       # cwe_facing in e2e-pr-path-filter.yml, which suppresses the rest of cli/.
       - "cli/cmd/**"
       - "cli/internal/clients/**"
@@ -93,7 +93,7 @@ jobs:
   # Non-PR runs use both control-plane provisioning modes on one runner and
   # cluster, in sequence. The
   # flag (PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER) is deployment-wide
-  # and each mode rejects the other's config, so a single CWE can't serve both at
+  # and each mode rejects the other's config, so a single controller can't serve both at
   # once. The script runs cp-controller flag-on first, then flips the flag off with
   # a light redeploy for the node-pool leg.
   #

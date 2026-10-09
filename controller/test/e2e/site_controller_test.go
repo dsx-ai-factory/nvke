@@ -37,7 +37,7 @@ import (
 const (
 	siteStageProvision = "provision" // a Forge node, reachable, then released
 	siteStageBootstrap = "bootstrap" // plus vanilla Kubernetes from nkectl
-	siteStageFull      = "full"      // plus the NKE stack, CWE, and a tenant
+	siteStageFull      = "full"      // plus the NKE stack, the controller, and a tenant
 )
 
 // Secrets the site controller run reads from the environment. They are never written to
@@ -156,7 +156,7 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		failed  bool
 		// deployed records that the install returned without error. The
 		// controller tag is set before Deploy runs, so it cannot stand in for
-		// this: after a failed install it is non-empty and the CWE probe would
+		// this: after a failed install it is non-empty and the controller probe would
 		// poll its full timeout against a stack that was never installed.
 		deployed bool
 	)
@@ -268,19 +268,19 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			deployed = true
 		}, NodeTimeout(1*time.Hour))
 
-		It("reports its CWE version", func(ctx SpecContext) {
+		It("reports its controller version", func(ctx SpecContext) {
 			// ContinueOnFailure reaches this spec after a failed bootstrap or
 			// a failed install. Probing either would poll the whole readiness
-			// timeout against a cluster with no CWE on it, and teardown needs
+			// timeout against a cluster with no controller on it, and teardown needs
 			// those minutes to release the node.
 			if !deployed {
 				Skip("the stack was not deployed")
 			}
 			version, err := site.ProbeCWE(ctx, cluster.Kubeconfig, 0, 0)
-			Expect(err).NotTo(HaveOccurred(), "CWE should become healthy")
+			Expect(err).NotTo(HaveOccurred(), "the controller should become healthy")
 			GinkgoLogr.Info("site controller", "cweVersion", version)
 			Expect(version).To(Equal(stack.Controller.Tag),
-				"CWE should report the version the run deployed")
+				"the controller should report the version the run deployed")
 		}, NodeTimeout(15*time.Minute))
 	}
 
@@ -329,7 +329,7 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		// SkipDelete as well as the other two. It keeps the tenant and skips
 		// the nkectl sweep, and this node is what those tenants' instances
 		// hang off, so releasing it either deletes them through the sweep --
-		// silently undoing the flag -- or orphans them with no CWE left to
+		// silently undoing the flag -- or orphans them with no controller left to
 		// release them. Whatever keeps a tenant has to keep its site.
 		if keepSite || cfg.Lifecycle.SkipDelete || (cfg.Lifecycle.PreserveOnFailure && failed) {
 			GinkgoLogr.Info("keeping the site controller", "name", node.Name, "ip", node.IP,
@@ -608,11 +608,11 @@ const siteClusterState = "site-cluster-state.txt"
 // siteClusterStateCollected is set once this run has written siteClusterState.
 var siteClusterStateCollected bool
 
-// collectSiteClusterState records what the site cluster says about CWE.
+// collectSiteClusterState records what the site cluster says about the controller.
 //
 // Separate from collectSiteDiagnostics because the two cover different
 // failures and neither substitutes for the other: nkectl writes diagnostics
-// when the bootstrap fails, so a run that bootstrapped and then never saw CWE
+// when the bootstrap fails, so a run that bootstrapped and then never saw the controller
 // answer gets ErrNoDiagnostics and, before this, kept nothing.
 //
 // Best effort and never fails the spec, for the same reason as the
@@ -652,7 +652,7 @@ func nodeInputs(kubernetesVersion string) nke.NodeInputs {
 
 // candidate is what the site is built from, resolved once the node exists.
 // Only the full stage deploys the stack; the bootstrap stage checks the API
-// server instead of CWE.
+// server instead of the controller.
 // nkectlBinary is the linux nkectl for an architecture, on the runner. Staged
 // rather than downloaded: every release is a pre-release, which the
 // latest-release URL skips.
@@ -699,7 +699,7 @@ func siteSpec(cfg config.Config, name string) (site.Spec, error) {
 }
 
 // stack is what gets installed once Kubernetes is up, and the controller
-// version CWE is then expected to report.
+// version the controller is then expected to report.
 
 // cloneRoot is the checkout the deploy path is exported from.
 func cloneRoot() (string, error) {
@@ -761,7 +761,7 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 	}
 	DeferCleanup(func() { _ = os.RemoveAll(assets) })
 
-	// Before a machine is taken: the deploy path chooses the name CWE is
+	// Before a machine is taken: the deploy path chooses the name the controller is
 	// installed under, the lane chooses the name the suite looks for, and
 	// nothing else makes the two agree. Checked here rather than beside the
 	// spec because the stack is what exports these assets and so what knows
@@ -804,7 +804,7 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 
 // apiServerReachable reports whether the forwarded kubeconfig reaches the
 // cluster's API server. Asserted in its own spec rather than substituted for
-// the CWE probe, so it holds in every stage that bootstraps.
+// the controller probe, so it holds in every stage that bootstraps.
 func apiServerReachable(kubeconfig string) error {
 	restConfig, err := kube.RESTConfig(kubeconfig, "")
 	if err != nil {
@@ -823,7 +823,7 @@ func apiServerReachable(kubeconfig string) error {
 // site release five minutes of that node -- so a slow sweep starved the one
 // step that must not be skipped. Releasing the site is what stops its Forge
 // instance leaking, and a leaked site is worse than a leaked tenant: it is the
-// larger instance, and its CWE is the only thing that can still delete the
+// larger instance, and its controller is the only thing that can still delete the
 // tenants. Waiting at all is still right, because releasing the site while a
 // tenant delete is in flight strands that tenant's instances with nothing left
 // to release them.

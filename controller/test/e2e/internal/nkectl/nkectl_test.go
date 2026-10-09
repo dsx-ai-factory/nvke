@@ -161,7 +161,7 @@ func TestTrackCreated(t *testing.T) {
 	r.trackCreated("capd-two")
 	require.Equal(t, []string{"capd-one", "capd-two"}, r.createdClusters)
 
-	// CreateCluster records the name it asked for and again the name CWE
+	// CreateCluster records the name it asked for and again the name the controller
 	// reported, which are normally the same. The second must not duplicate.
 	r.trackCreated("capd-one")
 	require.Equal(t, []string{"capd-one", "capd-two"}, r.createdClusters)
@@ -245,7 +245,7 @@ func TestTrackCreatedNodePool(t *testing.T) {
 	r.trackCreatedNodePool(second)
 	require.Equal(t, []NodePoolRef{first, second}, r.createdNodePools)
 
-	// CreateNodePool records the name it asked for and again the name CWE
+	// CreateNodePool records the name it asked for and again the name the controller
 	// reported, which are normally the same. The second must not duplicate.
 	r.trackCreatedNodePool(first)
 	require.Equal(t, []NodePoolRef{first, second}, r.createdNodePools)

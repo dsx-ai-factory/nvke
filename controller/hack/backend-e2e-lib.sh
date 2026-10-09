@@ -5,7 +5,7 @@
 # Shared body for the two backend E2E entrypoints, ci/backend-e2e.sh and
 # local-backend-e2e.sh. Source it; do not run it.
 #
-# The two entrypoints differ in how they get a Kind cluster with CWE on it: CI
+# The two entrypoints differ in how they get a Kind cluster with the controller on it: CI
 # builds every image and runs the tools from an inner container, while the local
 # one uses the Makefile targets and the host's tools. What they must NOT differ
 # in is everything after that, and they had: the local one never set
@@ -169,7 +169,7 @@ e2e_assert_no_new_skips() {
 }
 
 # Between the two CAPD legs the first leg's delete spec should have removed every
-# tenant cluster. Count CAPI Cluster objects rather than asking the CWE API,
+# tenant cluster. Count CAPI Cluster objects rather than asking the controller API,
 # which enforces auth: zero objects is an auth-free "the cluster is clean".
 # Returns non-zero on timeout rather than exiting, because the two entrypoints
 # want different things from that: CI dumps the surviving clusters and refuses

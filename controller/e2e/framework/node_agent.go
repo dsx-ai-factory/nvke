@@ -21,7 +21,7 @@ type NodeAgentCall struct {
 	ScriptName string
 }
 
-// NodeAgentServer is a test fixture reached through CWE's production agent client.
+// NodeAgentServer is a test fixture reached through the controller's production agent client.
 type NodeAgentServer struct {
 	nkeproto.UnimplementedNodeAgentServer
 	address    string

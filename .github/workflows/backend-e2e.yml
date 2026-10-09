@@ -65,7 +65,7 @@ on:
         default: false
       install-cni-after-init:
         description: >-
-          Have CWE initialize the first control-plane before invoking the node
+          Have the controller initialize the first control-plane before invoking the node
           agent's stand-alone InstallCNI RPC. This avoids coupling CNI apply to
           the kube-vip startup race in focused CAPD lanes.
         required: false
@@ -74,7 +74,7 @@ on:
       nkectl-smoke:
         description: >-
           Run hack/ci/nkectl-smoke.sh once the suite passes: drive nkectl against
-          the CWE this lane deployed. CAPD only for now.
+          the controller this lane deployed. CAPD only for now.
         required: false
         type: boolean
         default: false
@@ -86,7 +86,7 @@ on:
         default: false
       provision-cp-with-controller:
         description: >-
-          Deploy CWE with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true,
+          Deploy the controller with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true,
           so the control plane is provisioned by the cluster-level control-plane
           controller (no control-plane node pool). The caller pairs this with a
           cp-controller label filter. Off by default: the flag-off lanes keep the
@@ -99,7 +99,7 @@ on:
         description: >-
           Run both control-plane modes back to back on one runner and one kind
           cluster: the cp-controller leg first (flag on), then the node-pool leg
-          (flag off) after a light CWE redeploy. The legs' label filters are
+          (flag off) after a light controller redeploy. The legs' label filters are
           derived from the backend, so label-filter and
           provision-cp-with-controller are ignored on this path.
         required: false
@@ -161,9 +161,9 @@ jobs:
       NKE_E2E_USE_STACK: ${{ inputs.use-nke-stack }}
       NKE_E2E_STACK_CHART: ${{ inputs.stack-chart }}
       NKE_E2E_STACK_VERSION: ${{ inputs.stack-version }}
-      # Deploy CWE flag-on for the cp-controller lane; the CI script forwards this
+      # Deploy the controller flag-on for the cp-controller lane; the CI script forwards this
       # to the Tilt deploy and the e2e binary. `false` keeps the node-pool control
-      # plane. Note this is the mode, not an override of CWE's default: CWE's own
+      # plane. Note this is the mode, not an override of the controller's default: the controller's own
       # default is now true (#1054), and both the Tiltfile and deploy-stack.sh only
       # set the container env when the value is non-empty. An empty value would
       # therefore mean flag-on. The CI script resolves empty to false before any

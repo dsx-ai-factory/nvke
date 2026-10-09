@@ -28,9 +28,9 @@ const (
 	permissiveModeEnvVar = "PERMISSIVE_MODE"
 )
 
-// OIDCEnabled reports whether the CWE deployment on the management cluster has
+// OIDCEnabled reports whether the controller deployment on the management cluster has
 // tenant OIDC JWT auth turned on (NKE_OIDC_AUTH_ENABLED=true on its container). The OIDC
-// validations only apply when CWE configures tenant OIDC auth, so the suite uses this
+// validations only apply when the controller configures tenant OIDC auth, so the suite uses this
 // to skip them on deployments where OIDC is off.
 func OIDCEnabled(ctx context.Context, c client.Client) (bool, error) {
 	var deploy appsv1.Deployment
@@ -66,11 +66,11 @@ func OIDCEnabled(ctx context.Context, c client.Client) (bool, error) {
 	return false, nil
 }
 
-// SetOIDCEnabled overrides NKE_OIDC_AUTH_ENABLED on the CWE deployment's app
+// SetOIDCEnabled overrides NKE_OIDC_AUTH_ENABLED on the controller deployment's app
 // container with a direct env value (which takes precedence over any
 // ConfigMap-sourced value) and waits for the rollout to finish. The OIDC issuer /
 // discovery / CA env the enable workflow needs are left in place, so toggling this
-// flag alone moves CWE between "new clusters are created OIDC-off" and "OIDC is
+// flag alone moves the controller between "new clusters are created OIDC-off" and "OIDC is
 // active" without a redeploy.
 //
 // The brownfield OIDC spec uses this to construct its precondition: a cluster on

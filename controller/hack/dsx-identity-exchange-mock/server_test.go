@@ -36,7 +36,7 @@ func TestUnit_ExchangeSubject(t *testing.T) {
 		want   string
 	}
 	tests := map[string]parameters{
-		"bare metal CWE": {
+		"bare metal controller": {
 			region: "capd",
 			input:  "spiffe://capd.nke.local/tenant/nke/service/nke-controller/bm/cwe",
 			want:   "spiffe://nke.capd.nke-controller.nvid.id/bm/cwe",

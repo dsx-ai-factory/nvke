@@ -139,7 +139,7 @@ func TestSBOMRender(t *testing.T) {
 	if got := dig(t, spire, "spire-server", "nodeAttestor", "tpmDirect", "checksum"); got != mustChecksum(t, "arm64") {
 		t.Errorf("TPM checksum = %v", got)
 	}
-	// Follows the name CWE is installed under rather than asserting one, for
+	// Follows the name the controller is installed under rather than asserting one, for
 	// the reason spireAdminPath gives: the deploy path chooses it and this
 	// file does not. TestSBOMAdminIDFollowsTheControllerName covers the
 	// following itself.

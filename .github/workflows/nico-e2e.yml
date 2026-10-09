@@ -101,7 +101,7 @@ jobs:
       # Mirror branches select only the bounded core entry and health probes.
       # Comprehensive runs use the same expression as the CAPD lane. Health and
       # authn hit the
-      # management-cluster CWE, not the tenant backend, so this lane already
+      # management-cluster controller, not the tenant backend, so this lane already
       # pays for them. authn-spire is out because the NICo provider does not
       # set SPIFFE_ENABLED. The label filter keeps this job focused on the
       # nico-containers specs; nico-vms uses its own job below.
@@ -121,11 +121,11 @@ jobs:
       # Without this, a broken auth deployment turns the authn specs into
       # skips and the lane stays green having tested nothing new.
       require-authn: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}
-      # Same CWE and the same REST API as CAPD, so this asserts nothing new about
+      # Same controller and the same REST API as CAPD, so this asserts nothing new about
       # nkectl. It is on because it costs a minute on a lane that already runs,
-      # and it catches a CWE deployment difference the CAPD lane would not see.
+      # and it catches a controller deployment difference the CAPD lane would not see.
       nkectl-smoke: true
-      # cp-controller specs skip unless CWE is deployed flag-on, and the flag is
+      # cp-controller specs skip unless the controller is deployed flag-on, and the flag is
       # deployment-wide, so it needs its own leg. Without this the lane is the
       # only one in CI not covering controller-managed control planes.
       single-runner-control-plane-modes: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}

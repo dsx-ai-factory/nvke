@@ -22,7 +22,7 @@ func TestGofailRunbookWorkerCrashRetriesAfterHeartbeatTimeout(t *testing.T) {
 	const targetRunbook = "upgrade-kubelet-kubeadm"
 
 	testStarted := time.Now()
-	t.Log("starting local Temporal, PostgreSQL, agent, and production CWE worker")
+	t.Log("starting local Temporal, PostgreSQL, agent, and production controller worker")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
@@ -48,7 +48,7 @@ func TestGofailRunbookWorkerCrashRetriesAfterHeartbeatTimeout(t *testing.T) {
 		GofailHTTPAddr:     gofailAddr,
 	})
 	failingWorker.WaitReady(t)
-	t.Logf("instrumented CWE worker is ready; gofail HTTP endpoint is %s", gofailAddr)
+	t.Logf("instrumented controller worker is ready; gofail HTTP endpoint is %s", gofailAddr)
 	framework.SeedCWEGofailDB(t, databaseDSN)
 	framework.SetGofail(t, gofailAddr, framework.CWEGofailFailpointName, `return("`+targetRunbook+`")`)
 	t.Logf("activated failpoint %s for runbook %q", framework.CWEGofailFailpointName, targetRunbook)
@@ -88,7 +88,7 @@ func TestGofailRunbookWorkerCrashRetriesAfterHeartbeatTimeout(t *testing.T) {
 		recoveryWorker.Stop(t)
 	})
 	recoveryWorker.WaitReady(t)
-	t.Log("replacement CWE worker is ready")
+	t.Log("replacement controller worker is ready")
 
 	// The real policy waits for the two-minute heartbeat timeout and then 30 seconds before retrying.
 	retryCtx, retryCancel := context.WithTimeout(ctx, 3*time.Minute)

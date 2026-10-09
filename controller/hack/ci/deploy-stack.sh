@@ -41,7 +41,7 @@ set -euo pipefail
 # controller/deploy/charts/controller/templates would run this suite
 # green against the old templates. capd-e2e.yml triggers on controller/**, which
 # includes exactly those files.
-NKE_CONTROLLER_IMAGE="${1:?usage: $0 <cwe-image>}"
+NKE_CONTROLLER_IMAGE="${1:?usage: $0 <controller-image>}"
 : "${NODE_AGENT_SPIRE_ATTESTATION_METHOD:?NODE_AGENT_SPIRE_ATTESTATION_METHOD is required}"
 # Optional, from the workflow inputs of the same name. Set together to install a
 # published artifact; leave empty to build.
@@ -151,20 +151,20 @@ import json, os
 # ("duplicate entries for key") rather than taking the last one.
 #
 # SPIRE_SERVER_API_ADDRESS is the opposite case: the chart never renders it at
-# all, so without an entry here CWE falls back to its Go default,
+# all, so without an entry here the controller falls back to its Go default,
 # spire-server.spire-server.svc.cluster.local:8081. That default is wrong on
 # both paths -- the service listens on 443, not 8081 -- which is why
 # .env.tilt sets it explicitly for the Tilt path. It is also the wrong NAME
 # here: the spire chart derives the Service from the release, so Tilt gets
 # spire-server while under this umbrella it is <release>-server. Left unset,
-# CWE dials a host that does not exist and every join token fails with
+# the controller dials a host that does not exist and every join token fails with
 # "produced zero addresses", which is what stalled tenant provisioning.
 env = [{"name": "SPIRE_SERVER_API_ADDRESS",
         "value": os.environ["SPIRE_SERVER_API_ADDRESS"]}]
 flag = os.environ.get("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER", "")
 if flag:
     env.append({"name": "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER", "value": flag})
-# backend-e2e.yml sets this and only Tilt was forwarding it. Left out, CWE takes
+# backend-e2e.yml sets this and only Tilt was forwarding it. Left out, the controller takes
 # its "true" default and reboots a container node in-guest, which never restarts.
 soft_reboot = os.environ.get("NODE_REBOOT_SOFT_REBOOT_ENABLED", "")
 if soft_reboot:
@@ -299,7 +299,7 @@ EOF
 EXTRA=()
 
 # capnico-e2e renders the Secret CAPNICo reads. CAPD needs none of this:
-# clusterctl init brings that provider, and CWE reaches it with no credentials.
+# clusterctl init brings that provider, and the controller reaches it with no credentials.
 #
 # The provider itself is not an item -- install-capnico.sh installs it before
 # this runs -- so nothing here names a chart for it.
@@ -332,7 +332,7 @@ print(json.dumps({"Nico": {
   EXTRA+=(--config "${BOOTSTRAP_CONFIG}")
 fi
 
-# Applies the releases CWE resolves every OS image from. The controller chart
+# Applies the releases the controller resolves every OS image from. The controller chart
 # installs their CRDs, so this waits for the CRDs before applying.
 NKE_CONTROLLER_RELEASES_DIR="${NKE_CONTROLLER_RELEASES_DIR:-/workspace/cloud-workflow-engine/test/fixtures/releases}"
 [[ -d "${NKE_CONTROLLER_RELEASES_DIR}" ]] || { echo "releases not found at ${NKE_CONTROLLER_RELEASES_DIR}; set NKE_CONTROLLER_RELEASES_DIR" >&2; exit 1; }

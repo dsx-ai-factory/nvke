@@ -10,7 +10,7 @@ Usage:
   hack/bgp-containers/capture-cwe-delete.sh start RESULT_DIR TARGET_CP WORKER_NODE WORKER_IP VIP [PORT] [TOR_CONTAINER]
   hack/bgp-containers/capture-cwe-delete.sh stop RESULT_DIR
 
-Starts the capture set needed before triggering a CWE node deletion:
+Starts the capture set needed before triggering a controller node deletion:
   - tcpdump -U -l on every capd-cp-* container and the worker
   - /var/log/nke-execute-scripts.log on the target CP
   - nke-agent.service journal on the target CP

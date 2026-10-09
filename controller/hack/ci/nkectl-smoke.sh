@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Drive nkectl against the CWE a backend E2E lane already deployed. Source it
+# Drive nkectl against the controller a backend E2E lane already deployed. Source it
 # from ci/backend-e2e.sh; do not run it.
 #
 # The Ginkgo suite proves the server. This proves the CLI can talk to it: read
@@ -115,7 +115,7 @@ nkectl_smoke_mkdir() {
 }
 
 # Port-forward rather than the apiserver service proxy: the proxy does not
-# forward a bearer token to CWE, which is why wait_for_zero_tenant_clusters
+# forward a bearer token to the controller, which is why wait_for_zero_tenant_clusters
 # counts CAPI objects instead of calling the API.
 # Called bare, not as `nkectl_smoke || exit 1`: bash disables errexit for a
 # whole function body when the call is the left side of ||, which made every
@@ -124,7 +124,7 @@ nkectl_smoke_mkdir() {
 nkectl_smoke() {
   local no_auth_config out rc
 
-  # Only the runner lanes need this. A host lane already has CWE on
+  # Only the runner lanes need this. A host lane already has the controller on
   # localhost:${NKECTL_SMOKE_CONTROLLER_PORT}, forwarded by Tilt for the whole run.
   if [[ -n "${NKECTL_SMOKE_RUNNER:-}" ]]; then
     docker exec -d -e KUBECONFIG="${NKECTL_SMOKE_KUBECONFIG}" "${NKECTL_SMOKE_RUNNER}" \
@@ -173,7 +173,7 @@ EOF
     return 1
   fi
 
-  # Control: without this, a CWE that stopped enforcing auth would leave the
+  # Control: without this, a controller that stopped enforcing auth would leave the
   # check above green and prove nothing about the token.
   if [[ "${NKE_E2E_REQUIRE_AUTHN:-}" == "true" ]]; then
     if out="$(nkectl_no_auth_exec get clusters 2>&1)"; then
@@ -255,10 +255,10 @@ EOF
   nkectl_smoke_create_rejections || return 1
   nkectl_smoke_write_round_trip || return 1
 
-  log "PASS: nkectl reached CWE, authenticated, listed clusters and node pools, read providers, resolved a kubeconfig request, and had malformed creates rejected"
+  log "PASS: nkectl reached the controller, authenticated, listed clusters and node pools, read providers, resolved a kubeconfig request, and had malformed creates rejected"
 }
 
-# version and config: every command that needs no CWE. They are the first two
+# version and config: every command that needs no controller. They are the first two
 # steps of the operator journey in cli/docs/user-flow.md, and a broken one is
 # invisible to every other assertion here because they all run after set-site.
 nkectl_smoke_local_commands() {
@@ -325,7 +325,7 @@ nkectl_smoke_local_commands() {
     return 1
   fi
 
-  # Wiring only. generate sitespec needs no CWE and its output is exercised for
+  # Wiring only. generate sitespec needs no controller and its output is exercised for
   # real by nkectl-bootstrap-e2e, so this just proves the shipped binary still
   # has the command and enforces its required flag.
   if out="$(nkectl_exec generate sitespec smoke-gen 2>&1)"; then
@@ -338,7 +338,7 @@ nkectl_smoke_local_commands() {
   fi
 }
 
-# get kubeconfig reaches the management cluster directly, not CWE: site
+# get kubeconfig reaches the management cluster directly, not the controller: site
 # kubeconfig -> Secret nke-system/<cluster>-admin-kubeconfig. Nothing else here
 # exercises that path, and the not-found message is the only proof the CLI
 # looked in the right namespace under the right name.
@@ -373,7 +373,7 @@ nkectl_smoke_kubeconfig_negatives() {
 }
 
 # Node pool read-path negatives, asserting the message like the cluster ones
-# above. A node pool command resolves a name through CWE before it acts, so an
+# above. A node pool command resolves a name through the controller before it acts, so an
 # exit code alone cannot tell a lookup that found nothing apart from a flag the
 # CLI rejected on its own.
 nkectl_smoke_nodepool_negatives() {
@@ -439,7 +439,7 @@ nkectl_smoke_nodepool_negatives() {
   fi
 }
 
-# `get providers` reads the site kubeconfig through kubectl rather than the CWE
+# `get providers` reads the site kubeconfig through kubectl rather than the controller
 # REST client, so it is the only smoke assertion covering that subsystem. Both
 # lanes stage CAPNICo and wait for its CRDs (ci/backend-e2e.sh, needs-capnico-source),
 # so crdsEstablished holds on CAPD too; only the NICo lane deploys the manager
@@ -564,7 +564,7 @@ EOF
 }
 
 # Assert the status, not the message: the text is the middleware's, and a 400
-# is the only proof the request reached CWE rather than dying in the CLI.
+# is the only proof the request reached the controller rather than dying in the CLI.
 nkectl_smoke_expect_create_rejected() {
   local spec="$1" what="$2" out
   if out="$(nkectl_exec create cluster -f "$(nkectl_smoke_spec_path "${spec}")" 2>&1)"; then
@@ -572,14 +572,14 @@ nkectl_smoke_expect_create_rejected() {
     return 1
   fi
   if ! grep -q '400' <<<"${out}"; then
-    log "nkectl smoke: 'create cluster' with ${what} failed, but not with a 400 from CWE: ${out}" >&2
+    log "nkectl smoke: 'create cluster' with ${what} failed, but not with a 400 from the controller: ${out}" >&2
     return 1
   fi
 }
 
 # Create, list, duplicate-reject, delete, with the node pool round trip nested
 # inside it. One control-plane pool with autoProvisionDisabled passes create
-# validation and schedules no node, so CWE writes only the CAPI Cluster and
+# validation and schedules no node, so the controller writes only the CAPI Cluster and
 # DockerCluster. Runs after the last leg: the gate between legs counts tenant
 # clusters.
 nkectl_smoke_write_round_trip() {
@@ -644,7 +644,7 @@ EOF
     nkectl_smoke_write_cleanup
     return "${rc}"
   fi
-  log "PASS: nkectl created, listed, patched and deleted a cluster through CWE"
+  log "PASS: nkectl created, listed, patched and deleted a cluster through the controller"
 }
 
 # Best-effort delete; never fails the caller.
@@ -907,7 +907,7 @@ EOF
     fi
     if grep -q 'not found' <<<"${out}"; then
       log "nkectl smoke: node pool ${pool} was gone after ${attempt} polls"
-      log "PASS: nkectl created, listed, filtered, patched and deleted a node pool through CWE"
+      log "PASS: nkectl created, listed, filtered, patched and deleted a node pool through the controller"
       return 0
     fi
     log "nkectl smoke: polling for node pool ${pool} failed for a reason other than not-found: ${out}" >&2
@@ -917,7 +917,7 @@ EOF
   return 1
 }
 
-# Patch desiredNodeCount to $1 and assert CWE stored it.
+# Patch desiredNodeCount to $1 and assert the controller stored it.
 nkectl_smoke_nodepool_scale() {
   local want="$1" out cluster="${NKECTL_SMOKE_WRITE_CLUSTER}" pool="${NKECTL_SMOKE_WRITE_NODEPOOL}"
 

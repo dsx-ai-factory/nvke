@@ -101,7 +101,7 @@ func validateNkectlPostCreate(test *tenantTest) {
 
 		// The gap this entry exists to close. `get kubeconfig` reads
 		// nke-system/<cluster>-admin-kubeconfig through the site's own
-		// kubeconfig rather than the CWE API, and that Secret appears only after
+		// kubeconfig rather than the controller API, and that Secret appears only after
 		// provisioning -- which the smoke lane's cluster never does.
 		It("prints a usable admin kubeconfig", func(ctx context.Context) {
 			raw, err := test.nkectlRunner.GetKubeconfig(ctx, test.cluster.Name)
@@ -128,7 +128,7 @@ func validateNkectlPostCreate(test *tenantTest) {
 		}, SpecTimeout(5*time.Minute))
 
 		// The CLI's unit tests cover the flag surface; what is left to e2e is a
-		// patch reaching CWE and sticking to a cluster that provisioned.
+		// patch reaching the controller and sticking to a cluster that provisioned.
 		//
 		// enableCPNodeRecycling only changes what a later upgrade would do, so it
 		// starts nothing that could collide with the delete below. The one-way
@@ -143,7 +143,7 @@ func validateNkectlPostCreate(test *tenantTest) {
 			Expect(*patched.EnableCPNodeRecycling).To(BeTrue(), "the patch should have been applied")
 		}, SpecTimeout(5*time.Minute))
 
-		// The smoke asserts this too, but against a CWE holding no clusters. A
+		// The smoke asserts this too, but against a controller holding no clusters. A
 		// real cluster exists alongside here, so this also shows the lookup
 		// filters rather than simply finding nothing.
 		It("reports a missing cluster as not found", func(ctx context.Context) {

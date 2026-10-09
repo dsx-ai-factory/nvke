@@ -47,7 +47,7 @@ import (
 const requestSpanName = "POST /api/clusters"
 
 // TestTraceContinuesThroughOutbox sends a real POST /api/clusters through the
-// CWE handler, PostgreSQL, the outbox processor, and a Temporal dev server.
+// controller handler, PostgreSQL, the outbox processor, and a Temporal dev server.
 // Only provisioning is replaced: a stand-in ProvisionCluster workflow reads the
 // new cluster back through the real DB layer and injects a controlled outcome,
 // so no infrastructure is created.

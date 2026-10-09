@@ -291,18 +291,18 @@ tilt_config_staged=true
 
 # Sequential two-mode CAPD run (mirrors controller/hack/ci/backend-e2e.sh): a
 # default local run validates both control-plane paths on one cluster -- the
-# cp-controller leg (flag-on) first, then a light CWE redeploy to flag-off for
+# cp-controller leg (flag-on) first, then a light controller redeploy to flag-off for
 # the node-pool leg. Set LOCAL_NKE_E2E_LABEL_FILTER to run a single explicit
 # filter instead, or LOCAL_NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES=false.
 sequential_modes="${LOCAL_NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES:-true}"
 if [[ -n "${LOCAL_NKE_E2E_LABEL_FILTER:-}" ]]; then
   sequential_modes=false
 fi
-# The cp-controller leg needs a flag-on CWE, so deploy flag-on when sequential.
-# A single-filter run deploys one CWE and never redeploys, so it has to state
-# the mode rather than inherit it: CWE's own default is now true (#1054), and an
+# The cp-controller leg needs a flag-on controller, so deploy flag-on when sequential.
+# A single-filter run deploys one controller and never redeploys, so it has to state
+# the mode rather than inherit it: the controller's own default is now true (#1054), and an
 # unset flag used to mean "node-pool control plane". Left unset, the node-pool
-# specs get a flag-on CWE, which rejects control-plane node pools outright --
+# specs get a flag-on controller, which rejects control-plane node pools outright --
 # `control-plane node pools are not allowed when control-plane controller
 # provisioning is enabled`. Defaulted, not forced, so an explicit
 # PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true still selects the
@@ -313,7 +313,7 @@ else
   export PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-false}"
 fi
 
-log "deploying local CWE through Tilt"
+log "deploying local controller through Tilt"
 TILT_DISABLE_ANALYTICS=1 tilt ci \
   --port=0 \
   --timeout=40m \
@@ -366,9 +366,9 @@ docker cp "${e2e_binary}" "${runner_name}:/state/cwe-e2e.test"
 docker cp "${internal_kubeconfig}" "${runner_name}:/state/management.kubeconfig"
 docker cp "${e2e_config}" "${runner_name}:/state/e2e-config.json"
 
-# Run one Ginkgo leg against the already-deployed CWE. suffix keeps each leg's
+# Run one Ginkgo leg against the already-deployed controller. suffix keeps each leg's
 # log and JUnit report distinct (empty for a single-mode run).
-# Tilt builds CWE with `make build`, which bakes BUILD_VERSION in, so ask the
+# Tilt builds the controller with `make build`, which bakes BUILD_VERSION in, so ask the
 # Makefile for the same value rather than deriving it again here. Without it the
 # health suite's version spec skips itself and the leg still reports success.
 cwe_expected_version="$(make -C "${repo_root}" -s --no-print-directory print-BUILD_VERSION)"
@@ -414,7 +414,7 @@ run_local_leg() {
 
 # Cleanup gate between legs: the cp-controller leg's delete spec should have
 # removed every tenant cluster before the node-pool leg starts. Count CAPI
-# Cluster objects directly (not the CWE API, which enforces auth); zero of them
+# Cluster objects directly (not the controller API, which enforces auth); zero of them
 # is a faithful, auth-free "cluster is clean" signal.
 local_kubectl() { kubectl "$@"; }
 
@@ -427,7 +427,7 @@ wait_for_zero_tenant_clusters() {
 # (no re-run of Tilt), wait for the rollout, and confirm the new value stuck.
 redeploy_cwe() {
   local value="$1" got
-  log "redeploying CWE with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
+  log "redeploying the controller with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
   kubectl -n nke-controller set env deployment/nke-controller \
     "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
   kubectl -n nke-controller rollout status deployment/nke-controller --timeout=5m

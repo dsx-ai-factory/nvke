@@ -58,7 +58,7 @@ func validatePostReadyCertificateRenewal(test *tenantTest) {
 			20*time.Minute,
 		)).To(Succeed())
 
-		By("Verifying CWE and the tenant API report every node Ready after renewal")
+		By("Verifying the controller and the tenant API report every node Ready after renewal")
 		Eventually(func(ctx context.Context) error {
 			if err := test.assertDesiredNodesReady(ctx); err != nil {
 				return err

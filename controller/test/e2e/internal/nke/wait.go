@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	// nodeRebootStartTimeout bounds how long CWE may take to observe a reboot.
+	// nodeRebootStartTimeout bounds how long the controller may take to observe a reboot.
 	nodeRebootStartTimeout = 5 * time.Minute
 	// noLastError is the placeholder used before a poll loop records a failure.
 	noLastError = "<none>"
@@ -49,7 +49,7 @@ func stallWindow(budget time.Duration) time.Duration {
 // erroring if Provisioning flips to False, the message stops changing, the
 // deadline passes, or ctx is done.
 //
-// The message is watched because CWE does not give up. Its provisioning
+// The message is watched because the controller does not give up. Its provisioning
 // activities retry indefinitely, so a node that cannot be provisioned leaves
 // Provisioning True and Provisioned False for as long as anyone waits, and the
 // deadline is the only thing that ends it. A run then spends its whole budget
@@ -290,7 +290,7 @@ func (c *Client) WaitForProvisionedNodeCountExcluding(ctx context.Context, nodeP
 
 // WaitForProvisionedNodeCountStable waits until the node pool holds exactly
 // desired total (all provisioned) nodes continuously for stableFor. Used to
-// assert CWE does not spuriously re-provision a manually deleted node after the
+// assert the controller does not spuriously re-provision a manually deleted node after the
 // desired count was lowered (a delayed replacement resets the stability window).
 func (c *Client) WaitForProvisionedNodeCountStable(ctx context.Context, nodePoolID openapi_types.UUID, desired int, stableFor time.Duration) error {
 	deadline := time.After(c.opts.Provision)

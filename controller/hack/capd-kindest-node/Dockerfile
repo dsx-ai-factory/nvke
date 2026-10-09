@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Custom KinD/CAPD node image for local development. SPIRE agent.conf and
-# initial-trust-bundle.pem are supplied at bootstrap by CWE (capi_bootstrap_userdata.go),
+# initial-trust-bundle.pem are supplied at bootstrap by the controller (capi_bootstrap_userdata.go),
 # not baked into this image. See README.md in this directory.
 #
 # The local TPM-backed Forge flow depends on this image satisfying three local
@@ -12,7 +12,7 @@
 #   2. leave a DER-encoded EK certificate on disk at `/var/lib/swtpm/ek.cert`
 #      so the nico-vms container backend can surface Forge-compatible
 #      `tpmEkCertificate` data
-#   3. start that vTPM plumbing before `spire-agent` and `nke-agent`, so CWE
+#   3. start that vTPM plumbing before `spire-agent` and `nke-agent`, so the controller
 #      preflight sees a SPIFFE-enabled node whose TPM identity is already ready
 
 ARG KINDEST_NODE_TAG=v1.34.8
@@ -66,7 +66,7 @@ RUN set -eux; \
 COPY scripts/cloud-init-status-shim /usr/local/bin/cloud-init
 RUN chmod 0755 /usr/local/bin/cloud-init
 
-# nke-agent CNI install runs scripts that expect `python` on PATH. CWE's
+# nke-agent CNI install runs scripts that expect `python` on PATH. The controller's
 # kubeadm config runbooks also require PyYAML. The local TPM workflow
 # additionally needs:
 #   - `swtpm` to emulate the TPM itself

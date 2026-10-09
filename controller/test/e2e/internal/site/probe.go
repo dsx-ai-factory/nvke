@@ -3,7 +3,7 @@
 
 package site
 
-// Deciding whether CWE is healthy, and waiting until it is.
+// Deciding whether the controller is healthy, and waiting until it is.
 
 import (
 	"context"
@@ -32,10 +32,10 @@ const (
 	defaultProbeTimeout = 30 * time.Second
 )
 
-// ProbeCWE polls until CWE answers /healthz through kubeconfig, then returns
+// ProbeCWE polls until the controller answers /healthz through kubeconfig, then returns
 // the version it reports.
 //
-// Only a run that deployed CWE has one to ask. A run that stopped at
+// Only a run that deployed the controller has one to ask. A run that stopped at
 // Kubernetes asserts against the API server instead, and expresses that by not
 // calling this.
 func ProbeCWE(ctx context.Context, kubeconfig string, within, poll time.Duration) (string, error) {
@@ -71,7 +71,7 @@ func waitHealthy(ctx context.Context, within, poll, each time.Duration, probe fu
 		}
 		select {
 		case <-ctx.Done():
-			return "", fmt.Errorf("CWE did not become healthy within %s: %w", within, err)
+			return "", fmt.Errorf("controller did not become healthy within %s: %w", within, err)
 		case <-ticker.C:
 		}
 	}
@@ -85,7 +85,7 @@ func probeOnce(ctx context.Context, each time.Duration, probe func(context.Conte
 	return probe(ctx)
 }
 
-var errUnhealthy = errors.New("CWE unhealthy")
+var errUnhealthy = errors.New("controller unhealthy")
 
 func probeCWE(ctx context.Context, kubeconfig string) (string, error) {
 	restConfig, err := kube.RESTConfig(kubeconfig, "")

@@ -173,7 +173,7 @@ func rebootAlreadySignaled(machine *clusterv1.Machine, rebootAnnotation string) 
 		return false
 	}
 
-	// This is a best effort to parse the timestamp, CWE does currently put the value as a timestamp, but this is not necessarily guaranteed.
+	// This is a best effort to parse the timestamp, the controller does currently put the value as a timestamp, but this is not necessarily guaranteed.
 	rebootStartedTime, err := time.Parse(time.RFC3339, rebootAnnotation)
 	if err != nil {
 		return false
