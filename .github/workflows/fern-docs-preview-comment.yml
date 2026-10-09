@@ -4,8 +4,8 @@
 # Workflow 2 of 2 for Fern doc previews (see fern-docs-preview-build.yml).
 #
 # Triggered by workflow_run after the build workflow completes. Downloads the
-# fern/ artifact, generates a preview with DOCS_FERN_TOKEN, and posts (or
-# updates) a comment on the PR. Secrets are never exposed to untrusted code.
+# fern/ artifact, generates a preview with FERN_TOKEN, and posts (or updates)
+# a comment on the PR. Secrets are never exposed to untrusted code.
 #
 # Requires: FERN_TOKEN organization secret.
 
@@ -19,6 +19,7 @@ on:
 permissions:
   pull-requests: write
   actions: read
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.workflow_run.head_repository.full_name || github.repository }}-${{ github.event.workflow_run.head_branch || github.event.workflow_run.id }}
@@ -38,11 +39,30 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Read PR metadata
+      - name: Validate and read PR metadata
         id: metadata
         run: |
-          echo "pr_number=$(cat preview-metadata/pr_number)" >> "$GITHUB_OUTPUT"
+          PR_NUMBER=$(cat preview-metadata/pr_number)
+          if ! printf '%s' "$PR_NUMBER" | grep -qE '^[0-9]+$'; then
+            echo "::error::Invalid pr_number in artifact: ${PR_NUMBER}"
+            exit 1
+          fi
+          echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "head_ref=$(cat preview-metadata/head_ref)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout trusted Fern config from base branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.base_branch }}
+          sparse-checkout: fern
+          sparse-checkout-cone-mode: true
+          persist-credentials: false
+          path: trusted-fern
+
+      - name: Replace artifact fern/ with trusted config
+        run: |
+          rm -rf fern/
+          cp -r trusted-fern/fern/ fern/
 
       - name: Generate preview URL
         id: generate-docs
@@ -59,12 +79,15 @@ jobs:
             echo "::error::Failed to generate preview URL. See fern output above."
             exit 1
           fi
+          if ! printf '%s' "$URL" | grep -qE '^https://[a-zA-Z0-9._-]+\.buildwithfern\.com'; then
+            echo "::error::Unexpected preview URL host (expected buildwithfern.com): ${URL}"
+            exit 1
+          fi
           echo "preview_url=$URL" >> "$GITHUB_OUTPUT"
 
       - name: Build page links for changed files
         id: page-links
         env:
-          FERN_TOKEN: ${{ secrets.FERN_TOKEN }}
           PREVIEW_URL: ${{ steps.generate-docs.outputs.preview_url }}
         run: |
           CHANGED_FILES=""
@@ -79,7 +102,7 @@ jobs:
           BASE_URL="${PREVIEW_URL%/}"
           FILES_PARAM=$(echo "$CHANGED_FILES" | tr '\n' ',' | sed 's/,$//' \
             | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip(), safe=',/'))")
-          RESPONSE=$(curl -sf -H "FERN_TOKEN: $FERN_TOKEN" "${PREVIEW_URL}/api/fern-docs/get-slug-for-file?files=${FILES_PARAM}" 2>/dev/null) || {
+          RESPONSE=$(curl -sf "${PREVIEW_URL}/api/fern-docs/get-slug-for-file?files=${FILES_PARAM}" 2>/dev/null) || {
             echo "page_links=" >> "$GITHUB_OUTPUT"; exit 0
           }
 
