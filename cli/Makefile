@@ -35,6 +35,7 @@ endif
 
 # golangci-lint pin and bootstrap, shared with every other module.
 include ../make/golangci.mk
+include ../make/coverage.mk
 include ../make/tool-versions.mk
 
 # Version stamping, mirroring controller/Makefile.
@@ -135,7 +136,8 @@ build: ## Build nkectl into bin/, and assert the version stamp took.
 GO_TEST_FLAGS ?=
 
 test: ## Run this module's tests. (run by the merge gate)
-	$(GO) test $(GO_TEST_FLAGS) ./...
+	@$(COVERAGE_MKDIR)
+	$(GO) test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) ./...
 
 # e2e coverage for "nkectl bootstrap site" specifically -- e2e/bootstrap/ is
 # one of what may become several e2e/<command>/ suites as nkectl grows more

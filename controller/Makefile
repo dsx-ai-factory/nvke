@@ -33,6 +33,7 @@ endif
 GOLANGCI_LINT_GOWORK :=
 include ../make/tool-versions.mk
 include ../make/golangci.mk
+include ../make/coverage.mk
 
 # Image URL to use all building/pushing image targets
 IMG_NAME ?= nvcr.io/j7sbcjl3qgta/nke-controller
@@ -187,26 +188,25 @@ fmt: ## Format code (gofumpt + goimports; matches .golangci.yml formatters).
 # test command, so `make test` stays the one definition of what "the tests" are.
 GO_TEST_FLAGS ?=
 
-# atomic, not count. Go rejects `-covermode count` outright when -race is on:
-# "-covermode must be \"atomic\", not \"count\", when -race is enabled". atomic
-# is valid with or without the race detector, so one setting covers both and
-# there is no conditional to get wrong.
-GO_COVER_MODE ?= atomic
-
 .PHONY: test
 test: ## Execute unit tests (excludes integration tests). (run by the merge gate)
-	# coverage.txt is kept: `go tool cover` reads it, and producing it is free.
+	# The profile lands in the repository-root coverage/ directory now, not in
+	# coverage.txt beside this Makefile. make/coverage.mk owns the path and the
+	# mode for every module, and hack/coverage.sh reads that one directory.
+	# What has not changed: no threshold gates on the number it holds. See
+	# docs/coverage-policy.md for why a percentage is not test adequacy.
+	#
 	# The cobertura.xml conversion that used to follow is gone. It existed for
 	# GitLab's coverage visualisation, and that pipeline is gone -- no
 	# .gitlab-ci.yml, no workflow reading either file, and both are gitignored.
 	# It cost about 9 seconds of download and compile per run on a cold cache,
 	# and pulled golang.org/x/tools, 15 MB, to convert one file to XML.
-	# nico-sim already produces a coverprofile without it.
 	#
 	# integration-test/ is behind the `integration_test` build tag, so
 	# `go list ./...` no longer needs filtering here. The old grep matched
 	# by accident anyway: `.` is a regex wildcard, not a path prefix.
-	go test $(GO_TEST_FLAGS) ./... -coverprofile=coverage.txt -covermode $(GO_COVER_MODE)
+	@$(COVERAGE_MKDIR)
+	go test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) ./...
 
 # The `integration` build tag covers two packages here, and neither needs a
 # service to be running. internal/agent binds a loopback socket and mints its

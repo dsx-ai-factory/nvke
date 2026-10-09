@@ -40,8 +40,17 @@ if you would rather manage the tools yourself.
 ```bash
 make build                # compile every module, binaries into bin/
 make test                 # every module's own test suite
+make coverage             # the same suites, with a per-module coverage table
 make -C controller lint   # one module, when that is all you changed
 ```
+
+`make test` already writes a coverage profile per module into `coverage/`.
+`make coverage` re-runs the collecting modules from scratch and reports;
+`make coverage-report` skips the run and reports on the profiles that are
+already there. `go tool cover -html=coverage/<module>.out` opens one.
+**No threshold gates a merge, and the percentage is not a measure of how well
+tested anything is** — read [coverage-policy.md](coverage-policy.md) before
+quoting one in a review.
 
 Each module answers the same four verbs, so `make -C <module> {build,test,lint,fmt}`
 works for `agent`, `cli`, `controller`, `controller/nico-sim`,

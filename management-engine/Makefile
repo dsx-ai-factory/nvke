@@ -75,12 +75,18 @@ TEST_PROCS ?= 5
 test: test-api test-controller ## Run API and controller tests.
 
 .PHONY: test-api
+# Two profiles, not one: the API suite and the envtest suite are separate
+# invocations with separate binaries, so they cannot share an output file.
+# hack/coverage.sh treats every coverage/management-engine*.out as this
+# module's, and the suffixes come from make/coverage.mk.
 test-api: manifests generate fmt vet ## Run API tests.
-	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=cover-api.out ./apis/...
+	@$(COVERAGE_MKDIR)
+	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,apis) -covermode=$(GO_COVER_MODE) ./apis/...
 
 .PHONY: test-controller
 test-controller: manifests generate fmt vet setup-envtest ginkgo ## Run controller envtest fixtures.
-	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" "$(GINKGO)" --race --procs=$(TEST_PROCS) --cover --coverprofile=cover-controller.out ./controllers/...
+	@$(COVERAGE_MKDIR)
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" "$(GINKGO)" --race --procs=$(TEST_PROCS) --cover --covermode=$(GO_COVER_MODE) --output-dir=$(COVERAGE_DIR) --coverprofile=$(call coverprofile_name,controllers) ./controllers/...
 
 .PHONY: test-update
 test-update: export TESTUTIL_UPDATE_EXPECTED=true
@@ -207,6 +213,7 @@ GOLANGCI_LINT_VERSION ?= v2.14.0
 # this module and for cluster-api-provider-provisioned/. Included after the
 # pins above so the ones derived from go.mod keep their values.
 include ../make/tool-versions.mk
+include ../make/coverage.mk
 
 .PHONY: kind
 kind: $(LOCALBIN) ## Install the pinned Kind CLI for the development environment.

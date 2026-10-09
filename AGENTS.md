@@ -294,6 +294,19 @@ For the NKTP chart, from the repository root:
 make nktp-chart-check
 ```
 
+If you added, moved or removed a test file, a module, or anything in a module's
+`test` target, from the repository root:
+
+```bash
+make coverage-check   # runs no tests; a second
+```
+
+It fails when a module stops collecting coverage, when a module gains its first
+test and is not moved onto the collecting list, and when a build tag takes a test
+suite out of the build — none of which turns anything else red.
+**Do not add a coverage threshold and do not quote a coverage percentage as
+evidence that a change is tested.** See [docs/coverage-policy.md](docs/coverage-policy.md).
+
 `make lint` in `agent/` is the check CI runs on every push, so treat a failure
 there as a blocked merge. `make notices-check` regenerates the file and fails on
 any difference — if it reports a change, commit the regenerated file rather than

@@ -61,6 +61,7 @@ ARCHES := amd64 arm64
 # golangci-lint pin and bootstrap, shared with every other module.
 include ../make/tool-versions.mk
 include ../make/golangci.mk
+include ../make/coverage.mk
 
 GIT_HOOKS_DIR := $(shell git rev-parse --git-path hooks 2>/dev/null || echo .git/hooks)
 
@@ -215,7 +216,8 @@ export TMPDIR := /private/tmp
 endif
 
 test: ## Run tests (run by the merge gate)
-	go test $(GO_TEST_FLAGS) ./...
+	@$(COVERAGE_MKDIR)
+	go test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) ./...
 
 # Sources in this module carry the repository's Apache-2.0 identifier, per the
 # "License headers" section of the root CONTRIBUTING.md. Ignored paths are
