@@ -160,6 +160,5 @@ For the full checklist, see [verification](verification.md).
 - [Verification](verification.md): checking every signal end to end.
 - [Troubleshooting](troubleshooting.md): the failures seen on real site
   controllers, and their fixes.
-- [Observability](../../operations/observability.md): the Temporal UI,
-  controller logs and provider diagnostics, which NKTP complements rather than
-  replaces.
+- [Observe NVKE and its clusters](../../operate/observe.md): health checks,
+  controller logs and metrics, which NKTP complements rather than replaces.
