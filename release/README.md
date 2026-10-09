@@ -4,10 +4,10 @@ This directory holds release and qualification tooling: the orchestration that
 takes a candidate set of already-built artifacts and resolves what a
 qualification run would cover.
 
-> **Plan only.** This directory defines the shape of NKE release
-> qualification, and `qualify plan` resolves a real one from the repository's
-> tags and writes it as `plan.json`, which the e2e qualification workflow will
-> consume to run the matrix of jobs.
+> `qualify plan` resolves a real plan from the repository's tags and the
+> artifact bucket and writes it as `plan.json`. The
+> [`qualify-e2e` workflow](../.github/workflows/qualify-e2e.yml) runs it and
+> qualifies one job per stream.
 
 ## Usage
 
@@ -70,7 +70,7 @@ $ go run ./release/cmd/qualify plan --subject nke --scope full
         { "name": "capi-provisioned", "version": "v0.1.0" }
       ],
       "dependencies": [
-        { "name": "nke-cni-ovn",               "version": "1.4.0" },
+        { "name": "cni-ovn",               "version": "1.4.0" },
         { "name": "os-image-bootloader-amd64", "url": "https://cdn.example/nke-isos/qcow/efi/x86_64/qcow-imager.efi" },
         { "name": "os-image-bootloader-arm64", "url": "https://cdn.example/nke-isos/qcow/efi/aarch64/qcow-imager.efi" },
         { "name": "kind",                      "version": "v0.32.0" },
@@ -122,11 +122,24 @@ $ go run ./release/cmd/qualify plan --subject nke --scope full
 
 ## How the plan is used
 
-`plan.json` is the input to a qualification run. The e2e qualification workflow
-will consume it to run the matrix of qualification jobs: each stream in each
-combination is one job, run at the versions the plan resolved. The plan carries
-what a job needs, the versions to test and the capabilities of the stream to run
-on.
+`plan.json` is the input to a qualification run. In the
+[`qualify-e2e` workflow](../.github/workflows/qualify-e2e.yml):
+
+- The `plan` job runs `qualify plan --subject nke`. The dispatch inputs and
+  `QUALIFY_E2E_*` repository variables that name a version are passed as
+  `--overrides`, so the plan records them and a job never has to guess which of
+  the two it was handed. The plan is uploaded as an artifact.
+- The `qualify-matrix` job runs once for each stream of each combination. Its
+  versions, architecture and GPU model are that stream's entry in the plan, so
+  every stream qualifies exactly what the plan resolved. Each job is named by
+  its stream.
+
+The plan carries what a job needs, the versions to test and the capabilities of
+the stream to run on. The e2e suite requires every version a Forge run uses
+(`controller`, `capi-provisioned`, `kube`, `cni-ovn`, `kind`, `clusterctl`,
+`nerdctl` and the image and bootloader URLs) and fails before a machine exists
+when one is missing. It carries no default for them, so the plan is the one
+place the versions come from.
 
 ## What this is not
 
@@ -169,8 +182,9 @@ The file lists two kinds of thing.
 
 `components` are the parts of NKE tested together: `controller`, `cli`,
 `os-image` and `capi-provisioned`. Each carries `selectors` that say which
-version to take, and today the only selector is `latest`, the highest release,
-else the highest candidate. One choice of versions for all four is a
+version to take, and today the only selector is `latest`, the highest version of
+any kind ordered by semver, so `v0.1.1` beats `v0.1.1-rc.8` and `v0.1.1-rc.1`
+beats `v0.1.0`. One choice of versions for all four is a
 **combination**, which is what a plan is organised by.
 
 `dependencies` are the other versions a run needs: Kubernetes, the OVN CNI, the
@@ -202,7 +216,7 @@ constraint becomes `1.4`.
 | Component | Where its version comes from |
 |---|---|
 | `nke`, `controller`, `cli`, `capi-provisioned`, `os-image` | Git tags, under each component's tag prefix |
-| `kube`, `nke-cni-ovn` | The lock files the image's packages commit, read at the `os-image` tag the combination resolved. A node installs these from the image's own apt repository, so the lock files are the versions it can offer |
+| `kube`, `cni-ovn` | The lock files the image's packages commit, read at the `os-image` tag the combination resolved. A node installs these from the image's own apt repository, so the lock files are the versions it can offer |
 | `os-image-amd64`, `os-image-arm64` | Built from the `os-image` tag, the architecture and the Ubuntu point release the stream's series picks from `releases` |
 | `os-image-bootloader-amd64`, `os-image-bootloader-arm64` | A path declared in `qualification.yaml` under the registry's `artifact-cdn` source, because nothing derives it |
 | `kind`, `clusterctl`, `nerdctl` | `make/tool-versions.mk`, which owns every tool pin |

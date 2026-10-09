@@ -103,8 +103,8 @@ func TestMatchInstanceTypeTakesFirstSatisfyingType(t *testing.T) {
 		Key: "test",
 		InstanceTypes: []InstanceType{
 			{Name: "cheap-cpu", ID: "1", Provides: map[string]string{infra.CapabilityMachineType: "cpu", infra.CapabilityArch: "amd64"}},
-			{Name: "gpu", ID: "2", Provides: map[string]string{infra.CapabilityMachineType: "gpu", infra.CapabilityArch: "amd64", infra.CapabilityGPU: "l40"}},
-			{Name: "second-gpu", ID: "3", Provides: map[string]string{infra.CapabilityMachineType: "gpu", infra.CapabilityArch: "amd64", infra.CapabilityGPU: "l40"}},
+			{Name: "gpu", ID: "2", Provides: map[string]string{infra.CapabilityMachineType: "gpu", infra.CapabilityArch: "amd64", infra.CapabilityGPU: "l40s"}},
+			{Name: "second-gpu", ID: "3", Provides: map[string]string{infra.CapabilityMachineType: "gpu", infra.CapabilityArch: "amd64", infra.CapabilityGPU: "l40s"}},
 		},
 	}
 
@@ -115,7 +115,7 @@ func TestMatchInstanceTypeTakesFirstSatisfyingType(t *testing.T) {
 	}{
 		{"cheapest first", map[string]string{infra.CapabilityMachineType: "gpu"}, "gpu"},
 		{"cpu request", map[string]string{infra.CapabilityMachineType: "cpu"}, "cheap-cpu"},
-		{"gpu model narrows", map[string]string{infra.CapabilityGPU: "l40"}, "gpu"},
+		{"gpu model narrows", map[string]string{infra.CapabilityGPU: "l40s"}, "gpu"},
 		// kube names a software version, so it must not exclude every machine.
 		{"software keys ignored", map[string]string{infra.CapabilityMachineType: "cpu", "kube": "1.37"}, "cheap-cpu"},
 		{"no capabilities takes the first", map[string]string{}, "cheap-cpu"},
@@ -147,7 +147,7 @@ func TestMatchInstanceTypeDoesNotFallBack(t *testing.T) {
 	for _, capabilities := range []map[string]string{
 		{infra.CapabilityMachineType: "cpu", infra.CapabilityArch: "arm64"},
 		{infra.CapabilityMachineType: "gpu", infra.CapabilityArch: "amd64"},
-		{infra.CapabilityGPU: "l40"},
+		{infra.CapabilityGPU: "l40s"},
 	} {
 		if got, err := site.MatchInstanceType(capabilities); err == nil {
 			t.Errorf("%v should not have matched, got %q", capabilities, got.Name)
@@ -196,7 +196,7 @@ func TestResolvePicksTheSiteByCapability(t *testing.T) {
 		ID: "a", VpcID: "v", SubnetID: "s", SSHKeyGroupID: "k",
 		InstanceTypes: []InstanceType{
 			{Name: "cpu.himem.t1", ID: "1", Provides: map[string]string{"machineType": "cpu", "arch": "amd64"}},
-			{Name: "gpu.l40sx8", ID: "2", Provides: map[string]string{"machineType": "gpu", "arch": "amd64", "gpu": "l40"}},
+			{Name: "gpu.l40sx8", ID: "2", Provides: map[string]string{"machineType": "gpu", "arch": "amd64", "gpu": "l40s"}},
 		},
 	}
 	ytl := Site{
@@ -211,7 +211,7 @@ func TestResolvePicksTheSiteByCapability(t *testing.T) {
 	// The capability picks the site. Keying on a name instead would make this
 	// ambiguous the moment a second site is declared.
 	for _, tc := range []struct{ name, gpu, wantSite, wantType string }{
-		{"l40 is only at az61", "l40", "az61", "gpu.l40sx8"},
+		{"l40s is only at az61", "l40s", "az61", "gpu.l40sx8"},
 		{"gb200 is only at ytl", "gb200", "ytl", "gpu.gb200"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

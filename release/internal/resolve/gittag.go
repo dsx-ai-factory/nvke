@@ -28,10 +28,11 @@ type GitTag struct {
 // Resolve returns the version and the tag it was read from.
 //
 // With InputOverrideKey it checks that the version exists and returns it. With no
-// version it returns the highest release, else the highest candidate, or only
-// the highest candidate under SelectCandidate. Release candidates are not
-// preferred over a release by default, because a release can be a hotfix cut
-// without a candidate and holding against what shipped is the point.
+// version it returns the highest version of any kind, ordered by semver, so a
+// candidate is chosen when it is newer than every release and a release is chosen
+// when it is newer than its candidates: v0.1.1 beats v0.1.1-rc.8, and
+// v0.1.1-rc.1 beats v0.1.0. Under SelectCandidate it returns only the highest
+// candidate.
 func (g GitTag) Resolve(inputs map[string]string) (map[string]string, error) {
 	versions, err := g.versions()
 	if err != nil {
@@ -59,11 +60,6 @@ func (g GitTag) pick(versions []string, inputs map[string]string) (string, error
 		}
 		return "", fmt.Errorf("%s has no release candidate, so a version has to be named", g.name())
 	case "":
-		for _, v := range versions {
-			if isRelease(v) {
-				return v, nil
-			}
-		}
 		if len(versions) > 0 {
 			return versions[0], nil
 		}

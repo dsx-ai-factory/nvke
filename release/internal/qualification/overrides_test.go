@@ -99,7 +99,7 @@ func TestPlanOverridesReplaceWhatResolves(t *testing.T) {
 	if c.ID != "cli-v0.1.0-rc.7_os-image-v0.1.0-rc.3" {
 		t.Errorf("id is %q, which should carry the overridden version", c.ID)
 	}
-	if g := versionsOf(c.Dependencies); g != "nke-cni-ovn=1.4.0 kind=v0.33.0" {
+	if g := versionsOf(c.Dependencies); g != "cni-ovn=1.4.0 kind=v0.33.0" {
 		t.Errorf("combination dependencies are %q", g)
 	}
 	for _, s := range c.Streams {
@@ -117,8 +117,8 @@ func TestPlanOverridesReplaceWhatResolves(t *testing.T) {
 	if in := r["kube"].calls[0]; in[resolve.InputOverrideKey] != "1.34.2" || in["os-image.ref"] != "os-image/v0.1.0-rc.3" {
 		t.Errorf("kube was given %v", in)
 	}
-	if in := r["nke-cni-ovn"].calls[0]; in[resolve.InputOverrideKey] != "" {
-		t.Errorf("nke-cni-ovn was not overridden but was given %v", in)
+	if in := r["cni-ovn"].calls[0]; in[resolve.InputOverrideKey] != "" {
+		t.Errorf("cni-ovn was not overridden but was given %v", in)
 	}
 }
 
@@ -149,7 +149,7 @@ func TestPlanRejectsOverridesTheSubjectDoesNotList(t *testing.T) {
 		{
 			"an unknown name",
 			map[string]string{"helm": "v4.0.0"},
-			`nke has no component or dependency "helm", it lists os-image, cli, kube, nke-cni-ovn, kind`,
+			`nke has no component or dependency "helm", it lists os-image, cli, kube, cni-ovn, kind`,
 		},
 		{"the subject itself", map[string]string{"nke": "v0.22.0-beta.1"}, "nke is the subject, so its version is named with --version"},
 	} {

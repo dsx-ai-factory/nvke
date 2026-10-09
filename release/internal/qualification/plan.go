@@ -3,7 +3,7 @@
 
 package qualification
 
-// Plan is what `qualify plan` writes and every later verb reads.
+// Plan is what `qualify plan` writes and the e2e qualification workflow reads.
 type Plan struct {
 	Subject string `json:"subject"`
 	Version string `json:"version"`

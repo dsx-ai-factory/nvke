@@ -51,20 +51,18 @@ const (
 	envJumpHostPassword = "JUMP_HOST_PASSWORD"
 )
 
-// Host tools the node installs for nkectl, pinned to what has built a site on
-// the Forge hardware. Each can be overridden through -e2e.versions, as can
-// capi-provisioned, the only published CAPI provider tag there is.
-//
-// The first three mirror pins the repository keeps elsewhere, so a bump there
-// belongs here too: kind and clusterctl in make/tool-versions.mk as
-// KIND_VERSION and CAPI_VERSION, nerdctl in nkectl-bootstrap-e2e.yml as
-// NERDCTL_VERSION. They are copied rather than read because a test binary
-// cannot see a make variable.
+// The versions a Forge run is given in -e2e.versions, all required. A run that
+// names none of a version has not said what it qualifies, so the suite fails
+// before a machine exists instead of falling back to a constant the record
+// cannot see.
 const (
-	siteDefaultNerdctlVersion         = "2.3.5"
-	siteDefaultKindVersion            = "v0.32.0"
-	siteDefaultClusterctlVersion      = "v1.12.3"
-	siteDefaultCAPIProvisionedVersion = "v0.1.0-rc.1"
+	versionController      = "controller"
+	versionCAPIProvisioned = "capi-provisioned"
+	versionKube            = "kube"
+	versionCNIOVN          = "cni-ovn"
+	versionKind            = "kind"
+	versionClusterctl      = "clusterctl"
+	versionNerdctl         = "nerdctl"
 )
 
 // The shape of the site this run bootstraps.
@@ -496,7 +494,10 @@ func newForgeProvider(cfg config.Config, env *environment.Environment) (infra.Pr
 		}
 	}
 
-	kubernetesVersion := cmp.Or(optionalVersion("kube"), forgeDefaultKubernetesVersion)
+	versions, err := requireVersions(versionKube, versionCNIOVN, versionNerdctl, versionKind, versionClusterctl)
+	if err != nil {
+		return nil, err
+	}
 	provider, err := forge.New(forge.Options{
 		Env:      forgeEnv,
 		SiteName: forgeSite.Key,
@@ -510,11 +511,11 @@ func newForgeProvider(cfg config.Config, env *environment.Environment) (infra.Pr
 			return requireNodeArtifacts(arch)
 		},
 		Dialer: forge.Teleport(dialer),
-		Node:   nodeInputs(kubernetesVersion),
+		Node:   nodeInputs(versions[versionKube], versions[versionCNIOVN]),
 		Tools: forge.HostTools{
-			NerdctlVersion:    cmp.Or(optionalVersion("nerdctl"), siteDefaultNerdctlVersion),
-			KindVersion:       cmp.Or(optionalVersion("kind"), siteDefaultKindVersion),
-			ClusterctlVersion: cmp.Or(optionalVersion("clusterctl"), siteDefaultClusterctlVersion),
+			NerdctlVersion:    versions[versionNerdctl],
+			KindVersion:       versions[versionKind],
+			ClusterctlVersion: versions[versionClusterctl],
 		},
 		DisableMTLS: siteDisableMTLS,
 	})
@@ -563,9 +564,9 @@ func sessionRelay(session infra.Session) kube.EndpointRelay {
 	}
 }
 
-// siteDiagnostics is written next to site-e2e.log, in the directory the
+// siteDiagnostics is written next to qualify-e2e.log, in the directory the
 // suite runs from, so CI picks it up with the rest of the run's record.
-const siteDiagnostics = "site-diagnostics.tar.gz"
+const siteDiagnostics = "nkectl-diagnostics.tar.gz"
 
 // siteDiagnosticsCollected is set once this run has written siteDiagnostics.
 var siteDiagnosticsCollected bool
@@ -639,10 +640,10 @@ func collectSiteClusterState(ctx context.Context, session infra.Session, secrets
 // --disable-mtls, which comes from the same constant: the two sides
 // negotiate with each other, and a mismatch surfaces as an opaque TLS
 // handshake error rather than as a configuration problem.
-func nodeInputs(kubernetesVersion string) nke.NodeInputs {
+func nodeInputs(kubernetesVersion, cniVersion string) nke.NodeInputs {
 	inputs := nke.NodeInputs{
 		KubernetesVersion: kubernetesVersion,
-		CNIVersion:        cmp.Or(optionalVersion("cni-ovn"), forgeDefaultCNIVersion),
+		CNIVersion:        cniVersion,
 	}
 	if siteDisableMTLS {
 		inputs.AgentArgs = nke.AgentArgsNoMTLS
@@ -672,16 +673,13 @@ func siteSpec(cfg config.Config, name string) (site.Spec, error) {
 	if err != nil {
 		return site.Spec{}, err
 	}
-	version, err := requireVersion("controller")
+	versions, err := requireVersions(versionController, versionCAPIProvisioned, versionKube)
 	if err != nil {
 		return site.Spec{}, err
 	}
 	images := cfg.Site.Images
-	controller := site.Image{Repository: images.Controller.Repository, Tag: version}
-	provisioned := site.Image{
-		Repository: images.CAPIProvisioned.Repository,
-		Tag:        cmp.Or(optionalVersion("capi-provisioned"), siteDefaultCAPIProvisionedVersion),
-	}
+	controller := site.Image{Repository: images.Controller.Repository, Tag: versions[versionController]}
+	provisioned := site.Image{Repository: images.CAPIProvisioned.Repository, Tag: versions[versionCAPIProvisioned]}
 
 	return site.Spec{
 		Name: name,
@@ -690,7 +688,7 @@ func siteSpec(cfg config.Config, name string) (site.Spec, error) {
 			inRepo(repo, images.CAPIProvisioned.Archive),
 			inRepo(repo, images.Profiles.Archive),
 		},
-		KubernetesVersion:    cmp.Or(optionalVersion("kube"), forgeDefaultKubernetesVersion),
+		KubernetesVersion:    versions[versionKube],
 		CNI:                  siteCNI,
 		DisableMTLS:          siteDisableMTLS,
 		ControllerImage:      controller.Ref(),

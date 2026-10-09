@@ -1,12 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Command qualify drives release qualification: it resolves what to qualify,
-// runs it, records the result, and renders what is qualified.
-//
-// Only `plan` exists so far. The others are named in the root help rather
-// than stubbed, because a command that parses its flags and then refuses is
-// harder to tell from one that is merely broken.
+// Command qualify drives release qualification. Its one verb, `plan`,
+// resolves what to qualify.
 package main
 
 import (
@@ -44,13 +40,7 @@ func root() *cobra.Command {
 		Version: version,
 		Long: `Drive NKE release qualification.
 
-The tool has five verbs. Only plan is implemented.
-
-  plan       resolve what to qualify                  (implemented)
-  run        acquire capacity, call the suite, release
-  publish    record one stream's outcome
-  aggregate  rebuild one artifact from every result
-  generate   render the dashboard from it`,
+  plan       resolve what to qualify`,
 		SilenceUsage: true,
 	}
 	cmd.AddCommand(planCmd())

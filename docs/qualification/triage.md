@@ -20,13 +20,13 @@ whichever of these the run produced:
 
 | Artifact | What it tells you |
 |---|---|
-| `site-e2e.log` | The Ginkgo run. Start here. |
-| `site-e2e.junit.xml` | The same result, machine-readable. |
+| `qualify-e2e.log` | The Ginkgo run. Start here. |
+| `qualify-e2e.junit.xml` | The same result, machine-readable. |
 | `run-inputs.txt` | Which versions, images and settings the run actually resolved — including which were overridden. Answers "was it even testing what I thought?" |
-| `site-diagnostics.tar.gz` | What `nkectl` collected **on the node**. Present only when nkectl wrote a diagnostics directory, which it does when it fails. |
+| `nkectl-diagnostics.tar.gz` | What `nkectl` collected **on the node**. Present only when nkectl wrote a diagnostics directory, which it does when it fails. |
 | `tbot.log` | The Teleport bot. Only interesting when nothing could be reached at all. |
 
-**An absent `site-diagnostics.tar.gz` is normal and is information.** `nkectl`
+**An absent `nkectl-diagnostics.tar.gz` is normal and is information.** `nkectl`
 writes its diagnostics directory when it fails, so no tarball usually means
 bootstrap succeeded and the run failed somewhere after it. The suite
 distinguishes this case (`ErrNoDiagnostics`) from a real failure to archive,
@@ -126,7 +126,7 @@ Two consequences when reading a failure:
 
 ### Bootstrap: the node came up, the cluster did not
 
-`site-diagnostics.tar.gz` exists. Read it first — it is nkectl's own account of
+`nkectl-diagnostics.tar.gz` exists. Read it first — it is nkectl's own account of
 what it was doing.
 
 The two failure modes worth knowing in advance:

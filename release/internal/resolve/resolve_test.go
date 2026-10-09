@@ -90,6 +90,7 @@ func TestGitTagResolve(t *testing.T) {
 		"controller/v0.1.1-rc.2", "controller/v0.1.1-rc.10", "controller/v0.1.0",
 		"controller/v0.1.2-rc.1", "controller/not-a-version", "cli/v9.9.9",
 		"v0.21.0", "v0.22.0-beta.1",
+		"tool/v0.1.1-rc.8", "tool/v0.1.1", "tool/v0.1.0",
 	)
 
 	for _, tc := range []struct {
@@ -99,12 +100,13 @@ func TestGitTagResolve(t *testing.T) {
 		want   string
 		wantEr string
 	}{
-		{"highest release wins over a newer candidate", "controller/", nil, "v0.1.0", ""},
+		{"a candidate newer than every release wins", "controller/", nil, "v0.1.2-rc.1", ""},
+		{"a release newer than its candidates wins", "tool/", nil, "v0.1.1", ""},
 		{"candidates only", "controller/", map[string]string{InputSelectKey: SelectCandidate}, "v0.1.2-rc.1", ""},
 		{"named version", "controller/", map[string]string{InputOverrideKey: "v0.1.1-rc.10"}, "v0.1.1-rc.10", ""},
 		{"named version without v", "controller/", map[string]string{InputOverrideKey: "0.1.0"}, "v0.1.0", ""},
 		{"rc.10 sorts above rc.2", "controller/", map[string]string{InputOverrideKey: "v0.1.1-rc.10"}, "v0.1.1-rc.10", ""},
-		{"unprefixed tags", "", nil, "v0.21.0", ""},
+		{"unprefixed tags, the highest of any kind", "", nil, "v0.22.0-beta.1", ""},
 		{"unprefixed candidate", "", map[string]string{InputSelectKey: SelectCandidate}, "v0.22.0-beta.1", ""},
 		{"named version that does not exist", "controller/", map[string]string{InputOverrideKey: "v0.9.9"}, "", "has no version v0.9.9"},
 		{"not a version", "controller/", map[string]string{InputOverrideKey: "rc1"}, "", "is not a version"},

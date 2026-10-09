@@ -53,7 +53,7 @@ spec:
       resolve:
         strategy: lockedPackage
         with: {lockDir: os-image/packages/kubeadm-distro/lock, from: os-image}
-    - name: nke-cni-ovn
+    - name: cni-ovn
       resolve:
         strategy: lockedPackage
         with: {lockDir: os-image/packages/cni-ovn/lock, from: os-image}

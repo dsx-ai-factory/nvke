@@ -44,7 +44,7 @@ const (
 	InputOverrideKey = "override"
 
 	// InputSelectKey picks how a git tag strategy chooses when no version is
-	// named. Empty means the highest release, else the highest candidate.
+	// named. Empty means the highest version of any kind.
 	// SelectCandidate means the highest candidate only.
 	InputSelectKey = "select"
 

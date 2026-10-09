@@ -443,8 +443,14 @@ gmake site-inputs SITE_CONTROLLER_VERSION=$(git rev-parse --short=12 HEAD)
 go test -timeout 5h . -args \
   -ginkgo.label-filter=site-controller -ginkgo.v \
   -e2e.config=e2e-config.yaml -e2e.environment=forge -e2e.site-stage=full \
-  -e2e.versions=controller=<the same value>,os-image-bootloader=<url>,os-image=<url>
+  -e2e.versions=controller=<the same value>,os-image-bootloader=<url>,os-image=<url>,capi-provisioned=<version>,kube=<version>,cni-ovn=<version>,kind=<version>,clusterctl=<version>,nerdctl=<version>
 ```
+
+A Forge run requires every one of those versions and fails before a machine
+exists when one is missing, naming the ones it did not get. The suite carries no
+default for them. A qualification run gets them from the plan, and the tool
+versions (`kind`, `clusterctl` and `nerdctl`) are the pins in
+`make/tool-versions.mk`.
 
 The two OS-image keys may carry an architecture, as `os-image-arm64`. That is
 how one run boots two: a GB200 tenant puts arm64 workers behind a control plane
@@ -452,7 +458,7 @@ of whatever `-e2e.capabilities` asked for under `arch`, and each machine takes
 the pair built for it. The unsuffixed keys above are what a run on a single
 architecture passes, and are used for any architecture that has no suffixed
 pair. The CI workflow always passes suffixed pairs, from the
-`SITE_E2E_OS_IMAGE_<ARCH>` and `SITE_E2E_OS_IMAGE_BOOTLOADER_<ARCH>`
+`QUALIFY_E2E_OS_IMAGE_<ARCH>` and `QUALIFY_E2E_OS_IMAGE_BOOTLOADER_<ARCH>`
 repository variables.
 
 `SITE_CONTROLLER_VERSION` and `-e2e.versions=controller=` have to be the same
@@ -496,7 +502,7 @@ GITHUB_TOKEN=... gmake site-inputs SITE_CLI_BUILD=0 SITE_CLI_VERSION=v0.1.0 SITE
 ```
 
 The Forge workflow does all of this when given a `cli-version` input or the
-`SITE_E2E_CLI_VERSION` repository variable, and stops if the binary does not
+`QUALIFY_E2E_CLI_VERSION` repository variable, and stops if the binary does not
 report the version it was asked for. Pick a CLI and a controller that agree on
 the cluster API; the pairing is not checked until the bootstrap reaches
 "creating the site cluster".
@@ -513,7 +519,7 @@ release tag, which has to be fetched in a shallow clone. Set
 Teleport is the intended route. Locally that is a `tsh login` to the cluster
 the jump host is enrolled in. In CI it is a bot identity in `TELEPORT_PROXY`
 and `TELEPORT_IDENTITY_FILE`, which
-`.github/workflows/site-and-tenant-e2e.yml` obtains by joining with the
+`.github/workflows/qualify-e2e.yml` obtains by joining with the
 repository's GitHub OIDC token — nothing is stored. The bot's login is `root`,
 so the workflow sets `FORGE_TELEPORT_LOGIN=root` and
 `FORGE_YTL_TELEPORT_LOGIN=root`, which each site's `teleportLogin` in
@@ -537,5 +543,5 @@ is reached with the ed25519 key the run generates, never with a password.
 
 This route is for a future site, and the CI lane no longer offers it. There is
 no network path from the ARC fleet to the site's jump host on port 22 at all —
-only the Teleport proxy reaches it — so `site-and-tenant-e2e.yml` always
+only the Teleport proxy reaches it — so `qualify-e2e.yml` always
 goes through `tsh`.

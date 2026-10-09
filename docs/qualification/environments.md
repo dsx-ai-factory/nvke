@@ -39,7 +39,7 @@ infrastructure:          # opaque to the loader; the forge provider decodes it
           provides: {machineType: cpu, arch: amd64}
         - name: gpu.l40sx8
           id: "${FORGE_INSTANCE_TYPE_GPU_ID}"
-          provides: {machineType: gpu, arch: amd64, gpu: l40}
+          provides: {machineType: gpu, arch: amd64, gpu: l40s}
     ytl:
       id:            "${FORGE_YTL_SITE_ID:-}"
       vpcID:         "${FORGE_YTL_VPC_ID:-}"
@@ -64,7 +64,7 @@ A run asks for capabilities, not for a site or an instance type — those are
 things only the provider knows exist:
 
 ```
--e2e.capabilities gpu=l40,arch=amd64
+-e2e.capabilities gpu=l40s,arch=amd64
 ```
 
 `MatchInstanceType` walks the declared types **in order** and returns the first
@@ -77,7 +77,7 @@ machine:
 |---|---|
 | `machineType` | `cpu` or `gpu` |
 | `arch` | `amd64`, `arm64` |
-| `gpu` | the model, e.g. `l40`, `gb200` |
+| `gpu` | the model, e.g. `l40s`, `gb200` |
 
 Two consequences worth internalising.
 
@@ -86,7 +86,7 @@ several types satisfy a request, the first listed wins.
 
 **An empty request matches everything.** Asking for nothing is satisfied by
 every type, so the first declared type wins by default. The Forge lane always
-passes `-e2e.capabilities`, built from its `arch` and `gpu` inputs, so this is
+passes `-e2e.capabilities`, built from the `arch` and `gpu` of the stream it runs, so this is
 the shape a hand-run with neither falls back to.
 
 A request nothing satisfies **fails rather than falling back**. Asking for

@@ -29,7 +29,7 @@
 # the suite a JUMP_HOST_PASSWORD is still what selects it.
 #
 # NEVER AUTOMATIC. A run takes a bare-metal machine for up to an hour, so it
-# starts only when a person asks: a workflow_dispatch, or the `forge-e2e`
+# starts only when a person asks: a workflow_dispatch, or the `qualify-e2e`
 # label on a pull request from this repository. Three reasons it is not on a
 # schedule and not on every push:
 #
@@ -53,7 +53,15 @@
 # not: `forge.go` generates an ed25519 key per run, cloud-init writes the
 # public half to `authorized_keys`, and the dialer authenticates with the
 # private half, which never leaves the runner.
-name: Site and tenant e2e
+#
+# PLAN FIRST, THEN ONE JOB PER STREAM. The `plan` job runs `qualify plan` and
+# writes plan.json: what to qualify, resolved once, with every stream in the
+# scope. The `qualify-matrix` job then runs once per stream of that plan, so every stream
+# qualifies exactly the versions the plan named, and a run can say afterwards
+# what it qualified from plan.json alone. The dispatch inputs and QUALIFY_E2E_*
+# variables that name a version are overrides of what the plan resolves, not a
+# second source of versions.
+name: Qualify e2e
 
 on:
   workflow_dispatch:
@@ -67,54 +75,57 @@ on:
           - provision
           - bootstrap
           - full
+      nke-version:
+        description: "The nke tag to qualify, e.g. v0.22.0-beta.1. It must be an existing tag. QUALIFY_E2E_NKE_VERSION supplies it when this is empty, and the plan stops when neither is set and the repository has no release candidate."
+        type: string
+        required: false
+      scope:
+        description: "How much of the matrix to cover, a scope from release/policy.yaml. One job runs for each stream the scope selects."
+        type: string
+        required: false
+        default: golden-path
       controller-version:
-        description: "Published CWE tag to qualify, e.g. v0.1.1. A qualification run names one, and SITE_E2E_CONTROLLER_VERSION supplies it when this is empty. Empty with no variable falls back to building the image from this checkout, which is a developer path and amd64 only: docker build --load takes one platform, so it cannot produce the image an arm64 site needs."
+        description: "Overrides the published CWE tag the plan resolves, e.g. v0.1.1. QUALIFY_E2E_CONTROLLER_VERSION supplies it when this is empty."
         type: string
         required: false
       cli-version:
-        description: Published nkectl release to stage onto the node, e.g. v0.1.0-rc.7 (the cli/<version> GitHub Release). Leave empty to build nkectl from this checkout.
+        description: Overrides the nkectl release the plan resolves, e.g. v0.1.0-rc.7 (the cli/<version> GitHub Release).
         type: string
         required: false
       capi-provisioned-version:
-        description: "cluster-api-provider-provisioned version under qualification, e.g. v0.1.0-rc.1. One value for the image archive staged onto the node and the reference the bootstrap uses."
+        description: "Overrides the cluster-api-provider-provisioned version the plan resolves, e.g. v0.1.0-rc.1. One value for the image archive staged onto the node and the reference the bootstrap uses."
         type: string
         required: false
       kubernetes-version:
-        description: "Kubernetes version under qualification, e.g. 1.36.3. It selects the nke-kubeadm-distro package on every node and the version CWE builds the cluster with, so one value decides both."
+        description: "Overrides the Kubernetes version the plan resolves for every stream, e.g. 1.36.3. It selects the nke-kubeadm-distro package on every node and the version CWE builds the cluster with, so one value decides both."
         type: string
         required: false
       cni-ovn-version:
-        description: "OVN CNI version under qualification, e.g. 1.4.0. It selects the nke-cni-ovn-images and -charts packages."
+        description: "Overrides the OVN CNI version the plan resolves, e.g. 1.4.0. It selects the nke-cni-ovn-images and -charts packages."
         type: string
         required: false
       cwe-name:
         description: "Name CWE is installed under, e.g. cloud-workflow-engine. The deploy path decides it and it changed partway through the releases, so it moves with controller-version. Empty leaves the suite on its default, and the run fails early if that disagrees with the deploy path."
         type: string
         required: false
+      os-image-version:
+        description: "Overrides the os-image release the plan resolves, e.g. v0.1.1-rc.1. The node images are built from it, unless an image URL is overridden too."
+        type: string
+        required: false
       os-image-bootloader-amd64:
-        description: HTTPS URL of the amd64 qcow-imager EFI. Must be plain HTTPS -- iPXE cannot pull an OCI artifact.
+        description: Overrides the HTTPS URL of the amd64 qcow-imager EFI the plan resolves. Must be plain HTTPS -- iPXE cannot pull an OCI artifact.
         type: string
         required: false
       os-image-amd64:
-        description: HTTPS URL of the amd64 NKE qcow2.
+        description: Overrides the HTTPS URL of the amd64 NKE qcow2 the plan resolves.
         type: string
         required: false
       os-image-bootloader-arm64:
-        description: HTTPS URL of the arm64 qcow-imager EFI.
+        description: Overrides the HTTPS URL of the arm64 qcow-imager EFI the plan resolves.
         type: string
         required: false
       os-image-arm64:
-        description: HTTPS URL of the arm64 NKE qcow2.
-        type: string
-        required: false
-      arch:
-        description: Architecture of the CPU machines, which are the site controller and the tenant control plane. arm64 requires controller-version, because building the controller image here is amd64-only.
-        type: choice
-        required: false
-        default: arm64
-        options: [amd64, arm64]
-      gpu:
-        description: "GPU model the tenant workers need, e.g. gb200. Empty puts the workers on the CPU shape. The model decides their architecture, so it is not stated."
+        description: Overrides the HTTPS URL of the arm64 NKE qcow2 the plan resolves.
         type: string
         required: false
       keep-site:
@@ -123,7 +134,7 @@ on:
         required: false
         default: false
       image-registry:
-        description: Where the published controller and capi-provisioned images are pulled from. nvcr needs the NGC_API_KEY secret and the SITE_E2E_NGC_ORG variable.
+        description: Where the published controller and capi-provisioned images are pulled from. nvcr needs the NGC_API_KEY secret and the QUALIFY_E2E_NGC_ORG variable.
         type: choice
         required: false
         default: ghcr
@@ -136,13 +147,13 @@ on:
   # until it merges. A pull_request run also carries refs/pull/<n>/merge,
   # which is one of the two refs the Teleport join token accepts.
   #
-  # `labeled` and nothing else. Adding `forge-e2e` is the request to run;
+  # `labeled` and nothing else. Adding `qualify-e2e` is the request to run;
   # `synchronize` is deliberately absent so that pushing to a labelled PR
   # does not quietly take another machine. To run again, remove the label and
   # add it back, or use the re-run button.
   #
   # A pull_request event has no `inputs`, so the dispatch inputs fall back to
-  # SITE_E2E_* repository variables. See the job env below.
+  # QUALIFY_E2E_* repository variables. See the job env below.
   pull_request:
     types: [labeled]
     branches: [main]
@@ -163,35 +174,187 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  site:
-    # Named for what the run qualifies, so the shape is readable from the
-    # checks list without opening the run. forge is hardcoded: a second
-    # infrastructure provider gets its own job rather than a parameter on this
-    # one. The fallbacks are what the run itself falls back to, not what the
-    # dispatch defaults to, so a labelled pull request is labelled with the
-    # architecture it actually takes.
-    #
-    # The Ubuntu release is absent: it exists only inside the OS image URL,
-    # and job names are evaluated before any step, with no expression function
-    # that can extract it.
-    name: >-
-      forge-${{ inputs.gpu || vars.SITE_E2E_GPU || 'cpu' }}-${{ inputs.arch || vars.SITE_E2E_ARCH || 'amd64' }}-kube-${{ inputs.kubernetes-version || vars.SITE_E2E_KUBERNETES_VERSION || 'default' }}
+  # Resolves what to qualify and writes it as plan.json. It takes no hardware:
+  # it reads this repository's tags and the artifact bucket, so it runs on the
+  # same fleet as the lanes below only because that fleet can reach the bucket.
+  #
+  # The dispatch inputs and QUALIFY_E2E_* variables that name a version are passed
+  # to `qualify plan` as --overrides, so the plan records them under `overrides`
+  # and a lane never has to guess which of the two it was handed.
+  plan:
+    name: plan
+    runs-on: arc-amd64-cpu16
+    # The same gate as the lanes: a dispatch is deliberate, and a pull_request
+    # run has to be asked for with the `qualify-e2e` label from a branch in this
+    # repository. The lanes need this job, so they are skipped with it.
+    if: >-
+      github.repository == 'dsx-ai-factory/nke' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.label.name == 'qualify-e2e'))
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      # One entry per stream of every combination, for the lanes' matrix.
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      # What the plan resolved for the run as a whole.
+      nke-version: ${{ steps.matrix.outputs.nke-version }}
+      scope: ${{ steps.matrix.outputs.scope }}
+    env:
+      NKE_VERSION: ${{ inputs.nke-version || vars.QUALIFY_E2E_NKE_VERSION }}
+      SCOPE: ${{ inputs.scope || vars.QUALIFY_E2E_SCOPE || 'golden-path' }}
+      # The names are the registry's, which are the keys the suite reads.
+      OVERRIDE_CONTROLLER: ${{ inputs.controller-version || vars.QUALIFY_E2E_CONTROLLER_VERSION }}
+      OVERRIDE_CLI: ${{ inputs.cli-version || vars.QUALIFY_E2E_CLI_VERSION }}
+      OVERRIDE_CAPI_PROVISIONED: ${{ inputs.capi-provisioned-version || vars.QUALIFY_E2E_CAPI_PROVISIONED_VERSION }}
+      OVERRIDE_KUBE: ${{ inputs.kubernetes-version || vars.QUALIFY_E2E_KUBERNETES_VERSION }}
+      OVERRIDE_CNI_OVN: ${{ inputs.cni-ovn-version || vars.QUALIFY_E2E_CNI_OVN_VERSION }}
+      OVERRIDE_OS_IMAGE: ${{ inputs.os-image-version || vars.QUALIFY_E2E_OS_IMAGE_VERSION }}
+      OVERRIDE_OS_IMAGE_AMD64: ${{ inputs.os-image-amd64 || vars.QUALIFY_E2E_OS_IMAGE_AMD64 }}
+      OVERRIDE_OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 || vars.QUALIFY_E2E_OS_IMAGE_ARM64 }}
+      OVERRIDE_OS_IMAGE_BOOTLOADER_AMD64: ${{ inputs.os-image-bootloader-amd64 || vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
+      OVERRIDE_OS_IMAGE_BOOTLOADER_ARM64: ${{ inputs.os-image-bootloader-arm64 || vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
+    steps:
+      # Every tag and the history behind it: the plan reads the release tags,
+      # and reads the os-image lock files at the tag it resolved.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      # Inputs reach the shell through the environment, never through the
+      # script text, so a value cannot become a command.
+      - name: Plan
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          overrides=""
+          add() {
+            [ -n "$2" ] || return 0
+            overrides="${overrides:+${overrides},}$1=$2"
+          }
+          add controller "${OVERRIDE_CONTROLLER}"
+          add cli "${OVERRIDE_CLI}"
+          add capi-provisioned "${OVERRIDE_CAPI_PROVISIONED}"
+          add kube "${OVERRIDE_KUBE}"
+          add cni-ovn "${OVERRIDE_CNI_OVN}"
+          add os-image "${OVERRIDE_OS_IMAGE}"
+          add os-image-amd64 "${OVERRIDE_OS_IMAGE_AMD64}"
+          add os-image-arm64 "${OVERRIDE_OS_IMAGE_ARM64}"
+          add os-image-bootloader-amd64 "${OVERRIDE_OS_IMAGE_BOOTLOADER_AMD64}"
+          add os-image-bootloader-arm64 "${OVERRIDE_OS_IMAGE_BOOTLOADER_ARM64}"
+
+          args=(plan --subject nke --scope "${SCOPE}" --output plan.json)
+          # Left off when unset, so the plan says there is no release candidate
+          # rather than this workflow choosing a tag.
+          if [ -n "${NKE_VERSION}" ]; then
+            args+=(--version "${NKE_VERSION}")
+          fi
+          if [ -n "${overrides}" ]; then
+            args+=(--overrides "${overrides}")
+          fi
+
+          go run ./release/cmd/qualify "${args[@]}"
+
+          {
+            echo "### Qualification plan"
+            echo
+            echo "- nke: \`$(jq -r .version plan.json)\`"
+            echo "- scope: \`${SCOPE}\`"
+            echo "- overrides: \`$(jq -r '(.overrides // []) | join(", ") | if . == "" then "none" else . end' plan.json)\`"
+            echo
+            jq -r '.combinations[] | "- combination \(.id): " + ([.streams[].name] | join(", "))' plan.json
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      # One entry per stream of every combination, carrying what that lane
+      # needs. A value is the url when the entry has one and the version when
+      # it does not, which is what the suite takes under that key. The keyed
+      # os-image component's own version is a release tag and its bare name is
+      # the suite's fallback key for an image URL, so it is not passed.
+      - name: Build the matrix
+        id: matrix
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          matrix="$(jq -c '
+            def value($all; $name):
+              ([$all[] | select(.name == $name)] | first) as $e
+              | ($e.url // $e.version // "");
+            {include: [
+              .combinations[] as $c
+              | $c.streams[] as $s
+              | ($c.components + $c.dependencies + $s.dependencies) as $all
+              | {
+                  combination: $c.id,
+                  stream: $s.name,
+                  arch: $s.capabilities.arch,
+                  gpu: ($s.capabilities.gpu // ""),
+                  controller: value($all; "controller"),
+                  cli: value($all; "cli"),
+                  capi_provisioned: value($all; "capi-provisioned"),
+                  kube: value($all; "kube"),
+                  cni_ovn: value($all; "cni-ovn"),
+                  os_image: value($all; "os-image"),
+                  kind: value($all; "kind"),
+                  clusterctl: value($all; "clusterctl"),
+                  nerdctl: value($all; "nerdctl"),
+                  os_image_amd64: value($all; "os-image-amd64"),
+                  os_image_arm64: value($all; "os-image-arm64"),
+                  os_image_bootloader_amd64: value($all; "os-image-bootloader-amd64"),
+                  os_image_bootloader_arm64: value($all; "os-image-bootloader-arm64")
+                }
+            ]}' plan.json)"
+          {
+            echo "matrix=${matrix}"
+            echo "nke-version=$(jq -r .version plan.json)"
+            echo "scope=$(jq -r .scope plan.json)"
+          } >> "${GITHUB_OUTPUT}"
+          echo "${matrix}" | jq .
+
+      - name: Upload the plan
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qualify-plan-${{ github.run_id }}
+          path: plan.json
+          if-no-files-found: error
+          retention-days: 7
+
+  # One job per stream of the plan.
+  qualify-matrix:
+    # Named for the stream, which names its provider, GPU model, architecture,
+    # Ubuntu series and Kubernetes minor, so the shape is readable from the
+    # checks list without opening the run.
+    name: ${{ matrix.stream }}
+    needs: plan
+    strategy:
+      # Never cancel a sibling. A cancelled lane dies before its teardown and
+      # leaks a bare-metal instance, so one stream failing must not take the
+      # others with it.
+      fail-fast: false
+      # The site has capacity for three runs at once, which is what the
+      # concurrency note above is about.
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     # The ARC fleet on the RelEng EKS cluster: 16 vCPU / 64 GiB with dind, on
     # a runner image built to stand in for ubuntu-latest. In the corpnet VPC,
     # which is what makes the jump host reachable at all. Capped at two
     # runners for the whole class, another reason this lane is manual.
     runs-on: arc-amd64-cpu16
-    # A dispatch is already a deliberate act. A pull_request run has to be
-    # asked for by adding the `forge-e2e` label -- the label on this event,
-    # not any label the PR carries, so adding an unrelated label to a PR that
-    # already has `forge-e2e` does not take a machine -- and has to come from a branch in
-    # this repository -- a fork PR reaches neither the secrets nor the join
-    # token, so it would burn a runner to fail.
-    if: >-
-      github.repository == 'dsx-ai-factory/nke' &&
-      (github.event_name == 'workflow_dispatch' ||
-       (github.event.pull_request.head.repo.full_name == github.repository &&
-        github.event.label.name == 'forge-e2e'))
+    # Gated by the plan job: it is skipped when the plan is, and the plan job
+    # carries the dispatch and `qualify-e2e` label conditions.
     # Measured phases from the recorded SBOM run: ~17 min to create the instance,
     # ~10 to stage assets, ~5 to bootstrap, ~8 to install the management
     # plane, ~20 per tenant. Call it 60 for `full`, doubled for a cold run and
@@ -216,31 +379,28 @@ jobs:
       # what actually bound it -- see the daemon step.
       id-token: write
     env:
-      # Every knob, resolved once. A workflow_dispatch fills `inputs`; a
-      # pull_request run has none, so it takes the SITE_E2E_* repository
+      # Every knob, resolved once. The versions, the architecture and the GPU
+      # model come from the plan, through this stream's matrix entry. The rest
+      # are this lane's own: a workflow_dispatch fills `inputs`, and a
+      # pull_request run has none, so it takes the QUALIFY_E2E_* repository
       # variables instead. The guard step checks the result rather than
-      # letting an empty image URL surface twenty minutes into a run.
+      # letting an empty value surface twenty minutes into a run.
       #
-      # Each of these also accepts the FORGE_E2E_* name it used to have.
       # Nothing about a stage or an OS image is Forge's -- only the access
       # path to the hardware is, which is why FORGE_JUMP_HOST and the
-      # Teleport and Forge resource variables below keep their prefix. The
-      # old names stay in the chain so the rename needs no flag day: a run
-      # works on either, the resolved-inputs summary says which one answered
-      # and names the replacement, and the fallback goes once no run reports
-      # a deprecated name.
-      SITE_STAGE: ${{ inputs.stage || vars.SITE_E2E_STAGE || vars.FORGE_E2E_STAGE || 'provision' }}
+      # Teleport and Forge resource variables below keep their prefix.
+      SITE_STAGE: ${{ inputs.stage || vars.QUALIFY_E2E_STAGE || 'provision' }}
       # Empty asks for a build from this checkout; the resolve step fills it
       # in. Every use of it downstream -- the image site-inputs stages, the
       # NKECTL_CWE_IMAGE the bootstrap runs, and the tag the SBOM deploys --
       # reads this one value, which is what keeps them the same image.
-      SITE_CONTROLLER_VERSION: ${{ inputs.controller-version || vars.SITE_E2E_CONTROLLER_VERSION || vars.FORGE_E2E_CONTROLLER_VERSION }}
+      SITE_CONTROLLER_VERSION: ${{ matrix.controller }}
       # The same shape for nkectl: empty builds it from this checkout, a
       # version stages that cli/<version> release. The resolve step fills in
       # the commit when it builds, so -e2e.versions always names one. Named
       # for the component, as CAPI_PROVISIONED_VERSION is; the make variable
       # it feeds keeps the SITE_ prefix.
-      CLI_VERSION: ${{ inputs.cli-version || vars.SITE_E2E_CLI_VERSION }}
+      CLI_VERSION: ${{ matrix.cli }}
       # The name CWE is installed under, which the deploy path decides and the
       # suite has to be told. The deploy path is exported from
       # SITE_CONTROLLER_VERSION, and CWE was renamed partway through the
@@ -263,52 +423,53 @@ jobs:
       # `arch` asked for, so it needs both pairs, while a single-architecture
       # run needs one. Which pair each machine takes is decided by the suite
       # from the instance type it resolved, not here.
-      # Components the run qualifies that are not artifacts it downloads. Empty
-      # leaves the suite on its own constant, which is what a developer running
-      # by hand gets; CI states them so a run records what it qualified.
-      KUBERNETES_VERSION: ${{ inputs.kubernetes-version || vars.SITE_E2E_KUBERNETES_VERSION }}
-      CNI_OVN_VERSION: ${{ inputs.cni-ovn-version || vars.SITE_E2E_CNI_OVN_VERSION }}
-      OS_IMAGE_BOOTLOADER_AMD64: ${{ inputs.os-image-bootloader-amd64 || vars.SITE_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
-      OS_IMAGE_AMD64: ${{ inputs.os-image-amd64 || vars.SITE_E2E_OS_IMAGE_AMD64 }}
-      OS_IMAGE_BOOTLOADER_ARM64: ${{ inputs.os-image-bootloader-arm64 || vars.SITE_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
-      OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 || vars.SITE_E2E_OS_IMAGE_ARM64 }}
+      # Components the run qualifies that are not artifacts it downloads. The
+      # suite requires every one, so a run states them all and records what it
+      # qualified.
+      KUBERNETES_VERSION: ${{ matrix.kube }}
+      CNI_OVN_VERSION: ${{ matrix.cni_ovn }}
+      KIND_VERSION: ${{ matrix.kind }}
+      CLUSTERCTL_VERSION: ${{ matrix.clusterctl }}
+      NERDCTL_VERSION: ${{ matrix.nerdctl }}
+      # The os-image release the images were built from. It is recorded and not
+      # passed to the suite, whose bare os-image key is an image URL.
+      OS_IMAGE_RELEASE: ${{ matrix.os_image }}
+      OS_IMAGE_BOOTLOADER_AMD64: ${{ matrix.os_image_bootloader_amd64 }}
+      OS_IMAGE_AMD64: ${{ matrix.os_image_amd64 }}
+      OS_IMAGE_BOOTLOADER_ARM64: ${{ matrix.os_image_bootloader_arm64 }}
+      OS_IMAGE_ARM64: ${{ matrix.os_image_arm64 }}
       # The account the OS images bake. Empty is what the OSS os-image releases
       # use; an image from the internal pipeline bakes a different one, and a
       # mismatch fails as a publickey rejection after the provisioning wait
       # rather than at validation.
-      NODE_USER: ${{ vars.SITE_E2E_NODE_USER }}
-      # What the run needs to execute on, one key per input rather than one
-      # packed string. The suite takes them joined as -e2e.capabilities, which
-      # the step below assembles: a form with a dropdown and a repository
-      # variable per key is easier to set correctly than a string whose
-      # grammar has to be remembered, and ARCH is needed on its own anyway,
-      # for SITE_ARCH.
-      ARCH: ${{ inputs.arch || vars.SITE_E2E_ARCH }}
-      GPU: ${{ inputs.gpu || vars.SITE_E2E_GPU }}
+      NODE_USER: ${{ vars.QUALIFY_E2E_NODE_USER }}
+      # What the run needs to execute on, which is the stream's capabilities,
+      # one key each rather than one packed string. The suite takes them joined
+      # as -e2e.capabilities, which the step below assembles, and ARCH is
+      # needed on its own anyway, for SITE_ARCH.
+      ARCH: ${{ matrix.arch }}
+      GPU: ${{ matrix.gpu }}
       # A label cannot carry a boolean, so a labelled run takes this from the
       # repository variable, as it does every other setting. Holding a Forge
       # machine is expensive and the variable is easy to leave set, so the run
       # warns when it is on and the value is meant to be cleared once whatever
       # needed the machine has been read off it.
-      KEEP_SITE: ${{ inputs.keep-site || vars.SITE_E2E_KEEP_SITE || false }}
+      KEEP_SITE: ${{ inputs.keep-site || vars.QUALIFY_E2E_KEEP_SITE || false }}
       # ghcr or nvcr. Only the runner pulls from it: every image it names is
       # staged onto the node as an archive. The node's own pull is CAPNICo,
       # which is published to GHCR alone, so the GHCR login below stays either
       # way.
-      SITE_IMAGE_REGISTRY: ${{ inputs.image-registry || vars.SITE_E2E_IMAGE_REGISTRY || vars.FORGE_E2E_IMAGE_REGISTRY || 'ghcr' }}
+      SITE_IMAGE_REGISTRY: ${{ inputs.image-registry || vars.QUALIFY_E2E_IMAGE_REGISTRY || 'ghcr' }}
       # One value for the archive site-inputs pulls and the reference the suite
       # bootstraps with. Named for the component, as -e2e.versions and the
       # config field are; the make variable it feeds keeps the SITE_ prefix its
       # siblings share, so the two names meet at the site-inputs step below.
       #
-      # Defaulted rather than required: v0.1.0-rc.1 was the only published tag
-      # when this lane was written, and a run that names none should still get
-      # a working one rather than fail on an empty reference.
-      CAPI_PROVISIONED_VERSION: ${{ inputs.capi-provisioned-version || vars.SITE_E2E_CAPI_PROVISIONED_VERSION || 'v0.1.0-rc.1' }}
+      CAPI_PROVISIONED_VERSION: ${{ matrix.capi_provisioned }}
       # The NGC org the NVCR images are published under. A repository
       # variable, not the nvcr environment's NKE_NGC_ORG: that environment
       # gates the publish jobs, and this job has no business entering it.
-      SITE_E2E_NGC_ORG: ${{ vars.SITE_E2E_NGC_ORG || vars.FORGE_E2E_NGC_ORG }}
+      QUALIFY_E2E_NGC_ORG: ${{ vars.QUALIFY_E2E_NGC_ORG }}
       # Where `make site-inputs` writes nkectl and the three image archives.
       # Deliberately not the Makefile default, which is a $HOME cache: that
       # survives between jobs on a self-hosted runner, and a stale archive
@@ -499,7 +660,7 @@ jobs:
               ;;
           esac
 
-          # Empty on a pull_request run whose SITE_E2E_* variable is unset.
+          # Empty on a pull_request run whose QUALIFY_E2E_* variable is unset.
           # SITE_CONTROLLER_VERSION is not here: the step above resolves it.
           missing=()
           for name in SITE_STAGE; do
@@ -507,8 +668,7 @@ jobs:
           done
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "::error::no value for ${missing[*]}. A dispatch takes these from its inputs;" \
-                 "a labelled pull request takes them from the SITE_E2E_* repository variables" \
-                 "(or the FORGE_E2E_* names they replace)."
+                 "a labelled pull request takes them from the QUALIFY_E2E_* repository variables."
             exit 1
           fi
 
@@ -517,11 +677,11 @@ jobs:
           case "${SITE_IMAGE_REGISTRY}" in
             ghcr) images="ghcr.io/dsx-ai-factory/nke" ;;
             nvcr)
-              if [ -z "${SITE_E2E_NGC_ORG}" ] || [ -z "${NGC_TOKEN}" ]; then
-                echo "::error::image-registry nvcr needs the SITE_E2E_NGC_ORG repository variable and the NGC_API_KEY secret"
+              if [ -z "${QUALIFY_E2E_NGC_ORG}" ] || [ -z "${NGC_TOKEN}" ]; then
+                echo "::error::image-registry nvcr needs the QUALIFY_E2E_NGC_ORG repository variable and the NGC_API_KEY secret"
                 exit 1
               fi
-              images="nvcr.io/${SITE_E2E_NGC_ORG}"
+              images="nvcr.io/${QUALIFY_E2E_NGC_ORG}"
               ;;
             *)
               echo "::error::image-registry ${SITE_IMAGE_REGISTRY} is not ghcr or nvcr"
@@ -612,16 +772,19 @@ jobs:
           done
           if [ "${pairs}" -eq 0 ]; then
             echo "::error::no OS image pair for any architecture. A dispatch takes these from its inputs;" \
-                 "a labelled pull request takes them from the SITE_E2E_OS_IMAGE_<ARCH> repository variables."
+                 "a labelled pull request takes them from the QUALIFY_E2E_OS_IMAGE_<ARCH> repository variables."
             exit 1
           fi
 
-          # Keyed as the suite reads them: optionalVersion("kube") and
-          # optionalVersion("cni-ovn"). Omitted rather than passed empty
-          # when unset, because an empty value would override the suite's
-          # constant with nothing rather than leave it in place.
-          for pair in "kube=${KUBERNETES_VERSION}" "cni-ovn=${CNI_OVN_VERSION}"; do
-            [ -n "${pair#*=}" ] || continue
+          # Keyed as the suite reads them. The suite requires every one of
+          # these, so an empty one stops the run here and not after the node
+          # exists.
+          for pair in "kube=${KUBERNETES_VERSION}" "cni-ovn=${CNI_OVN_VERSION}" \
+              "kind=${KIND_VERSION}" "clusterctl=${CLUSTERCTL_VERSION}" "nerdctl=${NERDCTL_VERSION}"; do
+            if [ -z "${pair#*=}" ]; then
+              echo "::error::no value for ${pair%%=*}. The qualification plan supplies it, so the plan did not resolve one for this stream."
+              exit 1
+            fi
             versions="${versions},${pair}"
             echo "component version: ${pair}"
           done
@@ -753,7 +916,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # An NGC key with pull access on the SITE_E2E_NGC_ORG org's registry.
+      # An NGC key with pull access on the QUALIFY_E2E_NGC_ORG org's registry.
       # Separate from FORGE_API_KEY because NGC cannot scope one key to both
       # the Forge tenant and the registry. The runner is the only thing that
       # pulls with it: nothing on the node pulls from NVCR.
@@ -806,7 +969,7 @@ jobs:
           # references the suite hands the bootstrap and the deploy path are
           # the ones the archives carry.
           cat > controller/test/e2e/e2e-config.yaml <<EOF
-          # Generated by .github/workflows/site-and-tenant-e2e.yml.
+          # Generated by .github/workflows/qualify-e2e.yml.
           node:
             user: "${NODE_USER}"
           nkectl:
@@ -831,7 +994,7 @@ jobs:
       # step's env block and only for as long as GitHub keeps the log. A run
       # that qualified something has to be able to say what it qualified
       # after the log is gone, so this collects them once, in one file,
-      # uploaded beside site-e2e.log.
+      # uploaded beside qualify-e2e.log.
       #
       # Provenance, not just the value. The same `full` can arrive from a
       # dispatch input, a repository variable, or the default below, and
@@ -839,7 +1002,7 @@ jobs:
       - name: Record the resolved inputs
         shell: bash
         env:
-          WORKFLOW: .github/workflows/site-and-tenant-e2e.yml
+          WORKFLOW: .github/workflows/qualify-e2e.yml
           OUT: ${{ runner.temp }}/run-inputs.txt
           IN_STAGE: ${{ inputs.stage }}
           IN_CONTROLLER_VERSION: ${{ inputs.controller-version }}
@@ -848,87 +1011,91 @@ jobs:
           IN_KUBERNETES_VERSION: ${{ inputs.kubernetes-version }}
           IN_CNI_OVN_VERSION: ${{ inputs.cni-ovn-version }}
           IN_CWE_NAME: ${{ inputs.cwe-name }}
+          IN_OS_IMAGE_VERSION: ${{ inputs.os-image-version }}
+          VAR_OS_IMAGE_VERSION: ${{ vars.QUALIFY_E2E_OS_IMAGE_VERSION }}
           IN_OS_IMAGE_BOOTLOADER_AMD64: ${{ inputs.os-image-bootloader-amd64 }}
           IN_OS_IMAGE_AMD64: ${{ inputs.os-image-amd64 }}
           IN_OS_IMAGE_BOOTLOADER_ARM64: ${{ inputs.os-image-bootloader-arm64 }}
           IN_OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 }}
-          IN_ARCH: ${{ inputs.arch }}
-          IN_GPU: ${{ inputs.gpu }}
+          IN_NKE_VERSION: ${{ inputs.nke-version }}
+          IN_SCOPE: ${{ inputs.scope }}
           IN_KEEP_SITE: ${{ inputs.keep-site }}
-          VAR_KEEP_SITE: ${{ vars.SITE_E2E_KEEP_SITE }}
+          VAR_KEEP_SITE: ${{ vars.QUALIFY_E2E_KEEP_SITE }}
           IN_IMAGE_REGISTRY: ${{ inputs.image-registry }}
-          VAR_IMAGE_REGISTRY: ${{ vars.SITE_E2E_IMAGE_REGISTRY }}
-          VAR_NGC_ORG: ${{ vars.SITE_E2E_NGC_ORG }}
-          VAR_STAGE: ${{ vars.SITE_E2E_STAGE }}
-          VAR_CONTROLLER_VERSION: ${{ vars.SITE_E2E_CONTROLLER_VERSION }}
-          VAR_CLI_VERSION: ${{ vars.SITE_E2E_CLI_VERSION }}
-          # The names each of the six replaced, read separately so the
-          # summary can say a deprecated one answered instead of hiding it
-          # behind the value it supplied.
-          WAS_IMAGE_REGISTRY: ${{ vars.FORGE_E2E_IMAGE_REGISTRY }}
-          WAS_NGC_ORG: ${{ vars.FORGE_E2E_NGC_ORG }}
-          WAS_STAGE: ${{ vars.FORGE_E2E_STAGE }}
-          WAS_CONTROLLER_VERSION: ${{ vars.FORGE_E2E_CONTROLLER_VERSION }}
-          VAR_CAPI_PROVISIONED_VERSION: ${{ vars.SITE_E2E_CAPI_PROVISIONED_VERSION }}
-          VAR_KUBERNETES_VERSION: ${{ vars.SITE_E2E_KUBERNETES_VERSION }}
-          VAR_CNI_OVN_VERSION: ${{ vars.SITE_E2E_CNI_OVN_VERSION }}
+          VAR_IMAGE_REGISTRY: ${{ vars.QUALIFY_E2E_IMAGE_REGISTRY }}
+          VAR_NGC_ORG: ${{ vars.QUALIFY_E2E_NGC_ORG }}
+          VAR_STAGE: ${{ vars.QUALIFY_E2E_STAGE }}
+          VAR_CONTROLLER_VERSION: ${{ vars.QUALIFY_E2E_CONTROLLER_VERSION }}
+          VAR_CLI_VERSION: ${{ vars.QUALIFY_E2E_CLI_VERSION }}
+          VAR_CAPI_PROVISIONED_VERSION: ${{ vars.QUALIFY_E2E_CAPI_PROVISIONED_VERSION }}
+          VAR_KUBERNETES_VERSION: ${{ vars.QUALIFY_E2E_KUBERNETES_VERSION }}
+          VAR_CNI_OVN_VERSION: ${{ vars.QUALIFY_E2E_CNI_OVN_VERSION }}
           VAR_CWE_NAMESPACE: ${{ vars.CWE_NAMESPACE }}
           VAR_CWE_SERVICE: ${{ vars.CWE_SERVICE }}
-          VAR_OS_IMAGE_BOOTLOADER_AMD64: ${{ vars.SITE_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
-          VAR_OS_IMAGE_AMD64: ${{ vars.SITE_E2E_OS_IMAGE_AMD64 }}
-          VAR_OS_IMAGE_BOOTLOADER_ARM64: ${{ vars.SITE_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
-          VAR_OS_IMAGE_ARM64: ${{ vars.SITE_E2E_OS_IMAGE_ARM64 }}
-          VAR_NODE_USER: ${{ vars.SITE_E2E_NODE_USER }}
-          VAR_ARCH: ${{ vars.SITE_E2E_ARCH }}
-          VAR_GPU: ${{ vars.SITE_E2E_GPU }}
+          VAR_OS_IMAGE_BOOTLOADER_AMD64: ${{ vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_AMD64 }}
+          VAR_OS_IMAGE_AMD64: ${{ vars.QUALIFY_E2E_OS_IMAGE_AMD64 }}
+          VAR_OS_IMAGE_BOOTLOADER_ARM64: ${{ vars.QUALIFY_E2E_OS_IMAGE_BOOTLOADER_ARM64 }}
+          VAR_OS_IMAGE_ARM64: ${{ vars.QUALIFY_E2E_OS_IMAGE_ARM64 }}
+          VAR_NODE_USER: ${{ vars.QUALIFY_E2E_NODE_USER }}
+          VAR_NKE_VERSION: ${{ vars.QUALIFY_E2E_NKE_VERSION }}
+          VAR_SCOPE: ${{ vars.QUALIFY_E2E_SCOPE }}
+          # What the plan resolved for the whole run. The lane's own values
+          # come from its matrix entry, which is in the env above.
+          NKE_VERSION: ${{ needs.plan.outputs.nke-version }}
+          SCOPE: ${{ needs.plan.outputs.scope }}
+          STREAM: ${{ matrix.stream }}
+          COMBINATION: ${{ matrix.combination }}
           VAR_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
         run: |
           set -Eeuo pipefail
 
-          # label | resolved | dispatch input | repository variable | variable name |
-          #   deprecated variable | deprecated variable name
-          #
-          # The last two are set only for the six renamed away from FORGE_,
-          # and empty everywhere else. They exist so a run on an old name
-          # says so rather than reporting the new one it did not read.
+          # label | resolved | dispatch input | repository variable | variable name
           rows=(
-            "stage|SITE_STAGE|IN_STAGE|VAR_STAGE|SITE_E2E_STAGE|WAS_STAGE|FORGE_E2E_STAGE"
-            "controller version|SITE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|SITE_E2E_CONTROLLER_VERSION|WAS_CONTROLLER_VERSION|FORGE_E2E_CONTROLLER_VERSION"
-            "nkectl version|CLI_VERSION|IN_CLI_VERSION|VAR_CLI_VERSION|SITE_E2E_CLI_VERSION||"
-            "keep the node|KEEP_SITE|IN_KEEP_SITE|VAR_KEEP_SITE|SITE_E2E_KEEP_SITE||"
-            "image registry|SITE_IMAGE_REGISTRY|IN_IMAGE_REGISTRY|VAR_IMAGE_REGISTRY|SITE_E2E_IMAGE_REGISTRY|WAS_IMAGE_REGISTRY|FORGE_E2E_IMAGE_REGISTRY"
-            "NGC org|SITE_E2E_NGC_ORG||VAR_NGC_ORG|SITE_E2E_NGC_ORG|WAS_NGC_ORG|FORGE_E2E_NGC_ORG"
-            "Teleport proxy|FORGE_TELEPORT_PROXY||VAR_TELEPORT_PROXY|FORGE_TELEPORT_PROXY||"
-            "jump host|FORGE_JUMP_HOST|||||"
-            "Teleport join token|FORGE_TELEPORT_JOIN_TOKEN|||||"
-            "Forge org|FORGE_ORG_ID||FORGE_ORG_ID|FORGE_ORG_ID||"
-            "Forge site|FORGE_SITE_ID||FORGE_SITE_ID|FORGE_SITE_ID||"
-            "Forge VPC|FORGE_VPC_ID||FORGE_VPC_ID|FORGE_VPC_ID||"
-            "Forge subnet|FORGE_SUBNET_ID||FORGE_SUBNET_ID|FORGE_SUBNET_ID||"
-            "Forge SSH key group|FORGE_SSH_KEY_GROUP_ID||FORGE_SSH_KEY_GROUP_ID|FORGE_SSH_KEY_GROUP_ID||"
-            "CPU instance type|FORGE_INSTANCE_TYPE_CPU_ID||FORGE_INSTANCE_TYPE_CPU_ID|FORGE_INSTANCE_TYPE_CPU_ID||"
-            "GPU instance type|FORGE_INSTANCE_TYPE_GPU_ID||FORGE_INSTANCE_TYPE_GPU_ID|FORGE_INSTANCE_TYPE_GPU_ID||"
-            "capi-provisioned version|CAPI_PROVISIONED_VERSION|IN_CAPI_PROVISIONED_VERSION|VAR_CAPI_PROVISIONED_VERSION|SITE_E2E_CAPI_PROVISIONED_VERSION||"
-            "kubernetes version|KUBERNETES_VERSION|IN_KUBERNETES_VERSION|VAR_KUBERNETES_VERSION|SITE_E2E_KUBERNETES_VERSION||"
-            "cni-ovn version|CNI_OVN_VERSION|IN_CNI_OVN_VERSION|VAR_CNI_OVN_VERSION|SITE_E2E_CNI_OVN_VERSION||"
-            "CWE namespace|CWE_NAMESPACE|IN_CWE_NAME|VAR_CWE_NAMESPACE|CWE_NAMESPACE||"
-            "CWE service|CWE_SERVICE|IN_CWE_NAME|VAR_CWE_SERVICE|CWE_SERVICE||"
-            "amd64 OS image bootloader|OS_IMAGE_BOOTLOADER_AMD64|IN_OS_IMAGE_BOOTLOADER_AMD64|VAR_OS_IMAGE_BOOTLOADER_AMD64|SITE_E2E_OS_IMAGE_BOOTLOADER_AMD64||"
-            "amd64 OS image|OS_IMAGE_AMD64|IN_OS_IMAGE_AMD64|VAR_OS_IMAGE_AMD64|SITE_E2E_OS_IMAGE_AMD64||"
-            "arm64 OS image bootloader|OS_IMAGE_BOOTLOADER_ARM64|IN_OS_IMAGE_BOOTLOADER_ARM64|VAR_OS_IMAGE_BOOTLOADER_ARM64|SITE_E2E_OS_IMAGE_BOOTLOADER_ARM64||"
-            "arm64 OS image|OS_IMAGE_ARM64|IN_OS_IMAGE_ARM64|VAR_OS_IMAGE_ARM64|SITE_E2E_OS_IMAGE_ARM64||"
-            "node user|NODE_USER||VAR_NODE_USER|SITE_E2E_NODE_USER||"
-            "cpu arch|ARCH|IN_ARCH|VAR_ARCH|SITE_E2E_ARCH||"
-            "gpu model|GPU|IN_GPU|VAR_GPU|SITE_E2E_GPU||"
-            "ytl site|FORGE_YTL_SITE_ID||FORGE_YTL_SITE_ID|FORGE_YTL_SITE_ID||"
-            "ytl VPC|FORGE_YTL_VPC_ID||FORGE_YTL_VPC_ID|FORGE_YTL_VPC_ID||"
-            "ytl VPC prefix|FORGE_YTL_VPC_PREFIX_ID||FORGE_YTL_VPC_PREFIX_ID|FORGE_YTL_VPC_PREFIX_ID||"
-            "ytl ssh key group|FORGE_YTL_SSH_KEY_GROUP_ID||FORGE_YTL_SSH_KEY_GROUP_ID|FORGE_YTL_SSH_KEY_GROUP_ID||"
-            "ytl jump host|FORGE_YTL_JUMP_HOST||FORGE_YTL_JUMP_HOST|FORGE_YTL_JUMP_HOST||"
-            "ytl Teleport login|FORGE_YTL_TELEPORT_LOGIN|||||"
-            "ytl amd64 cpu instance type|FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID||FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID|FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID||"
-            "ytl arm64 cpu instance type|FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID||FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID|FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID||"
-            "ytl gb200 instance type|FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID||FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID|FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID||"
+            "stage|SITE_STAGE|IN_STAGE|VAR_STAGE|QUALIFY_E2E_STAGE"
+            "controller version|SITE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|QUALIFY_E2E_CONTROLLER_VERSION"
+            "nkectl version|CLI_VERSION|IN_CLI_VERSION|VAR_CLI_VERSION|QUALIFY_E2E_CLI_VERSION"
+            "keep the node|KEEP_SITE|IN_KEEP_SITE|VAR_KEEP_SITE|QUALIFY_E2E_KEEP_SITE"
+            "image registry|SITE_IMAGE_REGISTRY|IN_IMAGE_REGISTRY|VAR_IMAGE_REGISTRY|QUALIFY_E2E_IMAGE_REGISTRY"
+            "NGC org|QUALIFY_E2E_NGC_ORG||VAR_NGC_ORG|QUALIFY_E2E_NGC_ORG"
+            "Teleport proxy|FORGE_TELEPORT_PROXY||VAR_TELEPORT_PROXY|FORGE_TELEPORT_PROXY"
+            "jump host|FORGE_JUMP_HOST|||"
+            "Teleport join token|FORGE_TELEPORT_JOIN_TOKEN|||"
+            "Forge org|FORGE_ORG_ID||FORGE_ORG_ID|FORGE_ORG_ID"
+            "Forge site|FORGE_SITE_ID||FORGE_SITE_ID|FORGE_SITE_ID"
+            "Forge VPC|FORGE_VPC_ID||FORGE_VPC_ID|FORGE_VPC_ID"
+            "Forge subnet|FORGE_SUBNET_ID||FORGE_SUBNET_ID|FORGE_SUBNET_ID"
+            "Forge SSH key group|FORGE_SSH_KEY_GROUP_ID||FORGE_SSH_KEY_GROUP_ID|FORGE_SSH_KEY_GROUP_ID"
+            "CPU instance type|FORGE_INSTANCE_TYPE_CPU_ID||FORGE_INSTANCE_TYPE_CPU_ID|FORGE_INSTANCE_TYPE_CPU_ID"
+            "GPU instance type|FORGE_INSTANCE_TYPE_GPU_ID||FORGE_INSTANCE_TYPE_GPU_ID|FORGE_INSTANCE_TYPE_GPU_ID"
+            "capi-provisioned version|CAPI_PROVISIONED_VERSION|IN_CAPI_PROVISIONED_VERSION|VAR_CAPI_PROVISIONED_VERSION|QUALIFY_E2E_CAPI_PROVISIONED_VERSION"
+            "kubernetes version|KUBERNETES_VERSION|IN_KUBERNETES_VERSION|VAR_KUBERNETES_VERSION|QUALIFY_E2E_KUBERNETES_VERSION"
+            "cni-ovn version|CNI_OVN_VERSION|IN_CNI_OVN_VERSION|VAR_CNI_OVN_VERSION|QUALIFY_E2E_CNI_OVN_VERSION"
+            "kind version|KIND_VERSION|||"
+            "clusterctl version|CLUSTERCTL_VERSION|||"
+            "nerdctl version|NERDCTL_VERSION|||"
+            "CWE namespace|CWE_NAMESPACE|IN_CWE_NAME|VAR_CWE_NAMESPACE|CWE_NAMESPACE"
+            "CWE service|CWE_SERVICE|IN_CWE_NAME|VAR_CWE_SERVICE|CWE_SERVICE"
+            "os-image release|OS_IMAGE_RELEASE|IN_OS_IMAGE_VERSION|VAR_OS_IMAGE_VERSION|QUALIFY_E2E_OS_IMAGE_VERSION"
+            "amd64 OS image bootloader|OS_IMAGE_BOOTLOADER_AMD64|IN_OS_IMAGE_BOOTLOADER_AMD64|VAR_OS_IMAGE_BOOTLOADER_AMD64|QUALIFY_E2E_OS_IMAGE_BOOTLOADER_AMD64"
+            "amd64 OS image|OS_IMAGE_AMD64|IN_OS_IMAGE_AMD64|VAR_OS_IMAGE_AMD64|QUALIFY_E2E_OS_IMAGE_AMD64"
+            "arm64 OS image bootloader|OS_IMAGE_BOOTLOADER_ARM64|IN_OS_IMAGE_BOOTLOADER_ARM64|VAR_OS_IMAGE_BOOTLOADER_ARM64|QUALIFY_E2E_OS_IMAGE_BOOTLOADER_ARM64"
+            "arm64 OS image|OS_IMAGE_ARM64|IN_OS_IMAGE_ARM64|VAR_OS_IMAGE_ARM64|QUALIFY_E2E_OS_IMAGE_ARM64"
+            "node user|NODE_USER||VAR_NODE_USER|QUALIFY_E2E_NODE_USER"
+            "stream|STREAM|||"
+            "combination|COMBINATION|||"
+            "nke version|NKE_VERSION|IN_NKE_VERSION|VAR_NKE_VERSION|QUALIFY_E2E_NKE_VERSION"
+            "scope|SCOPE|IN_SCOPE|VAR_SCOPE|QUALIFY_E2E_SCOPE"
+            "cpu arch|ARCH|||"
+            "gpu model|GPU|||"
+            "ytl site|FORGE_YTL_SITE_ID||FORGE_YTL_SITE_ID|FORGE_YTL_SITE_ID"
+            "ytl VPC|FORGE_YTL_VPC_ID||FORGE_YTL_VPC_ID|FORGE_YTL_VPC_ID"
+            "ytl VPC prefix|FORGE_YTL_VPC_PREFIX_ID||FORGE_YTL_VPC_PREFIX_ID|FORGE_YTL_VPC_PREFIX_ID"
+            "ytl ssh key group|FORGE_YTL_SSH_KEY_GROUP_ID||FORGE_YTL_SSH_KEY_GROUP_ID|FORGE_YTL_SSH_KEY_GROUP_ID"
+            "ytl jump host|FORGE_YTL_JUMP_HOST||FORGE_YTL_JUMP_HOST|FORGE_YTL_JUMP_HOST"
+            "ytl Teleport login|FORGE_YTL_TELEPORT_LOGIN|||"
+            "ytl amd64 cpu instance type|FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID||FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID|FORGE_YTL_INSTANCE_TYPE_CPU_AMD64_ID"
+            "ytl arm64 cpu instance type|FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID||FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID|FORGE_YTL_INSTANCE_TYPE_CPU_ARM64_ID"
+            "ytl gb200 instance type|FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID||FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID|FORGE_YTL_INSTANCE_TYPE_GPU_GB200_ID"
           )
 
           # A row nobody remembers to add is the whole failure mode: the
@@ -945,11 +1112,11 @@ jobs:
           # and a new one has to be added here too. CWE_ is here because the
           # name CWE is installed under is read by the suite from the
           # environment variables it already honours, so it carries no
-          # SITE_E2E_ prefix of its own.
+          # QUALIFY_E2E_ prefix of its own.
           missing=()
           while read -r name; do
-            printf '%s\n' "${rows[@]}" | cut -d'|' -f5,7 | tr '|' '\n' | grep -qx "${name}" || missing+=("vars.${name}")
-          done < <(grep -oE 'vars\.(FORGE|SITE_E2E|CWE)_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
+            printf '%s\n' "${rows[@]}" | cut -d'|' -f5 | grep -qx "${name}" || missing+=("vars.${name}")
+          done < <(grep -oE 'vars\.(FORGE|QUALIFY_E2E|CWE)_[A-Z0-9_]*' "${WORKFLOW}" | cut -d. -f2 | sort -u)
           while read -r name; do
             printf '%s\n' "${rows[@]}" | cut -d'|' -f3 |
               grep -qx "IN_$(printf '%s' "${name}" | tr 'a-z-' 'A-Z_')" || missing+=("inputs.${name}")
@@ -970,7 +1137,7 @@ jobs:
             printf '  %-22s = %s\n' "run"         "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo
             for row in "${rows[@]}"; do
-              IFS='|' read -r label resolved input var varname wasvar wasvarname <<<"${row}"
+              IFS='|' read -r label resolved input var varname <<<"${row}"
               value="${!resolved:-}"
               [ -n "${value}" ] || value="<unset>"
               # The rows whose values are withheld. This file is an artifact
@@ -989,14 +1156,18 @@ jobs:
                 source="dispatch input"
               elif [ -n "${var}" ] && [ -n "${!var:-}" ]; then
                 source="repository variable ${varname}"
-              elif [ -n "${wasvar}" ] && [ -n "${!wasvar:-}" ]; then
-                # Named rather than folded into the line above, because this
-                # is the only signal that the rename is unfinished. The
-                # fallback in the env block goes when no run prints this.
-                source="repository variable ${wasvarname} (deprecated, rename to ${varname})"
               else
                 source="workflow default"
               fi
+              # What the plan resolved, which is where each of these comes
+              # from when no override named it.
+              case "${resolved}" in
+                SITE_CONTROLLER_VERSION|CLI_VERSION|CAPI_PROVISIONED_VERSION|KUBERNETES_VERSION|CNI_OVN_VERSION|KIND_VERSION|CLUSTERCTL_VERSION|NERDCTL_VERSION|OS_IMAGE_*|ARCH|GPU|STREAM|COMBINATION)
+                  if [ "${source}" = "workflow default" ]; then
+                    source="qualification plan"
+                  fi
+                  ;;
+              esac
               if [ "${withhold}" = 1 ]; then
                 source="repository secret ${resolved}"
               fi
@@ -1080,28 +1251,39 @@ jobs:
           #   junit-report   machine-readable beside the human-readable log.
           #                  A qualification run should be able to say which
           #                  specs it ran to something that is not a person.
-          #   json-report    what `qualify summarise` reads; JUnit has no
-          #                  equivalent of PreRunStats, and without those a
-          #                  leg's skip count is the size of the suite rather
-          #                  than the size of the run. Written but not
-          #                  uploaded: a Ginkgo report carries captured spec
-          #                  output, which on this lane is remote command
-          #                  output, so it stays on the runner for a
-          #                  summarise step to reduce to an outcome.
-          go test -v -timeout 220m . -args \
-            -ginkgo.label-filter=site-controller \
-            -ginkgo.timeout=150m \
-            -ginkgo.v \
-            -ginkgo.fail-on-empty \
-            -ginkgo.no-color \
-            -ginkgo.junit-report=site-e2e.junit.xml \
-            -ginkgo.json-report=report.json \
-            -e2e.config=e2e-config.yaml \
-            -e2e.environment=forge \
-            -e2e.site-stage="${SITE_STAGE}" \
-            -e2e.versions="controller=${SITE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}" \
-            -e2e.capabilities="${CAPABILITIES}" \
-            "${keep[@]}" 2>&1 | tee site-e2e.log
+          #   json-report    JUnit has no equivalent of PreRunStats, and
+          #                  without those a leg's skip count is the size of
+          #                  the suite rather than the size of the run.
+          #                  Written but not uploaded: a Ginkgo report
+          #                  carries captured spec output, which on this lane
+          #                  is remote command output, so it stays on the
+          #                  runner.
+          #
+          # TESTING: the Ginkgo run is commented out while the plan and the
+          # per-stream jobs are being wired up, so a job takes no Forge machine.
+          # It prints what it would have run instead.
+          #
+          # go test -v -timeout 220m . -args \
+          #   -ginkgo.label-filter=site-controller \
+          #   -ginkgo.timeout=150m \
+          #   -ginkgo.v \
+          #   -ginkgo.fail-on-empty \
+          #   -ginkgo.no-color \
+          #   -ginkgo.junit-report=qualify-e2e.junit.xml \
+          #   -ginkgo.json-report=qualify-e2e.report.json \
+          #   -e2e.config=e2e-config.yaml \
+          #   -e2e.environment=forge \
+          #   -e2e.site-stage="${SITE_STAGE}" \
+          #   -e2e.versions="controller=${SITE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}" \
+          #   -e2e.capabilities="${CAPABILITIES}" \
+          #   "${keep[@]}" 2>&1 | tee qualify-e2e.log
+          {
+            echo "ginkgo is not run. It would have run with:"
+            echo "  -e2e.site-stage=${SITE_STAGE}"
+            echo "  -e2e.versions=controller=${SITE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}"
+            echo "  -e2e.capabilities=${CAPABILITIES}"
+            echo "  keep: ${keep[*]:-no}"
+          } | tee qualify-e2e.log
 
       # The suite names the jump host in its own errors ("not reachable
       # through ..."), and those land in the log and the JUnit report. GitHub
@@ -1118,7 +1300,7 @@ jobs:
           for raw in "${FORGE_JUMP_HOST}" "${FORGE_YTL_JUMP_HOST}"; do
             [ -n "${raw}" ] || continue
             host="$(printf '%s' "${raw}" | sed 's/[][\.*^$/]/\\&/g')"
-            for f in site-e2e.log site-e2e.junit.xml tenant-diagnostics.json site-cluster-state.txt; do
+            for f in qualify-e2e.log qualify-e2e.junit.xml tenant-diagnostics.json site-cluster-state.txt; do
               [ -f "${f}" ] || continue
               sed -i "s/${host}/<jump host>/g" "${f}"
             done
@@ -1129,7 +1311,7 @@ jobs:
       # view, and a green one is the reference for diagnosing the next red
       # one.
       #
-      # site-diagnostics.tar.gz is what nkectl collected on the node when a
+      # nkectl-diagnostics.tar.gz is what nkectl collected on the node when a
       # bootstrap failed. It only exists on a failure, and only the suite can
       # save it: the node is released minutes later and takes it with it.
       #
@@ -1143,11 +1325,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: forge-site-${{ env.SITE_STAGE }}-${{ github.run_id }}
+          name: forge-site-${{ env.SITE_STAGE }}-${{ matrix.stream }}-${{ github.run_id }}
           path: |
-            controller/test/e2e/site-e2e.log
-            controller/test/e2e/site-e2e.junit.xml
-            controller/test/e2e/site-diagnostics.tar.gz
+            controller/test/e2e/qualify-e2e.log
+            controller/test/e2e/qualify-e2e.junit.xml
+            controller/test/e2e/nkectl-diagnostics.tar.gz
             controller/test/e2e/tenant-diagnostics.json
             controller/test/e2e/site-cluster-state.txt
             ${{ runner.temp }}/run-inputs.txt

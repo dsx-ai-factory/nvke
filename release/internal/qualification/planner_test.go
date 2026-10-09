@@ -76,7 +76,7 @@ func testPolicy() *Policy {
 
 func testRegistry() *Registry {
 	r := &Registry{APIVersion: APIVersion, Kind: KindRegistry}
-	for _, name := range []string{"nke", "os-image", "cli", "controller", "kube", "nke-cni-ovn", "kind"} {
+	for _, name := range []string{"nke", "os-image", "cli", "controller", "kube", "cni-ovn", "kind"} {
 		r.Spec.Components = append(r.Spec.Components, Component{Name: name, Resolve: Resolve{Strategy: "fake"}})
 	}
 	return r
@@ -94,7 +94,7 @@ spec:
     - {name: cli, selectors: [latest]}
   dependencies:
     - {name: kube, constraintFrom: {capability: kube}}
-    - {name: nke-cni-ovn, constraint: "1.4"}
+    - {name: cni-ovn, constraint: "1.4"}
     - {name: kind}
 `
 
@@ -108,7 +108,7 @@ func newResolvers() resolvers {
 		"os-image": fixed("v0.1.0", "os-image/v0.1.0"),
 		"cli":      fixed("v0.1.0-rc.7", "cli/v0.1.0-rc.7"),
 		"kube":     byConstraint("2"),
-		"nke-cni-ovn": {answer: func(in map[string]string) (map[string]string, error) {
+		"cni-ovn": {answer: func(in map[string]string) (map[string]string, error) {
 			return map[string]string{resolve.ResultVersionKey: in[resolve.InputConstraintKey] + ".0"}, nil
 		}},
 		"kind": fixed("v0.32.0", ""),
@@ -169,7 +169,7 @@ func TestPlanResolvesAndExpands(t *testing.T) {
 
 	// A literal constraint and no constraint are the same for every stream, so
 	// they are resolved once and recorded on the combination.
-	if g := versionsOf(c.Dependencies); g != "nke-cni-ovn=1.4.0 kind=v0.32.0" {
+	if g := versionsOf(c.Dependencies); g != "cni-ovn=1.4.0 kind=v0.32.0" {
 		t.Errorf("combination dependencies are %q", g)
 	}
 
@@ -199,7 +199,7 @@ func TestPlanResolvesPerStreamOnlyThroughACapability(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for name, want := range map[string]int{"nke-cni-ovn": 1, "kind": 1, "kube": 3} {
+	for name, want := range map[string]int{"cni-ovn": 1, "kind": 1, "kube": 3} {
 		if got := len(r[name].calls); got != want {
 			t.Errorf("%s was resolved %d times, want %d", name, got, want)
 		}
@@ -411,11 +411,11 @@ func TestPlanFailsEarly(t *testing.T) {
 		{
 			name: "a dependency that cannot resolve", subject: testSubject, scope: "full",
 			change: func(r resolvers) {
-				r["nke-cni-ovn"] = &fake{answer: func(map[string]string) (map[string]string, error) {
+				r["cni-ovn"] = &fake{answer: func(map[string]string) (map[string]string, error) {
 					return nil, fmt.Errorf("locks no version matching 1.4")
 				}}
 			},
-			want: "resolving nke-cni-ovn for nke: locks no version matching 1.4",
+			want: "resolving cni-ovn for nke: locks no version matching 1.4",
 		},
 		{
 			name: "a per-stream dependency that cannot resolve names the stream", subject: testSubject, scope: "full",

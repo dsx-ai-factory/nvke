@@ -120,8 +120,44 @@ func requireVersion(component string) (string, error) {
 	return version, nil
 }
 
-// optionalVersion reads one component's version, returning "" when the run did
-// not name it, for the versions a caller can sensibly default.
+// requireVersions reads several components' versions at once, naming every one
+// the run did not supply. A Forge run qualifies a set of versions, so a missing
+// one is reported together with the others rather than one run at a time.
+func requireVersions(components ...string) (map[string]string, error) {
+	versions, err := runVersions()
+	if err != nil {
+		return nil, err
+	}
+	return pickVersions(versions, components)
+}
+
+// pickVersions returns the named components' versions, or an error naming those
+// that are absent and those that are present.
+func pickVersions(versions map[string]string, components []string) (map[string]string, error) {
+	picked := make(map[string]string, len(components))
+	var missing []string
+	for _, component := range components {
+		if version, ok := versions[component]; ok {
+			picked[component] = version
+		} else {
+			missing = append(missing, component)
+		}
+	}
+	if len(missing) == 0 {
+		return picked, nil
+	}
+
+	known := make([]string, 0, len(versions))
+	for name := range versions {
+		known = append(known, name)
+	}
+	sort.Strings(known)
+	if len(known) == 0 {
+		return nil, fmt.Errorf("-e2e.versions names no components, and %s required", strings.Join(missing, ", "))
+	}
+	return nil, fmt.Errorf("-e2e.versions does not name %s; it names %s", strings.Join(missing, ", "), strings.Join(known, ", "))
+}
+
 // requireNodeArtifacts is the OS image and its imager for one architecture.
 //
 // Both are looked up as <component>-<arch> first and then unsuffixed, so a run
@@ -156,6 +192,9 @@ func requireVersionForArch(component, arch string) (string, error) {
 	return value, nil
 }
 
+// optionalVersion reads one component's version, returning "" when the run did
+// not name it. Only an artifact lookup that tries a more specific key first uses
+// it, since a version the run qualifies is required.
 func optionalVersion(component string) string {
 	versions, err := runVersions()
 	if err != nil {

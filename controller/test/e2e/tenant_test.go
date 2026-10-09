@@ -720,7 +720,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			// cannot fit between -ginkgo.timeout and the go-test backstop --
 			// and that backstop panics without unwinding, which leaks the
 			// site's instance. See the three nested timeouts in
-			// site-and-tenant-e2e.yml.
+			// qualify-e2e.yml.
 		}, NodeTimeout(15*time.Minute))
 	}
 }
@@ -1540,16 +1540,9 @@ func nicoSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec 
 	})
 }
 
-// Dependency versions that have carried a tenant on Forge. Defaults rather than
-// required inputs: they are not what a nico-forge run qualifies, and a resolved
-// combination from the qualify tool will supply them once the run verb exists.
-//
-// Kubernetes and the CNI are what the recorded Forge exercises ran. There is
-// no SPIRE pin: the OS image owns its spire-agent, so the lane installs none.
-const (
-	forgeDefaultKubernetesVersion = "1.36.3"
-	forgeDefaultCNIVersion        = "1.4.0"
-)
+// A Forge tenant takes its Kubernetes and CNI versions from -e2e.versions, both
+// required. There is no SPIRE pin: the OS image owns its spire-agent, so the
+// lane installs none.
 
 // nicoForgeSpec builds a CAPNico topology on real Forge. The manifests are the
 // ones nicoSpec already builds, since CAPNico reconciles both, so what this
@@ -1587,12 +1580,14 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nke.Cluster
 	site := selection.Site
 	controlPlaneType, workerType := selection.CPU, selection.WorkerType()
 
-	kubernetesVersion := cmp.Or(optionalVersion("kube"), shape.kubernetesVersion, forgeDefaultKubernetesVersion)
+	versions, err := requireVersions(versionKube, versionCNIOVN)
+	Expect(err).NotTo(HaveOccurred(), "should name the Kubernetes and CNI versions under qualification")
+	kubernetesVersion := versions[versionKube]
 
 	payloads, err := forgeRolePayloads(roleArchs{
 		ControlPlane: controlPlaneType.Arch(),
 		Worker:       workerType.Arch(),
-	}, kubernetesVersion)
+	}, kubernetesVersion, versions[versionCNIOVN])
 	Expect(err).NotTo(HaveOccurred(), "should render the Forge node payloads")
 
 	return nke.ClusterSpec{
@@ -1663,7 +1658,7 @@ type roleArchs struct {
 // forgeRolePayloads renders one payload set per role. When both roles are the
 // same architecture the work is done once and shared, which is the ordinary
 // single-architecture cluster.
-func forgeRolePayloads(archs roleArchs, kubernetesVersion string) (*nke.RolePayloads, error) {
+func forgeRolePayloads(archs roleArchs, kubernetesVersion, cniVersion string) (*nke.RolePayloads, error) {
 	build := func(arch string) (nke.NodePayloads, error) {
 		bootLoaderURL, imageURL, err := requireNodeArtifacts(arch)
 		if err != nil {
@@ -1674,7 +1669,7 @@ func forgeRolePayloads(archs roleArchs, kubernetesVersion string) (*nke.RolePayl
 			ImageURL:          imageURL,
 			Arch:              arch,
 			KubernetesVersion: kubernetesVersion,
-			CNIVersion:        cmp.Or(optionalVersion("cni-ovn"), forgeDefaultCNIVersion),
+			CNIVersion:        cniVersion,
 		})
 	}
 

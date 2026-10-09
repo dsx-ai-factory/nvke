@@ -21,7 +21,7 @@ spec:
     - {name: cli, selectors: [latest]}
   dependencies:
     - {name: kube, constraintFrom: {capability: kube}}
-    - {name: nke-cni-ovn, constraint: "1.4"}
+    - {name: cni-ovn, constraint: "1.4"}
     - {name: kind}
 `
 
@@ -109,7 +109,7 @@ func TestLoadSubjectRejects(t *testing.T) {
 		},
 		{
 			"constraint and constraintFrom together",
-			strings.Replace(validSubject, `{name: nke-cni-ovn, constraint: "1.4"}`, `{name: nke-cni-ovn, constraint: "1.4", constraintFrom: {capability: kube}}`, 1),
+			strings.Replace(validSubject, `{name: cni-ovn, constraint: "1.4"}`, `{name: cni-ovn, constraint: "1.4", constraintFrom: {capability: kube}}`, 1),
 			"both constraint and constraintFrom",
 		},
 		{
