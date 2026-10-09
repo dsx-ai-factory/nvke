@@ -39,7 +39,10 @@ and node pools already store keep resolving.
   profile name instead.
 - **Deprecated profiles keep their names** so existing pools still resolve them.
   `deprecated.yaml` only sets `spec.lifecycle.deprecated`, which excludes the
-  release from upgrade-target selection.
+  release from upgrade-target selection. A profile's directory sits next to the
+  index that lists it — `osProfiles/<profile>/` for `metadata.yaml`,
+  `osProfiles/deprecated/<profile>/` for `deprecated.yaml` — so deprecating a
+  profile moves its directory as well as its entry.
 - The Kubernetes version is carried as an annotation on the releases, and the
   variant is copied as written.
 

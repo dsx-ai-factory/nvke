@@ -134,6 +134,33 @@ func TestConvertDeprecatedProfileStaysResolvable(t *testing.T) {
 	}
 }
 
+func TestConvertReadsDeprecatedProfileFromTheDeprecatedDir(t *testing.T) {
+	const ipxe = "#!ipxe\necho deprecated\n"
+	root := writeTree(t, "profiles: {}\n", deprecatedMetadata(), map[string][2]string{
+		oldName: {ipxe, testUser},
+	})
+	require.FileExists(t, filepath.Join(root, "osProfiles", "deprecated", oldName, "ipxeScript"))
+	require.NoFileExists(t, filepath.Join(root, "osProfiles", oldName, "ipxeScript"))
+
+	image := decodeImage(t, mustConvert(t, root)[manifestName(oldName, kindMachineImage)])
+	assert.Equal(t, ipxe, image.Spec.NICo.IPXEScript)
+}
+
+// Deprecating a profile moves its directory as well as its index entry. A
+// directory left behind in the active tree is not found, which names the
+// profile rather than silently generating nothing for it.
+func TestConvertRejectsDeprecatedProfileLeftInTheActiveTree(t *testing.T) {
+	root := writeTree(t, "profiles: {}\n", deprecatedMetadata(), nil)
+	stale := filepath.Join(root, "osProfiles", oldName)
+	require.NoError(t, os.MkdirAll(stale, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(stale, "ipxeScript"), []byte(testIPXE), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(stale, "userData.tmpl"), []byte(testUser), 0o644))
+
+	_, err := convert(root)
+	require.ErrorContains(t, err, oldName)
+	require.ErrorContains(t, err, "read ipxeScript")
+}
+
 func TestConvertReadsBothIndexes(t *testing.T) {
 	root := writeTree(t, activeMetadata(), deprecatedMetadata(), map[string][2]string{
 		activeName: {testIPXE, testUser},
@@ -283,17 +310,31 @@ func activeAsDeprecated() string {
 `
 }
 
+// writeTree lays out a profiles root the way the fleet repository does: a
+// profile listed in deprecated.yaml has its directory under
+// osProfiles/deprecated/, every other one directly under osProfiles/.
 func writeTree(t *testing.T, metadata, deprecated string, files map[string][2]string) string {
 	t.Helper()
 	root := t.TempDir()
 	osDir := filepath.Join(root, "osProfiles")
 	require.NoError(t, os.MkdirAll(osDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(osDir, "metadata.yaml"), []byte(metadata), 0o644))
+	deprecatedNames := map[string]bool{}
 	if deprecated != "" {
 		require.NoError(t, os.WriteFile(filepath.Join(osDir, "deprecated.yaml"), []byte(deprecated), 0o644))
+		var index struct {
+			Profiles map[string]any `json:"profiles"`
+		}
+		require.NoError(t, yaml.Unmarshal([]byte(deprecated), &index))
+		for name := range index.Profiles {
+			deprecatedNames[name] = true
+		}
 	}
 	for name, pair := range files {
 		dir := filepath.Join(osDir, name)
+		if deprecatedNames[name] {
+			dir = filepath.Join(osDir, "deprecated", name)
+		}
 		require.NoError(t, os.MkdirAll(dir, 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "ipxeScript"), []byte(pair[0]), 0o644))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "userData.tmpl"), []byte(pair[1]), 0o644))
