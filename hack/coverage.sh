@@ -52,6 +52,7 @@ COVERAGE_MODULES=(
 	cli
 	cluster-api-provider-provisioned
 	controller
+	controller/api
 	controller/deploy/charts
 	controller/nico-sim
 	controller/test/e2e
@@ -64,13 +65,9 @@ COVERAGE_MODULES=(
 # fails when one of these gains a _test.go, because a module that starts
 # testing and does not start collecting is exactly the drift this guards.
 #
-#   controller/api                              generated OpenAPI types and a
-#                                               generated client. No hand
-#                                               written code to test.
 #   controller/hack/capd-reboot-controller      a development helper for the
 #                                               CAPD backend, run by hand.
 NO_TEST_MODULES=(
-	controller/api
 	controller/hack/capd-reboot-controller
 )
 
@@ -206,8 +203,7 @@ cmd_check() {
 			error "hack/coverage.sh lists ${module}, which is not a module in go.work"
 	done
 
-	# 3. A module that claims to have no tests really has none. This is the
-	#    check that fires when someone adds the first test to controller/api.
+	# 3. A module that claims to have no tests really has none.
 	for module in "${NO_TEST_MODULES[@]}"; do
 		local found
 		found="$(git ls-files -- "${module}/*_test.go")"

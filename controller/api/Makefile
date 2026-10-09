@@ -19,6 +19,7 @@ endif
 # lint sees the same public dependency graph as the other module builds.
 GOLANGCI_LINT_GOWORK :=
 include ../../make/golangci.mk
+include ../../make/coverage.mk
 
 # VACUUM_VERSION, pinned with the other repository-wide tool versions.
 include ../../make/tool-versions.mk
@@ -62,4 +63,5 @@ lint-spec: ## Lint openapi.yaml against openapi-lint.yaml.
 	$(GO) run github.com/daveshanley/vacuum@$(VACUUM_VERSION) lint --ruleset openapi-lint.yaml --ignore-file openapi-lint-ignore.yaml --details --no-banner --no-style --no-clip --min-score 0 openapi.yaml
 
 test: ## Run this module's tests.
-	$(GO) test $(GO_TEST_FLAGS) ./...
+	@$(COVERAGE_MKDIR)
+	$(GO) test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) ./...

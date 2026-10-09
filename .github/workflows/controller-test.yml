@@ -8,10 +8,10 @@
 # tested. A test suite nothing runs reads as coverage in review and provides
 # none.
 #
-# Not covered by the test job, deliberately: controller/api and
-# controller/hack/capd-reboot-controller have no _test.go files at all. The
-# root controller/test/e2e package mixes ordinary unit tests with TestE2E,
-# which needs a live cluster in KUBECONFIG; the job below skips only TestE2E.
+# Not covered by the test job, deliberately:
+# controller/hack/capd-reboot-controller has no _test.go files at all. The root
+# controller/test/e2e package mixes ordinary unit tests with TestE2E, which
+# needs a live cluster in KUBECONFIG; the job below skips only TestE2E.
 #
 # The `compile` job below covers those heavier suites in the one way a pull
 # request can: it type-checks them without running them. See its own comment.
@@ -86,6 +86,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - module: controller/api
+            run: make test
           # `make test` here already drops ./integration-test, which needs a
           # running controller on port 8080.
           # test-integration-local adds the two `integration`-tagged packages.

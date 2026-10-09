@@ -245,12 +245,12 @@ make -C controller generate-check    # the committed Go matches the spec
 make -C controller api-compat-check  # the spec change does not break a client
 ```
 
-This module has **no test files**. `make test` therefore compiles the module and
-reports success without running anything. That matters when you change the API:
-nothing here will catch a break *in the Go*, and the modules that will are
-`controller`, `cli` and `controller/test/e2e`. Build those too before you open a
-pull request. A break in the *contract* is `api-compat-check`'s job, and that
-one does run here.
+The authored tests in this module cover the stdlib OIDC issuer under
+`testutil/oidc`, which the controller reference and end-to-end suites share.
+`make test` runs those tests and compiles the generated API package. It does not
+catch a break in generated Go consumers, so build `controller`, `cli` and
+`controller/test/e2e` too before opening a pull request. A break in the contract
+is `api-compat-check`'s job, and that check runs from `controller/`.
 
 There is no `fmt` target, on purpose. Formatting the generated files belongs to
 the generator.
