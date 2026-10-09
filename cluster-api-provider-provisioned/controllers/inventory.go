@@ -167,7 +167,7 @@ func sortedAllocations(
 }
 
 // machineAddresses returns the hostname and IP address that Cluster API copies
-// to Machine status. CWE uses InternalIP to contact the node agent.
+// to Machine status. The controller uses InternalIP to contact the node agent.
 func machineAddresses(host infrav1.ProvisionedHost) []clusterv1.MachineAddress {
 	return []clusterv1.MachineAddress{
 		{Type: clusterv1.MachineHostName, Address: host.Hostname},

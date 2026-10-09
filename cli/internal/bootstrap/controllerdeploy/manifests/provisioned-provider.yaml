@@ -76,8 +76,8 @@ spec:
             description: |-
               ProvisionedClusterSpec defines the desired state of ProvisionedCluster.
 
-              The spec holds no control plane endpoint. CWE owns the control plane VIP
-              through the controlPlaneVIP field of its own cluster API, and CWE configures
+              The spec holds no control plane endpoint. The NKE controller owns the control plane VIP
+              through the controlPlaneVIP field of its own cluster API, and the controller configures
               kube-vip on each control plane node.
             properties:
               hosts:
@@ -95,7 +95,7 @@ spec:
                     hostname:
                       description: |-
                         Hostname is the DNS hostname of the host. It must be unique in the cluster.
-                        It does not become the Kubernetes Node name: CWE generates the Node name
+                        It does not become the Kubernetes Node name: the controller generates the Node name
                         and passes it to kubeadm.
                       maxLength: 253
                       minLength: 1
@@ -105,7 +105,7 @@ spec:
                       description: |-
                         IPAddress is the IP address that the network already assigned to this
                         host. The provider uses its canonical form in the provider ID and copies
-                        it to the status of the machine that holds the host. CWE uses it to reach
+                        it to the status of the machine that holds the host. The controller uses it to reach
                         the node agent.
                       maxLength: 45
                       minLength: 1
@@ -449,7 +449,7 @@ spec:
               addresses:
                 description: |-
                   Addresses contain the hostname and internal IP address from the inventory.
-                  Cluster API copies them to the Machine, and CWE reads the internal IP to
+                  Cluster API copies them to the Machine, and the controller reads the internal IP to
                   find the node agent.
                 items:
                   description: MachineAddress contains information for the node's

@@ -41,7 +41,7 @@ const (
 	provisionedClusterKind = "ProvisionedCluster"
 	machineFinalizer       = "provisionedmachine.infrastructure.cluster.x-k8s.io"
 
-	// machineSpireAgentIDPathAnnotation is the Machine contract CWE reads to
+	// machineSpireAgentIDPathAnnotation is the Machine contract the controller reads to
 	// create the node-agent workload entry under its TPM-attested SPIRE agent.
 	machineSpireAgentIDPathAnnotation = "nke.nvidia.com/spire-agent-spiffe-id-path"
 	tpmSpireAgentPathPrefix           = "/spire/agent/tpm/"
@@ -52,7 +52,7 @@ const (
 // The reconciler creates no infrastructure. The host is already on, and the
 // network already gave it an address. The reconciler records which machine
 // holds which host, and it publishes the address of that host so that Cluster
-// API and CWE can reach the node.
+// API and the controller can reach the node.
 type MachineReconciler struct {
 	client        client.Client
 	apiReader     client.Reader
@@ -134,7 +134,7 @@ func (r *MachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, fmt.Errorf("failed to get owner Machine: %w", err)
 	}
 	if ownerMachine == nil {
-		// Cluster API sets the owner reference shortly after CWE applies the
+		// Cluster API sets the owner reference shortly after the controller applies the
 		// Machine. Until then the owning cluster is unknown, so the provider
 		// cannot select the correct inventory.
 		logger.Info("Waiting for Machine controller to set the owner reference")
@@ -384,8 +384,8 @@ func (r *MachineReconciler) reconcileBoundMachine(
 	return ctrl.Result{}, r.applyHostStatus(ctx, machine, host)
 }
 
-// reconcileMachineSpireAgentIDPath connects CWE's generated node identity to
-// the TPM-attested SPIRE agent on the allocated host. CWE watches this Machine
+// reconcileMachineSpireAgentIDPath connects the controller's generated node identity to
+// the TPM-attested SPIRE agent on the allocated host. The controller watches this Machine
 // annotation and creates the /host/<node-ID> workload entry beneath the parent
 // path recorded here.
 func (r *MachineReconciler) reconcileMachineSpireAgentIDPath(
@@ -514,7 +514,7 @@ func (r *MachineReconciler) setNotReady(
 }
 
 // listClusterMachines returns every ProvisionedMachine of one cluster in one
-// namespace. CWE puts each cluster in its own namespace, and Cluster API labels
+// namespace. The controller puts each cluster in its own namespace, and Cluster API labels
 // every rendered machine with the cluster name, so the label narrows the list
 // even if a namespace ever holds two clusters.
 func (r *MachineReconciler) listClusterMachines(
