@@ -69,6 +69,15 @@ and then runs one job for each stream of the plan's scope. The versions, the
 architecture and the GPU model of a job are the plan's, and the dispatch inputs
 that name a version override what the plan resolves.
 
+A **dry run** does everything except join Teleport and run the suite, so it
+takes no Forge machine. It is the `dry-run` dispatch input, or the
+`qualify-e2e-dry-run` label on a pull request. Each stream job still builds the
+site inputs, which confirms every image and archive exists, and writes the e2e
+config. It then prints the `-e2e.versions` and `-e2e.capabilities` the suite
+would have been given into `qualify-e2e.log`. A dry run has its own concurrency
+group, so it does not wait behind a real run, and its jobs are named
+`<stream> (dry run)`.
+
 `-e2e.site-stage` chooses how far to go, so you can pay for the part you need:
 
 | Stage | Does everything above, plus | Roughly |

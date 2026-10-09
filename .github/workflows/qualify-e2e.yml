@@ -61,6 +61,13 @@
 # what it qualified from plan.json alone. The dispatch inputs and QUALIFY_E2E_*
 # variables that name a version are overrides of what the plan resolves, not a
 # second source of versions.
+#
+# DRY RUN. A `dry-run` dispatch input, or the `qualify-e2e-dry-run` label on a
+# pull request, does everything except join Teleport and run the suite: the
+# plan, each stream's job, the site inputs (so every image and archive is
+# confirmed to exist) and the e2e config. It takes no Forge machine, so it does
+# not queue behind a real run, and it prints the suite invocation it would have
+# made.
 name: Qualify e2e
 
 on:
@@ -128,6 +135,11 @@ on:
         description: Overrides the HTTPS URL of the arm64 NKE qcow2 the plan resolves.
         type: string
         required: false
+      dry-run:
+        description: Plan and prepare every stream without joining Teleport or running the suite, so no Forge machine is taken. The suite invocation is printed and not run.
+        type: boolean
+        required: false
+        default: false
       keep-site:
         description: Keep the node after the run, for debugging. Remember to delete it by hand.
         type: boolean
@@ -147,7 +159,8 @@ on:
   # until it merges. A pull_request run also carries refs/pull/<n>/merge,
   # which is one of the two refs the Teleport join token accepts.
   #
-  # `labeled` and nothing else. Adding `qualify-e2e` is the request to run;
+  # `labeled` and nothing else. Adding `qualify-e2e` is the request to run, and adding
+  # `qualify-e2e-dry-run` is the request for a dry run;
   # `synchronize` is deliberately absent so that pushing to a labelled PR
   # does not quietly take another machine. To run again, remove the label and
   # add it back, or use the re-run button.
@@ -170,7 +183,10 @@ concurrency:
   #
   # Never cancelled. Cancelling mid-flight leaks the instance, because
   # teardown is the suite's and the runner dies with the job.
-  group: ${{ github.workflow }} ${{ github.ref }}
+  #
+  # A dry run takes no machine, so it has its own group and does not wait behind
+  # a real run on the same branch.
+  group: ${{ github.workflow }} ${{ github.ref }} ${{ (inputs.dry-run == true || github.event.label.name == 'qualify-e2e-dry-run') && 'dry-run' || 'run' }}
   cancel-in-progress: false
 
 jobs:
@@ -185,23 +201,27 @@ jobs:
     name: plan
     runs-on: arc-amd64-cpu16
     # The same gate as the lanes: a dispatch is deliberate, and a pull_request
-    # run has to be asked for with the `qualify-e2e` label from a branch in this
+    # run has to be asked for with the `qualify-e2e` label, or the
+    # `qualify-e2e-dry-run` label for a dry run, from a branch in this
     # repository. The lanes need this job, so they are skipped with it.
     if: >-
       github.repository == 'dsx-ai-factory/nke' &&
       (github.event_name == 'workflow_dispatch' ||
        (github.event.pull_request.head.repo.full_name == github.repository &&
-        github.event.label.name == 'qualify-e2e'))
+        contains(fromJSON('["qualify-e2e","qualify-e2e-dry-run"]'), github.event.label.name)))
     timeout-minutes: 15
     permissions:
       contents: read
     outputs:
       # One entry per stream of every combination, for the lanes' matrix.
       matrix: ${{ steps.matrix.outputs.matrix }}
+      # Whether this is a dry run, decided here once so every lane agrees.
+      dry-run: ${{ steps.matrix.outputs.dry-run }}
       # What the plan resolved for the run as a whole.
       nke-version: ${{ steps.matrix.outputs.nke-version }}
       scope: ${{ steps.matrix.outputs.scope }}
     env:
+      DRY_RUN: ${{ (inputs.dry-run == true || github.event.label.name == 'qualify-e2e-dry-run') && 'true' || 'false' }}
       NKE_VERSION: ${{ inputs.nke-version || vars.QUALIFY_E2E_NKE_VERSION }}
       SCOPE: ${{ inputs.scope || vars.QUALIFY_E2E_SCOPE || 'golden-path' }}
       # The names are the registry's, which are the keys the suite reads.
@@ -278,7 +298,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          jq -r --arg run "${GITHUB_RUN_ID}" '
+          jq -r --arg run "${GITHUB_RUN_ID}" --arg dry "${DRY_RUN}" '
             (.overrides // []) as $over
             | def cell($e): if $e.url then ($e.url | sub("^https?://[^/]+/"; "")) else ($e.version // "") end;
               def short($e): if $e.url then ($e.url | split("/") | last) else ($e.version // "") end;
@@ -290,7 +310,8 @@ jobs:
               "| nke | `\(.version)` |",
               "| scope | `\(.scope)` |",
               "| overrides | \(if ($over | length) == 0 then "none" else ($over | map("`" + . + "`") | join(", ")) end) |",
-              "| combinations | \(.combinations | length) |",
+              "| mode | \(if $dry == "true" then "dry run, no machine is taken" else "run" end) |",
+            "| combinations | \(.combinations | length) |",
               "| streams | \([.combinations[].streams | length] | add) |",
               "| plan | artifact `qualify-plan-\($run)` |",
               "",
@@ -355,6 +376,7 @@ jobs:
             echo "matrix=${matrix}"
             echo "nke-version=$(jq -r .version plan.json)"
             echo "scope=$(jq -r .scope plan.json)"
+            echo "dry-run=${DRY_RUN}"
           } >> "${GITHUB_OUTPUT}"
           echo "${matrix}" | jq .
 
@@ -371,7 +393,7 @@ jobs:
     # Named for the stream, which names its provider, GPU model, architecture,
     # Ubuntu series and Kubernetes minor, so the shape is readable from the
     # checks list without opening the run.
-    name: ${{ matrix.stream }}
+    name: ${{ matrix.stream }}${{ needs.plan.outputs.dry-run == 'true' && ' (dry run)' || '' }}
     needs: plan
     strategy:
       # Never cancel a sibling. A cancelled lane dies before its teardown and
@@ -424,6 +446,8 @@ jobs:
       # path to the hardware is, which is why FORGE_JUMP_HOST and the
       # Teleport and Forge resource variables below keep their prefix.
       SITE_STAGE: ${{ inputs.stage || vars.QUALIFY_E2E_STAGE || 'provision' }}
+      # A dry run joins no Teleport and runs no suite. Decided by the plan job.
+      DRY_RUN: ${{ needs.plan.outputs.dry-run }}
       # Empty asks for a build from this checkout; the resolve step fills it
       # in. Every use of it downstream -- the image site-inputs stages, the
       # NKECTL_CWE_IMAGE the bootstrap runs, and the tag the SBOM deploys --
@@ -603,6 +627,7 @@ jobs:
       # runs tbot as the daemon that keeps the identity fresh. Both come out
       # of the same tarball, so one pin covers the join and the relay.
       - name: Install tsh and tbot
+        if: env.DRY_RUN != 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -685,14 +710,18 @@ jobs:
           # nothing else, so a dispatch from any other branch mints nothing.
           # Checked here because the join failure names neither the ref nor
           # the rule, and the dispatch UI offers every branch.
-          case "${REF}" in
-            refs/heads/main | refs/pull/*/merge) ;;
-            *)
-              echo "::error::running from ${REF}; the Teleport join token allows only" \
-                   "refs/heads/main and refs/pull/*/merge. Dispatch from main, or label a pull request."
-              exit 1
-              ;;
-          esac
+          #
+          # A dry run joins no Teleport, so it can run from any branch.
+          if [ "${DRY_RUN}" != "true" ]; then
+            case "${REF}" in
+              refs/heads/main | refs/pull/*/merge) ;;
+              *)
+                echo "::error::running from ${REF}; the Teleport join token allows only" \
+                     "refs/heads/main and refs/pull/*/merge. Dispatch from main, or label a pull request."
+                exit 1
+                ;;
+            esac
+          fi
 
           # Empty on a pull_request run whose QUALIFY_E2E_* variable is unset.
           # SITE_CONTROLLER_VERSION is not here: the step above resolves it.
@@ -887,6 +916,7 @@ jobs:
       # Every element of this config was verified against the cluster's 18.11
       # server by forge-connectivity-probe.yml before the lane was changed.
       - name: Start the Teleport identity daemon
+        if: env.DRY_RUN != 'true'
         shell: bash
         env:
           TBOT_DIR: ${{ runner.temp }}/tbot
@@ -1053,6 +1083,7 @@ jobs:
           IN_OS_IMAGE_ARM64: ${{ inputs.os-image-arm64 }}
           IN_NKE_VERSION: ${{ inputs.nke-version }}
           IN_SCOPE: ${{ inputs.scope }}
+          IN_DRY_RUN: ${{ inputs.dry-run }}
           IN_KEEP_SITE: ${{ inputs.keep-site }}
           VAR_KEEP_SITE: ${{ vars.QUALIFY_E2E_KEEP_SITE }}
           IN_IMAGE_REGISTRY: ${{ inputs.image-registry }}
@@ -1088,6 +1119,7 @@ jobs:
             "stage|SITE_STAGE|IN_STAGE|VAR_STAGE|QUALIFY_E2E_STAGE"
             "controller version|SITE_CONTROLLER_VERSION|IN_CONTROLLER_VERSION|VAR_CONTROLLER_VERSION|QUALIFY_E2E_CONTROLLER_VERSION"
             "nkectl version|CLI_VERSION|IN_CLI_VERSION|VAR_CLI_VERSION|QUALIFY_E2E_CLI_VERSION"
+            "dry run|DRY_RUN|IN_DRY_RUN||"
             "keep the node|KEEP_SITE|IN_KEEP_SITE|VAR_KEEP_SITE|QUALIFY_E2E_KEEP_SITE"
             "image registry|SITE_IMAGE_REGISTRY|IN_IMAGE_REGISTRY|VAR_IMAGE_REGISTRY|QUALIFY_E2E_IMAGE_REGISTRY"
             "NGC org|QUALIFY_E2E_NGC_ORG||VAR_NGC_ORG|QUALIFY_E2E_NGC_ORG"
@@ -1205,6 +1237,11 @@ jobs:
               if [ "${withhold}" = 1 ]; then
                 source="repository secret ${resolved}"
               fi
+              # A pull_request run has no inputs, so a dry run there came from
+              # its label.
+              if [ "${resolved}" = "DRY_RUN" ] && [ "${DRY_RUN}" = "true" ] && [ -z "${IN_DRY_RUN:-}" ]; then
+                source="label qualify-e2e-dry-run"
+              fi
               # The resolve steps fill these in from the checkout when no
               # published version was asked for, so neither arm above named it.
               if { [ "${resolved}" = "SITE_CONTROLLER_VERSION" ] && [ "${SITE_CONTROLLER_BUILD}" = "1" ]; } ||
@@ -1293,31 +1330,30 @@ jobs:
           #                  is remote command output, so it stays on the
           #                  runner.
           #
-          # TESTING: the Ginkgo run is commented out while the plan and the
-          # per-stream jobs are being wired up, so a job takes no Forge machine.
-          # It prints what it would have run instead.
-          #
-          # go test -v -timeout 220m . -args \
-          #   -ginkgo.label-filter=site-controller \
-          #   -ginkgo.timeout=150m \
-          #   -ginkgo.v \
-          #   -ginkgo.fail-on-empty \
-          #   -ginkgo.no-color \
-          #   -ginkgo.junit-report=qualify-e2e.junit.xml \
-          #   -ginkgo.json-report=qualify-e2e.report.json \
-          #   -e2e.config=e2e-config.yaml \
-          #   -e2e.environment=forge \
-          #   -e2e.site-stage="${SITE_STAGE}" \
-          #   -e2e.versions="controller=${SITE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}" \
-          #   -e2e.capabilities="${CAPABILITIES}" \
-          #   "${keep[@]}" 2>&1 | tee qualify-e2e.log
-          {
-            echo "ginkgo is not run. It would have run with:"
-            echo "  -e2e.site-stage=${SITE_STAGE}"
-            echo "  -e2e.versions=controller=${SITE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}"
-            echo "  -e2e.capabilities=${CAPABILITIES}"
-            echo "  keep: ${keep[*]:-no}"
-          } | tee qualify-e2e.log
+          if [ "${DRY_RUN}" = "true" ]; then
+            {
+              echo "dry run: ginkgo is not run. It would have run with:"
+              echo "  -e2e.site-stage=${SITE_STAGE}"
+              echo "  -e2e.versions=controller=${SITE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}"
+              echo "  -e2e.capabilities=${CAPABILITIES}"
+              echo "  keep: ${keep[*]:-no}"
+            } | tee qualify-e2e.log
+          else
+            go test -v -timeout 220m . -args \
+              -ginkgo.label-filter=site-controller \
+              -ginkgo.timeout=150m \
+              -ginkgo.v \
+              -ginkgo.fail-on-empty \
+              -ginkgo.no-color \
+              -ginkgo.junit-report=qualify-e2e.junit.xml \
+              -ginkgo.json-report=qualify-e2e.report.json \
+              -e2e.config=e2e-config.yaml \
+              -e2e.environment=forge \
+              -e2e.site-stage="${SITE_STAGE}" \
+              -e2e.versions="controller=${SITE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}" \
+              -e2e.capabilities="${CAPABILITIES}" \
+              "${keep[@]}" 2>&1 | tee qualify-e2e.log
+          fi
 
       # The suite names the jump host in its own errors ("not reachable
       # through ..."), and those land in the log and the JUnit report. GitHub
