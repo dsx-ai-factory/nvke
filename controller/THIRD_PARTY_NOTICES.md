@@ -173,7 +173,7 @@ notices-check` verifies it is up to date.
 | `k8s.io/utils/internal/third_party/forked/golang` | BSD-3-Clause | `k8s.io/utils@v0.0.0-20260626114624-be93311217bd` | https://github.com/kubernetes/utils/blob/be93311217bd/internal/third_party/forked/golang/LICENSE |
 | `k8s.io/utils/third_party/forked/golang/btree` | Apache-2.0 | `k8s.io/utils@v0.0.0-20260626114624-be93311217bd` | https://github.com/kubernetes/utils/blob/be93311217bd/third_party/forked/golang/btree/LICENSE |
 | `mellium.im/sasl` | BSD-2-Clause | `mellium.im/sasl@v0.3.2` | https://codeberg.org/mellium/sasl/src/tag/v0.3.2/LICENSE |
-| `sigs.k8s.io/cluster-api` | Apache-2.0 | `sigs.k8s.io/cluster-api@v1.13.6` | https://github.com/kubernetes-sigs/cluster-api/blob/v1.13.6/LICENSE |
+| `sigs.k8s.io/cluster-api` | Apache-2.0 | `sigs.k8s.io/cluster-api@v1.13.7` | https://github.com/kubernetes-sigs/cluster-api/blob/v1.13.7/LICENSE |
 | `sigs.k8s.io/controller-runtime` | Apache-2.0 | `sigs.k8s.io/controller-runtime@v0.25.2` | https://github.com/kubernetes-sigs/controller-runtime/blob/v0.25.2/LICENSE |
 | `sigs.k8s.io/json` | Apache-2.0 / BSD-3-Clause | `sigs.k8s.io/json@v0.0.0-20250730193827-2d320260d730` | https://github.com/kubernetes-sigs/json/blob/2d320260d730/LICENSE |
 | `sigs.k8s.io/randfill` | Apache-2.0 | `sigs.k8s.io/randfill@v1.0.0` | https://github.com/kubernetes-sigs/randfill/blob/v1.0.0/LICENSE |
@@ -18968,7 +18968,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### sigs.k8s.io/cluster-api
 
-_Apache-2.0 — sigs.k8s.io/cluster-api@v1.13.6_
+_Apache-2.0 — sigs.k8s.io/cluster-api@v1.13.7_
 
 #### LICENSE
 
