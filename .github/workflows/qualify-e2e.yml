@@ -1238,8 +1238,17 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test -n "${FORGE_JUMP_HOST}" || {
-            echo "::error::the FORGE_JUMP_HOST repository secret is unset; the suite has no way to reach the node"
+          # The environment the stream selected decides which jump host the
+          # suite will dial, so that is the one to insist on. Asserting
+          # Forge's on every run passes for the wrong reason on a DSX stream
+          # and sends a reader to a setting that run never touches.
+          case "${SITE_ENVIRONMENT}" in
+            forge) jump_host_var=FORGE_JUMP_HOST ;;
+            dsx)   jump_host_var=DSX_AZ51_DEV2_DH2_JUMP_HOST ;;
+            *)     echo "::error::no jump host is declared for environment ${SITE_ENVIRONMENT}"; exit 1 ;;
+          esac
+          test -n "${!jump_host_var}" || {
+            echo "::error::the ${jump_host_var} repository secret is unset; the suite has no way to reach the node"
             exit 1
           }
           # The repositories are the ones site-inputs pulled or tagged, so the
@@ -1593,15 +1602,16 @@ jobs:
       # through ..."), and those land in the log and the JUnit report. GitHub
       # masks a secret in the job log, not in an uploaded artifact.
       #
-      # Both sites' hosts: a run reaches one of them, and which one is not
-      # worth branching on here.
+      # Every declared host: a run reaches one of them, and which one is not
+      # worth branching on here. A host missing from this list is one the
+      # suite names in its errors and the artifact then publishes.
       - name: Withhold the jump host from the run log
         if: always()
         shell: bash
         working-directory: controller/test/e2e
         run: |
           set -Eeuo pipefail
-          for raw in "${FORGE_JUMP_HOST}" "${FORGE_YTL_JUMP_HOST}"; do
+          for raw in "${FORGE_JUMP_HOST}" "${FORGE_YTL_JUMP_HOST}" "${DSX_AZ51_DEV2_DH2_JUMP_HOST}"; do
             [ -n "${raw}" ] || continue
             host="$(printf '%s' "${raw}" | sed 's/[][\.*^$/]/\\&/g')"
             for f in qualify-e2e.log qualify-e2e.junit.xml tenant-diagnostics.json site-cluster-state.txt; do
