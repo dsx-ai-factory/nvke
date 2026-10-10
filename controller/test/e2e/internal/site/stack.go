@@ -35,8 +35,6 @@ const (
 	nodeAgentPort         = "15005"
 	spireServerAPIAddress = "spire-server.spire-server.svc.cluster.local:443"
 
-	defaultNicoAPIName = "forge"
-
 	// valuesCleanupTimeout bounds removing the rendered values files. Short on
 	// purpose: it is one rm over a session that was answering a moment ago.
 	valuesCleanupTimeout = 2 * time.Minute
@@ -123,11 +121,15 @@ type Nico struct {
 	APIName  string `json:"APIName"`
 }
 
-// NewNico is the CAPNICo configuration, with the API name defaulted. The name
-// is the path segment the API is served under and is the same for every site,
-// so a caller states the three values that differ.
-func NewNico(endpoint, orgID, token string) Nico {
-	return Nico{Endpoint: endpoint, OrgID: orgID, Token: token, APIName: defaultNicoAPIName}
+// NewNico is the CAPNICo configuration.
+//
+// The API name is stated rather than defaulted. It is the path segment the API
+// is served under, and it is NOT the same for every site: hosted Forge serves
+// "forge" and a DSX site serves "nico". It was defaulted while Forge was the
+// only substrate, and a default that is right for one of two is worse than no
+// default, because the wrong one fails as a 404 against a URL nothing printed.
+func NewNico(endpoint, orgID, token, apiName string) Nico {
+	return Nico{Endpoint: endpoint, OrgID: orgID, Token: token, APIName: apiName}
 }
 
 // ConfigKey implements CAPIProviderConfig. "Nico" is what

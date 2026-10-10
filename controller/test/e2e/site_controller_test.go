@@ -26,7 +26,9 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/environment"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/dsx"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/forge"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/provision"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/teleport"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
@@ -409,6 +411,8 @@ func newInfraProvider(cfg config.Config) (infra.Provider, error) {
 	switch env.Provider {
 	case forge.ProviderName:
 		return newForgeProvider(cfg, env)
+	case dsx.ProviderName:
+		return newDSXProvider(cfg, env)
 	default:
 		return nil, fmt.Errorf("environment %q names provider %q, which this suite does not implement", env.Name, env.Provider)
 	}
@@ -428,6 +432,8 @@ func newDeployConfig() (site.CAPIProviderConfig, error) {
 	switch env.Provider {
 	case forge.ProviderName:
 		return newNicoConfig(env)
+	case dsx.ProviderName:
+		return newDSXNicoConfig(env)
 	default:
 		return nil, fmt.Errorf("environment %q names provider %q, which this suite does not implement", env.Name, env.Provider)
 	}
@@ -444,7 +450,7 @@ func newNicoConfig(env *environment.Environment) (site.CAPIProviderConfig, error
 	if apiKey == "" {
 		return nil, fmt.Errorf("%s is not set", envForgeAPIKey)
 	}
-	return site.NewNico(forge.DefaultEndpoint, forgeEnv.Org.ID, apiKey), nil
+	return site.NewNico(forge.DefaultEndpoint, forgeEnv.Org.ID, apiKey, forge.APIName), nil
 }
 
 // newForgeProvider projects the environment into Forge's dialect and builds a
@@ -508,9 +514,9 @@ func newForgeProvider(cfg config.Config, env *environment.Environment) (infra.Pr
 		Images: func(_, arch string) (string, string, error) {
 			return requireNodeArtifacts(arch)
 		},
-		Dialer: forge.Teleport(dialer),
+		Dialer: provision.Teleport(dialer),
 		Node:   nodeInputs(versions[versionKube], versions[versionCNIOVN]),
-		Tools: forge.HostTools{
+		Tools: provision.HostTools{
 			NerdctlVersion:    versions[versionNerdctl],
 			KindVersion:       versions[versionKind],
 			ClusterctlVersion: versions[versionClusterctl],
@@ -521,6 +527,100 @@ func newForgeProvider(cfg config.Config, env *environment.Environment) (infra.Pr
 		return nil, err
 	}
 	return provider, nil
+}
+
+// newDSXProvider projects the environment into DSX's dialect and builds a
+// provider from it.
+//
+// It takes no credential. A DSX site keeps its own SSA client in its cluster
+// and the provider reads it, so SSA_CLIENT_ID and SSA_CLIENT_SECRET are an
+// override rather than a requirement -- which is what lets this run on a
+// workstation with nothing set, and on a runner with no Kubernetes access.
+func newDSXProvider(cfg config.Config, env *environment.Environment) (infra.Provider, error) {
+	dsxEnv, err := dsx.Decode(env.Infrastructure)
+	if err != nil {
+		return nil, fmt.Errorf("environment %q: %w", env.Name, err)
+	}
+	capabilities, err := runCapabilities()
+	if err != nil {
+		return nil, err
+	}
+	// Resolved here for the same reason Forge resolves here: capabilities
+	// nothing can satisfy fail before a machine exists.
+	selection, err := dsxEnv.Resolve(capabilities)
+	if err != nil {
+		return nil, err
+	}
+	dsxSite := selection.Site
+
+	dialer := &teleport.Dialer{
+		Login:        dsxSite.TeleportLogin,
+		IdentityFile: cfg.Runner.TeleportIdentityFile,
+	}
+	if password := os.Getenv(envJumpHostPassword); password != "" {
+		if jerr := dialer.JumpOverSSH(teleport.SSHJumpHost{
+			User:               cmp.Or(dsxSite.JumpHostUser, dsxSite.TeleportLogin),
+			Password:           password,
+			HostKeyFingerprint: dsxSite.JumpHostKeyFingerprint,
+		}); jerr != nil {
+			return nil, jerr
+		}
+	}
+
+	versions, err := requireVersions(versionKube, versionCNIOVN, versionNerdctl, versionKind, versionClusterctl)
+	if err != nil {
+		return nil, err
+	}
+	return dsx.New(dsx.Options{
+		Env:      dsxEnv,
+		SiteName: dsxSite.Key,
+		// The site node boots the OS image built for its own architecture,
+		// which is the same image a tenant control plane of that architecture
+		// boots. A GPU tenant's workers boot a different one.
+		Images: func(_, arch string) (string, string, error) {
+			return requireNodeArtifacts(arch)
+		},
+		Dialer: provision.Teleport(dialer),
+		Node:   nodeInputs(versions[versionKube], versions[versionCNIOVN]),
+		Tools: provision.HostTools{
+			NerdctlVersion:    versions[versionNerdctl],
+			KindVersion:       versions[versionKind],
+			ClusterctlVersion: versions[versionClusterctl],
+		},
+		DisableMTLS: siteDisableMTLS,
+	})
+}
+
+// newDSXNicoConfig is how the site's CAPNICo reaches the same datahall the
+// provider created the site node in.
+//
+// The token is minted once and written into a Secret, where it lives as a
+// static string. On this substrate it expires in fifteen minutes, and CAPNICo
+// has no refresh path: the install itself needs no live authentication, so it
+// completes, but a tenant create afterwards will fail on an expired token
+// until the Secret is patched. The fix is a credential that outlives the
+// run, which is a provisioning question rather than a code one -- see the
+// note on dsx.MintToken.
+func newDSXNicoConfig(env *environment.Environment) (site.CAPIProviderConfig, error) {
+	dsxEnv, err := dsx.Decode(env.Infrastructure)
+	if err != nil {
+		return nil, fmt.Errorf("environment %q: %w", env.Name, err)
+	}
+	capabilities, err := runCapabilities()
+	if err != nil {
+		return nil, err
+	}
+	selection, err := dsxEnv.Resolve(capabilities)
+	if err != nil {
+		return nil, err
+	}
+	dsxSite := selection.Site
+
+	token, err := dsx.MintToken(context.Background(), dsxSite)
+	if err != nil {
+		return nil, err
+	}
+	return site.NewNico(dsxSite.Endpoint(), dsxEnv.Org.ID, token, dsx.APIName), nil
 }
 
 // keepReason names which setting held the node, so the log says what to

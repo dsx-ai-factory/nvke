@@ -21,10 +21,10 @@ import (
 )
 
 const (
-	// apiName is the path segment a DSX site serves under, where the SDK's
+	// APIName is the path segment a DSX site serves under, where the SDK's
 	// generated paths say carbide. Forge serves the same API under "forge",
 	// which is the whole of the difference at this layer.
-	apiName = "nico"
+	APIName = "nico"
 
 	// defaultReadyTimeout is longer than Forge's. A DSX instance reports
 	// BootCompleted about three and a half minutes after create, before the
@@ -149,14 +149,14 @@ func New(opts Options) (*Provider, error) {
 	cfg.Servers = standard.ServerConfigurations{{URL: endpoint}}
 	cfg.HTTPClient = opts.HTTPClient
 	// After HTTPClient, because it wraps that client's transport.
-	cfg.SetAPIName(apiName)
+	cfg.SetAPIName(APIName)
 
 	// Its own Servers value rather than a shared slice, so neither
 	// configuration can be reached through the other's.
 	createCfg := standard.NewConfiguration()
 	createCfg.Servers = standard.ServerConfigurations{{URL: endpoint}}
 	createCfg.HTTPClient = createHTTP
-	createCfg.SetAPIName(apiName)
+	createCfg.SetAPIName(APIName)
 
 	return &Provider{
 		opts:         opts,
