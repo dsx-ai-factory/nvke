@@ -432,6 +432,7 @@ jobs:
                   combination: $c.id,
                   stream: $s.name,
                   arch: $s.capabilities.arch,
+                  provider: $s.capabilities.provider,
                   gpu: ($s.capabilities.gpu // ""),
                   controller: version($all; "controller"),
                   cli: version($all; "cli"),
@@ -654,6 +655,7 @@ jobs:
       # as -e2e.capabilities, which the step below assembles, and ARCH is
       # needed on its own anyway, for SITE_ARCH.
       ARCH: ${{ matrix.arch }}
+      PROVIDER: ${{ matrix.provider }}
       GPU: ${{ matrix.gpu }}
       # A label cannot carry a boolean, so a labelled run takes this from the
       # repository variable, as it does every other setting. Holding a Forge
@@ -729,6 +731,20 @@ jobs:
       FORGE_YTL_VPC_PREFIX_ID: ${{ vars.FORGE_YTL_VPC_PREFIX_ID }}
       FORGE_YTL_SSH_KEY_GROUP_ID: ${{ vars.FORGE_YTL_SSH_KEY_GROUP_ID }}
       FORGE_YTL_JUMP_HOST: ${{ vars.FORGE_YTL_JUMP_HOST }}
+      DSX_ORG_ID: ${{ vars.DSX_ORG_ID }}
+      DSX_AZ51_DEV2_DH2_SITE_ID: ${{ vars.DSX_AZ51_DEV2_DH2_SITE_ID }}
+      DSX_AZ51_DEV2_DH2_TENANT_ID: ${{ vars.DSX_AZ51_DEV2_DH2_TENANT_ID }}
+      DSX_AZ51_DEV2_DH2_VPC_ID: ${{ vars.DSX_AZ51_DEV2_DH2_VPC_ID }}
+      DSX_AZ51_DEV2_DH2_VPC_PREFIX_ID: ${{ vars.DSX_AZ51_DEV2_DH2_VPC_PREFIX_ID }}
+      DSX_AZ51_DEV2_DH2_SSH_KEY_GROUP_ID: ${{ vars.DSX_AZ51_DEV2_DH2_SSH_KEY_GROUP_ID }}
+      DSX_AZ51_DEV2_DH2_INSTANCE_TYPE_ID: ${{ vars.DSX_AZ51_DEV2_DH2_INSTANCE_TYPE_ID }}
+      DSX_AZ51_DEV2_DH2_CP_MACHINE_ID: ${{ vars.DSX_AZ51_DEV2_DH2_CP_MACHINE_ID }}
+      DSX_AZ51_DEV2_DH2_NODE_USER: ${{ vars.DSX_AZ51_DEV2_DH2_NODE_USER }}
+      DSX_AZ51_DEV2_DH2_TELEPORT_LOGIN: ${{ vars.DSX_AZ51_DEV2_DH2_TELEPORT_LOGIN }}
+      DSX_AZ51_DEV2_DH2_JUMP_HOST: ${{ secrets.DSX_AZ51_DEV2_DH2_JUMP_HOST }}
+      SSA_ISSUER: ${{ secrets.SSA_ISSUER }}
+      DSX_AZ51_DEV2_DH2_SSA_CLIENT_ID: ${{ secrets.DSX_AZ51_DEV2_DH2_SSA_CLIENT_ID }}
+      DSX_AZ51_DEV2_DH2_SSA_CLIENT_SECRET: ${{ secrets.DSX_AZ51_DEV2_DH2_SSA_CLIENT_SECRET }}
       # root for the same reason as FORGE_TELEPORT_LOGIN: the same bot reaches
       # both jump hosts through rg-k8aas-bot-ssh-root, whose only login is
       # root. Unset falls back to tsh's default, the runner's local user,
@@ -969,6 +985,20 @@ jobs:
             exit 1
           fi
           echo "SITE_ARCH=${arch}" >> "${GITHUB_ENV}"
+
+          # The stream names a provider; this names the file that describes
+          # that provider's infrastructure. Mapped rather than used as the
+          # filename directly: -e2e.environment names a file, not a backend,
+          # and collapsing the two would rule out a second environment for
+          # one provider -- a staging Forge beside the production one.
+          case "${PROVIDER}" in
+            forge) environment=forge ;;
+            dsx)   environment=dsx ;;
+            "")    echo "::error::the stream names no provider capability"; exit 1 ;;
+            *)     echo "::error::provider is ${PROVIDER}, which this workflow has no environment for"; exit 1 ;;
+          esac
+          echo "SITE_ENVIRONMENT=${environment}" >> "${GITHUB_ENV}"
+          echo "environment: ${environment}"
 
           # Joined here rather than taken as a string, so each key is set and
           # validated on its own. Empty keys are left out: the suite reads an
@@ -1552,7 +1582,7 @@ jobs:
               -ginkgo.junit-report=qualify-e2e.junit.xml \
               -ginkgo.json-report=qualify-e2e.report.json \
               -e2e.config=e2e-config.yaml \
-              -e2e.environment=forge \
+              -e2e.environment="${SITE_ENVIRONMENT}" \
               -e2e.site-stage="${SITE_STAGE}" \
               -e2e.versions="controller=${SITE_CONTROLLER_VERSION},cli=${CLI_VERSION},capi-provisioned=${CAPI_PROVISIONED_VERSION},${OS_IMAGE_VERSIONS}" \
               -e2e.capabilities="${CAPABILITIES}" \
