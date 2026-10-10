@@ -253,11 +253,3 @@ func WithTimeout(c *http.Client, timeout time.Duration) *http.Client {
 	clone.Timeout = timeout
 	return &clone
 }
-
-// CloseBody closes the in-memory copy the SDK leaves on a response after
-// reading and closing the real body.
-func CloseBody(resp *http.Response) {
-	if resp != nil && resp.Body != nil {
-		_ = resp.Body.Close()
-	}
-}
