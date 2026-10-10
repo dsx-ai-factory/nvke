@@ -1,0 +1,98 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Real DSX infrastructure the nico backend runs against, selected with
+# `-e2e.environment dsx`.
+#
+# No identifiers. Every ${...} below is read from the process environment at
+# load time; CI supplies them from repository variables, the same route the
+# Teleport proxy and the jump host already take. What stays here is the part
+# that is engineering rather than account: which datahalls exist, which
+# machines they offer, and what those machines provide.
+#
+# Credentials are not here. A datahall's SSA client comes from
+# DSX_<DATAHALL>_SSA_CLIENT_ID and _SECRET, whose names are derived from the
+# key the site is filed under --- so a credential scoped to one datahall cannot
+# be picked up by a run against another, and none of it belongs in a file.
+#
+# This file changes when the hardware does. A run needing a different Kubernetes
+# or a different OS image touches nothing here: neither is an infrastructure
+# input.
+
+provider: dsx
+
+# Opaque to the loader. Every key below is DSX's vocabulary, decoded by the dsx
+# provider alone, so a second provider describes its infrastructure in its own
+# terms without a shared schema to satisfy.
+infrastructure:
+  org:
+    # A name, not a number. Forge orgs are numeric ids; this is the literal
+    # string every request carries in its path.
+    id: "${DSX_ORG_ID:-ncx}"
+
+  sites:
+    # THE KEY IS THE DATAHALL, and it is also the API host: a request goes to
+    # carbide-rest-api-<key>.dev.dsx.nvidia.com, so there is no GET /site
+    # lookup the way Forge needs one.
+    #
+    # Every identifier below belongs to this datahall and only this one.
+    # az51-dev2-dh2 and az51-dev3-dh1 hold completely disjoint UUIDs for the
+    # same kinds of object, and nothing in an API response says which one an id
+    # came from. The az51 run log is itself named for dh1 while recording a dh2
+    # run, which is how close that mistake sits.
+    az51-dev2-dh2:
+      id: "${DSX_AZ51_DEV2_DH2_SITE_ID:-}"
+      tenantID: "${DSX_AZ51_DEV2_DH2_TENANT_ID:-}"
+      vpcID: "${DSX_AZ51_DEV2_DH2_VPC_ID:-}"
+
+      # A prefix, never a subnet: this fabric is FNN, which exposes prefixes
+      # only. Each instance takes a /31 and lands on the odd address, so the
+      # /29 behind this id holds four nodes --- and leaves no spare address for
+      # a control-plane VIP, which is why a site controller here takes none.
+      vpcPrefixID: "${DSX_AZ51_DEV2_DH2_VPC_PREFIX_ID:-}"
+
+      # Governs Serial-over-LAN console access, not the OS account's
+      # authorized_keys, so this grants no shell on a node. One group per
+      # datahall, created when the datahall was stood up and associated with
+      # the site afterwards --- an unassociated group is rejected at create.
+      sshKeyGroupID: "${DSX_AZ51_DEV2_DH2_SSH_KEY_GROUP_ID:-}"
+
+      # The account this datahall's image bakes. The OSS os-image bakes
+      # `ubuntu`; this one runs an internal-pipeline image. A mismatch writes
+      # authorized_keys for an account that does not exist, and the run fails
+      # as a publickey rejection twenty minutes into provisioning.
+      nodeUser: "${DSX_AZ51_DEV2_DH2_NODE_USER:-dgxc-admin}"
+
+      # How the lane reaches the machines it provisions: they sit behind this
+      # jump host and are not Teleport-enrolled themselves. Named outright
+      # rather than derived from the key --- the naming happens to be regular
+      # today and that is not a property worth depending on.
+      jumpHost: "${DSX_AZ51_DEV2_DH2_JUMP_HOST:-}"
+      teleportLogin: "${DSX_AZ51_DEV2_DH2_TELEPORT_LOGIN:-}"
+
+      # The hosts a site controller can be built on, targeted by id. This half
+      # has no Forge equivalent: Forge names an instance type and lets the API
+      # pick a machine, where a DSX create takes a machineId and names one.
+      #
+      # Named by the serial their operators use, because that is what a
+      # capacity conversation is held in. A datahall holds a handful of these
+      # and one being in Error is the difference between a run that can happen
+      # and one that cannot --- J701L6FY is deliberately absent here: its
+      # delete wedged and it sits in Error with BmcExplorationFailure.
+      machines:
+        - name: J701L43T
+          id: "${DSX_AZ51_DEV2_DH2_CP_MACHINE_ID:-}"
+          provides: {arch: amd64}
+
+      # What the site controller's own CWE places TENANT nodes on. A node pool
+      # names an instance type and has no machine field, so the two halves of a
+      # run are placed by different mechanisms and both have to be declared.
+      #
+      # An instance type here is not abstract sizing --- it is a named
+      # allowlist of specific machines, bound one at a time. A datahall can
+      # ship none at all, so an id here states that someone has already created
+      # the type and bound hosts to it. This one holds J701L44D.
+      instanceTypes:
+        - name: az51-dev2-dh2-nke-tenant
+          id: "${DSX_AZ51_DEV2_DH2_INSTANCE_TYPE_ID:-}"
+          provides: {machineType: cpu, arch: amd64}
