@@ -20,6 +20,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/provision"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/teleport"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
@@ -137,7 +138,7 @@ type Options struct {
 	// Node carries the package versions under qualification. Its image URLs
 	// are filled from Images, so any set here are ignored.
 	Node  nvke.NodeInputs
-	Tools HostTools
+	Tools provision.HostTools
 
 	// DisableMTLS runs the node agent without SPIFFE. nvkectl bootstrap site
 	// must be given --disable-mtls to match, and the stack deployed with
@@ -194,7 +195,7 @@ func New(opts Options) (*Provider, error) {
 	if opts.Dialer == nil {
 		return nil, errors.New("forge: no dialer")
 	}
-	if err := opts.Tools.validate(); err != nil {
+	if err := opts.Tools.Validate(); err != nil {
 		return nil, fmt.Errorf("forge: %w", err)
 	}
 	if opts.Endpoint == "" {
@@ -463,7 +464,7 @@ func (p *Provider) payloads(req infra.NodeRequest, instanceType InstanceType, au
 	if err != nil {
 		return "", "", fmt.Errorf("forge: %w", err)
 	}
-	userData, err := renderUserData(userDataInputs{
+	userData, err := provision.RenderUserData(provision.UserDataInputs{
 		Hostname:      req.Name,
 		AuthorizedKey: authorizedKey,
 		Arch:          arch,
@@ -618,7 +619,7 @@ func (p *Provider) nodeUser() string {
 	if u := strings.TrimSpace(p.opts.NodeUser); u != "" {
 		return u
 	}
-	return defaultNodeUser
+	return provision.DefaultNodeUser
 }
 
 func newKey() (ssh.Signer, string, error) {

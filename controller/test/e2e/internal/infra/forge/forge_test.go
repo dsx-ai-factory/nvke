@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/provision"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/teleport"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
@@ -177,7 +178,7 @@ func newTestProvider(t *testing.T, forge *fakeForge, dialer Dialer) *Provider {
 			KubernetesVersion: "1.34.2",
 			CNIVersion:        "1.4.0",
 		},
-		Tools:        completeTools(),
+		Tools:        provision.HostTools{NerdctlVersion: "2.3.5", KindVersion: "v0.32.0", ClusterctlVersion: "v1.12.3"},
 		HTTPClient:   srv.Client(),
 		ReadyTimeout: 2 * time.Second,
 		ReachTimeout: 2 * time.Second,
@@ -247,7 +248,7 @@ func TestProvisionNode(t *testing.T) {
 		t.Errorf("dialed %d times, want retries until the node answered", len(dialer.targets))
 	}
 	target := dialer.targets[len(dialer.targets)-1]
-	if target.JumpHost != testJumpHost || target.Address != "10.0.0.7" || target.User != defaultNodeUser || target.Signer == nil {
+	if target.JumpHost != testJumpHost || target.Address != "10.0.0.7" || target.User != provision.DefaultNodeUser || target.Signer == nil {
 		t.Errorf("dial target = %+v", target)
 	}
 	wantRan := []string{
@@ -382,7 +383,7 @@ func newSlowCreateProvider(t *testing.T, forge *fakeForge, dialer Dialer, perReq
 			KubernetesVersion: "1.34.2",
 			CNIVersion:        "1.4.0",
 		},
-		Tools:         completeTools(),
+		Tools:         provision.HostTools{NerdctlVersion: "2.3.5", KindVersion: "v0.32.0", ClusterctlVersion: "v1.12.3"},
 		HTTPClient:    client,
 		ReadyTimeout:  5 * time.Second,
 		ReachTimeout:  5 * time.Second,
@@ -438,7 +439,7 @@ func TestCreateFailureSaysTheInstanceMayExist(t *testing.T) {
 
 func TestNewRequiresJumpHost(t *testing.T) {
 	_, err := New(Options{
-		Env: testEnv(), APIKey: "nvapi-test", Tools: completeTools(),
+		Env: testEnv(), APIKey: "nvapi-test", Tools: provision.HostTools{NerdctlVersion: "2.3.5", KindVersion: "v0.32.0", ClusterctlVersion: "v1.12.3"},
 		Images: func(string, string) (string, string, error) { return "", "", nil },
 		Dialer: &fakeDialer{},
 	})
