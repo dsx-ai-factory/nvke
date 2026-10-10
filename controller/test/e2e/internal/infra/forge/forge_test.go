@@ -135,7 +135,7 @@ type fakeDialer struct {
 	targets  []teleport.Target
 }
 
-func (d *fakeDialer) Dial(_ context.Context, target teleport.Target) (Conn, error) {
+func (d *fakeDialer) Dial(_ context.Context, target teleport.Target) (provision.Conn, error) {
 	d.targets = append(d.targets, target)
 	if len(d.targets) <= d.refusals {
 		return nil, errors.New("connection refused")
@@ -161,7 +161,7 @@ func testEnv() *Environment {
 	}
 }
 
-func newTestProvider(t *testing.T, forge *fakeForge, dialer Dialer) *Provider {
+func newTestProvider(t *testing.T, forge *fakeForge, dialer provision.Dialer) *Provider {
 	t.Helper()
 	srv := httptest.NewServer(forge)
 	t.Cleanup(srv.Close)
@@ -364,7 +364,7 @@ func TestProvisionNodeRejectsUnmatchedCapabilities(t *testing.T) {
 // newSlowCreateProvider is newTestProvider with the two timeouts that matter
 // here set apart: everything runs under a cap shorter than the create delay,
 // and create runs under one longer than it.
-func newSlowCreateProvider(t *testing.T, forge *fakeForge, dialer Dialer, perRequest, create time.Duration) *Provider {
+func newSlowCreateProvider(t *testing.T, forge *fakeForge, dialer provision.Dialer, perRequest, create time.Duration) *Provider {
 	t.Helper()
 	srv := httptest.NewServer(forge)
 	t.Cleanup(srv.Close)

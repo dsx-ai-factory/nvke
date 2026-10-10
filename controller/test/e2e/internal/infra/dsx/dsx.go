@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	"github.com/NVIDIA/infra-controller/rest-api/sdk/standard"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/provision"
@@ -204,7 +204,8 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	// The tenant is declared rather than read back. Forge resolves it from
 	// GET /tenant/current; here it belongs to the datahall and is in the file
 	// with the rest of its identifiers.
-	create := standard.NewInstanceCreateRequest(req.Name, p.site.TenantID, p.site.VpcID, p.interfaces())
+	create := standard.NewInstanceCreateRequest(req.Name, p.site.TenantID, p.site.VpcID)
+	create.SetInterfaces(p.interfaces())
 	create.SetMachineId(machine.ID)
 	create.SetIpxeScript(ipxe)
 	create.SetUserData(userData)
@@ -376,7 +377,7 @@ func (p *Provider) release(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := p.client.InstanceAPI.DeleteInstance(ctx, p.opts.Env.Org.ID, id).Execute()
+	_, resp, err := p.client.InstanceAPI.DeleteInstance(ctx, p.opts.Env.Org.ID, id).Execute()
 	provision.CloseBody(resp)
 	if resp != nil && resp.StatusCode == http.StatusNotFound {
 		return nil

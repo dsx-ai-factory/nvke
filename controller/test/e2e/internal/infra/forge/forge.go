@@ -7,9 +7,6 @@ package forge
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -17,7 +14,6 @@ import (
 	"time"
 
 	"github.com/NVIDIA/infra-controller/rest-api/sdk/standard"
-	"golang.org/x/crypto/ssh"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/provision"
@@ -26,16 +22,6 @@ import (
 )
 
 const (
-	// cloudInitDiagnosticTimeout bounds the diagnostic collection. The context
-	// that reached this point may already be at its deadline, and a node that
-	// has stopped answering must not turn a reported failure into a hang.
-	cloudInitDiagnosticTimeout = 2 * time.Minute
-
-	// cloudInitStatusError is the status cloud-init reports when a module
-	// failed outright, as opposed to the "degraded done" it reports for a
-	// warning.
-	cloudInitStatusError = "error"
-
 	// DefaultEndpoint is production NGC. Staging is
 	// https://api.stg.ngc.nvidia.com.
 	DefaultEndpoint = "https://api.ngc.nvidia.com"
@@ -47,11 +33,6 @@ const (
 	defaultReadyTimeout = 30 * time.Minute
 	defaultReachTimeout = 20 * time.Minute
 	defaultPollInterval = 30 * time.Second
-
-	// releaseTimeout bounds the delete issued when provisioning fails
-	// part-way. It runs detached from the caller's context, so it needs a
-	// bound of its own.
-	releaseTimeout = 5 * time.Minute
 
 	// defaultCreateTimeout bounds the create call alone, and is deliberately
 	// far longer than the timeout the polls run under. Losing the response to
@@ -68,46 +49,6 @@ const (
 	createMayHaveLanded = "\nthe instance may exist even so: Forge builds it before it answers, and without the id in that answer nothing here can delete it -- check the Forge console for this name"
 )
 
-// Images resolves the Node version under qualification to the two URLs the
-// iPXE script boots: the qcow imager and the image it writes. Both must be
-// plain HTTPS, since iPXE cannot pull an OCI artifact.
-//
-// The architecture is a parameter because a run can span two: the machine
-// being created decides which image it needs, and only the provider knows
-// which machine that is.
-type Images func(nodeVersion, arch string) (bootLoaderURL, imageURL string, err error)
-
-// Conn is a connection to a node. It is everything a Session does except
-// release the machine, which is the provider's.
-type Conn interface {
-	Run(ctx context.Context, cmd string) (string, error)
-	Put(ctx context.Context, path string, data []byte, mode uint32) error
-	Fetch(ctx context.Context, path string) ([]byte, error)
-	Forward(ctx context.Context, remote string) (string, error)
-	Close() error
-}
-
-// Dialer opens a connection to a node through its site's jump host. A dial
-// that fails because the node is not answering yet is retried by the
-// provider, so a Dialer makes one attempt and reports what happened.
-type Dialer interface {
-	Dial(ctx context.Context, target teleport.Target) (Conn, error)
-}
-
-// Teleport is the Dialer a real run uses.
-func Teleport(d *teleport.Dialer) Dialer { return teleportDialer{d} }
-
-type teleportDialer struct{ d *teleport.Dialer }
-
-func (t teleportDialer) Dial(ctx context.Context, target teleport.Target) (Conn, error) {
-	c, err := t.d.Dial(ctx, target)
-	if err != nil {
-		// Not c: a nil *Client in a Conn is a non-nil Conn.
-		return nil, err
-	}
-	return c, nil
-}
-
 // Options configures a Provider.
 type Options struct {
 	Env *Environment
@@ -121,8 +62,8 @@ type Options struct {
 	Endpoint string // empty is DefaultEndpoint
 	AuthURL  string // empty pairs the token service with Endpoint
 
-	Images Images
-	Dialer Dialer
+	Images provision.Images
+	Dialer provision.Dialer
 	// NodeUser is the account the OS image bakes, and the login every
 	// session uses. Empty is the OSS os-image default; an internal-pipeline
 	// image needs its own. It must match the image or cloud-init writes
@@ -170,7 +111,7 @@ type Provider struct {
 
 var (
 	_ infra.Provider = (*Provider)(nil)
-	_ infra.Session  = (*session)(nil)
+	_ infra.Session  = (*provision.Session)(nil)
 )
 
 // New validates opts against the environment and returns a Provider. It
@@ -223,7 +164,7 @@ func New(opts Options) (*Provider, error) {
 	endpoint := strings.TrimRight(opts.Endpoint, "/")
 	// Taken before either SetAPIName below, which wraps the transport of the
 	// client it is given: a copy made afterwards would be wrapped twice.
-	createHTTP := withTimeout(opts.HTTPClient, opts.CreateTimeout)
+	createHTTP := provision.WithTimeout(opts.HTTPClient, opts.CreateTimeout)
 
 	cfg := standard.NewConfiguration()
 	cfg.Servers = standard.ServerConfigurations{{URL: endpoint}}
@@ -247,17 +188,6 @@ func New(opts Options) (*Provider, error) {
 	}, nil
 }
 
-// withTimeout copies c with at least the given timeout, raising a shorter one
-// and leaving an absent one absent. A copy rather than a mutation: the caller
-// keeps its client, and a test that injected a transport keeps that too.
-func withTimeout(c *http.Client, timeout time.Duration) *http.Client {
-	copied := *c
-	if copied.Timeout != 0 && copied.Timeout < timeout {
-		copied.Timeout = timeout
-	}
-	return &copied
-}
-
 // ProvisionNode creates one instance and returns once a session to it can run
 // commands and cloud-init has finished. An instance created and then not
 // brought that far is deleted before the error is returned, so a failed run
@@ -271,7 +201,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 		return infra.Node{}, nil, fmt.Errorf("forge: %w", err)
 	}
 
-	signer, authorizedKey, err := newKey()
+	signer, authorizedKey, err := provision.NewKey("forge")
 	if err != nil {
 		return infra.Node{}, nil, err
 	}
@@ -308,7 +238,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	}
 
 	inst, resp, err := p.createClient.InstanceAPI.CreateInstance(ctx, p.opts.Env.Org.ID).InstanceCreateRequest(*create).Execute()
-	closeBody(resp)
+	provision.CloseBody(resp)
 	if err != nil {
 		return infra.Node{}, nil, fmt.Errorf("forge: creating instance %s: %w%s", req.Name, apiError(err), createMayHaveLanded)
 	}
@@ -321,7 +251,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	fail := func(err error) (infra.Node, infra.Session, error) {
 		// Detached, because a canceled run is exactly when this matters most
 		// and inheriting the cancellation would abandon the instance.
-		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), provision.ReleaseTimeout)
 		defer cancel()
 		if rerr := release(rctx); rerr != nil {
 			return infra.Node{}, nil, errors.Join(err, fmt.Errorf("forge: instance %s (%s) was not deleted and must be removed by hand: %w", req.Name, id, rerr))
@@ -333,7 +263,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	if err != nil {
 		return fail(err)
 	}
-	conn, err := p.waitReachable(ctx, teleport.Target{JumpHost: p.opts.JumpHost, Address: address, User: p.nodeUser(), Signer: signer})
+	conn, err := provision.WaitReachable(ctx, p.opts.Dialer, teleport.Target{JumpHost: p.opts.JumpHost, Address: address, User: p.nodeUser(), Signer: signer}, "forge", p.opts.ReachTimeout, p.opts.PollInterval)
 	if err != nil {
 		// A key this run generated moments ago is not rejected by chance.
 		// sshd answering and refusing publickey means cloud-init wrote
@@ -346,97 +276,12 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 		}
 		return fail(err)
 	}
-	if err := awaitCloudInit(ctx, conn, req.Name); err != nil {
+	if err := provision.AwaitCloudInit(ctx, conn, "forge", req.Name); err != nil {
 		_ = conn.Close()
 		return fail(err)
 	}
 
-	return infra.Node{Name: req.Name, IP: address, Arch: instanceType.Arch()}, &session{Conn: conn, release: release}, nil
-}
-
-// cloudInitReport is the part of `cloud-init status --format=json` the node
-// preflight reads.
-type cloudInitReport struct {
-	Status         string   `json:"status"`
-	ExtendedStatus string   `json:"extended_status"`
-	Errors         []string `json:"errors"`
-	// RecoverableErrors are warnings. They set "degraded done" and a non-zero
-	// exit code without saying anything about whether the user data ran, so
-	// they are reported when something else fails rather than failing a node
-	// themselves.
-	RecoverableErrors map[string][]string `json:"recoverable_errors"`
-}
-
-// awaitCloudInit blocks until cloud-init settles, then reports whether the
-// node is fit to bootstrap on.
-//
-// The exit code of `cloud-init status` is not that verdict. An instance is
-// created with phone-home disabled and cannot reach the metadata service, so
-// cloud-init finds no datasource, falls back to DataSourceNone and finishes
-// "degraded done" -- exit 2 -- over a warning that says nothing about whether
-// the user data ran. `errors` is what carries a real failure, so that is what
-// the preflight reads.
-func awaitCloudInit(ctx context.Context, conn Conn, name string) error {
-	// The wait must not decide the outcome, so its exit code is discarded and
-	// the verdict comes from the report below.
-	if _, err := conn.Run(ctx, "cloud-init status --wait >/dev/null 2>&1 || true"); err != nil {
-		return fmt.Errorf("forge: waiting for cloud-init on %s: %w", name, err)
-	}
-
-	// stderr discarded, not merged: Run returns combined output, and a
-	// warning on stderr would be spliced into the JSON and fail the parse,
-	// rejecting a node that is fine.
-	out, err := conn.Run(ctx, "cloud-init status --format=json 2>/dev/null || true")
-	if err != nil {
-		return fmt.Errorf("forge: reading cloud-init status on %s: %w", name, err)
-	}
-
-	var report cloudInitReport
-	if err := json.Unmarshal([]byte(out), &report); err != nil {
-		return fmt.Errorf("forge: cloud-init status on %s is not the JSON the preflight reads: %w\n%s%s", name, err, out, cloudInitDiagnostics(ctx, conn))
-	}
-	if report.Status == cloudInitStatusError || len(report.Errors) > 0 {
-		detail := strings.Join(report.Errors, "; ")
-		if detail == "" {
-			detail = report.ExtendedStatus
-		}
-		return fmt.Errorf("forge: cloud-init on %s failed, and node preflight would reject it: %s%s", name, detail, cloudInitDiagnostics(ctx, conn))
-	}
-	return nil
-}
-
-// cloudInitDiagnostics reports why cloud-init degraded. `cloud-init status
-// --wait` gives an exit code and the word "done", which is not enough to act
-// on once the run has deleted the instance.
-//
-// Best effort throughout: a probe that fails contributes its error rather
-// than replacing the failure being reported, since the caller already has the
-// only fact that must survive.
-func cloudInitDiagnostics(ctx context.Context, conn Conn) string {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cloudInitDiagnosticTimeout)
-	defer cancel()
-
-	probes := []struct{ label, cmd string }{
-		// --long carries the recoverable errors that set the exit code.
-		{"cloud-init status --long", "cloud-init status --long"},
-		// Where a failing runcmd prints. The usual answer is here.
-		{"cloud-init-output.log (tail)", "sudo -n tail -n 120 /var/log/cloud-init-output.log"},
-		// cloud-init's own warnings, for a module that failed before runcmd.
-		{"cloud-init.log (warnings)", "sudo -n grep -aE 'WARNING|ERROR|CRITICAL' /var/log/cloud-init.log | tail -n 40"},
-	}
-
-	var b strings.Builder
-	for _, probe := range probes {
-		out, err := conn.Run(ctx, probe.cmd)
-		b.WriteString("\n--- " + probe.label + " ---\n")
-		if err != nil {
-			b.WriteString("collecting failed: " + err.Error() + "\n")
-		}
-		if trimmed := strings.TrimSpace(out); trimmed != "" {
-			b.WriteString(trimmed + "\n")
-		}
-	}
-	return b.String()
+	return infra.Node{Name: req.Name, IP: address, Arch: instanceType.Arch()}, &provision.Session{Conn: conn, Release: release}, nil
 }
 
 // payloads returns the iPXE script and the cloud-init user data, in that
@@ -504,7 +349,7 @@ func (p *Provider) authorize(ctx context.Context) (context.Context, error) {
 // from the org in its path.
 func (p *Provider) tenantID(ctx context.Context) (string, error) {
 	tenant, resp, err := p.client.TenantAPI.GetCurrentTenant(ctx, p.opts.Env.Org.ID).Execute()
-	closeBody(resp)
+	provision.CloseBody(resp)
 	if err != nil {
 		return "", fmt.Errorf("forge: reading the current tenant: %w", apiError(err))
 	}
@@ -528,7 +373,7 @@ func (p *Provider) waitReady(ctx context.Context, id string) (string, error) {
 			return "", err
 		}
 		inst, resp, err := p.client.InstanceAPI.GetInstance(actx, p.opts.Env.Org.ID, id).Execute()
-		closeBody(resp)
+		provision.CloseBody(resp)
 		if err == nil {
 			last = inst.GetStatus()
 			switch last {
@@ -559,35 +404,13 @@ func (p *Provider) waitReady(ctx context.Context, id string) (string, error) {
 	}
 }
 
-// waitReachable dials until the node answers. Ready and reachable are
-// different signals: an instance reports Ready once Forge has handed it over,
-// long before the image is written, booted and running sshd.
-func (p *Provider) waitReachable(ctx context.Context, target teleport.Target) (Conn, error) {
-	ctx, cancel := context.WithTimeout(ctx, p.opts.ReachTimeout)
-	defer cancel()
-
-	var lastErr error
-	for {
-		conn, err := p.opts.Dialer.Dial(ctx, target)
-		if err == nil {
-			return conn, nil
-		}
-		lastErr = err
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("forge: %s not reachable through %s after %s: %w", target.Address, target.JumpHost, p.opts.ReachTimeout, lastErr)
-		case <-time.After(p.opts.PollInterval):
-		}
-	}
-}
-
 func (p *Provider) release(ctx context.Context, id string) error {
 	ctx, err := p.authorize(ctx)
 	if err != nil {
 		return err
 	}
 	_, resp, err := p.client.InstanceAPI.DeleteInstance(ctx, p.opts.Env.Org.ID, id).Execute()
-	closeBody(resp)
+	provision.CloseBody(resp)
 	if resp != nil && resp.StatusCode == http.StatusNotFound {
 		return nil
 	}
@@ -622,26 +445,6 @@ func (p *Provider) nodeUser() string {
 	return provision.DefaultNodeUser
 }
 
-func newKey() (ssh.Signer, string, error) {
-	_, private, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return nil, "", fmt.Errorf("forge: generating the session key: %w", err)
-	}
-	signer, err := ssh.NewSignerFromKey(private)
-	if err != nil {
-		return nil, "", fmt.Errorf("forge: generating the session key: %w", err)
-	}
-	return signer, strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))), nil
-}
-
-// closeBody closes the in-memory copy the SDK leaves on a response after
-// reading and closing the real body.
-func closeBody(resp *http.Response) {
-	if resp != nil && resp.Body != nil {
-		_ = resp.Body.Close()
-	}
-}
-
 // apiError surfaces the response body the SDK keeps behind its error type,
 // which is where Forge says what it objected to.
 func apiError(err error) error {
@@ -650,27 +453,4 @@ func apiError(err error) error {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(open.Body())))
 	}
 	return err
-}
-
-// session is a Conn plus the release of the machine it is connected to.
-type session struct {
-	Conn
-	release  func(context.Context) error
-	released bool
-}
-
-func (s *session) Teardown(ctx context.Context) error {
-	if s.released {
-		return nil
-	}
-	closeErr := s.Close()
-	// Detached for the same reason as a failed provision: teardown is called
-	// most often from a run that is already ending.
-	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
-	defer cancel()
-	if err := s.release(rctx); err != nil {
-		return errors.Join(closeErr, err)
-	}
-	s.released = true
-	return closeErr
 }
