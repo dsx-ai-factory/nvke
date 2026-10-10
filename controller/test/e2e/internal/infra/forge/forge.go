@@ -238,7 +238,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	}
 
 	inst, resp, err := p.createClient.InstanceAPI.CreateInstance(ctx, p.opts.Env.Org.ID).InstanceCreateRequest(*create).Execute()
-	provision.CloseBody(resp)
+	closeBody(resp)
 	if err != nil {
 		return infra.Node{}, nil, fmt.Errorf("forge: creating instance %s: %w%s", req.Name, apiError(err), createMayHaveLanded)
 	}
@@ -349,7 +349,7 @@ func (p *Provider) authorize(ctx context.Context) (context.Context, error) {
 // from the org in its path.
 func (p *Provider) tenantID(ctx context.Context) (string, error) {
 	tenant, resp, err := p.client.TenantAPI.GetCurrentTenant(ctx, p.opts.Env.Org.ID).Execute()
-	provision.CloseBody(resp)
+	closeBody(resp)
 	if err != nil {
 		return "", fmt.Errorf("forge: reading the current tenant: %w", apiError(err))
 	}
@@ -373,7 +373,7 @@ func (p *Provider) waitReady(ctx context.Context, id string) (string, error) {
 			return "", err
 		}
 		inst, resp, err := p.client.InstanceAPI.GetInstance(actx, p.opts.Env.Org.ID, id).Execute()
-		provision.CloseBody(resp)
+		closeBody(resp)
 		if err == nil {
 			last = inst.GetStatus()
 			switch last {
@@ -410,7 +410,7 @@ func (p *Provider) release(ctx context.Context, id string) error {
 		return err
 	}
 	_, resp, err := p.client.InstanceAPI.DeleteInstance(ctx, p.opts.Env.Org.ID, id).Execute()
-	provision.CloseBody(resp)
+	closeBody(resp)
 	if resp != nil && resp.StatusCode == http.StatusNotFound {
 		return nil
 	}
@@ -453,4 +453,16 @@ func apiError(err error) error {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(open.Body())))
 	}
 	return err
+}
+
+// closeBody closes the in-memory copy the SDK leaves on a response after
+// reading and closing the real body.
+//
+// Per package rather than shared: bodyclose is an SSA analyzer and cannot
+// follow the close through a call into another package, so a shared helper
+// turns every call site into a false positive.
+func closeBody(resp *http.Response) {
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 }

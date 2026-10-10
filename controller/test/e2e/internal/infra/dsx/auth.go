@@ -133,6 +133,8 @@ func (s *tokenSource) Token(ctx context.Context) (string, error) {
 // exchange trades a client for a bearer token.
 func (s *tokenSource) exchange(ctx context.Context, credentials clientCredentials) (string, error) {
 	form := url.Values{"grant_type": {"client_credentials"}, "scope": {tokenScope}}
+	// #nosec G704 -- the issuer is declared configuration for this run, which is
+	// what makes it overridable per deployment; it is not reached from a request
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.issuer+"/token", strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", fmt.Errorf("building the token request: %w", err)
@@ -144,6 +146,7 @@ func (s *tokenSource) exchange(ctx context.Context, credentials clientCredential
 	if client == nil {
 		client = http.DefaultClient
 	}
+	// #nosec G704 -- same request, same declared issuer
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("exchanging the client for a token: %w", err)

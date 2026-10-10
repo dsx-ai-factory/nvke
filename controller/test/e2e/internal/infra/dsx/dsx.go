@@ -226,7 +226,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	}
 
 	inst, resp, err := p.createClient.InstanceAPI.CreateInstance(ctx, p.opts.Env.Org.ID).InstanceCreateRequest(*create).Execute()
-	provision.CloseBody(resp)
+	closeBody(resp)
 	if err != nil {
 		return infra.Node{}, nil, fmt.Errorf("dsx: creating instance %s on machine %s: %w%s", req.Name, machine.Name, apiError(err), createMayHaveLanded)
 	}
@@ -349,13 +349,20 @@ func (p *Provider) waitAddressed(ctx context.Context, id string) (string, error)
 			return "", err
 		}
 		inst, resp, err := p.client.InstanceAPI.GetInstance(actx, p.opts.Env.Org.ID, id).Execute()
-		provision.CloseBody(resp)
+		closeBody(resp)
 		if err == nil {
 			last = inst.GetStatus()
 			switch last {
 			case standard.INSTANCESTATUS_ERROR, standard.INSTANCESTATUS_TERMINATING:
 				return "", fmt.Errorf("dsx: instance %s went to %s while provisioning", id, last)
-			default:
+			// Every other status can carry an address, including Ready --
+			// which here means only that the datahall handed the machine over.
+			case standard.INSTANCESTATUS_PENDING,
+				standard.INSTANCESTATUS_PROVISIONING,
+				standard.INSTANCESTATUS_CONFIGURING,
+				standard.INSTANCESTATUS_READY,
+				standard.INSTANCESTATUS_UPDATING,
+				standard.INSTANCESTATUS_REBOOTING:
 				if address := instanceAddress(inst); address != "" {
 					return address, nil
 				}
@@ -378,7 +385,7 @@ func (p *Provider) release(ctx context.Context, id string) error {
 		return err
 	}
 	_, resp, err := p.client.InstanceAPI.DeleteInstance(ctx, p.opts.Env.Org.ID, id).Execute()
-	provision.CloseBody(resp)
+	closeBody(resp)
 	if resp != nil && resp.StatusCode == http.StatusNotFound {
 		return nil
 	}
@@ -424,4 +431,16 @@ func apiError(err error) error {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(open.Body())))
 	}
 	return err
+}
+
+// closeBody closes the in-memory copy the SDK leaves on a response after
+// reading and closing the real body.
+//
+// Per package rather than shared: bodyclose is an SSA analyzer and cannot
+// follow the close through a call into another package, so a shared helper
+// turns every call site into a false positive.
+func closeBody(resp *http.Response) {
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 }

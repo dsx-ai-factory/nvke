@@ -267,28 +267,28 @@ func TestProvisionNodeAttachesByPrefix(t *testing.T) {
 func TestProvisionNodeDialsBeforeReady(t *testing.T) {
 	// BootCompleted arrives about three and a half minutes after create, long
 	// before the OS is up, so Ready is not what this provider waits for. An
-	// address on a still-provisioning instance is enough to start dialling.
+	// address on a still-provisioning instance is enough to start dialing.
 	nico := &fakeNico{t: t, statuses: []string{"Provisioning"}}
 	dialer := &fakeDialer{conn: &fakeConn{}}
 	provider := newTestProvider(t, nico, dialer)
 
 	node, session, err := provider.ProvisionNode(context.Background(), request(t))
 	if err != nil {
-		t.Fatalf("a provisioning instance with an address should be dialled: %v", err)
+		t.Fatalf("a provisioning instance with an address should be dialed: %v", err)
 	}
 	t.Cleanup(func() { _ = session.Teardown(context.Background()) })
 	if node.IP == "" {
 		t.Error("no address was taken from a non-Ready instance")
 	}
 	if len(dialer.targets) == 0 {
-		t.Fatal("nothing was dialled")
+		t.Fatal("nothing was dialed")
 	}
 	target := dialer.targets[0]
 	if target.JumpHost != "az51-dev2-dh2-node01" {
-		t.Errorf("dialled through %q, want the datahall's jump host", target.JumpHost)
+		t.Errorf("dialed through %q, want the datahall's jump host", target.JumpHost)
 	}
 	if target.User != "dgxc-admin" {
-		t.Errorf("dialled as %q, want the account this datahall's image bakes", target.User)
+		t.Errorf("dialed as %q, want the account this datahall's image bakes", target.User)
 	}
 }
 
