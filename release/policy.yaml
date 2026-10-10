@@ -35,6 +35,13 @@ spec:
     l40s:
       selector: {gpu: l40s, ubuntu: "24.04"}
 
+    # The DSX datahall on its own. The dsx stream declares no gpu, so neither
+    # golden-path nor l40s reaches it, and `full` would take four contended
+    # GB200 machines to exercise one CPU substrate. A provider selector is the
+    # only one that separates the two lanes, which is what this scope is for.
+    dsx:
+      selector: {provider: dsx}
+
     # No selector, so every stream. What the weekly run covers. Adding a minor
     # is adding streams, not editing scopes.
     full: {}
