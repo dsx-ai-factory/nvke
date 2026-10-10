@@ -170,3 +170,19 @@ func (s *tokenSource) exchange(ctx context.Context, credentials clientCredential
 	}
 	return out.AccessToken, nil
 }
+
+// MintToken returns a bearer token for a datahall, for a caller that needs the
+// credential itself rather than a provider.
+//
+// The deploy writes this into a Secret CAPNICo reads, where it is a static
+// string: a DSX token lives fifteen minutes and CAPNICo has no refresh path,
+// so the install completes -- it needs no live authentication -- and a tenant
+// create afterwards fails on an expired token until the Secret is patched.
+func MintToken(ctx context.Context, site Site) (string, error) {
+	source := newTokenSource(&http.Client{Timeout: time.Minute}, os.Getenv(EnvIssuer), site.Key)
+	token, err := source.Token(ctx)
+	if err != nil {
+		return "", fmt.Errorf("dsx: %w", err)
+	}
+	return token, nil
+}

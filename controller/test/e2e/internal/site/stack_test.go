@@ -61,7 +61,7 @@ func testSBOM() Stack {
 		AssetPaths: []string{"deploy"},
 		Controller: Image{Repository: "nvcr.io/nke/cwe", Tag: "v1.2.3"},
 		Profiles:   Image{Repository: "nvcr.io/nke/profiles", Tag: "run-42"},
-		Provider:   NewNico("https://forge.example", "org", "tok"),
+		Provider:   NewNico("https://forge.example", "org", "tok", "forge"),
 		Registry:   Registry{Server: "ghcr.io", Username: "u", Token: "r"},
 		Tenant:     Tenant{User: "admin", Password: "p"},
 		Arch:       "arm64",
@@ -285,7 +285,7 @@ func TestStackValidation(t *testing.T) {
 		"arch":          func(d *Stack) { d.Arch = "riscv64" },
 		"controller":    func(d *Stack) { d.Controller.Tag = "" },
 		"profiles":      func(d *Stack) { d.Profiles = Image{} },
-		"provider":      func(d *Stack) { d.Provider = NewNico("https://forge.example", "org", "") },
+		"provider":      func(d *Stack) { d.Provider = NewNico("https://forge.example", "org", "", "forge") },
 		"no provider":   func(d *Stack) { d.Provider = nil },
 		"storage class": func(d *Stack) { d.StorageClassManifest = "https://example/sc.yaml" },
 	} {
