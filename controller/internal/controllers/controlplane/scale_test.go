@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
@@ -120,7 +121,7 @@ func TestCreatePendingNode_RequiresControlPlaneConfigurationID(t *testing.T) {
 		},
 	}
 
-	_, err := r.createPendingNode(context.Background(), cluster, nil, "")
+	_, err := r.createPendingNode(context.Background(), cluster, nil, "", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing control plane configuration ID")
 	mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
@@ -149,14 +150,18 @@ func TestCreatePendingNodeSetsFailureDomainButLeavesInstanceTypeUnset(t *testing
 
 	r := &reconciler{db: mockTx, logger: slog.Default()}
 	cluster := db.Cluster{
-		ID:   clusterID,
-		Name: "test-cluster",
+		ID:           clusterID,
+		Name:         "test-cluster",
+		ProviderType: db.ProviderTypeCAPI,
 		ControlPlaneConfig: db.ControlPlaneConfig{
 			ConfigurationID: controlPlaneConfigID,
 		},
 	}
 
-	_, err := r.createPendingNode(context.Background(), cluster, nil, failureDomain)
+	newNodeProvider, err := clients.GetNewNodeProvider(cluster)
+	require.NoError(t, err)
+
+	_, err = r.createPendingNode(context.Background(), cluster, nil, failureDomain, newNodeProvider)
 	require.NoError(t, err)
 	mockTx.AssertExpectations(t)
 }
@@ -202,7 +207,10 @@ func TestCreatePendingNode_ProviderPayload(t *testing.T) {
 				},
 			}
 
-			_, err := r.createPendingNode(context.Background(), cluster, nil, "")
+			newNodeProvider, err := clients.GetNewNodeProvider(cluster)
+			require.NoError(t, err)
+
+			_, err = r.createPendingNode(context.Background(), cluster, nil, "", newNodeProvider)
 			require.NoError(t, err)
 			mockTx.AssertExpectations(t)
 		})
@@ -252,7 +260,7 @@ func TestReconcileControlPlaneScaleUp_FeatureFlagDisabled(t *testing.T) {
 	}
 	cp := &controlPlane{}
 
-	err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, domainAllocator{})
+	err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, domainAllocator{}, nil)
 	require.NoError(t, err)
 	mockTx.AssertNotCalled(t, "ListClusterNodeNames", mock.Anything, mock.Anything)
 	mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
@@ -287,7 +295,8 @@ func TestReconcileControlPlaneScaleUp_FeatureFlagEnabled(t *testing.T) {
 	}
 
 	cluster := db.Cluster{
-		ID: clusterID,
+		ID:           clusterID,
+		ProviderType: db.ProviderTypeNico,
 		ControlPlaneConfig: db.ControlPlaneConfig{
 			ConfigurationID: controlPlaneConfigID,
 			DesiredCount:    3,
@@ -304,7 +313,9 @@ func TestReconcileControlPlaneScaleUp_FeatureFlagEnabled(t *testing.T) {
 	}
 
 	allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"})
-	err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, allocator)
+	newNodeProvider, err := clients.GetNewNodeProvider(cluster)
+	require.NoError(t, err)
+	err = r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, allocator, newNodeProvider)
 	require.NoError(t, err)
 	mockTx.AssertExpectations(t)
 }
@@ -313,7 +324,8 @@ func TestScaleUpSharesFailureDomainAllocatorAcrossCreationSites(t *testing.T) {
 	t.Parallel()
 
 	cluster := db.Cluster{
-		ID: uuid.New(),
+		ID:           uuid.New(),
+		ProviderType: db.ProviderTypeCAPI,
 		ControlPlaneConfig: db.ControlPlaneConfig{
 			ConfigurationID: uuid.New(),
 		},
@@ -328,11 +340,13 @@ func TestScaleUpSharesFailureDomainAllocatorAcrossCreationSites(t *testing.T) {
 
 	r := &reconciler{db: mockTx, logger: slog.Default()}
 	allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"})
+	newNodeProvider, err := clients.GetNewNodeProvider(cluster)
+	require.NoError(t, err)
 
-	created, err := r.scaleUp(context.Background(), cluster, 2, "control-plane scale-up", allocator)
+	created, err := r.scaleUp(context.Background(), cluster, 2, "control-plane scale-up", allocator, newNodeProvider)
 	require.NoError(t, err)
 	assert.Equal(t, 2, created)
-	created, err = r.scaleUp(context.Background(), cluster, 1, "surge node during upgrade", allocator)
+	created, err = r.scaleUp(context.Background(), cluster, 1, "surge node during upgrade", allocator, newNodeProvider)
 	require.NoError(t, err)
 	assert.Equal(t, 1, created)
 
@@ -364,7 +378,8 @@ func TestScaleUpUsesAllocatorDecision(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			cluster := db.Cluster{
-				ID: uuid.New(),
+				ID:           uuid.New(),
+				ProviderType: db.ProviderTypeCAPI,
 				ControlPlaneConfig: db.ControlPlaneConfig{
 					ConfigurationID: uuid.New(),
 				},
@@ -377,7 +392,9 @@ func TestScaleUpUsesAllocatorDecision(t *testing.T) {
 			}).Return(db.Node{}, nil).Once()
 
 			r := &reconciler{db: mockTx, logger: slog.Default()}
-			created, err := r.scaleUp(context.Background(), cluster, 1, "control-plane scale-up", tc.allocator)
+			newNodeProvider, err := clients.GetNewNodeProvider(cluster)
+			require.NoError(t, err)
+			created, err := r.scaleUp(context.Background(), cluster, 1, "control-plane scale-up", tc.allocator, newNodeProvider)
 			require.NoError(t, err)
 			assert.Equal(t, 1, created)
 			assert.Equal(t, tc.want, placement)
@@ -427,7 +444,8 @@ func TestReconcileControlPlaneScaleUp_Deficit(t *testing.T) {
 			}
 
 			cluster := db.Cluster{
-				ID: clusterID,
+				ID:           clusterID,
+				ProviderType: db.ProviderTypeNico,
 				ControlPlaneConfig: db.ControlPlaneConfig{
 					ConfigurationID: controlPlaneConfigID,
 					DesiredCount:    tc.desiredCount,
@@ -444,7 +462,9 @@ func TestReconcileControlPlaneScaleUp_Deficit(t *testing.T) {
 			cp := &controlPlane{nodes: nodes}
 
 			allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"})
-			err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, allocator)
+			newNodeProvider, err := clients.GetNewNodeProvider(cluster)
+			require.NoError(t, err)
+			err = r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, allocator, newNodeProvider)
 			require.NoError(t, err)
 			mockTx.AssertExpectations(t)
 			if tc.wantCreated == 0 {

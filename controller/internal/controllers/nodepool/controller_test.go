@@ -104,6 +104,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
 		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
+		mockTx.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, ProviderType: db.ProviderTypeNico}, nil)
 		mockTx.On("CreateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
 			nico, err := ns.NicoProvider()
 			return err == nil && ns.NodePoolID == poolID && nico.OSProfile == osProfile && nico.ConfigProfile == configProfile
@@ -234,6 +235,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
 		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
+		mockTx.On("GetCluster", mock.Anything, pool.ClusterID).Return(db.Cluster{ID: pool.ClusterID, ProviderType: db.ProviderTypeNico}, nil)
 		mockTx.On("GetNodeSet", mock.Anything, currentNodeSetID).Return(currentNodeSet, nil)
 		mockTx.On("ListNodeSets", mock.Anything, mock.Anything).Return([]db.NodeSet{currentNodeSet}, nil).Once()
 		// ListNodes is only called for non-current node sets; with a single (current) set it is not called
@@ -306,6 +308,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
 		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
+		mockTx.On("GetCluster", mock.Anything, pool.ClusterID).Return(db.Cluster{ID: pool.ClusterID, ProviderType: db.ProviderTypeNico}, nil)
 		mockTx.On("GetNodeSet", mock.Anything, oldNodeSetID).Return(oldNodeSet, nil)
 		mockTx.On("CreateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
 			nico, err := ns.NicoProvider()
@@ -392,6 +395,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
 		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
+		mockTx.On("GetCluster", mock.Anything, pool.ClusterID).Return(db.Cluster{ID: pool.ClusterID, ProviderType: db.ProviderTypeNico}, nil)
 		mockTx.On("GetNodeSet", mock.Anything, oldNodeSetID).Return(oldNodeSet, nil)
 		mockTx.On("CreateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
 			nico, err := ns.NicoProvider()
@@ -468,6 +472,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
 		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
+		mockTx.On("GetCluster", mock.Anything, pool.ClusterID).Return(db.Cluster{ID: pool.ClusterID, ProviderType: db.ProviderTypeNico}, nil)
 		mockTx.On("GetNodeSet", mock.Anything, currentNodeSetID).Return(currentNodeSet, nil)
 		mockTx.On("ListNodeSets", mock.Anything, mock.Anything).Return([]db.NodeSet{currentNodeSet, oldNodeSet}, nil).Once()
 		mockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{}, nil)
@@ -527,6 +532,7 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
 		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
+		mockTx.On("GetCluster", mock.Anything, pool.ClusterID).Return(db.Cluster{ID: pool.ClusterID, ProviderType: db.ProviderTypeNico}, nil)
 		mockTx.On("GetNodeSet", mock.Anything, currentNodeSetID).Return(currentNodeSet, nil)
 		mockTx.On("ListNodeSets", mock.Anything, mock.Anything).Return([]db.NodeSet{currentNodeSet}, nil).Once()
 		// ListNodes is only called for non-current node sets; with a single (current) set it is not called
@@ -585,6 +591,7 @@ func TestUnit_NodePoolControllerReconcileCAPIInfraTemplateChange(t *testing.T) {
 	mockTx := &testutil.MockTx{}
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 	mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
+	mockTx.On("GetCluster", mock.Anything, pool.ClusterID).Return(db.Cluster{ID: pool.ClusterID, ProviderType: db.ProviderTypeCAPI}, nil)
 	mockTx.On("GetNodeSet", mock.Anything, oldNodeSetID).Return(oldNodeSet, nil)
 	mockTx.On("CreateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
 		capi, err := ns.CAPIProvider()
@@ -732,13 +739,15 @@ func TestUnit_NodePoolControllerReplacementRequiresVIP(t *testing.T) {
 				mockDB := &testutil.MockDB{MockTx: mockTx}
 				mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 				mockTx.On("GetNodePoolForUpdate", mock.Anything, pool.ID).Return(pool, nil)
-				if !tc.bootstrap {
-					mockTx.On("GetNodeSet", mock.Anything, current.ID).Return(current, nil)
+				clusterProviderType := db.ProviderTypeNico
+				if provider == "capi" {
+					clusterProviderType = db.ProviderTypeCAPI
 				}
-				if tc.controlPlane && !tc.bootstrap && !tc.unchanged {
-					mockTx.On("GetCluster", mock.Anything, pool.ClusterID).Return(db.Cluster{
-						ID: pool.ClusterID, ControlPlaneVIP: tc.vip,
-					}, tc.clusterError).Once()
+				mockTx.On("GetCluster", mock.Anything, pool.ClusterID).Return(db.Cluster{
+					ID: pool.ClusterID, ProviderType: clusterProviderType, ControlPlaneVIP: tc.vip,
+				}, tc.clusterError).Once()
+				if !tc.bootstrap && tc.clusterError == nil {
+					mockTx.On("GetNodeSet", mock.Anything, current.ID).Return(current, nil)
 				}
 
 				active := current

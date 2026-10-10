@@ -50,7 +50,7 @@ type DeleteCAPIMachineRebootAnnotationInput struct {
 }
 
 // CreateCAPIInfraMachineForNode resolves the node's provider client via
-// clients.GetMachineMaterialization — the only place this flow decides which
+// clients.GetProviderClient — the only place this flow decides which
 // provider it's dealing with — and delegates the entire create (render,
 // apply, SPIRE token, bootstrap, generic CAPI Machine) to that client's
 // CreateMachine. Provider-specific behavior lives in internal/clients/capi
@@ -69,10 +69,11 @@ func (a *Activities) CreateCAPIInfraMachineForNode(ctx context.Context, input Cr
 		return err
 	}
 
-	machineClient, err := clients.GetMachineMaterialization(cluster)
+	provider, err := clients.GetProviderClient(cluster)
 	if err != nil {
 		return err
 	}
+	machineClient := provider.MachineMaterialization()
 
 	deps := shared.MachineCreateDeps{
 		K8sClient:                    a.k8sClient,
@@ -213,6 +214,10 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 	if err != nil {
 		return "", err
 	}
+	provider, err := clients.GetProviderClient(cluster)
+	if err != nil {
+		return "", err
+	}
 
 	machine := &clusterv1.Machine{}
 	if err := a.k8sClient.Get(ctx, client.ObjectKey{
@@ -243,15 +248,11 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 		}
 	}
 	if ipAddress == "" {
-		machineClient, clientErr := clients.GetMachineMaterialization(cluster)
-		if clientErr != nil {
-			return "", clientErr
-		}
 		advanceDeps := shared.MachineAdvanceDeps{
 			K8sClient:                  a.k8sClient,
 			ControlPlaneConfigSnapshot: a.controlPlaneConfigSnapshot,
 		}
-		if _, err := machineClient.TryAdvanceStuckMachine(ctx, advanceDeps, node, nodeSet, machine); err != nil {
+		if _, err := provider.MachineMaterialization().TryAdvanceStuckMachine(ctx, advanceDeps, node, nodeSet, machine); err != nil {
 			return "", err
 		}
 
@@ -259,7 +260,7 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 	}
 
 	// Record the type the infra provider settled on for templateless Nico nodes
-	// (which carry no CWE-selected type). Only authoritative once ready, and must
+	// (which carry no controller-selected type). Only authoritative once ready, and must
 	// never block provisioning; CAPD and template-backed nodes are unaffected.
 	var observedInstanceTypeID uuid.UUID
 	if node.NicoInstanceTypeID() == uuid.Nil {
@@ -288,10 +289,19 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 		}
 		nodeForUpdate.IP = ipAddress
 		// Sticky: only stamp the type when the node has no type yet, so we never
-		// clobber a CWE-selected (Forge) type or an already-recorded value.
+		// clobber a controller-selected (Forge) type or an already-recorded value.
 		stampInstanceType := observedInstanceTypeID != uuid.Nil && nodeForUpdate.NicoInstanceTypeID() == uuid.Nil
 		// Stamp only when there is something to record or nico already exists.
 		// Empty CAPD lookups must not invent a nico payload.
+		//
+		// Intentionally not routed through a provider-capability client:
+		// this is the already-documented edge case of a CAPI cluster whose
+		// own template happens to render a NicoMachine (see
+		// applyNicoMachineInstanceLabels) — provider-blending by template
+		// choice, not by cluster.ProviderType, so it does not generalize to
+		// another provider the way a true dispatch point would. Revisit only
+		// if this edge case needs to be handled for more than NICo-flavored
+		// CAPI machines.
 		if stampInstanceType || observedInstanceID != "" || observedMachineID != "" || nodeForUpdate.Nico != nil {
 			nico := db.NicoNodeProvider{}
 			if nodeForUpdate.Nico != nil {

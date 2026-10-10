@@ -9,14 +9,16 @@ export GOTOOLCHAIN
 
 WORKER_BIN_NAME			?= controller
 TEMPORAL_CLI_DOWNLOAD_DIR	?= $(CURDIR)/.go/temporal-cli
-CWE_GOFAIL_E2E_WORKER_BINARY	?= $(CURDIR)/.go/bin/cwe-worker-gofail
+# The e2e-gofail settings are NKE_CONTROLLER_GOFAIL_E2E_*. An empty value counts as unset.
+# CWE_GOFAIL_E2E_* are deprecated aliases for them; nke#1399 removes them.
+gofail_e2e_worker_binary	= $(or $(NKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY),$(CWE_GOFAIL_E2E_WORKER_BINARY),$(CURDIR)/.go/bin/cwe-worker-gofail)
 GOFAIL				?= $(shell go env GOPATH)/bin/gofail
 SETUP_ENVTEST			?= $(shell go env GOPATH)/bin/setup-envtest
 # Explicit store, so CI can cache a known path instead of guessing setup-envtest's
 # platform-dependent default.
 ENVTEST_BIN_DIR			?= $(CURDIR)/.go/envtest
-CWE_GOFAIL_E2E_CLUSTER_CRDS	?= $(shell go env GOMODCACHE)/sigs.k8s.io/cluster-api@$(shell go list -m -f '{{.Version}}' sigs.k8s.io/cluster-api)/config/crd/bases
-CWE_GOFAIL_E2E_CAPNICO_CRDS	?= $(shell go env GOMODCACHE)/github.com/dsx-ai-factory/cluster-api-provider-nico@$(shell go list -m -f '{{.Version}}' github.com/dsx-ai-factory/cluster-api-provider-nico)/config/crd/bases
+gofail_e2e_cluster_crds		= $(or $(NKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS),$(CWE_GOFAIL_E2E_CLUSTER_CRDS),$(shell go env GOMODCACHE)/sigs.k8s.io/cluster-api@$(shell go list -m -f '{{.Version}}' sigs.k8s.io/cluster-api)/config/crd/bases)
+gofail_e2e_capnico_crds		= $(or $(NKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS),$(CWE_GOFAIL_E2E_CAPNICO_CRDS),$(shell go env GOMODCACHE)/github.com/dsx-ai-factory/cluster-api-provider-nico@$(shell go list -m -f '{{.Version}}' github.com/dsx-ai-factory/cluster-api-provider-nico)/config/crd/bases)
 
 # The licence header template lives once, at the repository root.
 REPO_ROOT ?= $(shell git rev-parse --show-toplevel)
@@ -33,6 +35,7 @@ endif
 GOLANGCI_LINT_GOWORK :=
 include ../make/tool-versions.mk
 include ../make/golangci.mk
+include ../make/coverage.mk
 
 # Image URL to use all building/pushing image targets
 IMG_NAME ?= nvcr.io/j7sbcjl3qgta/nke-controller
@@ -187,26 +190,25 @@ fmt: ## Format code (gofumpt + goimports; matches .golangci.yml formatters).
 # test command, so `make test` stays the one definition of what "the tests" are.
 GO_TEST_FLAGS ?=
 
-# atomic, not count. Go rejects `-covermode count` outright when -race is on:
-# "-covermode must be \"atomic\", not \"count\", when -race is enabled". atomic
-# is valid with or without the race detector, so one setting covers both and
-# there is no conditional to get wrong.
-GO_COVER_MODE ?= atomic
-
 .PHONY: test
 test: ## Execute unit tests (excludes integration tests). (run by the merge gate)
-	# coverage.txt is kept: `go tool cover` reads it, and producing it is free.
+	# The profile lands in the repository-root coverage/ directory now, not in
+	# coverage.txt beside this Makefile. make/coverage.mk owns the path and the
+	# mode for every module, and hack/coverage.sh reads that one directory.
+	# What has not changed: no threshold gates on the number it holds. See
+	# docs/coverage-policy.md for why a percentage is not test adequacy.
+	#
 	# The cobertura.xml conversion that used to follow is gone. It existed for
 	# GitLab's coverage visualisation, and that pipeline is gone -- no
 	# .gitlab-ci.yml, no workflow reading either file, and both are gitignored.
 	# It cost about 9 seconds of download and compile per run on a cold cache,
 	# and pulled golang.org/x/tools, 15 MB, to convert one file to XML.
-	# nico-sim already produces a coverprofile without it.
 	#
 	# integration-test/ is behind the `integration_test` build tag, so
 	# `go list ./...` no longer needs filtering here. The old grep matched
 	# by accident anyway: `.` is a regex wildcard, not a path prefix.
-	go test $(GO_TEST_FLAGS) ./... -coverprofile=coverage.txt -covermode $(GO_COVER_MODE)
+	@$(COVERAGE_MKDIR)
+	go test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) ./...
 
 # The `integration` build tag covers two packages here, and neither needs a
 # service to be running. internal/agent binds a loopback socket and mints its
@@ -293,7 +295,7 @@ e2e-gofail: ## Execute gofail e2e tests against a local Temporal dev server.
 			printf "[gofail] %-22s %4ds (total %4ds)\n" "$$1" "$$((now - last))" "$$((now - start))"; \
 			last=$$now; \
 		}; \
-		mkdir -p "$(TEMPORAL_CLI_DOWNLOAD_DIR)" "$$(dirname "$(CWE_GOFAIL_E2E_WORKER_BINARY)")"; \
+		mkdir -p "$(TEMPORAL_CLI_DOWNLOAD_DIR)" "$$(dirname "$(gofail_e2e_worker_binary)")"; \
 		go install go.etcd.io/gofail@$(GOFAIL_VERSION); \
 		go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION); \
 		phase "install-tools"; \
@@ -306,12 +308,12 @@ e2e-gofail: ## Execute gofail e2e tests against a local Temporal dev server.
 		}; \
 		trap cleanup EXIT; \
 		phase "gofail-enable"; \
-		go build -tags gofail -o "$(CWE_GOFAIL_E2E_WORKER_BINARY)" ./cmd/worker; \
+		go build -tags gofail -o "$(gofail_e2e_worker_binary)" ./cmd/worker; \
 		phase "build-worker"; \
 		TEMPORAL_CLI_DOWNLOAD_DIR="$(TEMPORAL_CLI_DOWNLOAD_DIR)" \
-			CWE_GOFAIL_E2E_WORKER_BINARY="$(CWE_GOFAIL_E2E_WORKER_BINARY)" \
-			CWE_GOFAIL_E2E_CLUSTER_CRDS="$(CWE_GOFAIL_E2E_CLUSTER_CRDS)" \
-			CWE_GOFAIL_E2E_CAPNICO_CRDS="$(CWE_GOFAIL_E2E_CAPNICO_CRDS)" \
+			NKE_CONTROLLER_GOFAIL_E2E_WORKER_BINARY="$(gofail_e2e_worker_binary)" \
+			NKE_CONTROLLER_GOFAIL_E2E_CLUSTER_CRDS="$(gofail_e2e_cluster_crds)" \
+			NKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS="$(gofail_e2e_capnico_crds)" \
 			go test -v -tags gofail ./e2e/gofail ./e2e/tracing -timeout 30m -count=1; \
 		phase "run-tests"; \
 		cleanup; \
@@ -321,7 +323,7 @@ e2e-gofail: ## Execute gofail e2e tests against a local Temporal dev server.
 
 
 .PHONY: e2e-tracing
-e2e-tracing: ## Execute the tracing e2e test against a local Temporal dev server and PostgreSQL (initdb and postgres on PATH, or set CWE_GOFAIL_E2E_DB_CONNECTION_STRING).
+e2e-tracing: ## Execute the tracing e2e test against a local Temporal dev server and PostgreSQL (initdb and postgres on PATH, or set NKE_CONTROLLER_GOFAIL_E2E_DB_CONNECTION_STRING).
 	mkdir -p "$(TEMPORAL_CLI_DOWNLOAD_DIR)"
 	TEMPORAL_CLI_DOWNLOAD_DIR="$(TEMPORAL_CLI_DOWNLOAD_DIR)" go test -v -tags gofail ./e2e/tracing -timeout 10m -count=1
 
@@ -484,12 +486,12 @@ license-policy-check: $(GO_LICENSES) ## Verify every third-party dependency uses
 	@# --ignore= plus seven stray positional arguments that go-licenses reads as
 	@# package patterns. GOWORK=off narrows it to this module, and the siblings
 	@# that genuinely need ignoring are named explicitly.
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO_LICENSES) check ./cmd/worker \
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO_LICENSES) check ./cmd/worker ../cluster-api-provider-provisioned/cmd/manager \
 		--allowed_licenses=$(ALLOWED_LICENSES) \
-		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nke/agent,github.com/dsx-ai-factory/nke/management-engine,github.com/dsx-ai-factory/cluster-api-provider-nico"
+		--ignore="$$(GOWORK=off go list -m),github.com/dsx-ai-factory/nke/agent,github.com/dsx-ai-factory/nke/management-engine,github.com/dsx-ai-factory/nke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
 
 .PHONY: notices
-notices: $(GO_LICENSES) ## Regenerate THIRD_PARTY_NOTICES.md for the released worker binary.
+notices: $(GO_LICENSES) ## Regenerate THIRD_PARTY_NOTICES.md for the released worker and provider manager binaries.
 	@GO_LICENSES="$(GO_LICENSES)" ./hack/generate-notices
 
 # Not declared as depending on `notices`: the tracked-file gate below is cheap

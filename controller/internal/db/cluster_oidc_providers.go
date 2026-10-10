@@ -4,13 +4,7 @@
 package db
 
 import (
-	"context"
-	"database/sql"
-	"errors"
-	"fmt"
 	"maps"
-
-	"github.com/google/uuid"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
 )
@@ -51,28 +45,22 @@ func ClusterOIDCProvidersFromConfig(providers []controllerconfig.OIDCProvider) [
 	return out
 }
 
-func (q *queriesImpl) PinClusterOIDCProviders(ctx context.Context, clusterID uuid.UUID, providers []ClusterOIDCProvider) ([]ClusterOIDCProvider, error) {
-	// Empty, not nil: nil is stored as NULL, which means not pinned.
-	if providers == nil {
-		providers = []ClusterOIDCProvider{}
+// ClusterOIDCProvidersToConfig is the inverse of ClusterOIDCProvidersFromConfig,
+// and likewise shares no slice or map with providers.
+func ClusterOIDCProvidersToConfig(providers []ClusterOIDCProvider) []controllerconfig.OIDCProvider {
+	out := make([]controllerconfig.OIDCProvider, 0, len(providers))
+	for _, provider := range providers {
+		out = append(out, controllerconfig.OIDCProvider{
+			Name:           provider.Name,
+			IssuerURL:      provider.IssuerURL,
+			Audiences:      append([]string(nil), provider.Audiences...),
+			UsernameClaim:  provider.UsernameClaim,
+			UsernamePrefix: provider.UsernamePrefix,
+			GroupsClaim:    provider.GroupsClaim,
+			GroupsPrefix:   provider.GroupsPrefix,
+			RequiredClaims: maps.Clone(provider.RequiredClaims),
+			CABundle:       provider.CABundle,
+		})
 	}
-	_, err := q.db.NewUpdate().
-		Model(&Cluster{ID: clusterID, OIDCProviders: providers}).
-		Column("oidc_providers").
-		WherePK().
-		Where("oidc_providers IS NULL").
-		Exec(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("pin OIDC providers for cluster %s: %w", clusterID, err)
-	}
-
-	var cluster Cluster
-	err = q.db.NewSelect().Model(&cluster).Column("oidc_providers").Where("id = ?", clusterID).Scan(ctx)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("read OIDC providers for cluster %s: %w", clusterID, err)
-	}
-	return cluster.OIDCProviders, nil
+	return out
 }

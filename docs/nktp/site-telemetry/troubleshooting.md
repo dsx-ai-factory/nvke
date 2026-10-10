@@ -35,7 +35,7 @@ kubectl auth can-i update deployments.apps/nktp-operator --subresource=finalizer
   -n nktp --as=system:serviceaccount:nktp:opentelemetry-operator   # yes
 ```
 
-## The install stops at nke-base-config: "{{ .ClusterName }} has no value"
+## The install stops at nke-base-config: "`{{ .ClusterName }}` has no value"
 
 **Cause:** the BootstrapConfig passed with `--config` has no `ClusterName`.
 The `nktp-cluster` ConfigMap is rendered from it, and the renderer refuses an

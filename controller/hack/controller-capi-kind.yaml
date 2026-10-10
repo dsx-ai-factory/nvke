@@ -10,7 +10,7 @@ featureGates:
   ImageVolume: true
 networking:
   ipFamily: dual
-# CWE, five Temporal images, postgres, SPIRE and four CAPI/CAPD controllers all
+# The controller, five Temporal images, postgres, SPIRE and four CAPI/CAPD controllers all
 # land on this one node. kubelet serializes image pulls by default, so they queue
 # and whichever workload draws the back of the queue can miss its readiness
 # deadline.

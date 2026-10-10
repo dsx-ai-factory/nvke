@@ -41,10 +41,10 @@ load("ext://uibutton", "cmd_button", "text_input")
 #   ctx.provider_dir  (string)  Absolute path to the provider's root directory.
 #
 # Output — returned struct with:
-#   cwe_resource_deps  (list[string])           Tilt resource names CWE should depend on.
-#                                               Appended to the CWE k8s_resource resource_deps.
-#   cwe_env_overrides  (dict[string, string])   Env vars injected into CWE's chart values.
-#   cwe_chart_flags    (list[string], optional) Additional Helm flags for CWE.
+#   cwe_resource_deps  (list[string])           Tilt resource names the controller should depend on.
+#                                               Appended to the controller k8s_resource resource_deps.
+#   cwe_env_overrides  (dict[string, string])   Env vars injected into the controller's chart values.
+#   cwe_chart_flags    (list[string], optional) Additional Helm flags for the controller.
 #   spire_chart_flags  (list[string], optional) Additional Helm flags for SPIRE.
 #   spire_resource_deps (list[string], optional) Tilt resources SPIRE should depend on.
 #   preflight_script   (string, optional)       Bash fragment appended to the
@@ -53,7 +53,7 @@ load("ext://uibutton", "cmd_button", "text_input")
 #                                               CRDs are present in the cluster.
 #
 # Inside register(), the provider creates its own Tilt resources (local_resource,
-# helm_resource, etc.) and returns the struct to wire itself into CWE.
+# helm_resource, etc.) and returns the struct to wire itself into the controller.
 
 # Built-in provider name -> directory (relative to config.main_dir, or absolute).
 _builtin_provider_dirs = {
@@ -111,12 +111,12 @@ if "nico-vm" in _provider_names and "nico-vms" not in _provider_names:
          "in the provider list: it points nico-credentials at that backend and depends on " +
          "its Tilt resource by name.")
 
-# 'nico' and 'nico-vms' are mutually exclusive Forge backends for CWE: both set
+# 'nico' and 'nico-vms' are mutually exclusive Forge backends for the controller: both set
 # FORGE_URL and both bind host port 18080 (nico-mock's port-forward vs nico-vms's
 # listener). Enable at most one. (capd is orthogonal and may accompany either.)
 if "nico" in _provider_names and "nico-vms" in _provider_names:
     fail("Providers 'nico' (nico-mock, container-backed nodes) and 'nico-vms' (real " +
-         "KVM/libvirt VMs) are mutually exclusive CWE backends: both set CWE's FORGE_URL " +
+         "KVM/libvirt VMs) are mutually exclusive controller backends: both set the controller's FORGE_URL " +
          "and bind host port 18080. Enable only one (capd may accompany either).")
 
 # 'nico' and 'nico-vm' are mutually exclusive ways to get a CAPNICo
@@ -127,7 +127,7 @@ if "nico" in _provider_names and "nico-vm" in _provider_names:
          "from NGC) are mutually exclusive: both install a CAPNICo controller into " +
          "capnico-system and own the 'nico-credentials' secret. Enable only one.")
 
-# CWE accepts only the API provider blocks in SUPPORTED_INFRA_PROVIDERS. The
+# The controller accepts only the API provider blocks in SUPPORTED_INFRA_PROVIDERS. The
 # 'nico' provider (nico-sim) serves the container and the nico-vms backends;
 # the e2e suite submits Infra blocks to the first and Nico blocks to the second.
 _supported_infra_providers = []
@@ -345,11 +345,11 @@ else:
 
 # Collect integration points from all providers.
 _all_cwe_resource_deps = []
-# Default CWE env overrides applied before any provider overrides. Providers
+# Default controller env overrides applied before any provider overrides. Providers
 # can still .update() these if they need a different value.
 #
 # SPIRE_SERVER_ADDRESS: tenants reach the SPIRE server through the platform-
-# correct site-controller VIP, which CWE bakes into the spire-agent config it
+# correct site-controller VIP, which the controller bakes into the spire-agent config it
 # generates for each tenant. The default in .env.tilt.example is
 # host.docker.internal, which only resolves on Docker Desktop; this override
 # makes the Linux native Docker path work too.
@@ -428,7 +428,7 @@ if _missing_creds:
 
 # CNPG_SUPERUSER_PASSWORD is the single source of truth for the local postgres
 # superuser: it provisions the bitnami postgres chart, authenticates temporal
-# against it, and is what CWE substitutes into DB_CONNECTION_STRING at startup
+# against it, and is what the controller substitutes into DB_CONNECTION_STRING at startup
 # (config.EffectiveDBConnectionString).
 _postgres_superuser_password = _required_creds["CNPG_SUPERUSER_PASSWORD"]
 
@@ -977,7 +977,7 @@ k8s_resource(
 )
 
 # ---------------------------------------------------------------------------
-# CWE
+# Controller
 # ---------------------------------------------------------------------------
 
 _cwe_tenant_access_enabled = os.getenv(
@@ -1112,7 +1112,7 @@ if not CWE_IMAGE and not _cwe_local_debug_active:
     _cwe_image_keys = [("image.repository", "image.tag")]
     _cwe_resource_deps = ["cwe-compile"] + _cwe_resource_deps
 elif _cwe_local_debug_active:
-    print("Skipping in-cluster CWE image build while local CWE debug mode is active")
+    print("Skipping in-cluster controller image build while local controller debug mode is active")
 
 _cwe_compile_script = """
       set -euo pipefail
@@ -1139,14 +1139,14 @@ _cwe_profiles_preloaded = (os.getenv("NKE_CONTROLLER_PROFILES_PRELOADED", "") or
 if not _cwe_profiles_preloaded and not _cwe_profiles_dir:
     fail("NKE_CONTROLLER_PROFILES_DIR must point to an external profiles directory")
 if not _cwe_profiles_preloaded and not os.path.exists(_cwe_profiles_dir):
-    fail("CWE profiles not found at %s. Set NKE_CONTROLLER_PROFILES_DIR to a profiles tree; the in-repo fixture is controller/test/fixtures/profiles and the fleet profiles live in nke-site-deploy." % _cwe_profiles_dir)
+    fail("Controller profiles not found at %s. Set NKE_CONTROLLER_PROFILES_DIR to a profiles tree; the in-repo fixture is controller/test/fixtures/profiles and the fleet profiles live in nke-site-deploy." % _cwe_profiles_dir)
 
 _cwe_profiles_context = os.path.dirname(_cwe_profiles_dir)
 _cwe_profiles_dockerfile = os.path.join(_cwe_profiles_context, "Dockerfile")
 _cwe_profiles_runbooks_dir = os.path.join(_cwe_profiles_context, "runbooks")
 
 # Match hack/tilt-controller-chart-values.yaml: when profiles.image is on, skip baking
-# profiles into the Tilt CWE image and skip live_update sync into the read-only mount.
+# profiles into the Tilt controller image and skip live_update sync into the read-only mount.
 _cwe_profiles_image_enabled = True
 
 if _cwe_profiles_image_enabled:
@@ -1156,9 +1156,9 @@ if _cwe_profiles_image_enabled:
         _cwe_image_deps = _cwe_image_deps + ["docker.local/cwe-profiles:tilt"]
         _cwe_image_keys = _cwe_image_keys + [("profiles.image.repository", "profiles.image.tag")]
         if not os.path.exists(_cwe_profiles_dockerfile):
-            fail("CWE profiles Dockerfile not found at %s" % _cwe_profiles_dockerfile)
+            fail("Controller profiles Dockerfile not found at %s" % _cwe_profiles_dockerfile)
         if not os.path.exists(_cwe_profiles_runbooks_dir):
-            fail("CWE profile runbooks not found at %s" % _cwe_profiles_runbooks_dir)
+            fail("Controller profile runbooks not found at %s" % _cwe_profiles_runbooks_dir)
         custom_build(
             ref="docker.local/cwe-profiles:tilt",
             command=[
@@ -1257,7 +1257,7 @@ local_resource(
     resource_deps=["check-management-cluster"],
 )
 
-# Applies the releases CWE resolves every OS image from.
+# Applies the releases the controller resolves every OS image from.
 _nke_release_dir = os.getenv("NKE_CONTROLLER_RELEASES_DIR", _tilt_env.get("NKE_CONTROLLER_RELEASES_DIR", "")).strip()
 if _nke_release_dir == "":
     _nke_release_dir = os.path.join(_cwe_profiles_context, "releases")
@@ -1369,7 +1369,7 @@ cmd_button(
     """],
     resource="cwe",
     icon_name="restart_alt",
-    text="Restart CWE",
+    text="Restart controller",
 )
 
 cmd_button(

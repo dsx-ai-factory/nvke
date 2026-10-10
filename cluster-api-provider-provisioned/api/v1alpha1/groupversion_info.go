@@ -22,7 +22,7 @@ import (
 )
 
 // GroupName is the API group. Cluster API requires every infrastructure
-// provider to use this group, and CWE rejects a manifest that uses any other
+// provider to use this group, and the controller rejects a manifest that uses any other
 // group.
 const (
 	GroupName = "infrastructure.cluster.x-k8s.io"

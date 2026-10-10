@@ -108,6 +108,15 @@ jobs:
     permissions:
       contents: read
 
+  # The `policy` job only: the registry against the tree, in about a second.
+  # Its sibling `report` job skips itself when called from here, because it
+  # would re-run the nine suites the lanes above have already run. See the
+  # header of coverage.yml.
+  coverage:
+    uses: ./.github/workflows/coverage.yml
+    permissions:
+      contents: read
+
   agent-test:
     uses: ./.github/workflows/agent-test.yml
     permissions:
@@ -227,6 +236,7 @@ jobs:
       - controller-test
       - agent-test
       - packer-contracts
+      - coverage
       - management-engine-controller-test-policy
       - workspace
       - chart

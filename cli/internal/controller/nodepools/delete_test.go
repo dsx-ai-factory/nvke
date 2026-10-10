@@ -98,7 +98,7 @@ func TestDeleteNodePoolErrors(t *testing.T) {
 			wantErr: "accepts 1 arg(s)",
 		},
 		{
-			// CWE's own rejection for the last joined control-plane pool,
+			// The controller's own rejection for the last joined control-plane pool,
 			// surfaced verbatim rather than pre-checked client-side.
 			name: "server rejects deleting the last control-plane pool",
 			args: []string{"control-plane", "-c", "alpha"},

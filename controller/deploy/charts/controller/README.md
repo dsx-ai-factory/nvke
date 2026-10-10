@@ -26,12 +26,12 @@ A Helm chart to deploy the NKE controller service
 | autoscaling.maxReplicas | int | `100` |  |
 | autoscaling.minReplicas | int | `1` |  |
 | autoscaling.targetCPUUtilizationPercentage | int | `80` |  |
-| capi.rbac.create | bool | `false` | Create RBAC for CWE to watch and patch CAPI/NICo resources. |
+| capi.rbac.create | bool | `false` | Create RBAC for the controller to watch and patch CAPI/NICo resources. |
 | cni.imageRegistry | string | `""` | Optional OCI registry prefix for CNI component images. Empty uses chart defaults. |
 | cni.installAfterInit | bool | `false` | Install CNI after kubeadm init through the agent's InstallCNI RPC, which reads manifests from a Debian package rather than a bundle server. Needs the CNI charts package on the node that runs kubeadm init: nke-cni-ovn-charts-<stream> for OVN, or nke-cni-calico-manifests-<stream> for Calico. |
 | controllers.nico.enabled | bool | `true` | Run controllers that watch NICo infrastructure resources. |
 | deploymentAnnotations | object | `{}` | Annotations on the Deployment `metadata` (evaluated with `tpl`) |
-| env | list | `[]` | Additional environment variables to inject into the CWE container. |
+| env | list | `[]` | Additional environment variables to inject into the controller container. |
 | fullnameOverride | string | `""` |  |
 | identity.fieldManagerMachineHealthIssueName | string | `"cloud-workflow-engine-machine-health-issue"` | Field manager used when patching a Machine's health-issue annotation. |
 | identity.fieldManagerName | string | `"cloud-workflow-engine"` | Field manager for this controller's own CAPI/NICo Server-Side-Apply patches. |
@@ -39,7 +39,7 @@ A Helm chart to deploy the NKE controller service
 | identity.managedByLabelValue | string | `"cloud-workflow-engine"` | Value written under the nke.nvidia.com/managed-by label on objects this controller owns, and the value the tenant Secret reconciler filters on. |
 | image.digest | string | `""` | Optional digest (sha256:...) for the nke-controller image. When set, the pod pulls by digest and the tag becomes informational only. Use this to pin an immutable image. |
 | image.pullPolicy | string | `"IfNotPresent"` | This sets the pull policy for images. |
-| image.repository | string | `"ghcr.io/dsx-ai-factory/nke/nke-controller"` | Repository, including registry, for the nke-controller image (the CWE service) that this chart deploys. Override to pull it from a different registry (e.g. a private mirror); pair any change with a matching `imagePullSecrets` entry. Not to be confused with `profiles.image.repository` below, a separate optional content image. |
+| image.repository | string | `"ghcr.io/dsx-ai-factory/nke/nke-controller"` | Repository, including registry, for the nke-controller image (the controller service) that this chart deploys. Override to pull it from a different registry (e.g. a private mirror); pair any change with a matching `imagePullSecrets` entry. Not to be confused with `profiles.image.repository` below, a separate optional content image. |
 | image.tag | string | `""` | Overrides the tag for the nke-controller image; default is the chart appVersion. |
 | imagePullSecrets | list | `[]` | Must match image.repository, which defaults to ghcr.io. The NVCR-published chart gets the NGC secret put back at package time. Supply your own for a private GHCR package. |
 | ingress.annotations | object | `{}` |  |
@@ -84,7 +84,7 @@ A Helm chart to deploy the NKE controller service
 | nodeAgent.tlsJwt.subjectTenant | string | `""` | Tenant segment in the canonical local SPIFFE ID exchanged by DSX Identity. |
 | nodeAgent.tlsJwt.subjectTrustDomain | string | `""` | Exact SPIFFE trust domain accepted in node-agent JWT subjects. |
 | nodeSelector | object | `{}` |  |
-| oidc.providers | list | `[]` | Fleet-wide OIDC providers that clusters trust alongside nkeOIDCAuth; a cluster keeps the list it was created with. Not yet applied to clusters. At most five, each with name, issuerURL, audiences, usernameClaim, usernamePrefix and caBundle (inline PEM), and optionally groupsClaim, groupsPrefix and requiredClaims (claim name to required value). |
+| oidc.providers | list | `[]` | Fleet-wide OIDC providers that clusters trust alongside nkeOIDCAuth; a cluster keeps the list it was created with, and one created on a Kubernetes version earlier than 1.34 gets none. At most five, each with name, issuerURL, audiences, usernameClaim, usernamePrefix and caBundle (inline PEM), and optionally groupsClaim, groupsPrefix and requiredClaims (claim name to required value). |
 | podAnnotations | object | `{}` |  |
 | podLabels.app | string | `"cloud-workflow-engine"` |  |
 | podLabels.project | string | `"nke"` |  |
@@ -100,7 +100,7 @@ A Helm chart to deploy the NKE controller service
 | releaseCRDs.install | bool | `true` | Install the MachineImage, ClusterRelease and NodePoolRelease CRDs with the chart. |
 | replicaCount | int | `1` |  |
 | resources | object | `{}` |  |
-| scheduledMaintenance.certRenewal.enabled | bool | `true` | Enable CWE-owned periodic Kubernetes control-plane certificate renewal. |
+| scheduledMaintenance.certRenewal.enabled | bool | `true` | Enable controller-owned periodic Kubernetes control-plane certificate renewal. |
 | scheduledMaintenance.certRenewal.interval | string | `"12h"` | Interval between certificate renewal checks for each cluster. |
 | scheduledMaintenance.certRenewal.thresholdDays | int | `30` | Days before expiry that the runbook renews certificates. |
 | secrets.cnpgDbPasswordsSecretName | string | `""` | Name of the Kubernetes Secret (created out-of-band by Vault Secrets Operator) providing CNPG database passwords. Expected keys: CNPG_SUPERUSER_PASSWORD, CNPG_CLOUD_PASSWORD, CNPG_TEMPORAL_PASSWORD. When empty, CNPG_* env vars are not injected. When set, all three keys are required to exist in the named Secret. |
@@ -126,7 +126,8 @@ A Helm chart to deploy the NKE controller service
 | spiffe.capiKubeadmBootstrapManagerSubject | string | `""` | Subject the nke:capi-cluster-admin RBAC binding names for the kubeadm bootstrap manager. Defaults to its local SPIFFE ID; set it to the rewritten subject when that controller uses an exchanged tenant kubeconfig. |
 | spiffe.capiKubeadmControlPlaneManagerSubject | string | `""` | Subject the nke:capi-cluster-admin RBAC binding names for the kubeadm control-plane manager. Defaults to its local SPIFFE ID; set it to the rewritten subject when that controller uses an exchanged tenant kubeconfig. |
 | spiffe.capiManagerSubject | string | `""` | Subject the nke:capi-cluster-admin RBAC binding names for capi-manager. Defaults to spiffe://<trustDomain>/nke-service/capi-manager, which is what a tenant sees without token exchange. Set it whenever jwtExchangeEndpoint is set because the exchange may rewrite the token's sub claim. |
-| spiffe.cweSubject | string | `""` | Subject the nkeOIDCAuth.tenantRbacName RBAC bindings name in tenant clusters. Defaults to this controller's own SPIFFE ID, spiffe://<trustDomain>/nke-service/cloud-workflow-engine, which is what a tenant sees when no exchange is in play. Set it whenever jwtExchangeEndpoint is set: the exchange re-issues the token under its own trust domain and rewrites the path, so give the exchanged subject in full, e.g. spiffe://nke.<site>.cloud-workflow-engine.nvid.id/bm/cwe. A mismatch authenticates and then fails every authorization check. |
+| spiffe.controllerSubject | string | `""` | Subject the nkeOIDCAuth.tenantRbacName RBAC bindings name in tenant clusters. Defaults to this controller's own SPIFFE ID, spiffe://<trustDomain>/nke-service/cloud-workflow-engine, which is what a tenant sees when no exchange is in play. Set it whenever jwtExchangeEndpoint is set: the exchange re-issues the token under its own trust domain and rewrites the path, so give the exchanged subject in full, e.g. spiffe://nke.<site>.cloud-workflow-engine.nvid.id/bm/cwe. A mismatch authenticates and then fails every authorization check. |
+| spiffe.cweSubject | string | `""` | Older name for controllerSubject, still read. When both are set, controllerSubject wins. |
 | spiffe.enabled | bool | `false` | Enable SPIFFE identity for mTLS to tenant clusters |
 | spiffe.endpointSocket | string | `"unix:///spiffe-workload-api/spire-agent.sock"` |  |
 | spiffe.jwtExchangeEndpoint | string | `""` | RFC 8693 token-exchange endpoint the exec credential plugin trades its JWT-SVID at before calling a tenant API server. Leave empty to present the JWT-SVID directly, which is what every site does today. Set it only where the tenant clusters trust the exchange's issuer, otherwise the controller's calls to them will start failing authentication. |
@@ -138,8 +139,8 @@ A Helm chart to deploy the NKE controller service
 | spiffe.spire.serverPort | string | `"30440"` |  |
 | spiffe.spire.tpmPubhashesConfigMapName | string | `"tpm-pubhashes"` |  |
 | spiffe.trustDomain | string | `""` | SPIRE trust domain. When set, the chart renders ConfigMap nke-rbac. Required when nkeOIDCAuth.enabled is true: builds the nkeOIDCAuth.tenantRbacName SPIFFE subject ID in that ConfigMap. Must equal the SPIRE server's trust domain (the spire chart's global.spire.trustDomain) so the RBAC principals match issued identities. |
-| supportedInfraProviders | string | `"nico"` | Comma-separated API provider blocks accepted by mutating cluster and node-pool requests. The chart defaults deployed CWE to Nico only; set to "nico,infra" only for deployments that should accept generic CAPI-backed provider payloads. |
-| teleport.enabled | bool | `false` | Enable Teleport identity for CWE to manage Teleport resources (tokens, nodes) |
+| supportedInfraProviders | string | `"nico"` | Comma-separated API provider blocks accepted by mutating cluster and node-pool requests. The chart defaults the deployed controller to Nico only; set to "nico,infra" only for deployments that should accept generic CAPI-backed provider payloads. |
+| teleport.enabled | bool | `false` | Enable Teleport identity for the controller to manage Teleport resources (tokens, nodes) |
 | teleport.environment | string | `"non-prod"` | Teleport environment label: "prod" or "non-prod" (default: "non-prod") |
 | teleport.identityFile | string | `"/var/run/teleport/identity"` | Path where the tbot identity file is mounted |
 | teleport.identitySecretName | string | `"cloud-workflow-engine-teleport"` | Name of the Kubernetes secret containing the tbot identity (written by tbot output) |
@@ -160,7 +161,7 @@ A Helm chart to deploy the NKE controller service
 | temporal.publicTemporalHostPort | string | `""` |  |
 | tenantAccess.enabled | bool | `true` | Publish each cluster's kubeconfig as a Secret in the nke-system namespace, and remove those Secrets during cluster teardown. Gates both the controller and its cleanup activity, and the Secret grant they depend on. |
 | tolerations | list | `[]` |  |
-| tracing.enabled | bool | `false` | Enable OpenTelemetry tracing in the CWE binary (TracerProvider + transport hooks). Keep false in chart defaults; enable per environment against an OTLP collector. |
+| tracing.enabled | bool | `false` | Enable OpenTelemetry tracing in the controller binary (TracerProvider + transport hooks). Keep false in chart defaults; enable per environment against an OTLP collector. |
 | tracing.endpoint | string | `""` | Optional OTLP gRPC endpoint override (host:port). Leave empty when operatorInject.enabled is true so the operator-injected localhost sidecar endpoint is used. |
 | tracing.insecure | bool | `true` | Use insecure (plaintext) OTLP gRPC. Required for localhost sidecar / most in-cluster collectors. |
 | tracing.operatorInject.enabled | bool | `false` | When true (with tracing.enabled), add OpenTelemetry Operator pod annotations. |

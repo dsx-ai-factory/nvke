@@ -1,0 +1,64 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# How each component resolves to a version. This file holds the rule that
+# finds a version and never a version itself, so nothing here goes stale when
+# something is tagged or bumped.
+#
+# A component's name is also its key in the e2e suite's -e2e.versions flag, so
+# the plan can hand the suite what it resolved without a mapping in between.
+#
+# tagPrefix is explicit because a name and its tag genuinely disagree:
+# capi-provisioned is tagged cluster-api-provider-provisioned/v*, and nke
+# carries no prefix because its directory is the repository root.
+
+apiVersion: nke.nvidia.com/v1alpha1
+kind: Registry
+metadata:
+  name: nke
+  description: How each component resolves to a version.
+spec:
+  # Where artifacts are published. A component names a source in its resolve.with,
+  # so the location is stated once and appears in no other file.
+  sources:
+    - {name: artifact-cdn, url: https://d1veq6e8nuk2fy.cloudfront.net}
+
+  components:
+    - {name: nke,              resolve: {strategy: gitTag, with: {tagPrefix: ""}}}
+    - {name: controller,       resolve: {strategy: gitTag, with: {tagPrefix: "controller/"}}}
+    - {name: cli,              resolve: {strategy: gitTag, with: {tagPrefix: "cli/"}}}
+    - {name: capi-provisioned, resolve: {strategy: gitTag, with: {tagPrefix: "cluster-api-provider-provisioned/"}}}
+    - {name: os-image,         resolve: {strategy: gitTag, with: {tagPrefix: "os-image/"}}}
+
+    # A run needs the image and its bootloader for every architecture, whatever
+    # the stream's own. Each is named by the key the e2e suite reads and resolves
+    # to a URL. The image is built from the os-image release, and the bootloader
+    # is declared because nothing derives it.
+    - name: os-image-amd64
+      resolve:
+        strategy: osImage
+        with: {from: os-image, arch: amd64, variant: non-fde, source: artifact-cdn, path: nke-packages}
+    - name: os-image-arm64
+      resolve:
+        strategy: osImage
+        with: {from: os-image, arch: arm64, variant: non-fde, source: artifact-cdn, path: nke-packages}
+    - {name: os-image-bootloader-amd64, resolve: {strategy: url, with: {source: artifact-cdn}}}
+    - {name: os-image-bootloader-arm64, resolve: {strategy: url, with: {source: artifact-cdn}}}
+
+    # What an image carries is read from the lock files its release commits, at
+    # the os-image tag the combination resolved. A node installs these from the
+    # image's own apt repository, so the lock files are the versions it can
+    # offer.
+    - name: kube
+      resolve:
+        strategy: lockedPackage
+        with: {lockDir: os-image/packages/kubeadm-distro/lock, from: os-image}
+    - name: cni-ovn
+      resolve:
+        strategy: lockedPackage
+        with: {lockDir: os-image/packages/cni-ovn/lock, from: os-image}
+
+    # Read from make/tool-versions.mk, which owns every tool pin.
+    - {name: kind,             resolve: {strategy: makeVar, with: {var: KIND_VERSION}}}
+    - {name: clusterctl,       resolve: {strategy: makeVar, with: {var: CAPI_VERSION}}}
+    - {name: nerdctl,          resolve: {strategy: makeVar, with: {var: NERDCTL_VERSION}}}

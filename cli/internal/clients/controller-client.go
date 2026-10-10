@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package clients wraps the generated CWE API client with typed, error-parsed
+// Package clients wraps the generated controller API client with typed, error-parsed
 // methods, management-cluster authentication, and optional proxy TLS client
 // authentication.
 package clients
@@ -20,7 +20,7 @@ import (
 	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 
-// ControllerClient is a high-level client for the CWE REST API.
+// ControllerClient is a high-level client for the controller REST API.
 type ControllerClient struct {
 	raw *api.ClientWithResponses
 }
@@ -37,7 +37,7 @@ func New(cfg config.SiteConfig) (*ControllerClient, error) {
 	if cfg.Kubeconfig != "" {
 		source, err := auth.NewTokenSource(cfg.Kubeconfig, cfg.URL)
 		if err != nil {
-			return nil, fmt.Errorf("building CWE authentication: %w", err)
+			return nil, fmt.Errorf("building controller API authentication: %w", err)
 		}
 		tokens = source
 	}
@@ -71,7 +71,7 @@ func newClient(cfg config.SiteConfig, tokens tokenSource) (*ControllerClient, er
 	}
 	raw, err := api.NewClientWithResponses(apiURL, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("building CWE client: %w", err)
+		return nil, fmt.Errorf("building controller API client: %w", err)
 	}
 	return &ControllerClient{raw: raw}, nil
 }
@@ -80,7 +80,7 @@ func bearerToken(tokens tokenSource) api.RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
 		token, err := tokens.Mint(ctx)
 		if err != nil {
-			return fmt.Errorf("minting CWE bearer token: %w", err)
+			return fmt.Errorf("minting controller API bearer token: %w", err)
 		}
 		if token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
@@ -90,7 +90,7 @@ func bearerToken(tokens tokenSource) api.RequestEditorFn {
 }
 
 // apiError extracts a human-readable message from a non-2xx response body.
-// The CWE API returns {"message": "..."} for all error responses (GenericError).
+// The controller API returns {"message": "..."} for all error responses (GenericError).
 // Falls back to the raw body if the body isn't a GenericError.
 func apiError(status string, body []byte) error {
 	var e api.GenericError

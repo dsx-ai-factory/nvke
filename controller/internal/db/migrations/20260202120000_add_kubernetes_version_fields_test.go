@@ -59,7 +59,7 @@ func TestGetKubernetesVersionFromOSProfileOrDefault(t *testing.T) {
 		},
 		{
 			// The migration skips loading the index when it has no rows to
-			// backfill, which is what lets CWE start with no profiles tree.
+			// backfill, which is what lets the controller start with no profiles tree.
 			// Nothing should reach this function in that case, so this only
 			// guards the nil dereference if something ever does.
 			name:        "no index loaded",

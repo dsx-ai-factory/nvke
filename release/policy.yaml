@@ -1,0 +1,53 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The matrix a release can be qualified against: the streams that exist and
+# the named selections over them that decide how much of the matrix a given
+# run covers. What is qualified is in qualification.yaml, and how each
+# component resolves to a version is in registry.yaml.
+#
+# The streams below are the ones that exist: the Forge lanes on GB200 and L40S
+# capacity.
+# A policy naming capabilities no runner has produces plans that nothing can
+# schedule, so a stream is added with the runner that backs it.
+
+apiVersion: nke.nvidia.com/v1alpha1
+kind: QualificationPolicy
+metadata:
+  name: nke
+  description: The streams a release can be qualified against and the scopes over them.
+spec:
+  scopes:
+    # Only Ubuntu 24.04 on GB200, on every arch and minor that has a stream for
+    # it.
+    golden-path:
+      selector: {ubuntu: "24.04", gpu: gb200}
+    # No selector, so every stream. What the weekly run covers. Adding a minor
+    # is adding streams, not editing scopes.
+    full: {}
+
+  # A stream names capabilities, not the infrastructure that satisfies them.
+  # Which runner label, site, or subnet a capability resolves to is an
+  # environment knob and belongs to the e2e suite's own config, so that the
+  # suite stays runnable by hand and by a second organisation.
+  #
+  # `arch` is the architecture of the site and control-plane node. GPU workers
+  # can differ, and the GPU model decides theirs, so `arch` does not say which
+  # node images a run needs.
+  #
+  # A stream is named <provider>-<gpu>-<arch>-ubuntu-<series>-kube-<minor>, so
+  # two streams that differ only in GPU model do not share a name. The name is
+  # the key of everything recorded for a stream.
+  streams:
+    - name: forge-gb200-amd64-ubuntu-24.04-kube-1.36
+      capabilities: {provider: forge, gpu: gb200, arch: amd64, ubuntu: "24.04", kube: "1.36"}
+    - name: forge-gb200-arm64-ubuntu-24.04-kube-1.36
+      capabilities: {provider: forge, gpu: gb200, arch: arm64, ubuntu: "24.04", kube: "1.36"}
+    - name: forge-gb200-amd64-ubuntu-26.04-kube-1.36
+      capabilities: {provider: forge, gpu: gb200, arch: amd64, ubuntu: "26.04", kube: "1.36"}
+    - name: forge-gb200-arm64-ubuntu-26.04-kube-1.36
+      capabilities: {provider: forge, gpu: gb200, arch: arm64, ubuntu: "26.04", kube: "1.36"}
+    - name: forge-l40s-amd64-ubuntu-24.04-kube-1.36
+      capabilities: {provider: forge, gpu: l40s, arch: amd64, ubuntu: "24.04", kube: "1.36"}
+    - name: forge-l40s-amd64-ubuntu-26.04-kube-1.36
+      capabilities: {provider: forge, gpu: l40s, arch: amd64, ubuntu: "26.04", kube: "1.36"}

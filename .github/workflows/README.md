@@ -200,6 +200,15 @@ entry. A SHA-scoped `main` group prevents back-to-back merges from losing a
 result. Pull-request refs should remain shared so a new update cancels stale
 work.
 
+The e2e lanes pay for the SHA-scoped groups on a busy day: GitHub never cancels
+a queued leg whose commit has been superseded, so two-hour legs pile up for
+commits that are no longer the head. `e2e-queue-sweeper.yml` runs every ten
+minutes, keeps every running leg and the newest two queued runs per lane, and
+cancels the older queued ones. Dispatch a lane by hand on a swept commit when
+its result is wanted. The same sweep cancels queued lane runs on a
+`pull-request/<n>` mirror branch once that pull request is merged or closed:
+their result changes nothing, and they share the arm64 pool with main.
+
 Release gates need separate treatment: do not cancel a tag run, and keep tag
 groups distinct. `license.yml` documents the release-specific version of this
 rule.

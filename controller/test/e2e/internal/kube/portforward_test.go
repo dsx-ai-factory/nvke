@@ -334,9 +334,9 @@ func (r *resolvingStarter) lastSession() *fakeSession {
 	return r.sessions[len(r.sessions)-1]
 }
 
-func cweForwarder(t *testing.T) (*fake.Clientset, *resolvingStarter, *ServiceForwarder) {
+func controllerForwarder(t *testing.T) (*fake.Clientset, *resolvingStarter, *ServiceForwarder) {
 	t.Helper()
-	clientset := fake.NewClientset(cweService(), readyCWEPod("cwe-old"))
+	clientset := fake.NewClientset(controllerService(), readyControllerPod("cwe-old"))
 	starter := &resolvingStarter{inner: &podForwardStarter{
 		clientset: clientset,
 		namespace: "nke-controller",
@@ -348,7 +348,7 @@ func cweForwarder(t *testing.T) (*fake.Clientset, *resolvingStarter, *ServiceFor
 	return clientset, starter, forwarder
 }
 
-func readyCWEPod(name string) *corev1.Pod {
+func readyControllerPod(name string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "nke-controller",
@@ -366,7 +366,7 @@ func readyCWEPod(name string) *corev1.Pod {
 	}
 }
 
-func cweService() *corev1.Service {
+func controllerService() *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "nke-controller", Name: "nke-controller"},
 		Spec: corev1.ServiceSpec{
@@ -383,7 +383,7 @@ func cweService() *corev1.Service {
 // gone, the new one not yet Ready — must surface as an error rather than wedge
 // the forwarder.
 func TestServiceForwarderRedialResolvesTheReplacementPod(t *testing.T) {
-	clientset, starter, forwarder := cweForwarder(t)
+	clientset, starter, forwarder := controllerForwarder(t)
 
 	if pod := requestPod(t, forwarder); pod != "cwe-old" {
 		t.Fatalf("first request landed on pod %q, want cwe-old", pod)
@@ -399,7 +399,7 @@ func TestServiceForwarderRedialResolvesTheReplacementPod(t *testing.T) {
 		t.Fatal("expected an error while no pod backs the Service")
 	}
 
-	if _, err := pods.Create(t.Context(), readyCWEPod("cwe-new"), metav1.CreateOptions{}); err != nil {
+	if _, err := pods.Create(t.Context(), readyControllerPod("cwe-new"), metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if pod := requestPod(t, forwarder); pod != "cwe-new" {

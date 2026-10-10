@@ -13,7 +13,7 @@ import (
 	"github.com/dsx-ai-factory/nke/cli/internal/bootstrap/etcdkey"
 )
 
-// EtcdEncryptionKey reads the etcd encryption key CWE holds for clusterID and
+// EtcdEncryptionKey reads the etcd encryption key the controller holds for clusterID and
 // returns the Secret's data, decoded.
 //
 // The command's output is not placed in any error, unlike the other kubectl
@@ -27,17 +27,17 @@ func (e *Engine) EtcdEncryptionKey(
 	out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"-n", cweNamespace, "get", "secret", name, "-o", "json")
 	if err != nil {
-		return nil, fmt.Errorf("cwedeploy: reading %s/%s: %w", cweNamespace, name, err)
+		return nil, fmt.Errorf("controllerdeploy: reading %s/%s: %w", cweNamespace, name, err)
 	}
 
 	var secret struct {
 		Data map[string][]byte `json:"data"`
 	}
 	if err := json.Unmarshal([]byte(out), &secret); err != nil {
-		return nil, fmt.Errorf("cwedeploy: %s/%s is not a Secret: %w", cweNamespace, name, err)
+		return nil, fmt.Errorf("controllerdeploy: %s/%s is not a Secret: %w", cweNamespace, name, err)
 	}
 	if len(secret.Data[etcdkey.FieldActive]) == 0 {
-		return nil, fmt.Errorf("cwedeploy: %s/%s has no %q key", cweNamespace, name, etcdkey.FieldActive)
+		return nil, fmt.Errorf("controllerdeploy: %s/%s has no %q key", cweNamespace, name, etcdkey.FieldActive)
 	}
 	return secret.Data, nil
 }

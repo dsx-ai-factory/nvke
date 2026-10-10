@@ -19,16 +19,19 @@ local_resource(
         "hack/dev.sh", "hack/boilerplate.go.txt", "hack/boilerplate.yaml.txt",
         "Makefile", "go.mod", "go.sum",
     ],
-    # install-state regenerates these outputs; watching them would retrigger itself.
+    # install-state regenerates these outputs. Watching them would retrigger itself.
     ignore=["apis/**/zz_generated.deepcopy.go", "config/crd/bases", "config/rbac/role.yaml"],
 )
-docker_build("management-engine", ".", dockerfile="Dockerfile")
+docker_build("management-engine", "..", dockerfile="Dockerfile")
 metrics_port = os.getenv("METRICS_LOCAL_PORT", "")
+runtime_values = ["config/samples/runtime-values.yaml"]
+if os.getenv("DEV_VALUES", ""):
+    runtime_values.append(os.getenv("DEV_VALUES"))
 runtime = decode_yaml_stream(helm(
     "chart",
     name="management-engine",
     namespace="management-engine-system",
-    values=["config/samples/runtime-values.yaml"],
+    values=runtime_values,
     set=["manager.image.repository=management-engine", "manager.image.tag=dev"],
 ))
 for resource in runtime:

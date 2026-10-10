@@ -26,7 +26,7 @@ pair() {
 
 echo "supportedInfraProviders default:"
 out="$(render)"
-pair "defaults deployed CWE to nico only" "SUPPORTED_INFRA_PROVIDERS" "nico" "${out}"
+pair "defaults deployed controller to nico only" "SUPPORTED_INFRA_PROVIDERS" "nico" "${out}"
 
 echo "supportedInfraProviders opt-in:"
 out="$(render --set-string 'supportedInfraProviders=nico\,infra')"

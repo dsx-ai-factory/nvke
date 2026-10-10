@@ -62,7 +62,7 @@ the proxy on every request.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&url, "url", "", "CWE API base URL (e.g. http://localhost:8080)")
+	cmd.Flags().StringVar(&url, "url", "", "Controller API base URL (e.g. http://localhost:8080)")
 	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to the management cluster kubeconfig")
 	cmd.Flags().StringVar(&name, "name", "default", "Name for this site entry")
 	cmd.Flags().StringVar(&proxyClientCert, "proxy-client-cert", "", "Path to the proxy TLS client certificate")

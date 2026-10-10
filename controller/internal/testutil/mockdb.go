@@ -103,15 +103,6 @@ func (m *MockDB) SyncClusterControlPlaneConfigFromCPNodePools(ctx context.Contex
 	return args.Error(0)
 }
 
-func (m *MockDB) PinClusterOIDCProviders(ctx context.Context, clusterID uuid.UUID, providers []db.ClusterOIDCProvider) ([]db.ClusterOIDCProvider, error) {
-	args := m.Called(ctx, clusterID, providers)
-	v, ok := args.Get(0).([]db.ClusterOIDCProvider)
-	if !ok {
-		return nil, args.Error(1)
-	}
-	return v, args.Error(1)
-}
-
 func (m *MockDB) CreateControlPlaneConfiguration(ctx context.Context, row *db.ControlPlaneConfiguration) (db.ControlPlaneConfiguration, error) {
 	args := m.Called(ctx, row)
 	v, ok := args.Get(0).(db.ControlPlaneConfiguration)
@@ -351,15 +342,6 @@ func (m *MockTx) GetNodePool(ctx context.Context, id uuid.UUID) (db.NodePool, er
 	v, ok := args.Get(0).(db.NodePool)
 	if !ok {
 		return db.NodePool{}, args.Error(1)
-	}
-	return v, args.Error(1)
-}
-
-func (m *MockTx) PinClusterOIDCProviders(ctx context.Context, clusterID uuid.UUID, providers []db.ClusterOIDCProvider) ([]db.ClusterOIDCProvider, error) {
-	args := m.Called(ctx, clusterID, providers)
-	v, ok := args.Get(0).([]db.ClusterOIDCProvider)
-	if !ok {
-		return nil, args.Error(1)
 	}
 	return v, args.Error(1)
 }

@@ -35,6 +35,7 @@ endif
 
 # golangci-lint pin and bootstrap, shared with every other module.
 include ../make/golangci.mk
+include ../make/coverage.mk
 include ../make/tool-versions.mk
 
 # Version stamping, mirroring controller/Makefile.
@@ -135,7 +136,8 @@ build: ## Build nkectl into bin/, and assert the version stamp took.
 GO_TEST_FLAGS ?=
 
 test: ## Run this module's tests. (run by the merge gate)
-	$(GO) test $(GO_TEST_FLAGS) ./...
+	@$(COVERAGE_MKDIR)
+	$(GO) test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) ./...
 
 # e2e coverage for "nkectl bootstrap site" specifically -- e2e/bootstrap/ is
 # one of what may become several e2e/<command>/ suites as nkectl grows more
@@ -164,7 +166,7 @@ CAPD_HELM_DEB_PATH ?=
 
 # Builds nke-agent from this checkout's own agent/ module rather than
 # downloading a published bundle. The image gets no bundle server. The E2E
-# supplies local OVN chart, image, and Helm packages for CWE's post-init CNI
+# supplies local OVN chart, image, and Helm packages for the controller's post-init CNI
 # path. A no-op once the image exists locally.
 ensure-capd-image:
 	@nerdctl image inspect $(CAPD_KINDEST_NODE_IMAGE) >/dev/null 2>&1 || \

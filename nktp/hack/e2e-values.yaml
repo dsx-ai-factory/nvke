@@ -16,6 +16,10 @@
 # Kind has no other provider of metrics.k8s.io, and the lane asserts the
 # autoscalers read it. --kubelet-insecure-tls is Kind-only: Kind's kubelet
 # serving certificates are self-signed, so metrics-server cannot verify them.
+# Every exported signal is checked for this name.
+global:
+  clusterName: nktp-e2e
+
 metrics-server:
   enabled: true
   args: ["--kubelet-insecure-tls"]
@@ -84,6 +88,13 @@ daemonset:
       - {name: host-machine-id, hostPath: {path: /etc/machine-id, type: File}}
       - {name: journal-persistent, hostPath: {path: /run/log/journal, type: Directory}}
       - {name: host-logs, hostPath: {path: /var/log, type: Directory}}
+      - name: internal-tls-client
+        secret:
+          secretName: nktp-daemonset-client-tls
+          items:
+            - {key: tls.crt, path: tls.crt}
+            - {key: tls.key, path: tls.key}
+            - {key: ca.crt, path: ca.crt}
     volumeMounts:
       - {name: pod-logs, mountPath: /var/log/pods, readOnly: true}
       - {name: host-proc, mountPath: /hostfs/proc, readOnly: true}
@@ -95,6 +106,7 @@ daemonset:
       - {name: host-machine-id, mountPath: /hostfs/etc/machine-id, readOnly: true}
       - {name: journal-persistent, mountPath: /hostfs/run/log/journal, readOnly: true}
       - {name: host-logs, mountPath: /hostfs/var/log, readOnly: true}
+      - {name: internal-tls-client, mountPath: /etc/nktp/internal-tls/client, readOnly: true}
   otelcol:
     config:
       receivers:

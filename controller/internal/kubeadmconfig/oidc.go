@@ -113,6 +113,15 @@ func apiServerAuthenticationConfig(oidc *OIDCAuthenticationConfig) *OIDCAuthenti
 	}
 }
 
+// BuildAnonymousAuthenticationConfig returns the bootstrap anonymous-only
+// configuration, or nil when kubernetesVersion does not support it.
+func BuildAnonymousAuthenticationConfig(kubernetesVersion string) *OIDCAuthenticationConfig {
+	if !supportsAnonymousAuthConfig(kubernetesVersion) {
+		return nil
+	}
+	return apiServerAuthenticationConfig(nil)
+}
+
 type OIDCAuthenticationConfig = apiserverv1.AuthenticationConfiguration
 
 type OIDCIssuer = apiserverv1.Issuer

@@ -74,7 +74,7 @@ func main() {
 		panic(err)
 	}
 
-	dockerMachineType := &capdv1.DockerMachine{} //nolint:staticcheck // CAPD v1.12.3 still creates DockerMachine; migrate with #88.
+	dockerMachineType := &capdv1.DockerMachine{} //nolint:staticcheck // CAPD v1.13.6 still creates DockerMachine; migrate with #88.
 	err = ctrl.NewControllerManagedBy(mgr).
 		For(dockerMachineType).
 		Watches(
@@ -100,7 +100,7 @@ type reconciler struct {
 func (r *reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx)
 
-	dockerMachine := &capdv1.DockerMachine{} //nolint:staticcheck // CAPD v1.12.3 still creates DockerMachine; migrate with #88.
+	dockerMachine := &capdv1.DockerMachine{} //nolint:staticcheck // CAPD v1.13.6 still creates DockerMachine; migrate with #88.
 	if err := r.Get(ctx, req.NamespacedName, dockerMachine); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -173,7 +173,7 @@ func rebootAlreadySignaled(machine *clusterv1.Machine, rebootAnnotation string) 
 		return false
 	}
 
-	// This is a best effort to parse the timestamp, CWE does currently put the value as a timestamp, but this is not necessarily guaranteed.
+	// This is a best effort to parse the timestamp, the controller does currently put the value as a timestamp, but this is not necessarily guaranteed.
 	rebootStartedTime, err := time.Parse(time.RFC3339, rebootAnnotation)
 	if err != nil {
 		return false

@@ -26,12 +26,12 @@ git clone https://github.com/dsx-ai-factory/nke.git
 cd nke
 ```
 
-## controller (Cloud Workflow Engine)
+## controller
 
 > **`controller/` builds without NVIDIA credentials.** The carbide SDK and
 > cluster-api-provider-nico dependencies are now public. A cold build needs
 > access to the public Go module proxy; from the repository root,
-> `make build` compiles all eleven modules. See
+> `make build` compiles all twelve modules. See
 > [AGENTS.md](../AGENTS.md).
 
 The repository uses [Flox](https://flox.dev/) to pin its toolchain, in one
@@ -77,12 +77,12 @@ Never hand-edit `*.gen.go` files — they will be overwritten.
 ### Run locally
 
 ```bash
-kind create cluster                       # CWE watches a cluster
-make -C controller run-local              # Postgres, Temporal, then CWE
+kind create cluster                       # the NKE controller watches a cluster
+make -C controller run-local              # Postgres, Temporal, then the controller
 ```
 
-Swagger is on <http://localhost:8080/api/docs/>. Infrastructure credentials are
-configured on the Cluster API provider rather than CWE.
+Swagger is on [http://localhost:8080/api/docs/](http://localhost:8080/api/docs/). Infrastructure credentials are
+configured on the Cluster API provider rather than the controller.
 
 [first-cluster.md](first-cluster.md#api-only) covers this path in
 full, and goes on to tenant clusters.

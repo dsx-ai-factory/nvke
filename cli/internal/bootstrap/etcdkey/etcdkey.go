@@ -4,7 +4,7 @@
 // Package etcdkey persists the etcd encryption key of a bootstrapped site
 // cluster, so the key outlives the bootstrap cluster that generated it.
 //
-// CWE keeps a cluster's key in a Secret on the cluster it runs on. During a
+// The controller keeps a cluster's key in a Secret on the cluster it runs on. During a
 // bootstrap that is the ephemeral Kind cluster, which is deleted when the
 // command finishes; the nodes keep the key on disk, but nothing that could
 // drive them later does. This package writes the Secret out as a manifest a
@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	// secretPrefix and FieldActive name the Secret and the field CWE reads a
+	// secretPrefix and FieldActive name the Secret and the field the controller reads a
 	// cluster's active key from. They must match EtcdEncryptionKeySecretPrefix
 	// and the active field name in controller/internal/constants/constants.go,
 	// which this module cannot import. The bootstrap e2e reads the real Secret
@@ -44,7 +44,7 @@ const (
 // ErrExists is returned by Write when path already holds a file.
 var ErrExists = errors.New("etcdkey: file already exists")
 
-// SecretName is the name CWE gives the key Secret of cluster clusterID.
+// SecretName is the name the controller gives the key Secret of cluster clusterID.
 func SecretName(clusterID uuid.UUID) string {
 	return secretPrefix + clusterID.String()
 }

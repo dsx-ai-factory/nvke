@@ -58,7 +58,7 @@ What distinguishes it from a generic CAPI distribution:
 | `os-image/` | Reference Ubuntu node OS image (spec + Packer) and `nke-os-image-check`. |
 | `nktp/` | NVIDIA Kubernetes Telemetry Pipeline (NKTP): a Helm chart that deploys an OpenTelemetry pipeline for cluster metrics, logs and traces. Versioned and released on its own. |
 
-**Eleven Go modules**, tied together by a workspace at the repository root, each
+**Twelve Go modules**, tied together by a workspace at the repository root, each
 independently buildable. `make build` links seven binaries: `agent`, `updater`,
 `controller`, `nkectl`, `capd-reboot-controller`, `nke-os-image-check` and
 `management-engine`.
@@ -216,12 +216,11 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 
 Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 
-Copies of `LICENSE` (and, for the first two, `NOTICE`) are kept in the tree so that
-build artifacts can ship them. They are identical to the root files, are
-regenerated with `make licenses`, and are verified by `make licenses-check`:
+Copies of `LICENSE` are kept inside the two Helm charts so that the packaged charts
+ship them. They are identical to the root file, are regenerated with
+`make licenses`, and are verified by `make licenses-check`:
 
 | Directory | License | Path | Why it is here |
 |---|---|---|---|
-| `controller/` (container image) | Apache-2.0 | [controller/licenses/LICENSE](controller/licenses/LICENSE) | The image builds with `controller/` as its Docker context, which cannot reach the root files. |
 | `controller/deploy/charts/controller/` (Helm chart) | Apache-2.0 | [controller/deploy/charts/controller/LICENSE](controller/deploy/charts/controller/LICENSE) | Helm packages only files inside the chart directory. |
 | `nktp/deploy/charts/nktp/` (Helm chart) | Apache-2.0 | [nktp/deploy/charts/nktp/LICENSE](nktp/deploy/charts/nktp/LICENSE) | Helm packages only files inside the chart directory. This chart keeps its own `NOTICE`. |

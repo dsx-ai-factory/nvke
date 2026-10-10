@@ -4,8 +4,10 @@
 package clusters
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -108,6 +110,20 @@ name: my-cluster
 controlPlaneKubernetesVersion: "1.30.0"
 cniPlugin: calico
 etcdEncrypted: false
+controlPlaneConfig:
+  desiredCount: 3
+  nodeLabels:
+    tier: control
+nodePools:
+  - name: gpu
+    nodeNamePrefix: g
+    desiredNodeCount: 1
+    nodeLabels:
+      nvidia.com/gpu.present: "true"
+    nodeTaints:
+      - key: nvidia.com/gpu
+        value: "true"
+        effect: NoSchedule
 `))
 	out, err := run(t, cmd, "-f", "-")
 	if err != nil {
@@ -132,6 +148,33 @@ etcdEncrypted: false
 	}
 	if stored[0].CniPlugin != "calico" {
 		t.Errorf("posted cni plugin = %q, want calico", stored[0].CniPlugin)
+	}
+
+	// Labels and taints are not part of the stored cluster, so assert the wire body.
+	var body struct {
+		ControlPlaneConfig struct {
+			NodeLabels map[string]any `json:"nodeLabels"`
+		} `json:"controlPlaneConfig"`
+		NodePools []struct {
+			NodeLabels map[string]any `json:"nodeLabels"`
+			NodeTaints []any          `json:"nodeTaints"`
+		} `json:"nodePools"`
+	}
+	if err := json.Unmarshal(fake.lastRequestBody(), &body); err != nil {
+		t.Fatalf("decoding the create body: %v", err)
+	}
+	if want := map[string]any{"tier": "control"}; !reflect.DeepEqual(body.ControlPlaneConfig.NodeLabels, want) {
+		t.Errorf("controlPlaneConfig.nodeLabels = %v, want %v", body.ControlPlaneConfig.NodeLabels, want)
+	}
+	if len(body.NodePools) != 1 {
+		t.Fatalf("nodePools = %d, want 1", len(body.NodePools))
+	}
+	if want := map[string]any{"nvidia.com/gpu.present": "true"}; !reflect.DeepEqual(body.NodePools[0].NodeLabels, want) {
+		t.Errorf("nodePools[0].nodeLabels = %v, want %v", body.NodePools[0].NodeLabels, want)
+	}
+	wantTaints := []any{map[string]any{"key": "nvidia.com/gpu", "value": "true", "effect": "NoSchedule"}}
+	if !reflect.DeepEqual(body.NodePools[0].NodeTaints, wantTaints) {
+		t.Errorf("nodePools[0].nodeTaints = %v, want %v", body.NodePools[0].NodeTaints, wantTaints)
 	}
 
 	if !strings.Contains(out, `"my-cluster" created`) {

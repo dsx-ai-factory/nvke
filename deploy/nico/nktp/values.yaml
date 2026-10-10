@@ -74,13 +74,14 @@ opentelemetry-kube-stack:
 # controller ran with.
 
 # The four Collectors that export to the backend -- the watchdog and the three
-# gateways -- label everything they send with the site's name. Every other
-# Collector exports through them. The name comes from the nktp-cluster
-# ConfigMap, which nke-base-config renders from BootstrapConfig's ClusterName;
-# the anchors below are defined once and reused by each gateway.
+# gateways -- and the watchdog's sidecar label what they send with the site's
+# name. The chart's transform/cluster processor reads it from K8S_CLUSTER_NAME,
+# and the chart sets that from global.clusterName only when the env list omits
+# it. A site takes the name from the nktp-cluster ConfigMap instead, which
+# nke-base-config renders from BootstrapConfig's ClusterName; the anchor below
+# is defined once and reused by each gateway.
 watchdog:
   kubernetes:
-    replicas: 1
     autoscaler:
       minReplicas: 1
     resources:
@@ -97,26 +98,8 @@ watchdog:
         name: K8S_CLUSTER_NAME
         valueFrom:
           configMapKeyRef: {name: nktp-cluster, key: name}
-  otelcol:
-    config:
-      processors:
-        resource/cluster: &cluster-name-processor
-          attributes:
-            - {key: k8s.cluster.name, value: "${env:K8S_CLUSTER_NAME}", action: upsert}
-      service:
-        pipelines:
-          metrics:
-            processors: [memory_limiter, resource/cluster]
-          logs:
-            processors: [memory_limiter, resource/cluster]
-          traces:
-            processors: [memory_limiter, resource/cluster]
-        # The watchdog's own telemetry skips its pipelines.
-        telemetry:
-          resource:
-            k8s.cluster.name: "${env:K8S_CLUSTER_NAME}"
-  # The watchdog's sidecar exports the watchdog's telemetry straight to the
-  # backend, so its own telemetry needs the name too.
+  # The watchdog's sidecar exports the watchdog's own telemetry straight to the
+  # backend, so it needs the name too.
   sidecar:
     kubernetes:
       env:
@@ -125,16 +108,9 @@ watchdog:
             fieldRef: {fieldPath: metadata.name}
         - {name: GOMEMLIMIT, value: 192MiB}
         - *cluster-name-env
-    otelcol:
-      config:
-        service:
-          telemetry:
-            resource:
-              k8s.cluster.name: "${env:K8S_CLUSTER_NAME}"
 
 gateway_logs:
   kubernetes:
-    replicas: 1
     autoscaler:
       minReplicas: 1
     resources:
@@ -144,18 +120,9 @@ gateway_logs:
       - {name: GOMEMLIMIT, value: 896MiB}
       - {name: GOGC, value: "50"}
       - *cluster-name-env
-  otelcol:
-    config:
-      processors:
-        resource/cluster: *cluster-name-processor
-      service:
-        pipelines:
-          logs:
-            processors: [memory_limiter, resource/cluster]
 
 gateway_metrics:
   kubernetes:
-    replicas: 1
     autoscaler:
       minReplicas: 1
     resources:
@@ -165,18 +132,9 @@ gateway_metrics:
       - {name: GOMEMLIMIT, value: 896MiB}
       - {name: GOGC, value: "50"}
       - *cluster-name-env
-  otelcol:
-    config:
-      processors:
-        resource/cluster: *cluster-name-processor
-      service:
-        pipelines:
-          metrics:
-            processors: [memory_limiter, resource/cluster]
 
 gateway_traces:
   kubernetes:
-    replicas: 1
     autoscaler:
       minReplicas: 1
     resources:
@@ -186,14 +144,6 @@ gateway_traces:
       - {name: GOMEMLIMIT, value: 896MiB}
       - {name: GOGC, value: "50"}
       - *cluster-name-env
-  otelcol:
-    config:
-      processors:
-        resource/cluster: *cluster-name-processor
-      service:
-        pipelines:
-          traces:
-            processors: [memory_limiter, resource/cluster]
 
 cluster_events:
   kubernetes:
@@ -205,7 +155,6 @@ cluster_events:
 
 large_target_metrics:
   kubernetes:
-    replicas: 1
     autoscaler:
       minReplicas: 1
     # Heap and limits for a small cluster's kube-state-metrics. Raise them with
@@ -223,7 +172,7 @@ large_target_metrics:
   otelcol:
     config:
       exporters:
-        otlp_http:
+        otlp:
           sending_queue:
             queue_size: 67108864 # 64MiB serialized.
       receivers:
@@ -302,7 +251,7 @@ daemonset:
   otelcol:
     config:
       exporters:
-        otlp_http/metrics:
+        otlp/metrics:
           sending_queue:
             queue_size: 8388608 # 8MiB serialized.
       receivers:

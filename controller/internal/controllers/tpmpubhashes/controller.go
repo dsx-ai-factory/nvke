@@ -87,7 +87,7 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 }
 
 func (c *Controller) reconcileTpmPubhashesCm(ctx context.Context) error {
-	// List ClusterStaticEntries managed by CWE's machine-spire-entry-controller.
+	// List ClusterStaticEntries managed by the controller's machine-spire-entry-controller.
 	clusterStaticEntries := &spirev1alpha1.ClusterStaticEntryList{}
 	err := c.k8sClient.List(ctx, clusterStaticEntries, client.MatchingLabels{
 		constants.LabelKeyNkeManagedBy: constants.FieldManagerMachineSpireEntry,

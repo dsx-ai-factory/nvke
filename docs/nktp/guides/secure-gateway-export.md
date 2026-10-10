@@ -1,8 +1,23 @@
 # Secure gateway export
 
-NKTP ships with a self-hosted LGTM stack sending telemetry over plaintext by default. This is intended only for local development. Production environments should configure HTTPS before sending logs, metrics and traces to a production backend.
+NKTP exports to its bundled LGTM backend over plaintext OTLP/gRPC at
+`lgtm:4317` by default. LGTM already enables both
+[gRPC and HTTP ingestion](https://github.com/grafana/docker-otel-lgtm/blob/v0.32.0/docker/otelcol-config.yaml).
+This backend is intended only for local development. Configure TLS before
+sending logs, metrics and traces to a production backend.
 
-This guide walks through setting up mTLS for NKTP's three gateway collectors to an OTLP/HTTP backend. This guide does not focus on encryption from other components to the gateways. The [example](../examples/gateway-mtls.values.yaml) shows the skeleton for using mTLS.
+Choose the protocol and endpoint supported by your backend for each signal.
+The Collector's [`otlp` exporter](https://github.com/open-telemetry/opentelemetry-collector/blob/v0.162.0/exporter/otlpexporter/README.md)
+uses gRPC; [`otlp_http`](https://github.com/open-telemetry/opentelemetry-collector/blob/v0.162.0/exporter/otlphttpexporter/README.md)
+uses HTTP. Changing the port alone does not change the protocol.
+For example, direct ingestion into [Prometheus](https://prometheus.io/docs/guides/opentelemetry/)
+or [Loki](https://grafana.com/docs/loki/latest/send-data/otel/) requires OTLP/HTTP.
+LGTM accepts gRPC through its bundled Collector, which forwards metrics and logs
+to those HTTP endpoints internally.
+
+This guide configures mTLS for the three gateway Collectors using gRPC. The
+[example](../examples/gateway-mtls.values.yaml) shows the overrides. Receiver
+TLS for connections into the gateways is configured separately.
 
 ## mTLS with an existing certificate
 
@@ -21,7 +36,9 @@ kubectl create secret generic backend-tls \
   --from-file=tls.key=/path/to/client.key
 ```
 
-2. Mount the secret into each gateway.
+2. Mount the secret into each gateway, preserving its internal TLS volumes and
+mounts. Each gateway needs its internal server certificate for ingress, and its sidecar needs its internal
+client certificate to export to watchdog. The backend credentials belong on the main gateway Collector, not its sidecar.
 
 ```yaml
 gateway_logs:
@@ -29,6 +46,20 @@ gateway_logs:
     podSecurityContext:
       fsGroup: 10001
     volumes:
+      - name: internal-tls-server
+        secret:
+          secretName: nktp-gateway-logs-server-tls
+          items:
+            - {key: tls.crt, path: tls.crt}
+            - {key: tls.key, path: tls.key}
+            - {key: ca.crt, path: ca.crt}
+      - name: internal-tls-client
+        secret:
+          secretName: nktp-gateway-logs-client-tls
+          items:
+            - {key: tls.crt, path: tls.crt}
+            - {key: tls.key, path: tls.key}
+            - {key: ca.crt, path: ca.crt}
       - name: backend-tls
         projected:
           defaultMode: 0440
@@ -43,6 +74,9 @@ gateway_logs:
                   - key: tls.key
                     path: tls.key
     volumeMounts:
+      - name: internal-tls-server
+        mountPath: /etc/nktp/internal-tls/server
+        readOnly: true
       - name: backend-tls
         mountPath: /etc/nktp/backend-tls
         readOnly: true
@@ -63,9 +97,10 @@ gateway_logs:
   otelcol:
     config:
       exporters:
-        otlp_http:
-          endpoint: https://telemetry.example.com:4318
+        otlp:
+          endpoint: telemetry.example.com:4317
           tls:
+            insecure: false
             ca_file: /etc/nktp/backend-tls/ca.crt
             cert_file: /etc/nktp/backend-tls/tls.crt
             key_file: /etc/nktp/backend-tls/tls.key
@@ -73,8 +108,21 @@ gateway_logs:
 ```
 
 Apply the volume, mount, and exporter settings to `gateway_logs`,
-`gateway_metrics`, and `gateway_traces`. The complete
-[values example](../examples/gateway-mtls.values.yaml) configures all three.
+`gateway_metrics`, and `gateway_traces`. Use each gateway's own internal Secrets:
+`nktp-gateway-<signal>-server-tls` and `nktp-gateway-<signal>-client-tls`, where
+`<signal>` is `logs`, `metrics`, or `traces`. Keep the volume names and mount paths
+shown above. The complete [values example](../examples/gateway-mtls.values.yaml)
+configures all three.
+
+Set `insecure: false` explicitly: the development defaults disable TLS, and
+Helm retains nested defaults when merging overrides. Configure the watchdog
+and its sidecar's backend exporters too, if sending NKTP's own telemetry to
+this backend.
+
+For an HTTP backend, remove the default gRPC exporter with `otlp: null`, add
+`otlp_http` with an `https://` endpoint and the same certificate settings, and
+replace `otlp` with `otlp_http` in each affected pipeline's `exporters` list.
+Preserve the queue and retry settings from the default exporter as needed.
 
 For server-authenticated TLS with a private CA but no client authentication,
 mount only `ca.crt` and configure only `ca_file`.

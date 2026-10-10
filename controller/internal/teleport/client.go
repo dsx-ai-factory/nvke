@@ -101,7 +101,7 @@ func WithLabels(labels map[string]string) ListNodesOption {
 	}
 }
 
-// Client defines the interface for Teleport API operations needed by CWE.
+// Client defines the interface for Teleport API operations needed by the controller.
 // All token operations enforce ownership - the client will only interact with
 // tokens that have the "managed-by: nke-cloud-workflow-engine" label.
 type Client interface {
@@ -109,7 +109,7 @@ type Client interface {
 
 	// Token operations - all methods enforce ownership labels.
 	// UpsertToken automatically adds ownership labels.
-	// GetToken, DeleteToken, ListTokens only operate on CWE-owned tokens.
+	// GetToken, DeleteToken, ListTokens only operate on controller-owned tokens.
 	UpsertToken(ctx context.Context, token ProvisionToken) error
 	GetToken(ctx context.Context, name string) (*ProvisionToken, error)
 	DeleteToken(ctx context.Context, name string) error
@@ -249,9 +249,9 @@ func (c *clientImpl) GetToken(ctx context.Context, name string) (*ProvisionToken
 
 		result = fromTeleportToken(teleportToken)
 
-		// Verify ownership - refuse to return tokens not managed by CWE
+		// Verify ownership - refuse to return tokens not managed by the controller
 		if !IsOwnedByController(result.Labels, c.managedByLabelValue) {
-			c.logger.Warn("attempted to access token not owned by CWE",
+			c.logger.Warn("attempted to access token not owned by the controller",
 				"name", name,
 				LabelManagedBy, result.Labels[LabelManagedBy],
 			)
@@ -274,7 +274,7 @@ func (c *clientImpl) DeleteToken(ctx context.Context, name string) error {
 
 	// GetToken already verified ownership, but double-check
 	if !IsOwnedByController(token.Labels, c.managedByLabelValue) {
-		c.logger.Warn("attempted to delete token not owned by CWE",
+		c.logger.Warn("attempted to delete token not owned by the controller",
 			"name", name,
 			LabelManagedBy, token.Labels[LabelManagedBy],
 		)
@@ -307,7 +307,7 @@ func (c *clientImpl) ListTokens(ctx context.Context) ([]ProvisionToken, error) {
 			return err
 		}
 
-		// Filter to only CWE-owned tokens
+		// Filter to only controller-owned tokens
 		result = make([]ProvisionToken, 0)
 		totalCount := 0
 		for _, tt := range teleportTokens {

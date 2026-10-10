@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
+	"github.com/dsx-ai-factory/nke/controller/internal/kubeadmconfig"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
 )
 
@@ -84,4 +85,71 @@ func oidcCABundleClient(t *testing.T) client.Client {
 			"ca.crt": []byte("-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n"),
 		},
 	}).Build()
+}
+
+func TestRollback_AnonymousConfigurationMatchesBootstrap(t *testing.T) {
+	for _, tt := range []struct {
+		version string
+		restore bool
+	}{
+		{version: "v1.33.9"},
+		{version: "v1.34.0", restore: true},
+		{version: "v1.35.0", restore: true},
+	} {
+		t.Run(tt.version, func(t *testing.T) {
+			op := NewEnableOIDCOperation(WithOIDCConfig(&config.NkeOIDCAuth{Enabled: true, IssuerURL: "https://shared.example.com"}))
+			payload, err := op.BuildApplyToNodePayload(context.Background(), fakeCluster{name: "tenant", k8s: tt.version})
+			require.NoError(t, err)
+			artifact, err := parsePayload(payload)
+			require.NoError(t, err)
+
+			initConfig := &kubeadmconfig.InitConfig{
+				NodeIP: "10.0.0.10", APIServerEndpoint: "tenant.example:6443", NodeName: "cp-0",
+				KubernetesVersion: tt.version, PodSubnet: "10.244.0.0/16", ServiceSubnet: "10.96.0.0/12",
+			}
+			initArtifacts, err := initConfig.Render()
+			require.NoError(t, err)
+			joinConfig := &kubeadmconfig.JoinConfig{
+				ControlPlane: true, NodeIP: "10.0.0.11", APIServerEndpoint: "tenant.example:6443", NodeName: "cp-1",
+				KubernetesVersion: tt.version, CertificateKey: "REDACTED", Token: "example-token", DiscoveryTokenCACertHash: "sha256:REDACTED",
+			}
+			joinArtifacts, err := joinConfig.Render()
+			require.NoError(t, err)
+			authFiles := func(files []kubeadmconfig.File) []fileArtifact {
+				var out []fileArtifact
+				for _, file := range files {
+					if file.Path == artifact.AuthConfigPath {
+						out = append(out, fileArtifact{Path: file.Path, Content: file.Content, Mode: file.Mode, Owner: file.Owner})
+					}
+				}
+				return out
+			}
+			bootstrapFiles := authFiles(initArtifacts.Files)
+			require.Equal(t, bootstrapFiles, authFiles(joinArtifacts.Files))
+			c := &fakeClient{}
+			op.nodeAgentClientDialer = dialerFor(c)
+			require.NoError(t, op.Rollback(context.Background(), cpNode(), payload))
+			require.Len(t, c.calls, 1)
+			req := c.calls[0]
+			require.Len(t, req.GetFlagOps(), 1)
+			if !tt.restore {
+				require.Nil(t, artifact.Previous)
+				require.Empty(t, bootstrapFiles)
+				require.Empty(t, req.GetFiles())
+				require.Equal(t, kubeadmconfig.AuthConfigFlagName, req.GetFlagOps()[0].GetRemove().GetName())
+				require.Equal(t, []string{artifact.AuthConfigPath}, req.GetRemoveFiles())
+				return
+			}
+			require.NotNil(t, artifact.Previous, "rollback must retain the bootstrap anonymous restriction")
+			require.Len(t, bootstrapFiles, 1)
+			require.Equal(t, bootstrapFiles, artifact.Previous.Files)
+			require.Equal(t, filesToProto(bootstrapFiles), req.GetFiles())
+			require.Empty(t, req.GetRemoveFiles())
+			require.Equal(t, kubeadmconfig.AuthConfigFlagName, req.GetFlagOps()[0].GetSet().GetName())
+			require.Equal(t, artifact.AuthConfigPath, req.GetFlagOps()[0].GetSet().GetValue())
+			enable, err := buildEnablePatchRequest(artifact)
+			require.NoError(t, err)
+			require.Equal(t, enable.GetStrategicMergePatches(), req.GetStrategicMergePatches(), "rollback must retain the mount and volume")
+		})
+	}
 }

@@ -10,7 +10,7 @@
 # kindest/node tag before PATCH-ing the cluster.
 #
 # Prerequisites:
-#   - CWE API reachable (Tilt / port-forward on :8080 by default)
+#   - Controller API reachable (Tilt / port-forward on :8080 by default)
 #   - Cluster already created (make capd-create-cluster / ./hack/create-capd-cluster.sh)
 #   - For CP recycling upgrades, kube-vip/BGP should already be enabled on create
 #
@@ -186,7 +186,7 @@ wait_for_upgrade() {
     fi
 
     if [[ "${started}" != "true" ]] && (( SECONDS >= start_deadline )); then
-      die "controlPlaneUpgrading never became True within ${UPGRADE_START_TIMEOUT_SECONDS}s; check CWE controller logs"
+      die "controlPlaneUpgrading never became True within ${UPGRADE_START_TIMEOUT_SECONDS}s; check controller logs"
     fi
 
     if [[ "${started}" == "true" ]]; then

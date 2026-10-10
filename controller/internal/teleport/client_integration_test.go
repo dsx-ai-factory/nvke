@@ -154,7 +154,7 @@ func TestIntegration_OwnershipLabels(t *testing.T) {
 	assert.Equal(t, "nke-cloud-workflow-engine", got.Labels[teleport.LabelManagedBy])
 }
 
-// TestIntegration_ListTokensFiltersOwned verifies ListTokens only returns CWE-owned tokens.
+// TestIntegration_ListTokensFiltersOwned verifies ListTokens only returns controller-owned tokens.
 func TestIntegration_ListTokensFiltersOwned(t *testing.T) {
 	client := getTestClient(t)
 	ctx := context.Background()
@@ -165,7 +165,7 @@ func TestIntegration_ListTokensFiltersOwned(t *testing.T) {
 	err := client.UpsertToken(ctx, token)
 	require.NoError(t, err)
 
-	// ListTokens should include our token (it's owned by CWE)
+	// ListTokens should include our token (it's owned by the controller)
 	tokens, err := client.ListTokens(ctx)
 	require.NoError(t, err)
 

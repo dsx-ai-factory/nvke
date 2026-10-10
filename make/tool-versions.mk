@@ -66,11 +66,24 @@ KUBECTL_SHA256_AMD64 ?= 123d8c8844f46b1244c547fffb3c17180c0c26dac9890589fe7e6776
 KUBECTL_SHA256_ARM64 ?= 9f9d9c44a7b5264515ac9da5991584e2395bd50662e651132337e7b4d0c56f8f
 # clusterctl and the CAPI core/kubeadm providers ship as one release, so one
 # pin covers the binary and everything `clusterctl init` installs.
-CAPI_VERSION    ?= v1.12.3
+# Consumers: controller/Makefile.dev, controller/hack/ci/backend-e2e.sh,
+# cli/Makefile, and the gofail and nkectl bootstrap E2E workflows.
+CAPI_VERSION    ?= v1.13.6
+# clusterctl-linux-{amd64,arm64} from the CAPI release above.
+CLUSTERCTL_SHA256_AMD64 ?= 1e4019b8ef30fa13993716d28b9fec4072fee1e17ea2cc69cb7c8f232d9b8c2f
+CLUSTERCTL_SHA256_ARM64 ?= c3fe61fd44fa63d2efcee2a93432619527909b210a84cda7ee86eea1425de8c2
 # The cert-manager `clusterctl init` installs at CAPI_VERSION. The NKTP chart's
 # Kind e2e installs it, and its kubeconform check validates against its CRDs.
 # Move it with CAPI_VERSION.
-CERT_MANAGER_VERSION ?= v1.19.3
+CERT_MANAGER_VERSION ?= v1.21.1
+# kind drives it as its container provider in the nkectl bootstrap e2e, which
+# installs the nerdctl-full release for this version. release/ reads this pin
+# for the qualification plan.
+NERDCTL_VERSION ?= 2.3.5
+# Both from that release's SHA256SUMS, for the nerdctl-full archive. They move
+# with NERDCTL_VERSION.
+NERDCTL_FULL_SHA256_AMD64 ?= b697295c623639734aaab737523c808fd3cc8d3046039fd94fff1744e4c317aa
+NERDCTL_FULL_SHA256_ARM64 ?= 6e4b687f1d138e750a3c8372abc0f81d3d7490b6359c48c0562fc7dfe98859b2
 
 ORAS_VERSION        ?= 1.3.3
 ORAS_SHA256_AMD64   ?= 9ce999f8d2de03fc03968b29d743077a58783e545e5eaa53917ca177352d0e59
@@ -97,6 +110,13 @@ REDOCLY_VERSION     ?= 2.57.0
 # Checks and publishes the documentation site (.github/workflows/api-docs.yml).
 # fern/fern.config.json pins the same number; move both together.
 FERN_VERSION        ?= 5.143.6
+
+# syft generates the SPDX SBOMs that ship with every released artifact. The
+# version is pinned here rather than left to anchore/sbom-action's bundled
+# default, so a re-run of an old tag produces the same document a consumer
+# already has, and a syft bump is a reviewable commit rather than a silent
+# change in what the release describes.
+SYFT_VERSION ?= v1.41.2
 
 # Development tools invoked by module Makefiles. These were declared where they
 # were used -- buf in agent/, setup-envtest and ginkgo in controller/, and

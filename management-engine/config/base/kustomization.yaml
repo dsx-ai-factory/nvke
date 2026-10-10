@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Manager resources only; uninstall preserves the namespace and external Secrets.
+# Manager resources only. Uninstall preserves the namespace and external Secrets.
 namespace: management-engine-system
 namePrefix: management-engine-
 resources:

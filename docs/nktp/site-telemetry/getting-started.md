@@ -38,7 +38,7 @@ The deploy path also wires the rest of the management plane into it:
 
 | Component | Signal | How |
 |---|---|---|
-| Cloud Workflow Engine | metrics, logs, traces | ServiceMonitor, pod logs, OTLP traces to the traces gateway; its metrics NetworkPolicy admits `nktp` |
+| NKE controller | metrics, logs, traces | ServiceMonitor, pod logs, OTLP traces to the node Collector; its metrics NetworkPolicy admits `nktp` |
 | Temporal | metrics | a ServiceMonitor per server role, from Temporal's own chart |
 | SPIRE server and agent | metrics | PodMonitors, from SPIRE's own chart |
 | API server, etcd, CoreDNS | metrics | the chart's control-plane monitors |
@@ -130,6 +130,24 @@ kubectl -n nktp port-forward deploy/lgtm 3000:3000 --address 127.0.0.1
 If you are working through a jump host, forward that port over SSH rather than
 binding it on the site network. The **NKTP Health** dashboard shows whether the
 pipeline itself is healthy.
+
+### NKE reference dashboards
+
+NKE also ships [reference Grafana dashboards](../../../controller/deploy/dashboards/README.md)
+as JSON files. These are starting points for investigating a site, not a
+complete monitoring or alerting setup. Review their **Requirements and scope**
+panels, check that your backend collects the required metrics, and adapt the
+dashboards and alerts to your operating needs. An empty optional panel can mean
+its metric is not scraped.
+
+To use these dashboards, open Grafana **Dashboards → New → Import**, upload its
+JSON file (or paste the JSON), and select a Prometheus datasource when prompted.
+The files are not installed automatically with the site controller. You can
+import them into the bundled `lgtm` Grafana while developing, but import them
+into your [real telemetry backend](configuration.md#connecting-a-real-backend)
+for site operations: `lgtm` keeps data in memory and has no authentication.
+See the [dashboard README](../../../controller/deploy/dashboards/README.md)
+for the full catalog and import details.
 
 For the full checklist, see [verification](verification.md).
 

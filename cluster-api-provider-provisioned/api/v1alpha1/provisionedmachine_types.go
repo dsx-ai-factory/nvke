@@ -53,7 +53,7 @@ type ProvisionedMachineStatus struct {
 	HostName string `json:"hostName,omitempty"`
 
 	// Addresses contain the hostname and internal IP address from the inventory.
-	// Cluster API copies them to the Machine, and CWE reads the internal IP to
+	// Cluster API copies them to the Machine, and the controller reads the internal IP to
 	// find the node agent.
 	// +optional
 	Addresses []clusterv1.MachineAddress `json:"addresses,omitempty"`

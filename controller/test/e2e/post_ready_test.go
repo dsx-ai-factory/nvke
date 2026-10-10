@@ -278,7 +278,7 @@ func assertSystemReservedMemory(ctx context.Context, tenantClient client.Client,
 
 func expectedNodeMemoryReservation(spec nke.ClusterSpec) (resource.Quantity, error) {
 	systemReserved := ""
-	pools := slices.Concat(spec.ControlPlane.Pools, spec.Workers)
+	pools := slices.Clone(spec.Workers)
 	if cp := spec.ControlPlane.Config; cp != nil {
 		pools = append(pools, nke.NodePoolSpec{Name: "control-plane", SystemReservedMemory: cp.SystemReservedMemory})
 	}

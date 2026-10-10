@@ -37,13 +37,13 @@ func NewGetCmd(siteFn SiteFn, runner inspect.Runner) *cobra.Command {
 		Aliases: []string{"provider"},
 		Short:   "List infrastructure providers installed on the site controller",
 		Long: "List infrastructure providers installed on the site controller.\n\n" +
-			"This reads the site's Kubernetes cluster directly rather than the CWE API, so it " +
+			"This reads the site's Kubernetes cluster directly rather than the controller API, so it " +
 			"needs the kubeconfig registered with 'nkectl config set-site --kubeconfig' and " +
 			"kubectl on PATH.\n\n" +
 			"CONFIGURED means the provider's CRDs are established, its manager is available, and " +
 			"its credentials Secret exists. It does not mean those credentials work.\n\n" +
 			"The set of providers listed is the set nkectl knows how to describe. It is not a " +
-			"restriction: CWE accepts any infrastructure manifest written by hand.",
+			"restriction: the controller accepts any infrastructure manifest written by hand.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			f, err := util.ParseFormat(outputFormat)

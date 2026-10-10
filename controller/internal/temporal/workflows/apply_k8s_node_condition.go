@@ -27,7 +27,7 @@ type ApplyK8sNodeConditionInput struct {
 }
 
 // ApplyK8sNodeCondition applies a corev1.NodeCondition to a kubernetes node.
-// Not to be confused with CWE db.NodeCondition.
+// Not to be confused with controller db.NodeCondition.
 func ApplyK8sNodeCondition(ctx workflow.Context, input ApplyK8sNodeConditionInput) error {
 	logger := workflow.GetLogger(ctx)
 

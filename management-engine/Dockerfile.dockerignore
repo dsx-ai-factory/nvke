@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+**
+!management-engine/**/*.go
+!management-engine/go.mod
+!management-engine/go.sum
+!controller/api/*.go
+!controller/api/go.mod
+!controller/api/go.sum
+!controller/api/openapi.yaml
+**/*_test.go

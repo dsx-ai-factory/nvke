@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-// SPDX-License-Identifier: Apache-2.0
-
 /*
 Copyright 2017 The Kubernetes Authors.
 
@@ -17,6 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package v1alpha1 contains a local copy of the upstream
 // k8s.io/kube-proxy/config/v1alpha1 KubeProxyConfiguration top-level struct.
 //
@@ -32,7 +32,7 @@ limitations under the License.
 //   - APIVersion, Kind constant and upstream type aliases are added
 //   - the struct doc comment is omitted
 //   - top-level json tags are adjusted to use omitzero; map and slice fields
-//     also retain omitempty so empty collections are omitted from CWE-rendered
+//     also retain omitempty so empty collections are omitted from controller-rendered
 //     YAML unless explicitly set
 //
 // Refresh process:

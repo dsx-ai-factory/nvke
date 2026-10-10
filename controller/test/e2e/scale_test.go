@@ -28,16 +28,11 @@ import (
 
 const drainProbeLabel = "e2e.nvidia.com/drain-probe"
 
-// validateNodePoolScale scales each node pool up by one node and back down: the
-// worker pool, then the control-plane pool when the control plane is one. A
-// controller-managed control plane has no pool; the cp-controller entries scale
-// it instead.
+// validateNodePoolScale scales the worker pool up by one node and back down. The
+// control plane has no pool; the cp-controller entries scale it instead.
 func validateNodePoolScale(test *tenantTest) {
 	It("scales the node pools up and down", func(ctx context.Context) {
 		pools := []api.NodePool{expectWorkerPool(ctx, test)}
-		if test.spec.ControlPlane.Config == nil {
-			pools = append(pools, expectControlPlanePool(ctx, test))
-		}
 		originalNodes := make([]map[openapi_types.UUID]struct{}, len(pools))
 		for i, pool := range pools {
 			originalNodes[i] = expectNodeIDs(ctx, test, pool.ID)
@@ -71,10 +66,6 @@ func validateNodePoolScale(test *tenantTest) {
 			By("Deleting the scaled-up worker node")
 			Expect(test.nke.DeleteNode(ctx, workerNode.ID)).To(Succeed(), "should delete the scaled-up worker node")
 		}
-		for _, controlPlaneNode := range newNodes[1:] {
-			By("Deleting the scaled-up control-plane node")
-			Expect(test.nke.DeleteNode(ctx, controlPlaneNode.ID)).To(Succeed(), "should delete the scaled-up control-plane node")
-		}
 
 		By("Waiting for each node pool to return to its original desired count")
 		waitForPoolCountsInParallel(ctx, test, poolScales(pools, 0)...)
@@ -95,7 +86,7 @@ func validateWorkerDrainAndDeletion(ctx context.Context, test *tenantTest, worke
 	GinkgoHelper()
 
 	adminClient := expectSucceed(test.tenantClients.GetAdminClient(ctx, test.cluster.Name))
-	By("Waiting for the scaled-up worker to be Ready through CWE and the tenant API")
+	By("Waiting for the scaled-up worker to be Ready through the controller and the tenant API")
 	Eventually(func(ctx context.Context) error {
 		return assertNodeReadyForDrain(ctx, test, adminClient, worker)
 	}).WithContext(ctx).WithTimeout(5 * time.Minute).WithPolling(2 * time.Second).Should(Succeed())
@@ -137,10 +128,10 @@ func validateWorkerDrainAndDeletion(ctx context.Context, test *tenantTest, worke
 func assertNodeReadyForDrain(ctx context.Context, test *tenantTest, tenantClient client.Client, expected api.Node) error {
 	node, err := test.nke.GetNode(ctx, expected.ID)
 	if err != nil {
-		return fmt.Errorf("getting scaled-up CWE node %s: %w", expected.ID, err)
+		return fmt.Errorf("getting scaled-up node %s from the controller: %w", expected.ID, err)
 	}
 	if node.Conditions.KubernetesReady.Status != api.ConditionStatusTrue {
-		return fmt.Errorf("scaled-up CWE node %s is not KubernetesReady", expected.ID)
+		return fmt.Errorf("scaled-up node %s reported by the controller is not KubernetesReady", expected.ID)
 	}
 
 	var tenantNode corev1.Node

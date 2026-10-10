@@ -1,0 +1,61 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What is qualified when NKE is qualified as a whole. The subject is nke, and
+# its version, a beta tag on main, is the plan's version.
+#
+# components are the parts of NKE tested together. Each carries selectors that
+# say which version to take, and the only selector is `latest`. One choice of
+# versions for all of them is a combination.
+#
+# dependencies are the other versions a run needs. They have no selectors,
+# because the components determine them or a pin file does. One with no
+# constraintFrom is resolved once for the combination. One whose constraintFrom
+# names a stream capability is resolved once per stream, with the stream's
+# value as its constraint. Quote a version, because YAML reads an unquoted 1.40
+# as a number.
+#
+# agent/ is absent deliberately. It is built from source alongside the OS image
+# and baked into it, so it is never deployed on its own and a run has nothing
+# to select. The image version identifies the agent inside it.
+#
+# CAPNICo is not here either. It is a first-party Go module compiled into the
+# controller, so controller/go.mod pins it exactly and the e2e workflow reads
+# that same line. A selector would replace an exact pin with float, which is
+# strictly weaker.
+
+apiVersion: nke.nvidia.com/v1alpha1
+kind: Qualification
+metadata:
+  name: nke
+  description: How NKE as a whole is qualified.
+spec:
+  subject: nke
+
+  components:
+    - {name: controller,       selectors: [latest]}
+    - {name: cli,              selectors: [latest]}
+    - {name: os-image,         selectors: [latest]}
+    - {name: capi-provisioned, selectors: [latest]}
+
+  dependencies:
+    # The Kubernetes version the image carries for the stream's minor.
+    - {name: kube, constraintFrom: {capability: kube}}
+    # The OVN stream to qualify. A choice about what is tested, so it is stated
+    # here and not left to float to whatever the image carries newest.
+    - {name: cni-ovn, constraint: "1.4"}
+
+    # The image for each architecture depends on the stream's Ubuntu series. The
+    # point release in its file name is the highest of the releases that series
+    # matches. Nothing derives the list, so it is declared here.
+    - {name: os-image-amd64, constraintFrom: {capability: ubuntu}, releases: &ubuntu ["24.04.5", "26.04.1"]}
+    - {name: os-image-arm64, constraintFrom: {capability: ubuntu}, releases: *ubuntu}
+
+    # The bootloader is versioned apart from the image and depends on nothing. Its
+    # value is a path under the registry's artifact-cdn source.
+    - {name: os-image-bootloader-amd64, value: nke-isos/qcow/efi/x86_64/2026-06-25/1782410681/qcow-imager.efi}
+    - {name: os-image-bootloader-arm64, value: nke-isos/qcow/efi/aarch64/2026-06-25/1782410719/qcow-imager.efi}
+
+    - {name: kind}
+    - {name: clusterctl}
+    - {name: nerdctl}

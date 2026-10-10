@@ -28,6 +28,7 @@ endif
 include ../../make/tool-versions.mk
 # golangci-lint pin and bootstrap, shared with every other module.
 include ../../make/golangci.mk
+include ../../make/coverage.mk
 SETCAP := sudo setcap cap_net_admin+ep
 
 .PHONY: \
@@ -67,12 +68,9 @@ run-vm: build-privileged
 # test command, so `make test` stays the one definition of what "the tests" are.
 GO_TEST_FLAGS ?=
 
-# atomic, not count: Go rejects `-covermode=count` when -race is on. atomic is
-# valid either way. Same setting as controller/Makefile.
-GO_COVER_MODE ?= atomic
-
 test: ## Run this module's tests. (run by the merge gate)
-	$(GO) test $(GO_TEST_FLAGS) ./... -coverprofile=coverage.txt -covermode=$(GO_COVER_MODE)
+	@$(COVERAGE_MKDIR)
+	$(GO) test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) ./...
 
 # All backends (mock + real VMs) in a single invocation.
 #Linux runs libvirt; macOS runs qemu + libvirt-via-lima.

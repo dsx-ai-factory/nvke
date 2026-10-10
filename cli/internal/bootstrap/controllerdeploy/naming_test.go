@@ -139,3 +139,42 @@ func TestNodePortAndSPIRENameTheController(t *testing.T) {
 		}
 	}
 }
+
+// TestPostgresCreatesTheDatabaseTheControllerUses pins the two settings that
+// have to agree. The controller's database name is appDb.dbName in the
+// controller values; the database is created by the Postgres script that
+// postgres-values.yaml replaces. A name on one side only installs cleanly and
+// leaves the controller unready, because it connects to a database nobody
+// created. The Temporal script is not replaced, so the chart still creates the
+// Temporal databases.
+func TestPostgresCreatesTheDatabaseTheControllerUses(t *testing.T) {
+	var controller struct {
+		AppDB struct {
+			DBName string `yaml:"dbName"`
+		} `yaml:"appDb"`
+	}
+	var postgres struct {
+		InitDB struct {
+			Scripts map[string]string `yaml:"scripts"`
+		} `yaml:"initdb"`
+	}
+	for file, into := range map[string]any{cweValuesFile: &controller, postgresValuesFile: &postgres} {
+		body, err := fs.ReadFile(manifestsFS, file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := yaml.Unmarshal(body, into); err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+	}
+
+	if controller.AppDB.DBName != cweNamespace {
+		t.Errorf("%s appDb.dbName = %q, want %q", cweValuesFile, controller.AppDB.DBName, cweNamespace)
+	}
+	if got, want := postgres.InitDB.Scripts["init-cwe.sql"], `CREATE DATABASE "`+controller.AppDB.DBName+`";`; strings.TrimSpace(got) != want {
+		t.Errorf("%s init-cwe.sql = %q, want %q", postgresValuesFile, got, want)
+	}
+	if len(postgres.InitDB.Scripts) != 1 {
+		t.Errorf("%s sets scripts %v, want only init-cwe.sql: the Temporal script stays as the chart ships it", postgresValuesFile, postgres.InitDB.Scripts)
+	}
+}

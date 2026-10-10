@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package nodepools provides cobra subcommands for the nkectl node pool
-// resource. All commands here are backed by the CWE REST API.
+// resource. All commands here are backed by the controller REST API.
 package nodepools
 
 import (
 	"github.com/dsx-ai-factory/nke/cli/internal/clients"
 )
 
-// ControllerClientFn is a factory that returns an authenticated CWE client.
+// ControllerClientFn is a factory that returns an authenticated controller API client.
 // Commands receive this rather than a constructed client so that the
 // client is only built when a command actually runs (not at startup).
 type ControllerClientFn func() (*clients.ControllerClient, error)

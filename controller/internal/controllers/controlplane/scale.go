@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
 )
@@ -31,6 +32,7 @@ func (r *reconciler) scaleUp(
 	count int,
 	reason string,
 	allocator domainAllocator,
+	newNodeProvider clients.NewNodeProvider,
 ) (int, error) {
 	if count <= 0 {
 		return 0, nil
@@ -44,7 +46,7 @@ func (r *reconciler) scaleUp(
 	created := 0
 	for range count {
 		failureDomain := allocator.take()
-		createdNode, err := r.createPendingNode(ctx, cluster, existingNodeNames, failureDomain)
+		createdNode, err := r.createPendingNode(ctx, cluster, existingNodeNames, failureDomain, newNodeProvider)
 		if err != nil {
 			return created, err
 		}
@@ -68,6 +70,7 @@ func (r *reconciler) createPendingNode(
 	cluster db.Cluster,
 	existingNodeNames []string,
 	failureDomain string,
+	newNodeProvider clients.NewNodeProvider,
 ) (db.Node, error) {
 	if cluster.ControlPlaneConfig.ConfigurationID == uuid.Nil {
 		return db.Node{}, fmt.Errorf("missing control plane configuration ID for pending control-plane node")
@@ -93,12 +96,7 @@ func (r *reconciler) createPendingNode(
 	}
 	nodes.PinAgentProfile(&pendingNode, r.cfg)
 
-	if cluster.ProviderType == db.ProviderTypeNico {
-		// Every node on a Nico cluster carries a payload, which strict readers
-		// such as labelNode rely on. The instance type is left unset here: the
-		// infra provider settles it, and waitForCAPIMachineReady records it.
-		pendingNode.SetNico(db.NicoNodeProvider{})
-	}
+	newNodeProvider.ApplyPlaceholderNodePayload(&pendingNode)
 
 	createdNode, err := r.db.CreateNode(ctx, &pendingNode)
 	if err != nil {

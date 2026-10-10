@@ -10,15 +10,15 @@ apiAuth:
   enabled: true
   permissive: false
 
-# CWE reconciles CAPI objects, so it needs the RBAC for them.
-# CWE accepts only the API provider blocks named here, and this lane needs
+# The controller reconciles CAPI objects, so it needs the RBAC for them.
+# The controller accepts only the API provider blocks named here, and this lane needs
 # BOTH. The e2e suite submits an Infra block for the nico-containers backend --
 # buildNicoRequest in test/e2e/internal/nke/request.go builds NicoCluster and
 # NicoMachine manifests inside api.InfraClusterProvider -- and reserves the Nico
 # block for nico-vms. controller/Tiltfile derives the same pair for a provider
 # list containing "nico".
 #
-# "nico" alone parses and starts CWE, then rejects every create with "infra
+# "nico" alone parses and starts the controller, then rejects every create with "infra
 # provider is not supported by this deployment", which is how this was found.
 supportedInfraProviders: nico,infra
 capi:
@@ -57,7 +57,7 @@ env:
 # used to read off disk and pass as a second --values file. It is static
 # configuration -- the same on every run -- so it belongs in the overlay: a
 # deploy path that does not carry it under-describes the deployment, and a
-# reader of the generated tree could not tell how CWE was configured.
+# reader of the generated tree could not tell how the controller was configured.
 #
 # The Tiltfile still reads that file (controller/Tiltfile:1018,1197), so this
 # is a second copy and the two can drift. Verified equivalent at the time of

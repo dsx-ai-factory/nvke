@@ -648,7 +648,7 @@ func joinNode(ctx workflow.Context, nodeID uuid.UUID, boundJoinAttempt bool) (bo
 // and is needed for workers too: a worker that partially joins then fails loops
 // on preflight leftovers, because the agent re-runs join without a reset and the
 // worker retry lives in the KubeadmJoin activity loop rather than here. This
-// CWE-side, control-plane-only cleanup is a fallback until the agent does
+// controller-side, control-plane-only cleanup is a fallback until the agent does
 // reset-before-join for all nodes.
 func cleanBeforeControlPlaneRejoin(ctx workflow.Context, nodeID uuid.UUID) {
 	logger := workflow.GetLogger(ctx)
@@ -696,7 +696,7 @@ func cleanBeforeControlPlaneRejoin(ctx workflow.Context, nodeID uuid.UUID) {
 	// Call the activity directly rather than the teardown helper: an empty
 	// condition message tells the activity to skip the condition update, so a
 	// joining node's Deleting condition is never touched (the teardown helper
-	// writes it). Skip the etcd phase -- CWE removed the member above.
+	// writes it). Skip the etcd phase -- the controller removed the member above.
 	resetOptions := workflow.ActivityOptions{
 		StartToCloseTimeout: 7 * time.Minute,
 		RetryPolicy: &temporal.RetryPolicy{

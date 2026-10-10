@@ -54,7 +54,7 @@ readinessProbe:
 
 appDb:
   url: postgres-postgresql.postgres.svc.cluster.local:5432
-  dbName: cloud-workflow
+  dbName: nke-controller
   postgresUser: postgres
   sslMode: disable
 
@@ -72,9 +72,9 @@ nkeOIDCAuth:
   enabled: false
 
 # Cluster API. A site cluster is a CAPI cluster whose infrastructure provider
-# is cluster-api-provider-provisioned, so CWE runs its CAPI controllers and gets
+# is cluster-api-provider-provisioned, so the NKE controller runs its CAPI controllers and gets
 # the RBAC to write the objects. Engine.Deploy installs CAPI itself, before this
-# release, so the controllers exist by the time CWE writes anything.
+# release, so the controllers exist by the time the NKE controller writes anything.
 #
 capi:
   enabled: true

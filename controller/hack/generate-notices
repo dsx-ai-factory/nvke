@@ -4,7 +4,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Generates THIRD_PARTY_NOTICES.md: every third-party Go module linked into the
-# released cloud-workflow-engine worker binary, with the verbatim text of each
+# released cloud-workflow-engine worker binary and, for the controller's file, the
+# cluster-api-provider-provisioned manager binary, with the verbatim text of each
 # module's license.
 #
 # Adapted from NVIDIA/aicr's tools/generate-notices, which produces the same
@@ -15,7 +16,7 @@
 #
 #   go-licenses — like `go list` and golang.org/x/tools/go/packages beneath it —
 #   resolves the dependency graph for a SINGLE platform: the host's GOOS/GOARCH
-#   unless told otherwise. For CWE the *module* set turns out to be identical
+#   unless told otherwise. For the controller the *module* set turns out to be identical
 #   across linux/amd64, linux/arm64 and darwin/arm64 (verified against
 #   `go list -deps`), so the choice does not affect which dependencies are
 #   attributed.
@@ -33,7 +34,7 @@
 #
 #   AICR loops over four platforms instead, because it releases a darwin CLI as
 #   well as linux daemons (see its .goreleaser.yaml), so for that project the
-#   dependency set itself genuinely varies by GOOS. CWE ships one linux
+#   dependency set itself genuinely varies by GOOS. The controller ships one linux
 #   container, so a single pinned target is sufficient.
 #
 # Requires: go, go-licenses (installed by the Makefile's notices target).
@@ -46,10 +47,19 @@ cd "${MODULE_ROOT}"
 
 OUTPUT="${OUTPUT:-${MODULE_ROOT}/THIRD_PARTY_NOTICES.md}"
 
-# The binary shipped in the container image. nico-sim and
-# nico-simctl are development tooling and are not distributed.
+# The binaries shipped in the container images: the CWE worker, and the
+# cluster-api-provider-provisioned manager, whose image ships this same file.
+# nico-sim and nico-simctl are development tooling and are not distributed.
 # PACKAGES entries are relative to this module.
-read -r -a PACKAGES <<< "${PACKAGES:-./cmd/worker}"
+read -r -a PACKAGES <<< "${PACKAGES:-./cmd/worker ../cluster-api-provider-provisioned/cmd/manager}"
+
+# What the header says the file covers. cli and os-image share this script and
+# keep the original text; only a file that also covers the provider manager names it.
+SCOPE=$'the released\n`cloud-workflow-engine` worker binary'
+case " ${PACKAGES[*]} " in
+    *cluster-api-provider-provisioned/cmd/manager*)
+        SCOPE=$'the released\n`cloud-workflow-engine` worker binary and the\n`cluster-api-provider-provisioned` manager binary' ;;
+esac
 
 # Pinned, not inherited from the host — see the header. Matches the primary
 # architecture of the published image; the Dockerfile builds GOOS=linux.
@@ -106,12 +116,12 @@ fi
 # matches by string prefix, not path component, so the entry "go" — which
 # `go list std | cut -d/ -f1` produces, from go/ast and go/build — swallows
 # every module whose path merely begins with those two letters. It cost 29 of
-# CWE's 140 dependencies here, with no error and no warning.
+# the controller's 140 dependencies here, with no error and no warning.
 #
 # No stdlib list is needed anyway: go-licenses already excludes the standard
 # library, verified by it emitting zero packages whose first path component
 # lacks a dot.
-IGNORE="${LOCAL_MODULE},github.com/dsx-ai-factory/nke/agent,github.com/dsx-ai-factory/nke/controller/api,github.com/dsx-ai-factory/nke/controller/deploy/charts,github.com/dsx-ai-factory/nke/management-engine,github.com/dsx-ai-factory/cluster-api-provider-nico"
+IGNORE="${LOCAL_MODULE},github.com/dsx-ai-factory/nke/agent,github.com/dsx-ai-factory/nke/controller/api,github.com/dsx-ai-factory/nke/controller/deploy/charts,github.com/dsx-ai-factory/nke/management-engine,github.com/dsx-ai-factory/nke/cluster-api-provider-provisioned,github.com/dsx-ai-factory/cluster-api-provider-nico"
 
 # Explicit mktemp templates: macOS mktemp with no template ignores TMPDIR and
 # allocates under confstr(_CS_DARWIN_USER_TEMP_DIR), which makes the scratch
@@ -146,7 +156,7 @@ echo "Generating dependency index..." >&2
 # A replace directive is honoured, and reported as the replacement rather than
 # the original: it is the replacement that is compiled in and whose license text
 # is reproduced, so naming the original would attribute a version the binary
-# does not contain. CWE pins sigs.k8s.io/controller-runtime back to v0.22.5 that
+# does not contain. The controller pins sigs.k8s.io/controller-runtime back to v0.22.5 that
 # way, where .Module.Version still reads v0.23.3. The key stays .Module.Path
 # because package import paths are unaffected by the replacement.
 go list -deps -buildvcs=false \
@@ -310,9 +320,9 @@ DRAFT_FILE="$(mktemp "${TMPDIR:-/tmp}/cwe-notices-out.XXXXXX")"
 
 NVIDIA Cloud Workflow Engine (CWE)
 
-This file lists every third-party Go module statically linked into the released
-`cloud-workflow-engine` worker binary, along with the verbatim text of each
-module's license.
+EOF
+    printf 'This file lists every third-party Go module statically linked into %s, along with the verbatim text of each\nmodule'\''s license.\n' "${SCOPE}"
+    cat <<'EOF'
 
 Standard library packages are excluded — their license is covered by the Go
 distribution. First-party NVIDIA modules are excluded as they are not

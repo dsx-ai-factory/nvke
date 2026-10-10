@@ -53,7 +53,7 @@ type MachineCreateDeps struct {
 	// client reads only the fields relevant to its own provider.
 	Config config.Config
 
-	// ControllerClientCABundle is the PEM bundle a node needs to verify CWE's
+	// ControllerClientCABundle is the PEM bundle a node needs to verify the controller's
 	// client certificate when external node-agent mTLS is enabled. Empty when
 	// not configured.
 	ControllerClientCABundle string
@@ -72,7 +72,7 @@ type MachineCreateDeps struct {
 	CreateSpireJoinToken func(ctx context.Context, node db.Node) (token, alternateSpiffeIDPath string, err error)
 
 	// SeedControlPlaneInstanceType pre-fills a control-plane node's instance
-	// type when CWE didn't set one, returning the (possibly updated) node
+	// type when the controller didn't set one, returning the (possibly updated) node
 	// pool. Only the nico client calls this.
 	SeedControlPlaneInstanceType func(ctx context.Context, node db.Node, nodePool db.NodePool) (db.NodePool, error)
 }
@@ -192,7 +192,7 @@ func MachineLabels(clusterName string, controlPlane bool) map[string]string {
 }
 
 func machineAnnotations(node db.Node) map[string]string {
-	// CWE owns drain / kube Node removal in teardown workflows. Tell CAPI to skip its
+	// The controller owns drain / kube Node removal in teardown workflows. Tell CAPI to skip its
 	// drain and volume-detach waits so Machine deletion is not blocked when the
 	// workload API is unreachable.
 	return map[string]string{

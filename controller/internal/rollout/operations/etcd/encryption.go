@@ -27,7 +27,7 @@ const (
 
 // DefaultObjectsToEncrypt returns the resource list used by the brownfield
 // enablement workflow. Keep this explicit so an agent default change cannot
-// silently change CWE behavior.
+// silently change controller behavior.
 const (
 	configmaps = "configmaps"
 	secrets    = "secrets"

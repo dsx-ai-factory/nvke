@@ -2,7 +2,7 @@
 
 > Status: **proposal** — for discussion. Describes a shift from NKE-owned OS
 > image construction to an operator-owned node readiness contract, with
-> cluster software installed afterward by CWE through `nke-agent`.
+> cluster software installed afterward by the NKE controller through `nke-agent`.
 
 ---
 
@@ -21,7 +21,7 @@ This proposal reframes that relationship into two clear phases:
    (Ubuntu 24.04, NKE apt repo, `nke-agent`, `spire-agent`, TPM). *How* that
    happens is out of scope for NKE.
 2. **Post-provision bootstrap (NKE-owned):** once the agent is reachable over
-   SPIFFE mTLS, CWE drives the rest through `nke-agent` — kubeadm packages,
+   SPIFFE mTLS, the controller drives the rest through `nke-agent` — kubeadm packages,
    CNI, Teleport, cluster identity config, and lifecycle operations.
 
 Operators may satisfy phase 1 with a Packer-built qcow, cloud-init at first
@@ -34,7 +34,7 @@ That choice is **out of scope for the NKE team**.
 
 ### Current model
 
-CWE provisions nodes by selecting an **OS profile** that typically includes:
+The controller provisions nodes by selecting an **OS profile** that typically includes:
 
 - An iPXE / image URL pointing at an NKE-built Ubuntu qcow
 - A cloud-init `userData` template that installs packages from the NKE apt repo
@@ -61,7 +61,7 @@ contract, validate it, then configure the node as an NKE bootstrap step.**
 | Phase | Owner | Responsibility |
 |-------|--------|----------------|
 | Bring OS / agents online | **Operator** | Satisfy the BYO-OS contract by any means |
-| Cluster bootstrap & lifecycle | **NKE (CWE → nke-agent)** | Install kubeadm / CNI / Teleport / etc., inject identity, run kubeadm, manage the node |
+| Cluster bootstrap & lifecycle | **NKE (controller → nke-agent)** | Install kubeadm / CNI / Teleport / etc., inject identity, run kubeadm, manage the node |
 
 NKE continues to own:
 
@@ -83,7 +83,7 @@ NKE does **not** own:
 
 ### Goals
 
-1. Define a clear, minimal **node readiness contract** that CWE can check before
+1. Define a clear, minimal **node readiness contract** that the controller can check before
    NKE bootstrap begins.
 2. Make OS construction **operator-owned**; keep cluster software install as an
    **NKE-owned** step after the agent is up.
@@ -119,14 +119,14 @@ true is irrelevant to NKE.
 ### Explicitly **not** part of the BYO-OS contract
 
 These must **not** be required in the operator’s base image. They are installed
-and configured afterward by NKE (CWE → `nke-agent`):
+and configured afterward by NKE (controller → `nke-agent`):
 
 | Component | Why post-provision |
 |-----------|-------------------|
 | **kubeadm / Kubernetes distro packages** | Versioned with the cluster, not the OS image. Coupling them to golden images has been a long-standing pain point. |
 | **CNI packages / chart images** (OVN, Calico, …) | Cluster network choice and version belong to cluster config, not the OS. |
 | **Teleport** (and similar ops agents) | Site/env policy applied by NKE bootstrap once the agent can install packages and write config securely. |
-| Other cluster-scoped packages | Anything whose version or presence depends on the cluster profile rather than “can this node speak to CWE?” |
+| Other cluster-scoped packages | Anything whose version or presence depends on the cluster profile rather than “can this node speak to the controller?” |
 
 ### Phase boundary
 
@@ -142,7 +142,7 @@ and configured afterward by NKE (CWE → `nke-agent`):
                                 │ contract met; agent reachable
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│         Phase 2 — NKE-owned (CWE → nke-agent bootstrap)         │
+│     Phase 2 — NKE-owned (controller → nke-agent bootstrap)      │
 │                                                                 │
 │  • SPIRE trust material / agent config (if not already present) │
 │  • Install kubeadm distro packages                              │
@@ -157,7 +157,7 @@ and configured afterward by NKE (CWE → `nke-agent`):
 **NKE:** everything from “agent is up” onward — package installs that today often
 live in cloud-init `runcmd`, plus cluster lifecycle.
 
-Operators may still apply extra site config themselves if they wish; CWE only
+Operators may still apply extra site config themselves if they wish; the controller only
 requires that the node can attest and speak mTLS so NKE bootstrap can proceed.
 
 ---
@@ -170,11 +170,11 @@ All of the following are valid for **phase 1**. NKE does not prefer one.
 |---------|--------|
 | Pre-built image | Packer (or equivalent) bakes Ubuntu 24.04, configures the NKE apt repo, installs `nke-agent` / `spire-agent` / TPM tools. **Does not** bake kubeadm, CNI, or Teleport. |
 | Provision-time install | Stock Ubuntu cloud image; operator installs only the contract packages after create. |
-| Post-create config management | Minimal image + Ansible (or similar) converges the contract packages/services before CWE bootstrap. |
+| Post-create config management | Minimal image + Ansible (or similar) converges the contract packages/services before controller bootstrap. |
 
 ---
 
-## 6. Implications for CWE and OS profiles
+## 6. Implications for the controller and OS profiles
 
 ### Today
 
@@ -192,7 +192,7 @@ OS profiles (or a successor “node environment” object) should evolve toward:
 2. **Thin first-boot overlays** only where unavoidable (hostname, network,
    enough SPIRE config for mTLS to come up) — not a full package bootstrap
    script for kubeadm/CNI/Teleport.
-3. **Post-agent bootstrap activities** in CWE workflows: `ConfigureAptRepo` (if
+3. **Post-agent bootstrap activities** in controller workflows: `ConfigureAptRepo` (if
    needed), `InstallPackages` for kubeadm / CNI / Teleport, write Teleport /
    remaining SPIRE config, then existing kubeadm / `InstallCNI` flows.
 4. **Readiness gates** that assert the phase-1 contract — agent reachability,
@@ -204,7 +204,7 @@ labs and nico-vms. Those are convenience implementations of phase 1, not
 requirements. Reference images should prefer the thin contract over “kitchen
 sink” package lists.
 
-### Suggested readiness checks (CWE)
+### Suggested readiness checks (controller)
 
 Before phase-2 bootstrap (kubeadm packages, CNI, Teleport, init/join):
 
@@ -226,9 +226,9 @@ BYO-OS does not mean operators invent packages from scratch.
 | `nke-agent` `.deb` | NKE | **Phase 1** — required on the node before bootstrap |
 | `spire-agent` (NKE-packaged / TPM-enabled build as applicable) | NKE / platform | **Phase 1** — required |
 | NKE apt repo metadata + signing keys | NKE | **Phase 1** — repo must be configured so phase 2 can install |
-| kubeadm / Kubernetes distro packages | NKE | **Phase 2** — installed via CWE → agent after readiness |
-| CNI packages / chart images | NKE | **Phase 2** — installed via CWE → agent after readiness |
-| Teleport (when enabled) | NKE / site policy | **Phase 2** — installed/configured via CWE → agent |
+| kubeadm / Kubernetes distro packages | NKE | **Phase 2** — installed via controller → agent after readiness |
+| CNI packages / chart images | NKE | **Phase 2** — installed via controller → agent after readiness |
+| Teleport (when enabled) | NKE / site policy | **Phase 2** — installed/configured via controller → agent |
 | Reference qcow / cloud-init examples | NKE (optional) | Non-normative phase-1 helpers |
 | Production golden images for a given site | **Operator** | Implements phase 1 only |
 
@@ -260,7 +260,7 @@ BYO-OS, not as silent part of the minimal contract.
 NKE should document, for FDE pools:
 
 1. Required disk layout / unlock method (as applicable to the profile).
-2. Whether CWE still participates in key injection or only consumes an
+2. Whether the controller still participates in key injection or only consumes an
    already-encrypted disk.
 3. Which TPM / clevis packages must be present in phase 1 vs installed later
    (prefer phase 1 for anything needed to unlock or attest at boot).
@@ -293,7 +293,7 @@ those images — FDE images should still aim for the thin phase-1 package set.
   for dev, not a production substitute unless explicitly accepted.
 - **Cluster secrets:** trust bundles, Teleport join tokens, and similar must not
   be baked into shared golden images reused across trust domains; prefer
-  phase-2 injection via CWE → agent (or an equivalent secure channel).
+  phase-2 injection via controller → agent (or an equivalent secure channel).
 
 See also `agent/docs/SECURITY.md`.
 
@@ -303,8 +303,8 @@ See also `agent/docs/SECURITY.md`.
 
 1. **Document** this contract (this proposal → accepted design).
 2. **Move** kubeadm / CNI / Teleport installs out of normative cloud-init
-   `runcmd` into CWE → `nke-agent` bootstrap activities.
-3. **Validate** phase 1 in CWE provisioning (explicit conditions / preflight)
+   `runcmd` into controller → `nke-agent` bootstrap activities.
+3. **Validate** phase 1 in controller provisioning (explicit conditions / preflight)
    without removing existing OS profiles.
 4. **Thin** reference images and OS profiles to the phase-1 package set;
    keep FDE reference images as needed (§8).
@@ -324,7 +324,7 @@ valid way to satisfy phase 1 while phase-2 work lands.
    (`nke-agent=…`) or only “≥ N / from channel X”?
 2. **SPIRE config at first boot:** minimum overlay so mTLS works before phase 2
    (trust bundle / server address) — cloud-init vs agent-first chicken-and-egg?
-3. **Registration API:** do operators hand CWE an image ID only, or also a
+3. **Registration API:** do operators hand the controller an image ID only, or also a
    “bootstrap complete” webhook / phone_home equivalent when not using
    cloud-init?
 4. **Ubuntu 22.04:** sunset timeline for any remaining 22.04 profiles once
@@ -341,14 +341,14 @@ Approve the direction that:
    TPM enablement** as the phase-1 node readiness contract.
 2. **How** phase 1 is met is **out of scope for NKE** and owned by the operator.
 3. **kubeadm, CNI, Teleport, and similar** are **not** base-image requirements;
-   they are installed and configured by **CWE → nke-agent** after provisioning.
+   they are installed and configured by **the controller → nke-agent** after provisioning.
 4. **FDE** is a documented caveat (§8): encryption layout is not “just another
    apt package”; FDE pools need an explicit image/boot contract on top of BYO-OS.
-5. CWE evolves OS profiles toward thin phase-1 bring-up + agent-driven phase-2
+5. The controller evolves OS profiles toward thin phase-1 bring-up + agent-driven phase-2
    bootstrap, with current NKE images retained as reference implementations.
 
 Once agreed, follow-ups are: tighten the contract into a versioned checklist,
-land phase-2 install activities for packages currently in cloud-init, add CWE
+land phase-2 install activities for packages currently in cloud-init, add controller
 readiness condition wording, document the FDE overlay, and publish a short
 operator guide with non-normative Packer / Ansible / cloud-init examples for
 phase 1 only.

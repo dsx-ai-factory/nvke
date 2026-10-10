@@ -18,7 +18,7 @@ import (
 
 // parallelClusterStagger spaces out create/delete requests so the clusters'
 // lifecycles overlap rather than run one-at-a-time, mirroring the nke-e2e
-// default-cluster flow: CWE and the infrastructure must handle several
+// default-cluster flow: the controller and the infrastructure must handle several
 // concurrent tenant-cluster lifecycles at once.
 const parallelClusterStagger = time.Minute
 
@@ -30,7 +30,7 @@ const parallelClusterStagger = time.Minute
 // lifecycle.
 //
 // nke-e2e used three fixed clusters differing by CNI (Calico 3.30.1, Calico
-// 3.31.4, OVN). CWE's API has no CNI-version field, so the Calico version
+// 3.31.4, OVN). The controller's API has no CNI-version field, so the Calico version
 // matrix cannot be reproduced here; CNI-plugin diversity (OVN + Calico) is used
 // instead. Opt in with the "parallel-lifecycle" label — it is the most
 // expensive scenario (multiple clusters provisioning at once).

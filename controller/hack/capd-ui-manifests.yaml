@@ -3,7 +3,7 @@
 
 # Sample CAPD infrastructure snippets for a local CAPD-backed cluster.
 # Use as the cluster infrastructure manifest, node-pool machine template, and
-# node-pool pre-kubeadm commands when creating the cluster via the CWE API.
+# node-pool pre-kubeadm commands when creating the cluster via the controller API.
 
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
 kind: DockerCluster

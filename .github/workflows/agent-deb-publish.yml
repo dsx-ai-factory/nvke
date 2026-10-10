@@ -561,17 +561,22 @@ jobs:
       id-token: write       # the OIDC token the attestation is signed against
       attestations: write   # writes the provenance attestation
     steps:
-      # Only for agent/THIRD_PARTY_NOTICES.md, which is attached below and
-      # cannot be produced from the build artifacts. It runs BEFORE the download:
-      # a first checkout deletes the workspace contents, which `clean: false`
-      # does not prevent.
-      - name: Checkout for the notices file
+      # For the local verify-release-assets action, for
+      # agent/THIRD_PARTY_NOTICES.md, which is attached below and cannot be
+      # produced from the build artifacts, and for the make files the syft pin
+      # is read from. It runs BEFORE the download: a first checkout deletes the
+      # workspace contents, which `clean: false` does not prevent.
+      - name: Checkout for the notices file and the tool pins
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           clean: false
           ref: ${{ needs.build.outputs.sha }}
-          sparse-checkout: agent/THIRD_PARTY_NOTICES.md
+          sparse-checkout: |
+            agent/THIRD_PARTY_NOTICES.md
+            .github/actions/verify-release-assets
+            Makefile
+            make
           sparse-checkout-cone-mode: false
 
       - name: Download packages
@@ -580,6 +585,18 @@ jobs:
           pattern: agent-deb-*
           merge-multiple: true
           path: agent/bin
+
+      # Version pins come from make/versions.mk, so `make show-versions` and CI
+      # cannot disagree.
+      - name: Read the pinned syft version
+        id: versions
+        shell: bash
+        run: echo "syft_version=$(make --no-print-directory print-SYFT_VERSION)" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: ${{ steps.versions.outputs.syft_version }}
 
       - name: Inspect packages
         id: meta
@@ -601,11 +618,35 @@ jobs:
             exit 1
           fi
 
-          # Hash the packages and the notices together, so one file covers
-          # everything a consumer downloads. Names are relative because
+          # One SPDX document per package, from the package's own contents.
+          #
+          # syft reads a .deb directly, but a deb-archive scan yields only the
+          # control metadata -- one entry, "nke-agent <version>", which a
+          # consumer already knows from the filename. The question this exists
+          # to answer is which components are inside, so the archive is
+          # unpacked first and the extracted tree scanned: that reaches the
+          # Go build info the linker embedded in the agent binary, and the SBOM
+          # lists the module versions actually shipped on every managed node.
+          #
+          # --source-name binds the document to the package it describes rather
+          # than to the throwaway extraction directory, whose name would
+          # otherwise be what the SPDX document claims to be about.
+          for deb in agent/bin/*.deb; do
+            name="$(basename "${deb}" .deb)"
+            root="$(mktemp -d)"
+            dpkg-deb -R "${deb}" "${root}"
+            syft scan "dir:${root}" \
+              --output "spdx-json=agent/bin/${name}.spdx.json" \
+              --source-name "${name}.deb"
+            rm -rf "${root}"
+          done
+
+          # Hash the packages, their SBOMs and the notices together, so one file
+          # covers everything a consumer downloads. Names are relative because
           # `sha256sum -c` resolves them against the working directory, and a
           # consumer runs it from wherever they unpacked the release.
           ( cd agent/bin && sha256sum -- *.deb > checksums.txt )
+          ( cd agent/bin && sha256sum -- *.spdx.json >> checksums.txt )
           cp agent/THIRD_PARTY_NOTICES.md agent/bin/THIRD_PARTY_NOTICES.md
           ( cd agent/bin && sha256sum -- THIRD_PARTY_NOTICES.md >> checksums.txt )
           echo "checksums.txt:"
@@ -658,6 +699,7 @@ jobs:
             the commands.
           files: |
             agent/bin/*.deb
+            agent/bin/*.spdx.json
             agent/bin/checksums.txt
             agent/bin/checksums.txt.sigstore.json
             agent/bin/THIRD_PARTY_NOTICES.md

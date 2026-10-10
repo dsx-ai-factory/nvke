@@ -10,7 +10,7 @@
 #   2. `bootstrap site`, run in the background. The moment its ephemeral Kind
 #      cluster is ready this suite bridges the two container networks and
 #      proves packets cross both ways. The command then deploys Postgres,
-#      Temporal, SPIRE and CWE, builds a cluster over the pre-provisioned
+#      Temporal, SPIRE and the controller, builds a cluster over the pre-provisioned
 #      hosts, writes its kubeconfig and exits 0.
 #   3. Every fake node's spire-agent attested to that SPIRE server over TPM.
 #      The EK thumbprints were an input to the command, so a bootstrap that
@@ -75,7 +75,7 @@ SPIRE_VIP="${NKECTL_E2E_SPIRE_SERVER_ADDRESS:-172.26.0.2}"
 # attestation fails.
 SPIRE_TRUST_DOMAIN="${NKECTL_E2E_SPIRE_TRUST_DOMAIN:-nkectl-e2e.example.test}"
 export NKECTL_E2E_SPIRE_TRUST_DOMAIN="${SPIRE_TRUST_DOMAIN}"
-# First CSV node, used for Traefik access. CWE may initialize another node.
+# First CSV node, used for Traefik access. The controller may initialize another node.
 INIT_NODE_IP="${NKECTL_E2E_INIT_NODE_IP:-172.26.0.10}"
 # Where Traefik is published on the new cluster, and where stage 5 asks for the
 # page. In the NodePort range, and clear of the SPIRE server's 30081.
@@ -105,12 +105,12 @@ REPO_ROOT="$(dirname "${CLI_DIR}")"
 BGP_FILES_DIR="${REPO_ROOT}/controller/hack/bgp-containers"
 # Scratch dir for the rendered FRR config, bind-mounted into the container.
 BGP_RENDER_DIR="${SCRIPT_DIR}/.bgp"
-: "${NKECTL_CWE_IMAGE:?NKECTL_CWE_IMAGE must name the CWE image to deploy, already present in containerd (see comment above)}"
+: "${NKECTL_CWE_IMAGE:?NKECTL_CWE_IMAGE must name the controller image to deploy, already present in containerd (see comment above)}"
 export NKECTL_CWE_IMAGE
 
 # The Cluster API infrastructure provider for hosts that already exist, built
-# below from this checkout. Without it the CAPI objects CWE writes have no
-# controller and the cluster never leaves provisioning. nkectl finds the
+# below from this checkout. Without it the CAPI objects the NKE controller writes have no
+# reconciler and the cluster never leaves provisioning. nkectl finds the
 # kustomize base by walking up to go.work, so only the image is named here.
 export NKECTL_CAPI_PROVISIONED_IMAGE="${NKECTL_CAPI_PROVISIONED_IMAGE:-cluster-api-provider-provisioned:latest}"
 
@@ -513,7 +513,7 @@ log "running: nkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-clu
   "NKECTL_CAPI_PROVISIONED_IMAGE=${NKECTL_CAPI_PROVISIONED_IMAGE})"
 
 # In the background, because the attach below has to happen *during* the run:
-# CWE and the spire-agents talk over the node network, which the bootstrap
+# The controller and the spire-agents talk over the node network, which the bootstrap
 # cluster is not on, because the nodes came up before it existed.
 #
 # --keep-bootstrap-cluster: this suite's EXIT trap removes the cluster, and the
@@ -592,8 +592,8 @@ probe_cross_bridge_connectivity() {
 # attach_bootstrap_to_node_network bridges the two networks. Both are nerdctl
 # bridges, and nerdctl's default CNI config sets the firewall plugin's
 # ingressPolicy to "same-bridge", which DROPs any forward from one CNI bridge
-# out another. So CWE -> nke-agent and node -> SPIRE VIP are dropped by
-# default, CWE's NodePreflight times out, and no node attests. Permit exactly
+# out another. So controller -> nke-agent and node -> SPIRE VIP are dropped by
+# default, the controller's NodePreflight times out, and no node attests. Permit exactly
 # this pair of bridges, both directions, at position 1 so it precedes the
 # isolation chain; nothing else on the host becomes reachable.
 #
@@ -621,7 +621,7 @@ attach_bootstrap_to_node_network() {
 }
 
 # Attach as soon as Kind reports the cluster ready: after Kind has finished
-# with the control-plane container, and before CWE is deployed, so the extra
+# with the control-plane container, and before the controller is deployed, so the extra
 # network disturbs neither. Bounded separately from the command's own timeout,
 # and abandoned if the command exits first.
 log "waiting for the bootstrap cluster to become ready, to attach it to the node network at ${SPIRE_VIP}"
@@ -642,7 +642,7 @@ while kill -0 "${bootstrap_pid}" 2>/dev/null && [ "${SECONDS}" -lt "${attach_dea
 done
 
 if [ "${attached}" != true ]; then
-  log "FAIL: the bootstrap cluster was never attached to the node network, so CWE"
+  log "FAIL: the bootstrap cluster was never attached to the node network, so the controller"
   log "  cannot reach the nodes and their agents cannot reach SPIRE. Not waiting"
   log "  for a bootstrap that has no route to the hosts it is building on."
   abort_bootstrap
@@ -656,8 +656,8 @@ output="$(cat "${BOOTSTRAP_LOG}")"
 if [ "${status}" -ne 0 ]; then
   fail "nkectl bootstrap site exited ${status}"
 fi
-if ! grep -q "cwe deployment healthy" <<<"${output}"; then
-  fail "CWE was never confirmed healthy on /readyz"
+if ! grep -q "controller deployment healthy" <<<"${output}"; then
+  fail "the controller was never confirmed healthy on /readyz"
 fi
 if ! grep -q "cluster provisioned" <<<"${output}"; then
   fail "the command exited 0 without reporting the cluster provisioned"
@@ -665,7 +665,7 @@ fi
 if [ ! -s "${TENANT_KUBECONFIG}" ]; then
   fail "no kubeconfig was written to ${TENANT_KUBECONFIG}"
 fi
-log "PASS: bootstrap site created the site cluster through the CWE API"
+log "PASS: bootstrap site created the site cluster through the controller API"
 
 # The controller reached this point by answering /readyz through its Service
 # and the host through its external NodePort. What that does not show is that
@@ -716,7 +716,7 @@ all_nodes_ready() {
 #
 # Every site spec node joins as a control-plane node and nkectl removes the
 # control-plane taint once they have all joined, so all must be Ready and
-# schedulable. CWE joins them one at a time, ~6 min apart, so the third
+# schedulable. The controller joins them one at a time, ~6 min apart, so the third
 # kubelet starts ~13 min after the cluster is created.
 
 log "waiting for ${expected_nodes} nodes to report Ready"

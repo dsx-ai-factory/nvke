@@ -29,7 +29,7 @@ type clusterReader interface {
 
 // SecretReconciler translates management-cluster kubeconfig Secret events into
 // tenant-manager lifecycle changes. The informer LIST on startup also supplies
-// create events for Secrets that existed before CWE restarted.
+// create events for Secrets that existed before the controller restarted.
 type SecretReconciler struct {
 	database            clusterReader
 	reader              client.Reader

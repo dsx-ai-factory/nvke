@@ -64,7 +64,8 @@ WORK_MODULES := agent \
                 cli \
                 controller/test/e2e \
                 management-engine \
-                os-image
+                os-image \
+                release
 
 # Modules whose commands `build` can compile with `go build -o bin/ ./cmd/...`,
 # which names each binary after its package directory. controller/api and
@@ -115,7 +116,9 @@ cmd_ldflags = -X 'main.version=$(call cmd_version,$(1))' \
 RELEASE_LDFLAGS ?= -s -w -buildid= -extldflags -static
 
 # Must match WORKER_BIN_NAME in controller/Makefile. `build` fails if it does not.
-CWE_BIN_NAME ?= controller
+# NKE_CONTROLLER_BIN_NAME overrides it. An empty value counts as unset.
+# CWE_BIN_NAME is a deprecated alias for NKE_CONTROLLER_BIN_NAME; nke#1399 removes it.
+controller_bin_name = $(or $(NKE_CONTROLLER_BIN_NAME),$(CWE_BIN_NAME),controller)
 
 # No module is excluded from the workspace any more; kept (empty) because
 # work-check accounts for every go.mod in the tree against these two lists.
@@ -123,15 +126,13 @@ PRIVATE_MODULES :=
 
 # Every place an artefact ships LICENSE and NOTICE from.
 #
-# The root files cannot be COPYed into the controller image directly: that image
-# builds with `controller/` as its context, and Docker cannot reach outside a
-# build context. So the files are copied to a location inside it. The Helm chart
-# has the same constraint and the same answer.
+# `helm package` includes only files inside the chart directory, so the root
+# files are copied into the chart. The controller image does not need a copy:
+# it builds with the repository root as its context and COPYs them directly.
 #
 # The chart copies existed before this and nothing maintained them -- they were
 # committed by hand and happened to match. `licenses-check` now enforces it.
-LICENSE_DESTS := controller/licenses \
-                 controller/deploy/charts/controller
+LICENSE_DESTS := controller/deploy/charts/controller
 
 # Chart directories that ship the root LICENSE but keep a NOTICE of their own,
 # which `make licenses` must not overwrite.
@@ -148,7 +149,7 @@ include make/versions.mk
 include make/checks.mk
 
 .DEFAULT_GOAL := help
-.PHONY: help show-versions tools-check lint-workflows lint-shell docs-check internal-config-check lint-chart chart-rbac-check chart-package-check chart-controller-config-check chart-check vulncheck fmt lint gate test-compile test-e2e-backend-ci work work-sync work-check build test preflight version-check clean licenses licenses-check license-deps-check notices notices-check license-header-check
+.PHONY: help show-versions tools-check lint-workflows lint-shell docs-check internal-config-check lint-chart chart-rbac-check chart-package-check chart-controller-config-check chart-check vulncheck fmt lint gate test-compile test-e2e-backend-ci work work-sync work-check build test coverage coverage-report coverage-check preflight version-check clean licenses licenses-check license-deps-check notices notices-check license-header-check
 
 ##@ Help
 
@@ -290,6 +291,21 @@ test: ## Run each module's own test suite.
 		fi; \
 	done
 
+coverage: ## Run the tests of every collecting module and report the coverage.
+	@# Not folded into `test` above. `test` runs every workspace module, this
+	@# runs the nine that collect, and a developer wanting one does not always
+	@# want the other. The profiles land in coverage/ at the root; the report
+	@# fails on a missing, malformed or empty one, and on a test package that
+	@# nothing ran. It does not fail on a percentage -- see
+	@# docs/coverage-policy.md for why not.
+	@MAKE='$(MAKE)' ./hack/coverage.sh run
+
+coverage-report: ## Validate and summarise the profiles already in coverage/.
+	@./hack/coverage.sh report
+
+coverage-check: ## Check the coverage registry against the tree. Runs no tests.
+	@./hack/coverage.sh check
+
 test-compile: ## Type-check test variants that need external services to run.
 	@echo "- compile controller/test/e2e"
 	@cd controller/test/e2e && CGO_ENABLED=1 $(GO) vet ./...
@@ -315,7 +331,8 @@ PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
                      cli \
                      controller \
                      management-engine \
-                     os-image
+                     os-image \
+                     release
 
 # controller/api ships no tests of its own, so linting and testing it alone
 # compiles nothing that uses it. These are the modules that import it, and a
@@ -508,8 +525,8 @@ build: ## Build every workspace package, and the released commands into bin/.
 	@# delegate rather than repeat either here. See CMD_MODULES above.
 	@echo "- building controller"
 	@$(MAKE) --no-print-directory -C controller build >/dev/null || exit 1
-	@cp controller/bin/$(CWE_BIN_NAME) $(BIN_DIR)/ \
-		|| { echo "ERROR: controller/Makefile no longer produces bin/$(CWE_BIN_NAME). Update CWE_BIN_NAME here to match its WORKER_BIN_NAME."; exit 1; }
+	@cp controller/bin/$(controller_bin_name) $(BIN_DIR)/ \
+		|| { echo "ERROR: controller/Makefile no longer produces bin/$(controller_bin_name). Update controller_bin_name here to match its WORKER_BIN_NAME."; exit 1; }
 	@# Same reason as controller: cli/Makefile owns nkectl's
 	@# version ldflags, and it asserts the stamp took.
 	@echo "- building cli"
@@ -687,8 +704,8 @@ license-header-check: ## Verify every source file carries the Apache-2.0 SPDX he
 
 ##@ Housekeeping
 
-clean: ## Remove the built binaries.
-	@rm -rf $(BIN_DIR)
+clean: ## Remove the built binaries and the coverage profiles.
+	@rm -rf $(BIN_DIR) $(CURDIR)/coverage
 
 ##@ End-to-end
 

@@ -633,7 +633,7 @@ configure_openvswitch() {
     error_exit "UPLINK_DHCP=false requires UPLINK_ADDRESS"
   fi
 
-  # API validation already catches these from CWE-driven runs; the checks
+  # API validation already catches these from controller-driven runs; the checks
   # below are defense-in-depth for direct nkecli / manual invocation. They
   # apply regardless of backend so bad input fails fast.
   if [ -n "${UPLINK_ADDRESS:-}" ]; then

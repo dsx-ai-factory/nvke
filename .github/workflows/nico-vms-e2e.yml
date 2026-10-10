@@ -32,7 +32,7 @@ on:
       # host-mode branch.
       - "controller/hack/ci/nkectl-smoke.sh"
       - "controller/test/kubeadm/scripts/**"
-      # The Tiltfile is the lane's CWE deployment recipe (#683).
+      # The Tiltfile is the lane's controller deployment recipe (#683).
       - controller/Tiltfile
       # The default OVN topology is the behavioral gate for the typed
       # Open vSwitch provisioning path.
@@ -317,7 +317,7 @@ jobs:
           path: |
             ${{ env.NKE_E2E_STATE_DIR }}/
             !${{ env.NKE_E2E_STATE_DIR }}/cwe-e2e.test
-            # The smoke's own nkectl state: a cached CWE token lives here.
+            # The smoke's own nkectl state: a cached controller token lives here.
             !${{ env.NKE_E2E_STATE_DIR }}/nkectl-home
             !${{ env.NKE_E2E_STATE_DIR }}/nkectl-no-auth
             !${{ env.NKE_E2E_STATE_DIR }}/nkectl

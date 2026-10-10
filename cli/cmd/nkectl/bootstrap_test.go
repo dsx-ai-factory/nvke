@@ -35,18 +35,18 @@ import (
 
 // fakeCWERunner is a scripted controllerdeploy.CommandRunner: every helm call
 // succeeds, and every `kubectl get --raw .../readyz` call reports healthy
-// immediately, so runBootstrapSite's CWE deploy step can be exercised
+// immediately, so runBootstrapSite's controller deploy step can be exercised
 // without a real helm binary, kubectl binary or cluster.
 type fakeCWERunner struct{}
 
 func (fakeCWERunner) Run(_ context.Context, name string, args ...string) (string, error) {
 	joined := strings.Join(args, " ")
 	if name == "kubectl" && strings.Contains(joined, "jsonpath={.data.value}") {
-		// The Secret CWE publishes the finished cluster's kubeconfig in.
+		// The Secret the controller publishes the finished cluster's kubeconfig in.
 		return base64.StdEncoding.EncodeToString([]byte("apiVersion: v1\nkind: Config\n")), nil
 	}
 	if name == "kubectl" && strings.Contains(joined, "get secret etcd-encryption-key-") {
-		// The Secret CWE keeps the cluster's etcd encryption key in.
+		// The Secret the controller keeps the cluster's etcd encryption key in.
 		return `{"apiVersion":"v1","kind":"Secret","data":{"active":"` +
 			base64.StdEncoding.EncodeToString([]byte(fakeEtcdKey)) + `","active-since":"MQ=="}}`, nil
 	}
@@ -65,7 +65,7 @@ func (fakeCWERunner) Run(_ context.Context, name string, args ...string) (string
 // and points nkectl at it through the port it dials.
 //
 // A real server rather than an injected client: the address is the thing under
-// test on this path. nkectl builds it from the host port the CWE NodePort was
+// test on this path. nkectl builds it from the host port the controller NodePort was
 // mapped to, and a client handed in by a test would prove nothing about that.
 func startFakeCWEAPI(t *testing.T, provisioned bool) {
 	t.Helper()
@@ -133,7 +133,7 @@ func startFakeCWEAPIWithNodes(t *testing.T, provisioned bool, total, joined int)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("listen for fake CWE API: %v", err)
+		t.Fatalf("listen for fake controller API: %v", err)
 	}
 	srv := httptest.NewUnstartedServer(mux)
 	srv.Listener = listener
@@ -277,11 +277,11 @@ registry:
 
 // TestRunBootstrapSiteCreatesTheCluster is the whole command on its happy
 // path: a valid site spec passes validation, the ephemeral bootstrap kind
-// cluster is stood up and torn down again, CWE is asked to create the cluster,
+// cluster is stood up and torn down again, the controller is asked to create the cluster,
 // and the finished cluster's kubeconfig is written out.
 //
 // Every binary is faked, so this needs no kind, no container runtime and no
-// cluster; the CWE API is a real HTTP server on the port nkectl dials.
+// cluster; the controller API is a real HTTP server on the port nkectl dials.
 func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
 	setBootstrapEnv(t)
 	startFakeCWEAPI(t, true)
@@ -937,10 +937,10 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 
 	t.Run("a real failure writes a bundle", func(t *testing.T) {
 		// Short, so the suite does not sit through the default five minutes
-		// waiting for a CWE that will never report healthy.
+		// waiting for a controller that will never report healthy.
 		t.Setenv("NKECTL_CONTROLLER_READY_TIMEOUT", "1s")
 		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
-		// CWE never reports healthy: the failure this exists for.
+		// The controller never reports healthy: the failure this exists for.
 		err := runBootstrapSite(context.Background(), io.Discard, &bootstrapSiteOptions{
 			siteSpec:            writeSiteSpec(t, validSiteSpec),
 			diagnosticsDir:      dir,
@@ -1114,9 +1114,9 @@ func (r *recordingCWERunner) saw(fragment string) bool {
 	return false
 }
 
-// TestRunBootstrapSiteSavesTheEtcdEncryptionKey: the key CWE generated ends
+// TestRunBootstrapSiteSavesTheEtcdEncryptionKey: the key the controller generated ends
 // up on disk, as a Secret the operator can hand to a later controller, before
-// the bootstrap cluster holding CWE's copy is deleted.
+// the bootstrap cluster holding the controller's copy is deleted.
 func TestRunBootstrapSiteSavesTheEtcdEncryptionKey(t *testing.T) {
 	setBootstrapEnv(t)
 	startFakeCWEAPI(t, true)
@@ -1163,7 +1163,7 @@ func TestRunBootstrapSiteSavesTheEtcdEncryptionKey(t *testing.T) {
 		t.Fatalf("key file is not a Secret manifest: %v", err)
 	}
 	if !strings.HasPrefix(secret.Metadata.Name, "etcd-encryption-key-") {
-		t.Errorf("metadata.name = %q, want CWE's etcd-encryption-key-<uuid>", secret.Metadata.Name)
+		t.Errorf("metadata.name = %q, want the controller's etcd-encryption-key-<uuid>", secret.Metadata.Name)
 	}
 	if secret.Metadata.Namespace != nil {
 		t.Errorf("metadata.namespace = %q, want none", *secret.Metadata.Namespace)
@@ -1172,7 +1172,7 @@ func TestRunBootstrapSiteSavesTheEtcdEncryptionKey(t *testing.T) {
 		t.Errorf("cluster-name annotation = %q, want %q", secret.Metadata.Annotations["nke.nvidia.com/cluster-name"], "nke-site")
 	}
 	if string(secret.Data["active"]) != fakeEtcdKey {
-		t.Errorf("data.active is not the key CWE served")
+		t.Errorf("data.active is not the key the controller served")
 	}
 	if !runner.sawArgs("delete", "cluster") {
 		t.Errorf("a successful bootstrap should still tear down the bootstrap kind cluster; calls: %v", runner.calls)
@@ -1208,7 +1208,7 @@ func TestRunBootstrapSiteRetainsClusterWhenKeyCaptureFails(t *testing.T) {
 		t.Error("bootstrap cluster was deleted while it held the only reachable copy of the key")
 	}
 	// The recovery command writes what the tool would have: to the path the
-	// operator chose, owner-readable only, the Secret CWE holds.
+	// operator chose, owner-readable only, the Secret the controller holds.
 	for _, want := range []string{
 		"was not saved to " + keyOut,
 		"kubeconfig is at " + kubeconfigOut,

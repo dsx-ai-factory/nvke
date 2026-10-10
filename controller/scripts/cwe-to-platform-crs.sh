@@ -2,10 +2,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Generate or resync platform CRs from the CWE API.
-# Fetches all clusters and node pools from CWE, generates ForgeTenant, ForgeSite,
+# Generate or resync platform CRs from the controller API.
+# Fetches all clusters and node pools from the controller, generates ForgeTenant, ForgeSite,
 # ForgeVPC, NKECluster, NKENodePool. Use for onboarding new clusters or resyncing
-# after changes made via the CWE API. Prerequisites: jq.
+# after changes made via the controller API. Prerequisites: jq.
 
 set -euo pipefail
 
@@ -16,9 +16,9 @@ usage() {
     echo "Usage: $0 --cwe-api-url <url> --forge-api-url <url> --namespace <ns> [--output-dir <dir>] [--dry-run] [--apply]"
     echo ""
     echo "Options:"
-    echo "  --cwe-api-url URL     CWE API base (e.g. http://localhost:8080 with: kubectl port-forward -n cloud-workflow-engine svc/cloud-workflow-engine 8080:8080)"
+    echo "  --cwe-api-url URL     controller API base (e.g. http://localhost:8080 with: kubectl port-forward -n cloud-workflow-engine svc/cloud-workflow-engine 8080:8080)"
     echo "  --forge-api-url URL   forge-console API base for /forge/* metadata (e.g. http://localhost:8090)"
-    echo "  --namespace NS        Platform namespace for CRs (target; may differ from CWE/site)"
+    echo "  --namespace NS        Platform namespace for CRs (target; may differ from controller/site)"
     echo "  --output-dir DIR      Output directory (default: ./output/<forgeVPC.name>)"
     echo "  --dry-run             Print YAML only, do not write or apply"
     echo "  --apply               After generating, apply CRs (kubeconfig = platform API)"
@@ -66,21 +66,21 @@ if [[ "$FORGE_API" != */api ]]; then
     FORGE_API="${FORGE_API}/api"
 fi
 
-# ---------- Resolve list of cluster IDs (all clusters on CWE) ----------
+# ---------- Resolve list of cluster IDs (all clusters on the controller) ----------
 CLUSTER_IDS=()
 all_clusters=$(curl -sS --max-time 30 "${API}/clusters" || true)
 if [[ -z "$all_clusters" ]] || [[ "$(echo "$all_clusters" | jq -r '.clusters // empty')" == "" ]]; then
-    echo "Error: failed to fetch clusters from CWE"
+    echo "Error: failed to fetch clusters from the controller"
     exit 1
 fi
 while IFS= read -r id; do
     [[ -n "$id" ]] && CLUSTER_IDS+=("$id")
 done < <(echo "$all_clusters" | jq -r '.clusters[].id')
 if [[ ${#CLUSTER_IDS[@]} -eq 0 ]]; then
-    echo "Error: no clusters found in CWE"
+    echo "Error: no clusters found in the controller"
     exit 1
 fi
-echo "Found ${#CLUSTER_IDS[@]} cluster(s) on CWE"
+echo "Found ${#CLUSTER_IDS[@]} cluster(s) on the controller"
 
 namespace="$NAMESPACE_ARG"
 
@@ -139,7 +139,7 @@ first_cluster=true
 for cluster_id in "${CLUSTER_IDS[@]}"; do
     cluster_json=$(curl -sS "${API}/clusters/${cluster_id}" || true)
     if [[ -z "$cluster_json" ]] || [[ "$(echo "$cluster_json" | jq -r '.id // empty')" == "" ]]; then
-        echo "Error: failed to fetch cluster from CWE: $cluster_id"
+        echo "Error: failed to fetch cluster from the controller: $cluster_id"
         exit 1
     fi
 
@@ -147,11 +147,11 @@ for cluster_id in "${CLUSTER_IDS[@]}"; do
     nodepools_json=$(echo "$nodepools_json" | jq -c '.nodePools // []')
 
     cluster_name=$(echo "$cluster_json" | jq -r '.name')
-    # Org ID and site ID must be present on the cluster detail from CWE API
+    # Org ID and site ID must be present on the cluster detail from the controller API
     org_id=$(echo "$cluster_json" | jq -r '.orgID // empty')
     site_id=$(uuid_from_json "$(echo "$cluster_json" | jq -c '.siteID')")
     if [[ -z "$org_id" ]] || [[ -z "$site_id" ]]; then
-        echo "Error: cluster $cluster_id is missing orgID or siteID in CWE API response; cannot generate CRs"
+        echo "Error: cluster $cluster_id is missing orgID or siteID in the controller API response; cannot generate CRs"
         exit 1
     fi
     vpc_id=$(uuid_from_json "$(echo "$cluster_json" | jq -c '.vpcID')")
@@ -278,13 +278,13 @@ ${cluster_spec}
         np_auto_mode_disabled=$(echo "$np" | jq -r '.autoModeDisabled // false')
         np_recycle_budget=$(echo "$np" | jq -r '.recycleBudget // 0')
         np_max_surge=$(echo "$np" | jq -r '.maxSurge // 0')
-        # Validate required fields; skip node pools with missing or zero UUIDs (CWE data issue)
+        # Validate required fields; skip node pools with missing or zero UUIDs (controller data issue)
         if [[ -z "$np_name" ]] || [[ -z "$np_prefix" ]] || [[ -z "$np_os_profile" ]] || [[ -z "$np_config_profile" ]]; then
             echo "  Warning: skipping node pool (missing name, nodeNamePrefix, osProfile, or configProfile): $np"
             continue
         fi
         if [[ -z "$np_instance_type" ]] || [[ "$np_instance_type" == "$ZERO_UUID" ]] || [[ "$np_instance_type" == "null" ]]; then
-            echo "  Warning: skipping node pool '$np_name' - instanceTypeID is missing or zero in CWE API (fix data in CWE)"
+            echo "  Warning: skipping node pool '$np_name' - instanceTypeID is missing or zero in the controller API (fix data in the controller)"
             continue
         fi
         extra_spec=""

@@ -6,7 +6,7 @@ name: management-engine
 description: A Helm chart to distribute management-engine
 type: application
 
-version: 0.1.1
+version: 0.1.2
 appVersion: "dev"
 
 keywords:

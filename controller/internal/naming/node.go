@@ -12,13 +12,13 @@ import (
 const (
 	// MaxGeneratedNodeNameLength is the Kubernetes limit for Node object names.
 	MaxGeneratedNodeNameLength = 63
-	// NodeNameSuffixLength is the width of the decimal suffix CWE assigns (%04d).
+	// NodeNameSuffixLength is the width of the decimal suffix the controller assigns (%04d).
 	NodeNameSuffixLength = 4
 	// NodeNameSuffixModulo is the exclusive upper bound for random suffix selection (Intn).
 	NodeNameSuffixModulo   = 10000
 	nodeNameSeparatorCount = 2
 
-	// GeneratedNodeNameFormat documents the CWE node naming contract for error messages.
+	// GeneratedNodeNameFormat documents the controller node naming contract for error messages.
 	GeneratedNodeNameFormat = "<cluster name>-<nodeNamePrefix>-<4-digit-suffix>"
 	// formatNodeNameTemplate is the template for FormatNodeName.
 	formatNodeNameTemplate = "%s-%s-%0*d"

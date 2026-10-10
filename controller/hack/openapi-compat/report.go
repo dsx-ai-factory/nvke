@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/blang/semver/v4"
 )
 
 // change is one entry of the engine's report. Only the fields the policy reads
@@ -52,7 +54,7 @@ func (c change) describe() string {
 // waiverStub is the YAML a reviewer can paste into the waiver file, so the
 // failure message carries its own remedy rather than sending them to the
 // schema.
-func (c change) waiverStub() []string {
+func (c change) waiverStub(baseline string) []string {
 	return []string{
 		fmt.Sprintf("- change: %q", c.ChangeText),
 		fmt.Sprintf("  path: %q", c.Path),
@@ -60,6 +62,7 @@ func (c change) waiverStub() []string {
 		`  reason: "<why this break is acceptable, and what consumers must do>"`,
 		`  owner: "<a person, not a team>"`,
 		`  review: "<YYYY-MM-DD>"`,
+		fmt.Sprintf("  baseline: %q", baseline),
 	}
 }
 
@@ -188,25 +191,55 @@ func (r reportRequest) produce(ctx context.Context, specs specPair) ([]byte, err
 	return runDiffer(ctx, r.differ, r.differVersion, baselinePath, r.spec)
 }
 
-// newestTag picks the baseline. It fails when no tag matches rather than
+// newestTag picks the baseline. It fails when no tag qualifies rather than
 // falling back to the merge base: a shallow clone has no tags, and comparing
 // against nothing would otherwise look exactly like a clean run.
 func newestTag(ctx context.Context, glob string) (string, error) {
-	out, err := git(ctx, "tag", "--list", glob, "--sort=-version:refname")
+	out, err := git(ctx, "tag", "--list", glob)
 	if err != nil {
 		return "", err
 	}
-	for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
-		if tag := strings.TrimSpace(line); tag != "" {
-			return tag, nil
-		}
+	if tag, ok := newestRelease(strings.Split(out, "\n")); ok {
+		return tag, nil
 	}
 	return "", fmt.Errorf(
-		"no tag matches %q, so there is no baseline to compare against. "+
+		"no stable %sMAJOR.MINOR.PATCH tag matches %q, so there is no baseline to compare against. "+
 			"Fetch tags (a shallow CI checkout has none: actions/checkout needs fetch-depth: 0 or fetch-tags: true), "+
 			"or name a ref with --baseline",
-		glob,
+		releaseTagPrefix, glob,
 	)
+}
+
+// newestRelease picks the highest stable release among candidate tag names.
+//
+// The glob cannot do this on its own: git matches it with fnmatch, where
+// `[0-9]*` is a digit followed by anything, so `controller/api/v0.0.29-rc1`
+// matches `defaultTagGlob`. Nor can `--sort=-version:refname`, which orders a
+// prerelease above the release it precedes unless versionsort.suffix is
+// configured. A release candidate selected as the baseline could not be ordered
+// by supersedes, so a waiver written against an earlier release would stay
+// Unused and fail instead of expiring.
+//
+// Ordering therefore goes through releaseVersion, the same function supersedes
+// uses, which keeps the invariant the tag constants describe: a tag either
+// selects as a baseline and orders against a waiver, or does neither.
+func newestRelease(tags []string) (string, bool) {
+	var best string
+	var bestVersion semver.Version
+	for _, line := range tags {
+		tag := strings.TrimSpace(line)
+		if tag == "" {
+			continue
+		}
+		v, ok := releaseVersion(tag)
+		if !ok {
+			continue
+		}
+		if best == "" || v.GT(bestVersion) {
+			best, bestVersion = tag, v
+		}
+	}
+	return best, best != ""
 }
 
 func showAtRef(ctx context.Context, ref, path string) ([]byte, error) {

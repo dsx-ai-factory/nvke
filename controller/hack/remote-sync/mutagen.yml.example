@@ -29,7 +29,7 @@
 sync:
   defaults:
     mode: "one-way-replica"
-    # Mutagen's portable default is 0600/0700 (owner-only). CWE containers
+    # Mutagen's portable default is 0600/0700 (owner-only). Controller containers
     # run as non-root and read synced files (e.g. profiles/), so they must be
     # world-readable. Executable bit is still tracked separately.
     permissions:

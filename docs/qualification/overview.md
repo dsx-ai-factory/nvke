@@ -60,9 +60,23 @@ parts are the way they are.
 ## Running one
 
 The lane never starts on its own. It runs on a `workflow_dispatch`, or when
-the `forge-e2e` label is applied to a pull request from this repository. It is
+the `qualify-e2e` label is applied to a pull request from this repository. It is
 deliberately not on a schedule or on push: it costs hardware, and a run nobody
 is watching is a run nobody acts on.
+
+A run starts with a `plan` job that runs `qualify plan` and uploads `plan.json`,
+and then runs one job for each stream of the plan's scope. The versions, the
+architecture and the GPU model of a job are the plan's, and the dispatch inputs
+that name a version override what the plan resolves.
+
+A **dry run** does everything except join Teleport and run the suite, so it
+takes no Forge machine. It is the `dry-run` dispatch input, or the
+`qualify-e2e-dry-run` label on a pull request. Each stream job still builds the
+site inputs, which confirms every image and archive exists, and writes the e2e
+config. It then prints the `-e2e.versions` and `-e2e.capabilities` the suite
+would have been given into `qualify-e2e.log`. A dry run has its own concurrency
+group, so it does not wait behind a real run, and its jobs are named
+`<stream> (dry run)`.
 
 `-e2e.site-stage` chooses how far to go, so you can pay for the part you need:
 
@@ -78,10 +92,10 @@ Every run uploads the same artifacts whether it passed or failed:
 
 | Artifact | What it is |
 |---|---|
-| `site-e2e.log` | the Ginkgo run |
-| `site-e2e.junit.xml` | the same result, machine-readable |
+| `qualify-e2e.log` | the Ginkgo run |
+| `qualify-e2e.junit.xml` | the same result, machine-readable |
 | `run-inputs.txt` | which versions and settings the run actually resolved, and which were overridden |
-| `site-diagnostics.tar.gz` | what `nkectl` collected on the node — present only when it failed |
+| `nkectl-diagnostics.tar.gz` | what `nkectl` collected on the node — present only when it failed |
 | `tbot.log` | the Teleport bot, for when nothing could be reached at all |
 
 A red run is as likely to be the site as the code. [triage.md](triage.md) is how
@@ -126,5 +140,5 @@ Related, outside this directory:
 | Path | Contents |
 |---|---|
 | `controller/test/e2e/README.md` | running the e2e suite: labels, configuration, and the lane's prerequisites |
-| `.github/workflows/site-and-tenant-e2e.yml` | the workflow itself |
+| `.github/workflows/qualify-e2e.yml` | the workflow itself |
 | `RELEASE.md` | how a release is cut once a candidate qualifies |

@@ -8,7 +8,7 @@ components. **Each service ships its own**, normally from the
 service's Helm chart, so the monitor is versioned, labeled and removed with
 the service it describes.
 
-Today, the Cloud Workflow Engine, Temporal and SPIRE do this, switched on by
+Today, the NKE controller, Temporal and SPIRE do this, switched on by
 their `deploy/nico` overlays. cert-manager, NodeLocal DNSCache, OVN-Kubernetes and
 CAPNICo don't, so their metrics aren't collected until their owners add a
 monitor.

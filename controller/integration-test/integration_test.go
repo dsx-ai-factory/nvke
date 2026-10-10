@@ -26,14 +26,6 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/api"
 )
 
-type IntegrationTestConfig struct {
-	ControllerAPIURL          string `env:"CWE_API_URL" envDefault:"http://localhost:8080/api"`
-	CreateClusterRequestPath  string `env:"CREATE_CLUSTER_REQUEST_PATH" envDefault:"testdata/default/create-cluster-request.json"`
-	CreateNodePoolRequestPath string `env:"CREATE_NODE_POOL_REQUEST_PATH" envDefault:"testdata/default/create-nodepool-request.json"`
-	SkipCleanup               bool   `env:"SKIP_CLEANUP" envDefault:"false"`
-	ControlPlaneVIP           string `env:"CONTROL_PLANE_VIP"`
-}
-
 type IntegrationTestSuite struct {
 	config                IntegrationTestConfig
 	client                *api.ClientWithResponses
@@ -47,7 +39,7 @@ type IntegrationTestSuite struct {
 }
 
 func TestIntegration(t *testing.T) {
-	config := env.Must(env.ParseAs[IntegrationTestConfig]())
+	config := env.Must(loadIntegrationTestConfig())
 
 	client, err := api.NewClientWithResponses(config.ControllerAPIURL)
 	require.NoError(t, err, "Failed to create API client")

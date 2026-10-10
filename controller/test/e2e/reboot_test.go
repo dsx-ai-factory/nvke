@@ -30,7 +30,7 @@ func validateLabelReboot(test *tenantTest) {
 		By(fmt.Sprintf("Applying %s=%s to worker %s", rebootLabelKey, rebootLabelReason, worker.Name))
 		applyRebootLabel(ctx, test, worker.Name)
 
-		By("Waiting for CWE to observe the reboot")
+		By("Waiting for the controller to observe the reboot")
 		expectSucceed(test.nke.WaitForNodeRebooting(ctx, worker.ID, rebootObservedAfter))
 
 		By("Waiting for reboot to complete (Rebooting=False and KubernetesReady=True)")

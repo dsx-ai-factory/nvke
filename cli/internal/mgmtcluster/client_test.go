@@ -61,7 +61,7 @@ func TestGetClusterKubeconfigReturnsAdminSecretData(t *testing.T) {
 }
 
 func TestGetClusterKubeconfigIgnoresNonAdminSecret(t *testing.T) {
-	// Only the CWE/CAPI-consumed "-kubeconfig" Secret exists (e.g. a SPIRE
+	// Only the controller/CAPI-consumed "-kubeconfig" Secret exists (e.g. a SPIRE
 	// exec-auth kubeconfig on an OIDC-enabled cluster) — GetClusterKubeconfig
 	// must not fall back to it.
 	c := newTestClient(t, &corev1.Secret{

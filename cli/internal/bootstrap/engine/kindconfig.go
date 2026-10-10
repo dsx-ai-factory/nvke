@@ -12,7 +12,7 @@ import (
 
 // kindClusterConfig mirrors the subset of kind's Cluster config
 // (kind.x-k8s.io/v1alpha4) this package generates. Single control-plane
-// node: the bootstrap cluster only ever hosts CWE for the duration of one
+// node: the bootstrap cluster only ever hosts the controller for the duration of one
 // `nkectl bootstrap site` run, it is not a multi-node target.
 type kindClusterConfig struct {
 	Kind       string          `yaml:"kind"`

@@ -10,6 +10,17 @@ controller/hack/capd-reboot-controller/capd-reboot-controller
 **/.bin/
 **/dist/
 **/release/
+# The root release/ is tracked: it holds release tooling, not build output.
+# The rule above still catches a nested release/ a build drops somewhere, which
+# is what it was written for. Re-including the directory is what makes this
+# work -- git does not descend into an excluded directory, so a negation naming
+# a file inside it would never match.
+!/release/
+
+# `qualify plan --output plan.json`, written at the checkout root. Anchored to
+# the root, since --output defaults to stdout and a run has to ask for the file
+# by name.
+/plan.json
 
 # Coverage output and local cluster credentials.
 *.out
@@ -74,14 +85,19 @@ cli/e2e/bootstrap/.etcd-encryption-key.json
 # nkectl and the three image archives `make site-inputs` stages for the Forge
 # site-controller lane. The lane points SITE_INPUTS here, inside the checkout,
 # so the workspace rather than a $HOME cache owns them -- see the env block in
-# site-and-tenant-e2e.yml. Hundreds of megabytes of docker save output.
+# qualify-e2e.yml. Hundreds of megabytes of docker save output.
 .site-inputs/
 
-# What the Forge lane's `go test` leaves in the e2e directory. report.json and
+# What the Forge lane's `go test` leaves in the e2e directory. qualify-e2e.report.json and
 # the diagnostics tarball carry captured spec output, which on this lane is
 # remote command output, so an accidental commit is a disclosure rather than
 # noise.
-controller/test/e2e/site-e2e.log
-controller/test/e2e/site-e2e.junit.xml
-controller/test/e2e/report.json
-controller/test/e2e/site-diagnostics.tar.gz
+controller/test/e2e/qualify-e2e.log
+controller/test/e2e/qualify-e2e.junit.xml
+controller/test/e2e/qualify-e2e.report.json
+controller/test/e2e/nkectl-diagnostics.tar.gz
+
+# Coverage profiles. make/coverage.mk points every module's `go test` here, and
+# hack/coverage.sh reads the directory. Nothing in it is committed: a profile
+# describes one run on one machine, and CI uploads it as an artifact instead.
+/coverage/

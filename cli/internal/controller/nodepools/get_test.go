@@ -6,6 +6,7 @@ package nodepools
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -69,7 +70,7 @@ func TestGetNodePoolsPrintsATable(t *testing.T) {
 	}
 }
 
-// TestGetNodePoolsSendsFiltersAsQueryParams pins that the filters go to CWE.
+// TestGetNodePoolsSendsFiltersAsQueryParams pins that the filters go to the controller.
 // Filtering locally would pass these assertions while fetching every pool.
 func TestGetNodePoolsSendsFiltersAsQueryParams(t *testing.T) {
 	seeds := []seed{
@@ -191,8 +192,13 @@ func TestGetNodePoolsOutputFormats(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fake, clientFn := newFakeCWE(t,
-				seed{clusterName: "alpha", name: "gpu-workers", desiredNodeCount: 8})
+			fake, clientFn := newFakeCWE(t, seed{
+				clusterName:      "alpha",
+				name:             "gpu-workers",
+				desiredNodeCount: 8,
+				nodeLabels:       map[string]string{"nvidia.com/gpu.present": "true", "node-role.kubernetes.io/worker": ""},
+				nodeTaints:       []api.NodeTaint{{Key: "nvidia.com/gpu", Value: "true", Effect: api.NodeTaintEffectNoSchedule}},
+			})
 
 			out, err := run(t, NewGetCmd(clientFn), "-o", tt.format)
 			if err != nil {
@@ -214,6 +220,12 @@ func TestGetNodePoolsOutputFormats(t *testing.T) {
 			// fields the table leaves out.
 			if pools[0].ClusterID != stored.ClusterID || pools[0].NodeNamePrefix != stored.NodeNamePrefix {
 				t.Errorf("pool = %+v, want every field of %+v", pools[0], stored)
+			}
+			if !reflect.DeepEqual(pools[0].NodeLabels, stored.NodeLabels) {
+				t.Errorf("nodeLabels = %v, want %v", pools[0].NodeLabels, stored.NodeLabels)
+			}
+			if !reflect.DeepEqual(pools[0].NodeTaints, stored.NodeTaints) {
+				t.Errorf("nodeTaints = %v, want %v", pools[0].NodeTaints, stored.NodeTaints)
 			}
 			// Nothing is resolved for a structured format, so no cluster list.
 			if seen := fake.seen(); len(seen) != 1 {
@@ -306,7 +318,7 @@ func TestGetNodePoolsReportsAnAPIError(t *testing.T) {
 		t.Fatal("get nodepools succeeded, want an error")
 	}
 	if !strings.Contains(err.Error(), "boom") {
-		t.Errorf("error = %v, want it to carry the message CWE sent", err)
+		t.Errorf("error = %v, want it to carry the message the controller sent", err)
 	}
 }
 
@@ -321,7 +333,7 @@ func TestGetNodePoolsReportsAClusterLookupError(t *testing.T) {
 		t.Fatal("get nodepools succeeded, want an error")
 	}
 	if !strings.Contains(err.Error(), "clusters unavailable") {
-		t.Errorf("error = %v, want it to carry the message CWE sent", err)
+		t.Errorf("error = %v, want it to carry the message the controller sent", err)
 	}
 }
 
@@ -460,7 +472,7 @@ func TestGetNodePoolsAcceptsSeveralNames(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("rows = %d, want a header and two pools:\n%s", len(got), out)
 	}
-	// Argument order, not the order CWE returns them in.
+	// Argument order, not the order the controller returns them in.
 	for i, want := range []string{"gpu-workers", "control-plane"} {
 		if name := fields(got[i+1])[0]; name != want {
 			t.Errorf("row %d = %q, want %q", i, name, want)
@@ -472,7 +484,7 @@ func TestGetNodePoolsAcceptsSeveralNames(t *testing.T) {
 		if strings.Contains(req, "/nodePools") {
 			lists++
 			if !strings.Contains(req, "name=") {
-				t.Errorf("request %q fetches every pool; each name is filtered by CWE", req)
+				t.Errorf("request %q fetches every pool; each name is filtered by the controller", req)
 			}
 		}
 	}

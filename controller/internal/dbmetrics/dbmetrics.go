@@ -379,6 +379,11 @@ func (c *Collector) collectClusterNodePoolAndNodeSetInfo(ctx context.Context, ch
 		clusterCtx := clusterInfoContext{
 			Name: cluster.Name,
 		}
+		// Intentionally not routed through a provider-capability client:
+		// this enriches an observability metric's labels, not reconciliation
+		// behavior — a missing label for another provider degrades a
+		// dashboard, not a cluster. Revisit only if another provider needs
+		// its own set of metric-label fields worth generalizing.
 		if cluster.ProviderType == db.ProviderTypeNico {
 			provider, err := cluster.NicoProvider()
 			if err != nil {

@@ -31,6 +31,11 @@ func (a *Activities) GetNodeProvisioningContext(ctx context.Context, nodeID uuid
 	if err != nil {
 		return NodeProvisioningContext{}, fmt.Errorf("failed to resolve node context: %w", err)
 	}
+	// Intentionally not routed through a provider-capability client: a
+	// single nil-safe field read, the same shape as the already-exempted
+	// db-layer accessors, just one layer higher. CAPI has no config-profile
+	// concept to read instead. Revisit only if resolving this needs more
+	// than one field or more than a nil check.
 	configProfile := ""
 	if nodeSet.Nico != nil {
 		nicoNodeSetProvider, err := nodeSet.NicoProvider()

@@ -132,3 +132,4 @@ spec:
           url: http://169.254.169.254:7777/latest/meta-data/phone_home
   lifecycle:
     deprecated: false
+    hidden: false

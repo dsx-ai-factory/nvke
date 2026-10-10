@@ -91,7 +91,7 @@ func (f *fakeCWE) failPatchWith(status int, body string) {
 
 // failDeleteWith makes the fake reject every DELETE with status and body
 // instead of removing the pool, while still answering the list lookup
-// normally. Used to pin CWE rejections (e.g. last control-plane pool)
+// normally. Used to pin controller rejections (e.g. last control-plane pool)
 // verbatim through the CLI.
 func (f *fakeCWE) failDeleteWith(status int, body string) {
 	f.mu.Lock()
@@ -106,11 +106,13 @@ type seed struct {
 	name             string
 	desiredNodeCount int
 	controlPlane     bool
+	nodeLabels       map[string]string
+	nodeTaints       []api.NodeTaint
 	// conditions overrides the default, which marks the pool provisioned.
 	conditions *api.NodePoolConditions
 }
 
-// newFakeCWE starts a fake CWE holding a node pool per seed, and returns it
+// newFakeCWE starts a fake controller API holding a node pool per seed, and returns it
 // together with a ControllerClientFn wired to it.
 func newFakeCWE(t *testing.T, seeds ...seed) (*fakeCWE, ControllerClientFn) {
 	t.Helper()
@@ -123,6 +125,13 @@ func newFakeCWE(t *testing.T, seeds ...seed) (*fakeCWE, ControllerClientFn) {
 			clusterIDs[s.clusterName] = clusterID
 			f.clusterNames[clusterID] = s.clusterName
 		}
+		labels, taints := map[string]string{}, []api.NodeTaint{}
+		if s.nodeLabels != nil {
+			labels = s.nodeLabels
+		}
+		if s.nodeTaints != nil {
+			taints = s.nodeTaints
+		}
 		f.nodePools = append(f.nodePools, api.NodePool{
 			ID:                uuid.New(),
 			ClusterID:         clusterID,
@@ -130,7 +139,8 @@ func newFakeCWE(t *testing.T, seeds ...seed) (*fakeCWE, ControllerClientFn) {
 			NodeNamePrefix:    s.name,
 			KubernetesVersion: "1.30.0",
 			DesiredNodeCount:  s.desiredNodeCount,
-			NodeLabels:        map[string]string{},
+			NodeLabels:        labels,
+			NodeTaints:        taints,
 			ControlPlane:      s.controlPlane,
 			Conditions:        conditionsFor(s),
 		})
@@ -284,7 +294,7 @@ func (f *fakeCWE) listClusters(w http.ResponseWriter, name string) {
 }
 
 // update answers PATCH /nodePools/{id}, applying desiredNodeCount and echoing
-// the stored pool back the way CWE does.
+// the stored pool back the way the controller does.
 func (f *fakeCWE) update(w http.ResponseWriter, r *http.Request, id string) {
 	var raw map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
@@ -312,7 +322,7 @@ func (f *fakeCWE) update(w http.ResponseWriter, r *http.Request, id string) {
 	writeJSON(w, http.StatusNotFound, api.GenericError{Message: "node pool " + id + " not found"})
 }
 
-// create answers POST /nodePools, enforcing the required fields the way CWE
+// create answers POST /nodePools, enforcing the required fields the way the controller
 // does and storing the pool so a later list returns it.
 func (f *fakeCWE) create(w http.ResponseWriter, r *http.Request) {
 	var raw map[string]any
@@ -346,20 +356,38 @@ func (f *fakeCWE) create(w http.ResponseWriter, r *http.Request) {
 	name, _ := raw["name"].(string)
 	prefix, _ := raw["nodeNamePrefix"].(string)
 	count, _ := raw["desiredNodeCount"].(float64)
+	// An omitted map or list reads back empty, as the controller answers, not null.
+	labels, taints := map[string]string{}, []api.NodeTaint{}
+	var fields struct {
+		NodeLabels map[string]string `json:"nodeLabels"`
+		NodeTaints []api.NodeTaint   `json:"nodeTaints"`
+	}
+	body, _ := json.Marshal(raw)
+	if err := json.Unmarshal(body, &fields); err != nil {
+		writeJSON(w, http.StatusBadRequest, api.GenericError{Message: "malformed labels or taints: " + err.Error()})
+		return
+	}
+	if fields.NodeLabels != nil {
+		labels = fields.NodeLabels
+	}
+	if fields.NodeTaints != nil {
+		taints = fields.NodeTaints
+	}
 	pool := api.NodePool{
 		ID:               uuid.New(),
 		ClusterID:        clusterID,
 		Name:             name,
 		NodeNamePrefix:   prefix,
 		DesiredNodeCount: int(count),
-		NodeLabels:       map[string]string{},
+		NodeLabels:       labels,
+		NodeTaints:       taints,
 	}
 	f.nodePools = append(f.nodePools, pool)
 	writeJSON(w, http.StatusCreated, pool)
 }
 
 // delete answers DELETE /nodePools/{id}, removing the pool from the store on
-// success. CWE's real response carries no body on 202.
+// success. The controller's real response carries no body on 202.
 func (f *fakeCWE) delete(w http.ResponseWriter, id string) {
 	if f.deleteStatus != 0 {
 		writeJSON(w, f.deleteStatus, json.RawMessage(f.deleteBody))

@@ -1,0 +1,148 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Workflow 2 of 2 for Fern doc previews (see fern-docs-preview-build.yml).
+#
+# Triggered by workflow_run after the build workflow completes. Downloads the
+# fern/ artifact, generates a preview with FERN_TOKEN, and posts (or updates)
+# a comment on the PR. Secrets are never exposed to untrusted code.
+#
+# Requires: FERN_TOKEN organization secret.
+
+name: "Preview Fern Docs: Comment"
+
+on:
+  workflow_run:
+    workflows: ["Preview Fern Docs: Build"]
+    types: [completed]
+
+permissions:
+  pull-requests: write
+  actions: read
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_repository.full_name || github.repository }}-${{ github.event.workflow_run.head_branch || github.event.workflow_run.id }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    name: Post preview comment
+    runs-on: ubuntu-latest
+    if: github.repository == 'dsx-ai-factory/nke' && github.event.workflow_run.conclusion == 'success'
+    timeout-minutes: 15
+    steps:
+      - name: Download Fern sources and metadata
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fern-preview
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate and read PR metadata
+        id: metadata
+        run: |
+          PR_NUMBER=$(cat preview-metadata/pr_number)
+          if ! printf '%s' "$PR_NUMBER" | grep -qE '^[0-9]+$'; then
+            echo "::error::Invalid pr_number in artifact: ${PR_NUMBER}"
+            exit 1
+          fi
+          echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$(cat preview-metadata/head_ref)" >> "$GITHUB_OUTPUT"
+
+      # The docs link to files all over the repo, so build from the whole trusted tree.
+      - name: Checkout trusted tree from base branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.base_branch }}
+          persist-credentials: false
+          path: trusted
+
+      - name: Overlay the PR's docs content on the trusted tree
+        run: |
+          for d in docs cli/docs controller/docs; do
+            if [ -d "${d}" ]; then rm -rf "trusted/${d}" && cp -r "${d}" "trusted/${d}"; fi
+          done
+          if [ -f controller/api/openapi.yaml ]; then cp controller/api/openapi.yaml trusted/controller/api/openapi.yaml; fi
+
+      - name: Generate preview URL
+        id: generate-docs
+        env:
+          FERN_TOKEN: ${{ secrets.FERN_TOKEN }}
+          PR_NUMBER: ${{ steps.metadata.outputs.pr_number }}
+        working-directory: ./trusted/fern
+        run: |
+          set -o pipefail
+          PREVIEW_ID=$(printf 'pr-%s' "$PR_NUMBER" | tr -c 'A-Za-z0-9-' '-')
+          npx -y fern-api@latest generate --docs --preview --id "$PREVIEW_ID" 2>&1 | tee /tmp/fern-output.log
+          URL=$(grep -oE 'https://[^[:space:]]+' /tmp/fern-output.log | tail -1 || true)
+          if [ -z "$URL" ]; then
+            echo "::error::Failed to generate preview URL. See fern output above."
+            exit 1
+          fi
+          if ! printf '%s' "$URL" | grep -qE '^https://[a-zA-Z0-9._-]+\.buildwithfern\.com'; then
+            echo "::error::Unexpected preview URL host (expected buildwithfern.com): ${URL}"
+            exit 1
+          fi
+          echo "preview_url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Build page links for changed files
+        id: page-links
+        env:
+          PREVIEW_URL: ${{ steps.generate-docs.outputs.preview_url }}
+        run: |
+          CHANGED_FILES=""
+          if [ -f preview-metadata/changed_md_files ]; then
+            CHANGED_FILES=$(cat preview-metadata/changed_md_files)
+          fi
+
+          if [ -z "$CHANGED_FILES" ] || [ -z "$PREVIEW_URL" ]; then
+            echo "page_links=" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          BASE_URL="${PREVIEW_URL%/}"
+          FILES_PARAM=$(echo "$CHANGED_FILES" | tr '\n' ',' | sed 's/,$//' \
+            | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip(), safe=',/'))")
+          RESPONSE=$(curl -sf "${PREVIEW_URL}/api/fern-docs/get-slug-for-file?files=${FILES_PARAM}" 2>/dev/null) || {
+            echo "page_links=" >> "$GITHUB_OUTPUT"; exit 0
+          }
+
+          PAGE_LINKS=$(echo "$RESPONSE" | jq -r --arg url "$BASE_URL" \
+            '.mappings[] | select(.slug != null) | "- [\(.slug)](\($url)/\(.slug))"')
+
+          if [ -n "$PAGE_LINKS" ]; then
+            { echo "page_links<<EOF"; echo "$PAGE_LINKS"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+          else
+            echo "page_links=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post or update PR comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.metadata.outputs.pr_number }}
+          PREVIEW_URL: ${{ steps.generate-docs.outputs.preview_url }}
+          PAGE_LINKS: ${{ steps.page-links.outputs.page_links }}
+        run: |
+          BODY=":herb: **Preview your docs:** <${PREVIEW_URL}>"
+          if [ -n "${PAGE_LINKS}" ]; then
+            BODY="${BODY}
+
+          Here are the markdown pages you've updated:
+          ${PAGE_LINKS}"
+          fi
+
+          MARKER="<!-- preview-docs -->"
+          BODY="${BODY}
+
+          ${MARKER}"
+
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" | tr -d '\r' | head -1)
+
+          if [ -n "$COMMENT_ID" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" \
+              -X PATCH -f body="$BODY"
+          else
+            gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+              -f body="$BODY"
+          fi

@@ -99,7 +99,7 @@ func (f *fakeSession) Teardown(context.Context) error { return nil }
 func TestCollectDiagnostics(t *testing.T) {
 	s := newFakeSession()
 	s.fetch[diagnosticsArchive] = []byte("tarball")
-	dest := filepath.Join(t.TempDir(), "site-diagnostics.tar.gz")
+	dest := filepath.Join(t.TempDir(), "nkectl-diagnostics.tar.gz")
 
 	if err := CollectDiagnostics(context.Background(), s, dest); err != nil {
 		t.Fatalf("collect: %v", err)
@@ -120,7 +120,7 @@ func TestCollectDiagnosticsRedacts(t *testing.T) {
 	s.fetch[diagnosticsArchive] = tarGz(t, map[string]string{
 		"diagnostics/journal.log": "authenticating with " + testForgeToken + "\n",
 	})
-	dest := filepath.Join(t.TempDir(), "site-diagnostics.tar.gz")
+	dest := filepath.Join(t.TempDir(), "nkectl-diagnostics.tar.gz")
 
 	if err := CollectDiagnostics(context.Background(), s, dest, testForgeToken); err != nil {
 		t.Fatalf("collect: %v", err)
@@ -148,7 +148,7 @@ func TestCollectDiagnosticsWithoutADirectory(t *testing.T) {
 	// remote `if test -d ...; else echo ...; fi` prints when nkectl wrote
 	// nothing, which is what a deploy that worked leaves behind.
 	s.fail = func(string) (string, error) { return noDiagnosticsMarker + "\n", nil }
-	dest := filepath.Join(t.TempDir(), "site-diagnostics.tar.gz")
+	dest := filepath.Join(t.TempDir(), "nkectl-diagnostics.tar.gz")
 
 	if err := CollectDiagnostics(context.Background(), s, dest); !errors.Is(err, ErrNoDiagnostics) {
 		t.Fatalf("an absent directory should be ErrNoDiagnostics, got %v", err)
@@ -163,7 +163,7 @@ func TestCollectDiagnosticsWithoutADirectory(t *testing.T) {
 func TestCollectDiagnosticsWhenArchivingFails(t *testing.T) {
 	s := newFakeSession()
 	s.fail = func(string) (string, error) { return "tar: permission denied", errors.New("exit status 2") }
-	dest := filepath.Join(t.TempDir(), "site-diagnostics.tar.gz")
+	dest := filepath.Join(t.TempDir(), "nkectl-diagnostics.tar.gz")
 
 	err := CollectDiagnostics(context.Background(), s, dest)
 	if err == nil || errors.Is(err, ErrNoDiagnostics) {

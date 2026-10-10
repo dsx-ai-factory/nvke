@@ -140,7 +140,7 @@ func TestGetClustersAcceptsSeveralNames(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("rows = %d, want a header and two clusters:\n%s", len(got), out)
 	}
-	// Argument order, not the order CWE returns them in.
+	// Argument order, not the order the controller returns them in.
 	for i, want := range []string{"gamma", "alpha"} {
 		if got[i+1][0] != want {
 			t.Errorf("row %d = %q, want %q", i, got[i+1][0], want)

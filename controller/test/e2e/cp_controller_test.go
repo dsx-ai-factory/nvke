@@ -21,14 +21,9 @@ import (
 // validateControllerManagedControlPlane asserts a cluster provisioned from the
 // cluster-level controlPlaneConfig (control-plane controller, no control-plane
 // node pool) has no such pool and brings the desired control-plane nodes to Ready
-// in both CWE and the tenant API. Requires flag-on CWE (a flag-off CWE rejects
-// controlPlaneConfig at create); self-skips otherwise.
+// in both the controller and the tenant API.
 func validateControllerManagedControlPlane(test *tenantTest) {
 	It("manages the control plane from the cluster-level config without a control-plane node pool", func(ctx context.Context) {
-		if !controlPlaneControllerEnabled() {
-			Skip("requires CWE deployed with " + controlPlaneControllerEnv + " on")
-		}
-
 		Expect(test.spec.ControlPlane.Config).NotTo(BeNil(),
 			"the control-plane-controller spec must set a cluster-level control plane config")
 		desired := test.spec.ControlPlane.Config.DesiredCount
@@ -48,6 +43,9 @@ func validateControllerManagedControlPlane(test *tenantTest) {
 
 		By("Asserting the tenant cluster reports Ready for the controller-managed control-plane nodes")
 		assertControlPlaneNodesReadyInTenant(ctx, test, desired)
+		want := expectedControlPlaneFailureDomainCounts(test.spec, desired)
+		By("Verifying the control-plane Machines requested the expected failure domains")
+		assertCAPDControlPlaneFailureDomains(ctx, test, desired, want)
 	}, Label("cp-controller", "readiness"), NodeTimeout(90*time.Minute))
 }
 
@@ -59,15 +57,10 @@ const controlPlaneControllerUpdateDesiredCount = 3
 
 // validateControllerManagedControlPlaneUpdate PATCHes the cluster-level
 // controlPlaneConfig desiredCount and waits for the control plane to converge on
-// the new count in CWE and the tenant API. The controller-managed control plane
-// has no node pool, so it can't be scaled through the node pool API. Requires
-// flag-on CWE; self-skips otherwise.
+// the new count in the controller and the tenant API. The controller-managed control plane
+// has no node pool, so it can't be scaled through the node pool API.
 func validateControllerManagedControlPlaneUpdate(test *tenantTest) {
 	It("scales the controller-managed control plane to a new desired count", func(ctx context.Context) {
-		if !controlPlaneControllerEnabled() {
-			Skip("requires CWE deployed with " + controlPlaneControllerEnv + " on")
-		}
-
 		Expect(test.spec.ControlPlane.Config).NotTo(BeNil(),
 			"the control-plane-controller spec must set a cluster-level control plane config")
 		desired := controlPlaneControllerUpdateDesiredCount
@@ -75,14 +68,16 @@ func validateControllerManagedControlPlaneUpdate(test *tenantTest) {
 		By(fmt.Sprintf("Updating the cluster-level control-plane desired count to %d", desired))
 		expectSucceed(test.nke.UpdateControlPlaneDesiredCount(ctx, test.cluster.ID, desired))
 
-		By("Waiting for the updated control-plane node count to become KubernetesReady in CWE")
+		By("Waiting for the updated control-plane node count to become KubernetesReady in the controller")
 		Eventually(func(ctx context.Context) error {
 			return test.nke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, desired)
 		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(5*time.Second).
-			Should(Succeed(), "control plane should scale to the new desired count in CWE")
+			Should(Succeed(), "control plane should scale to the new desired count in the controller")
 
 		By("Asserting the tenant cluster reports Ready for the updated control-plane nodes")
 		assertControlPlaneNodesReadyInTenant(ctx, test, desired)
+		By("Verifying scale-up balanced CAPI Machines across the eligible failure domains")
+		assertCAPDControlPlaneFailureDomains(ctx, test, desired, nil)
 	}, Label("cp-controller", "update"), NodeTimeout(90*time.Minute))
 }
 
@@ -97,17 +92,13 @@ const controlPlaneControllerRollKubernetesVersion = "1.34.8"
 
 // validateControllerManagedControlPlaneRollingUpdate bumps the control-plane
 // config revision and asserts the controller rolls the old nodes onto new ones at
-// the same desired count, Ready in both CWE and the tenant API (mirrors the
+// the same desired count, Ready in both the controller and the tenant API (mirrors the
 // node-pool baseline in upgrade_test.go, but via the cluster-level config
 // revision). The field it bumps depends on the provider, since the replacing
 // fields differ. Runs after the desiredCount update so quorum survives a
-// one-at-a-time roll. Requires flag-on CWE; self-skips otherwise.
+// one-at-a-time roll.
 func validateControllerManagedControlPlaneRollingUpdate(test *tenantTest) {
 	It("rolls the controller-managed control plane on a control-plane config revision", func(ctx context.Context) {
-		if !controlPlaneControllerEnabled() {
-			Skip("requires CWE deployed with " + controlPlaneControllerEnv + " on")
-		}
-
 		Expect(test.spec.ControlPlane.Config).NotTo(BeNil(),
 			"the control-plane-controller spec must set a cluster-level control plane config")
 
@@ -126,20 +117,22 @@ func validateControllerManagedControlPlaneRollingUpdate(test *tenantTest) {
 			expectSucceed(test.nke.UpgradeClusterControlPlane(ctx, test.cluster.ID, controlPlaneControllerRollKubernetesVersion))
 		}
 
-		By("Waiting for every old control-plane node to be replaced and KubernetesReady in CWE")
+		By("Waiting for every old control-plane node to be replaced and KubernetesReady in the controller")
 		Expect(test.nke.WaitForControlPlaneNodesRolled(ctx, test.cluster.ID, desired, oldNodeIDs)).To(Succeed(),
 			"control plane should roll onto new nodes at the same desired count")
 
 		By("Asserting the tenant cluster reports Ready for the rolled control-plane nodes")
 		assertControlPlaneNodesReadyInTenant(ctx, test, desired)
+		By("Verifying replacement CAPI Machines retained balanced failure-domain placement")
+		assertCAPDControlPlaneFailureDomains(ctx, test, desired, nil)
 	}, Label("cp-controller", "rolling-update"), NodeTimeout(90*time.Minute))
 }
 
 // assertControlPlaneNodesReadyInTenant builds an authenticated tenant client and
-// eventually asserts that the controller-managed control-plane nodes CWE reports
+// eventually asserts that the controller-managed control-plane nodes the controller reports
 // (NodePoolID == uuid.Nil) are present and Ready in the tenant Kubernetes API. It
 // mirrors validateNodeReadinessPostCreate's tenant-side node-list pattern, but
-// keys off the CWE-reported control-plane node names rather than node pools,
+// keys off the controller-reported control-plane node names rather than node pools,
 // since the controller-managed control plane has no owning pool.
 func assertControlPlaneNodesReadyInTenant(ctx context.Context, test *tenantTest, desired int) {
 	GinkgoHelper()
@@ -163,7 +156,7 @@ func controlPlaneNodesReadyInTenant(ctx context.Context, test *tenantTest, tenan
 		return err
 	}
 	if len(names) != desired {
-		return fmt.Errorf("CWE reports %d controller-managed control-plane nodes; want %d", len(names), desired)
+		return fmt.Errorf("controller reports %d controller-managed control-plane nodes; want %d", len(names), desired)
 	}
 
 	var tenantNodes corev1.NodeList
@@ -197,10 +190,6 @@ const controlPlaneControllerDeleteSurgeCount = 4
 // is deterministic because nothing asynchronous has to happen for it to hold.
 func validateControllerManagedControlPlaneDeleteRefused(test *tenantTest) {
 	It("refuses a control-plane node delete that would leave fewer than three", func(ctx context.Context) {
-		if !controlPlaneControllerEnabled() {
-			Skip("requires CWE deployed with " + controlPlaneControllerEnv + " on")
-		}
-
 		By("Confirming the control plane is at the three-node fault-tolerant floor")
 		Eventually(func(ctx context.Context) error {
 			return test.nke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount)
@@ -254,10 +243,6 @@ func validateControllerManagedControlPlaneDeleteRefused(test *tenantTest) {
 // also the replacement-first shape operators are told to use.
 func validateControllerManagedControlPlaneSerializedDelete(test *tenantTest) {
 	It("serializes a quorum-safe control-plane node delete and gates joins on it", func(ctx context.Context) {
-		if !controlPlaneControllerEnabled() {
-			Skip("requires CWE deployed with " + controlPlaneControllerEnv + " on")
-		}
-
 		By(fmt.Sprintf("Growing the control plane to %d so the delete clears the quorum floor", controlPlaneControllerDeleteSurgeCount))
 		expectSucceed(test.nke.UpdateControlPlaneDesiredCount(ctx, test.cluster.ID, controlPlaneControllerDeleteSurgeCount))
 		Eventually(func(ctx context.Context) error {
@@ -272,6 +257,8 @@ func validateControllerManagedControlPlaneSerializedDelete(test *tenantTest) {
 		By("Waiting for every grown control-plane node to report Joined, which is what the quorum floor counts")
 		Expect(test.nke.WaitForJoinedControlPlaneNodes(ctx, test.cluster.ID, controlPlaneControllerDeleteSurgeCount)).To(Succeed(),
 			"the quorum floor counts joined nodes, so the delete must not race the Joined write")
+		By("Verifying the four-node control plane is balanced before scale-down")
+		assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerDeleteSurgeCount, nil)
 
 		By("Lowering the desired count so the delete shrinks the control plane instead of replacing the node")
 		expectSucceed(test.nke.UpdateControlPlaneDesiredCount(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount))
@@ -342,6 +329,8 @@ func validateControllerManagedControlPlaneSerializedDelete(test *tenantTest) {
 
 		By("Asserting the tenant cluster reports Ready for the surviving control-plane nodes")
 		assertControlPlaneNodesReadyInTenant(ctx, test, controlPlaneControllerUpdateDesiredCount)
+		By("Verifying the three-node control plane remains balanced after scale-down")
+		assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerUpdateDesiredCount, nil)
 	}, Label("cp-controller", "cp-delete"), NodeTimeout(45*time.Minute))
 }
 
@@ -360,10 +349,6 @@ func validateControllerManagedControlPlaneSerializedDelete(test *tenantTest) {
 // teardown runs to completion is what the unit tests cannot cover.
 func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 	It("refuses deleting a healthy control-plane node but removes an unreachable one", func(ctx context.Context) {
-		if !controlPlaneControllerEnabled() {
-			Skip("requires CWE deployed with " + controlPlaneControllerEnv + " on")
-		}
-
 		By("Confirming the control plane is settled at the three-node fault-tolerant floor")
 		Eventually(func(ctx context.Context) error {
 			return test.nke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount)
@@ -375,6 +360,28 @@ func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 		cpNodes := expectSucceed(test.nke.ListClusterNodesByControlPlane(ctx, test.cluster.ID, true))
 		Expect(cpNodes).To(HaveLen(controlPlaneControllerUpdateDesiredCount))
 		victim := cpNodes[0]
+		var victimDomain string
+		originalNames := make(map[string]struct{}, len(cpNodes))
+		if test.spec.Backend == nke.BackendCAPD {
+			By("Selecting the Machine in the less-used failure domain for deletion")
+			domainsByNode := assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerUpdateDesiredCount, nil)
+			Expect(controlPlaneEligibleDomains(test.spec)).To(Equal(2),
+				"the replacement-domain check requires exactly two eligible domains")
+			counts := make(map[string]int)
+			for _, node := range cpNodes {
+				originalNames[node.Name] = struct{}{}
+				domain := domainsByNode[node.Name]
+				counts[domain]++
+			}
+			for _, node := range cpNodes {
+				if counts[domainsByNode[node.Name]] == 1 {
+					victim = node
+					victimDomain = domainsByNode[node.Name]
+					break
+				}
+			}
+			Expect(victimDomain).NotTo(BeEmpty(), "a balanced three-node control plane should have one Machine in a less-used domain")
+		}
 
 		By("Confirming the delete is refused while the node is healthy")
 		message := expectSucceed(test.nke.DeleteNodeExpectingRefusal(ctx, victim.ID))
@@ -386,7 +393,7 @@ func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 		Expect(runDockerCommand(ctx, "exec", container, "systemctl", "stop", "kubelet")).To(Succeed(),
 			"stopping kubelet is how this spec makes the node unreachable")
 
-		By("Waiting for CWE to observe the node as no longer ready")
+		By("Waiting for the controller to observe the node as no longer ready")
 		Eventually(func(ctx context.Context) error {
 			state, err := test.nke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID)
 			if err != nil {
@@ -398,7 +405,7 @@ func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 			}
 			return nil
 		}).WithContext(ctx).WithTimeout(10*time.Minute).WithPolling(5*time.Second).
-			Should(Succeed(), "CWE should notice the node stopped being ready")
+			Should(Succeed(), "the controller should notice the node stopped being ready")
 
 		By("Deleting the same node now that it is unreachable")
 		Expect(test.nke.DeleteNode(ctx, victim.ID)).To(Succeed(),
@@ -441,5 +448,19 @@ func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
 
 		By("Asserting the tenant cluster reports Ready for the recovered control plane")
 		assertControlPlaneNodesReadyInTenant(ctx, test, controlPlaneControllerUpdateDesiredCount)
+		if test.spec.Backend == nke.BackendCAPD {
+			By("Verifying the replacement refilled the deleted Machine's failure domain")
+			names := expectSucceed(test.nke.ControlPlaneNodeNames(ctx, test.cluster.ID))
+			var replacementNames []string
+			for _, name := range names {
+				if _, existed := originalNames[name]; !existed {
+					replacementNames = append(replacementNames, name)
+				}
+			}
+			Expect(replacementNames).To(HaveLen(1), "the deleted control-plane node should have exactly one replacement")
+			replacementDomains := assertCAPDControlPlaneFailureDomains(ctx, test, controlPlaneControllerUpdateDesiredCount, nil)
+			replacementDomain := replacementDomains[replacementNames[0]]
+			Expect(replacementDomain).To(Equal(victimDomain), "the replacement should refill the deleted Machine's domain")
+		}
 	}, Label("cp-controller", "cp-delete"), NodeTimeout(60*time.Minute))
 }

@@ -50,7 +50,7 @@ type database interface {
 }
 
 // Reconciler approves pending kubelet-serving CSRs that match the node identity
-// recorded in CWE.
+// recorded in the controller.
 type Reconciler struct {
 	clusterID uuid.UUID
 	database  database
@@ -118,7 +118,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 		return ctrl.Result{}, nil
 	}
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("getting CWE cluster %s: %w", r.clusterID, err)
+		return ctrl.Result{}, fmt.Errorf("getting controller cluster %s: %w", r.clusterID, err)
 	}
 	if cluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
 		return ctrl.Result{}, nil
@@ -126,7 +126,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 
 	nodes, err := r.database.ListNodes(ctx, db.NodeFilters{ClusterID: &r.clusterID})
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("listing CWE nodes for cluster %s: %w", r.clusterID, err)
+		return ctrl.Result{}, fmt.Errorf("listing controller nodes for cluster %s: %w", r.clusterID, err)
 	}
 	decision := planDecision(csr, nodes)
 	if decision.Action == decisionSkip {
@@ -212,12 +212,12 @@ func planDecision(csr *certificatesv1.CertificateSigningRequest, nodes []db.Node
 
 	expectedIP, known := knownNodeIP(nodes, nodeName)
 	if !known {
-		return newDecision(csr, nodeName, decisionSkip, "node is not present in CWE desired state")
+		return newDecision(csr, nodeName, decisionSkip, "node is not present in the controller's desired state")
 	}
 	if reason := validateServingCSR(csr, nodeName, expectedIP); reason != "" {
 		return newDecision(csr, nodeName, decisionSkip, reason)
 	}
-	return newDecision(csr, nodeName, decisionApprove, "matches CWE node identity")
+	return newDecision(csr, nodeName, decisionApprove, "matches controller node identity")
 }
 
 func newDecision(csr *certificatesv1.CertificateSigningRequest, nodeName, action, reason string) csrDecision {
@@ -239,7 +239,7 @@ func knownNodeIP(nodes []db.Node, nodeName string) (string, bool) {
 }
 
 // validateServingCSR returns an empty string when a CSR matches the identity
-// recorded in CWE. A non-empty return value explains why it must not be
+// recorded in the controller. A non-empty return value explains why it must not be
 // approved.
 func validateServingCSR(csr *certificatesv1.CertificateSigningRequest, nodeName, expectedIP string) string {
 	if !slices.Contains(csr.Spec.Groups, nodeGroup) {
@@ -295,7 +295,7 @@ func validateSubjectAlternativeNames(csr *x509.CertificateRequest, nodeName, exp
 
 	for _, dnsName := range csr.DNSNames {
 		if dnsName != nodeName {
-			return fmt.Sprintf("DNS SAN %q does not match CWE node name", dnsName)
+			return fmt.Sprintf("DNS SAN %q does not match controller node name", dnsName)
 		}
 	}
 
@@ -305,7 +305,7 @@ func validateSubjectAlternativeNames(csr *x509.CertificateRequest, nodeName, exp
 	expected := net.ParseIP(expectedIP)
 	for _, ipAddress := range csr.IPAddresses {
 		if expected == nil || !ipAddress.Equal(expected) {
-			return fmt.Sprintf("IP SAN %q does not match CWE node IP", ipAddress)
+			return fmt.Sprintf("IP SAN %q does not match controller node IP", ipAddress)
 		}
 	}
 	return ""

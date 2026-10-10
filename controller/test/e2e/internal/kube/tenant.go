@@ -97,7 +97,7 @@ type EndpointRelay func(ctx context.Context, hostPort string) (string, error)
 // A tenant's published kubeconfig names its own VIP, which is right for
 // anything inside the site and wrong for a test process outside it. On Forge
 // that address is unroutable from CI: run 36051890151 brought up a tenant
-// whose nodes CWE reported Ready, then spent its whole budget failing to
+// whose nodes the controller reported Ready, then spent its whole budget failing to
 // dial 10.91.194.69:6443 to confirm it from the cluster side.
 //
 // Left unset every tenant client talks to the published address directly,
@@ -142,7 +142,7 @@ func WithJWTExchangeCABundle(bundle []byte) TenantClientFactoryOption {
 // It obtains the tenant endpoint, CA, and authentication mode from the
 // TenantAccessController-published kubeconfig in nke-system. Plain kubeconfig
 // credentials are preserved; the SPIRE exec plugin is replaced by a lazily
-// minted JWT-SVID for CWE's identity.
+// minted JWT-SVID for the controller's identity.
 type TenantClientFactory struct {
 	coreClient coreclient.CoreV1Interface
 	coreREST   rest.Interface
@@ -201,11 +201,11 @@ func (f *TenantClientFactory) GetClient(ctx context.Context, clusterName string)
 
 // GetAdminClient returns a tenant client from the admin kubeconfig TenantAccess
 // publishes. Post-ready probes use it to create short-lived workloads without
-// widening the production CWE SPIFFE identity's permissions for test setup.
+// widening the production controller SPIFFE identity's permissions for test setup.
 //
 // With OIDC off TenantAccess publishes the admin kubeconfig itself, and that
 // Secret is used as it stands. With OIDC on it publishes a SPIRE exec-auth
-// kubeconfig for the CWE identity, which is deliberately not an admin
+// kubeconfig for the controller identity, which is deliberately not an admin
 // credential, so authenticate as adminSPIFFEPath instead. nke:capi-cluster-admin
 // binds that identity to cluster-admin in every tenant.
 func (f *TenantClientFactory) GetAdminClient(ctx context.Context, clusterName string) (client.Client, error) {
@@ -653,7 +653,7 @@ func trustDomainFromSPIREServerConfig(data []byte) (string, error) {
 			return parsed.Host, nil
 		}
 	}
-	return "", errors.New("server configuration has neither trust_domain nor a CWE admin_id")
+	return "", errors.New("server configuration has neither trust_domain nor a controller admin_id")
 }
 
 func validateTrustDomain(trustDomain string) error {

@@ -1,41 +1,52 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+// Controller setup and reconcile dispatch coordinate lifecycle work and status persistence.
+
 package controllers
 
 import (
 	"context"
 	"errors"
-	"fmt"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
-	"sigs.k8s.io/cluster-api/util/annotations"
-	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	"github.com/dsx-ai-factory/nke/controller/api"
 	internalv1 "github.com/dsx-ai-factory/nke/management-engine/apis/v1"
 )
 
-var nkeClusterOwnedConditions = []string{
-	clusterv1.AvailableCondition,
-	internalv1.SyncedCondition,
-	internalv1.ReadyCondition,
-	clusterv1.PausedCondition,
-	clusterv1.DeletingCondition,
+const (
+	nkeClusterFinalizer = "internal.nke.nvidia.com/cluster-cleanup"
+	defaultPollInterval = 10 * time.Second
+)
+
+// CWEClient is the existing REST API surface used by cluster reconciliation.
+type CWEClient interface {
+	Endpoint() string
+	FindByName(ctx context.Context, name string) (*api.Cluster, error)
+	Get(ctx context.Context, id string) (*api.Cluster, error)
+	Create(ctx context.Context, request api.CreateClusterRequest) (*api.Cluster, error)
+	Delete(ctx context.Context, id string) error
 }
 
-// NKEClusterReconciler reconciles a NKECluster object
+// NKEClusterReconciler coordinates cluster provisioning from declarative intent.
 type NKEClusterReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	CWE          CWEClient
+	Bindings     []CWEBinding
+	PollInterval time.Duration
 }
 
-// +kubebuilder:rbac:groups=internal.nke.nvidia.com,resources=nkeclusters,verbs=get;list;watch
-// +kubebuilder:rbac:groups=internal.nke.nvidia.com,resources=nkeclusters/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=internal.nke.nvidia.com,resources=nkeclusters,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=internal.nke.nvidia.com,resources=nkeclusters/status,verbs=update;patch
 
 func (r *NKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, retErr error) {
 	log := ctrl.LoggerFrom(ctx)
@@ -50,78 +61,47 @@ func (r *NKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	observed := true
 	defer func() {
 		if conditionErr := setNKEClusterConditions(&cluster); conditionErr != nil {
 			retErr = errors.Join(retErr, conditionErr)
 		}
-		if patchErr := patchHelper.Patch(ctx, &cluster,
-			patch.WithOwnedConditions{Conditions: nkeClusterOwnedConditions},
-			patch.WithStatusObservedGeneration{},
-		); patchErr != nil {
+		if observed && retErr == nil {
+			// Set this explicitly: the patch helper returns early when other status fields are unchanged.
+			cluster.Status.ObservedGeneration = cluster.Generation
+		}
+		if patchErr := patchHelper.Patch(ctx, &cluster, patch.WithOwnedConditions{Conditions: nkeClusterOwnedConditions}); client.IgnoreNotFound(patchErr) != nil {
 			retErr = errors.Join(retErr, patchErr)
 		}
 	}()
 
-	if annotations.HasPaused(&cluster) {
-		conditions.Set(&cluster, metav1.Condition{
-			Type: clusterv1.PausedCondition, Status: metav1.ConditionTrue, Reason: clusterv1.PausedReason,
-		})
+	if r.CWE == nil {
+		setLifecycleConditions(&cluster, metav1.ConditionUnknown, metav1.ConditionUnknown, "ProvisioningNotConfigured", "Cluster provisioning is not configured")
 		return ctrl.Result{}, nil
 	}
-	conditions.Set(&cluster, metav1.Condition{
-		Type: clusterv1.PausedCondition, Status: metav1.ConditionFalse, Reason: clusterv1.NotPausedReason,
-	})
-	return ctrl.Result{}, nil
-}
-
-func setNKEClusterConditions(cluster *internalv1.NKECluster) error {
-	deleting := metav1.ConditionFalse
-	reason := clusterv1.NotDeletingReason
 	if !cluster.DeletionTimestamp.IsZero() {
-		deleting = metav1.ConditionTrue
-		reason = clusterv1.DeletingReason
+		return r.reconcileDelete(ctx, &cluster)
 	}
-	conditions.Set(cluster, metav1.Condition{Type: clusterv1.DeletingCondition, Status: deleting, Reason: reason})
-
-	if err := conditions.SetSummaryCondition(cluster, cluster, internalv1.SyncedCondition,
-		conditions.ForConditionTypes{internalv1.ControlPlaneReadyCondition},
-		conditions.CustomMergeStrategy{MergeStrategy: conditions.DefaultMergeStrategy(
-			conditions.ComputeReasonFunc(conditions.GetDefaultComputeMergeReasonFunc(
-				internalv1.NotSyncedReason, internalv1.SyncUnknownReason, internalv1.SyncedReason,
-			)),
-		)},
-	); err != nil {
-		return fmt.Errorf("summarize NKECluster Synced condition: %w", err)
+	if !controllerutil.ContainsFinalizer(&cluster, nkeClusterFinalizer) {
+		// Persist cleanup responsibility before making any provisioning request.
+		controllerutil.AddFinalizer(&cluster, nkeClusterFinalizer)
+		observed = false
+		return ctrl.Result{RequeueAfter: r.PollInterval}, nil
 	}
-	if err := conditions.SetSummaryCondition(cluster, cluster, clusterv1.AvailableCondition,
-		conditions.ForConditionTypes{internalv1.ControlPlaneReadyCondition},
-		conditions.CustomMergeStrategy{MergeStrategy: conditions.DefaultMergeStrategy(
-			conditions.ComputeReasonFunc(conditions.GetDefaultComputeMergeReasonFunc(
-				clusterv1.NotAvailableReason, clusterv1.AvailableUnknownReason, clusterv1.AvailableReason,
-			)),
-		)},
-	); err != nil {
-		return fmt.Errorf("summarize NKECluster Available condition: %w", err)
-	}
-	if err := conditions.SetSummaryCondition(cluster, cluster, internalv1.ReadyCondition,
-		conditions.ForConditionTypes{clusterv1.AvailableCondition, clusterv1.DeletingCondition},
-		conditions.NegativePolarityConditionTypes{clusterv1.DeletingCondition},
-		conditions.CustomMergeStrategy{MergeStrategy: conditions.DefaultMergeStrategy(
-			conditions.GetPriorityFunc(conditions.GetDefaultMergePriorityFunc(clusterv1.DeletingCondition)),
-			conditions.ComputeReasonFunc(conditions.GetDefaultComputeMergeReasonFunc(
-				clusterv1.NotReadyReason, clusterv1.ReadyUnknownReason, clusterv1.ReadyReason,
-			)),
-		)},
-	); err != nil {
-		return fmt.Errorf("summarize NKECluster Ready condition: %w", err)
-	}
-	return nil
+	return r.reconcileCluster(ctx, &cluster)
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *NKEClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.PollInterval <= 0 {
+		r.PollInterval = defaultPollInterval
+	}
+	// Status writes must not resubmit rejected requests. Deletion must still run without a spec change.
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&internalv1.NKECluster{}).
+		For(&internalv1.NKECluster{}, builder.WithPredicates(predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
+			return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration() ||
+				!e.ObjectOld.GetDeletionTimestamp().Equal(e.ObjectNew.GetDeletionTimestamp())
+		}})).
 		Named("nkecluster").
 		Complete(r)
 }

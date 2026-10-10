@@ -322,6 +322,11 @@ All nodes should show `Ready` status. On the init node,
 
 ## Troubleshooting
 
+For failures of the `nkectl bootstrap site` command itself, where its logs and
+diagnostics are, and when it is safe to re-run, see
+[Troubleshooting a Site Bootstrap](../../cli/docs/bootstrap-troubleshooting.md).
+The entries below are node-side.
+
 **Node-agent not starting:**
 
 ```bash

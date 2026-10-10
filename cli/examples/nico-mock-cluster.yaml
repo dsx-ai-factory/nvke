@@ -68,6 +68,8 @@ nodePools:
     desiredNodeCount: 1
     controlPlane: false
     systemReservedMemory: "1Gi"
+    nodeLabels:
+      tier: compute
     infra:
       preKubeadmCommands:
         - "mkdir -p /run/cluster-api"

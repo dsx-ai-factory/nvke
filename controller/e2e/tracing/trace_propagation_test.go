@@ -41,13 +41,13 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/db/migrations"
 	"github.com/dsx-ai-factory/nke/controller/internal/otelx"
 	"github.com/dsx-ai-factory/nke/controller/internal/server"
-	cwetemporal "github.com/dsx-ai-factory/nke/controller/internal/temporal"
+	controllertemporal "github.com/dsx-ai-factory/nke/controller/internal/temporal"
 )
 
 const requestSpanName = "POST /api/clusters"
 
 // TestTraceContinuesThroughOutbox sends a real POST /api/clusters through the
-// CWE handler, PostgreSQL, the outbox processor, and a Temporal dev server.
+// controller handler, PostgreSQL, the outbox processor, and a Temporal dev server.
 // Only provisioning is replaced: a stand-in ProvisionCluster workflow reads the
 // new cluster back through the real DB layer and injects a controlled outcome,
 // so no infrastructure is created.
@@ -82,11 +82,11 @@ func TestTraceContinuesThroughOutbox(t *testing.T) {
 	require.NoError(t, migrations.Migrate(ctx, bunDB))
 	database := db.NewDB(bunDB)
 
-	temporalClient, err := cwetemporal.NewClient(cfg, logger)
+	temporalClient, err := controllertemporal.NewClient(cfg, logger)
 	require.NoError(t, err)
 	t.Cleanup(temporalClient.Close)
 
-	w := worker.New(temporalClient, cfg.TemporalTaskQueue, cwetemporal.WorkerOptions())
+	w := worker.New(temporalClient, cfg.TemporalTaskQueue, controllertemporal.WorkerOptions())
 	w.RegisterWorkflowWithOptions(standInProvision, workflow.RegisterOptions{Name: "ProvisionCluster"})
 	w.RegisterActivityWithOptions(func(ctx context.Context, clusterID string) error {
 		cluster, err := database.GetCluster(ctx, uuid.MustParse(clusterID))
@@ -105,7 +105,7 @@ func TestTraceContinuesThroughOutbox(t *testing.T) {
 	require.NoError(t, w.Start())
 	t.Cleanup(w.Stop)
 
-	processor := cwetemporal.NewOutboxProcessor(cfg, logger, database, temporalClient)
+	processor := controllertemporal.NewOutboxProcessor(cfg, logger, database, temporalClient)
 	processor.Start(ctx)
 	t.Cleanup(processor.Stop)
 

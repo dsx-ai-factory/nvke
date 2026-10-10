@@ -4,8 +4,9 @@
 // Command osprofiles-to-crs reads an OS profile tree and writes reviewable YAML
 // for one MachineImage, one NodePoolRelease, and one ClusterRelease per profile.
 //
-// Both metadata.yaml and optional deprecated.yaml are imported. Every profile
-// keeps its name, so a pool that already selects a deprecated profile still
+// Both metadata.yaml and optional deprecated.yaml are imported, the latter
+// reading its profile files from osProfiles/deprecated/. Every profile keeps
+// its name, so a pool that already selects a deprecated profile still
 // resolves it. Deprecated imports set spec.lifecycle.deprecated on both
 // releases; upgrade-target search excludes that mark. kubernetes_version and
 // kubernetes_version_injected are copied onto the release annotations.
@@ -44,7 +45,9 @@ func run(args []string) error {
 		if _, err := fmt.Fprint(out, `Usage: osprofiles-to-crs --profiles <dir> --output <dir>
 
 Reads osProfiles/metadata.yaml, optional deprecated.yaml, and each profile's
-ipxeScript and userData.tmpl. Writes three manifests per profile:
+ipxeScript and userData.tmpl, from osProfiles/<profile>/ when the profile is
+listed in metadata.yaml and osProfiles/deprecated/<profile>/ when it is listed
+in deprecated.yaml. Writes three manifests per profile:
 <profile>-machineimage.yaml, <profile>-nodepoolrelease.yaml, and
 <profile>-clusterrelease.yaml. Deprecated profiles keep their names so existing
 pools still resolve them, and spec.lifecycle.deprecated excludes them from

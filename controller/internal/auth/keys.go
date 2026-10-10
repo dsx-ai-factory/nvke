@@ -57,7 +57,7 @@ type jwksSourceFactory func(iss Issuer) (*jwksKeySource, error)
 
 // NewKeySources builds a key source for every configured issuer, fetches once,
 // and returns the map NewVerifier takes, keyed by Issuer.Name. In ModeEnforcing a
-// key set that could not be obtained is a returned error, so CWE exits before the
+// key set that could not be obtained is a returned error, so the controller exits before the
 // listener opens rather than rejecting every caller; in ModePermissive it is only
 // logged. Either way every issuer gets an entry, including the failed ones, so a
 // later refresh recovers without a restart.
@@ -179,7 +179,7 @@ func jwksSourceFromConfig(logger *slog.Logger) jwksSourceFactory {
 		var rt http.RoundTripper = cloned
 		if path := strings.TrimSpace(spec.BearerTokenPath); path != "" {
 			// Read per request: the file is usually a projected service account
-			// volume, which the kubelet rotates well inside CWE's lifetime.
+			// volume, which the kubelet rotates well inside the controller's lifetime.
 			rt = &fileBearerTransport{base: cloned, path: path}
 		}
 

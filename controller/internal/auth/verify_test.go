@@ -26,7 +26,7 @@ type verifyCase struct {
 	spoil func(f fixture, spec *TokenSpec)
 	// raw hands Verify a credential that was never a minted token.
 	raw *string
-	// prepare breaks the fixture rather than the token, for CWE's own failures.
+	// prepare breaks the fixture rather than the token, for the controller's own failures.
 	prepare func(f fixture)
 
 	// wantReason is empty when verification must succeed.
@@ -178,7 +178,7 @@ func TestVerifyClaims(t *testing.T) {
 			wantErrIs:  jwt.ErrTokenExpired,
 		},
 		{
-			name: "nbf one second in the future is accepted: the CWE pod is behind the apiserver",
+			name: "nbf one second in the future is accepted: the controller pod is behind the apiserver",
 			spoil: func(_ fixture, spec *TokenSpec) {
 				now := time.Now().Add(time.Second)
 				spec.IssuedAt, spec.NotBefore = At(now), At(now)
@@ -455,7 +455,7 @@ func TestAuthenticate(t *testing.T) {
 			require.True(t, ok)
 			assert.Equal(t, tt.wantReason, reason)
 
-			// The token verified, so CWE knows exactly who signed it.
+			// The token verified, so the controller knows exactly who signed it.
 			issuerName, hasIssuer := auth.IssuerOf(err)
 			require.True(t, hasIssuer, "a verified token's admission failure knows its issuer")
 			assert.Equal(t, k8sName, issuerName)

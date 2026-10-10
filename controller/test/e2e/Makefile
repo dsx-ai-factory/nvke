@@ -9,6 +9,7 @@ GOBIN = $(shell $(GO) env GOPATH)/bin
 endif
 
 include ../../../make/golangci.mk
+include ../../../make/coverage.mk
 
 GO_TEST_FLAGS ?=
 
@@ -21,7 +22,8 @@ lint: ## Run golangci-lint. (run by the merge gate)
 	@$(GOLANGCI_LINT_RUN) run --timeout 10m --max-same-issues 0 --max-issues-per-linter 0 ./...
 
 test: ## Run tests. (run by the merge gate)
-	$(GO) test $(GO_TEST_FLAGS) -skip '^TestE2E$$' . ./internal/...
+	@$(COVERAGE_MKDIR)
+	$(GO) test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) -skip '^TestE2E$$' . ./internal/...
 
 # What the site lane (site_controller_test.go) stages onto its node. The image
 # archives are written outside the clone so they can't be committed.
@@ -39,10 +41,10 @@ SITE_CONTROLLER_IMAGE ?= $(SITE_IMAGE_REGISTRY)/nke-controller:$(SITE_CONTROLLER
 SITE_PROVISIONED_IMAGE ?= $(SITE_IMAGE_REGISTRY)/cluster-api-provider-provisioned:$(SITE_PROVISIONED_VERSION)
 SITE_PROFILES_IMAGE ?= nke-e2e-profiles:local
 
-# Build the CWE from this checkout instead of pulling SITE_CONTROLLER_IMAGE.
+# Build the controller from this checkout instead of pulling SITE_CONTROLLER_IMAGE.
 #
 # nkectl is built here by default (see SITE_CLI_BUILD), and it is a client of
-# the CWE it bootstraps, so the two have to agree on the cluster API. Built
+# the controller it bootstraps, so the two have to agree on the cluster API. Built
 # from one commit they do; a published pair has to be chosen to:
 # GHCR carries release tags only and its newest, v0.1.1-rc.8, is 43 commits
 # before #850, which removed infra.spireAttestationMethod from the cluster
@@ -78,7 +80,7 @@ endif
 #
 # BUILD_VERSION is a different thing: GIT_VERSION only names the image, while
 # BUILD_VERSION is what the ldflags bake into version.Version, so it is what
-# the running CWE reports and what the suite compares against
+# the running controller reports and what the suite compares against
 # -e2e.versions=controller= with. It is SITE_CONTROLLER_VERSION, the same
 # value the image is tagged with and the suite is told to expect, so the three
 # cannot disagree. Left to itself the controller Makefile derives it

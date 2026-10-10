@@ -125,6 +125,22 @@ jobs:
         with:
           go-version-file: go.work
 
+      # Version pins come from make/versions.mk, so `make show-versions` and CI
+      # cannot disagree.
+      - name: Read the pinned syft version
+        id: versions
+        shell: bash
+        run: echo "syft_version=$(make --no-print-directory print-SYFT_VERSION)" >> "${GITHUB_OUTPUT}"
+
+      # Installed before the artifacts are built, because the SBOMs are written
+      # inside that step: checksums.txt is computed at the end of it, and a
+      # document produced afterwards would not be covered by it or by the
+      # attestation over it.
+      - name: Set up syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: ${{ steps.versions.outputs.syft_version }}
+
       # What each component ships differs, so it is declared rather than guessed.
       # A component with no artifacts still gets a release: the tag and its notes
       # are the point and the files are a bonus.
@@ -154,6 +170,25 @@ jobs:
               echo "No artifacts defined for '${DIR:-<repository>}'; releasing notes only."
               ;;
           esac
+
+          # One SPDX document per binary, scanned from the built file rather
+          # than from this source tree: syft reads the Go build info the
+          # linker embedded, so the document lists the module versions that
+          # are actually in the bytes being shipped. A source-tree scan would
+          # describe go.mod instead, which is a different claim -- it says what
+          # a build should select, not what this one did.
+          #
+          # Per binary, not one for all four: a consumer downloads one platform
+          # and needs the answer for that platform. The four differ, because
+          # the dependency graph is GOOS/GOARCH-conditional.
+          shopt -s nullglob
+          for bin in dist/nkectl-*; do
+            case "${bin}" in *.spdx.json) continue ;; esac
+            syft scan "file:${bin}" \
+              --output "spdx-json=${bin}.spdx.json" \
+              --source-name "$(basename "${bin}")"
+          done
+          shopt -u nullglob
 
           if find dist -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
             ( cd dist && sha256sum -- * > checksums.txt )

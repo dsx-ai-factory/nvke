@@ -37,7 +37,7 @@ import (
 const (
 	siteStageProvision = "provision" // a Forge node, reachable, then released
 	siteStageBootstrap = "bootstrap" // plus vanilla Kubernetes from nkectl
-	siteStageFull      = "full"      // plus the NKE stack, CWE, and a tenant
+	siteStageFull      = "full"      // plus the NKE stack, the controller, and a tenant
 )
 
 // Secrets the site controller run reads from the environment. They are never written to
@@ -51,20 +51,18 @@ const (
 	envJumpHostPassword = "JUMP_HOST_PASSWORD"
 )
 
-// Host tools the node installs for nkectl, pinned to what has built a site on
-// the Forge hardware. Each can be overridden through -e2e.versions, as can
-// capi-provisioned, the only published CAPI provider tag there is.
-//
-// The first three mirror pins the repository keeps elsewhere, so a bump there
-// belongs here too: kind and clusterctl in make/tool-versions.mk as
-// KIND_VERSION and CAPI_VERSION, nerdctl in nkectl-bootstrap-e2e.yml as
-// NERDCTL_VERSION. They are copied rather than read because a test binary
-// cannot see a make variable.
+// The versions a Forge run is given in -e2e.versions, all required. A run that
+// names none of a version has not said what it qualifies, so the suite fails
+// before a machine exists instead of falling back to a constant the record
+// cannot see.
 const (
-	siteDefaultNerdctlVersion         = "2.3.5"
-	siteDefaultKindVersion            = "v0.32.0"
-	siteDefaultClusterctlVersion      = "v1.12.3"
-	siteDefaultCAPIProvisionedVersion = "v0.1.0-rc.1"
+	versionController      = "controller"
+	versionCAPIProvisioned = "capi-provisioned"
+	versionKube            = "kube"
+	versionCNIOVN          = "cni-ovn"
+	versionKind            = "kind"
+	versionClusterctl      = "clusterctl"
+	versionNerdctl         = "nerdctl"
 )
 
 // The shape of the site this run bootstraps.
@@ -156,7 +154,7 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		failed  bool
 		// deployed records that the install returned without error. The
 		// controller tag is set before Deploy runs, so it cannot stand in for
-		// this: after a failed install it is non-empty and the CWE probe would
+		// this: after a failed install it is non-empty and the controller probe would
 		// poll its full timeout against a stack that was never installed.
 		deployed bool
 	)
@@ -268,19 +266,19 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 			deployed = true
 		}, NodeTimeout(1*time.Hour))
 
-		It("reports its CWE version", func(ctx SpecContext) {
+		It("reports its controller version", func(ctx SpecContext) {
 			// ContinueOnFailure reaches this spec after a failed bootstrap or
 			// a failed install. Probing either would poll the whole readiness
-			// timeout against a cluster with no CWE on it, and teardown needs
+			// timeout against a cluster with no controller on it, and teardown needs
 			// those minutes to release the node.
 			if !deployed {
 				Skip("the stack was not deployed")
 			}
-			version, err := site.ProbeCWE(ctx, cluster.Kubeconfig, 0, 0)
-			Expect(err).NotTo(HaveOccurred(), "CWE should become healthy")
-			GinkgoLogr.Info("site controller", "cweVersion", version)
+			version, err := site.ProbeController(ctx, cluster.Kubeconfig, 0, 0)
+			Expect(err).NotTo(HaveOccurred(), "the controller should become healthy")
+			GinkgoLogr.Info("site controller", "controllerVersion", version)
 			Expect(version).To(Equal(stack.Controller.Tag),
-				"CWE should report the version the run deployed")
+				"the controller should report the version the run deployed")
 		}, NodeTimeout(15*time.Minute))
 	}
 
@@ -329,7 +327,7 @@ var _ = Describe("Site controller on Forge", Ordered, ContinueOnFailure, Label("
 		// SkipDelete as well as the other two. It keeps the tenant and skips
 		// the nkectl sweep, and this node is what those tenants' instances
 		// hang off, so releasing it either deletes them through the sweep --
-		// silently undoing the flag -- or orphans them with no CWE left to
+		// silently undoing the flag -- or orphans them with no controller left to
 		// release them. Whatever keeps a tenant has to keep its site.
 		if keepSite || cfg.Lifecycle.SkipDelete || (cfg.Lifecycle.PreserveOnFailure && failed) {
 			GinkgoLogr.Info("keeping the site controller", "name", node.Name, "ip", node.IP,
@@ -496,7 +494,10 @@ func newForgeProvider(cfg config.Config, env *environment.Environment) (infra.Pr
 		}
 	}
 
-	kubernetesVersion := cmp.Or(optionalVersion("kube"), forgeDefaultKubernetesVersion)
+	versions, err := requireVersions(versionKube, versionCNIOVN, versionNerdctl, versionKind, versionClusterctl)
+	if err != nil {
+		return nil, err
+	}
 	provider, err := forge.New(forge.Options{
 		Env:      forgeEnv,
 		SiteName: forgeSite.Key,
@@ -510,11 +511,11 @@ func newForgeProvider(cfg config.Config, env *environment.Environment) (infra.Pr
 			return requireNodeArtifacts(arch)
 		},
 		Dialer: forge.Teleport(dialer),
-		Node:   nodeInputs(kubernetesVersion),
+		Node:   nodeInputs(versions[versionKube], versions[versionCNIOVN]),
 		Tools: forge.HostTools{
-			NerdctlVersion:    cmp.Or(optionalVersion("nerdctl"), siteDefaultNerdctlVersion),
-			KindVersion:       cmp.Or(optionalVersion("kind"), siteDefaultKindVersion),
-			ClusterctlVersion: cmp.Or(optionalVersion("clusterctl"), siteDefaultClusterctlVersion),
+			NerdctlVersion:    versions[versionNerdctl],
+			KindVersion:       versions[versionKind],
+			ClusterctlVersion: versions[versionClusterctl],
 		},
 		DisableMTLS: siteDisableMTLS,
 	})
@@ -563,9 +564,9 @@ func sessionRelay(session infra.Session) kube.EndpointRelay {
 	}
 }
 
-// siteDiagnostics is written next to site-e2e.log, in the directory the
+// siteDiagnostics is written next to qualify-e2e.log, in the directory the
 // suite runs from, so CI picks it up with the rest of the run's record.
-const siteDiagnostics = "site-diagnostics.tar.gz"
+const siteDiagnostics = "nkectl-diagnostics.tar.gz"
 
 // siteDiagnosticsCollected is set once this run has written siteDiagnostics.
 var siteDiagnosticsCollected bool
@@ -608,11 +609,11 @@ const siteClusterState = "site-cluster-state.txt"
 // siteClusterStateCollected is set once this run has written siteClusterState.
 var siteClusterStateCollected bool
 
-// collectSiteClusterState records what the site cluster says about CWE.
+// collectSiteClusterState records what the site cluster says about the controller.
 //
 // Separate from collectSiteDiagnostics because the two cover different
 // failures and neither substitutes for the other: nkectl writes diagnostics
-// when the bootstrap fails, so a run that bootstrapped and then never saw CWE
+// when the bootstrap fails, so a run that bootstrapped and then never saw the controller
 // answer gets ErrNoDiagnostics and, before this, kept nothing.
 //
 // Best effort and never fails the spec, for the same reason as the
@@ -639,10 +640,10 @@ func collectSiteClusterState(ctx context.Context, session infra.Session, secrets
 // --disable-mtls, which comes from the same constant: the two sides
 // negotiate with each other, and a mismatch surfaces as an opaque TLS
 // handshake error rather than as a configuration problem.
-func nodeInputs(kubernetesVersion string) nke.NodeInputs {
+func nodeInputs(kubernetesVersion, cniVersion string) nke.NodeInputs {
 	inputs := nke.NodeInputs{
 		KubernetesVersion: kubernetesVersion,
-		CNIVersion:        cmp.Or(optionalVersion("cni-ovn"), forgeDefaultCNIVersion),
+		CNIVersion:        cniVersion,
 	}
 	if siteDisableMTLS {
 		inputs.AgentArgs = nke.AgentArgsNoMTLS
@@ -652,7 +653,7 @@ func nodeInputs(kubernetesVersion string) nke.NodeInputs {
 
 // candidate is what the site is built from, resolved once the node exists.
 // Only the full stage deploys the stack; the bootstrap stage checks the API
-// server instead of CWE.
+// server instead of the controller.
 // nkectlBinary is the linux nkectl for an architecture, on the runner. Staged
 // rather than downloaded: every release is a pre-release, which the
 // latest-release URL skips.
@@ -672,16 +673,13 @@ func siteSpec(cfg config.Config, name string) (site.Spec, error) {
 	if err != nil {
 		return site.Spec{}, err
 	}
-	version, err := requireVersion("controller")
+	versions, err := requireVersions(versionController, versionCAPIProvisioned, versionKube)
 	if err != nil {
 		return site.Spec{}, err
 	}
 	images := cfg.Site.Images
-	controller := site.Image{Repository: images.Controller.Repository, Tag: version}
-	provisioned := site.Image{
-		Repository: images.CAPIProvisioned.Repository,
-		Tag:        cmp.Or(optionalVersion("capi-provisioned"), siteDefaultCAPIProvisionedVersion),
-	}
+	controller := site.Image{Repository: images.Controller.Repository, Tag: versions[versionController]}
+	provisioned := site.Image{Repository: images.CAPIProvisioned.Repository, Tag: versions[versionCAPIProvisioned]}
 
 	return site.Spec{
 		Name: name,
@@ -690,7 +688,7 @@ func siteSpec(cfg config.Config, name string) (site.Spec, error) {
 			inRepo(repo, images.CAPIProvisioned.Archive),
 			inRepo(repo, images.Profiles.Archive),
 		},
-		KubernetesVersion:    cmp.Or(optionalVersion("kube"), forgeDefaultKubernetesVersion),
+		KubernetesVersion:    versions[versionKube],
 		CNI:                  siteCNI,
 		DisableMTLS:          siteDisableMTLS,
 		ControllerImage:      controller.Ref(),
@@ -699,7 +697,7 @@ func siteSpec(cfg config.Config, name string) (site.Spec, error) {
 }
 
 // stack is what gets installed once Kubernetes is up, and the controller
-// version CWE is then expected to report.
+// version the controller is then expected to report.
 
 // cloneRoot is the checkout the deploy path is exported from.
 func cloneRoot() (string, error) {
@@ -798,7 +796,7 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 
 // apiServerReachable reports whether the forwarded kubeconfig reaches the
 // cluster's API server. Asserted in its own spec rather than substituted for
-// the CWE probe, so it holds in every stage that bootstraps.
+// the controller probe, so it holds in every stage that bootstraps.
 func apiServerReachable(kubeconfig string) error {
 	restConfig, err := kube.RESTConfig(kubeconfig, "")
 	if err != nil {
@@ -817,7 +815,7 @@ func apiServerReachable(kubeconfig string) error {
 // site release five minutes of that node -- so a slow sweep starved the one
 // step that must not be skipped. Releasing the site is what stops its Forge
 // instance leaking, and a leaked site is worse than a leaked tenant: it is the
-// larger instance, and its CWE is the only thing that can still delete the
+// larger instance, and its controller is the only thing that can still delete the
 // tenants. Waiting at all is still right, because releasing the site while a
 // tenant delete is in flight strands that tenant's instances with nothing left
 // to release them.

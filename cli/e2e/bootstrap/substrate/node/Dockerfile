@@ -24,7 +24,7 @@ FROM ${BASE_IMAGE}
 ARG NODE_AGENT_PORT=15005
 
 # Fail the build loudly if the base image ever stops serving on the port the
-# substrate (and CWE's NODE_AGENT_PORT default) expects, rather than letting it
+# substrate (and the controller's NODE_AGENT_PORT default) expects, rather than letting it
 # surface as an unexplained readiness timeout.
 RUN grep -q -- "--secure-server-port ${NODE_AGENT_PORT}" /etc/default/nke-agent
 RUN ! grep -q -- '--disable-mtls' /etc/default/nke-agent
@@ -32,7 +32,7 @@ RUN ! grep -q -- '--disable-mtls' /etc/default/nke-agent
 # These hosts are already provisioned. The CAPD base image has a cloud-init
 # status shim (controller/hack/capd-kindest-node/scripts/cloud-init-status-shim)
 # that reads /var/lib/nico-containers/cloud-init/status. This suite has no
-# nico-sim process to write that file, so mark setup complete here or CWE's
+# nico-sim process to write that file, so mark setup complete here or the controller's
 # NodePreflight stays on "cloud-init not done: status: running" forever.
 RUN install -d /var/lib/nico-containers/cloud-init && \
     printf 'done\n' >/var/lib/nico-containers/cloud-init/status

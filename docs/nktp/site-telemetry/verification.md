@@ -6,6 +6,9 @@ installed through the `deploy/nico` deploy path, or after any change to its NKTP
 values. It assumes the development backend, `lgtm`. Against your own backend,
 run the same queries there.
 
+On an existing site, where the controller runs as `cloud-workflow-engine`,
+replace `nke-controller` with `cloud-workflow-engine` throughout this page.
+
 All commands run against the site controller cluster:
 
 ```bash
@@ -114,7 +117,7 @@ backend scrapes itself without going through NKTP.
 ```bash
 logql 'sum by (k8s_namespace_name) (count_over_time({k8s_namespace_name=~".+"}[15m]))'   # every namespace with Pods
 logql 'sum by (service_name) (count_over_time({service_name=~"journald|auth|kube-apiserver"}[15m]))'
-logql 'sum(count_over_time({service_name="unknown_service"} | k8s_event_reason=~".+" [15m]))'  # Kubernetes Events
+logql 'sum(count_over_time({service_name=~".+"} | k8s_event_reason=~".+" [15m]))'  # Kubernetes Events
 logql 'sum by (k8s_cluster_name) (count_over_time({k8s_cluster_name=~".+"}[15m]))'       # <site-name>
 ```
 

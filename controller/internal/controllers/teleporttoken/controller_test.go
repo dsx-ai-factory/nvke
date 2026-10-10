@@ -541,8 +541,8 @@ func TestReconcile(t *testing.T) {
 		mockTeleport.AssertCalled(t, "UpsertToken", ctx, mock.Anything)
 	})
 
-	// Note: "ignores non-CWE-managed nodes" test was removed because ListNodes now applies
-	// server-side label filtering (managed-by + site), so non-CWE-managed nodes are never returned.
+	// Note: "ignores non-controller-managed nodes" test was removed because ListNodes now applies
+	// server-side label filtering (managed-by + site), so non-controller-managed nodes are never returned.
 
 	t.Run("handles bootstrap scenario - registered node without site label", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
@@ -551,7 +551,7 @@ func TestReconcile(t *testing.T) {
 
 		node := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 
-		// Teleport reports node as registered (CWE-managed, matching node-id, no site label)
+		// Teleport reports node as registered (controller-managed, matching node-id, no site label)
 		mockTeleport.On("ListNodes", ctx, TeleportNamespace, mock.Anything).Return([]teleport.Node{
 			{
 				Hostname: "node-1",

@@ -11,7 +11,7 @@ metadata:
   annotations:
     # These two annotations state which Kubernetes version the machineInit
     # userDataTemplate below supports. They describe that template only.
-    #   "" and "true":        the template takes the version from CWE, through
+    #   "" and "true":        the template takes the version from the controller, through
     #                         {{ .KubernetesVersion }}, so it supports any version.
     #   "1.34.2" and "false": the template is written for that one version.
     internal.nke.nvidia.com/machine-init-kubernetes-version: "1.34.2"

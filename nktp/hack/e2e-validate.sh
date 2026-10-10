@@ -109,15 +109,30 @@ kubectl label namespace "$NAMESPACE" \
 
 # The chart's defaults are sized for a multi-node cluster. VALUES sizes it for
 # one Kind node and turns on metrics-server for Kind; see that file.
-helm install nktp "$CHART" \
+# upgrade --install so REUSE_CLUSTER can rerun over an existing release. On a
+# rerun the HPAs own each autoscaled Collector's spec.replicas through the scale
+# subresource, and Helm's server-side apply conflicts with them over the
+# chart's replicas; --force-conflicts takes the field back.
+helm upgrade --install nktp "$CHART" \
   --namespace "$NAMESPACE" \
+  --force-conflicts \
   --wait --timeout 15m \
   --values "$VALUES"
 
 log "Waiting for the Operator-built Collectors"
 # helm --wait covers the Helm-managed workloads. The Operator builds the
 # Collectors after that, so they need their own wait.
-kubectl -n "$NAMESPACE" wait --for=condition=Ready pod --all --timeout=10m
+# On a rerun the Operator replaces Pods while this waits, and a Pod deleted
+# mid-wait fails it, so retry until one wait sees every Pod Ready.
+pods_ready=0
+for _ in $(seq 1 20); do
+  if kubectl -n "$NAMESPACE" wait --for=condition=Ready pod --all --timeout=60s >/dev/null 2>&1; then
+    pods_ready=1
+    break
+  fi
+  sleep 10
+done
+[ "$pods_ready" = 1 ] || die "the Collectors never all became Ready"
 
 # ------------------------------------------------------------ the backend port
 
@@ -161,6 +176,15 @@ promql_nonempty() {
   [ "${n:-0}" -gt 0 ]
 }
 
+# logql_empty <query> -- succeeds when the query returns nothing
+logql_empty() {
+  local n
+  n=$(curl -fsS --get 'http://127.0.0.1:3100/loki/api/v1/query' \
+        --data-urlencode "query=$1" 2>/dev/null |
+        jq -r '.data.result | length' 2>/dev/null) || return 1
+  [ "${n:-0}" -eq 0 ]
+}
+
 # promql_empty <query> -- succeeds when the query returns nothing
 promql_empty() {
   local n
@@ -186,10 +210,12 @@ log "Asserting the signals"
 retry_until "scrape targets are up" \
   promql_nonempty 'min by (job) (up{job=~"kubelet|kubelet-cadvisor|nktp-operator|node-exporter|.*-targetallocator|nktp/nktp-ksm-.*"}) == 1'
 
-# The inverse assertion: no exporter is failing to send. This is the one that
-# catches a backend the gateways cannot reach.
+# The inverse assertion: no NKTP exporter is failing to send. This is the one
+# that catches a backend the gateways cannot reach. It looks at the last five
+# minutes, so failures during a rollout on a rerun age out, and only at NKTP's
+# Collectors, not the development backend's own internal one.
 retry_until "no exporter send failures" \
-  promql_empty 'sum by (service_name) ({__name__=~"otelcol_exporter_send_failed.*"}) > 0'
+  promql_empty 'sum by (service_name) (increase({__name__=~"otelcol_exporter_send_failed.*", service_name=~"nktp-.*"}[5m])) > 0'
 
 # The API server and CoreDNS are scraped through the kube-stack monitors the
 # large-target pool selects. The scheduler, controller manager, etcd and
@@ -212,9 +238,52 @@ retry_until "pod logs reach Loki" \
 retry_until "node journal logs reach Loki" \
   logql_nonempty 'sum(count_over_time({service_name="journald"}[15m]))'
 
-# Kubernetes events reach Loki through the cluster-events Collector.
+# Kubernetes events reach Loki through the cluster-events Collector, named
+# after the controller that reported them, or kube-apiserver when none did.
 retry_until "Kubernetes events reach Loki" \
-  logql_nonempty 'sum(count_over_time({service_name="unknown_service"} | k8s_event_reason=~".+" [15m]))'
+  logql_nonempty 'sum(count_over_time({service_name=~".+", service_name!="unknown_service"} | k8s_event_reason=~".+" [15m]))'
+retry_until "no Kubernetes event lacks a service name" \
+  logql_empty 'sum(count_over_time({service_name="unknown_service"} | k8s_event_reason=~".+" [15m]))'
+
+# The gateways and the watchdog label everything they export with
+# global.clusterName, which VALUES sets.
+retry_until "metrics carry the cluster name" \
+  promql_nonempty 'count(up{k8s_cluster_name="nktp-e2e"}) > 0'
+retry_until "logs carry the cluster name" \
+  logql_nonempty 'sum(count_over_time({k8s_cluster_name="nktp-e2e"}[15m]))'
+
+# A Pod outside NKTP logs a credential. The node Collector's redaction
+# processor masks it, so the line arrives with its marker but not the token.
+probe_image="${NKE_E2E_DOCKERHUB_MIRROR:+${NKE_E2E_DOCKERHUB_MIRROR}/}curlimages/curl:8.10.1"
+kubectl -n default delete pod nktp-e2e-redaction --ignore-not-found --wait >/dev/null
+kubectl -n default run nktp-e2e-redaction --restart=Never --image="$probe_image" \
+  --command -- sh -c 'while true; do echo "nktp-e2e-redaction Authorization: Bearer e2e-secret-token-123"; sleep 5; done' >/dev/null
+retry_until "a logged credential arrives redacted" \
+  logql_nonempty 'sum(count_over_time({k8s_namespace_name="default"} |= "nktp-e2e-redaction" |= "****" [15m]))'
+retry_until "the logged credential never reaches the backend" \
+  logql_empty 'sum(count_over_time({k8s_namespace_name="default"} |= "e2e-secret-token-123" [15m]))'
+kubectl -n default delete pod nktp-e2e-redaction --ignore-not-found --wait=false >/dev/null
+
+# Internal mTLS: cert-manager has issued every certificate, and a gateway
+# refuses a TLS client that presents none. Traffic flowing above shows the
+# Collectors' own certificates work; this shows a client without one cannot
+# get in.
+retry_until "every certificate is Ready" \
+  kubectl -n "$NAMESPACE" wait --for=condition=Ready certificate --all --timeout=10s
+# The gateway must present a certificate from NKTP's internal CA, so it serves
+# TLS, and must return no HTTP response, so it closed the connection on the
+# missing client certificate. Under TLS 1.3 that close comes after the
+# handshake, so curl reports a broken pipe rather than a TLS alert.
+gateway_requires_client_cert() {
+  local out
+  kubectl -n default delete pod nktp-e2e-mtls-probe --ignore-not-found --wait >/dev/null 2>&1
+  out=$(kubectl -n default run nktp-e2e-mtls-probe --rm -i --restart=Never --quiet \
+    --pod-running-timeout=2m --image="$probe_image" --command -- \
+    curl -skSv --http2 --max-time 10 "https://nktp-gateway-logs-collector.${NAMESPACE}.svc:4317/" 2>&1) || true
+  printf '%s\n' "$out" | grep -q 'issuer: CN=nktp-internal-ca' &&
+    ! printf '%s\n' "$out" | grep -q '^< HTTP/2'
+}
+retry_until "a gateway refuses a client without a certificate" gateway_requires_client_cert
 
 # Every Collector's sidecar delivers its own telemetry: the watchdog's to the
 # backend, the other six through the watchdog. The sidecars keep only error and

@@ -21,6 +21,28 @@ global:
   #         repository: <mirror>/rancher/kubectl
   imageRegistry: ""
 
+  # Cluster name to set as k8s.cluster.name on telemetry that leaves NKTP for the
+  # backend. The gateways, the watchdog and the watchdog sidecar read it from the
+  # K8S_CLUSTER_NAME environment variable in their transform/cluster processor.
+  # It must not contain double quotes or backslashes.
+  # Telemetry that already has k8s.cluster.name keeps it. Empty sets "unknown".
+  clusterName: ""
+
+certManager:
+  # Creates a Certificate for each collector and its sidecar for collector->gateway and collector->watchdog
+  # and creates a self-signed Issuer to act as a in-cluster CA + Issuer to sign collector Certificates
+  # https://cert-manager.io/docs/configuration/selfsigned/#bootstrapping-ca-issuers
+  internalTLS:
+    enabled: true
+    # Leave empty to let NKTP create an internal self-signed CA and Issuer.
+    #
+    # To use an existing Issuer or ClusterIssuer:
+    # issuerRef:
+    #   name: corporate-workload-ca
+    #   kind: ClusterIssuer
+    #   group: cert-manager.io
+    issuerRef: {}
+
 # Collector image used by all OTel workloads. global.imageRegistry replaces registry.
 otelcol_image:
   registry: "" # Empty pulls from the image's default registry (Docker Hub for this repository).
@@ -76,8 +98,10 @@ watchdog:
             - periodic:
                 interval: 30s
                 exporter:
-                  otlpHttp:
-                    endpoint: http://nktp-watchdog-collector:4318
+                  otlpGrpc:
+                    endpoint: nktp-watchdog-collector:4320
+                    tls:
+                      insecure: true
                     temporalityPreference: cumulative
       prometheusCR:
         enabled: false # The future metrics service owns monitor discovery.
@@ -126,6 +150,18 @@ watchdog:
       readOnlyRootFilesystem: true
       capabilities:
         drop: [ALL]
+    volumes:
+      - name: internal-tls-server
+        secret:
+          secretName: nktp-watchdog-server-tls
+          items:
+            - {key: tls.crt, path: tls.crt}
+            - {key: tls.key, path: tls.key}
+            - {key: ca.crt, path: ca.crt}
+    volumeMounts:
+      - name: internal-tls-server
+        mountPath: /etc/nktp/internal-tls/server
+        readOnly: true
   otelcol:
     # Set a custom image for this workload only.
     # image:
@@ -137,10 +173,29 @@ watchdog:
         health_check:
           endpoint: 0.0.0.0:13133
       receivers:
-        otlp:
+        otlp/insecure:
           protocols:
-            http:
-              endpoint: 0.0.0.0:4318
+            grpc:
+              endpoint: 0.0.0.0:4320
+        otlp/secure:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+              tls:
+                cert_file: /etc/nktp/internal-tls/server/tls.crt
+                key_file: /etc/nktp/internal-tls/server/tls.key
+                client_ca_file: /etc/nktp/internal-tls/server/ca.crt
+                reload_interval: 1h
+              keepalive:
+                server_parameters:
+                  # GOAWAY at 5m (+/-10% jitter) lets clients reconnect through the Service.
+                  # Five minutes limits routine churn while periodically redistributing telemetry.
+                  # Lower the age if watchdog headroom requires faster relief after scale-up;
+                  # raise it to reduce TCP setup and TLS handshakes when TLS is enabled.
+                  # Reconnects can select the same replica; allow for gradual redistribution.
+                  # gRPC connection management: https://github.com/grpc/proposal/blob/master/A9-server-side-conn-mgt.md
+                  max_connection_age: 5m
+                  max_connection_age_grace: 30s # Increase if in-flight exports need longer before forced closure.
         prometheus:
           config:
             scrape_configs:
@@ -167,13 +222,40 @@ watchdog:
                   - source_labels: [__meta_kubernetes_endpointslice_address_target_name]
                     target_label: pod
       processors:
+        redaction/basic_v1:
+          allow_all_keys: true
+          redact_all_types: true
+          summary: silent
+          blocked_key_patterns:
+            - '(?i)(?:(?:^|[._-])(?:password|passwd|secret|token|(?:access|refresh|id|session|auth)[._-]?token|(?:access|secret|private|api)[._-]?key|secret[._-]?access[._-]?key|client[._-]?secret|authorization|(?:set[._-]?)?cookie)|(?-i:[a-z0-9])(?:(?-i:P)(?:assword|asswd|rivate[._-]?key)|(?-i:S)ecret|(?-i:T)oken|(?-i:A)(?:pi[._-]?key|ccess[._-]?key|uthorization)|(?-i:C)ookie))$$'
+          blocked_values:
+            - '(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*'
+            - '(?i)"?\b(?:[A-Za-z0-9]+[._-])*(?:password|passwd|secret|token|(?:access|refresh|id|session|auth)[._-]?token|(?:access|secret|private|api)[._-]?key|secret[._-]?access[._-]?key|client[._-]?secret|authorization|(?:set[._-]?)?cookie|[A-Za-z0-9]*(?-i:[a-z0-9])(?:(?-i:P)(?:assword|asswd|rivate[._-]?key)|(?-i:S)ecret|(?-i:T)oken|(?-i:A)(?:pi[._-]?key|ccess[._-]?key|uthorization)|(?-i:C)ookie))"?\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|''(?:\\.|[^''\\])*''|(?:(?:Bearer|Basic)\s+)?[^\s,;"]+)'
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
           limit_percentage: 80 # Hard heap threshold, 819.2Mi. Leaves room below the container cap.
           spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (563.2Mi).
+        transform/cluster:
+          # Sets k8s.cluster.name from global.clusterName, or "unknown", unless the sender set one.
+          # The variable is inside an OTTL string so that names such as 42 or true stay strings.
+          error_mode: ignore
+          trace_statements:
+            - context: resource
+              statements:
+                - 'set(attributes["k8s.cluster.name"], "${env:K8S_CLUSTER_NAME:-unknown}") where attributes["k8s.cluster.name"] == nil'
+          metric_statements:
+            - context: resource
+              statements:
+                - 'set(attributes["k8s.cluster.name"], "${env:K8S_CLUSTER_NAME:-unknown}") where attributes["k8s.cluster.name"] == nil'
+          log_statements:
+            - context: resource
+              statements:
+                - 'set(attributes["k8s.cluster.name"], "${env:K8S_CLUSTER_NAME:-unknown}") where attributes["k8s.cluster.name"] == nil'
       exporters:
-        otlp_http:
-          endpoint: http://lgtm:4318
+        otlp:
+          endpoint: lgtm:4317
+          tls:
+            insecure: true
           retry_on_failure:
             max_elapsed_time: 30m
           sending_queue:
@@ -188,6 +270,7 @@ watchdog:
               flush_timeout: 1s # Flush partial batches to limit low-volume buffering time.
       service:
         extensions: [health_check]
+        # Own telemetry is redacted by the sidecar before export.
         telemetry:
           resource:
             service.name: nktp-watchdog
@@ -217,19 +300,19 @@ watchdog:
                       endpoint: http://127.0.0.1:4319
         pipelines:
           metrics:
-            receivers: [otlp, prometheus]
-            processors: [memory_limiter]
-            exporters: [otlp_http]
+            receivers: [otlp/insecure, otlp/secure, prometheus]
+            processors: [memory_limiter, redaction/basic_v1, transform/cluster]
+            exporters: [otlp]
           logs:
-            receivers: [otlp]
-            processors: [memory_limiter]
-            exporters: [otlp_http]
+            receivers: [otlp/secure]
+            processors: [memory_limiter, redaction/basic_v1, transform/cluster]
+            exporters: [otlp]
           traces:
-            receivers: [otlp]
-            processors: [memory_limiter]
-            exporters: [otlp_http]
+            receivers: [otlp/secure]
+            processors: [memory_limiter, redaction/basic_v1, transform/cluster]
+            exporters: [otlp]
   # Native sidecar for this workload's own telemetry. It buffers through outages,
-  # keeps only error and slow traces, and exports to http://lgtm:4318.
+  # keeps only error and slow traces, and exports over plaintext gRPC to lgtm:4317.
   sidecar:
     kubernetes:
       resources:
@@ -280,10 +363,35 @@ watchdog:
                 keepalive:
                   idle_timeout: 5m # Longer than the 60s metric interval, so a reused connection is not closed mid-request.
         processors:
+          redaction/basic_v1:
+            allow_all_keys: true
+            redact_all_types: true
+            summary: silent
+            blocked_key_patterns:
+              - '(?i)(?:(?:^|[._-])(?:password|passwd|secret|token|(?:access|refresh|id|session|auth)[._-]?token|(?:access|secret|private|api)[._-]?key|secret[._-]?access[._-]?key|client[._-]?secret|authorization|(?:set[._-]?)?cookie)|(?-i:[a-z0-9])(?:(?-i:P)(?:assword|asswd|rivate[._-]?key)|(?-i:S)ecret|(?-i:T)oken|(?-i:A)(?:pi[._-]?key|ccess[._-]?key|uthorization)|(?-i:C)ookie))$$'
+            blocked_values:
+              - '(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*'
+              - '(?i)"?\b(?:[A-Za-z0-9]+[._-])*(?:password|passwd|secret|token|(?:access|refresh|id|session|auth)[._-]?token|(?:access|secret|private|api)[._-]?key|secret[._-]?access[._-]?key|client[._-]?secret|authorization|(?:set[._-]?)?cookie|[A-Za-z0-9]*(?-i:[a-z0-9])(?:(?-i:P)(?:assword|asswd|rivate[._-]?key)|(?-i:S)ecret|(?-i:T)oken|(?-i:A)(?:pi[._-]?key|ccess[._-]?key|uthorization)|(?-i:C)ookie))"?\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|''(?:\\.|[^''\\])*''|(?:(?:Bearer|Basic)\s+)?[^\s,;"]+)'
           memory_limiter:
             check_interval: 500ms
             limit_percentage: 80 # Hard heap threshold, 204.8Mi.
             spike_limit_percentage: 25 # Soft refusal at 55% (140.8Mi).
+          transform/cluster:
+            # Sets k8s.cluster.name from global.clusterName, or "unknown", unless the sender set one.
+            # The variable is inside an OTTL string so that names such as 42 or true stay strings.
+            error_mode: ignore
+            trace_statements:
+              - context: resource
+                statements:
+                  - 'set(attributes["k8s.cluster.name"], "${env:K8S_CLUSTER_NAME:-unknown}") where attributes["k8s.cluster.name"] == nil'
+            metric_statements:
+              - context: resource
+                statements:
+                  - 'set(attributes["k8s.cluster.name"], "${env:K8S_CLUSTER_NAME:-unknown}") where attributes["k8s.cluster.name"] == nil'
+            log_statements:
+              - context: resource
+                statements:
+                  - 'set(attributes["k8s.cluster.name"], "${env:K8S_CLUSTER_NAME:-unknown}") where attributes["k8s.cluster.name"] == nil'
           tail_sampling:
             decision_wait: 5s # Covers the 1s SDK flush interval with margin.
             num_traces: 5000 # Bounds traces held in memory. The oldest are dropped first.
@@ -301,8 +409,10 @@ watchdog:
                   span:
                     - end_time_unix_nano - start_time_unix_nano > 1000000000
         exporters:
-          otlp_http:
-            endpoint: http://lgtm:4318
+          otlp:
+            endpoint: lgtm:4317
+            tls:
+              insecure: true
             retry_on_failure:
               max_elapsed_time: 30m
             sending_queue:
@@ -341,16 +451,16 @@ watchdog:
           pipelines:
             metrics:
               receivers: [otlp]
-              processors: [memory_limiter]
-              exporters: [otlp_http]
+              processors: [memory_limiter, redaction/basic_v1, transform/cluster]
+              exporters: [otlp]
             logs:
               receivers: [otlp]
-              processors: [memory_limiter]
-              exporters: [otlp_http]
+              processors: [memory_limiter, redaction/basic_v1, transform/cluster]
+              exporters: [otlp]
             traces:
               receivers: [otlp]
-              processors: [memory_limiter, tail_sampling]
-              exporters: [otlp_http]
+              processors: [memory_limiter, tail_sampling, redaction/basic_v1, transform/cluster]
+              exporters: [otlp]
 
 # Log gateway. Exports all logs from the cluster.
 gateway_logs:
@@ -399,6 +509,25 @@ gateway_logs:
       readOnlyRootFilesystem: true
       capabilities:
         drop: [ALL]
+    volumes:
+      - name: internal-tls-server
+        secret:
+          secretName: nktp-gateway-logs-server-tls
+          items:
+            - {key: tls.crt, path: tls.crt}
+            - {key: tls.key, path: tls.key}
+            - {key: ca.crt, path: ca.crt}
+      - name: internal-tls-client
+        secret:
+          secretName: nktp-gateway-logs-client-tls
+          items:
+            - {key: tls.crt, path: tls.crt}
+            - {key: tls.key, path: tls.key}
+            - {key: ca.crt, path: ca.crt}
+    volumeMounts:
+      - name: internal-tls-server
+        mountPath: /etc/nktp/internal-tls/server
+        readOnly: true
   otelcol:
     # Set a custom image for this workload only.
     # image:
@@ -414,16 +543,48 @@ gateway_logs:
           protocols:
             grpc:
               endpoint: 0.0.0.0:4317
-            http:
-              endpoint: 0.0.0.0:4318
+              tls:
+                cert_file: /etc/nktp/internal-tls/server/tls.crt
+                key_file: /etc/nktp/internal-tls/server/tls.key
+                client_ca_file: /etc/nktp/internal-tls/server/ca.crt
+                reload_interval: 1h
+              keepalive:
+                server_parameters:
+                  # GOAWAY at 5m (+/-10% jitter) lets clients reconnect through the Service.
+                  # Five minutes limits routine churn while periodically redistributing telemetry.
+                  # Lower the age if gateway headroom requires faster relief after scale-up;
+                  # raise it to reduce TCP setup and TLS handshakes.
+                  # Reconnects can select the same gateway; allow for gradual redistribution.
+                  # gRPC connection management: https://github.com/grpc/proposal/blob/master/A9-server-side-conn-mgt.md
+                  max_connection_age: 5m
+                  max_connection_age_grace: 30s # Increase if in-flight exports need longer before forced closure.
       processors:
+        redaction/basic_v1:
+          allow_all_keys: true
+          redact_all_types: true
+          summary: silent
+          blocked_key_patterns:
+            - '(?i)(?:(?:^|[._-])(?:password|passwd|secret|token|(?:access|refresh|id|session|auth)[._-]?token|(?:access|secret|private|api)[._-]?key|secret[._-]?access[._-]?key|client[._-]?secret|authorization|(?:set[._-]?)?cookie)|(?-i:[a-z0-9])(?:(?-i:P)(?:assword|asswd|rivate[._-]?key)|(?-i:S)ecret|(?-i:T)oken|(?-i:A)(?:pi[._-]?key|ccess[._-]?key|uthorization)|(?-i:C)ookie))$$'
+          blocked_values:
+            - '(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*'
+            - '(?i)"?\b(?:[A-Za-z0-9]+[._-])*(?:password|passwd|secret|token|(?:access|refresh|id|session|auth)[._-]?token|(?:access|secret|private|api)[._-]?key|secret[._-]?access[._-]?key|client[._-]?secret|authorization|(?:set[._-]?)?cookie|[A-Za-z0-9]*(?-i:[a-z0-9])(?:(?-i:P)(?:assword|asswd|rivate[._-]?key)|(?-i:S)ecret|(?-i:T)oken|(?-i:A)(?:pi[._-]?key|ccess[._-]?key|uthorization)|(?-i:C)ookie))"?\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|''(?:\\.|[^''\\])*''|(?:(?:Bearer|Basic)\s+)?[^\s,;"]+)'
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
           limit_percentage: 80 # Hard heap threshold, 6.4Gi. Leaves room below the container cap.
           spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (4.4Gi).
+        transform/cluster:
+          # Sets k8s.cluster.name from global.clusterName, or "unknown", unless the sender set one.
+          # The variable is inside an OTTL string so that names such as 42 or true stay strings.
+          error_mode: ignore
+          log_statements:
+            - context: resource
+              statements:
+                - 'set(attributes["k8s.cluster.name"], "${env:K8S_CLUSTER_NAME:-unknown}") where attributes["k8s.cluster.name"] == nil'
       exporters:
-        otlp_http:
-          endpoint: http://lgtm:4318
+        otlp:
+          endpoint: lgtm:4317
+          tls:
+            insecure: true
           retry_on_failure:
             max_elapsed_time: 30m
           sending_queue:
@@ -468,10 +629,10 @@ gateway_logs:
         pipelines:
           logs:
             receivers: [otlp]
-            processors: [memory_limiter]
-            exporters: [otlp_http]
+            processors: [memory_limiter, redaction/basic_v1, transform/cluster]
+            exporters: [otlp]
   # Native sidecar for this workload's own telemetry. It buffers through outages,
-  # keeps only error and slow traces, and exports to http://nktp-watchdog-collector:4318.
+  # keeps only error and slow traces, and exports over gRPC to nktp-watchdog-collector:4317.
   sidecar:
     kubernetes:
       resources:
@@ -504,6 +665,10 @@ gateway_logs:
         readOnlyRootFilesystem: true
         capabilities:
           drop: [ALL]
+      volumeMounts:
+        - name: internal-tls-client
+          mountPath: /etc/nktp/internal-tls/client
+          readOnly: true
     otelcol:
       # Set a custom image for this sidecar only.
       # image:
@@ -543,8 +708,13 @@ gateway_logs:
                   span:
                     - end_time_unix_nano - start_time_unix_nano > 1000000000
         exporters:
-          otlp_http:
-            endpoint: http://nktp-watchdog-collector:4318
+          otlp:
+            endpoint: nktp-watchdog-collector:4317
+            tls:
+              cert_file: /etc/nktp/internal-tls/client/tls.crt
+              key_file: /etc/nktp/internal-tls/client/tls.key
+              ca_file: /etc/nktp/internal-tls/client/ca.crt
+              reload_interval: 1h
             retry_on_failure:
               max_elapsed_time: 30m
             sending_queue:
@@ -584,15 +754,15 @@ gateway_logs:
             metrics:
               receivers: [otlp]
               processors: [memory_limiter]
-              exporters: [otlp_http]
+              exporters: [otlp]
             logs:
               receivers: [otlp]
               processors: [memory_limiter]
-              exporters: [otlp_http]
+              exporters: [otlp]
             traces:
               receivers: [otlp]
               processors: [memory_limiter, tail_sampling]
-              exporters: [otlp_http]
+              exporters: [otlp]
 
 # Metric gateway. Exports all metrics from the cluster.
 gateway_metrics:
@@ -641,6 +811,25 @@ gateway_metrics:
       readOnlyRootFilesystem: true
       capabilities:
         drop: [ALL]
+    volumes:
+      - name: internal-tls-server
+        secret:
+          secretName: nktp-gateway-metrics-server-tls
+          items:
+            - {key: tls.crt, path: tls.crt}
+            - {key: tls.key, path: tls.key}
+            - {key: ca.crt, path: ca.crt}
+      - name: internal-tls-client
+        secret:
+          secretName: nktp-gateway-metrics-client-tls
+          items:
+            - {key: tls.crt, path: tls.crt}
+            - {key: tls.key, path: tls.key}
+            - {key: ca.crt, path: ca.crt}
+    volumeMounts:
+      - name: internal-tls-server
+        mountPath: /etc/nktp/internal-tls/server
+        readOnly: true
   otelcol:
     # Set a custom image for this workload only.
     # image:
@@ -656,16 +845,48 @@ gateway_metrics:
           protocols:
             grpc:
               endpoint: 0.0.0.0:4317
-            http:
-              endpoint: 0.0.0.0:4318
+              tls:
+                cert_file: /etc/nktp/internal-tls/server/tls.crt
+                key_file: /etc/nktp/internal-tls/server/tls.key
+                client_ca_file: /etc/nktp/internal-tls/server/ca.crt
+                reload_interval: 1h
+              keepalive:
+                server_parameters:
+                  # GOAWAY at 5m (+/-10% jitter) lets clients reconnect through the Service.
+                  # Five minutes limits routine churn while periodically redistributing telemetry.
+                  # Lower the age if gateway headroom requires faster relief after scale-up;
+                  # raise it to reduce TCP setup and TLS handshakes.
+                  # Reconnects can select the same gateway; allow for gradual redistribution.
+                  # gRPC connection management: https://github.com/grpc/proposal/blob/master/A9-server-side-conn-mgt.md
+                  max_connection_age: 5m
+                  max_connection_age_grace: 30s # Increase if in-flight exports need longer before forced closure.
       processors:
+        redaction/basic_v1:
+          allow_all_keys: true
+          redact_all_types: true
+          summary: silent
+          blocked_key_patterns:
+            - '(?i)(?:(?:^|[._-])(?:password|passwd|secret|token|(?:access|refresh|id|session|auth)[._-]?token|(?:access|secret|private|api)[._-]?key|secret[._-]?access[._-]?key|client[._-]?secret|authorization|(?:set[._-]?)?cookie)|(?-i:[a-z0-9])(?:(?-i:P)(?:assword|asswd|rivate[._-]?key)|(?-i:S)ecret|(?-i:T)oken|(?-i:A)(?:pi[._-]?key|ccess[._-]?key|uthorization)|(?-i:C)ookie))$$'
+          blocked_values:
+            - '(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*'
+            - '(?i)"?\b(?:[A-Za-z0-9]+[._-])*(?:password|passwd|secret|token|(?:access|refresh|id|session|auth)[._-]?token|(?:access|secret|private|api)[._-]?key|secret[._-]?access[._-]?key|client[._-]?secret|authorization|(?:set[._-]?)?cookie|[A-Za-z0-9]*(?-i:[a-z0-9])(?:(?-i:P)(?:assword|asswd|rivate[._-]?key)|(?-i:S)ecret|(?-i:T)oken|(?-i:A)(?:pi[._-]?key|ccess[._-]?key|uthorization)|(?-i:C)ookie))"?\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|''(?:\\.|[^''\\])*''|(?:(?:Bearer|Basic)\s+)?[^\s,;"]+)'
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
           limit_percentage: 80 # Hard heap threshold, 6.4Gi. Leaves room below the container cap.
           spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (4.4Gi).
+        transform/cluster:
+          # Sets k8s.cluster.name from global.clusterName, or "unknown", unless the sender set one.
+          # The variable is inside an OTTL string so that names such as 42 or true stay strings.
+          error_mode: ignore
+          metric_statements:
+            - context: resource
+              statements:
+                - 'set(attributes["k8s.cluster.name"], "${env:K8S_CLUSTER_NAME:-unknown}") where attributes["k8s.cluster.name"] == nil'
       exporters:
-        otlp_http:
-          endpoint: http://lgtm:4318
+        otlp:
+          endpoint: lgtm:4317
+          tls:
+            insecure: true
           retry_on_failure:
             max_elapsed_time: 30m
           sending_queue:
@@ -710,10 +931,10 @@ gateway_metrics:
         pipelines:
           metrics:
             receivers: [otlp]
-            processors: [memory_limiter]
-            exporters: [otlp_http]
+            processors: [memory_limiter, redaction/basic_v1, transform/cluster]
+            exporters: [otlp]
   # Native sidecar for this workload's own telemetry. It buffers through outages,
-  # keeps only error and slow traces, and exports to http://nktp-watchdog-collector:4318.
+  # keeps only error and slow traces, and exports over gRPC to nktp-watchdog-collector:4317.
   sidecar:
     kubernetes:
       resources:
@@ -746,6 +967,10 @@ gateway_metrics:
         readOnlyRootFilesystem: true
         capabilities:
           drop: [ALL]
+      volumeMounts:
+        - name: internal-tls-client
+          mountPath: /etc/nktp/internal-tls/client
+          readOnly: true
     otelcol:
       # Set a custom image for this sidecar only.
       # image:
@@ -785,8 +1010,13 @@ gateway_metrics:
                   span:
                     - end_time_unix_nano - start_time_unix_nano > 1000000000
         exporters:
-          otlp_http:
-            endpoint: http://nktp-watchdog-collector:4318
+          otlp:
+            endpoint: nktp-watchdog-collector:4317
+            tls:
+              cert_file: /etc/nktp/internal-tls/client/tls.crt
+              key_file: /etc/nktp/internal-tls/client/tls.key
+              ca_file: /etc/nktp/internal-tls/client/ca.crt
+              reload_interval: 1h
             retry_on_failure:
               max_elapsed_time: 30m
             sending_queue:
@@ -826,15 +1056,15 @@ gateway_metrics:
             metrics:
               receivers: [otlp]
               processors: [memory_limiter]
-              exporters: [otlp_http]
+              exporters: [otlp]
             logs:
               receivers: [otlp]
               processors: [memory_limiter]
-              exporters: [otlp_http]
+              exporters: [otlp]
             traces:
               receivers: [otlp]
               processors: [memory_limiter, tail_sampling]
-              exporters: [otlp_http]
+              exporters: [otlp]
 
 # Trace gateway. Exports all traces from the cluster.
 gateway_traces:
@@ -883,6 +1113,25 @@ gateway_traces:
       readOnlyRootFilesystem: true
       capabilities:
         drop: [ALL]
+    volumes:
+      - name: internal-tls-server
+        secret:
+          secretName: nktp-gateway-traces-server-tls
+          items:
+            - {key: tls.crt, path: tls.crt}
+            - {key: tls.key, path: tls.key}
+            - {key: ca.crt, path: ca.crt}
+      - name: internal-tls-client
+        secret:
+          secretName: nktp-gateway-traces-client-tls
+          items:
+            - {key: tls.crt, path: tls.crt}
+            - {key: tls.key, path: tls.key}
+            - {key: ca.crt, path: ca.crt}
+    volumeMounts:
+      - name: internal-tls-server
+        mountPath: /etc/nktp/internal-tls/server
+        readOnly: true
   otelcol:
     # Set a custom image for this workload only.
     # image:
@@ -898,16 +1147,48 @@ gateway_traces:
           protocols:
             grpc:
               endpoint: 0.0.0.0:4317
-            http:
-              endpoint: 0.0.0.0:4318
+              tls:
+                cert_file: /etc/nktp/internal-tls/server/tls.crt
+                key_file: /etc/nktp/internal-tls/server/tls.key
+                client_ca_file: /etc/nktp/internal-tls/server/ca.crt
+                reload_interval: 1h
+              keepalive:
+                server_parameters:
+                  # GOAWAY at 5m (+/-10% jitter) lets clients reconnect through the Service.
+                  # Five minutes limits routine churn while periodically redistributing telemetry.
+                  # Lower the age if gateway headroom requires faster relief after scale-up;
+                  # raise it to reduce TCP setup and TLS handshakes.
+                  # Reconnects can select the same gateway; allow for gradual redistribution.
+                  # gRPC connection management: https://github.com/grpc/proposal/blob/master/A9-server-side-conn-mgt.md
+                  max_connection_age: 5m
+                  max_connection_age_grace: 30s # Increase if in-flight exports need longer before forced closure.
       processors:
+        redaction/basic_v1:
+          allow_all_keys: true
+          redact_all_types: true
+          summary: silent
+          blocked_key_patterns:
+            - '(?i)(?:(?:^|[._-])(?:password|passwd|secret|token|(?:access|refresh|id|session|auth)[._-]?token|(?:access|secret|private|api)[._-]?key|secret[._-]?access[._-]?key|client[._-]?secret|authorization|(?:set[._-]?)?cookie)|(?-i:[a-z0-9])(?:(?-i:P)(?:assword|asswd|rivate[._-]?key)|(?-i:S)ecret|(?-i:T)oken|(?-i:A)(?:pi[._-]?key|ccess[._-]?key|uthorization)|(?-i:C)ookie))$$'
+          blocked_values:
+            - '(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*'
+            - '(?i)"?\b(?:[A-Za-z0-9]+[._-])*(?:password|passwd|secret|token|(?:access|refresh|id|session|auth)[._-]?token|(?:access|secret|private|api)[._-]?key|secret[._-]?access[._-]?key|client[._-]?secret|authorization|(?:set[._-]?)?cookie|[A-Za-z0-9]*(?-i:[a-z0-9])(?:(?-i:P)(?:assword|asswd|rivate[._-]?key)|(?-i:S)ecret|(?-i:T)oken|(?-i:A)(?:pi[._-]?key|ccess[._-]?key|uthorization)|(?-i:C)ookie))"?\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|''(?:\\.|[^''\\])*''|(?:(?:Bearer|Basic)\s+)?[^\s,;"]+)'
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
           limit_percentage: 80 # Hard heap threshold, 6.4Gi. Leaves room below the container cap.
           spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (4.4Gi).
+        transform/cluster:
+          # Sets k8s.cluster.name from global.clusterName, or "unknown", unless the sender set one.
+          # The variable is inside an OTTL string so that names such as 42 or true stay strings.
+          error_mode: ignore
+          trace_statements:
+            - context: resource
+              statements:
+                - 'set(attributes["k8s.cluster.name"], "${env:K8S_CLUSTER_NAME:-unknown}") where attributes["k8s.cluster.name"] == nil'
       exporters:
-        otlp_http:
-          endpoint: http://lgtm:4318
+        otlp:
+          endpoint: lgtm:4317
+          tls:
+            insecure: true
           retry_on_failure:
             max_elapsed_time: 30m
           sending_queue:
@@ -952,10 +1233,10 @@ gateway_traces:
         pipelines:
           traces:
             receivers: [otlp]
-            processors: [memory_limiter]
-            exporters: [otlp_http]
+            processors: [memory_limiter, redaction/basic_v1, transform/cluster]
+            exporters: [otlp]
   # Native sidecar for this workload's own telemetry. It buffers through outages,
-  # keeps only error and slow traces, and exports to http://nktp-watchdog-collector:4318.
+  # keeps only error and slow traces, and exports over gRPC to nktp-watchdog-collector:4317.
   sidecar:
     kubernetes:
       resources:
@@ -988,6 +1269,10 @@ gateway_traces:
         readOnlyRootFilesystem: true
         capabilities:
           drop: [ALL]
+      volumeMounts:
+        - name: internal-tls-client
+          mountPath: /etc/nktp/internal-tls/client
+          readOnly: true
     otelcol:
       # Set a custom image for this sidecar only.
       # image:
@@ -1027,8 +1312,13 @@ gateway_traces:
                   span:
                     - end_time_unix_nano - start_time_unix_nano > 1000000000
         exporters:
-          otlp_http:
-            endpoint: http://nktp-watchdog-collector:4318
+          otlp:
+            endpoint: nktp-watchdog-collector:4317
+            tls:
+              cert_file: /etc/nktp/internal-tls/client/tls.crt
+              key_file: /etc/nktp/internal-tls/client/tls.key
+              ca_file: /etc/nktp/internal-tls/client/ca.crt
+              reload_interval: 1h
             retry_on_failure:
               max_elapsed_time: 30m
             sending_queue:
@@ -1068,15 +1358,15 @@ gateway_traces:
             metrics:
               receivers: [otlp]
               processors: [memory_limiter]
-              exporters: [otlp_http]
+              exporters: [otlp]
             logs:
               receivers: [otlp]
               processors: [memory_limiter]
-              exporters: [otlp_http]
+              exporters: [otlp]
             traces:
               receivers: [otlp]
               processors: [memory_limiter, tail_sampling]
-              exporters: [otlp_http]
+              exporters: [otlp]
 
 # Node-level collector. Collects local telemetry and forwards received OTLP signals.
 daemonset:
@@ -1120,8 +1410,10 @@ daemonset:
             - periodic:
                 interval: 30s
                 exporter:
-                  otlpHttp:
-                    endpoint: http://nktp-watchdog-collector:4318
+                  otlpGrpc:
+                    endpoint: nktp-watchdog-collector:4320
+                    tls:
+                      insecure: true
                     temporalityPreference: cumulative
       observability:
         metrics:
@@ -1221,6 +1513,13 @@ daemonset:
         hostPath:
           path: /var/log
           type: Directory
+      - name: internal-tls-client
+        secret:
+          secretName: nktp-daemonset-client-tls
+          items:
+            - {key: tls.crt, path: tls.crt}
+            - {key: tls.key, path: tls.key}
+            - {key: ca.crt, path: ca.crt}
     volumeMounts:
       - name: pod-logs
         mountPath: /var/log/pods
@@ -1248,6 +1547,9 @@ daemonset:
         readOnly: true
       - name: host-logs
         mountPath: /hostfs/var/log
+        readOnly: true
+      - name: internal-tls-client
+        mountPath: /etc/nktp/internal-tls/client
         readOnly: true
   otelcol:
     # Set a custom image for this workload only.
@@ -1454,6 +1756,15 @@ daemonset:
                     action: drop
                     regex: .+;
       processors:
+        redaction/basic_v1:
+          allow_all_keys: true
+          redact_all_types: true
+          summary: silent
+          blocked_key_patterns:
+            - '(?i)(?:(?:^|[._-])(?:password|passwd|secret|token|(?:access|refresh|id|session|auth)[._-]?token|(?:access|secret|private|api)[._-]?key|secret[._-]?access[._-]?key|client[._-]?secret|authorization|(?:set[._-]?)?cookie)|(?-i:[a-z0-9])(?:(?-i:P)(?:assword|asswd|rivate[._-]?key)|(?-i:S)ecret|(?-i:T)oken|(?-i:A)(?:pi[._-]?key|ccess[._-]?key|uthorization)|(?-i:C)ookie))$$'
+          blocked_values:
+            - '(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*'
+            - '(?i)"?\b(?:[A-Za-z0-9]+[._-])*(?:password|passwd|secret|token|(?:access|refresh|id|session|auth)[._-]?token|(?:access|secret|private|api)[._-]?key|secret[._-]?access[._-]?key|client[._-]?secret|authorization|(?:set[._-]?)?cookie|[A-Za-z0-9]*(?-i:[a-z0-9])(?:(?-i:P)(?:assword|asswd|rivate[._-]?key)|(?-i:S)ecret|(?-i:T)oken|(?-i:A)(?:pi[._-]?key|ccess[._-]?key|uthorization)|(?-i:C)ookie))"?\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|''(?:\\.|[^''\\])*''|(?:(?:Bearer|Basic)\s+)?[^\s,;"]+)'
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
           limit_percentage: 80 # Hard heap threshold, 3.2Gi. Leaves room below the container cap.
@@ -1478,8 +1789,13 @@ daemonset:
                 - set(attributes["service.name"], "nktp-operator")
                 - set(attributes["service.instance.id"], attributes["k8s.pod.name"])
       exporters:
-        otlp_http/logs:
-          endpoint: http://nktp-gateway-logs-collector:4318
+        otlp/logs:
+          endpoint: nktp-gateway-logs-collector:4317
+          tls:
+            ca_file: /etc/nktp/internal-tls/client/ca.crt
+            cert_file: /etc/nktp/internal-tls/client/tls.crt
+            key_file: /etc/nktp/internal-tls/client/tls.key
+            reload_interval: 1h
           retry_on_failure:
             max_elapsed_time: 30m
           sending_queue:
@@ -1492,8 +1808,13 @@ daemonset:
               min_size: 1048576 # Batch at 1MiB to amortize export overhead.
               max_size: 2097152 # Split above 2MiB serialized. Decoded heap can be larger.
               flush_timeout: 1s # Flush partial batches to limit low-volume buffering time.
-        otlp_http/metrics:
-          endpoint: http://nktp-gateway-metrics-collector:4318
+        otlp/metrics:
+          endpoint: nktp-gateway-metrics-collector:4317
+          tls:
+            ca_file: /etc/nktp/internal-tls/client/ca.crt
+            cert_file: /etc/nktp/internal-tls/client/tls.crt
+            key_file: /etc/nktp/internal-tls/client/tls.key
+            reload_interval: 1h
           retry_on_failure:
             max_elapsed_time: 30m
           sending_queue:
@@ -1506,8 +1827,13 @@ daemonset:
               min_size: 1048576
               max_size: 2097152
               flush_timeout: 1s
-        otlp_http/traces:
-          endpoint: http://nktp-gateway-traces-collector:4318
+        otlp/traces:
+          endpoint: nktp-gateway-traces-collector:4317
+          tls:
+            ca_file: /etc/nktp/internal-tls/client/ca.crt
+            cert_file: /etc/nktp/internal-tls/client/tls.crt
+            key_file: /etc/nktp/internal-tls/client/tls.key
+            reload_interval: 1h
           retry_on_failure:
             max_elapsed_time: 30m
           sending_queue:
@@ -1520,8 +1846,13 @@ daemonset:
               min_size: 1048576
               max_size: 2097152
               flush_timeout: 1s
-        otlp_http/watchdog:
-          endpoint: http://nktp-watchdog-collector:4318
+        otlp/watchdog:
+          endpoint: nktp-watchdog-collector:4317
+          tls:
+            ca_file: /etc/nktp/internal-tls/client/ca.crt
+            cert_file: /etc/nktp/internal-tls/client/tls.crt
+            key_file: /etc/nktp/internal-tls/client/tls.key
+            reload_interval: 1h
           retry_on_failure:
             max_elapsed_time: 30m
           sending_queue:
@@ -1567,26 +1898,26 @@ daemonset:
         pipelines:
           logs:
             receivers: [filelog, journald, otlp, filelog/host-auth, filelog/host-audit, filelog/kube-api-audit]
-            processors: [memory_limiter, resource/node]
-            exporters: [otlp_http/logs]
+            processors: [memory_limiter, resource/node, redaction/basic_v1]
+            exporters: [otlp/logs]
           logs/targetallocator:
             receivers: [filelog/targetallocator]
-            processors: [memory_limiter, resource/node, transform/targetallocator]
-            exporters: [otlp_http/watchdog]
+            processors: [memory_limiter, resource/node, transform/targetallocator, redaction/basic_v1]
+            exporters: [otlp/watchdog]
           logs/operator:
             receivers: [filelog/operator]
-            processors: [memory_limiter, resource/node, transform/operator]
-            exporters: [otlp_http/watchdog]
+            processors: [memory_limiter, resource/node, transform/operator, redaction/basic_v1]
+            exporters: [otlp/watchdog]
           metrics:
             receivers: [prometheus, prometheus/kubelet, otlp]
-            processors: [memory_limiter, resource/node]
-            exporters: [otlp_http/metrics]
+            processors: [memory_limiter, resource/node, redaction/basic_v1]
+            exporters: [otlp/metrics]
           traces:
             receivers: [otlp]
-            processors: [memory_limiter, resource/node]
-            exporters: [otlp_http/traces]
+            processors: [memory_limiter, resource/node, redaction/basic_v1]
+            exporters: [otlp/traces]
   # Native sidecar for this workload's own telemetry. It buffers through outages,
-  # keeps only error and slow traces, and exports to http://nktp-watchdog-collector:4318.
+  # keeps only error and slow traces, and exports over gRPC to nktp-watchdog-collector:4317.
   sidecar:
     kubernetes:
       resources:
@@ -1623,6 +1954,10 @@ daemonset:
         readOnlyRootFilesystem: true
         capabilities:
           drop: [ALL]
+      volumeMounts:
+        - name: internal-tls-client
+          mountPath: /etc/nktp/internal-tls/client
+          readOnly: true
     otelcol:
       # Set a custom image for this sidecar only.
       # image:
@@ -1662,8 +1997,13 @@ daemonset:
                   span:
                     - end_time_unix_nano - start_time_unix_nano > 1000000000
         exporters:
-          otlp_http:
-            endpoint: http://nktp-watchdog-collector:4318
+          otlp:
+            endpoint: nktp-watchdog-collector:4317
+            tls:
+              cert_file: /etc/nktp/internal-tls/client/tls.crt
+              key_file: /etc/nktp/internal-tls/client/tls.key
+              ca_file: /etc/nktp/internal-tls/client/ca.crt
+              reload_interval: 1h
             retry_on_failure:
               max_elapsed_time: 30m
             sending_queue:
@@ -1704,15 +2044,15 @@ daemonset:
             metrics:
               receivers: [otlp]
               processors: [memory_limiter]
-              exporters: [otlp_http]
+              exporters: [otlp]
             logs:
               receivers: [otlp]
               processors: [memory_limiter]
-              exporters: [otlp_http]
+              exporters: [otlp]
             traces:
               receivers: [otlp]
               processors: [memory_limiter, tail_sampling]
-              exporters: [otlp_http]
+              exporters: [otlp]
 
 # Scrapes monitoring CRs labeled nktp.nvidia.io/large-target: "true".
 large_target_metrics:
@@ -1741,8 +2081,10 @@ large_target_metrics:
             - periodic:
                 interval: 30s
                 exporter:
-                  otlpHttp:
-                    endpoint: http://nktp-watchdog-collector:4318
+                  otlpGrpc:
+                    endpoint: nktp-watchdog-collector:4320
+                    tls:
+                      insecure: true
                     temporalityPreference: cumulative
       resources:
         requests:
@@ -1831,6 +2173,18 @@ large_target_metrics:
       readOnlyRootFilesystem: true
       capabilities:
         drop: [ALL]
+    volumes:
+      - name: internal-tls-client
+        secret:
+          secretName: nktp-large-target-metrics-client-tls
+          items:
+            - {key: tls.crt, path: tls.crt}
+            - {key: tls.key, path: tls.key}
+            - {key: ca.crt, path: ca.crt}
+    volumeMounts:
+      - name: internal-tls-client
+        mountPath: /etc/nktp/internal-tls/client
+        readOnly: true
   otelcol:
     # Set a custom image for this workload only.
     # image:
@@ -1856,13 +2210,27 @@ large_target_metrics:
             # The Target Allocator supplies scrape jobs and assigned targets from monitoring CRs.
             scrape_configs: []
       processors:
+        redaction/basic_v1:
+          allow_all_keys: true
+          redact_all_types: true
+          summary: silent
+          blocked_key_patterns:
+            - '(?i)(?:(?:^|[._-])(?:password|passwd|secret|token|(?:access|refresh|id|session|auth)[._-]?token|(?:access|secret|private|api)[._-]?key|secret[._-]?access[._-]?key|client[._-]?secret|authorization|(?:set[._-]?)?cookie)|(?-i:[a-z0-9])(?:(?-i:P)(?:assword|asswd|rivate[._-]?key)|(?-i:S)ecret|(?-i:T)oken|(?-i:A)(?:pi[._-]?key|ccess[._-]?key|uthorization)|(?-i:C)ookie))$$'
+          blocked_values:
+            - '(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*'
+            - '(?i)"?\b(?:[A-Za-z0-9]+[._-])*(?:password|passwd|secret|token|(?:access|refresh|id|session|auth)[._-]?token|(?:access|secret|private|api)[._-]?key|secret[._-]?access[._-]?key|client[._-]?secret|authorization|(?:set[._-]?)?cookie|[A-Za-z0-9]*(?-i:[a-z0-9])(?:(?-i:P)(?:assword|asswd|rivate[._-]?key)|(?-i:S)ecret|(?-i:T)oken|(?-i:A)(?:pi[._-]?key|ccess[._-]?key|uthorization)|(?-i:C)ookie))"?\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|''(?:\\.|[^''\\])*''|(?:(?:Bearer|Basic)\s+)?[^\s,;"]+)'
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
           limit_percentage: 80 # Hard heap threshold, 12.8Gi. The Go runtime target is 8GiB.
           spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (8.8Gi).
       exporters:
-        otlp_http:
-          endpoint: http://nktp-gateway-metrics-collector:4318
+        otlp:
+          endpoint: nktp-gateway-metrics-collector:4317
+          tls:
+            ca_file: /etc/nktp/internal-tls/client/ca.crt
+            cert_file: /etc/nktp/internal-tls/client/tls.crt
+            key_file: /etc/nktp/internal-tls/client/tls.key
+            reload_interval: 1h
           retry_on_failure:
             max_elapsed_time: 30m
           sending_queue:
@@ -1907,10 +2275,10 @@ large_target_metrics:
         pipelines:
           metrics:
             receivers: [prometheus]
-            processors: [memory_limiter]
-            exporters: [otlp_http]
+            processors: [memory_limiter, redaction/basic_v1]
+            exporters: [otlp]
   # Native sidecar for this workload's own telemetry. It buffers through outages,
-  # keeps only error and slow traces, and exports to http://nktp-watchdog-collector:4318.
+  # keeps only error and slow traces, and exports over gRPC to nktp-watchdog-collector:4317.
   sidecar:
     kubernetes:
       resources:
@@ -1943,6 +2311,10 @@ large_target_metrics:
         readOnlyRootFilesystem: true
         capabilities:
           drop: [ALL]
+      volumeMounts:
+        - name: internal-tls-client
+          mountPath: /etc/nktp/internal-tls/client
+          readOnly: true
     otelcol:
       # Set a custom image for this sidecar only.
       # image:
@@ -1982,8 +2354,13 @@ large_target_metrics:
                   span:
                     - end_time_unix_nano - start_time_unix_nano > 1000000000
         exporters:
-          otlp_http:
-            endpoint: http://nktp-watchdog-collector:4318
+          otlp:
+            endpoint: nktp-watchdog-collector:4317
+            tls:
+              cert_file: /etc/nktp/internal-tls/client/tls.crt
+              key_file: /etc/nktp/internal-tls/client/tls.key
+              ca_file: /etc/nktp/internal-tls/client/ca.crt
+              reload_interval: 1h
             retry_on_failure:
               max_elapsed_time: 30m
             sending_queue:
@@ -2023,15 +2400,15 @@ large_target_metrics:
             metrics:
               receivers: [otlp]
               processors: [memory_limiter]
-              exporters: [otlp_http]
+              exporters: [otlp]
             logs:
               receivers: [otlp]
               processors: [memory_limiter]
-              exporters: [otlp_http]
+              exporters: [otlp]
             traces:
               receivers: [otlp]
               processors: [memory_limiter, tail_sampling]
-              exporters: [otlp_http]
+              exporters: [otlp]
 
 # Cluster event reader. One elected replica watches Kubernetes Events.
 cluster_events:
@@ -2079,6 +2456,18 @@ cluster_events:
       readOnlyRootFilesystem: true
       capabilities:
         drop: [ALL]
+    volumes:
+      - name: internal-tls-client
+        secret:
+          secretName: nktp-cluster-events-client-tls
+          items:
+            - {key: tls.crt, path: tls.crt}
+            - {key: tls.key, path: tls.key}
+            - {key: ca.crt, path: ca.crt}
+    volumeMounts:
+      - name: internal-tls-client
+        mountPath: /etc/nktp/internal-tls/client
+        readOnly: true
   otelcol:
     # Set a custom image for this workload only.
     # image:
@@ -2099,13 +2488,34 @@ cluster_events:
           k8s_leader_elector: k8s_leader_elector
           namespaces: [] # Empty watches all namespaces. Restrict this list for a smaller scope.
       processors:
+        transform/event_service:
+          log_statements:
+            - context: log
+              statements:
+                - set(resource.attributes["nvidia.telemetry.class"], "k8s.event")
+                - set(resource.attributes["service.name"], attributes["k8s.event.reporting_controller"]) where (resource.attributes["service.name"] == nil or resource.attributes["service.name"] == "") and attributes["k8s.event.reporting_controller"] != nil and attributes["k8s.event.reporting_controller"] != ""
+                - set(resource.attributes["service.name"], "kube-apiserver") where resource.attributes["service.name"] == nil or resource.attributes["service.name"] == ""
+        redaction/basic_v1:
+          allow_all_keys: true
+          redact_all_types: true
+          summary: silent
+          blocked_key_patterns:
+            - '(?i)(?:(?:^|[._-])(?:password|passwd|secret|token|(?:access|refresh|id|session|auth)[._-]?token|(?:access|secret|private|api)[._-]?key|secret[._-]?access[._-]?key|client[._-]?secret|authorization|(?:set[._-]?)?cookie)|(?-i:[a-z0-9])(?:(?-i:P)(?:assword|asswd|rivate[._-]?key)|(?-i:S)ecret|(?-i:T)oken|(?-i:A)(?:pi[._-]?key|ccess[._-]?key|uthorization)|(?-i:C)ookie))$$'
+          blocked_values:
+            - '(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*'
+            - '(?i)"?\b(?:[A-Za-z0-9]+[._-])*(?:password|passwd|secret|token|(?:access|refresh|id|session|auth)[._-]?token|(?:access|secret|private|api)[._-]?key|secret[._-]?access[._-]?key|client[._-]?secret|authorization|(?:set[._-]?)?cookie|[A-Za-z0-9]*(?-i:[a-z0-9])(?:(?-i:P)(?:assword|asswd|rivate[._-]?key)|(?-i:S)ecret|(?-i:T)oken|(?-i:A)(?:pi[._-]?key|ccess[._-]?key|uthorization)|(?-i:C)ookie))"?\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|''(?:\\.|[^''\\])*''|(?:(?:Bearer|Basic)\s+)?[^\s,;"]+)'
         memory_limiter:
           check_interval: 500ms # Poll Go heap Alloc. Bursts can allocate between checks.
           limit_percentage: 80 # Hard heap threshold, 819.2Mi. Leaves room below the container cap.
           spike_limit_percentage: 25 # Subtract from hard threshold for soft refusal at 55% (563.2Mi).
       exporters:
-        otlp_http:
-          endpoint: http://nktp-gateway-logs-collector:4318
+        otlp:
+          endpoint: nktp-gateway-logs-collector:4317
+          tls:
+            ca_file: /etc/nktp/internal-tls/client/ca.crt
+            cert_file: /etc/nktp/internal-tls/client/tls.crt
+            key_file: /etc/nktp/internal-tls/client/tls.key
+            reload_interval: 1h
           retry_on_failure:
             max_elapsed_time: 30m
           sending_queue:
@@ -2150,10 +2560,10 @@ cluster_events:
         pipelines:
           logs:
             receivers: [k8s_events]
-            processors: [memory_limiter]
-            exporters: [otlp_http]
+            processors: [memory_limiter, transform/event_service, redaction/basic_v1]
+            exporters: [otlp]
   # Native sidecar for this workload's own telemetry. It buffers through outages,
-  # keeps only error and slow traces, and exports to http://nktp-watchdog-collector:4318.
+  # keeps only error and slow traces, and exports over gRPC to nktp-watchdog-collector:4317.
   sidecar:
     kubernetes:
       resources:
@@ -2186,6 +2596,10 @@ cluster_events:
         readOnlyRootFilesystem: true
         capabilities:
           drop: [ALL]
+      volumeMounts:
+        - name: internal-tls-client
+          mountPath: /etc/nktp/internal-tls/client
+          readOnly: true
     otelcol:
       # Set a custom image for this sidecar only.
       # image:
@@ -2225,8 +2639,13 @@ cluster_events:
                   span:
                     - end_time_unix_nano - start_time_unix_nano > 1000000000
         exporters:
-          otlp_http:
-            endpoint: http://nktp-watchdog-collector:4318
+          otlp:
+            endpoint: nktp-watchdog-collector:4317
+            tls:
+              cert_file: /etc/nktp/internal-tls/client/tls.crt
+              key_file: /etc/nktp/internal-tls/client/tls.key
+              ca_file: /etc/nktp/internal-tls/client/ca.crt
+              reload_interval: 1h
             retry_on_failure:
               max_elapsed_time: 30m
             sending_queue:
@@ -2266,15 +2685,15 @@ cluster_events:
             metrics:
               receivers: [otlp]
               processors: [memory_limiter]
-              exporters: [otlp_http]
+              exporters: [otlp]
             logs:
               receivers: [otlp]
               processors: [memory_limiter]
-              exporters: [otlp_http]
+              exporters: [otlp]
             traces:
               receivers: [otlp]
               processors: [memory_limiter, tail_sampling]
-              exporters: [otlp_http]
+              exporters: [otlp]
 
 # Default in-cluster backend. MUST be disabled for production use.
 otel-lgtm:

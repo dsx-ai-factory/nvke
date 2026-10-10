@@ -13,7 +13,7 @@ import (
 // assigned its IP address. No controller creates or changes the host.
 type ProvisionedHost struct {
 	// Hostname is the DNS hostname of the host. It must be unique in the cluster.
-	// It does not become the Kubernetes Node name: CWE generates the Node name
+	// It does not become the Kubernetes Node name: the controller generates the Node name
 	// and passes it to kubeadm.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
@@ -22,7 +22,7 @@ type ProvisionedHost struct {
 
 	// IPAddress is the IP address that the network already assigned to this
 	// host. The provider uses its canonical form in the provider ID and copies
-	// it to the status of the machine that holds the host. CWE uses it to reach
+	// it to the status of the machine that holds the host. The controller uses it to reach
 	// the node agent.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=45
@@ -43,8 +43,8 @@ type ProvisionedHost struct {
 
 // ProvisionedClusterSpec defines the desired state of ProvisionedCluster.
 //
-// The spec holds no control plane endpoint. CWE owns the control plane VIP
-// through the controlPlaneVIP field of its own cluster API, and CWE configures
+// The spec holds no control plane endpoint. The NKE controller owns the control plane VIP
+// through the controlPlaneVIP field of its own cluster API, and the controller configures
 // kube-vip on each control plane node.
 type ProvisionedClusterSpec struct {
 	// Hosts is the inventory. The provider gives one host to each machine.

@@ -51,7 +51,7 @@ STATE_DIR="${RUNNER_TEMP:-${TMPDIR:-/tmp}/bootstrap-e2e-host}"
 # passes there -- the fleet, not the suite, was the variable.
 #
 # Under containerd's own root on purpose: that path already has to be
-# non-overlay for the CWE image build, so this inherits one requirement
+# non-overlay for the controller image build, so this inherits one requirement
 # instead of adding a second one somewhere else.
 NERDCTL_DATA_ROOT="/var/lib/containerd-nerdctl/nerdctl"
 

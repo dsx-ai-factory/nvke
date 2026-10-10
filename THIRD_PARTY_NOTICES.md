@@ -14,7 +14,7 @@ where those notices are, and which do not yet — and why.
 | Component | Notices | Generated from | Enforced by |
 |---|---|---|---|
 | `agent/` — the node agent | [agent/THIRD_PARTY_NOTICES.md](agent/THIRD_PARTY_NOTICES.md) | the import closure of `./cmd/...` for `linux/amd64` and `linux/arm64` | the `Third-Party Notices` workflow, on every push |
-| `controller/` — the Cloud Workflow Engine | [controller/THIRD_PARTY_NOTICES.md](controller/THIRD_PARTY_NOTICES.md) — **156 modules** | the import closure of `./cmd/worker` for `linux/amd64`, read from the committed `vendor/` tree | the `Third-Party Notices` workflow, on every push |
+| `controller/` — the Cloud Workflow Engine | [controller/THIRD_PARTY_NOTICES.md](controller/THIRD_PARTY_NOTICES.md) — **151 modules** | the import closures of `./cmd/worker` and the provider's `./cmd/manager` for `linux/amd64` | the `Third-Party Notices` workflow, on every push |
 | `cli/` — the `nkectl` CLI | [cli/THIRD_PARTY_NOTICES.md](cli/THIRD_PARTY_NOTICES.md) — **24 modules** | the import closure of `./cmd/nkectl` for `linux/amd64` | the `Third-Party Notices` workflow, on every push |
 | `os-image/` — the `nke-os-image-check` binary | [os-image/THIRD_PARTY_NOTICES.md](os-image/THIRD_PARTY_NOTICES.md) — **9 modules** | the import closure of `./cmd/nke-os-image-check` for `linux/amd64` | the `Third-Party Notices` workflow, on every push |
 
@@ -28,11 +28,9 @@ cd os-image   && make notices
 ```
 
 ⚠️ **The controller, nkectl and os-image generators need the workspace on** (do
-not set `GOWORK=off`), for two different reasons. The controller and nkectl read
-the committed `vendor/` tree, which is a workspace-level construct — that is what
-lets them run without downloading anything at all.
-`os-image` requires `github.com/dsx-ai-factory/nke/agent`, which resolves only through
-the workspace's `use` directive; with the workspace off, `go-licenses` fails with
+not set `GOWORK=off`), because `os-image` requires
+`github.com/dsx-ai-factory/nke/agent`, which resolves only through the workspace's
+`use` directive; with the workspace off, `go-licenses` fails with
 `go.mod file not found` before it collects anything.
 
 `make notices-check` regenerates the file and fails if the result differs from
@@ -41,8 +39,33 @@ the dependency tree without the build going red.
 
 ## Not yet covered
 
-**Nothing.** Every binary this repository redistributes now carries generated
-attribution, and CI regenerates and compares all four on every push.
+The agent, controller, CLI and os-image binaries carry generated attribution,
+and CI regenerates and compares all four on every push.
+
+The `cluster-api-provider-provisioned` image, published by
+`image-provisioned-nvcr.yml`, ships `controller/THIRD_PARTY_NOTICES.md`. That file
+is generated from both the CWE worker and the provider's manager
+(`./cmd/manager`), so it covers the provider's whole dependency closure and the
+controller's notices check fails if it drifts. The provider's closure is 67
+modules, the same set for `linux/amd64` and `linux/arm64`, and every one is in the
+file. The generator analyses `linux/amd64` only; to check `linux/arm64`, compare
+the output of
+
+```bash
+cd cluster-api-provider-provisioned
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go list -deps \
+  -f '{{with .Module}}{{if not .Main}}{{.Path}}@{{.Version}}{{end}}{{end}}' ./cmd/manager | sort -u
+```
+
+against the Module column of the index in `controller/THIRD_PARTY_NOTICES.md`.
+
+The `management-engine` manager image and chart are not part of the initial
+open-source release. No workflow in this repository builds or publishes them, the
+`Dockerfile` and `make docker-build` / `docker-push` targets are for
+development with a caller-supplied image name. The module's API types are compiled into the controller and
+its CRDs ship in the controller chart, so those carry the controller's
+attribution. If the manager image is published, it needs `LICENSE`, `NOTICE`
+and a generated dependency inventory, and a row above.
 
 `capd-reboot-controller` is built by `make build` but shipped nowhere — no
 image, no artifact, no package. If it starts shipping, it needs a row above and

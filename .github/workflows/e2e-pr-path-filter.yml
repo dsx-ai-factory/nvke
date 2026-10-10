@@ -66,15 +66,15 @@ jobs:
               exit 0
             fi
 
-            # The CLI hack/ci/nkectl-smoke.sh exercises against a live CWE. Keep
+            # The CLI hack/ci/nkectl-smoke.sh exercises against a live controller. Keep
             # in step with what the smoke asserts on; capd-e2e.yml mirrors it as
-            # push globs. The rest of cli/ cannot break against CWE, and skips.
+            # push globs. The rest of cli/ cannot break against the controller, and skips.
             cwe_facing='^cli/(cmd/|internal/(clients|clusterstate|controller|providers|bootstrap/sitecluster|util)/)'
             e2e_unrelated='(^|/)docs/|^cli/|^cluster-api-provider-provisioned/'
 
             if [[ -n "$changed_files" ]] && ! grep -qEv "$e2e_unrelated" <<< "$changed_files"; then
               if grep -qE "$cwe_facing" <<< "$changed_files"; then
-                echo "Pull request ${pr_number} touches the CWE-facing CLI: running backend E2E."
+                echo "Pull request ${pr_number} touches the controller-facing CLI: running backend E2E."
               else
                 run_e2e=false
                 echo "Skipping backend E2E for pull request ${pr_number}: all changed files are under excluded paths."

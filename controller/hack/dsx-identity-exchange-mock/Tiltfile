@@ -118,7 +118,7 @@ def register(ctx):
         },
         cwe_chart_flags=[
             "--set-string", "spiffe.jwtExchangeEndpoint=%s" % exchange_endpoint,
-            "--set-string", "spiffe.cweSubject=spiffe://nke.capd.nke-controller.nvid.id/bm/cwe",
+            "--set-string", "spiffe.controllerSubject=spiffe://nke.capd.nke-controller.nvid.id/bm/cwe",
             "--set-string", "spiffe.capiManagerSubject=spiffe://nke.capd.capi-manager.nvid.id/bm/cwe",
             "--set-string", "spiffe.capiKubeadmControlPlaneManagerSubject=spiffe://nke.capd.capi-kubeadm-control-plane-manager.nvid.id/bm/cwe",
             "--set-string", "spiffe.capiKubeadmBootstrapManagerSubject=spiffe://nke.capd.capi-kubeadm-bootstrap-manager.nvid.id/bm/cwe",

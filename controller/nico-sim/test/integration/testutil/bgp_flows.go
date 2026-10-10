@@ -39,7 +39,7 @@ const (
 //
 // It provisions 3 control-plane VMs and a worker-only client VM, SSHes into
 // each control-plane VM to run the kube-vip configure script (validating the
-// CWE runbook path), then starts kube-vip via kubelet. The test verifies the
+// controller runbook path), then starts kube-vip via kubelet. The test verifies the
 // host's ECMP route and worker-originated traffic distribution, then deletes a
 // control-plane VM and verifies route and traffic degradation.
 //
@@ -57,7 +57,7 @@ func RunBGPECMPFlow(t *testing.T, env *TestEnv, profile RuntimeProfile) {
 	t.Log("Phase 1: Provisioning 3 CP VMs and a worker client VM...")
 	test.provisionTopology()
 
-	t.Log("Phase 2: Configuring kube-vip on each CP VM via CWE runbook...")
+	t.Log("Phase 2: Configuring kube-vip on each CP VM via controller runbook...")
 	test.configureControlPlanes()
 
 	t.Log("Phase 3: Waiting for kubelet and CP identity backends...")
@@ -144,9 +144,9 @@ func prepareBGPECMPTest(t *testing.T, env *TestEnv, profile RuntimeProfile) *bgp
 	// Ensure the privileged BGP port redirects to the configured speaker port.
 	ensureBGPIPTablesRedirect(t, profile.Config.BridgeName, bridgeGW, profile.Config.BGPListenPort)
 
-	// Read and base64-encode the shared CWE control-plane kube-vip runbook for
+	// Read and base64-encode the shared controller control-plane kube-vip runbook for
 	// embedding in cloud-init write_files (avoids YAML escaping issues). The test
-	// exercises the exact runbook CWE ships on CP nodes, not a divergent copy.
+	// exercises the exact runbook the controller ships on CP nodes, not a divergent copy.
 	return &bgpECMPTest{
 		t:         t,
 		env:       env,
@@ -553,11 +553,11 @@ done`, bgpECMPRequestCount, firstSourcePort, vip, bgpECMPBackendPort)
 	t.Logf("%d fresh worker connections to %s distributed across backends: %v", bgpECMPRequestCount, vip, counts)
 }
 
-// readAndEncodeCWERunbook reads a shared CWE control-plane runbook (the same
-// script CWE executes on real CP nodes) and returns its base64-encoded content
+// readAndEncodeCWERunbook reads a shared controller control-plane runbook (the same
+// script the controller executes on real CP nodes) and returns its base64-encoded content
 // for embedding in cloud-init write_files. This keeps the integration test on a
 // single source of truth rather than a divergent copy. FindRepoRoot resolves the
-// nico-sim module root; the CWE runbooks live in the parent module one level up.
+// nico-sim module root; the controller runbooks live in the parent module one level up.
 func readAndEncodeCWERunbook(t *testing.T, filename string) string {
 	t.Helper()
 	moduleRoot, err := FindRepoRoot()
@@ -567,7 +567,7 @@ func readAndEncodeCWERunbook(t *testing.T, filename string) string {
 	path := filepath.Join(moduleRoot, "..", "internal", "runbook", "scripts", filename)
 	content, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read CWE runbook %s: %v", filename, err)
+		t.Fatalf("read controller runbook %s: %v", filename, err)
 	}
 	return base64.StdEncoding.EncodeToString(content)
 }

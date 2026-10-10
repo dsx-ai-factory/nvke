@@ -785,7 +785,7 @@ func TestStdServerErrorStatus_MalformedPathUUID(t *testing.T) {
 // middleware as production. The caller must configure mockDB (GetTx, RunInTx, and
 // any tx method mocks) as needed; invalid requests are rejected by the validator.
 // When MockTx is set, CreateCluster path stubs are installed so valid forge
-// creates (no longer blocked by CWE Forge CIDR overlap checks) do not panic.
+// creates (no longer blocked by controller Forge CIDR overlap checks) do not panic.
 func newTestServerWithValidator(t *testing.T, mockDB *testutil.MockDB) http.Handler {
 	t.Helper()
 

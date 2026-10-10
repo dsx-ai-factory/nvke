@@ -43,4 +43,11 @@ resources:
   kind: NodePoolRelease
   path: github.com/dsx-ai-factory/nke/management-engine/apis/v1
   version: v1
+- api:
+    crdVersion: v1
+  domain: nke.nvidia.com
+  group: internal
+  kind: ClusterReleaseChannel
+  path: github.com/dsx-ai-factory/nke/management-engine/apis/v1
+  version: v1
 version: "3"

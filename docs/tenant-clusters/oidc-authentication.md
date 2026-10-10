@@ -66,8 +66,9 @@ them while clusters with OIDC authentication exist.
 
 If `spiffe.jwtExchangeEndpoint` is set, tenant clusters must trust the
 exchange's issuer, so `issuerURL` names that issuer. The chart then also
-requires `spiffe.cweSubject` and the Cluster API subject overrides. See the
-chart README.
+requires `spiffe.controllerSubject` and the Cluster API subject overrides. The
+older `spiffe.cweSubject` also satisfies the first; if both are set,
+`spiffe.controllerSubject` wins. See the chart README.
 
 ## Enabling OIDC on an Existing Cluster
 

@@ -193,9 +193,20 @@ fi
 # answers. DPkg::Lock::Timeout bounds the other half -- unattended-upgrades
 # holds the lock on a fresh runner, and dpkg's default is to wait forever. One
 # job sat on it for 5h29m and was recorded as cancelled, not failed.
+# A stalled mirror hangs apt too: bound and retry downloads, install from cache.
+apt_install() {
+  local attempt
+  for attempt in 1 2 3; do
+    sudo -E timeout -k 30 600 apt-get update -qq -o DPkg::Lock::Timeout=600 &&
+      sudo -E timeout -k 30 600 apt-get install -y -qq --download-only -o DPkg::Lock::Timeout=600 "$@" &&
+      break
+    [[ "${attempt}" -lt 3 ]] || fail "apt-get could not download: $*"
+    warn "apt-get failed or timed out (attempt ${attempt}/3); retrying"
+  done
+  sudo -E apt-get install -y -qq -o DPkg::Lock::Timeout=600 -o Dpkg::Options::="--force-confold" "$@"
+}
 log "Installing QEMU/libvirt packages for ${DEB_ARCH}..."
-sudo -E apt-get update -qq -o DPkg::Lock::Timeout=600
-sudo -E apt-get install -y -qq -o DPkg::Lock::Timeout=600 -o Dpkg::Options::="--force-confold" \
+apt_install \
   "${QEMU_SYSTEM_PKG}" \
   qemu-utils \
   libvirt-daemon-system \
@@ -219,7 +230,7 @@ if [[ "${FDE}" == true ]]; then
   log "NKE_CI_HOST_FDE=true: installing UEFI firmware, swtpm, e2fsprogs and sshpass"
   # sshpass: the E2E lane reads each guest's journals through nico-vms'
   # password-login diagnostic user when a node never registers.
-  sudo -E apt-get install -y -qq -o DPkg::Lock::Timeout=600 -o Dpkg::Options::="--force-confold" \
+  apt_install \
     ovmf \
     swtpm \
     swtpm-tools \
@@ -579,7 +590,7 @@ fi
 # http://carbide-pxe.forge/api/v0/cloud-init/ for their NoCloud seed and run
 # kube-vip on a hardcoded BGP port 179. D7 boots vanilla noble from a local
 # seed ISO and D5 drops CNI, so no guest here asks for any of them. With
-# NKE_CI_HOST_FDE=true all three are added above, because a CWE-driven tenant
+# NKE_CI_HOST_FDE=true all three are added above, because a controller-driven tenant
 # runs kube-vip and its control plane reaches the metadata server.
 
 # ── 6b. vTPM and console logs for the FDE image ─────────────────────────────

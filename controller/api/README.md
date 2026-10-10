@@ -188,8 +188,15 @@ check whether the deprecation route above applies first — it usually should
 have.
 
 A waiver is deleted once the baseline tag has moved past the release that
-carried the break — the gate fails on a waiver that matches nothing, so it
-cannot be forgotten.
+carried the break. A waiver that matches nothing fails the gate, so it cannot be
+forgotten. Recording the `baseline` it was written against is the one
+exemption: when the check runs against a stable `controller/api/vX.Y.Z` tag
+*later* than that one, the waiver reports as expired instead of failing, so a
+break that has since shipped does not fail unrelated branches. Any other
+relation leaves it failing — the same tag, an earlier one, or a baseline that
+is not an orderable release tag at all (a commit SHA, a branch, a release
+candidate). Checking against an older or unorderable ref therefore does not
+retire a waiver.
 
 ## Rendering the reference
 
@@ -238,12 +245,12 @@ make -C controller generate-check    # the committed Go matches the spec
 make -C controller api-compat-check  # the spec change does not break a client
 ```
 
-This module has **no test files**. `make test` therefore compiles the module and
-reports success without running anything. That matters when you change the API:
-nothing here will catch a break *in the Go*, and the modules that will are
-`controller`, `cli` and `controller/test/e2e`. Build those too before you open a
-pull request. A break in the *contract* is `api-compat-check`'s job, and that
-one does run here.
+The authored tests in this module cover the stdlib OIDC issuer under
+`testutil/oidc`, which the controller reference and end-to-end suites share.
+`make test` runs those tests and compiles the generated API package. It does not
+catch a break in generated Go consumers, so build `controller`, `cli` and
+`controller/test/e2e` too before opening a pull request. A break in the contract
+is `api-compat-check`'s job, and that check runs from `controller/`.
 
 There is no `fmt` target, on purpose. Formatting the generated files belongs to
 the generator.

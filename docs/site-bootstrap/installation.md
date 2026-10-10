@@ -63,7 +63,7 @@ make -C cli build   # → cli/bin/nkectl; not `go build`, which leaves the Clust
 
 - **`kind`** — `brew install kind` (macOS) or download from https://kind.sigs.k8s.io/docs/user/quick-start/#installation
 - **`nerdctl`** and a **containerd** for it to talk to — the container runtime `nkectl` uses to create the Kind cluster and load images into it. Docker is not supported. Rootful nerdctl, run as root, is what CI exercises; rootless is untested. kind states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the version CI exercises.
-- **`helm`**, **`kubectl`** and **`clusterctl`** — `nkectl` shells out to all three: Helm for the Postgres, Temporal, SPIRE and CWE releases, `kubectl` for manifests, and `clusterctl init` for the Cluster API providers.
+- **`helm`**, **`kubectl`** and **`clusterctl`** — `nkectl` shells out to all three: Helm for the Postgres, Temporal, SPIRE and NKE controller releases, `kubectl` for manifests, and `clusterctl init` for the Cluster API providers.
 
 Only nerdctl is checked before the run starts. A missing `kind` fails in the pre-flight check for a leftover bootstrap cluster, before anything is created; a missing `helm`, `kubectl` or `clusterctl` surfaces mid-bootstrap, after the Kind cluster is already up.
 

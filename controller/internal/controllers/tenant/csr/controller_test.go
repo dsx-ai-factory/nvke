@@ -183,13 +183,13 @@ func TestValidateServingCSR(t *testing.T) {
 			commonName: "system:node:worker-1",
 			org:        []string{"system:nodes"},
 			dnsNames:   []string{"other"},
-			wantReason: `DNS SAN "other" does not match CWE node name`,
+			wantReason: `DNS SAN "other" does not match controller node name`,
 		},
 		"wrong IP SAN": {
 			commonName: "system:node:worker-1",
 			org:        []string{"system:nodes"},
 			ips:        []net.IP{net.ParseIP("192.0.2.11")},
-			wantReason: `IP SAN "192.0.2.11" does not match CWE node IP`,
+			wantReason: `IP SAN "192.0.2.11" does not match controller node IP`,
 		},
 		"URI SAN": {
 			commonName: "system:node:worker-1",
@@ -229,14 +229,14 @@ func TestPlanDecision(t *testing.T) {
 		invalid := newServingCSR(t, "invalid", time.Now(), "system:node:worker-1", []string{"system:nodes"}, []string{"other"}, nil, nil)
 		decision := planDecision(invalid, nodes)
 		require.Equal(t, decisionSkip, decision.Action)
-		require.Equal(t, `DNS SAN "other" does not match CWE node name`, decision.Reason)
+		require.Equal(t, `DNS SAN "other" does not match controller node name`, decision.Reason)
 	})
 
 	t.Run("unknown node is skipped", func(t *testing.T) {
 		t.Parallel()
 		decision := planDecision(valid, nil)
 		require.Equal(t, decisionSkip, decision.Action)
-		require.Equal(t, "node is not present in CWE desired state", decision.Reason)
+		require.Equal(t, "node is not present in the controller's desired state", decision.Reason)
 	})
 }
 
@@ -404,7 +404,7 @@ func TestReconcilerRetriesNodeLookupFailure(t *testing.T) {
 	}
 
 	_, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: csr.Name}})
-	require.ErrorContains(t, err, "listing CWE nodes")
+	require.ErrorContains(t, err, "listing controller nodes")
 }
 
 func TestReconcilerDoesNotApproveForDeletingCluster(t *testing.T) {

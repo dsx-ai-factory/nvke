@@ -22,7 +22,7 @@ func TestGofailRunbookWorkerCrashRetriesAfterHeartbeatTimeout(t *testing.T) {
 	const targetRunbook = "upgrade-kubelet-kubeadm"
 
 	testStarted := time.Now()
-	t.Log("starting local Temporal, PostgreSQL, agent, and production CWE worker")
+	t.Log("starting local Temporal, PostgreSQL, agent, and production controller worker")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
@@ -34,10 +34,10 @@ func TestGofailRunbookWorkerCrashRetriesAfterHeartbeatTimeout(t *testing.T) {
 	nodeAgent.SetKubeconfig(tenantAPI.Kubeconfig())
 	kubeconfigPath := framework.WriteKubeconfig(t)
 	taskQueue := framework.TaskQueueName("cwe-gofail-runbook", t.Name())
-	workerBinary := framework.CWEWorkerBinary(t)
+	workerBinary := framework.ControllerWorkerBinary(t)
 	gofailAddr := framework.FreeLocalhostAddress(t)
 
-	failingWorker := framework.StartCWEWorkerBinary(t, framework.CWEWorkerBinaryConfig{
+	failingWorker := framework.StartControllerWorkerBinary(t, framework.ControllerWorkerBinaryConfig{
 		BinaryPath:         workerBinary,
 		DBConnectionString: databaseDSN,
 		KubeconfigPath:     kubeconfigPath,
@@ -48,10 +48,10 @@ func TestGofailRunbookWorkerCrashRetriesAfterHeartbeatTimeout(t *testing.T) {
 		GofailHTTPAddr:     gofailAddr,
 	})
 	failingWorker.WaitReady(t)
-	t.Logf("instrumented CWE worker is ready; gofail HTTP endpoint is %s", gofailAddr)
-	framework.SeedCWEGofailDB(t, databaseDSN)
-	framework.SetGofail(t, gofailAddr, framework.CWEGofailFailpointName, `return("`+targetRunbook+`")`)
-	t.Logf("activated failpoint %s for runbook %q", framework.CWEGofailFailpointName, targetRunbook)
+	t.Logf("instrumented controller worker is ready; gofail HTTP endpoint is %s", gofailAddr)
+	framework.SeedControllerGofailDB(t, databaseDSN)
+	framework.SetGofail(t, gofailAddr, framework.ControllerGofailFailpointName, `return("`+targetRunbook+`")`)
+	t.Logf("activated failpoint %s for runbook %q", framework.ControllerGofailFailpointName, targetRunbook)
 
 	run, err := server.Client().ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:                  taskQueue,
@@ -59,7 +59,7 @@ func TestGofailRunbookWorkerCrashRetriesAfterHeartbeatTimeout(t *testing.T) {
 		WorkflowRunTimeout:  3*time.Minute + 30*time.Second,
 		WorkflowTaskTimeout: 5 * time.Second,
 	}, workflows.UpgradeControlPlaneAddons, workflows.UpgradeControlPlaneAddonsInput{
-		ClusterID:         framework.CWEGofailClusterID,
+		ClusterID:         framework.ControllerGofailClusterID,
 		KubernetesVersion: "1.31.0",
 	})
 	require.NoError(t, err)
@@ -67,15 +67,15 @@ func TestGofailRunbookWorkerCrashRetriesAfterHeartbeatTimeout(t *testing.T) {
 
 	crashCtx, crashCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer crashCancel()
-	require.NoError(t, failingWorker.WaitForOutput(crashCtx, framework.CWEGofailWorkerCrashLine),
+	require.NoError(t, failingWorker.WaitForOutput(crashCtx, framework.ControllerGofailWorkerCrashLine),
 		"gofail crash marker was not emitted:\n%s", failingWorker.Output())
-	require.Contains(t, failingWorker.Output(), framework.CWEGofailWorkerCrashLine)
+	require.Contains(t, failingWorker.Output(), framework.ControllerGofailWorkerCrashLine)
 	t.Logf("observed failpoint marker; injected worker output:\n%s", failingWorker.Output())
 	exitErr := failingWorker.Kill(t)
 	require.Error(t, exitErr, "failing worker should report an error after the e2e framework kills it")
 	t.Logf("killed injected worker process: %v", exitErr)
 
-	recoveryWorker := framework.StartCWEWorkerBinary(t, framework.CWEWorkerBinaryConfig{
+	recoveryWorker := framework.StartControllerWorkerBinary(t, framework.ControllerWorkerBinaryConfig{
 		BinaryPath:         workerBinary,
 		DBConnectionString: databaseDSN,
 		KubeconfigPath:     kubeconfigPath,
@@ -88,7 +88,7 @@ func TestGofailRunbookWorkerCrashRetriesAfterHeartbeatTimeout(t *testing.T) {
 		recoveryWorker.Stop(t)
 	})
 	recoveryWorker.WaitReady(t)
-	t.Log("replacement CWE worker is ready")
+	t.Log("replacement controller worker is ready")
 
 	// The real policy waits for the two-minute heartbeat timeout and then 30 seconds before retrying.
 	retryCtx, retryCancel := context.WithTimeout(ctx, 3*time.Minute)
@@ -99,7 +99,7 @@ func TestGofailRunbookWorkerCrashRetriesAfterHeartbeatTimeout(t *testing.T) {
 	require.NoError(t, err,
 		"workflow did not resume promptly after worker loss; failing worker output:\n%s\nrecovery worker output:\n%s",
 		failingWorker.Output(), recoveryWorker.Output())
-	require.Equal(t, framework.CWEGofailNodeID, result.NodeID)
+	require.Equal(t, framework.ControllerGofailNodeID, result.NodeID)
 	t.Logf("workflow recovered on the replacement worker with node %s", result.NodeID)
 	tenantAPI.AssertDNSReconciled(t)
 	_, err = nodeAgent.WaitForScript(retryCtx, targetRunbook)

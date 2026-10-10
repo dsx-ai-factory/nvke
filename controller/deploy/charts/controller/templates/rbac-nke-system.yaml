@@ -23,7 +23,7 @@ rules:
     resourceNames:
       - nke-rbac
     verbs: ["get"]
-  # Publish, rotate, and clean up Secrets owned by CWE.
+  # Publish, rotate, and clean up Secrets owned by the controller.
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

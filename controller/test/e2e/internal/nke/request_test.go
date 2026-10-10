@@ -12,9 +12,49 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 
 	"github.com/dsx-ai-factory/nke/controller/api"
 )
+
+func TestUnit_CAPDRequestPublishesFailureDomains(t *testing.T) {
+	tests := []struct {
+		name    string
+		domains []CAPDFailureDomain
+		want    []map[string]any
+	}{
+		{
+			name:    "control-plane and worker domains use the v1beta2 list",
+			domains: []CAPDFailureDomain{{Name: "fd-a", ControlPlane: true}, {Name: "fd-b", ControlPlane: true}, {Name: "fd-worker", ControlPlane: false}},
+			want:    []map[string]any{{"name": "fd-a", "controlPlane": true}, {"name": "fd-b", "controlPlane": true}, {"name": "fd-worker", "controlPlane": false}},
+		},
+		{
+			name:    "worker-only domains preserve controlPlane false",
+			domains: []CAPDFailureDomain{{Name: "fd-worker", ControlPlane: false}},
+			want:    []map[string]any{{"name": "fd-worker", "controlPlane": false}},
+		},
+		{name: "nil domains omit the key"},
+		{name: "empty domains omit the key", domains: []CAPDFailureDomain{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := buildCAPDRequest(ClusterSpec{
+				KubernetesVersion:  "1.34.2",
+				CAPDNodeImage:      "node-image:local",
+				ControlPlane:       ControlPlane{Config: &ControlPlaneConfigSpec{DesiredCount: 1}},
+				CAPDFailureDomains: tt.domains,
+			})
+			require.NoError(t, err)
+			spec, ok := req.Infra.Cluster["spec"].(map[string]any)
+			require.True(t, ok)
+			if tt.want == nil {
+				require.NotContains(t, spec, "failureDomains")
+			} else {
+				require.Equal(t, tt.want, spec["failureDomains"])
+			}
+		})
+	}
+}
 
 func TestUnit_ContainerCAPIReadyCommandsPreserveBundleSource(t *testing.T) {
 	t.Setenv("NKE_E2E_BUNDLE_SERVER_URL", "http://bundle-mirror/")

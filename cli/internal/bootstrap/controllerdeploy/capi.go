@@ -37,7 +37,7 @@ const (
 )
 
 // installCAPI puts Cluster API and the provisioned infrastructure provider on
-// the bootstrap cluster, so that the CAPI objects CWE writes for a tier-0
+// the bootstrap cluster, so that the CAPI objects the NKE controller writes for a tier-0
 // cluster have controllers to act on them.
 //
 // This runs inside `nkectl bootstrap site` rather than beside it because the
@@ -82,7 +82,7 @@ func (e *Engine) installCAPICore(ctx context.Context, kubeconfigPath string) err
 		"--control-plane", "kubeadm:"+capiVersion,
 		"--wait-providers",
 	); err != nil {
-		return fmt.Errorf("cwedeploy: clusterctl init: %w\n%s\n"+
+		return fmt.Errorf("controllerdeploy: clusterctl init: %w\n%s\n"+
 			"clusterctl %s must be on PATH and the host must be able to reach "+
 			"github.com and the cert-manager charts", err, out, capiVersion)
 	}
@@ -102,7 +102,7 @@ func (e *Engine) installProvisionedProvider(
 	timeout time.Duration,
 ) error {
 	if cfg.ProvisionedProviderImage == "" {
-		return errors.New("cwedeploy: Config.ProvisionedProviderImage is required; it names the " +
+		return errors.New("controllerdeploy: Config.ProvisionedProviderImage is required; it names the " +
 			"cluster-api-provider-provisioned image to run (published by " +
 			".github/workflows/image-provisioned-nvcr.yml, or build it with " +
 			"`docker build -f cluster-api-provider-provisioned/Dockerfile .`)")
@@ -110,11 +110,11 @@ func (e *Engine) installProvisionedProvider(
 
 	raw, err := manifestsFS.ReadFile(provisionedProviderFile)
 	if err != nil {
-		return fmt.Errorf("cwedeploy: reading the embedded provisioned provider manifest: %w", err)
+		return fmt.Errorf("controllerdeploy: reading the embedded provisioned provider manifest: %w", err)
 	}
 	rendered := string(raw)
 	if !strings.Contains(rendered, provisionedDefaultImage) {
-		return fmt.Errorf("cwedeploy: %s does not contain the expected placeholder image %q; "+
+		return fmt.Errorf("controllerdeploy: %s does not contain the expected placeholder image %q; "+
 			"the provider's manager manifest changed and this install can no longer set its image",
 			provisionedProviderFile, provisionedDefaultImage)
 	}
@@ -130,13 +130,13 @@ func (e *Engine) installProvisionedProvider(
 		"namespace", provisionedNamespace, "image", cfg.ProvisionedProviderImage)
 	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"apply", "--server-side", "--force-conflicts", "-f", manifest); err != nil {
-		return fmt.Errorf("cwedeploy: applying the provisioned provider: %w\n%s", err, out)
+		return fmt.Errorf("controllerdeploy: applying the provisioned provider: %w\n%s", err, out)
 	}
 
 	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"-n", provisionedNamespace, "rollout", "status", "deployment/"+provisionedDeployment,
 		"--timeout", timeout.String()); err != nil {
-		return fmt.Errorf("cwedeploy: waiting for the provisioned provider: %w\n%s", err, out)
+		return fmt.Errorf("controllerdeploy: waiting for the provisioned provider: %w\n%s", err, out)
 	}
 	return nil
 }

@@ -93,7 +93,7 @@ func (a *Activities) executeHostRunbook(ctx context.Context, input ExecuteHostRu
 
 	// Preserve SWE behavior by default: SWE RunbookExecution.Finish translated any
 	// non-zero agent ExecuteScript exit code into ExecutionStatusFailed, which
-	// CWE surfaced as RunbookError.
+	// the controller surfaced as RunbookError.
 	if !isExpectedRunbookExitCode(int(result.GetExitCode()), input) {
 		output := result.GetOutput()
 		scriptError := result.GetErrorMessage()

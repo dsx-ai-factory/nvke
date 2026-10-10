@@ -244,10 +244,10 @@ kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- \
 
 `cluster.controlPlaneVIP` is an IPv4 address that fronts the Kubernetes API for
 every control-plane node. It is required when `cluster.nodes` contains more than
-one node. When set, CWE runs kube-vip on each node,
+one node. When set, the controller runs kube-vip on each node,
 kubeadm uses the VIP as the `controlPlaneEndpoint`, and the kubeconfig `bootstrap
 site` writes points at it. A single-node cluster may leave it empty and use that
-node's IP as its fixed endpoint. CWE selects a control-plane node that reports
+node's IP as its fixed endpoint. The controller selects a control-plane node that reports
 ready to join, so the endpoint does not necessarily use the first node listed in
 the site spec.
 

@@ -382,7 +382,7 @@ func attemptKubeadmReset(ctx workflow.Context, nodeID uuid.UUID, isControlPlane 
 
 	var skipPhases []string
 	if isControlPlane {
-		// CWE handles etcd member removal explicitly for live CP teardown, and skips it
+		// The controller handles etcd member removal explicitly for live CP teardown, and skips it
 		// entirely for whole-cluster teardown, so kubeadm reset must not run its own
 		// remove-etcd-member phase.
 		skipPhases = []string{removeEtcdMember}
@@ -451,7 +451,7 @@ func cancelNodeProvisionWorkflow(ctx workflow.Context, nodeID uuid.UUID) error {
 }
 
 // cancelNodeJoinWorkflow cancels the node's JoinNode workflow. Note this stops
-// only CWE-side orchestration: the agent runs kubeadm join out-of-band in its
+// only controller-side orchestration: the agent runs kubeadm join out-of-band in its
 // own goroutine, so a join already in flight is not interrupted by this cancel.
 // The subsequent kubeadm reset in teardown is what actually reconciles the
 // node's local and etcd state, overriding whatever the join goroutine left.

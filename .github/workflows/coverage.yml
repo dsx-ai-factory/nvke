@@ -1,0 +1,160 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Coverage collection across the nine modules that have tests.
+#
+# Three of them collected a profile before this existed and six did not, and
+# nothing read any of it: controller/Makefile wrote coverage.txt and said so in
+# a comment, nico-sim and management-engine wrote their own, and no workflow,
+# service or threshold touched any of them. A profile nobody reads is close to
+# no profile. No profile at all is worse -- there is then nothing to notice when
+# a build tag quietly stops compiling a suite, because the run still passes and
+# nothing goes red.
+#
+# READ docs/coverage-policy.md BEFORE WIRING A NUMBER INTO ANYTHING HERE. A
+# percentage measures which lines a test binary executed, not whether anything
+# was asserted about them. Nothing in this file fails on one, deliberately. What
+# does fail: a missing, malformed or empty profile, and a package that holds
+# tests and is not being run.
+#
+# TWO JOBS, BECAUSE THEY COST DIFFERENT AMOUNTS
+#
+# `policy` reads the registry against the tree. No test run, no Go build, about
+# a second. It is a merge-gate member, and it is the half that catches the
+# drift: a new module that collects nothing, a module that gains its first test
+# and does not start collecting, a test recipe that loses its -coverprofile.
+#
+# `report` runs the nine suites and summarises them. That duplicates work the
+# gate's own test lanes already do, so it does NOT run on a pull request -- the
+# `if` below skips it when this workflow is called, and the gate tolerates a
+# skipped job. It runs on main, on a schedule and on demand, which is where a
+# trend is read from anyway. Making it a gate member would roughly double the
+# gate's wall clock to re-measure what controller-test.yml, agent-test.yml and
+# go-build.yml have already run.
+
+name: Coverage
+
+# workflow_call is what merge-gate.yml uses to call this as a reusable workflow,
+# for the `policy` job only. A called workflow does not apply its own `paths:`
+# filter, so on a pull request this runs whatever changed; the filter below
+# still applies to `push`.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.go'
+      - '**/go.mod'
+      - '**/go.sum'
+      - '**/Makefile'
+      - 'make/coverage.mk'
+      - 'go.work'
+      - 'go.work.sum'
+      - 'hack/coverage.sh'
+      - '.github/workflows/coverage.yml'
+  # Weekly, so the trend survives a quiet week on main and so a profile that
+  # only breaks on a cold cache is found by something other than a release.
+  schedule:
+    - cron: '25 6 * * 1'
+  workflow_call:
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  # The sha is part of the group on main, so every commit gets its own.
+  # Without it, back-to-back merges lose CI results: GitHub allows one running
+  # and one pending run per group, and cancels the pending one when a third
+  # arrives -- whatever cancel-in-progress says.
+  #
+  # A literal name, NOT ${{ github.workflow }}. Inside a called workflow that
+  # expression is the CALLER's name, so every workflow merge-gate.yml calls
+  # would compute the same group and cancel each other.
+  group: Coverage-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  policy:
+    name: Check the coverage registry
+    runs-on: ubuntu-latest
+    if: github.repository == 'dsx-ai-factory/nke'
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # `make coverage-check` parses go.work and greps Makefiles. It runs no Go
+      # and needs no toolchain, which is the whole point of splitting it out.
+      - name: Verify every module is classified and still collecting
+        run: make coverage-check
+
+  report:
+    name: Collect and report
+    # Skipped when merge-gate.yml calls this on a pull request: in a called
+    # workflow github.event_name is the CALLER's event, so `push`, `schedule`
+    # and `workflow_dispatch` are the three that are really this workflow's
+    # own. See the header for why the gate does not pay for this job.
+    if: >-
+      github.repository == 'dsx-ai-factory/nke' &&
+      (github.event_name == 'push' ||
+       github.event_name == 'schedule' ||
+       github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    # Nine suites in sequence, with the race detector on. controller alone is
+    # the better part of ten minutes on a cold module cache.
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Workspace mode (default) so every module resolves the root module
+      # graph. go.work carries the toolchain that satisfies all of them.
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          # go.work.sum holds only the hashes not already in a member's go.sum,
+          # so keyed on it alone a dependency bump restores a stale cache.
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      # ⚠️ CGO_ENABLED=1 is required and this job does not work without it.
+      # #116 replaced modernc.org/sqlite (pure Go) with mattn/go-sqlite3, a cgo
+      # binding that compiles to a stub failing at the first query rather than
+      # at build time. Eight controller packages fail with "requires cgo to
+      # work. This is a stub" without it. See controller-test.yml.
+      #
+      # -race, to match what the gate's lanes measure. A profile collected from
+      # a different build of the same suite is a different measurement, and the
+      # point of the table is that it is comparable between runs.
+      - name: Run every collecting module's tests
+        env:
+          CGO_ENABLED: "1"
+          GO_TEST_FLAGS: -race
+        run: make coverage
+
+      # Unconditionally: a failed run is exactly when someone wants to look at
+      # the profiles that were produced before it stopped.
+      - name: Upload the coverage profiles
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-profiles
+          path: coverage/
+          # 30, not the default 90. The schedule above supersedes this
+          # measurement weekly, so two months of superseded profiles is storage
+          # spent on nothing anyone will open. The table in the job summary has
+          # no retention and outlives the artifact either way.
+          retention-days: 30
+          # An empty directory means the run failed before any suite finished,
+          # which the step above already reported. Do not add a second error.
+          if-no-files-found: warn

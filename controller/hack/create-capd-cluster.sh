@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # The control plane is cluster-level controlPlaneConfig, not a node pool.
-# CWE rejects control-plane node pools when control-plane controller
+# The controller rejects control-plane node pools when control-plane controller
 # provisioning is enabled, which is the default. More than one control-plane
 # node requires controlPlaneVIP, so the count defaults to 1 unless kube-vip is on.
 

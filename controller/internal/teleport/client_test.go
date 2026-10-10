@@ -644,7 +644,7 @@ func TestFromTeleportToken(t *testing.T) {
 
 		result := fromTeleportToken(tt)
 		assert.Equal(t, "static-token", result.Name)
-		assert.Equal(t, JoinMethod("token"), result.JoinMethod) // raw string, not a CWE constant
+		assert.Equal(t, JoinMethod("token"), result.JoinMethod) // raw string, not a controller constant
 		assert.Contains(t, result.Roles, "Node")
 		assert.Nil(t, result.Spec) // unsupported join methods have nil Spec
 	})

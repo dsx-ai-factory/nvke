@@ -1,0 +1,48 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package clients_test
+
+import (
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/dsx-ai-factory/nke/controller/internal/clients"
+	capiclient "github.com/dsx-ai-factory/nke/controller/internal/clients/capi"
+	"github.com/dsx-ai-factory/nke/controller/internal/clients/nico"
+	"github.com/dsx-ai-factory/nke/controller/internal/db"
+)
+
+func TestGetProviderClient(t *testing.T) {
+	t.Run("capi provider exposes every settled capability backed by the capi client", func(t *testing.T) {
+		provider, err := clients.GetProviderClient(db.Cluster{ID: uuid.New(), ProviderType: db.ProviderTypeCAPI})
+		require.NoError(t, err)
+		assert.IsType(t, &capiclient.Client{}, provider.ClusterScaffold())
+		assert.IsType(t, &capiclient.Client{}, provider.MachineMaterialization())
+		assert.IsType(t, &capiclient.Client{}, provider.NodePoolUpgradeConfig())
+		assert.IsType(t, &capiclient.Client{}, provider.KubeVIPConfig())
+		assert.IsType(t, &capiclient.Client{}, provider.NodeSetProvider())
+		assert.IsType(t, &capiclient.Client{}, provider.ControlPlaneConfigNodeProvider())
+		assert.IsType(t, &capiclient.Client{}, provider.NewNodeProvider())
+	})
+
+	t.Run("nico provider exposes every settled capability backed by the nico client", func(t *testing.T) {
+		provider, err := clients.GetProviderClient(db.Cluster{ID: uuid.New(), ProviderType: db.ProviderTypeNico})
+		require.NoError(t, err)
+		assert.IsType(t, &nico.Client{}, provider.ClusterScaffold())
+		assert.IsType(t, &nico.Client{}, provider.MachineMaterialization())
+		assert.IsType(t, &nico.Client{}, provider.NodePoolUpgradeConfig())
+		assert.IsType(t, &nico.Client{}, provider.KubeVIPConfig())
+		assert.IsType(t, &nico.Client{}, provider.NodeSetProvider())
+		assert.IsType(t, &nico.Client{}, provider.ControlPlaneConfigNodeProvider())
+		assert.IsType(t, &nico.Client{}, provider.NewNodeProvider())
+	})
+
+	t.Run("unsupported provider errors", func(t *testing.T) {
+		_, err := clients.GetProviderClient(db.Cluster{ID: uuid.New(), ProviderType: db.ProviderType("unknown")})
+		require.Error(t, err)
+	})
+}

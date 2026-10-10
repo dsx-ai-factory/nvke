@@ -33,6 +33,7 @@ const (
 	BackendNicoForge Backend = "nico-forge"
 
 	capiSpecKey          = "spec"
+	capiNameKey          = "name"
 	nodeRoleWorker       = "worker"
 	nodeRoleControlPlane = "control-plane"
 )
@@ -67,8 +68,7 @@ type ControlPlane struct {
 
 	// Config, when non-nil, provisions the control plane through the cluster-level
 	// control-plane controller (CreateClusterControlPlaneConfig) with no
-	// control-plane node pool. It is mutually exclusive with Pools and requires
-	// CWE with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER on (its default).
+	// control-plane node pool. It is mutually exclusive with Pools.
 	Config *ControlPlaneConfigSpec
 }
 
@@ -91,7 +91,7 @@ type ControlPlaneConfigSpec struct {
 
 // ClusterNetworkSpec describes the non-default network configuration to pass
 // to cluster creation. ExpectedPodCIDRs is test-only metadata used by e2e
-// validations and is not sent to the CWE API.
+// validations and is not sent to the controller API.
 type ClusterNetworkSpec struct {
 	PodCIDR          string
 	ServiceCIDR      string
@@ -99,16 +99,17 @@ type ClusterNetworkSpec struct {
 }
 
 // ClusterSpec is the backend-parameterized, N-pool description of a tenant
-// cluster to create through the CWE API.
+// cluster to create through the controller API.
 type ClusterSpec struct {
-	Name              string // base name; CreateCluster appends a timestamp for uniqueness
-	Backend           Backend
-	KubernetesVersion string // e.g. "1.34.2"
-	CNIPlugin         string // empty defaults to ovn-kubernetes; "calico" is an explicit override
-	CAPDNodeImage     string // CAPD only: capd customImage, e.g. "cwe-capd-kindest-node:local"
-	ControlPlane      ControlPlane
-	Workers           []NodePoolSpec
-	Network           *ClusterNetworkSpec
+	Name               string // base name; CreateCluster appends a timestamp for uniqueness
+	Backend            Backend
+	KubernetesVersion  string              // e.g. "1.34.2"
+	CNIPlugin          string              // empty defaults to ovn-kubernetes; "calico" is an explicit override
+	CAPDNodeImage      string              // CAPD only: capd customImage, e.g. "cwe-capd-kindest-node:local"
+	CAPDFailureDomains []CAPDFailureDomain // CAPD only: domains advertised by DockerCluster
+	ControlPlane       ControlPlane
+	Workers            []NodePoolSpec
+	Network            *ClusterNetworkSpec
 
 	// Infrastructure-specific cluster fields. Nico containers use SiteID and
 	// VpcID inside their CAPI manifests; NICo VMs use all three as API fields.
@@ -145,6 +146,12 @@ type NodePayloads struct {
 type RolePayloads struct {
 	ControlPlane NodePayloads
 	Worker       NodePayloads
+}
+
+// CAPDFailureDomain is a DockerCluster placement domain and whether it can host control-plane nodes.
+type CAPDFailureDomain struct {
+	Name         string
+	ControlPlane bool
 }
 
 var (
@@ -290,7 +297,7 @@ func buildCAPNicoRequest(spec ClusterSpec, payloads func(controlPlane bool) Node
 				"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
 				"kind":       "NicoCluster",
 				"metadata": map[string]any{
-					"name": name,
+					capiNameKey: name,
 				},
 				capiSpecKey: map[string]any{
 					"siteID": siteID.String(),
@@ -384,7 +391,7 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec, p
 				"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
 				"kind":       "NicoMachineTemplate",
 				"metadata": map[string]any{
-					"name": fmt.Sprintf("%s-%s-template", clusterName, spec.Name),
+					capiNameKey: fmt.Sprintf("%s-%s-template", clusterName, spec.Name),
 				},
 				capiSpecKey: map[string]any{
 					"template": map[string]any{
@@ -454,8 +461,17 @@ func buildCAPDRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	if req.Infra == nil {
 		return api.CreateClusterRequest{}, fmt.Errorf("CAPD cluster skeleton is missing infra.cluster")
 	}
-	if err := setMapPath(req.Infra.Cluster, req.Name, "metadata", "name"); err != nil {
+	if err := setMapPath(req.Infra.Cluster, req.Name, "metadata", capiNameKey); err != nil {
 		return api.CreateClusterRequest{}, fmt.Errorf("setting infra cluster name: %w", err)
+	}
+	if len(spec.CAPDFailureDomains) > 0 {
+		domains := make([]map[string]any, 0, len(spec.CAPDFailureDomains))
+		for _, domain := range spec.CAPDFailureDomains {
+			domains = append(domains, map[string]any{capiNameKey: domain.Name, "controlPlane": domain.ControlPlane})
+		}
+		if err := setMapPath(req.Infra.Cluster, domains, capiSpecKey, "failureDomains"); err != nil {
+			return api.CreateClusterRequest{}, fmt.Errorf("setting CAPD failure domains: %w", err)
+		}
 	}
 
 	for _, ps := range orderedPools(spec) {
@@ -770,7 +786,7 @@ func parseUUIDs(ss []string) ([]uuid.UUID, error) {
 
 // setMapPath walks the nested map[string]interface{} along keys (asserting each
 // intermediate level) and assigns value at the final key.
-func setMapPath(root map[string]any, value string, keys ...string) error {
+func setMapPath(root map[string]any, value any, keys ...string) error {
 	if len(keys) == 0 {
 		return fmt.Errorf("no keys provided")
 	}

@@ -17,6 +17,7 @@ import (
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout/temporal"
 )
@@ -39,12 +40,13 @@ type fakeCluster struct {
 	cps []rollout.Node
 }
 
-func (c *fakeCluster) ID() uuid.UUID                     { return c.id }
-func (c *fakeCluster) Name() string                      { return "fake" }
-func (c *fakeCluster) KubernetesVersion() string         { return "v1.30.0" }
-func (c *fakeCluster) ControlPlaneVIP() string           { return "10.0.0.1:6443" }
-func (c *fakeCluster) ControlPlaneNodes() []rollout.Node { return c.cps }
-func (c *fakeCluster) Nodes() []rollout.Node             { return c.cps }
+func (c *fakeCluster) ID() uuid.UUID                                  { return c.id }
+func (c *fakeCluster) Name() string                                   { return "fake" }
+func (c *fakeCluster) KubernetesVersion() string                      { return "v1.30.0" }
+func (c *fakeCluster) ControlPlaneVIP() string                        { return "10.0.0.1:6443" }
+func (c *fakeCluster) OIDCProviders() []controllerconfig.OIDCProvider { return nil }
+func (c *fakeCluster) ControlPlaneNodes() []rollout.Node              { return c.cps }
+func (c *fakeCluster) Nodes() []rollout.Node                          { return c.cps }
 
 // fakeNode is a minimal rollout.Node.
 type fakeNode struct {

@@ -28,35 +28,27 @@ items:
   status:
     conditions:
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: '* ControlPlaneReady: Condition not yet reported'
+      message: Cluster provisioning is not configured
       observedGeneration: 2
       reason: AvailableUnknown
       status: Unknown
       type: Available
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: ""
+      message: Cluster provisioning is not configured
       observedGeneration: 2
-      reason: NotDeleting
-      status: "False"
-      type: Deleting
+      reason: ProvisioningNotConfigured
+      status: Unknown
+      type: ControlPlaneReady
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: ""
-      observedGeneration: 2
-      reason: NotPaused
-      status: "False"
-      type: Paused
-    - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: |-
-        * Available:
-          * ControlPlaneReady: Condition not yet reported
+      message: Cluster provisioning is not configured
       observedGeneration: 2
       reason: ReadyUnknown
       status: Unknown
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
-      message: '* ControlPlaneReady: Condition not yet reported'
+      message: Cluster provisioning is not configured
       observedGeneration: 2
-      reason: SyncUnknown
+      reason: ProvisioningNotConfigured
       status: Unknown
       type: Synced
     observedGeneration: 2

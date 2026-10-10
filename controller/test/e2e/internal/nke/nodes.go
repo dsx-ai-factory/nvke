@@ -15,7 +15,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/api"
 )
 
-// NodeCondition evaluates one required property of a CWE node. When it returns
+// NodeCondition evaluates one required property of a node reported by the controller. When it returns
 // false, reason is included in the assertion diagnostics.
 type NodeCondition func(api.Node) (bool, string)
 
@@ -129,13 +129,13 @@ func (c *Client) ListExpectedNodes(
 			return pool.Name == poolName
 		})
 		if poolIndex < 0 {
-			return nil, fmt.Errorf("CWE does not report expected node pool %q", poolName)
+			return nil, fmt.Errorf("controller does not report expected node pool %q", poolName)
 		}
 
 		pool := nodePools[poolIndex]
 		if pool.DesiredNodeCount != expectedNodeCount {
 			return nil, fmt.Errorf(
-				"CWE node pool %q has desired count %d; want %d",
+				"controller node pool %q has desired count %d; want %d",
 				poolName, pool.DesiredNodeCount, expectedNodeCount,
 			)
 		}
@@ -160,7 +160,7 @@ func (c *Client) ListExpectedNodes(
 	for poolID, pool := range expectedPoolsByID {
 		if actualCount := nodeCountsByPoolID[poolID]; actualCount != pool.nodeCount {
 			return nil, fmt.Errorf(
-				"CWE node pool %q reports %d nodes; want %d",
+				"controller node pool %q reports %d nodes; want %d",
 				pool.name, actualCount, pool.nodeCount,
 			)
 		}
@@ -220,7 +220,7 @@ func (c *Client) ControlPlaneNodeIDs(ctx context.Context, clusterID openapi_type
 	return ids, nil
 }
 
-// IsNodeReady reports whether CWE's KubernetesReady condition is true.
+// IsNodeReady reports whether the controller's KubernetesReady condition is true.
 func IsNodeReady(node api.Node) (bool, string) {
 	condition := node.Conditions.KubernetesReady
 	if condition.Status == api.ConditionStatusTrue {

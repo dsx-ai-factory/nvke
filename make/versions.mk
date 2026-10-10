@@ -45,6 +45,8 @@ show-versions: ## Print every pinned tool version.
 		"KIND_VERSION"           "$(KIND_VERSION)" \
 		"KUBECTL_VERSION"        "$(KUBECTL_VERSION)" \
 		"CAPI_VERSION"           "$(CAPI_VERSION)" \
+		"CLUSTERCTL_SHA256_AMD64" "$(CLUSTERCTL_SHA256_AMD64)" \
+		"CLUSTERCTL_SHA256_ARM64" "$(CLUSTERCTL_SHA256_ARM64)" \
 		"CERT_MANAGER_VERSION"   "$(CERT_MANAGER_VERSION)" \
 		"ORAS_VERSION"           "$(ORAS_VERSION)" \
 		"PACKER_VERSION"         "$(PACKER_VERSION)" \
@@ -52,7 +54,8 @@ show-versions: ## Print every pinned tool version.
 		"GO_LICENSES_VERSION"    "$(GO_LICENSES_VERSION)" \
 		"VACUUM_VERSION"         "$(VACUUM_VERSION)" \
 		"REDOCLY_VERSION"        "$(REDOCLY_VERSION)" \
-		"FERN_VERSION"           "$(FERN_VERSION)"
+		"FERN_VERSION"           "$(FERN_VERSION)" \
+		"SYFT_VERSION"           "$(SYFT_VERSION)"
 	@echo
 	@echo "Pinned in .flox/env/manifest.toml, and printed here from the live"
 	@echo "environment rather than from a second copy of the number:"

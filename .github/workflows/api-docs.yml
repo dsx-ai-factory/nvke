@@ -26,8 +26,7 @@
 # workflow design guide keeps out of the required gate. Path-filtered on both
 # events because an advisory check cannot leave a pull request waiting.
 #
-# Node is preinstalled on the GitHub-hosted runner. The two CLIs are pinned in
-# make/tool-versions.mk and fetched with npx.
+# Node is preinstalled on the GitHub-hosted runner. The CLIs are fetched with npx.
 
 name: API docs
 
@@ -38,7 +37,6 @@ on:
       - 'controller/api/openapi.yaml'
       - 'controller/api/redocly.yaml'
       - 'controller/api/Makefile'
-      - 'make/tool-versions.mk'
       - 'docs/**'
       - 'fern/**'
       - 'cli/docs/**'
@@ -51,7 +49,6 @@ on:
       - 'controller/api/openapi.yaml'
       - 'controller/api/redocly.yaml'
       - 'controller/api/Makefile'
-      - 'make/tool-versions.mk'
       - 'docs/**'
       - 'fern/**'
       - 'cli/docs/**'
@@ -106,25 +103,18 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Read the pinned Fern CLI version
-        id: pin
-        run: echo "version=$(make --no-print-directory print-FERN_VERSION)" >> "$GITHUB_OUTPUT"
-
       - name: Check the site definition
         working-directory: fern
-        env:
-          FERN_VERSION: ${{ steps.pin.outputs.version }}
-        run: npx -y "fern-api@${FERN_VERSION}" check
+        run: npx -y fern-api@latest check
 
       - name: Publish a preview of the site
         if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && env.FERN_TOKEN != ''
         working-directory: fern
         env:
-          FERN_VERSION: ${{ steps.pin.outputs.version }}
           PREVIEW_ID: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || format('branch-{0}', github.ref_name) }}
         run: |
           id=$(printf '%s' "$PREVIEW_ID" | tr -c 'A-Za-z0-9-' '-')
-          npx -y "fern-api@${FERN_VERSION}" generate --docs --preview --id "$id" 2>&1 | tee preview.log
+          npx -y fern-api@latest generate --docs --preview --id "$id" 2>&1 | tee preview.log
           url=$(grep -oE 'https://[^[:space:]]+' preview.log | tail -1)
           [ -n "$url" ] || { echo "::error::fern printed no preview URL"; exit 1; }
           echo "::notice title=Fern preview::$url"
@@ -137,9 +127,7 @@ jobs:
       - name: Publish the site
         if: github.event_name == 'push' && env.FERN_TOKEN != ''
         working-directory: fern
-        env:
-          FERN_VERSION: ${{ steps.pin.outputs.version }}
-        run: npx -y "fern-api@${FERN_VERSION}" generate --docs
+        run: npx -y fern-api@latest generate --docs
 
       - name: Say why the site was not published
         if: github.event_name == 'push' && env.FERN_TOKEN == ''
@@ -160,14 +148,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Read the pinned Fern CLI version
-        id: pin
-        run: echo "version=$(make --no-print-directory print-FERN_VERSION)" >> "$GITHUB_OUTPUT"
-
       - name: Delete the preview
         if: env.FERN_TOKEN != ''
         working-directory: fern
         env:
-          FERN_VERSION: ${{ steps.pin.outputs.version }}
           PREVIEW_ID: pr-${{ github.event.number }}
-        run: npx -y "fern-api@${FERN_VERSION}" docs preview delete "$PREVIEW_ID" || echo "::notice::No preview named $PREVIEW_ID to delete."
+        run: npx -y fern-api@latest docs preview delete "$PREVIEW_ID" || echo "::notice::No preview named $PREVIEW_ID to delete."

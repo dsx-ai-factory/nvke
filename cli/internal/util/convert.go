@@ -17,7 +17,7 @@ import (
 // level, for example a list or a single value.
 var ErrNotMapping = errors.New("yaml document is not a mapping")
 
-// YAMLToRequest reads a YAML document and deserialises it into a CWE API
+// YAMLToRequest reads a YAML document and deserialises it into a controller API
 // request type T. Field names in the YAML must match the json tags of T.
 func YAMLToRequest[T any](data []byte) (T, error) {
 	m, err := YAMLToGenericMap(data)

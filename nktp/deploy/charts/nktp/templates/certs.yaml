@@ -1,0 +1,111 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+{{- if .Values.certManager.internalTLS.enabled }}
+{{- $issuerRef := .Values.certManager.internalTLS.issuerRef -}}
+{{- if empty $issuerRef }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: nktp-internal-selfsigned-issuer
+  namespace: {{ .Release.Namespace }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: nktp-internal-ca
+  namespace: {{ .Release.Namespace }}
+spec:
+  secretName: nktp-internal-ca
+  commonName: nktp-internal-ca
+  duration: 43800h # Five years. CA rotation requires a coordinated trust migration.
+  renewBefore: 8760h # One year.
+  isCA: true
+  usages:
+    - cert sign
+  privateKey:
+    rotationPolicy: Never # Preserve the trust key during routine certificate renewal.
+  issuerRef:
+    name: nktp-internal-selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: nktp-internal-ca-issuer
+  namespace: {{ .Release.Namespace }}
+spec:
+  ca:
+    secretName: nktp-internal-ca
+{{- end }}
+{{- $servers := list
+      (dict "name" "nktp-watchdog-server" "secretName" "nktp-watchdog-server-tls" "serviceName" "nktp-watchdog-collector")
+      (dict "name" "nktp-gateway-logs-server" "secretName" "nktp-gateway-logs-server-tls" "serviceName" "nktp-gateway-logs-collector")
+      (dict "name" "nktp-gateway-metrics-server" "secretName" "nktp-gateway-metrics-server-tls" "serviceName" "nktp-gateway-metrics-collector")
+      (dict "name" "nktp-gateway-traces-server" "secretName" "nktp-gateway-traces-server-tls" "serviceName" "nktp-gateway-traces-collector") -}}
+{{- range $server := $servers }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $server.name }}
+  namespace: {{ $.Release.Namespace }}
+spec:
+  secretName: {{ $server.secretName }}
+  duration: 2160h # 90 days.
+  renewBefore: 360h # 15 days.
+  dnsNames:
+    - {{ $server.serviceName }}
+    - {{ $server.serviceName }}.{{ $.Release.Namespace }}
+    - {{ $server.serviceName }}.{{ $.Release.Namespace }}.svc
+    - {{ $server.serviceName }}.{{ $.Release.Namespace }}.svc.cluster.local
+  usages:
+    - server auth
+  privateKey:
+    rotationPolicy: Always
+  issuerRef:
+    {{- if empty $issuerRef }}
+    name: nktp-internal-ca-issuer
+    kind: Issuer
+    group: cert-manager.io
+    {{- else }}
+    {{- $issuerRef | toYaml | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- $clients := list
+      (dict "name" "nktp-daemonset-client" "commonName" "nktp-daemonset")
+      (dict "name" "nktp-large-target-metrics-client" "commonName" "nktp-large-target-metrics")
+      (dict "name" "nktp-cluster-events-client" "commonName" "nktp-cluster-events") 
+      (dict "name" "nktp-gateway-traces-client" "commonName" "nktp-gateway-traces")
+      (dict "name" "nktp-gateway-logs-client" "commonName" "nktp-gateway-logs")
+      (dict "name" "nktp-gateway-metrics-client" "commonName" "nktp-gateway-metrics") -}}
+{{- range $client := $clients }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $client.name }}
+  namespace: {{ $.Release.Namespace }}
+spec:
+  secretName: {{ $client.name }}-tls
+  commonName: {{ $client.commonName }}
+  duration: 2160h # 90 days.
+  renewBefore: 360h # 15 days.
+  usages:
+    - client auth
+  privateKey:
+    rotationPolicy: Always
+  issuerRef:
+    {{- if empty $issuerRef }}
+    name: nktp-internal-ca-issuer
+    kind: Issuer
+    group: cert-manager.io
+    {{- else }}
+    {{- $issuerRef | toYaml | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- end }}

@@ -64,7 +64,7 @@ type NodeInputs struct {
 	AptSuite string
 
 	// AgentArgs overrides the node agent's arguments. Empty means the port
-	// CWE dials and nothing else. Whether the agent runs --disable-mtls has to
+	// the controller dials and nothing else. Whether the agent runs --disable-mtls has to
 	// agree with how the dialing side was deployed, and a mismatch fails as
 	// an opaque TLS handshake error, so a caller that decides the one decides
 	// the other here.

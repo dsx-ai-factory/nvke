@@ -87,6 +87,12 @@ updates:
       # import in nico-sim rewritten rather than go.mod edited.
       - dependency-name: "github.com/NVIDIA/ncx-infra-controller-rest"
 
+      # Since the go 1.27.1 toolchain the updater reads the module path of
+      # github.com/google/cel-go as "downloading" (go_module_path_mismatch; the
+      # real path is cel.dev/cel-go) and marks every gomod run red, although it
+      # still updates the group PR. Nothing here requires cel-go directly.
+      - dependency-name: "github.com/google/cel-go"
+
   # Dockerfiles anywhere in the tree (controller/, controller/hack/*, agent/, ...).
   #
   # This only reaches an image named on a FROM. Two forms in this tree are

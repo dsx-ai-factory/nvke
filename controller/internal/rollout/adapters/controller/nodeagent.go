@@ -20,7 +20,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout/nodeagent"
 )
 
-// ErrNodeNotFound reports that a rollout node is absent from CWE inventory.
+// ErrNodeNotFound reports that a rollout node is absent from controller inventory.
 var ErrNodeNotFound = errors.New("node not found")
 
 // NodeResolver loads the current db.Node for a rollout node UUID. The dialer
@@ -43,12 +43,12 @@ func NewNodeResolver(nodes []db.Node) NodeResolver {
 	}
 }
 
-// NewDatabaseNodeResolver builds a resolver over current CWE inventory. Rollout
+// NewDatabaseNodeResolver builds a resolver over current controller inventory. Rollout
 // workers are long-lived and must handle clusters and nodes created after worker
 // startup, so a fixed startup snapshot is not suitable for production wiring.
 func NewDatabaseNodeResolver(database db.DB) (NodeResolver, error) {
 	if database == nil || isNilDatabase(database) {
-		return nil, errors.New("rollout cwe NewDatabaseNodeResolver: database must be non-nil")
+		return nil, errors.New("rollout controller NewDatabaseNodeResolver: database must be non-nil")
 	}
 	return func(ctx context.Context, nodeID uuid.UUID) (db.Node, error) {
 		node, err := database.GetNode(ctx, nodeID)
@@ -78,10 +78,10 @@ func isNilDatabase(database db.DB) bool {
 // the raw agent gRPC client; callers invoke its RPCs directly.
 func NewSPIFFEDialer(transport *agent.Transport, resolve NodeResolver) (nodeagent.Dialer, error) {
 	if transport == nil {
-		return nil, errors.New("rollout cwe NewSPIFFEDialer: transport must be non-nil")
+		return nil, errors.New("rollout controller NewSPIFFEDialer: transport must be non-nil")
 	}
 	if resolve == nil {
-		return nil, errors.New("rollout cwe NewSPIFFEDialer: resolve must be non-nil")
+		return nil, errors.New("rollout controller NewSPIFFEDialer: resolve must be non-nil")
 	}
 	return func(ctx context.Context, rolloutNode rollout.Node) (nkeproto.NodeAgentClient, func(), error) {
 		conn, cleanup, err := dial(ctx, transport, resolve, rolloutNode)
@@ -100,10 +100,10 @@ func NewSPIFFEDialer(transport *agent.Transport, resolve NodeResolver) (nodeagen
 // both required.
 func NewMethodSupportChecker(transport *agent.Transport, resolve NodeResolver) (nodeagent.MethodSupportChecker, error) {
 	if transport == nil {
-		return nil, errors.New("rollout cwe NewMethodSupportChecker: transport must be non-nil")
+		return nil, errors.New("rollout controller NewMethodSupportChecker: transport must be non-nil")
 	}
 	if resolve == nil {
-		return nil, errors.New("rollout cwe NewMethodSupportChecker: resolve must be non-nil")
+		return nil, errors.New("rollout controller NewMethodSupportChecker: resolve must be non-nil")
 	}
 	return func(ctx context.Context, rolloutNode rollout.Node, fullMethod string) error {
 		conn, cleanup, err := dial(ctx, transport, resolve, rolloutNode)
@@ -129,7 +129,7 @@ func dial(
 	rolloutNode rollout.Node,
 ) (*grpc.ClientConn, func(), error) {
 	if rolloutNode == nil {
-		return nil, nil, errors.New("rollout cwe dialer: node must be non-nil")
+		return nil, nil, errors.New("rollout controller dialer: node must be non-nil")
 	}
 	node, err := resolve(ctx, rolloutNode.ID())
 	if err != nil {

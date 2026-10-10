@@ -69,7 +69,7 @@ func ResolveNodeConfig(nodeSet db.NodeSet, nodePool db.NodePool) (NodeConfig, er
 	}, nil
 }
 
-// renderInfraMachine builds the NicoMachine CWE constructs for a NICo-backed
+// renderInfraMachine builds the NicoMachine the controller constructs for a NICo-backed
 // node. ipxeScriptTemplate is the iPXE script of the image the node's release
 // boots, which this renders with the node's disk selection strategy.
 func (*Client) renderInfraMachine(ipxeScriptTemplate, namespace string, node db.Node, nodeSet db.NodeSet, nodePool db.NodePool, cluster db.Cluster) (client.Object, error) {
@@ -211,14 +211,14 @@ func buildMachine(
 			NVLinkLogicalPartitionID: nvLinkPartition,
 			SSHKeyGroupIDs:           uuidStrings(sshKeyGroupIDs),
 			IpxeScript:               ipxeScript,
-			// Identity labels CWE knows before create. CAPNICo owns machine-id,
+			// Identity labels the controller knows before create. CAPNICo owns machine-id,
 			// site-id, site-name, vpc-id, vpc-name, and ip-address.
 			Labels: instanceLabels,
 		},
 	}, nil
 }
 
-// BuildInstanceLabels is the subset of instance labels CWE still writes on
+// BuildInstanceLabels is the subset of instance labels the controller still writes on
 // the CAPI path. CAPNICo fills in topology and machine identity after
 // create. Exported because the CAPI client applies it too, for the rare case
 // where a CAPI-provider cluster's own template happens to render a

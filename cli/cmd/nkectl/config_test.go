@@ -87,7 +87,7 @@ func TestUseSiteSwitchesCurrentSite(t *testing.T) {
 	cfg := &config.Config{
 		Sites: map[string]config.SiteConfig{
 			"dev":  {URL: "http://localhost:8080", Kubeconfig: "/kube/dev.yaml"},
-			"prod": {URL: "https://prod-cwe.example.com", Kubeconfig: "/kube/prod.yaml"},
+			"prod": {URL: "https://prod-controller.example.com", Kubeconfig: "/kube/prod.yaml"},
 		},
 		CurrentSite: "dev",
 	}
@@ -140,7 +140,7 @@ func TestResolveSiteConfigPrefersSiteFlagOverride(t *testing.T) {
 	cfg := &config.Config{
 		Sites: map[string]config.SiteConfig{
 			"dev":  {URL: "http://localhost:8080", Kubeconfig: "/kube/dev.yaml"},
-			"prod": {URL: "https://prod-cwe.example.com", Kubeconfig: "/kube/prod.yaml"},
+			"prod": {URL: "https://prod-controller.example.com", Kubeconfig: "/kube/prod.yaml"},
 		},
 		CurrentSite: "dev",
 	}
@@ -152,7 +152,7 @@ func TestResolveSiteConfigPrefersSiteFlagOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveSiteConfig: %v", err)
 	}
-	if resolved.URL != "https://prod-cwe.example.com" {
+	if resolved.URL != "https://prod-controller.example.com" {
 		t.Errorf("URL = %q, want prod URL", resolved.URL)
 	}
 }
@@ -202,7 +202,7 @@ func TestResolveSiteConfigErrorsWhenCurrentSiteIsDangling(t *testing.T) {
 	// CurrentSite names a site no longer present in Sites -- e.g. a hand-edited
 	// config.yaml, or a site removed without clearing current-site.
 	cfg := &config.Config{
-		Sites:       map[string]config.SiteConfig{"prod": {URL: "https://prod-cwe.example.com"}},
+		Sites:       map[string]config.SiteConfig{"prod": {URL: "https://prod-controller.example.com"}},
 		CurrentSite: "dev",
 	}
 

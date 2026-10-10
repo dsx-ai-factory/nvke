@@ -172,7 +172,7 @@ func TestInstallCAPICore_SkipsWhenAlreadyInstalled(t *testing.T) {
 	}
 }
 
-// TestDeploy_InstallsCAPIBeforeCWE is the ordering that matters: CWE starts
+// TestDeploy_InstallsCAPIBeforeCWE is the ordering that matters: the controller starts
 // writing CAPI objects as soon as a cluster is created, and an object written
 // before its controller exists just sits there.
 func TestDeploy_InstallsCAPIBeforeCWE(t *testing.T) {
@@ -190,6 +190,6 @@ func TestDeploy_InstallsCAPIBeforeCWE(t *testing.T) {
 			capi, provider, cwe, runner.calls)
 	}
 	if capi > cwe || provider > cwe {
-		t.Errorf("CAPI (%d) and the provider (%d) must be installed before CWE (%d)", capi, provider, cwe)
+		t.Errorf("CAPI (%d) and the provider (%d) must be installed before the controller (%d)", capi, provider, cwe)
 	}
 }

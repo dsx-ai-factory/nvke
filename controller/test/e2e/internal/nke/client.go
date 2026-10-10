@@ -49,7 +49,7 @@ type TokenSource interface {
 	Token(ctx context.Context) (string, error)
 }
 
-// Client wraps the generated CWE API client plus the configured timeouts.
+// Client wraps the generated controller API client plus the configured timeouts.
 type Client struct {
 	api  *api.ClientWithResponses
 	opts Options

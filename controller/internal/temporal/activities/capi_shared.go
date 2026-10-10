@@ -28,6 +28,12 @@ func (a *Activities) isDockerMachineBackedNode(ctx context.Context, cluster db.C
 		return true, nil
 	}
 
+	// Intentionally not routed through a provider-capability client: Docker
+	// Machine bootstrap is a CAPI/CAPD-only concept with no equivalent on any
+	// other provider, so adding a provider never requires touching this
+	// guard — it already answers false for anything that isn't CAPI. Revisit
+	// only if a future provider gains its own Docker-Machine-equivalent local
+	// dev path.
 	if cluster.ProviderType != db.ProviderTypeCAPI {
 		return false, nil
 	}

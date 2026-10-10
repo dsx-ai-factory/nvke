@@ -12,7 +12,7 @@
 # Rather than install the chart and then reach in and patch what it created,
 # this is a second Service alongside it. Services are only a selector and a set
 # of ports, and nothing stops two of them pointing at the same pods: the chart
-# keeps its ClusterIP for CWE and everything else inside the cluster, and this
+# keeps its ClusterIP for the controller and everything else inside the cluster, and this
 # one carries the fixed external route. Neither knows about the other.
 #
 # Two values have to agree with things outside this file:

@@ -23,7 +23,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
 )
 
-// A CAPI Cluster resolves through its CWE cluster row, which is what says the
+// A CAPI Cluster resolves through its controller cluster row, which is what says the
 // kubeconfig comes from the Secret TenantAccess publishes.
 func TestDBClusterTenantClientProviderResolvesCAPIClusterViaClusterRow(t *testing.T) {
 	ctx := context.Background()

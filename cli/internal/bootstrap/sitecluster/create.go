@@ -18,7 +18,7 @@ import (
 	api "github.com/dsx-ai-factory/nke/controller/api"
 )
 
-// pollInterval is how often WaitProvisioned asks CWE where it has got to. A
+// pollInterval is how often WaitProvisioned asks the controller where it has got to. A
 // var, not a const, so tests can shrink it rather than paying real wall-clock
 // time for a retry loop — the same shape controllerdeploy's waitReadyPollInterval uses.
 var pollInterval = 10 * time.Second
@@ -26,7 +26,7 @@ var pollInterval = 10 * time.Second
 // DefaultWaitTimeout bounds a wait whose caller supplied no budget of its own.
 const DefaultWaitTimeout = 30 * time.Minute
 
-// ClusterAPI is the part of the CWE client this package needs.
+// ClusterAPI is the part of the controller client this package needs.
 //
 // An interface rather than *clients.ControllerClient so the create-and-wait flow can
 // be tested against a fake that returns a scripted sequence of conditions,
@@ -39,12 +39,12 @@ type ClusterAPI interface {
 	ListControlPlaneNodes(ctx context.Context, clusterID openapi_types.UUID) ([]api.Node, error)
 }
 
-// ErrClusterFailed is returned when CWE reports a state the cluster cannot come
+// ErrClusterFailed is returned when the controller reports a state the cluster cannot come
 // back from on its own. Callers tell it apart from a timeout so they can say
 // which happened.
 var ErrClusterFailed = errors.New("cluster provisioning failed")
 
-// Create submits the cluster described by inv and returns what CWE recorded.
+// Create submits the cluster described by inv and returns what the controller recorded.
 // Provisioning is asynchronous; see WaitProvisioned.
 func Create(ctx context.Context, client ClusterAPI, inv *sitespec.SiteSpec, log *slog.Logger) (*api.Cluster, error) {
 	req, err := ClusterRequest(inv)
@@ -66,7 +66,7 @@ func Create(ctx context.Context, client ClusterAPI, inv *sitespec.SiteSpec, log 
 	return cluster, nil
 }
 
-// WaitProvisioned polls CWE until the cluster reports Provisioned, reports a
+// WaitProvisioned polls the controller until the cluster reports Provisioned, reports a
 // state it cannot recover from, or timeout elapses.
 //
 // The state is logged on every change rather than every poll: a bootstrap takes
@@ -90,7 +90,7 @@ func WaitProvisioned(
 	for {
 		cluster, err := client.GetCluster(ctx, id)
 		if err != nil {
-			// A read can fail while the cluster is perfectly healthy — CWE
+			// A read can fail while the cluster is perfectly healthy — the controller
 			// restarting, for one. Keep polling and report the last error only
 			// if the wait runs out.
 			lastErr = err
@@ -127,11 +127,11 @@ func WaitProvisioned(
 	}
 }
 
-// WaitControlPlaneJoined polls CWE until want control-plane nodes report
+// WaitControlPlaneJoined polls the controller until want control-plane nodes report
 // Provisioned, or timeout elapses.
 //
 // This wait exists because the cluster's own Provisioned condition does not
-// mean what a caller tearing down orchestration needs it to mean. CWE sets it
+// mean what a caller tearing down orchestration needs it to mean. The controller sets it
 // as soon as the one node it picked as the initial control-plane node has run
 // kubeadm init and had its CNI installed — deliberately, because the remaining
 // nodes cannot join until there is something to join, and the controller that
@@ -178,7 +178,7 @@ func WaitControlPlaneJoined(
 		} else {
 			// The read recovered, so it is no longer what went wrong. Left set,
 			// it would be reported as the reason a node never joined and send
-			// the operator after CWE instead of the node.
+			// the operator after the controller instead of the node.
 			lastErr = nil
 			provisioned, pending := controlPlaneProgress(nodes, want)
 			outstanding = pending
@@ -208,7 +208,7 @@ func WaitControlPlaneJoined(
 // The description is what the operator gets when the wait runs out, so it
 // carries each outstanding node's condition message — the difference between
 // "a node is slow" and "a node is stuck on something" — and says how many
-// nodes CWE has not created a record for at all.
+// nodes the controller has not created a record for at all.
 func controlPlaneProgress(nodes []api.Node, want int) (int, string) {
 	provisioned := 0
 	pending := make([]string, 0, len(nodes))

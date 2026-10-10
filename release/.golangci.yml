@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Mirrors cli/.golangci.yml, for the same reason it gives: this module is new
+# and clean, so it takes the small linter set rather than importing the
+# disabled entries agent/ and controller/ carry for pre-existing debt.
+
+version: "2"
+
+run:
+  concurrency: 8
+  modules-download-mode: readonly
+  tests: true
+  allow-parallel-runners: true
+
+linters:
+  enable:
+    - errorlint
+    - goheader
+    - misspell
+    - nolintlint
+    - revive
+    - unconvert
+    - usestdlibvars
+  settings:
+    # goheader with no template silently passes everything, so the template is
+    # the whole point of enabling it.
+    goheader:
+      template: |-
+        SPDX-FileCopyrightText: Copyright (c) {{MOD_YEAR-RANGE}} NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+        SPDX-License-Identifier: Apache-2.0
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+
+formatters:
+  enable:
+    - gci
+    - gofumpt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/dsx-ai-factory/nke)
+    gofumpt:
+      extra-rules: true

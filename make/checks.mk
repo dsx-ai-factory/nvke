@@ -268,12 +268,21 @@ base-image-check: ## Verify release-relevant Dockerfiles pin base images by dige
 go-version-sync: ## Rewrite every go.mod `go` directive to match go.work.
 	@./hack/go-version-check.sh --fix --modules "$(WORK_MODULES)" --private "$(PRIVATE_MODULES)"
 
+# The scan that reads .grype.yaml needs a vulnerability database and a network.
+# This reads the file only, so the three rules its preamble states are checked
+# on a laptop and in the merge gate, not just in the weekly scan -- including
+# the review date, which is the one that goes off while nobody is looking.
+.PHONY: grype-ignore-check
+grype-ignore-check: ## Verify every .grype.yaml exception is scoped, owned and in date.
+	@./hack/grype-ignore-check.sh
+
 gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory tool-version-check
 	@$(MAKE) --no-print-directory tools-check
 	@$(MAKE) --no-print-directory version-check
 	@$(MAKE) --no-print-directory go-version-check
 	@$(MAKE) --no-print-directory base-image-check
+	@$(MAKE) --no-print-directory grype-ignore-check
 	@CGO_ENABLED=1 $(MAKE) --no-print-directory GO_TEST_FLAGS=-race test
 	@$(MAKE) --no-print-directory test-compile
 	@$(MAKE) --no-print-directory lint

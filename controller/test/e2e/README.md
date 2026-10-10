@@ -196,32 +196,40 @@ make test-e2e E2E_TIMEOUT=3h ARGS='--label-filter=capd'
 The two `core` targets run one control-plane node and one worker through create,
 tenant-node readiness, delete, and tenant-access cleanup. Pull-request mirror
 branches use these rows for bounded feedback. Runs on `main`, scheduled runs,
-and manual runs keep the comprehensive backend rows, including both
-control-plane provisioning modes and the extended lifecycle validations.
+and manual runs keep the comprehensive backend rows, including the extended
+lifecycle validations.
+
+The CAPD `cp-controller` rows advertise failure domains through
+`DockerCluster.spec.failureDomains` and check that control-plane Machines land
+only in eligible domains and stay balanced through create, scale, rolling
+update, and delete. These rows reject `lifecycle.reuseCluster`, since each
+needs its own set of domains.
+
+To run only these scenarios locally:
+
+```bash
+make test-e2e ARGS='--label-filter="capd && cp-controller"'
+```
 
 ### Local CAPD e2e (`make test-e2e-capd-local`)
 
-`make test-e2e-capd-local` (Colima + kind + Tilt + CAPD) validates **both**
-control-plane paths on one cluster by default, mirroring CI: the
-controller-managed leg (`cp-controller`, deployed with
-`PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true`) runs first, then a
-light CWE redeploy flips the flag off for the node-pool leg. The node-pool leg
-only starts once the cp-controller leg's tenant cluster is fully torn down.
+`make test-e2e-capd-local` (Colima + kind + Tilt + CAPD) runs the CAPD suite
+against a controller that provisions every control plane from the cluster-level
+`controlPlaneConfig`, cp-controller entries included. It skips the `nkectl` row,
+which needs the CLI and `kubectl` that the local runner does not have, so the
+local run is not CLI coverage. An entry that describes its control plane as one
+node pool is sent as the equivalent `controlPlaneConfig`.
 
 The CAPD node image uses Open vSwitch's kernel datapath. Geneve leaves through
 the kernel route on Docker's uplink, and `br-ex` stays a dummy gateway so OVN
 does not adopt that interface. `NKE_OVS_DATAPATH_TYPE=netdev` selects the
 userspace datapath instead. The existing DNS workload probe and networking
-scenarios exercise this setup in the node-pool leg.
+scenarios exercise this setup.
 
-To iterate faster, run a single leg instead:
+To iterate faster, run a single filter instead:
 
 ```bash
-# One explicit filter, single-mode (honors PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER):
 LOCAL_NKE_E2E_LABEL_FILTER="capd && cp-controller" make test-e2e-capd-local
-
-# Node-pool path only:
-LOCAL_NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES=false make test-e2e-capd-local
 ```
 
 ### OS profile provisioning matrix
@@ -443,8 +451,14 @@ gmake site-inputs SITE_CONTROLLER_VERSION=$(git rev-parse --short=12 HEAD)
 go test -timeout 5h . -args \
   -ginkgo.label-filter=site-controller -ginkgo.v \
   -e2e.config=e2e-config.yaml -e2e.environment=forge -e2e.site-stage=full \
-  -e2e.versions=controller=<the same value>,os-image-bootloader=<url>,os-image=<url>
+  -e2e.versions=controller=<the same value>,os-image-bootloader=<url>,os-image=<url>,capi-provisioned=<version>,kube=<version>,cni-ovn=<version>,kind=<version>,clusterctl=<version>,nerdctl=<version>
 ```
+
+A Forge run requires every one of those versions and fails before a machine
+exists when one is missing, naming the ones it did not get. The suite carries no
+default for them. A qualification run gets them from the plan, and the tool
+versions (`kind`, `clusterctl` and `nerdctl`) are the pins in
+`make/tool-versions.mk`.
 
 The two OS-image keys may carry an architecture, as `os-image-arm64`. That is
 how one run boots two: a GB200 tenant puts arm64 workers behind a control plane
@@ -452,7 +466,7 @@ of whatever `-e2e.capabilities` asked for under `arch`, and each machine takes
 the pair built for it. The unsuffixed keys above are what a run on a single
 architecture passes, and are used for any architecture that has no suffixed
 pair. The CI workflow always passes suffixed pairs, from the
-`SITE_E2E_OS_IMAGE_<ARCH>` and `SITE_E2E_OS_IMAGE_BOOTLOADER_<ARCH>`
+`QUALIFY_E2E_OS_IMAGE_<ARCH>` and `QUALIFY_E2E_OS_IMAGE_BOOTLOADER_<ARCH>`
 repository variables.
 
 `SITE_CONTROLLER_VERSION` and `-e2e.versions=controller=` have to be the same
@@ -496,7 +510,7 @@ GITHUB_TOKEN=... gmake site-inputs SITE_CLI_BUILD=0 SITE_CLI_VERSION=v0.1.0 SITE
 ```
 
 The Forge workflow does all of this when given a `cli-version` input or the
-`SITE_E2E_CLI_VERSION` repository variable, and stops if the binary does not
+`QUALIFY_E2E_CLI_VERSION` repository variable, and stops if the binary does not
 report the version it was asked for. Pick a CLI and a controller that agree on
 the cluster API; the pairing is not checked until the bootstrap reaches
 "creating the site cluster".
@@ -513,7 +527,7 @@ release tag, which has to be fetched in a shallow clone. Set
 Teleport is the intended route. Locally that is a `tsh login` to the cluster
 the jump host is enrolled in. In CI it is a bot identity in `TELEPORT_PROXY`
 and `TELEPORT_IDENTITY_FILE`, which
-`.github/workflows/site-and-tenant-e2e.yml` obtains by joining with the
+`.github/workflows/qualify-e2e.yml` obtains by joining with the
 repository's GitHub OIDC token — nothing is stored. The bot's login is `root`,
 so the workflow sets `FORGE_TELEPORT_LOGIN=root` and
 `FORGE_YTL_TELEPORT_LOGIN=root`, which each site's `teleportLogin` in
@@ -537,5 +551,5 @@ is reached with the ed25519 key the run generates, never with a password.
 
 This route is for a future site, and the CI lane no longer offers it. There is
 no network path from the ARC fleet to the site's jump host on port 22 at all —
-only the Teleport proxy reaches it — so `site-and-tenant-e2e.yml` always
+only the Teleport proxy reaches it — so `qualify-e2e.yml` always
 goes through `tsh`.

@@ -527,10 +527,10 @@ func TestGetAdminClientReportsMissingKubeconfig(t *testing.T) {
 	}
 }
 
-// On an OIDC cluster the published kubeconfig authenticates as the CWE
+// On an OIDC cluster the published kubeconfig authenticates as the controller
 // identity, which is deliberately not cluster-admin. GetAdminClient must mint
 // the capi-manager identity instead, or every caller gets a 403 on test setup.
-func TestAdminAndCWEPathsMintDistinctIdentities(t *testing.T) {
+func TestAdminAndControllerPathsMintDistinctIdentities(t *testing.T) {
 	objects := []runtime.Object{
 		spireServerConfigMapObject(`{"server":{"trust_domain":"test.nke.local"}}`),
 		spireServerPod("spire-server-1", true, spireServerSelector()),
@@ -581,13 +581,13 @@ func TestAdminAndCWEPathsMintDistinctIdentities(t *testing.T) {
 		t.Fatalf("admin path did not mint %q", want)
 	}
 
-	// The GetClient path must keep minting the CWE identity. Pointing it at the
+	// The GetClient path must keep minting the controller identity. Pointing it at the
 	// admin identity would silently give every tenant read cluster-admin.
-	cweConfig, err := factory.tenantRESTConfig(context.Background(), "tenant-a")
+	controllerConfig, err := factory.tenantRESTConfig(context.Background(), "tenant-a")
 	if err != nil {
 		t.Fatalf("tenantRESTConfig() error = %v", err)
 	}
-	command := mintedFor(t, cweConfig)
+	command := mintedFor(t, controllerConfig)
 	if want := "spiffe://test.nke.local" + controllerSPIFFEPath(); !slices.Contains(command, want) {
 		t.Fatalf("GetClient path did not mint %q, got %#v", want, command)
 	}
@@ -720,11 +720,11 @@ func TestTrustDomainFromSPIREServerConfig(t *testing.T) {
 			config: `{"server":{"trust_domain":"test.nke.local","admin_ids":["spiffe://ignored.nke.local/nke-service/nke-controller"]}}`,
 			want:   "test.nke.local",
 		},
-		"CWE admin ID fallback": {
+		"controller admin ID fallback": {
 			config: `{"server":{"admin_ids":["spiffe://fallback.nke.local` + controllerSPIFFEPath() + `"]}}`,
 			want:   "fallback.nke.local",
 		},
-		"missing":   {config: `{"server":{}}`, wantErr: "neither trust_domain nor a CWE admin_id"},
+		"missing":   {config: `{"server":{}}`, wantErr: "neither trust_domain nor a controller admin_id"},
 		"malformed": {config: `{`, wantErr: "parsing server.conf JSON"},
 	}
 

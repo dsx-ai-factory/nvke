@@ -134,7 +134,7 @@ func TestAuthenticationRoundTripPreservesImmutability(t *testing.T) {
 
 	for _, tt := range []struct {
 		name string
-		// auth is spec.authentication as JSON; empty leaves the field absent.
+		// auth is spec.authentication as JSON. An empty value leaves the field absent.
 		auth string
 	}{
 		{name: "absent"},

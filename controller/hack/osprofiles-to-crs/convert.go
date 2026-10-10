@@ -130,11 +130,11 @@ func renderProfile(profilesDir string, item listedProfile, gitops bool) (map[str
 	if err := validateProfile(item); err != nil {
 		return nil, err
 	}
-	ipxe, err := readScript(profilesDir, item.name, "ipxeScript")
+	ipxe, err := readScript(profilesDir, item, "ipxeScript")
 	if err != nil {
 		return nil, err
 	}
-	userData, err := readScript(profilesDir, item.name, "userData.tmpl")
+	userData, err := readScript(profilesDir, item, "userData.tmpl")
 	if err != nil {
 		return nil, err
 	}
@@ -180,16 +180,29 @@ func validateProfile(item listedProfile) error {
 	return nil
 }
 
-func readScript(profilesDir, name, file string) (string, error) {
-	path := filepath.Join(profilesDir, "osProfiles", name, file)
+func readScript(profilesDir string, item listedProfile, file string) (string, error) {
+	path := filepath.Join(profileDir(profilesDir, item), file)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("profile %q: read %s: %w", name, file, err)
+		return "", fmt.Errorf("profile %q: read %s: %w", item.name, file, err)
 	}
 	if len(bytes.TrimSpace(data)) == 0 {
-		return "", fmt.Errorf("profile %q: %s is empty", name, file)
+		return "", fmt.Errorf("profile %q: %s is empty", item.name, file)
 	}
 	return stripLicenseHeader(string(data)), nil
+}
+
+// profileDir is the directory holding a profile's ipxeScript and
+// userData.tmpl. Deprecating a profile moves its directory into
+// osProfiles/deprecated/ alongside its deprecated.yaml entry, so the active
+// tree lists only what a new cluster may still select. The files have to stay
+// readable either way: a cluster that already selects the profile cannot be
+// provisioned or repaired without them.
+func profileDir(profilesDir string, item listedProfile) string {
+	if item.deprecated {
+		return filepath.Join(profilesDir, "osProfiles", "deprecated", item.name)
+	}
+	return filepath.Join(profilesDir, "osProfiles", item.name)
 }
 
 // stripLicenseHeader drops an SPDX header after a script's first line, so a

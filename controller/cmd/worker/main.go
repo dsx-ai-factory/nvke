@@ -123,6 +123,7 @@ func main() {
 
 	// Before the SPIFFE wait and the migrations: a bad configuration should cost a
 	// restart, not a migrated schema.
+	var fleetOIDC *controllerconfig.OIDCConfig
 	if cfg.ControllerConfigPath == "" {
 		logger.Info("CONTROLLER_CONFIG_PATH is unset; running without nke-controller-config")
 	} else {
@@ -132,6 +133,7 @@ func main() {
 			os.Exit(1)
 		}
 		logger.Info("Loaded nke-controller-config", "path", cfg.ControllerConfigPath, "oidcProviders", len(controllerCfg.OIDC.Providers))
+		fleetOIDC = &controllerCfg.OIDC
 	}
 
 	authenticator, err := auth.Setup(ctx, auth.Options{
@@ -346,7 +348,7 @@ func main() {
 	} else {
 		// Both controllers below watch NicoMachine, and either takes the manager
 		// down where CAPNICo is not installed. Read once: every deployment path
-		// installs the infrastructure providers before CWE.
+		// installs the infrastructure providers before the NKE controller.
 		nicoCRDInstalled, err := capi.NicoMachineCRDInstalled(k8sControllerManager.GetRESTMapper())
 		if err != nil {
 			logger.Error("Failed to look up the NicoMachine CRD", "error", err)
@@ -411,7 +413,7 @@ func main() {
 	// Retry before giving up. Temporal restarting for a few seconds used to be
 	// enough to exit here, and once the process is in CrashLoopBackOff the
 	// restart delay grows to five minutes -- so a dependency that was away for
-	// seconds kept CWE down for minutes. Retry for a bounded window instead.
+	// seconds kept the controller down for minutes. Retry for a bounded window instead.
 	if err := registerTemporalNamespaceWithRetry(ctx, cfg, temporalLogger, logger); err != nil {
 		logger.Error("Failed to register Temporal namespace", "error", err)
 		os.Exit(1)
@@ -534,7 +536,7 @@ func main() {
 		logger.Info("Cert renewal controller disabled")
 	}
 
-	httpServer, err := server.NewServer(cfg, serverLogger, dbInstance, temporalClient, authenticator, managementK8sClient)
+	httpServer, err := server.NewServer(cfg, serverLogger, dbInstance, temporalClient, authenticator, managementK8sClient, server.WithFleetOIDC(fleetOIDC))
 	if err != nil {
 		logger.Error("Failed to construct HTTP server", "error", err)
 		os.Exit(1)

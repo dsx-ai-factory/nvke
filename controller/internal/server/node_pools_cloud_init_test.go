@@ -116,7 +116,7 @@ func TestValidateUpdatedNodePool_RejectsManagedSpirePathsWhenSpireEnabled(t *tes
 	require.NoError(t, err)
 
 	err = validateUpdatedNodePool(capiCluster(), &dbNodePool)
-	require.EqualError(t, err, `file path "/etc/spire-agent/agent.conf" is managed by CWE and must not be provided`)
+	require.EqualError(t, err, `file path "/etc/spire-agent/agent.conf" is managed by the controller and must not be provided`)
 }
 
 func TestDBNodePoolFromAPI_CopiesCAPICloudInitInputs(t *testing.T) {

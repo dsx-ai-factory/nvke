@@ -24,10 +24,16 @@ const (
 	defaultSpecInRepo = "controller/api/openapi.yaml"
 	// defaultWaivers holds the accepted breaking changes. See README.md.
 	defaultWaivers = "api/openapi-compat-waivers.yaml"
-	// defaultTagGlob matches the tags controller-api-tag.yml publishes. The
-	// digit classes keep release-candidate and other suffixed tags out: a
-	// baseline has to be a stable, consumable version.
-	defaultTagGlob = "controller/api/v[0-9]*.[0-9]*.[0-9]*"
+	// releaseTagPrefix is what every published baseline tag starts with. The
+	// glob below and the ordering in policy.go both read it, so a tag either
+	// selects as a baseline and orders against a waiver, or does neither.
+	releaseTagPrefix = "controller/api/v"
+	// defaultTagGlob matches the tags controller-api-tag.yml publishes. It is a
+	// cheap narrowing only: git matches it with fnmatch, so `[0-9]*` is a digit
+	// followed by anything and a release candidate slips through. newestRelease
+	// does the real filtering, because a baseline has to be a stable,
+	// consumable version.
+	defaultTagGlob = releaseTagPrefix + "[0-9]*.[0-9]*.[0-9]*"
 	// defaultDiffer is the change engine. It is invoked with `go run`, pinned
 	// by --differ-version, so nothing has to be installed and the classification
 	// cannot drift with whatever is on PATH.
@@ -101,7 +107,7 @@ engine writes a report this tool does not recognize.
 	kept, discharged := applyLifecycle(got.report.Changes, life)
 	kept = append(kept, life.Findings...)
 
-	result := evaluate(kept, rules)
+	result := evaluate(kept, rules, got.baseline)
 	writeSummary(stdout, got.baseline, *spec, got.report, result, discharged, *noticeDays)
 
 	switch {
@@ -190,7 +196,7 @@ func writeSummary(w io.Writer, baseline, spec string, rep *report, result policy
 		fmt.Fprintf(w, "\n%d breaking change(s) are not waived:\n\n", len(result.Unwaived))
 		for _, c := range result.Unwaived {
 			fmt.Fprintf(w, "  %s\n", c.describe())
-			fmt.Fprintf(w, "    waive with: %s\n", strings.Join(c.waiverStub(), "\n                "))
+			fmt.Fprintf(w, "    waive with: %s\n", strings.Join(c.waiverStub(baseline), "\n                "))
 		}
 	}
 	if len(result.Waived) > 0 {
@@ -203,6 +209,13 @@ func writeSummary(w io.Writer, baseline, spec string, rep *report, result policy
 		fmt.Fprintf(w, "\n%d waiver(s) match nothing and must be removed:\n", len(result.Unused))
 		for _, waiver := range result.Unused {
 			fmt.Fprintf(w, "  %s | %s | %s (owner %s)\n", waiver.Change, waiver.Path, waiver.Property, waiver.Owner)
+		}
+	}
+
+	if len(result.Expired) > 0 {
+		fmt.Fprintf(w, "\n%d waiver(s) were written against an older baseline and no longer match; delete them when convenient:\n", len(result.Expired))
+		for _, waiver := range result.Expired {
+			fmt.Fprintf(w, "  %s | %s | %s (owner %s, baseline %s)\n", waiver.Change, waiver.Path, waiver.Property, waiver.Owner, waiver.Baseline)
 		}
 	}
 

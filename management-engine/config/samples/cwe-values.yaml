@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Optional CWE connection: replace the endpoint and supply the referenced ConfigMap and Secret.
+manager:
+  args:
+    - --leader-elect
+    - --leader-election-namespace=$(STATE_NAMESPACE)
+    - --kubeconfig=/etc/management-api/kubeconfig
+    - --namespace=project-a
+    - --cwe-endpoint=https://cwe.example.com/api
+    - --cwe-bindings=/etc/cwe/bindings/bindings.json
+    - --cwe-token-file=/etc/cwe/auth/token
+  extraVolumeMounts:
+    - name: cwe-bindings
+      mountPath: /etc/cwe/bindings
+      readOnly: true
+    - name: cwe-token
+      mountPath: /etc/cwe/auth
+      readOnly: true
+  extraVolumes:
+    - name: cwe-bindings
+      configMap:
+        name: management-cwe-bindings
+    - name: cwe-token
+      secret:
+        secretName: management-cwe-token

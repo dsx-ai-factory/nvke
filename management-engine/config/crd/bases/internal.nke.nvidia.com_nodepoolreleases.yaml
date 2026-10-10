@@ -64,11 +64,21 @@ spec:
                       Deprecated allows resources already depending on the Release to keep
                       using it, but rejects new cluster or node pool creation referencing it.
                     type: boolean
+                  hidden:
+                    default: false
+                    description: Hidden defines if the release is visible in a given
+                      channel
+                    type: boolean
+                  supportedUntil:
+                    description: SupportedUntil is the time at which support for this
+                      release ends.
+                    format: date-time
+                    type: string
                 type: object
               machineImageRef:
                 description: |-
                   MachineImageReference names a cluster-scoped MachineImage. Only the name is
-                  selectable; the kind and scope are fixed.
+                  selectable
                 properties:
                   name:
                     description: ResourceName is a Kubernetes DNS subdomain name,

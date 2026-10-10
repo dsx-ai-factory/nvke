@@ -25,7 +25,7 @@ const (
 	// adminKubeconfigSecretSuffix names the Secret that always holds the
 	// verbatim control-plane admin.conf, regardless of OIDC mode (mirrors
 	// tenantaccess.AdminKubeconfigSecretName in the controller). This is
-	// distinct from the "<cluster>-kubeconfig" Secret, which is CWE/CAPI's
+	// distinct from the "<cluster>-kubeconfig" Secret, which is the controller's and CAPI's
 	// own consumed kubeconfig and holds a SPIRE exec-auth kubeconfig instead
 	// of admin.conf when OIDC auth is enabled on the cluster.
 	adminKubeconfigSecretSuffix = "-admin-kubeconfig"

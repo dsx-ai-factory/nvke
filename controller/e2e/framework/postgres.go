@@ -10,7 +10,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -21,23 +20,25 @@ import (
 )
 
 const (
-	CWEGofailPostgresDSNEnv = "CWE_GOFAIL_E2E_DB_CONNECTION_STRING"
-	postgresReadyTimeout    = 15 * time.Second
+	ControllerGofailPostgresDSNEnv = "NKE_CONTROLLER_GOFAIL_E2E_DB_CONNECTION_STRING"
+	postgresReadyTimeout           = 15 * time.Second
+	// legacyPostgresDSNEnv is a deprecated alias; nke#1399 removes it.
+	legacyPostgresDSNEnv = "CWE_GOFAIL_E2E_DB_CONNECTION_STRING"
 )
 
 // StartPostgres returns the CI-provided PostgreSQL DSN or starts an ephemeral local server.
 func StartPostgres(t testing.TB) string {
 	t.Helper()
 
-	if dsn := os.Getenv(CWEGofailPostgresDSNEnv); dsn != "" {
+	if dsn := getenvWithLegacy(ControllerGofailPostgresDSNEnv, legacyPostgresDSNEnv); dsn != "" {
 		waitForPostgres(t, dsn)
 		return dsn
 	}
 
 	initdb, err := exec.LookPath("initdb")
-	require.NoError(t, err, "initdb is required locally; set %s to use an existing disposable PostgreSQL database", CWEGofailPostgresDSNEnv)
+	require.NoError(t, err, "initdb is required locally; set %s to use an existing disposable PostgreSQL database", ControllerGofailPostgresDSNEnv)
 	postgres, err := exec.LookPath("postgres")
-	require.NoError(t, err, "postgres is required locally; set %s to use an existing disposable PostgreSQL database", CWEGofailPostgresDSNEnv)
+	require.NoError(t, err, "postgres is required locally; set %s to use an existing disposable PostgreSQL database", ControllerGofailPostgresDSNEnv)
 
 	dataDir := filepath.Join(t.TempDir(), "data")
 	initCmd := exec.Command(initdb, "-D", dataDir, "-A", "trust", "-U", "postgres", "--no-locale", "--encoding=UTF8", "--no-sync") // #nosec G204 -- test-controlled executable and directory.

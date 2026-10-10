@@ -354,12 +354,19 @@ jobs:
             echo "s5cmd_version=$(make --no-print-directory print-S5CMD_VERSION)"
             echo "s5cmd_sha256_amd64=$(make --no-print-directory print-S5CMD_SHA256_AMD64)"
             echo "s5cmd_sha256_arm64=$(make --no-print-directory print-S5CMD_SHA256_ARM64)"
+            echo "syft_version=$(make --no-print-directory print-SYFT_VERSION)"
+            echo "luks_passphrase=$(make --no-print-directory -C os-image/packer print-LUKS_PASSPHRASE)"
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up ORAS
         uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
         with:
           version: ${{ steps.versions.outputs.oras_version }}
+
+      - name: Set up syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: ${{ steps.versions.outputs.syft_version }}
 
       - name: Resolve version and tags
         id: meta
@@ -406,11 +413,11 @@ jobs:
       # cost is negligible and it keeps this step identical across the
       # matrix.
       # dpkg-dev: dpkg-scanpackages indexes the CNI debs fetch-artifacts.sh builds.
-      - name: Install QEMU, cloud-localds, swtpm, OVMF/AAVMF, 7z, xorriso, and dpkg-dev
+      - name: Install QEMU, cloud-localds, swtpm, OVMF/AAVMF, 7z, xorriso, dpkg-dev, and libguestfs
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-system-x86 qemu-system-arm qemu-utils cloud-image-utils genisoimage unzip swtpm ovmf qemu-efi-aarch64 p7zip-full xorriso dpkg-dev
+          sudo apt-get install -y -qq qemu-system-x86 qemu-system-arm qemu-utils cloud-image-utils genisoimage unzip swtpm ovmf qemu-efi-aarch64 p7zip-full xorriso dpkg-dev libguestfs-tools jq
           qemu-system-x86_64 --version | head -1
           qemu-system-aarch64 --version | head -1
           qemu-img --version | head -1
@@ -421,10 +428,13 @@ jobs:
       # than hours into a bake. arm64 used to warn instead, which is how it
       # burned 2 to 5 hours per run and never finished.
       - name: Enable KVM access
+        env:
+          ARCH: ${{ matrix.arch }}
+          QEMU_SUFFIX: ${{ matrix.arch == 'arm64' && 'aarch64' || 'x86_64' }}
         run: |
           set -euo pipefail
           if [[ ! -c /dev/kvm ]]; then
-            echo "::error::This runner did not expose /dev/kvm (${{ matrix.arch }} leg)"
+            echo "::error::This runner did not expose /dev/kvm (${ARCH} leg)"
             echo "::error::Without it the bake falls back to tcg, which has never finished for arm64."
             lscpu
             grep -m1 -E '^(flags|Features)' /proc/cpuinfo || true
@@ -451,9 +461,57 @@ jobs:
             sudo chmod 666 /dev/kvm
           fi
           ls -l /dev/kvm
+          # Still open it: nke_qemu_env tests the permission bits with -w,
+          # which says nothing about whether open(2) would actually succeed.
           exec 3<>/dev/kvm
           exec 3>&-
-          echo "::notice::/dev/kvm present and writable; building with hardware acceleration"
+          # But opening the device is not a test of whether KVM works. Some runner
+          # pods come up with /dev/kvm bind-mounted and openable on a host
+          # where QEMU cannot actually use it, so this step reported
+          # "building with hardware acceleration" and check-acceleration then
+          # failed 15s later for want of that acceleration -- naming the
+          # accelerator, not the runner, as the cause (#1337).
+          #
+          # First ask the detector the bake itself will use, under the same
+          # ACCELERATOR=kvm the build steps pass, so this step cannot disagree
+          # with check-acceleration by construction, and dump what
+          # distinguishes a bad pod from a bad device when it does fail. That
+          # call alone saves little time -- check-acceleration repeats it
+          # seconds later -- and is here for the diagnosis.
+          #
+          # Then start QEMU for real on what it picked. nke_qemu_env goes no
+          # further than the permission bits and 'qemu -accel help', and that
+          # list is what this QEMU was compiled with, not what it can
+          # initialise here -- so a pod whose /dev/kvm cannot back a VM still
+          # satisfies both it and check-acceleration. Creating the machine is
+          # what settles it: KVM_CREATE_VM and KVM_CREATE_VCPU run during
+          # setup, so such a pod fails in about a second rather than minutes
+          # into the bake.
+          #
+          # The machine, CPU and accelerator flags are the detector's own, so
+          # the probe boots what the bake would. -S holds the vCPU before its
+          # first instruction, which is why no firmware or disk is needed and
+          # nothing can hang; the monitor 'quit' then ends a VM that did come
+          # up.
+          if ! ( cd os-image/packer && ACCELERATOR=kvm REQUIRE_ACCELERATION=1 \
+                 bash -ec '
+                   . ./scripts/qemu-arch.sh
+                   nke_qemu_env "${ARCH}"
+                   printf "quit\\n" | timeout 60 "${QEMU_BIN}" \
+                     -machine "${QEMU_MACHINE}" -cpu "${QEMU_CPU}" "${ACCEL_ARGS[@]}" \
+                     -S -no-user-config -nodefaults -display none -monitor stdio
+                 ' ); then
+            echo "::error::This runner exposes /dev/kvm but QEMU cannot use it (${ARCH} leg)."
+            echo "::error::The bake would fall back to tcg, which has never finished for arm64."
+            echo "::group::KVM diagnostics"
+            ls -l /dev/kvm || true
+            "qemu-system-${QEMU_SUFFIX}" -accel help || true
+            lscpu || true
+            lsmod 2>/dev/null | grep -E '^kvm' || echo "no kvm module listed"
+            echo "::endgroup::"
+            exit 1
+          fi
+          echo "::notice::QEMU reports usable KVM; building with hardware acceleration"
 
       - name: Install Packer
         env:
@@ -706,6 +764,30 @@ jobs:
           )"
           echo "disk=${disk}" >> "$GITHUB_OUTPUT"
 
+      # Before the push, not after: a disk whose package database cannot be
+      # read is a disk we cannot describe, and that is worth failing on while
+      # nothing has been published yet. It also means pull-request runs, which
+      # build but never push, still exercise this.
+      #
+      # The FDE disk needs the build-time LUKS passphrase to open. It is the
+      # documented placeholder (`changeit`, see this workflow's release body
+      # and os-image/docs/full-disk-encryption.md), read from the Makefile that
+      # baked it in rather than repeated here.
+      - name: Extract an SBOM from the qcow2
+        env:
+          DISK: ${{ steps.disks.outputs.disk }}
+          VARIANT: ${{ matrix.variant }}
+          LUKS_PASSPHRASE: ${{ steps.versions.outputs.luks_passphrase }}
+        run: |
+          set -euo pipefail
+          # Only the FDE disk carries a LUKS container; offering the
+          # passphrase to the other variant would be harmless but misleading.
+          passphrase=""
+          [[ "${VARIANT}" == "fde" ]] && passphrase="${LUKS_PASSPHRASE}"
+          LUKS_PASSPHRASE="${passphrase}" \
+            os-image/packer/scripts/extract-image-sbom.sh \
+              "dist/${DISK}" "dist/${DISK%.qcow2}.spdx.json"
+
       # --artifact-platform is still marked experimental in the ORAS CLI. It is
       # load-bearing: without it the manifest has no platform in its config and
       # `oras pull --platform linux/${{ matrix.arch }}` cannot select this disk.
@@ -770,6 +852,11 @@ jobs:
           set -euo pipefail
           mkdir -p assets
           ( cd dist && sha256sum "${DISK}" ) > "assets/checksums-${BUILD}.txt"
+          # The SBOM is small enough to attach, unlike the disk it describes,
+          # so it is both hashed here and copied into the upload.
+          sbom="${DISK%.qcow2}.spdx.json"
+          ( cd dist && sha256sum "${sbom}" ) >> "assets/checksums-${BUILD}.txt"
+          cp "dist/${sbom}" "assets/${sbom}"
           if [[ "${BUILD}" == "amd64-non-fde" ]]; then
             cp os-image/bin/nke-os-image-check assets/nke-os-image-check
             ( cd assets && sha256sum nke-os-image-check >> "checksums-${BUILD}.txt" )
@@ -1112,15 +1199,22 @@ jobs:
             Verify a node closed that window with `luks-tpm-verify` before trusting
             TPM-only unlock in production.
 
-            `checksums.txt` covers all eight qcow2s and the checker binary. The
-            disks themselves are the OCI artifacts above; they are too large to
-            attach here.
+            `checksums.txt` covers all eight qcow2s, their SBOMs and the checker
+            binary. The disks themselves are the OCI artifacts above; they are
+            too large to attach here.
+
+            Each disk has an SPDX 2.3 SBOM attached beside it, named after the
+            disk it describes -- `nke-node-fde-ubuntu-26.04.1-amd64.spdx.json`
+            for `nke-node-fde-ubuntu-26.04.1-amd64.qcow2`, and so on. It lists
+            the image's dpkg package set, read out of the built disk rather
+            than derived from the Packer templates.
 
             `checksums.txt.sigstore.json` is the build-provenance attestation
             over `checksums.txt`; see [RELEASE.md](RELEASE.md) for the verify
             commands.
           files: |
             dist/nke-os-image-check
+            dist/*.spdx.json
             dist/checksums.txt
             dist/checksums.txt.sigstore.json
           fail_on_unmatched_files: true
@@ -1131,15 +1225,20 @@ jobs:
       # The name-and-size check below proves an asset arrived, not that it
       # arrived whole. The shared action hashes what the release carries
       # against checksums.txt, which is the bar release.yml already held.
-      # require-all is false because the same file also covers the four
+      # require-all is false because the same file also covers the eight
       # qcow2s, which ship as OCI artifacts rather than release assets.
+      #
+      # expected-count is a floor, so it has to name every attachment or a
+      # release missing all eight SBOMs still clears it on the three others:
+      # eight .spdx.json, the checker binary, checksums.txt and its
+      # attestation.
       - name: Verify the release assets
         if: startsWith(github.ref, 'refs/tags/os-image/')
         uses: ./.github/actions/verify-release-assets
         with:
           release-id: ${{ steps.release.outputs.id }}
           checksums: dist/checksums.txt
-          expected-count: "2"
+          expected-count: "11"
           require-all: "false"
           github-token: ${{ github.token }}
 
@@ -1148,9 +1247,11 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           RELEASE_ID: ${{ steps.release.outputs.id }}
+          CHECKSUMS: dist/checksums.txt
         with:
           retries: 3
           script: |
+            const fs = require('fs');
             const release_id = Number(process.env.RELEASE_ID);
 
             const { data: rel } = await github.rest.repos.getRelease({
@@ -1161,14 +1262,40 @@ jobs:
               .filter(a => a.state === 'uploaded' && a.size > 0)
               .map(a => a.name)
               .sort();
-            const want = ['checksums.txt', 'nke-os-image-check'];
-            for (const n of want) {
-              if (!names.includes(n)) {
-                core.setFailed(
-                  `Release ${release_id} is missing ${n} (has [${names.join(', ') || 'nothing'}]). ` +
-                  `It is left as an unpublished draft.`);
-                return;
-              }
+
+            // Name every asset the release must carry, rather than trusting
+            // the count the verify step enforces: that is a floor, so one
+            // stray attachment would let it stand in for a missing SBOM.
+            //
+            // The list comes out of checksums.txt instead of being spelled
+            // here, so adding an Ubuntu flavor or an architecture to the
+            // matrix does not need a second edit. The eight build legs each
+            // append their own disk and SBOM to it, so it names all eight
+            // .spdx.json and nke-os-image-check. The qcow2s are dropped: they
+            // ship as OCI artifacts, too large to attach. checksums.txt and
+            // its attestation do not appear inside it, so they stay explicit.
+            const listed = fs.readFileSync(process.env.CHECKSUMS, 'utf8')
+              .split('\n')
+              .map(l => l.replace(/^[0-9a-f]+\s+[ *]?/, '').trim())
+              .filter(n => n && !n.endsWith('.qcow2'));
+            const sboms = listed.filter(n => n.endsWith('.spdx.json'));
+            if (sboms.length !== 8) {
+              core.setFailed(
+                `checksums.txt names ${sboms.length} SBOMs, expected 8 ` +
+                `(one per matrix leg). The release is left as an unpublished draft.`);
+              return;
+            }
+
+            const want = [...new Set([
+              ...listed, 'checksums.txt', 'checksums.txt.sigstore.json',
+            ])].sort();
+            const missing = want.filter(n => !names.includes(n));
+            if (missing.length > 0) {
+              core.setFailed(
+                `Release ${release_id} is missing ${missing.join(', ')} ` +
+                `(has [${names.join(', ') || 'nothing'}]). ` +
+                `It is left as an unpublished draft.`);
+              return;
             }
 
             if (rel.draft) {

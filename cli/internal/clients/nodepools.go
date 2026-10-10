@@ -77,7 +77,7 @@ func (c *ControllerClient) PatchNodePool(
 }
 
 // DeleteNodePool deletes the node pool with the given UUID. The delete is
-// asynchronous: CWE queues teardown of the pool's nodes and returns before
+// asynchronous: the controller queues teardown of the pool's nodes and returns before
 // they are drained.
 func (c *ControllerClient) DeleteNodePool(ctx context.Context, id openapi_types.UUID) error {
 	resp, err := c.raw.DeleteNodePoolWithResponse(ctx, id)

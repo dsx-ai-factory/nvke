@@ -132,7 +132,7 @@ func TestReconcileNodesNeedingRolloutWithoutControlPlaneVIPDoesNotReplaceNodes(t
 	}).Return([]db.Node{node}, nil)
 	r := &reconciler{cfg: cpControllerConfig(true), db: mockTx, logger: slog.Default()}
 
-	err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{})
+	err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
 
 	require.NoError(t, err)
 	mockTx.AssertExpectations(t)
@@ -199,7 +199,7 @@ func TestReconcileNodesNeedingRolloutWithoutControlPlaneVIPDeletesAfterSurgeExis
 	mockTx.On("CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(db.WorkflowOutbox{}, nil)
 	r := &reconciler{cfg: cpControllerConfig(true), db: mockTx, logger: slog.Default()}
 
-	err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{})
+	err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
 
 	require.NoError(t, err)
 	mockTx.AssertExpectations(t)
@@ -248,7 +248,7 @@ func TestReconcileLegacyNodesNeedingRolloutWithoutControlPlaneVIPDoesNotReplaceN
 	})).Return([]db.Node{deprecatedNode}, nil)
 	r := &reconciler{db: mockTx, logger: slog.Default()}
 
-	err := r.reconcileNodesNeedingRollout(context.Background(), cluster, &controlPlane{}, domainAllocator{})
+	err := r.reconcileNodesNeedingRollout(context.Background(), cluster, &controlPlane{}, domainAllocator{}, nil)
 
 	require.NoError(t, err)
 	mockTx.AssertExpectations(t)

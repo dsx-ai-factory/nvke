@@ -20,9 +20,13 @@ desiredNodeCount: 1
 controlPlane: false
 systemReservedMemory: "1Gi"
 
-# Stored on the pool at creation.
+# Labels and taints can be set at create only and cannot be updated.
 nodeLabels:
   tier: compute
+nodeTaints:
+  - key: dedicated
+    value: compute
+    effect: NoSchedule
 
 # A pool carries either infra or nico, never both. This path supplies CAPI
 # manifests directly, matching nico-mock-cluster.yaml; a real site uses nico.

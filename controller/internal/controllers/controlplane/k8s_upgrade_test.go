@@ -40,11 +40,16 @@ func TestUpdateNodePoolKubeVersion_EmptyOSProfile(t *testing.T) {
 			nico.OSProfile == ""
 	})).Return(db.NodePool{}, nil)
 
-	r := &reconciler{db: mockTx, logger: slog.Default(), nodePoolUpgradeConfig: clients.GetNodePoolUpgradeConfig}
-	err := r.updateNodePoolKubeVersion(
+	cluster := db.Cluster{KubernetesVersion: "1.35.0", ProviderType: db.ProviderTypeCAPI}
+	nodePoolUpgradeConfig, err := clients.GetNodePoolUpgradeConfig(cluster)
+	require.NoError(t, err)
+
+	r := &reconciler{db: mockTx, logger: slog.Default()}
+	err = r.updateNodePoolKubeVersion(
 		context.Background(),
-		db.Cluster{KubernetesVersion: "1.35.0", ProviderType: db.ProviderTypeCAPI},
+		cluster,
 		nodePool{NodePool: storedPool},
+		nodePoolUpgradeConfig,
 	)
 
 	require.NoError(t, err)
@@ -66,17 +71,12 @@ func TestUpdateNodePoolKubeVersion_ResolveErrorSkipsUpdate(t *testing.T) {
 	mockTx := &testutil.MockTx{}
 	mockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(storedPool, nil)
 
-	r := &reconciler{
-		db:     mockTx,
-		logger: slog.Default(),
-		nodePoolUpgradeConfig: func(db.Cluster) (clients.NodePoolUpgradeConfig, error) {
-			return stubNodePoolUpgradeConfig{err: resolveErr}, nil
-		},
-	}
+	r := &reconciler{db: mockTx, logger: slog.Default()}
 	err := r.updateNodePoolKubeVersion(
 		context.Background(),
 		db.Cluster{KubernetesVersion: "1.35.0"},
 		nodePool{NodePool: storedPool},
+		stubNodePoolUpgradeConfig{err: resolveErr},
 	)
 
 	require.ErrorIs(t, err, resolveErr)

@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Overrides for the Postgres chart nkectl embeds (controller/deploy/charts/postgresql).
+# The chart creates the controller's database from init-cwe.sql, named
+# cloud-workflow by default; this renames it to the one controller-values.yaml
+# (appDb.dbName) connects to. The script key stays init-cwe.sql so it replaces
+# the default rather than adding a second script, and init-temporal.sql stays
+# as the chart ships it.
+initdb:
+  scripts:
+    init-cwe.sql: |
+      CREATE DATABASE "nke-controller";

@@ -9,11 +9,11 @@ below is on `main`; the steps the CLI does not cover are marked.
 | Command | What it does | Status |
 |---|---|---|
 | `nkectl generate sitespec <name> --nodes hosts.csv` | Writes a site spec for `bootstrap site` from a node CSV. `--set path=value` fills in what the CSV does not carry. | Available |
-| `nkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running CWE, has CWE create the site cluster on the spec's hosts through `nke-agent`, writes `<name>.kubeconfig` and `<name>-etcd-encryption-key.json`, tears the Kind cluster down on success. `--dry-run` validates the spec only. | Available |
+| `nkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running the NKE controller, has the controller create the site cluster on the spec's hosts through `nke-agent`, writes `<name>.kubeconfig` and `<name>-etcd-encryption-key.json`, tears the Kind cluster down on success. `--dry-run` validates the spec only. | Available |
 | `nkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
 | Install an infrastructure provider on the new cluster | Install Cluster API and CAPNICo, before the site controller. See [Infrastructure Providers](../../docs/site-bootstrap/infrastructure-providers.md). No `nkectl` command. | Not in the CLI |
 | Install the site controller on the new cluster | Deploy the controller Helm chart (`controller/deploy/charts/controller`). No `nkectl` command yet. | Not in the CLI |
-| `nkectl config set-site --url <cwe-url> --kubeconfig <path>` | Points the CLI at a site controller. `use-site` switches between entries, `view` prints the config. | Available |
+| `nkectl config set-site --url <controller-url> --kubeconfig <path>` | Points the CLI at a site controller. `use-site` switches between entries, `view` prints the config. | Available |
 | `nkectl get providers` | Lists the Cluster API infrastructure providers the site controller can use, with their state. Alpha. | Available |
 | `nkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
 | `nkectl get clusters [name ...]` | Lists tenant clusters. Names narrow to those clusters. `-o json\|yaml` changes the format. | Available |
@@ -80,8 +80,10 @@ later and the copy a disaster recovery needs. Move it off the host. On failure i
 diagnostics to `cluster-diagnostics/` first, and keeps the Kind cluster when
 the failure came after the site cluster was created, or when
 `--keep-bootstrap-cluster` is set; the error says how to clean up.
+[bootstrap-troubleshooting.md](bootstrap-troubleshooting.md) explains how to
+read a failure and fix the common ones.
 
-The Kind cluster runs Postgres, Temporal, SPIRE, Cluster API and CWE.
+The Kind cluster runs Postgres, Temporal, SPIRE, Cluster API and the controller.
 `nkectl get bootstrap-manifest` lists the charts and images the bootstrap
 fetches, with their versions. It leaves out the kind node image and what
 `clusterctl init` installs. The `NKECTL_*` variables in the
@@ -98,7 +100,7 @@ for why the order matters. `nkectl` has no command for this step.
 ### 4. Install the site controller
 
 The site cluster from step 2 is a plain Kubernetes cluster. The site controller
-(CWE) that manages tenant clusters is installed with the controller Helm chart
+that manages tenant clusters is installed with the controller Helm chart
 in [`controller/deploy/charts/controller`](https://github.com/dsx-ai-factory/nke/tree/main/controller/deploy/charts/controller).
 `nkectl` has no command for this step yet.
 
@@ -106,15 +108,15 @@ in [`controller/deploy/charts/controller`](https://github.com/dsx-ai-factory/nke
 
 ```bash
 nkectl config set-site --name my-tier0-site \
-  --url https://cwe.my-tier0-site.example.com \
+  --url https://controller.my-tier0-site.example.com \
   --kubeconfig ./my-tier0-site.kubeconfig
 nkectl config view
 ```
 
-`--url` is the CWE API. `--kubeconfig` is the site cluster's kubeconfig; `get
+`--url` is the controller's API. `--kubeconfig` is the site cluster's kubeconfig; `get
 providers` and `get kubeconfig` read the cluster directly and need it.
 
-CWE API commands (`get`/`create`/`patch`/`delete` clusters) use that
+Controller API commands (`get`/`create`/`patch`/`delete` clusters) use that
 kubeconfig to authenticate: they read the audience from ConfigMap
 `nke-auth-config` in `nke-controller`, or in `cloud-workflow-engine` when that
 is absent, and mint a TokenRequest for
@@ -227,10 +229,10 @@ which pool is scaled. `desiredNodeCount` is the only field this command
 supports today; the API accepts more, but anything else is rejected before the
 request is sent.
 
-Scaling is asynchronous: the command returns once CWE has recorded the change,
+Scaling is asynchronous: the command returns once the controller has recorded the change,
 and the site controller provisions or tears down nodes to match it. A rejected
 scale-up, such as one the cluster's pod CIDR has no room for, is reported with
-CWE's own message. There is no confirmation prompt, so a lower count starts
+the controller's own message. There is no confirmation prompt, so a lower count starts
 removing nodes straight away.
 
 
@@ -244,7 +246,7 @@ Node pool names are unique within a cluster, so `--cluster` is what decides
 which pool is resolved. Deletion is asynchronous and the nodes are drained
 before removal; run `nkectl get nodepools --cluster <cluster-name>` to check
 on it. On a site controller with the control-plane controller off, deleting a
-cluster's last joined control-plane node pool is rejected with CWE's own
+cluster's last joined control-plane node pool is rejected with the NKE controller's own
 message — delete the cluster instead.
 
 ### 14. Delete the tenant cluster

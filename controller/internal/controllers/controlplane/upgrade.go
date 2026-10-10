@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
 )
@@ -39,6 +40,7 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 	cluster db.Cluster,
 	cp *controlPlane,
 	allocator domainAllocator,
+	newNodeProvider clients.NewNodeProvider,
 ) error {
 	logger := r.logger.With(
 		"clusterID", cluster.ID,
@@ -105,7 +107,7 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 						"nodesNeedingRolloutCount", len(nodesNeedingRollout))
 					return nil
 				}
-				created, err := r.scaleUp(ctx, cluster, deficit, "surge nodes during upgrade", allocator)
+				created, err := r.scaleUp(ctx, cluster, deficit, "surge nodes during upgrade", allocator, newNodeProvider)
 				if err != nil {
 					return fmt.Errorf("failed to scale up control plane before recycling: %w", err)
 				}
@@ -120,7 +122,7 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 					"nodesNeedingRolloutCount", len(nodesNeedingRollout))
 				return nil
 			}
-			if _, err := r.scaleUp(ctx, cluster, 1, "surge node during upgrade", allocator); err != nil {
+			if _, err := r.scaleUp(ctx, cluster, 1, "surge node during upgrade", allocator, newNodeProvider); err != nil {
 				return fmt.Errorf("failed to scale up control plane before recycling: %w", err)
 			}
 		}

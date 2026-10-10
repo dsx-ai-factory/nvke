@@ -6,7 +6,6 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,7 +24,7 @@ const (
 
 // validateClusterConfig verifies the cluster and its initial control-plane and
 // worker node pools report the configuration they were created with (spec
-// round-trip). NOTE: CWE's API Cluster type exposes no CNI-version field, so
+// round-trip). NOTE: the controller's API Cluster type exposes no CNI-version field, so
 // unlike the nke-e2e reference this cannot assert the CNI version.
 func validateClusterConfig(test *tenantTest) {
 	It("reports the cluster and initial node-pool configuration it was created with", func(ctx context.Context) {
@@ -34,26 +33,17 @@ func validateClusterConfig(test *tenantTest) {
 		Expect(test.cluster.ControlPlaneKubernetesVersion).To(Equal(test.spec.KubernetesVersion))
 		Expect(test.cluster.EtcdEncrypted).To(Equal(test.spec.ControlPlane.EtcdEncrypted))
 
-		if cpSpec := test.spec.ControlPlane.Config; cpSpec != nil {
-			By("Verifying the cluster-level control-plane configuration and that no control-plane node pool exists")
-			controlPlane := expectSucceed(test.nke.GetClusterControlPlane(ctx, test.cluster.ID))
-			if controlPlane.Config.Nico != nil {
-				Expect(controlPlane.Config.Nico.ConfigProfile).To(Equal(cpSpec.ConfigProfile))
-			}
-			Expect(controlPlane.Status.KubernetesVersion).To(Equal(test.spec.KubernetesVersion))
-			Expect(controlPlane.Config.DesiredCount).To(Equal(cpSpec.DesiredCount))
-			for _, pool := range expectSucceed(test.nke.ListNodePools(ctx, test.cluster.ID)) {
-				Expect(pool.ControlPlane).To(BeFalse(), "a controller-managed control plane has no node pool (found %q)", pool.Name)
-			}
-		} else {
-			By("Verifying the initial control-plane node pool")
-			cpPool := expectControlPlanePool(ctx, test)
-			cpPoolSpec := test.spec.ControlPlane.Pools[0]
-			if cpPool.Nico != nil {
-				Expect(cpPool.Nico.ConfigProfile).To(Equal(cpPoolSpec.ConfigProfile))
-			}
-			Expect(cpPool.KubernetesVersion).To(Equal(test.spec.KubernetesVersion))
-			Expect(cpPool.DesiredNodeCount).To(Equal(cpPoolSpec.DesiredNodeCount))
+		By("Verifying the cluster-level control-plane configuration and that no control-plane node pool exists")
+		cpSpec := test.spec.ControlPlane.Config
+		Expect(cpSpec).NotTo(BeNil(), "the cluster must be created with a control-plane config")
+		controlPlane := expectSucceed(test.nke.GetClusterControlPlane(ctx, test.cluster.ID))
+		if controlPlane.Config.Nico != nil {
+			Expect(controlPlane.Config.Nico.ConfigProfile).To(Equal(cpSpec.ConfigProfile))
+		}
+		Expect(controlPlane.Status.KubernetesVersion).To(Equal(test.spec.KubernetesVersion))
+		Expect(controlPlane.Config.DesiredCount).To(Equal(cpSpec.DesiredCount))
+		for _, pool := range expectSucceed(test.nke.ListNodePools(ctx, test.cluster.ID)) {
+			Expect(pool.ControlPlane).To(BeFalse(), "a controller-managed control plane has no node pool (found %q)", pool.Name)
 		}
 
 		By("Verifying the initial worker node pool")
@@ -68,7 +58,7 @@ func validateClusterConfig(test *tenantTest) {
 	}, Label("lifecycle", "nodepool", "config"), NodeTimeout(5*time.Minute))
 }
 
-// validateNodeReplacement verifies CWE's auto-heal contract: with the desired
+// validateNodeReplacement verifies the controller's auto-heal contract: with the desired
 // count unchanged, deleting a worker provisions a replacement while the
 // surviving node is preserved. Runs at desired=2 (scales the worker pool up
 // first) so "heal back with the survivor intact" is actually exercised, not
@@ -149,25 +139,6 @@ func validateAdditionalNodePool(test *tenantTest) {
 	It("creates, scales, and deletes an additional worker node pool", func(ctx context.Context) {
 		primaryPool := expectWorkerPool(ctx, test)
 		primaryBefore := expectNodeIDs(ctx, test, primaryPool.ID)
-
-		// A controller-managed control plane has no pool to delete; the
-		// cp-controller entries assert its delete refusal instead.
-		if test.spec.ControlPlane.Config == nil {
-			controlPlanePool := expectControlPlanePool(ctx, test)
-
-			By("Verifying the only joined control-plane pool cannot be deleted")
-			resp, err := test.nke.API().DeleteNodePoolWithResponse(ctx, controlPlanePool.ID)
-			Expect(err).NotTo(HaveOccurred(), "should receive a response when deleting the control-plane pool")
-			Expect(resp.StatusCode()).To(Equal(http.StatusBadRequest), "response body: %s", resp.Body)
-			Expect(resp.JSON400).NotTo(BeNil(), "400 response should contain a structured error")
-			Expect(resp.JSON400.Message).To(ContainSubstring("last joined control-plane node pool"))
-
-			poolAfterRejection, status, err := test.nke.GetNodePool(ctx, controlPlanePool.ID)
-			Expect(err).NotTo(HaveOccurred(), "should get the control-plane pool after its deletion is rejected")
-			Expect(status).To(Equal(http.StatusOK))
-			Expect(poolAfterRejection).NotTo(BeNil())
-			Expect(poolAfterRejection.ID).To(Equal(controlPlanePool.ID), "rejected deletion should preserve the control-plane pool")
-		}
 
 		By("Creating an additional worker node pool")
 		req := expectSucceed(workerNodePoolRequest(test, extraPoolName, "wx"))

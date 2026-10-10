@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package tenant manages one controller-runtime manager for each tenant
-// cluster that CWE is currently able and allowed to manage.
+// cluster that the controller is currently able and allowed to manage.
 //
 // The management-cluster Secret informer is the access-material event source.
 // It does not communicate with managerRuntime directly:
@@ -85,12 +85,12 @@
 //	                  +-- manager exits unexpectedly ---------> retry start
 //	                                                            return to RUNNING
 //
-// A failed initial or replacement start is retried with backoff. CWE shutdown
+// A failed initial or replacement start is retried with backoff. Controller shutdown
 // stops every manager and does not restart them.
 //
 // # Scaling, limitations, and future direction
 //
-// The initial implementation keeps all tenant control loops in one CWE process.
+// The initial implementation keeps all tenant control loops in one controller process.
 // ManagerSet creates one controller-runtime Manager for every active tenant
 // cluster. Each manager has its own REST client, cache, CSR informer, work queue,
 // and controller goroutines connected to that tenant cluster.
@@ -103,9 +103,9 @@
 // capacity limit or an HA guarantee. Per-manager metrics and health listeners
 // are currently disabled.
 //
-// Increasing the CWE Deployment replica count is not a supported way to scale
+// Increasing the controller Deployment replica count is not a supported way to scale
 // this subsystem. Tenant-manager leader election and distributed ownership are
-// disabled, so every CWE replica would observe the same access Secrets and
+// disabled, so every controller replica would observe the same access Secrets and
 // start another manager for every tenant cluster, duplicating watches and
 // reconciliation.
 //
@@ -157,7 +157,7 @@
 //	       CSR informer queues existing and newly observed pending CSRs
 //	                              |
 //	                              v
-//	          validate each CSR against CWE node identity and approve
+//	          validate each CSR against controller node identity and approve
 //
 // Tenant-access publication is triggered by the committed Joined=True update;
 // it does not wait for the whole cluster to become Provisioned. The CSR

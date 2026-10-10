@@ -41,7 +41,7 @@ setup_failed() {
     local step="$1"
     echo "" >&2
     echo "colima-start: failed while ${step}." >&2
-    echo "colima-start: the VM is NOT ready for CWE local development." >&2
+    echo "colima-start: the VM is NOT ready for controller local development." >&2
     echo "" >&2
     echo "If Docker did not come up:" >&2
     echo "  colima ssh --profile ${COLIMA_PROFILE} -- sudo systemctl reset-failed docker.service && colima ssh --profile ${COLIMA_PROFILE} -- sudo systemctl start docker.service" >&2
@@ -164,7 +164,7 @@ main() {
     run_step "verifying the Colima VM size" verify_colima_size || return 1
 
     echo ""
-    echo "Colima is ready for CWE local development."
+    echo "Colima is ready for controller local development."
     echo "Docker socket: ${docker_host}"
     echo "vTPM proxy device: /dev/vtpmx"
     echo ""

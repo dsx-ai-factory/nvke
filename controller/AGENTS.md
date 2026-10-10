@@ -297,7 +297,7 @@ make test
 These run against a live CWE deployment:
 ```bash
 cd integration-test
-CWE_API_URL=http://localhost:8080/api go test -tags integration_test -v -timeout=3h
+NKE_CONTROLLER_API_URL=http://localhost:8080/api go test -tags integration_test -v -timeout=3h
 ```
 
 ## Temporal Workflows

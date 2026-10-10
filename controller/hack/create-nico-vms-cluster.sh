@@ -10,21 +10,21 @@
 #
 # Notes:
 #   - Defaults to the cpu4-mem6gb seed instance type. The kubelet reservations are
-#     fixed by CWE's generated kubeadm patch (kubeReserved 2Gi plus the
+#     fixed by the controller's generated kubeadm patch (kubeReserved 2Gi plus the
 #     systemReservedMemory below),
 #     so ~3Gi is carved off regardless of node size. On a 4Gi node that leaves only
 #     ~700Mi allocatable -> the control plane exceeds it -> kubelet reports
 #     MemoryPressure and tags the node NoSchedule (which, among other things, blocks
 #     kubeadm's upgrade-health-check Job). 6Gi leaves ~3Gi allocatable, enough headroom.
-#   - systemReservedMemory defaults to 1Gi. The CWE API/DB default is 16Gi, which alone
+#   - systemReservedMemory defaults to 1Gi. The controller API/DB default is 16Gi, which alone
 #     exceeds these small seed instance types, so it must be set explicitly here.
 #   - The control plane is cluster-level controlPlaneConfig, not a node pool.
-#     CWE rejects control-plane node pools when control-plane controller
+#     The controller rejects control-plane node pools when control-plane controller
 #     provisioning is enabled, which is the default.
 #   - The worker pool is always included; set WORKER_DESIRED_COUNT=0 to create a
 #     control-plane-only cluster.
 #   - CNI defaults to ovn-kubernetes. Set CNI_PLUGIN=calico to use Calico instead.
-#     CNI_VERSION is optional; when empty the CWE API applies the plugin default
+#     CNI_VERSION is optional; when empty the controller API applies the plugin default
 #     (1.4.0 for OVN, 3.30.1 for Calico).
 
 set -euo pipefail

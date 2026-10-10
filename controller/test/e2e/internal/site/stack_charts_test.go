@@ -61,11 +61,12 @@ const databasePassword = "db-secret"
 
 var wantDBSecret = base64.StdEncoding.EncodeToString([]byte(databasePassword))
 
-// skipOffline skips when helm could not reach a chart repository, since these
-// tests are about what the charts read and not about the network.
+// skipOffline skips when helm could not reach a chart repository or was rate
+// limited by it, since these tests are about what the charts read and not
+// about the network.
 func skipOffline(t *testing.T, chart string, err error) {
 	t.Helper()
-	for _, offline := range []string{"dial tcp", "no such host", "cannot be reached"} {
+	for _, offline := range []string{"dial tcp", "no such host", "cannot be reached", "toomanyrequests"} {
 		if strings.Contains(err.Error(), offline) {
 			t.Skipf("%s chart unreachable: %v", chart, err)
 		}
@@ -221,17 +222,17 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 
 		svc := find(t, docs, "Service", controllerName())
 		if ns := dig(t, svc, "metadata", "namespace"); ns != controllerName() {
-			t.Errorf("CWE Service namespace = %v, want %s: the health probe would miss it", ns, controllerName())
+			t.Errorf("controller Service namespace = %v, want %s: the health probe would miss it", ns, controllerName())
 		}
 
 		deployment := find(t, docs, "Deployment", controllerName())
 		containers, _ := dig(t, deployment, "spec", "template", "spec", "containers").([]any)
 		if len(containers) == 0 {
-			t.Fatal("CWE Deployment has no containers")
+			t.Fatal("controller Deployment has no containers")
 		}
 		container, _ := containers[0].(map[string]any)
 		if got := container["image"]; got != "nvcr.io/nke/cwe:v1.2.3" {
-			t.Errorf("CWE image = %v", got)
+			t.Errorf("controller image = %v", got)
 		}
 		env := map[string]any{}
 		for _, e := range container["env"].([]any) {
@@ -253,7 +254,7 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 			"TELEPORT_TOKEN_NAME_PREFIX":        controllerName() + "-",
 		} {
 			if env[name] != want {
-				t.Errorf("CWE env %s = %v, want %s", name, env[name], want)
+				t.Errorf("controller env %s = %v, want %s", name, env[name], want)
 			}
 		}
 		if got, _ := env["DB_CONNECTION_STRING"].(string); !strings.Contains(got, "/"+controllerName()+"?") {

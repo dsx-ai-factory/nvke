@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package infra is the contract for creating the bare machine a site
-// controller is built on, before any CWE exists to ask. It names capabilities
+// controller is built on, before any controller exists to ask. It names capabilities
 // rather than infrastructure, so nothing here is provider vocabulary and it
 // carries no external dependencies.
 package infra

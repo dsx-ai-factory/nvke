@@ -62,7 +62,7 @@ func TestPatchNodePoolScales(t *testing.T) {
 
 // TestPatchNodePoolSendsOnlyTheGivenFields pins the request body. A field the
 // operator did not name must stay absent, because a field present in the body
-// is a field CWE overwrites.
+// is a field the controller overwrites.
 func TestPatchNodePoolSendsOnlyTheGivenFields(t *testing.T) {
 	fake, clientFn := newFakeCWE(t, seed{clusterName: "alpha", name: "gpu-workers", desiredNodeCount: 3})
 
@@ -78,7 +78,7 @@ func TestPatchNodePoolSendsOnlyTheGivenFields(t *testing.T) {
 	if len(bodies[0]) != 1 {
 		t.Fatalf("patch body = %v, want desiredNodeCount alone", bodies[0])
 	}
-	// A number, not the string "8": CWE rejects a string for an integer field.
+	// A number, not the string "8": the controller rejects a string for an integer field.
 	if got, ok := bodies[0]["desiredNodeCount"].(float64); !ok || int(got) != 8 {
 		t.Errorf("patch body desiredNodeCount = %#v, want the number 8", bodies[0]["desiredNodeCount"])
 	}
@@ -196,7 +196,7 @@ func TestPatchNodePoolErrors(t *testing.T) {
 			wantErr: "accepts 1 arg(s)",
 		},
 		{
-			// The field is real and CWE would take it; nkectl does not offer
+			// The field is real and the controller would take it; nkectl does not offer
 			// it yet, and says which fields it does.
 			name:    "patch carries an unsupported field",
 			seeds:   []seed{{clusterName: "alpha", name: "gpu-workers", desiredNodeCount: 3}},
@@ -204,7 +204,7 @@ func TestPatchNodePoolErrors(t *testing.T) {
 			wantErr: `unknown field "maxSurge"; nkectl can set desiredNodeCount`,
 		},
 		{
-			// Left to reach CWE, a null comes back as a validator message
+			// Left to reach the controller, a null comes back as a validator message
 			// naming a JSON pointer. Refused locally instead.
 			name:    "patch sets a null",
 			seeds:   []seed{{clusterName: "alpha", name: "gpu-workers", desiredNodeCount: 3}},
@@ -225,7 +225,7 @@ func TestPatchNodePoolErrors(t *testing.T) {
 		},
 		{
 			// A rejected update, such as a scale-up the cluster's pod CIDR has
-			// no room for, must reach the operator with CWE's own explanation.
+			// no room for, must reach the operator with the controller's own explanation.
 			name: "server rejects the patch",
 			args: []string{"gpu-workers", "-c", "alpha", "--patch", "desiredNodeCount: 8"},
 			clientFn: func(t *testing.T) ControllerClientFn {

@@ -8,7 +8,7 @@ The four `NicoCluster`, `NicoClusterTemplate`, `NicoMachine` and
 ## Why they live here
 
 The gofail E2E suite installs these CRDs into its envtest control plane
-(`CWE_GOFAIL_E2E_CAPNICO_CRDS`). They are not in the vendored module — `go mod
+(`NKE_CONTROLLER_GOFAIL_E2E_CAPNICO_CRDS`). They are not in the vendored module — `go mod
 vendor` keeps only `.go` files — so the workflow used to `git checkout` the
 provider repository, which was private then and needed `NKE_INTERNAL_RO_TOKEN`.
 GitHub does not pass secrets to `pull_request` runs from forks, so `gofail`

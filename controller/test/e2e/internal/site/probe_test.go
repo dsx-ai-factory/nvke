@@ -38,7 +38,7 @@ func TestProbeReportsNeverHealthy(t *testing.T) {
 }
 
 // TestProbeAttemptHangs covers the attempt that connects and then never
-// answers, which is how a site looks while CWE listens but its database and
+// answers, which is how a site looks while the controller listens but its database and
 // Temporal checks have not passed yet. The wait has to outlive that attempt
 // and come round again, or the site is called dead on the strength of one
 // request.

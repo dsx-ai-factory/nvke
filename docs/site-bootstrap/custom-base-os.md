@@ -142,7 +142,7 @@ On other nodes, omit the `write_files` section and the last two `runcmd` lines
 ## Customizing
 
 - Update `cluster.nodes` with your actual node names and IPs
-- Set `registry.bootstrapRepo` and `registry.bootstrapChart` to your CWE registry path
+- Set `registry.bootstrapRepo` and `registry.bootstrapChart` to your NKE controller registry path
 - Supply `REGISTRY_API_KEY` via your secrets management (not hardcoded in cloud-init)
 - Log the bootstrap host in to your image registry (`nerdctl login nvcr.io`) the same way; `nkectl` pulls the two images with nerdctl
 - Update the Kubernetes repository minor version to match `cluster.k8sVersion` in the site spec

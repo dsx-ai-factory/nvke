@@ -115,8 +115,8 @@ func (a *Activities) kubeadmJoin(ctx context.Context, node db.Node) (KubeadmJoin
 	joinConfig.SystemReservedMemory = nodePool.SystemReservedMemory
 	joinConfig.KubeReservedMemory = nodePool.KubeReservedMemory
 
-	if node.ControlPlane && cluster.OIDCAuthEnabled {
-		joinConfig.AuthenticationConfig, err = a.buildOIDCAuthenticationConfig(ctx, cluster.Name)
+	if authn := a.clusterAuthentication(cluster); node.ControlPlane && authn.Needed() {
+		joinConfig.AuthenticationConfig, err = kubeadmconfig.BuildClusterAuthenticationConfig(ctx, a.k8sClient, authn)
 		if err != nil {
 			return KubeadmJoinResult{}, fmt.Errorf("failed to build OIDC authentication config: %w", err)
 		}

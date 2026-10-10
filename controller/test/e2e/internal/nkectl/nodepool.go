@@ -52,7 +52,7 @@ func nodePoolNotFoundIn(out string, ref NodePoolRef) bool {
 // CreateNodePool writes req to a file, creates it with
 // `nkectl create nodepool -f`, and returns the pool read back by name.
 //
-// The pool's identity is recorded before that read, so a pool CWE created but
+// The pool's identity is recorded before that read, so a pool the controller created but
 // this could not then look up is still removable by CleanupCreatedNodePools.
 func (r *Runner) CreateNodePool(ctx context.Context, clusterName string, req api.CreateNodePoolRequest) (*api.NodePool, error) {
 	body, err := json.Marshal(req)
@@ -74,7 +74,7 @@ func (r *Runner) CreateNodePool(ctx context.Context, clusterName string, req api
 
 	ref := NodePoolRef{Cluster: clusterName, Pool: req.Name}
 	// Tracked before the command runs, for the same reason CreateCluster does:
-	// a create CWE accepts but fails to report leaves a pool under this name
+	// a create the controller accepts but fails to report leaves a pool under this name
 	// and no other trace of it.
 	r.trackCreatedNodePool(ref)
 
@@ -90,7 +90,7 @@ func (r *Runner) CreateNodePool(ctx context.Context, clusterName string, req api
 	r.logf("nkectl e2e: %s", strings.TrimSpace(out))
 
 	ref.Pool = match[1]
-	r.trackCreatedNodePool(ref) // a no-op unless CWE named it something else
+	r.trackCreatedNodePool(ref) // a no-op unless the controller named it something else
 
 	return r.GetNodePoolByName(ctx, ref)
 }
@@ -161,7 +161,7 @@ func (r *Runner) ScaleNodePool(ctx context.Context, ref NodePoolRef, desired int
 // True, erroring if Provisioning flips to False, Timeouts.Provision passes, or
 // ctx is done.
 //
-// The condition marks the pool record itself provisioned, not its nodes: CWE
+// The condition marks the pool record itself provisioned, not its nodes: the controller
 // sets it once the node set exists (internal/temporal/workflows/provision_node_pool.go).
 // Node readiness is asserted against the tenant cluster by the caller.
 func (r *Runner) WaitForNodePoolProvisioned(ctx context.Context, ref NodePoolRef) (*api.NodePool, error) {

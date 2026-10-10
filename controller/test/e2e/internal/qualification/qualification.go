@@ -3,10 +3,9 @@
 
 // Package qualification is the suite's half of the qualification interface.
 //
-// `qualify run` talks to this suite twice, once to ask what a selection needs
-// and once to run it, passing the resolved values as flags. This package
-// parses those flags and nothing else: it holds no test logic, because the
-// qualify tool owns none either.
+// The values a run qualifies arrive as flags, -e2e.versions and
+// -e2e.capabilities, resolved from the qualification plan. This package parses
+// those flags and nothing else: it holds no test logic.
 package qualification
 
 import (

@@ -143,8 +143,10 @@ checkout, and do not stub a dependency to make the build pass.
   `FIXME:` with a tracking link, which is the established convention. A
   tracking link means a GitHub issue on this repository, not an internal
   tracker.
-- **Do not commit build output** — `bin/`, `release/`, `agent/build/deb_*`, or
+- **Do not commit build output** — `bin/`, `agent/build/deb_*`, or
   `controller/.local/`. All of it is already in `.gitignore`; keep it that way.
+  The root `release/` is not build output: it is the release tooling module,
+  and `.gitignore` negates the `**/release/` rule for it deliberately.
 - **Do not change the release or CI workflows** in `.github/workflows/` as part
   of an unrelated change. They gate every merge.
 - Do not add a new dependency without saying why in the pull request.
@@ -291,6 +293,19 @@ For the NKTP chart, from the repository root:
 ```bash
 make nktp-chart-check
 ```
+
+If you added, moved or removed a test file, a module, or anything in a module's
+`test` target, from the repository root:
+
+```bash
+make coverage-check   # runs no tests; a second
+```
+
+It fails when a module stops collecting coverage, when a module gains its first
+test and is not moved onto the collecting list, and when a build tag takes a test
+suite out of the build — none of which turns anything else red.
+**Do not add a coverage threshold and do not quote a coverage percentage as
+evidence that a change is tested.** See [docs/coverage-policy.md](docs/coverage-policy.md).
 
 `make lint` in `agent/` is the check CI runs on every push, so treat a failure
 there as a blocked merge. `make notices-check` regenerates the file and fails on

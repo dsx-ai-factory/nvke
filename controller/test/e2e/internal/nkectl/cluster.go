@@ -35,7 +35,7 @@ var (
 // CreateCluster writes spec to a file, creates it with
 // `nkectl create cluster -f`, and returns the cluster read back by name.
 //
-// The new cluster's identity is recorded before that read, so a cluster CWE
+// The new cluster's identity is recorded before that read, so a cluster the controller
 // created but this could not then look up is still removable by CleanupCreated.
 func (r *Runner) CreateCluster(ctx context.Context, spec nke.ClusterSpec) (*api.Cluster, error) {
 	req, err := nke.BuildCreateRequest(spec)
@@ -60,7 +60,7 @@ func (r *Runner) CreateCluster(ctx context.Context, spec nke.ClusterSpec) (*api.
 		return nil, fmt.Errorf("writing the spec for %q: %w", req.Name, writeErr)
 	}
 
-	// Tracked before the command runs: a create CWE accepts but fails to report
+	// Tracked before the command runs: a create the controller accepts but fails to report
 	// -- a dropped connection, a timeout -- leaves a cluster under this name
 	// and no other trace of it.
 	r.trackCreated(req.Name)
@@ -78,7 +78,7 @@ func (r *Runner) CreateCluster(ctx context.Context, spec nke.ClusterSpec) (*api.
 	r.logf("nkectl e2e: %s", strings.TrimSpace(out))
 
 	name := match[1]
-	r.trackCreated(name) // a no-op unless CWE named it something else
+	r.trackCreated(name) // a no-op unless the controller named it something else
 	if id, parseErr := uuid.Parse(match[2]); parseErr == nil {
 		r.clusterNames[id] = name
 	} else {
@@ -172,7 +172,7 @@ func (r *Runner) WaitForClusterReady(ctx context.Context, id openapi_types.UUID)
 // prints for the named cluster.
 //
 // The command reads the nke-system/<cluster>-admin-kubeconfig Secret through the
-// site's own kubeconfig rather than the CWE API. That Secret is published only
+// site's own kubeconfig rather than the controller API. That Secret is published only
 // once the cluster has provisioned, so this fails against one that has not.
 func (r *Runner) GetKubeconfig(ctx context.Context, name string) ([]byte, error) {
 	out, err := r.Run(ctx, "get", "kubeconfig", name)

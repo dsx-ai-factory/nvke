@@ -61,7 +61,7 @@ notices-check` verifies it is up to date.
 | `github.com/x448/float16` | MIT | `github.com/x448/float16@v0.8.4` | https://github.com/x448/float16/blob/v0.8.4/LICENSE |
 | `go.yaml.in/yaml/v2` | Apache-2.0 | `go.yaml.in/yaml/v2@v2.4.4` | https://github.com/yaml/go-yaml/blob/v2.4.4/LICENSE |
 | `go.yaml.in/yaml/v3` | MIT | `go.yaml.in/yaml/v3@v3.0.5` | https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE |
-| `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.59.0` | https://cs.opensource.google/go/x/net/+/v0.59.0:LICENSE |
+| `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.60.0` | https://cs.opensource.google/go/x/net/+/v0.60.0:LICENSE |
 | `golang.org/x/oauth2` | BSD-3-Clause | `golang.org/x/oauth2@v0.37.0` | https://cs.opensource.google/go/x/oauth2/+/v0.37.0:LICENSE |
 | `golang.org/x/sys/unix` | BSD-3-Clause | `golang.org/x/sys@v0.48.0` | https://cs.opensource.google/go/x/sys/+/v0.48.0:LICENSE |
 | `golang.org/x/term` | BSD-3-Clause | `golang.org/x/term@v0.46.0` | https://cs.opensource.google/go/x/term/+/v0.46.0:LICENSE |
@@ -5780,7 +5780,7 @@ limitations under the License.
 
 ### golang.org/x/net
 
-_BSD-3-Clause — golang.org/x/net@v0.59.0_
+_BSD-3-Clause — golang.org/x/net@v0.60.0_
 
 #### LICENSE
 

@@ -8,14 +8,14 @@
 # Not a recommendation for a production site -- a deliberate choice for the
 # first run on this path, which is already changing one thing that has never
 # been exercised on NICo (spiffe.enabled). API authentication is a separate
-# axis: apiAuth is REST tokens, spiffe is CWE-to-agent mTLS. Turning both on at
+# axis: apiAuth is REST tokens, spiffe is controller-to-agent mTLS. Turning both on at
 # once means a failure could be either.
 #
 # It also cannot simply be flipped true here. The chart defaults
 # apiAuth.configMap.create to false and mounts `nke-auth-config`, which on the
 # e2e lanes comes from the nke-auth-dev item -- and that item is test
 # scaffolding (it creates nke-client, nke-outsider and nke-e2e ServiceAccounts)
-# that a site has no business installing. CWE treats a configured-but-unreadable
+# that a site has no business installing. The controller treats a configured-but-unreadable
 # AUTH_CONFIG_PATH as a startup failure, never as "disabled", so enabling this
 # without supplying the ConfigMap does not degrade -- it fails to start.
 #
@@ -26,7 +26,7 @@ apiAuth:
   permissive: false
 
 # The SAME value the capnico-e2e target uses, deliberately: this is a tenant
-# guard rail, not a mode. It reaches CWE as SUPPORTED_INFRA_PROVIDERS, an
+# guard rail, not a mode. It reaches the controller as SUPPORTED_INFRA_PROVIDERS, an
 # accept-list validated at startup (internal/config), and renders nothing else
 # -- the CAPI permissions come from capi.rbac.create below, which is a separate
 # key.
@@ -77,7 +77,7 @@ env: []
 # used to read off disk and pass as a second --values file. It is static
 # configuration -- the same on every run -- so it belongs in the overlay: a
 # deploy path that does not carry it under-describes the deployment, and a
-# reader of the generated tree could not tell how CWE was configured.
+# reader of the generated tree could not tell how the controller was configured.
 #
 # The Tiltfile still reads that file (controller/Tiltfile:1018,1197), so this
 # is a second copy and the two can drift. Verified equivalent at the time of
@@ -111,7 +111,7 @@ nkeSystemNamespace:
 # (see below) the only images that resolve are those already in the node's
 # containerd, so bumping this without staging the new image first gives
 # ImagePullBackOff, not an upgrade. Verified the hard way on a live site: pinning
-# rc.8, which the node had never seen, took CWE down until it was reverted.
+# rc.8, which the node had never seen, took the controller down until it was reverted.
 #
 # Staging a newer build, in the k8s.io namespace the kubelet reads:
 #   ctr -n k8s.io images import <saved-image>.tar
@@ -128,7 +128,7 @@ nkeSystemNamespace:
 # it. A site controller running rc.8 rejects this checkout's own nkectl with
 #   400 Bad Request: infra.spireAttestationMethod is required
 # at "creating the site cluster". The tag below is this branch's merge base with
-# main, so the CWE binary, this chart and nkectl all come from one commit.
+# main, so the controller binary, this chart and nkectl all come from one commit.
 # Repoint at a GHCR release tag once one is cut past #850.
 #
 # This block becomes redundant once the item installs a published chart rather
@@ -160,12 +160,13 @@ securityContext:
 
 # Telemetry to the nktp item, which installs before this one: its node
 # Collectors scrape the ServiceMonitor, the metrics NetworkPolicy admits their
-# namespace, and traces go to its traces gateway. The chart defaults the first
-# two on; the e2e targets turn them off because their clusters have no
-# monitoring CRDs.
+# namespace, and traces go to the node Collector on the controller's node. The
+# chart defaults the first two on; the e2e targets turn them off because their
+# clusters have no monitoring CRDs.
 #
-# insecure is plaintext gRPC inside the cluster: the nktp chart configures no
-# TLS on its gateway receivers.
+# insecure is plaintext gRPC inside the cluster: the node Collector's OTLP
+# receiver takes plaintext from workloads and forwards to the traces gateway
+# over mTLS. The gateways accept only Collectors' client certificates.
 metrics:
   networkPolicy:
     enabled: true
@@ -179,7 +180,7 @@ serviceMonitor:
 tracing:
   enabled: true
   serviceName: nke-controller
-  endpoint: nktp-gateway-traces-collector.nktp.svc.cluster.local:4317
+  endpoint: nktp-daemonset-collector.nktp.svc.cluster.local:4317
   insecure: true
 
 # /readyz, not /api/version. /api/version proves only that HTTP is serving;
@@ -224,7 +225,7 @@ env:
 # container listens on 8080, and setting port: 30080 here only renames the
 # in-cluster port while leaving nothing reachable from the node. That is the
 # mistake this file made on its first run -- a live site's release shows
-# service.port: 30080, but it reaches CWE through the separate NodePort
+# service.port: 30080, but it reaches the controller through the separate NodePort
 # Service nkectl's bootstrap applies (controller-nodeport.yaml), not through that.
 #
 # nodePort renders a SECOND Service beside the ClusterIP one, which is the
@@ -236,7 +237,7 @@ service:
 
 secrets:
   # Names the Secret ../nke-base-config/35-dgxc-tenant-credentials.yaml.tmpl
-  # renders. Empty means CWE never receives DGXC_TENANT_USER and
+  # renders. Empty means the controller never receives DGXC_TENANT_USER and
   # DGXC_TENANT_PASSWORD, and every tenant create fails at user-data rendering
   # -- one of that run's eleven failures. The chart injects them only
   # when this names a Secret carrying keys `user` and `password`.

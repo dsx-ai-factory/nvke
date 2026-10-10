@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/workflow"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
 	"github.com/dsx-ai-factory/nke/controller/internal/rollout"
 	controllerpreflights "github.com/dsx-ai-factory/nke/controller/internal/rollout/preflights"
 )
@@ -145,10 +146,11 @@ func TestRegisterRolloutWorkflow_DifferentNames_BothRegistered(t *testing.T) {
 // must satisfy the interface.
 type fakeFactoryCluster struct{}
 
-func (fakeFactoryCluster) ID() uuid.UUID             { return uuid.Nil }
-func (fakeFactoryCluster) Name() string              { return "fake" }
-func (fakeFactoryCluster) KubernetesVersion() string { return "v1.30.0" }
-func (fakeFactoryCluster) ControlPlaneVIP() string   { return "10.0.0.1:6443" }
+func (fakeFactoryCluster) ID() uuid.UUID                                  { return uuid.Nil }
+func (fakeFactoryCluster) Name() string                                   { return "fake" }
+func (fakeFactoryCluster) KubernetesVersion() string                      { return "v1.30.0" }
+func (fakeFactoryCluster) ControlPlaneVIP() string                        { return "10.0.0.1:6443" }
+func (fakeFactoryCluster) OIDCProviders() []controllerconfig.OIDCProvider { return nil }
 func (fakeFactoryCluster) ControlPlaneNodes() []rollout.Node {
 	return nil
 }

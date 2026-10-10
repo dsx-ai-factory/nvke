@@ -1,0 +1,38 @@
+[
+  {
+    "namespace": "cwe-integration",
+    "channel": "stable",
+    "controlPlaneClass": "local",
+    "template": {
+      "controlPlaneKubernetesVersion": "1.36.1",
+      "cniPlugin": "ovn-kubernetes",
+      "controlPlaneConfig": {
+        "desiredCount": 1,
+        "provisioningMonitorDisabled": true,
+        "infra": {
+          "machineTemplate": {
+            "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
+            "kind": "DockerMachineTemplate",
+            "spec": {
+              "template": {
+                "metadata": {
+                  "annotations": {
+                    "cluster.x-k8s.io/paused": "true"
+                  }
+                },
+                "spec": {}
+              }
+            }
+          }
+        }
+      },
+      "infra": {
+        "cluster": {
+          "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
+          "kind": "DockerCluster",
+          "spec": {}
+        }
+      }
+    }
+  }
+]

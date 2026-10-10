@@ -50,7 +50,7 @@ primary:
 #
 # Without this the SBOM cannot say which database it installs. Two installs a
 # week apart get different binaries with nothing in the tree to show it, which
-# for the component holding all CWE state is the worst place for it.
+# for the component holding all controller state is the worst place for it.
 #
 # This digest is what `latest` resolved to on a live site controller, read
 # back from the running pod's imageID. The chart's own appVersion claims 18.3.0;

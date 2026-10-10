@@ -279,7 +279,7 @@ func rebootCAPINode(ctx workflow.Context, input RebootNodeInput, rebootAttempt i
 	nodeID := input.NodeID
 	message := fmt.Sprintf("Rebooting node (attempt: %d): %s", rebootAttempt, input.Reason)
 
-	// Set the rebooting node condition in CWE db
+	// Set the rebooting node condition in the controller db
 	if err := updateNodeRebootingCondition(ctx, nodeID, db.ConditionStatusTrue, message); err != nil {
 		return time.Time{}, fmt.Errorf("failed to update node conditions: %w", err)
 	}

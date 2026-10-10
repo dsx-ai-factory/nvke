@@ -1,14 +1,14 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package sitecluster turns a bootstrap site spec into the CWE request that creates
+// Package sitecluster turns a bootstrap site spec into the controller request that creates
 // the cluster from it.
 //
 // It is the whole of the translation between the two vocabularies. The
-// site spec describes hosts an operator already owns; CWE's API describes a
+// site spec describes hosts an operator already owns; the controller API describes a
 // Cluster API cluster. Keeping the mapping in one function, away from the
 // command that runs it, means it can be read and tested as what it is: a
-// statement of how a site cluster is expressed to CWE.
+// statement of how a site cluster is expressed to the controller.
 package sitecluster
 
 import (
@@ -27,12 +27,12 @@ const (
 	provisionedMachineTemplateKind = "ProvisionedMachineTemplate"
 )
 
-// ClusterRequest builds the CWE CreateCluster request that turns inv's
+// ClusterRequest builds the controller CreateCluster request that turns inv's
 // pre-provisioned hosts into a Kubernetes cluster.
 //
 // The shape of the request is what makes it a site cluster:
 //
-//   - the request carries an infra payload and no nico payload. That is how CWE
+//   - the request carries an infra payload and no nico payload. That is how the controller
 //     selects CAPI mode over Forge mode.
 //   - infra.cluster is a ProvisionedCluster whose site spec is the hosts
 //     from the file. The provider hands one host to each machine; it creates
@@ -116,7 +116,7 @@ func provisionedHosts(inv *sitespec.SiteSpec) ([]map[string]interface{}, error) 
 }
 
 // provisionedCluster builds the infrastructure resource from the site hosts.
-// CWE receives the VIP separately in the create request.
+// The controller receives the VIP separately in the create request.
 func provisionedCluster(name string, hosts []map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"apiVersion": provisionedAPIVersion,
@@ -146,11 +146,11 @@ func provisionedMachineTemplate() map[string]interface{} {
 }
 
 // clusterNetwork passes the site spec's CIDRs through, or nil when it named
-// neither and CWE's own defaults apply.
+// neither and the controller's own defaults apply.
 //
-// CWE rejects non-default CIDRs for any CNI plugin other than ovn-kubernetes,
+// The controller rejects non-default CIDRs for any CNI plugin other than ovn-kubernetes,
 // so a site spec that sets them with calico fails at create time with that
-// message. That check belongs to CWE, which owns the rule; restating it here
+// message. That check belongs to the controller, which owns the rule; restating it here
 // would be a second copy to keep in step.
 func clusterNetwork(inv *sitespec.SiteSpec) *api.ClusterNetworkCreateConfig {
 	if inv.Cluster.PodCidr == "" && inv.Cluster.ServiceCidr == "" {

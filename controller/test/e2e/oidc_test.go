@@ -92,17 +92,17 @@ func validateOIDCPostDelete(test *tenantTest) {
 	}, Label("spire-oidc"))
 }
 
-// skipIfNKEOIDCDisabled skips the current spec when the CWE deployment does not
+// skipIfNKEOIDCDisabled skips the current spec when the controller deployment does not
 // have tenant OIDC JWT auth enabled (NKE_OIDC_AUTH_ENABLED != true).
 func skipIfNKEOIDCDisabled(ctx context.Context, k8s client.Client) {
 	GinkgoHelper()
 	if !expectSucceed(nke.OIDCEnabled(ctx, k8s)) {
-		Skip("OIDC is disabled in the CWE deployment (NKE_OIDC_AUTH_ENABLED != true)")
+		Skip("OIDC is disabled in the controller deployment (NKE_OIDC_AUTH_ENABLED != true)")
 	}
 }
 
 // verifyIdentity runs a credential pod as id and asserts it maps to wantUser,
-// has the node permissions CWE needs, and can make a real list call against the
+// has the node permissions the controller needs, and can make a real list call against the
 // tenant API.
 func verifyIdentity(ctx context.Context, test *tenantTest, id tenantauth.Identity, wantUser string) {
 	GinkgoHelper()

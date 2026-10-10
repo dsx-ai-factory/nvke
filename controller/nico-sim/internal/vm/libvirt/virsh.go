@@ -33,8 +33,10 @@ type virsh struct {
 }
 
 const (
-	startAttempts   = 3
-	startRetryDelay = 2 * time.Second
+	startAttempts    = 3
+	startRetryDelay  = 2 * time.Second
+	defineAttempts   = 6
+	defineRetryDelay = 30 * time.Second
 )
 
 func (r *virsh) EnsureBridge(ctx context.Context, bridgeName, bridgeCIDR string) error {
@@ -93,7 +95,11 @@ func (r *virsh) CreateAndStart(ctx context.Context, spec vm.InstanceSpec) (strin
 		return "", fmt.Errorf("failed to write domain xml: %w", err)
 	}
 
-	if _, err := r.runVirsh(ctx, "define", xmlPath); err != nil {
+	// On the arm64 CI runners a define can fail for a while with "Unable to find 'efi' firmware"; a later one works.
+	if err := retry(ctx, defineAttempts, defineRetryDelay, func() error {
+		_, defineErr := r.runVirsh(ctx, "define", xmlPath)
+		return defineErr
+	}); err != nil {
 		return "", fmt.Errorf("virsh define failed: %w", err)
 	}
 	if _, err := r.runVirsh(ctx, "autostart", spec.DomainName); err != nil {

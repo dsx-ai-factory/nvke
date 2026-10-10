@@ -111,6 +111,14 @@ jobs:
       - name: Check release-relevant base images are digest-pinned
         run: make base-image-check
 
+      # The grype scans themselves need a vulnerability database, a network and
+      # an NVIDIA runner, so they are not in the merge gate and do not run on a
+      # fork pull request. The policy their ignore list has to satisfy is pure
+      # file reading, so it is checked here, where it gates the pull request
+      # that adds the entry rather than the weekly scan long afterwards.
+      - name: Check .grype.yaml exceptions are scoped, owned and in date
+        run: make grype-ignore-check
+
       - name: Build
         run: make version-check
 
@@ -127,3 +135,13 @@ jobs:
           CGO_ENABLED: "1"
           GO_TEST_FLAGS: -race
         run: make -C cluster-api-provider-provisioned test
+
+      # Likewise the release module's only unit-test lane. This is what makes
+      # TestRepositoryFilesAreValid a merge-gate check rather than a test
+      # someone has to remember to run: it loads release/registry.yaml,
+      # policy.yaml and qualification.yaml, so a selector naming a capability no
+      # stream declares fails here.
+      # No -race -- the planner is sequential and reads git tags through one
+      # subprocess at a time.
+      - name: Test release qualification tooling
+        run: make -C release test

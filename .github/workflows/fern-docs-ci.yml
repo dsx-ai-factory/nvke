@@ -1,0 +1,72 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Required merge gate for documentation changes. Runs without secrets; no
+# publishing. Advisory publishing and the API reference render are in api-docs.yml.
+
+name: Fern Docs CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  ## --- OPTION: NVIDIA copy-PR-bot trigger ---
+  ## Replace the pull_request block above with:
+  # push:
+  #   branches:
+  #     - "pull-request/[0-9]+"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fern-docs-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fern-check:
+    name: Fern Check
+    runs-on: ubuntu-latest
+    if: github.repository == 'dsx-ai-factory/nke'
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Detect docs changes
+        id: changes
+        run: |
+          if git diff --name-only "origin/${GITHUB_BASE_REF:-main}"...HEAD \
+              | grep -qE '^(docs/|fern/|cli/docs/|controller/docs/|tools/check-docs-mdx|\.github/workflows/fern-docs-ci\.yml)'; then
+            echo "docs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check MDX safety
+        if: steps.changes.outputs.docs == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          paths=()
+          for d in docs fern cli/docs controller/docs; do
+            [ -d "$d" ] && paths+=("$d")
+          done
+          python3 tools/check-docs-mdx \
+            --exclude 'docs/qualification/*' \
+            --exclude '*/AGENTS.md' \
+            "${paths[@]}"
+
+      - name: Check the site definition
+        if: steps.changes.outputs.docs == 'true' || github.event_name == 'workflow_dispatch'
+        working-directory: fern
+        run: npx -y fern-api@latest check
+
+      - name: Check MDX validity
+        if: steps.changes.outputs.docs == 'true' || github.event_name == 'workflow_dispatch'
+        working-directory: fern
+        run: npx -y fern-api@latest docs md check

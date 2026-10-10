@@ -35,9 +35,9 @@ import (
 // 200 mean anything; path-prefix admission is admit_test.go's job.
 var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", "authn-spire"), func() {
 	var (
-		runtimeClient client.Client
-		admission     spireAdmission
-		cweImage      string
+		runtimeClient   client.Client
+		admission       spireAdmission
+		controllerImage string
 	)
 
 	BeforeEach(func(ctx SpecContext) {
@@ -90,12 +90,12 @@ var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", 
 
 		// NKE's own image, the one on the node carrying bash, curl and the
 		// Workload API JWT fetcher.
-		cweImage, err = cweContainerImage(tctx, clientset)
+		controllerImage, err = controllerContainerImage(tctx, clientset)
 		Expect(err).NotTo(HaveOccurred(), "read the NKE deployment's image")
 	})
 
 	It("admits an attested workload's JWT-SVID and rejects one minted for the wrong audience", func(ctx SpecContext) {
-		pod := spireProbePod(cweImage, admission)
+		pod := spireProbePod(controllerImage, admission)
 
 		_, message, err := kube.RunPod(ctx, runtimeClient, pod, spireProbeContainer, spireProbeTimeout)
 		Expect(err).NotTo(HaveOccurred(),
@@ -231,13 +231,13 @@ func parseSpireAdmission(raw []byte) (spireAdmission, bool, error) {
 	return spireAdmission{}, false, nil
 }
 
-func cweContainerImage(ctx context.Context, clientset kubernetes.Interface) (string, error) {
+func controllerContainerImage(ctx context.Context, clientset kubernetes.Interface) (string, error) {
 	deployment, err := clientset.AppsV1().Deployments(controller.Namespace()).
 		Get(ctx, controller.Deployment(), metav1.GetOptions{})
 	if err != nil {
 		return "", fmt.Errorf("getting Deployment %s/%s: %w", controller.Namespace(), controller.Deployment(), err)
 	}
-	container := cweContainer(deployment)
+	container := controllerContainer(deployment)
 	if container == nil {
 		return "", fmt.Errorf("deployment %s/%s has no container named %s", controller.Namespace(), controller.Deployment(), controller.Deployment())
 	}
@@ -416,8 +416,8 @@ func TestParseProbeReport(t *testing.T) {
 	}
 }
 
-// TestCweContainerImage pins the lookup the probe pod's image comes from.
-func TestCweContainerImage(t *testing.T) {
+// TestControllerContainerImage pins the lookup the probe pod's image comes from.
+func TestControllerContainerImage(t *testing.T) {
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Namespace: controller.Namespace(), Name: controller.Deployment()},
 		Spec: appsv1.DeploymentSpec{
@@ -432,15 +432,15 @@ func TestCweContainerImage(t *testing.T) {
 			},
 		},
 	}
-	got, err := cweContainerImage(context.Background(), fake.NewClientset(deployment))
+	got, err := controllerContainerImage(context.Background(), fake.NewClientset(deployment))
 	if err != nil {
-		t.Fatalf("cweContainerImage: %v", err)
+		t.Fatalf("controllerContainerImage: %v", err)
 	}
 	if got != "docker.local/cwe:tilt" {
-		t.Fatalf("cweContainerImage = %q", got)
+		t.Fatalf("controllerContainerImage = %q", got)
 	}
 
-	if _, err := cweContainerImage(context.Background(), fake.NewClientset()); err == nil {
+	if _, err := controllerContainerImage(context.Background(), fake.NewClientset()); err == nil {
 		t.Fatal("expected an error when the NKE deployment cannot be read")
 	}
 }

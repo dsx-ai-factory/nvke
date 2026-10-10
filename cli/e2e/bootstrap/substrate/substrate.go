@@ -9,16 +9,16 @@
 // containers end to end: it derives the node image, starts them, waits for
 // the agent, and destroys them afterwards.
 //
-// Modelled on CWE's own provisioned-provider E2E substrate
-// (test/e2e/internal/substrate in the CWE repo), with two differences that
+// Modelled on the controller's own provisioned-provider E2E substrate
+// (test/e2e/internal/substrate in the former cloud-workflow-engine repository), with two differences that
 // follow from nkectl having no existing cluster to attach to:
 //
 //   - This package creates its own private network rather than joining one
-//     that already exists. CWE's substrate joins the management cluster's
-//     kind network because CWE already runs there; nkectl's ephemeral
+//     that already exists. The controller's substrate joins the management cluster's
+//     kind network because the controller already runs there; nkectl's ephemeral
 //     bootstrap cluster does not exist yet when these fixture nodes come up,
 //     so there is nothing to join.
-//   - Addresses are assigned, not discovered. CWE's substrate reads addresses
+//   - Addresses are assigned, not discovered. The controller's substrate reads addresses
 //     back from the runtime specifically to avoid assuming IPAM behavior on a
 //     shared network it does not own. This package owns its network outright,
 //     so pinning addresses is safe, and the fixture's site spec file needs a
@@ -125,7 +125,7 @@ type Node struct {
 	// Name is what the node will be called in Kubernetes — passed through the
 	// site spec file's node name and ends up as kubeadm's --node-name.
 	Name string
-	// IP is the address assigned on the substrate network. It is what CWE
+	// IP is the address assigned on the substrate network. It is what the controller
 	// dials for node-agent and what kubeadm advertises.
 	IP string
 	// Container is the container name.

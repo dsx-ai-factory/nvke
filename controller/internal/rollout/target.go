@@ -9,6 +9,8 @@ package rollout
 
 import (
 	"github.com/google/uuid"
+
+	"github.com/dsx-ai-factory/nke/controller/internal/controllerconfig"
 )
 
 // NodeRole identifies whether a Node is a control-plane node or a worker.
@@ -42,4 +44,5 @@ type Cluster interface {
 	ControlPlaneVIP() string
 	ControlPlaneNodes() []Node
 	Nodes() []Node
+	OIDCProviders() []controllerconfig.OIDCProvider
 }

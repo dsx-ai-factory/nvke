@@ -23,7 +23,7 @@ type KeySource interface {
 }
 
 // ErrKeysStale reports that an issuer's cached key set has aged out and could not
-// be refreshed. Reported as ReasonJWKSStale rather than ReasonBadSignature: CWE
+// be refreshed. Reported as ReasonJWKSStale rather than ReasonBadSignature: the controller
 // is wrong, not the token.
 var ErrKeysStale = errors.New("issuer key set is stale")
 
@@ -42,7 +42,7 @@ const (
 	ReasonNotYetValid         FailureReason = "not_yet_valid"
 	ReasonAudienceMismatch    FailureReason = "audience_mismatch"
 	ReasonAlgorithmNotAllowed FailureReason = "algorithm_not_allowed"
-	// ReasonJWKSStale is CWE's own failure, not the token's. See ErrKeysStale.
+	// ReasonJWKSStale is the controller's own failure, not the token's. See ErrKeysStale.
 	ReasonJWKSStale FailureReason = "jwks_stale"
 	// ReasonNotAdmitted is the only reason the caller renders as 403; every
 	// other one is 401.
@@ -52,7 +52,7 @@ const (
 const (
 	// clockSkewLeeway is applied to both "exp" and "nbf". Kubernetes mints bound
 	// service account tokens with nbf == iat and golang-jwt applies no leeway of
-	// its own, so a CWE pod a second behind the apiserver would reject freshly
+	// its own, so a controller pod a second behind the apiserver would reject freshly
 	// minted tokens.
 	clockSkewLeeway = 60 * time.Second
 
@@ -287,7 +287,7 @@ func (v *Verifier) Verify(ctx context.Context, token string) (*Principal, error)
 	// GetSubject returns ("", nil) for an absent "sub" and the parser does not
 	// require the claim, so without this a token with no "sub" authenticates as a
 	// Principal nothing can authorize. bad_signature, not not_admitted, whose 403
-	// would say CWE knows who this is.
+	// would say the controller knows who this is.
 	if subject == "" {
 		return nil, entry.failure(ReasonBadSignature,
 			errors.New("token carries no \"sub\" claim, so it names no principal"))

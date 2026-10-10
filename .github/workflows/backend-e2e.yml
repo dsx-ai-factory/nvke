@@ -65,7 +65,7 @@ on:
         default: false
       install-cni-after-init:
         description: >-
-          Have CWE initialize the first control-plane before invoking the node
+          Have the controller initialize the first control-plane before invoking the node
           agent's stand-alone InstallCNI RPC. This avoids coupling CNI apply to
           the kube-vip startup race in focused CAPD lanes.
         required: false
@@ -74,34 +74,13 @@ on:
       nkectl-smoke:
         description: >-
           Run hack/ci/nkectl-smoke.sh once the suite passes: drive nkectl against
-          the CWE this lane deployed. CAPD only for now.
+          the controller this lane deployed. CAPD only for now.
         required: false
         type: boolean
         default: false
       needs-capnico-source:
         description: >-
           Stage the pinned cluster-api-provider-nico Go module source for the suite.
-        required: false
-        type: boolean
-        default: false
-      provision-cp-with-controller:
-        description: >-
-          Deploy CWE with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true,
-          so the control plane is provisioned by the cluster-level control-plane
-          controller (no control-plane node pool). The caller pairs this with a
-          cp-controller label filter. Off by default: the flag-off lanes keep the
-          node-pool control plane. Ignored when single-runner-control-plane-modes is set, which
-          drives the flag per leg inside the CI script.
-        required: false
-        type: boolean
-        default: false
-      single-runner-control-plane-modes:
-        description: >-
-          Run both control-plane modes back to back on one runner and one kind
-          cluster: the cp-controller leg first (flag on), then the node-pool leg
-          (flag off) after a light CWE redeploy. The legs' label filters are
-          derived from the backend, so label-filter and
-          provision-cp-with-controller are ignored on this path.
         required: false
         type: boolean
         default: false
@@ -161,20 +140,9 @@ jobs:
       NKE_E2E_USE_STACK: ${{ inputs.use-nke-stack }}
       NKE_E2E_STACK_CHART: ${{ inputs.stack-chart }}
       NKE_E2E_STACK_VERSION: ${{ inputs.stack-version }}
-      # Deploy CWE flag-on for the cp-controller lane; the CI script forwards this
-      # to the Tilt deploy and the e2e binary. `false` keeps the node-pool control
-      # plane. Note this is the mode, not an override of CWE's default: CWE's own
-      # default is now true (#1054), and both the Tiltfile and deploy-stack.sh only
-      # set the container env when the value is non-empty. An empty value would
-      # therefore mean flag-on. The CI script resolves empty to false before any
-      # use, so passing `''` here is safe -- but pass the mode you want.
-      PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER: ${{ inputs.provision-cp-with-controller }}
       # These backends only observe a container restart, not a real boot: soft reboot can never
       # show a detectable change, so skip straight to hard.
       NODE_REBOOT_SOFT_REBOOT_ENABLED: false
-      # When set, the CI script runs both control-plane modes sequentially on this
-      # one runner/cluster and drives the per-leg label filter and flag itself.
-      NKE_E2E_SINGLE_RUNNER_CONTROL_PLANE_MODES: ${{ inputs.single-runner-control-plane-modes }}
       KIND_CLUSTER_NAME: cwe-${{ inputs.backend }}-${{ github.run_id }}-${{ github.run_attempt }}
       CAPNICO_SOURCE_SRC: ${{ inputs.needs-capnico-source && format('{0}/.capnico/cluster-api-provider-nico', github.workspace) || '' }}
     steps:
