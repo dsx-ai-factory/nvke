@@ -499,7 +499,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			if spec.validate.brownfieldOIDC {
 				// A cluster on an OIDC-enabled site is always born OIDC-on, but
 				// brownfield enablement needs an OIDC-off cluster to act on. Turn the
-				// controller create default off (the OIDC config env stays, so the enable
+				// controller create default off (the OIDC issuer settings stay, so the enable
 				// workflow still runs once it is flipped back on) so this cluster is
 				// created OIDC-off; validateBrownfieldOIDC flips it on and enables.
 				// Restored in AfterAll.

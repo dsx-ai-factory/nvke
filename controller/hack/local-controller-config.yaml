@@ -1,0 +1,87 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# nke-controller-config for host-local runs: make run, make run-local,
+# make run-remote, make debug, and the gofail e2e worker. A deployment gets the
+# same file from the chart instead. Every key is required, because
+# internal/controllerconfig has no defaults; TestLocalControllerConfig checks
+# that this file still loads and sets them all.
+#
+# To change a setting for your own runs, copy this file under .local/ and point
+# CONTROLLER_CONFIG_PATH at the copy.
+fieldManager:
+  name: cloud-workflow-engine
+  rebootMachineName: cloud-workflow-engine-reboot-machine
+  machineHealthIssueName: cloud-workflow-engine-machine-health-issue
+managedByLabelValue: cloud-workflow-engine
+metricsListenAddress: 127.0.0.1:9090
+supportedInfraProviders:
+  - nico
+tracing:
+  enabled: false
+  endpoint: ""
+  insecure: true
+  serviceName: cloud-workflow-engine
+certRenewal:
+  controllerEnabled: true
+  interval: 12h
+  thresholdDays: 30
+kubeadmImageRepository: registry.k8s.io
+cniImageRegistry: ""
+installCNIAfterInit: false
+nicoControllersEnabled: true
+profilesDir: test/fixtures/profiles
+runbooksDir: test/fixtures/runbooks
+tenantAccessEnabled: false
+nodeAgent:
+  spireAttestationMethod: tpm
+  dsxImds:
+    endpoint: http://169.254.169.254
+    pluginChecksum: ""
+    operatorTenant: ""
+  tlsJWT:
+    enabled: false
+    issuer: ""
+    jwksURI: ""
+    algorithms: []
+    subjectTrustDomain: ""
+    dsxIdentityExchangeURL: ""
+    subjectTenant: ""
+    subjectService: ""
+  externalMTLSEnabled: false
+oidc:
+  managementOIDCAuth:
+    enabled: false
+    issuerURL: ""
+    discoveryURL: ""
+    caBundleSecretRef:
+      namespace: ""
+      name: ""
+      key: ""
+  providers: []
+temporal:
+  hostPort: localhost:7233
+  namespace: cloud-workflow-engine
+  taskQueue: cloud-workflow-engine-tasks
+  tls:
+    caCert: ""
+    clientCert: ""
+    clientKey: ""
+    serverName: ""
+spire:
+  spiffeEnabled: false
+  spiffeEndpointSocket: unix:///tmp/spire-agent/agent.sock
+  spiffeJWTExchangeEndpoint: ""
+  serverNamespace: spire-server
+  className: spire-mgmt-spire
+  tpmPubhashesConfigMapName: tpm-pubhashes
+  serverPort: "9091"
+  joinTokenTTL: 1h
+teleport:
+  enabled: false
+  identityFile: ""
+  proxyAddress: ""
+  environment: non-prod
+  managedByLabelValue: nke-cloud-workflow-engine
+  tokenNamePrefix: nke-cwe-
+permissiveMode: false

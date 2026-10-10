@@ -1281,11 +1281,13 @@ for controller in \
     /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth --help >/dev/null 2>&1
 done
 runner_exec kubectl -n "${CONTROLLER_NAME}" rollout status "deployment/${CONTROLLER_NAME}" --timeout=5m
-for env_name in TENANT_ACCESS_ENABLED NKE_OIDC_AUTH_ENABLED; do
-  env_value="$(runner_exec kubectl -n "${CONTROLLER_NAME}" get "deployment/${CONTROLLER_NAME}" \
-    -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"${env_name}\")].value}")"
-  if [[ "${env_value}" != "true" ]]; then
-    log "${env_name} must be true in the CAPD E2E deployment, got ${env_value:-<empty>}"
+# Both deploy paths set these as chart values, which the chart renders into
+# nke-controller-config.
+controller_values="$(runner_exec helm -n "${CONTROLLER_NAME}" get values "${CONTROLLER_NAME}" --all -o json)"
+for setting in tenantAccess.enabled nkeOIDCAuth.enabled; do
+  value="$(jq -r ".${setting}" <<<"${controller_values}")"
+  if [[ "${value}" != "true" ]]; then
+    log "${setting} must be true in the CAPD E2E deployment, got ${value:-<empty>}"
     exit 1
   fi
 done

@@ -62,7 +62,7 @@ NVKECTL_BIN="${STATE_DIR}/nvkectl"
 NVKECTL_SMOKE_KUBECONFIG="${E2E_KUBECONFIG}"
 TMP_DIR="${STATE_DIR}"
 BACKEND=nico-vms
-# The controller runs with NKE_OIDC_AUTH_ENABLED here, so the smoke's no-token control is
+# The controller runs with OIDC enabled here, so the smoke's no-token control is
 # valid: a call without a token must fail.
 export NKE_E2E_REQUIRE_AUTHN=true
 TILT_PGID=""
@@ -653,10 +653,10 @@ wait_for_tilt() {
 wait_for_tilt
 
 kubectl -n nke-controller rollout status deployment/nke-controller --timeout=5m
-for env_name in TENANT_ACCESS_ENABLED NKE_OIDC_AUTH_ENABLED; do
-  env_value="$(kubectl -n nke-controller get deployment/nke-controller \
-    -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"${env_name}\")].value}")"
-  [[ "${env_value}" == "true" ]] || fail "${env_name} must be true in the controller deployment, got ${env_value:-<empty>}"
+# Tilt passes both as chart values, which the chart renders into nke-controller-config.
+for setting in tenantAccess.enabled nkeOIDCAuth.enabled; do
+  value="$(helm -n nke-controller get values nke-controller --all -o json | jq -r ".${setting}")"
+  [[ "${value}" == "true" ]] || fail "${setting} must be true in the nke-controller release, got ${value:-<empty>}"
 done
 kubectl -n capnico-system rollout status deployment/controller-manager --timeout=5m
 curl -fsS --max-time 5 http://localhost:18080/healthz >/dev/null || fail "nico-vms does not answer on localhost:18080"

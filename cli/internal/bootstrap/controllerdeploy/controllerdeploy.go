@@ -144,8 +144,8 @@ const (
 	cweSvcPort = "http"
 
 	// profilesPath is where the controller reads OS and config profiles from
-	// (PROFILES_DIR). Set explicitly rather than left to the chart's empty
-	// default, so PROFILES_DIR names the empty /profiles the controller image
+	// (profilesDir). Set explicitly rather than left to the chart's empty
+	// default, so profilesDir names the empty /profiles the controller image
 	// ships rather than resolving somewhere else. nvkectl deploys no profiles
 	// into it; a site gets them from its deploy repository.
 	profilesPath = "/profiles"

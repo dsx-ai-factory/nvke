@@ -1,8 +1,8 @@
-# Every environment variable the chart sets whose setting nke-controller-config
-# carries, mapped to its config.yaml key. The chart refuses an env entry that
-# names one (templates/_helpers.tpl), and the drift tests in
-# internal/controllerconfig check this list against config.Config,
-# controllerconfig.Config and deployment.yaml.
+# Every environment variable whose setting moved into nke-controller-config,
+# mapped to its config.yaml key. The controller no longer reads them. The chart
+# refuses an env entry that names one (templates/_helpers.tpl), and the drift
+# tests in internal/controllerconfig check this list against config.Config,
+# controllerconfig.Config, ApplyTo and deployment.yaml.
 FIELD_MANAGER_NAME: fieldManager.name
 FIELD_MANAGER_REBOOT_MACHINE_NAME: fieldManager.rebootMachineName
 FIELD_MANAGER_MACHINE_HEALTH_ISSUE_NAME: fieldManager.machineHealthIssueName

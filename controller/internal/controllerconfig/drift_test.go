@@ -3,10 +3,10 @@
 
 package controllerconfig_test
 
-// These tests keep controllerconfig.Config in step with config.Config while
-// both exist. Every environment variable config.Config parses is either
-// migrated to a config.yaml key or stays on the environment path for a stated
-// reason, and each claim is checked against the Go types and the chart.
+// config.Config takes each field either from an environment variable (an env
+// tag) or from nke-controller-config (a controllerconfig tag naming its key).
+// These tests check that split against the list of retired variables, the Go
+// types, ApplyTo, and the chart.
 
 import (
 	"os"
@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,9 +25,9 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllerconfig"
 )
 
-// migratedEnvFile maps each environment variable the chart sets whose setting
-// nke-controller-config carries to its config.yaml key. The chart's env guard
-// reads the same file, so this is the only copy of the list.
+// migratedEnvFile maps each environment variable whose setting moved into
+// nke-controller-config to its config.yaml key. The chart's env guard reads the
+// same file, so this is the only copy of the list.
 const migratedEnvFile = "../../deploy/charts/controller/files/controller-config-env.yaml"
 
 // loadMigrated reads migratedEnvFile.
@@ -96,7 +97,7 @@ var stayEnv = map[string]string{
 	"NKE_OIDC_AUTH_AUTO_MIGRATION_ENABLED":                  chartUnset,
 }
 
-// configMapOnly lists config.yaml keys that have no environment variable,
+// configMapOnly lists config.yaml keys that never had an environment variable,
 // because the ConfigMap is the first place they exist.
 var configMapOnly = []string{"oidc.providers"}
 
@@ -107,30 +108,31 @@ const chartDeployment = "../../deploy/charts/controller/templates/deployment.yam
 // Uppercase-only, so volume, port, and container names do not match.
 var envNamePattern = regexp.MustCompile(`(?m)^\s+- name: ([A-Z][A-Z0-9_]*)\s*$`)
 
-func TestEveryConfigEnvVarIsClassified(t *testing.T) {
+func TestEveryConfigEnvVarStaysOnTheEnvironment(t *testing.T) {
 	t.Parallel()
 	migrated := loadMigrated(t)
 
-	parsed := envVarNames(reflect.TypeFor[config.Config](), "")
+	var parsed []string
+	for _, f := range configLeaves(t) {
+		if f.envName != "" {
+			parsed = append(parsed, f.envName)
+		}
+	}
 	require.NotEmpty(t, parsed)
 
 	for _, name := range parsed {
-		_, isMigrated := migrated[name]
-		_, staysEnv := stayEnv[name]
-		switch {
-		case isMigrated && staysEnv:
-			t.Errorf("%s is in both %s and stayEnv", name, migratedEnvFile)
-		case !isMigrated && !staysEnv:
-			t.Errorf("config.Config parses %s, but it is in neither %s nor stayEnv: "+
-				"add it to controllerconfig.Config and that file, or to stayEnv with a reason", name, migratedEnvFile)
+		if key, retired := migrated[name]; retired {
+			t.Errorf("config.Config parses %s, which nke-controller-config replaced as %s; read it from the file", name, key)
+			continue
+		}
+		if _, ok := stayEnv[name]; !ok {
+			t.Errorf("config.Config parses %s, which is not in stayEnv: "+
+				"add it to controllerconfig.Config and %s, or to stayEnv with a reason", name, migratedEnvFile)
 		}
 	}
-
-	for _, table := range []map[string]string{migrated, stayEnv} {
-		for name := range table {
-			if !slices.Contains(parsed, name) {
-				t.Errorf("%s is classified here, but config.Config no longer parses it; remove the entry", name)
-			}
+	for name := range stayEnv {
+		if !slices.Contains(parsed, name) {
+			t.Errorf("stayEnv lists %s, but config.Config no longer parses it; remove the entry", name)
 		}
 	}
 }
@@ -158,7 +160,72 @@ func TestEveryMigratedKeyExistsOnce(t *testing.T) {
 	}
 }
 
-func TestClassificationMatchesTheChart(t *testing.T) {
+func TestEveryMigratedKeyHasOneConfigField(t *testing.T) {
+	t.Parallel()
+	migrated := loadMigrated(t)
+
+	fieldFor := make(map[string]string, len(migrated))
+	for _, f := range configLeaves(t) {
+		if f.fileKey == "" {
+			continue
+		}
+		if !slices.Contains(slices.Collect(mapValues(migrated)), f.fileKey) {
+			t.Errorf("config.Config.%s takes %s from the file, which %s does not list", f.name, f.fileKey, migratedEnvFile)
+		}
+		if other, taken := fieldFor[f.fileKey]; taken {
+			t.Errorf("config.Config.%s and config.Config.%s both take %s", f.name, other, f.fileKey)
+		}
+		fieldFor[f.fileKey] = f.name
+	}
+	for name, key := range migrated {
+		if _, ok := fieldFor[key]; !ok {
+			t.Errorf("no config.Config field takes %s (formerly %s); give the field a controllerconfig tag", key, name)
+		}
+	}
+}
+
+// ApplyTo is written out field by field. For each key, this sets that key alone
+// in the file and checks that ApplyTo changes exactly the field tagged with it,
+// and never a field the environment supplies.
+func TestApplyToFollowsTheTags(t *testing.T) {
+	t.Parallel()
+	migrated := loadMigrated(t)
+	leaves := configLeaves(t)
+
+	for _, key := range slices.Sorted(mapValues(migrated)) {
+		t.Run(key, func(t *testing.T) {
+			t.Parallel()
+
+			var file controllerconfig.Config
+			setNonZero(t, fileField(t, reflect.ValueOf(&file).Elem(), key), key)
+
+			var cfg config.Config
+			for _, f := range leaves {
+				if f.envName != "" {
+					setNonZero(t, reflect.ValueOf(&cfg).Elem().FieldByIndex(f.index), "env")
+				}
+			}
+			before := cfg
+			file.ApplyTo(&cfg)
+
+			var changed []string
+			for _, f := range leaves {
+				got := reflect.ValueOf(cfg).FieldByIndex(f.index)
+				was := reflect.ValueOf(before).FieldByIndex(f.index)
+				if f.envName != "" {
+					require.Equal(t, was.Interface(), got.Interface(), "ApplyTo changed config.Config.%s, which %s supplies", f.name, f.envName)
+					continue
+				}
+				if !got.IsZero() {
+					changed = append(changed, f.fileKey)
+				}
+			}
+			require.Equal(t, []string{key}, changed, "setting %s changed the fields tagged with these keys", key)
+		})
+	}
+}
+
+func TestChartSetsNoRetiredVariable(t *testing.T) {
 	t.Parallel()
 	migrated := loadMigrated(t)
 
@@ -170,37 +237,111 @@ func TestClassificationMatchesTheChart(t *testing.T) {
 	}
 	require.NotEmpty(t, chartSets, "found no environment variables in %s", chartDeployment)
 
-	for name := range migrated {
-		if !chartSets[name] {
-			t.Errorf("%s lists %s, but %s does not set it; move it to stayEnv as %q", migratedEnvFile, name, chartDeployment, chartUnset)
+	for name, key := range migrated {
+		if chartSets[name] {
+			t.Errorf("%s sets %s, which the controller no longer reads; render %s in nke-controller-config instead", chartDeployment, name, key)
 		}
 	}
 	for name, reason := range stayEnv {
 		if reason == chartUnset && chartSets[name] {
-			t.Errorf("stayEnv says the chart never sets %s, but %s does; migrate it", name, chartDeployment)
+			t.Errorf("stayEnv says the chart never sets %s, but %s does; move it into nke-controller-config", name, chartDeployment)
 		}
 	}
 }
 
-// envVarNames lists the variables caarlos0/env reads for typ, composing
-// envPrefix into nested struct names the same way the library does.
-func envVarNames(typ reflect.Type, prefix string) []string {
-	names := make([]string, 0, typ.NumField())
-	for i := range typ.NumField() {
-		field := typ.Field(i)
-		if !field.IsExported() {
-			continue
+// configLeaf is one field of config.Config that a value comes from: either an
+// environment variable or a key in nke-controller-config.
+type configLeaf struct {
+	name    string
+	index   []int
+	envName string
+	fileKey string
+}
+
+// configLeaves walks config.Config, composing envPrefix into variable names the
+// way caarlos0/env does. A field with neither tag must be a struct to descend into.
+func configLeaves(t *testing.T) []configLeaf {
+	t.Helper()
+	var walk func(typ reflect.Type, index []int, name, envPrefix string) []configLeaf
+	walk = func(typ reflect.Type, index []int, name, envPrefix string) []configLeaf {
+		var leaves []configLeaf
+		for i := range typ.NumField() {
+			field := typ.Field(i)
+			if !field.IsExported() {
+				continue
+			}
+			fieldIndex := append(slices.Clone(index), i)
+			fieldName := name + field.Name
+			envTag, hasEnv := field.Tag.Lookup("env")
+			fileKey, hasFile := field.Tag.Lookup("controllerconfig")
+			switch {
+			case hasEnv && hasFile:
+				t.Errorf("config.Config.%s has both an env and a controllerconfig tag", fieldName)
+			case hasEnv:
+				envName, _, _ := strings.Cut(envTag, ",")
+				leaves = append(leaves, configLeaf{name: fieldName, index: fieldIndex, envName: envPrefix + envName})
+			case hasFile:
+				leaves = append(leaves, configLeaf{name: fieldName, index: fieldIndex, fileKey: fileKey})
+			case field.Type.Kind() == reflect.Struct:
+				leaves = append(leaves, walk(field.Type, fieldIndex, fieldName+".", envPrefix+field.Tag.Get("envPrefix"))...)
+			default:
+				t.Errorf("config.Config.%s has neither an env nor a controllerconfig tag", fieldName)
+			}
 		}
-		if tag, ok := field.Tag.Lookup("env"); ok {
-			name, _, _ := strings.Cut(tag, ",")
-			names = append(names, prefix+name)
-			continue
+		return leaves
+	}
+	return walk(reflect.TypeFor[config.Config](), nil, "", "")
+}
+
+// fileField returns the field of a controllerconfig.Config value at a dotted
+// config.yaml key, following json tags.
+func fileField(t *testing.T, v reflect.Value, key string) reflect.Value {
+	t.Helper()
+	for _, part := range strings.Split(key, ".") {
+		found := false
+		for i := range v.NumField() {
+			name, _, _ := strings.Cut(v.Type().Field(i).Tag.Get("json"), ",")
+			if name == part {
+				v = v.Field(i)
+				found = true
+				break
+			}
 		}
-		if field.Type.Kind() == reflect.Struct {
-			names = append(names, envVarNames(field.Type, prefix+field.Tag.Get("envPrefix"))...)
+		require.True(t, found, "controllerconfig.Config has no %s", key)
+	}
+	return v
+}
+
+// setNonZero gives v a value that is not its zero value.
+func setNonZero(t *testing.T, v reflect.Value, label string) {
+	t.Helper()
+	switch {
+	case v.Type() == reflect.TypeFor[metav1.Duration]():
+		v.Set(reflect.ValueOf(metav1.Duration{Duration: 3 * time.Second}))
+	case v.Kind() == reflect.String:
+		v.SetString("set-" + label)
+	case v.Kind() == reflect.Bool:
+		v.SetBool(true)
+	case v.Kind() == reflect.Int || v.Kind() == reflect.Int64:
+		v.SetInt(7)
+	case v.Kind() == reflect.Float64:
+		v.SetFloat(0.5)
+	case v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.String:
+		v.Set(reflect.ValueOf([]string{"set-" + label}).Convert(v.Type()))
+	default:
+		t.Fatalf("setNonZero does not handle %s for %s", v.Type(), label)
+	}
+}
+
+// mapValues iterates a map's values.
+func mapValues(m map[string]string) func(func(string) bool) {
+	return func(yield func(string) bool) {
+		for _, v := range m {
+			if !yield(v) {
+				return
+			}
 		}
 	}
-	return names
 }
 
 // schemaKeys lists config.yaml's leaf keys by following json tags. A slice is

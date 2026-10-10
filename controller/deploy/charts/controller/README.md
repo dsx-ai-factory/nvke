@@ -54,7 +54,7 @@ A Helm chart to deploy the NVKE controller service
 | metrics.listenAddress | string | `"0.0.0.0:9090"` | listenAddress controls which interface the metrics server binds. Set to 0.0.0.0:<port> when a NetworkPolicy is in place to restrict access. |
 | metrics.networkPolicy.additionalNamespaces | list | `[]` | additionalNamespaces allows extra namespaces to scrape the metrics port. |
 | metrics.networkPolicy.enabled | bool | `true` | enabled controls whether a NetworkPolicy is created to restrict metrics port access to the Prometheus and Alloy scraper namespaces. |
-| metrics.port | int | `9090` | Port for the dedicated Prometheus metrics server. Must match METRICS_LISTEN_ADDRESS in the container env. |
+| metrics.port | int | `9090` | Port for the dedicated Prometheus metrics server. Must match the port in listenAddress. |
 | nameOverride | string | `"cloud-workflow-engine"` |  |
 | namespaceOverride | string | `""` | Deploy into this namespace instead of the release namespace (umbrella use). |
 | nkeOIDCAuth.caBundleSecret.key | string | `""` | Key in the Secret containing the OIDC CA bundle. |
@@ -94,8 +94,8 @@ A Helm chart to deploy the NVKE controller service
 | profiles.image.enabled | bool | `false` | Copy `/profiles` from a content image into profiles.path |
 | profiles.image.repository | string | `"nvcr.io/j7sbcjl3qgta/cwe-profiles"` | Repository, including registry, for the fleet profiles content image (not the nke-controller image above). Override to pull it from a different registry (e.g. a private mirror); pair any change with a matching `imagePullSecrets` entry. |
 | profiles.image.tag | string | `""` | Tag for the profiles content image (used when digest is empty) |
-| profiles.path | string | `""` | Directory mounted/read as PROFILES_DIR |
-| profiles.runbooksPath | string | `""` | Directory read as RUNBOOKS_DIR for config-profile hook scripts. Empty uses the runbooks/ directory under path. |
+| profiles.path | string | `""` | Directory mounted and read as profilesDir |
+| profiles.runbooksPath | string | `""` | Directory read as runbooksDir for config-profile hook scripts. Empty uses the runbooks/ directory under path. |
 | readinessProbe | string | `nil` |  |
 | releaseCRDs.install | bool | `true` | Install the MachineImage, ClusterRelease and NodePoolRelease CRDs with the chart. |
 | replicaCount | int | `1` |  |

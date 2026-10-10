@@ -217,8 +217,8 @@ remote_temporal_start() {
     echo "  • Remote Temporal: localhost:${frontend_port}"
     echo "  • Remote Temporal UI: http://localhost:${ui_port}"
     echo ""
-    echo "Set environment variables:"
-    echo "  export TEMPORAL_HOST_PORT=localhost:${frontend_port}"
+    echo "Run the controller against it with make run-remote, or set temporal.hostPort:"
+    echo "  localhost:${frontend_port} in a copy of hack/local-controller-config.yaml"
 }
 
 # Stop port-forward to remote Temporal

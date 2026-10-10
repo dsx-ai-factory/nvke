@@ -43,7 +43,9 @@ load("ext://uibutton", "cmd_button", "text_input")
 # Output — returned struct with:
 #   cwe_resource_deps  (list[string])           Tilt resource names the controller should depend on.
 #                                               Appended to the controller k8s_resource resource_deps.
-#   cwe_env_overrides  (dict[string, string])   Env vars injected into the controller's chart values.
+#   cwe_env_overrides  (dict[string, string])   Overrides for .env.tilt. Only the names this file passes to
+#                                               the controller's env list reach it; settings in
+#                                               nke-controller-config go through cwe_chart_flags.
 #   cwe_chart_flags    (list[string], optional) Additional Helm flags for the controller.
 #   spire_chart_flags  (list[string], optional) Additional Helm flags for SPIRE.
 #   spire_resource_deps (list[string], optional) Tilt resources SPIRE should depend on.
@@ -127,7 +129,7 @@ if "nico" in _provider_names and "nico-vm" in _provider_names:
          "from NGC) are mutually exclusive: both install a CAPNICo controller into " +
          "capnico-system and own the 'nico-credentials' secret. Enable only one.")
 
-# The controller accepts only the API provider blocks in SUPPORTED_INFRA_PROVIDERS. The
+# The controller accepts only the API provider blocks in supportedInfraProviders. The
 # 'nico' provider (nico-sim) serves the container and the nico-vms backends;
 # the e2e suite submits Infra blocks to the first and Nico blocks to the second.
 _supported_infra_providers = []
@@ -1039,7 +1041,7 @@ if _cwe_node_reboot_soft_reboot_enabled != "":
     })
 for _name in _required_cred_names:
     _cwe_chart_extra_env.append({"name": _name, "value": _required_creds[_name]})
-# AUTH_CONFIG_PATH and PERMISSIVE_MODE come from the apiAuth values below, not
+# AUTH_CONFIG_PATH and permissiveMode come from the apiAuth values below, not
 # from this env list: the chart owns the mount they point at.
 
 # Local node images include the CNI manifests package, so install CNI after

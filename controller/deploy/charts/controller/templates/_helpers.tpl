@@ -117,10 +117,10 @@ config.yaml
 {{- end }}
 
 {{/*
-Refuse an env entry for a variable nke-controller-config also carries: the file
-would hold the chart value while the environment held the override, and the
-controller validates the file at startup. files/controller-config-env.yaml lists
-those variables, each with the config.yaml key that replaces it.
+Refuse an env entry for a variable nke-controller-config carries: the controller
+reads that setting only from the file, so the entry would do nothing.
+files/controller-config-env.yaml lists those variables, each with the
+config.yaml key that replaces it.
 CONTROLLER_CONFIG_PATH is refused too: a second entry could point the controller
 at another file, or at none.
 */}}
@@ -141,9 +141,9 @@ at another file, or at none.
 {{- end }}
 
 {{/*
-RUNBOOKS_DIR, and runbooksDir in nke-controller-config: profiles.runbooksPath
-when set, else the runbooks/ directory the profiles image provides, else empty,
-which leaves the controller its own default of PROFILES_DIR/runbooks.
+runbooksDir in nke-controller-config: profiles.runbooksPath when set, else the
+runbooks/ directory the profiles image provides, else empty, which leaves the
+controller its own default of profilesDir/runbooks.
 */}}
 {{- define "controller.runbooksDir" -}}
 {{- if .Values.profiles.runbooksPath -}}

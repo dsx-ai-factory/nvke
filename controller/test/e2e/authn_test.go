@@ -68,8 +68,8 @@ var _ = Describe("NVKE API authentication", Label("authn"), func() {
 		GinkgoHelper()
 		if mode == authnModePermissive {
 			Skip(fmt.Sprintf(
-				"authentication is PERMISSIVE: %s=true on Deployment %s/%s, so a rejected request is counted and then served, and 200 is the correct answer to this case",
-				authnPermissiveEnv, controller.Namespace(), controller.Deployment(),
+				"authentication is PERMISSIVE: permissiveMode is true in %s/%s, so a rejected request is counted and then served, and 200 is the correct answer to this case",
+				controller.Namespace(), nvke.ControllerConfigMap,
 			))
 		}
 	}
@@ -191,11 +191,9 @@ var _ = Describe("NVKE API authentication", Label("authn"), func() {
 // parameter binder with a 400 — hence 401 exactly, not "not 200".
 const authnProbeUUID = "00000000-0000-0000-0000-000000000000"
 
-// The environment deciding whether the middleware is in the chain and enforces.
-const (
-	authnConfigPathEnv = "AUTH_CONFIG_PATH"
-	authnPermissiveEnv = "PERMISSIVE_MODE"
-)
+// authnConfigPathEnv puts the middleware in the chain; permissiveMode in
+// nke-controller-config decides whether it enforces.
+const authnConfigPathEnv = "AUTH_CONFIG_PATH"
 
 const (
 	authnModeDisabled   = "disabled"
@@ -215,9 +213,7 @@ const (
 const authnTimeout = 60 * time.Second
 
 // detectAuthnEnforcement reports whether the NVKE Deployment's authentication
-// middleware is absent, permissive or enforcing. An env var sourced from a
-// ConfigMap ref reads empty for PERMISSIVE_MODE and so reports enforcing, the
-// safe direction; nothing shipped sources it that way.
+// middleware is absent, permissive or enforcing.
 func detectAuthnEnforcement(ctx context.Context, clientset kubernetes.Interface) (string, error) {
 	deployment, err := clientset.AppsV1().Deployments(controller.Namespace()).Get(ctx, controller.Deployment(), metav1.GetOptions{})
 	if err != nil {
@@ -232,14 +228,23 @@ func detectAuthnEnforcement(ctx context.Context, clientset kubernetes.Interface)
 	if _, found := containerEnvValue(container, authnConfigPathEnv); !found {
 		return authnModeDisabled, nil
 	}
-	if value, _ := containerEnvValue(container, authnPermissiveEnv); strings.EqualFold(strings.TrimSpace(value), "true") {
+
+	settings, err := clientset.CoreV1().ConfigMaps(controller.Namespace()).Get(ctx, nvke.ControllerConfigMap, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("getting ConfigMap %s/%s: %w", controller.Namespace(), nvke.ControllerConfigMap, err)
+	}
+	permissive, err := nvke.ControllerSetting(settings.Data, "permissiveMode")
+	if err != nil {
+		return "", err
+	}
+	if permissive == true {
 		return authnModePermissive, nil
 	}
 	return authnModeEnforcing, nil
 }
 
 // controllerContainer picks the NVKE container by name: a scan over all of them would
-// read a sidecar's PERMISSIVE_MODE as NVKE's.
+// read a sidecar's AUTH_CONFIG_PATH as NVKE's.
 func controllerContainer(deployment *appsv1.Deployment) *corev1.Container {
 	for i := range deployment.Spec.Template.Spec.Containers {
 		if deployment.Spec.Template.Spec.Containers[i].Name == controller.Deployment() {
@@ -411,53 +416,41 @@ func TestDetectAuthnEnforcement(t *testing.T) {
 			},
 		}
 	}
+	settings := func(permissive bool) *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: controller.Namespace(), Name: nvke.ControllerConfigMap},
+			Data:       map[string]string{"config.yaml": fmt.Sprintf("metricsListenAddress: 127.0.0.1:9090\npermissiveMode: %t\n", permissive)},
+		}
+	}
+	authConfigPath := corev1.EnvVar{Name: "AUTH_CONFIG_PATH", Value: "/etc/nke/auth/auth.yaml"}
 
 	tests := []struct {
-		name string
-		env  []corev1.EnvVar
-		want string
+		name       string
+		env        []corev1.EnvVar
+		permissive bool
+		want       string
 	}{
 		{
-			name: "no AUTH_CONFIG_PATH is authentication off",
-			env:  []corev1.EnvVar{{Name: "PERMISSIVE_MODE", Value: "false"}},
-			want: authnModeDisabled,
+			name:       "no AUTH_CONFIG_PATH is authentication off, whatever permissiveMode says",
+			permissive: true,
+			want:       authnModeDisabled,
 		},
 		{
-			name: "AUTH_CONFIG_PATH with PERMISSIVE_MODE=true is permissive",
-			env: []corev1.EnvVar{
-				{Name: "AUTH_CONFIG_PATH", Value: "/etc/nke/auth/auth.yaml"},
-				{Name: "PERMISSIVE_MODE", Value: "true"},
-			},
-			want: authnModePermissive,
+			name:       "AUTH_CONFIG_PATH with permissiveMode true is permissive",
+			env:        []corev1.EnvVar{authConfigPath},
+			permissive: true,
+			want:       authnModePermissive,
 		},
 		{
-			name: "AUTH_CONFIG_PATH with PERMISSIVE_MODE=false is enforcing",
-			env: []corev1.EnvVar{
-				{Name: "AUTH_CONFIG_PATH", Value: "/etc/nke/auth/auth.yaml"},
-				{Name: "PERMISSIVE_MODE", Value: "false"},
-			},
+			name: "AUTH_CONFIG_PATH with permissiveMode false is enforcing",
+			env:  []corev1.EnvVar{authConfigPath},
 			want: authnModeEnforcing,
-		},
-		{
-			// The chart may omit the flag. Absent is not permissive.
-			name: "AUTH_CONFIG_PATH with no PERMISSIVE_MODE is enforcing",
-			env:  []corev1.EnvVar{{Name: "AUTH_CONFIG_PATH", Value: "/etc/nke/auth/auth.yaml"}},
-			want: authnModeEnforcing,
-		},
-		{
-			// A YAML "True" survives into the env as a string.
-			name: "PERMISSIVE_MODE is read case-insensitively",
-			env: []corev1.EnvVar{
-				{Name: "AUTH_CONFIG_PATH", Value: "/etc/nke/auth/auth.yaml"},
-				{Name: "PERMISSIVE_MODE", Value: " True "},
-			},
-			want: authnModePermissive,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := detectAuthnEnforcement(context.Background(), fake.NewClientset(deployment(tt.env...)))
+			got, err := detectAuthnEnforcement(context.Background(), fake.NewClientset(deployment(tt.env...), settings(tt.permissive)))
 			if err != nil {
 				t.Fatalf("detectAuthnEnforcement: %v", err)
 			}
@@ -466,6 +459,12 @@ func TestDetectAuthnEnforcement(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("a missing nke-controller-config is an error, not a mode", func(t *testing.T) {
+		if _, err := detectAuthnEnforcement(context.Background(), fake.NewClientset(deployment(authConfigPath))); err == nil {
+			t.Fatal("expected an error when nke-controller-config cannot be read")
+		}
+	})
 
 	t.Run("a missing deployment is an error, not a mode", func(t *testing.T) {
 		// Skipping here would turn a broken kubeconfig into a green run.

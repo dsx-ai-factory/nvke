@@ -70,7 +70,7 @@ WORKDIR /
 COPY --from=builder /workspace/controller/bin/controller /usr/local/bin/controller
 COPY --from=spiffe-jwt-exec-auth /ko-app/cmd /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth
 
-# OS/config profiles are operator-supplied at runtime (PROFILES_DIR), not baked
+# OS/config profiles are operator-supplied at runtime (profilesDir), not baked
 # into the image.
 RUN mkdir -p /profiles
 

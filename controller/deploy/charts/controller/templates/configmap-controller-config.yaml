@@ -2,10 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # The controller's non-secret settings, in the shape internal/controllerconfig
-# loads; nothing mounts it yet. controllerconfig has no defaults and refuses
-# padding, so every key is rendered, with the Go default wherever deployment.yaml
-# leaves a variable unset or empty, and values are trimmed where the environment
-# path trims them.
+# loads at startup. controllerconfig has no defaults and refuses padding, so
+# every key is rendered, with a default wherever a value is unset or empty, and
+# values are trimmed.
 {{- $tracing := .Values.tracing }}
 {{- $traceToEndpoint := and $tracing.enabled $tracing.endpoint }}
 {{- $dsxImds := eq .Values.nodeAgent.spireAttestationMethod "dsxImds" }}
@@ -60,13 +59,13 @@ data:
         operatorTenant: {{ if $dsxImds }}{{ trim .Values.nodeAgent.dsxImds.operatorTenant | quote }}{{ else }}""{{ end }}
       tlsJWT:
         enabled: {{ $tlsJwt.enabled }}
-        issuer: {{ if $tlsJwt.enabled }}{{ $tlsJwt.issuer | quote }}{{ else }}""{{ end }}
-        jwksURI: {{ if $tlsJwt.enabled }}{{ $tlsJwt.jwksURI | quote }}{{ else }}""{{ end }}
-        algorithms: {{ if $tlsJwt.enabled }}{{ $tlsJwt.algorithms | toJson }}{{ else }}[]{{ end }}
-        subjectTrustDomain: {{ if $tlsJwt.enabled }}{{ $tlsJwt.subjectTrustDomain | quote }}{{ else }}""{{ end }}
-        dsxIdentityExchangeURL: {{ if $tlsJwt.enabled }}{{ trim $tlsJwt.dsxIdentityExchangeURL | quote }}{{ else }}""{{ end }}
-        subjectTenant: {{ if $tlsJwt.enabled }}{{ trim $tlsJwt.subjectTenant | quote }}{{ else }}""{{ end }}
-        subjectService: {{ if $tlsJwt.enabled }}{{ trim $tlsJwt.subjectService | quote }}{{ else }}""{{ end }}
+        issuer: {{ if $tlsJwt.enabled }}{{ required "nodeAgent.tlsJwt.issuer is required when TLS/JWT is enabled" $tlsJwt.issuer | quote }}{{ else }}""{{ end }}
+        jwksURI: {{ if $tlsJwt.enabled }}{{ required "nodeAgent.tlsJwt.jwksURI is required when TLS/JWT is enabled" $tlsJwt.jwksURI | quote }}{{ else }}""{{ end }}
+        algorithms: {{ if $tlsJwt.enabled }}{{ $_ := required "nodeAgent.tlsJwt.algorithms must contain at least one algorithm when TLS/JWT is enabled" (join "," $tlsJwt.algorithms) }}{{ $tlsJwt.algorithms | toJson }}{{ else }}[]{{ end }}
+        subjectTrustDomain: {{ if $tlsJwt.enabled }}{{ required "nodeAgent.tlsJwt.subjectTrustDomain is required when TLS/JWT is enabled" $tlsJwt.subjectTrustDomain | quote }}{{ else }}""{{ end }}
+        dsxIdentityExchangeURL: {{ if $tlsJwt.enabled }}{{ required "nodeAgent.tlsJwt.dsxIdentityExchangeURL is required when TLS/JWT is enabled" (trim $tlsJwt.dsxIdentityExchangeURL) | quote }}{{ else }}""{{ end }}
+        subjectTenant: {{ if $tlsJwt.enabled }}{{ required "nodeAgent.tlsJwt.subjectTenant is required when TLS/JWT is enabled" (trim $tlsJwt.subjectTenant) | quote }}{{ else }}""{{ end }}
+        subjectService: {{ if $tlsJwt.enabled }}{{ required "nodeAgent.tlsJwt.subjectService is required when TLS/JWT is enabled" (trim $tlsJwt.subjectService) | quote }}{{ else }}""{{ end }}
       externalMTLSEnabled: {{ .Values.nodeAgent.externalMTLS.enabled }}
     oidc:
       managementOIDCAuth:

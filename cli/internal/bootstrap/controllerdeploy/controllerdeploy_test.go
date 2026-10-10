@@ -470,10 +470,10 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 	if !strings.Contains(cwe, "image.repository=nvcr.io/org/controller") || !strings.Contains(cwe, "image.tag=edge") {
 		t.Errorf("controller call = %q, want the image split into repository/tag", cwe)
 	}
-	// PROFILES_DIR only. nvkectl deploys no profiles content, so the chart's
+	// profilesDir only. nvkectl deploys no profiles content, so the chart's
 	// profiles.image stays disabled and nothing should turn it on.
 	if !strings.Contains(cwe, "profiles.path="+profilesPath) {
-		t.Errorf("controller call = %q, want PROFILES_DIR pointed at %s", cwe, profilesPath)
+		t.Errorf("controller call = %q, want profilesDir pointed at %s", cwe, profilesPath)
 	}
 	if strings.Contains(cwe, "profiles.image") {
 		t.Errorf("controller call = %q, want no profiles.image setting", cwe)
@@ -821,13 +821,13 @@ func TestTPMPluginChecksum(t *testing.T) {
 // The expected class is spelled out rather than taken from the constant, for
 // the same reason the port test spells out its address: asserting the constant
 // against itself would survive any drift. This pins our value to the literal
-// the NVKE controller's SPIRE_CLASS_NAME defaults to. It cannot catch the NVKE controller changing that default
+// the NVKE controller's spire.className defaults to. It cannot catch the NVKE controller changing that default
 // -- that lives in another module -- but it does catch this side moving.
 func TestSpireAndCWEAgreeOnTheClassName(t *testing.T) {
 	const cweClassNameDefault = "spire-mgmt-spire"
 
 	if spireControllerManagerClass != cweClassNameDefault {
-		t.Errorf("the class is %q, but the NVKE controller's SPIRE_CLASS_NAME defaults to %q; "+
+		t.Errorf("the class is %q, but the NVKE controller's spire.className defaults to %q; "+
 			"the NVKE controller would write ClusterStaticEntry objects the controller manager ignores",
 			spireControllerManagerClass, cweClassNameDefault)
 	}

@@ -22,6 +22,8 @@ export TEMPORAL_UI_PORT ?= 18233
 export SPIRE_NAMESPACE ?= spire-server
 export SPIRE_SERVER_POD ?= spire-server-0
 export SPIRE_SERVER_PORT ?= 9091
+# Starts the local SPIRE agent in dev-start-*. The controller's own switch is
+# spire.spiffeEnabled in its config file.
 export SPIFFE_ENABLED ?= false
 
 # CAPD / Kind Configuration
@@ -68,6 +70,7 @@ dev-check: ## Check if development prerequisites are installed
 	@command -v kubectl >/dev/null 2>&1 || { echo "❌ kubectl is required. Install with: brew install kubectl"; exit 1; }
 	@command -v tsh >/dev/null 2>&1 || echo "⚠️  tsh (Teleport) not found. Only 'make run-remote' needs it. Install with: brew install teleport"
 	@command -v jq >/dev/null 2>&1 || { echo "❌ jq is required. Install with: brew install jq"; exit 1; }
+	@command -v yq >/dev/null 2>&1 || echo "⚠️  yq not found. Only 'make run-remote' needs it. Install with: brew install yq"
 	@echo "✅ All prerequisites are installed"
 
 .PHONY: dev-postgres-start
@@ -217,8 +220,9 @@ dev-start-remote: dev-check dev-postgres-start ## Start remote development (conn
 	@echo "  • Remote Temporal UI:  http://localhost:$(TEMPORAL_UI_PORT)"
 	@echo ""
 	@echo "📝 Next steps:"
-	@echo "  To start the controller worker with remote Temporal:"
-	@echo "     TEMPORAL_HOST_PORT=localhost:$(TEMPORAL_FRONTEND_PORT) make run"
+	@echo "  To start the controller worker with remote Temporal, point temporal.hostPort"
+	@echo "  in a copy of hack/local-controller-config.yaml at localhost:$(TEMPORAL_FRONTEND_PORT):"
+	@echo "     CONTROLLER_CONFIG_PATH=<your copy> make run"
 	@echo ""
 	@echo "  Or use the all-in-one command next time:"
 	@echo "     TARGET_CLUSTER=nke-site-forge-az24-dev6 make run-remote"
@@ -239,9 +243,7 @@ run-local: dev-start-local ## Start local services and run the controller (sourc
 		echo "📦 Installing the release CRDs and the fixture releases (RELEASES_DIR=$${releases_dir})..."; \
 		$(MAKE) releases-install RELEASES_DIR="$${releases_dir}" || exit $$?; \
 		echo ""; \
-		echo "🚀 Starting the controller worker..."; \
-		export PROFILES_DIR="$${PROFILES_DIR:-$(CURDIR)/test/fixtures/profiles}"; \
-		export RUNBOOKS_DIR="$${RUNBOOKS_DIR:-$(CURDIR)/test/fixtures/runbooks}"; \
+		echo "🚀 Starting the controller worker (CONTROLLER_CONFIG_PATH=$${CONTROLLER_CONFIG_PATH})..."; \
 		echo ""; \
 		go run cmd/worker/main.go \
 	'
@@ -250,9 +252,12 @@ run-local: dev-start-local ## Start local services and run the controller (sourc
 run-remote: dev-start-remote ## Start remote services and run the controller (sources .env.local if present)
 	@echo ""
 	@echo "🚀 Starting the controller worker with remote Temporal..."
+	@mkdir -p .local
 	@bash -c '\
 		[ -f .env.local ] && echo "📄 Loading .env.local..." && set -a && source .env.local && set +a; \
-		export TEMPORAL_HOST_PORT=localhost:$(TEMPORAL_FRONTEND_PORT); \
+		remote_config="$(CURDIR)/.local/controller-config.remote.yaml"; \
+		yq ".temporal.hostPort = \"localhost:$(TEMPORAL_FRONTEND_PORT)\"" "$${CONTROLLER_CONFIG_PATH:-$(LOCAL_CONTROLLER_CONFIG)}" > "$${remote_config}" || exit $$?; \
+		export CONTROLLER_CONFIG_PATH="$${remote_config}"; \
 		echo ""; \
 		go run cmd/worker/main.go \
 	'
@@ -336,9 +341,10 @@ dev-env-local: ## Print environment variables for local mode
 	@echo "# The controller will use local Temporal by default (localhost:7233)"
 
 .PHONY: dev-env-remote
-dev-env-remote: ## Print environment variables for remote mode
-	@echo "# Remote Development Mode Environment Variables"
-	@echo "export TEMPORAL_HOST_PORT=localhost:$(TEMPORAL_FRONTEND_PORT)"
+dev-env-remote: ## Print how to point the controller at remote Temporal
+	@echo "# Remote development mode: set temporal.hostPort to localhost:$(TEMPORAL_FRONTEND_PORT) in a"
+	@echo "# copy of hack/local-controller-config.yaml and point CONTROLLER_CONFIG_PATH at it,"
+	@echo "# or use make run-remote, which does both"
 	@echo ""
 	@echo "# Optional: Customize Teleport settings"
 	@echo "export TSH_PROXY=$(TSH_PROXY)"

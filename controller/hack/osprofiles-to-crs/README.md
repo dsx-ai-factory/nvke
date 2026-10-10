@@ -55,7 +55,7 @@ go run ./hack/osprofiles-to-crs --profiles <profiles root> --output <directory>
 ```
 
 `--profiles` is a directory that contains `osProfiles/`, the same root the
-controller reads as `PROFILES_DIR`.
+controller reads as `profilesDir`.
 
 | Flag | Default | Meaning |
 |---|---|---|

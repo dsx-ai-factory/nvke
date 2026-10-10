@@ -26,8 +26,8 @@ apiAuth:
   permissive: false
 
 # The SAME value the capnico-e2e target uses, deliberately: this is a tenant
-# guard rail, not a mode. It reaches the controller as SUPPORTED_INFRA_PROVIDERS, an
-# accept-list validated at startup (internal/config), and renders nothing else
+# guard rail, not a mode. It reaches the controller as supportedInfraProviders in
+# nke-controller-config, an accept-list validated at startup, and renders nothing else
 # -- the CAPI permissions come from capi.rbac.create below, which is a separate
 # key.
 #

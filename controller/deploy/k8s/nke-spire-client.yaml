@@ -39,8 +39,8 @@ metadata:
 #
 # The path segment is /nke-e2e/ rather than NVKE's own /nke-service/, so the probe
 # does not share NVKE's prefix and admit.spiffe's prefix check is actually
-# exercised. className must match the SPIRE controller manager's (the Tiltfile
-# sets SPIRE_CLASS_NAME); a wrong value is ignored silently and shows up as a pod
+# exercised. className must match the SPIRE controller manager's (Tilt's chart
+# values set spiffe.spire.className); a wrong value is ignored silently and shows up as a pod
 # that never gets an SVID.
 #
 # Any pod matching both selectors below gets full NVKE API access. Dev clusters

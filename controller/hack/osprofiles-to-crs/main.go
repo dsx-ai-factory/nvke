@@ -34,7 +34,7 @@ func main() {
 
 func run(args []string) error {
 	flags := flag.NewFlagSet("osprofiles-to-crs", flag.ContinueOnError)
-	profiles := flags.String("profiles", "", "Profiles root containing osProfiles (controller PROFILES_DIR)")
+	profiles := flags.String("profiles", "", "Profiles root containing osProfiles (the controller's profilesDir)")
 	output := flags.String("output", "", "Flat directory for generated release manifests")
 	crds := flags.String("crds", defaultCRDDir, "Directory of the CRD manifests every generated manifest is validated against")
 	license := flags.String("license", licenseProprietary, "SPDX license identifier of the generated headers: "+licenseProprietary+" or "+licenseApache)

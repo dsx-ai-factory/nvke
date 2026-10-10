@@ -64,7 +64,7 @@ kubeadm's preflight errors without `conntrack` and warns without `socat` or
 `ethtool`.
 
 The bundled images are the ones kubeadm asks for by default, from
-`registry.k8s.io`. A controller that sets `KUBEADM_IMAGE_REPOSITORY` to a
+`registry.k8s.io`. A controller whose `kubeadmImageRepository` points at a
 mirror makes kubeadm ask for different names, so the node pulls from the mirror
 and is no longer offline.
 

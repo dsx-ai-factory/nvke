@@ -26,12 +26,12 @@ Each uses the [site configuration](#site-configuration).
 Set these values in the NVKE Controller Helm chart. The [chart
 README](../../controller/deploy/charts/controller/README.md) lists each one.
 
-| Value | Environment variable | Purpose |
+| Value | `nke-controller-config` key | Purpose |
 |---|---|---|
-| `nkeOIDCAuth.enabled` | `NKE_OIDC_AUTH_ENABLED` | Enables OIDC authentication for new clusters. Default `false`. |
-| `nkeOIDCAuth.issuerURL` | `NKE_OIDC_AUTH_ISSUER_URL` | The OIDC issuer tenant API servers trust. Required. |
-| `nkeOIDCAuth.discoveryURL` | `NKE_OIDC_AUTH_DISCOVERY_URL` | Optional. Set it when tenant API servers cannot reach the issuer's discovery document at `issuerURL`. |
-| `nkeOIDCAuth.caBundleSecret.namespace`, `.name`, `.key` | `NKE_OIDC_AUTH_CA_BUNDLE_SECRET_*` | Optional. The Secret holding the issuer's PEM CA bundle, embedded in each tenant API server's configuration. Set every field or none. The Secret and key must exist and be non-empty. |
+| `nkeOIDCAuth.enabled` | `oidc.managementOIDCAuth.enabled` | Enables OIDC authentication for new clusters. Default `false`. |
+| `nkeOIDCAuth.issuerURL` | `oidc.managementOIDCAuth.issuerURL` | The OIDC issuer tenant API servers trust. Required. |
+| `nkeOIDCAuth.discoveryURL` | `oidc.managementOIDCAuth.discoveryURL` | Optional. Set it when tenant API servers cannot reach the issuer's discovery document at `issuerURL`. |
+| `nkeOIDCAuth.caBundleSecret.namespace`, `.name`, `.key` | `oidc.managementOIDCAuth.caBundleSecretRef.*` | Optional. The Secret holding the issuer's PEM CA bundle, embedded in each tenant API server's configuration. Set every field or none. The Secret and key must exist and be non-empty. |
 
 OIDC authentication also requires:
 

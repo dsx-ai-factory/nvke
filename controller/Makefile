@@ -239,7 +239,7 @@ test-health: ## Run the health-labeled subset of the test/e2e suite against the 
 # is absent. test-authn-spire is the way to run only that one.
 #
 # The permissive specs have no target: they need an NVKE deployed with
-# PERMISSIVE_MODE=true, which is a different deployment. Run them against one
+# permissiveMode: true, which is a different deployment. Run them against one
 # with `make test-e2e ARGS='--label-filter=authn-permissive'`.
 .PHONY: test-authn
 test-authn: ## Run the authn-labeled subset of the test/e2e suite against the cluster in KUBECONFIG.
@@ -433,6 +433,12 @@ docker-manifest: check-img-repo ## Stitch <t>-amd64 + <t>-arm64 into <t> under I
 ##@ Run
 
 .PHONY: run
+# Host-local runs read nke-controller-config from this file unless
+# CONTROLLER_CONFIG_PATH names another.
+LOCAL_CONTROLLER_CONFIG ?= $(CURDIR)/hack/local-controller-config.yaml
+
+run debug run-local: export CONTROLLER_CONFIG_PATH ?= $(LOCAL_CONTROLLER_CONFIG)
+
 run: ## Runs the worker.
 	go run cmd/worker/main.go
 
