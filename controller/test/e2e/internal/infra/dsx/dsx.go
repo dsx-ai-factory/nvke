@@ -26,14 +26,27 @@ const (
 	// which is the whole of the difference at this layer.
 	APIName = "nico"
 
-	// defaultReadyTimeout is longer than Forge's. A DSX instance reports
-	// BootCompleted about three and a half minutes after create, before the
-	// host has finished imaging, and the firmware then loops UEFI HTTP boot
-	// across every NIC before falling through to disk. Ten, fifteen and
-	// twenty-seven minutes were all measured on the az51 exercise. It is slow
-	// rather than broken, and a budget cut to Forge's would fail every run.
-	defaultReadyTimeout = 45 * time.Minute
-	defaultReachTimeout = 30 * time.Minute
+	// The two waits are weighted the other way round from Forge's, because on
+	// this substrate they wait for different things than they do there.
+	//
+	// An address arrives early: BootCompleted is reported about three and a
+	// half minutes after create, before the host has finished imaging, and the
+	// interface has its address by then. waitAddressed wants nothing more, so
+	// fifteen minutes is already generous.
+	//
+	// SSH is the long one. After the imager writes the disk and reboots, the
+	// firmware loops UEFI HTTP boot across every NIC before falling through to
+	// disk -- ten, fifteen and twenty-seven minutes were all measured on the
+	// az51 exercise. Slow rather than broken, so WaitReachable carries the
+	// budget.
+	//
+	// Together they are 50 minutes, matching Forge's 30 + 20, and both sit
+	// under the same governor: the provision spec's own NodeTimeout, which is
+	// 45 minutes for every provider. These bound the individual waits; that
+	// bounds the pair. A run that hits it still releases its machine, because
+	// the release on failure is detached from the canceled context.
+	defaultReadyTimeout = 15 * time.Minute
+	defaultReachTimeout = 35 * time.Minute
 	defaultPollInterval = 30 * time.Second
 
 	// defaultCreateTimeout bounds the create call alone, and is deliberately
