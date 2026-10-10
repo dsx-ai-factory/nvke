@@ -1,0 +1,274 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package dsx
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/environment"
+	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/infra"
+)
+
+// checkedInDir is where the suite's environments live, relative to this
+// package. Tests reach them directly so a malformed file fails here rather
+// than an hour into a run on hardware.
+const checkedInDir = "../../../environments"
+
+var envReference = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}`)
+
+func setSynthetic(t *testing.T, path string) {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	for _, match := range envReference.FindAllSubmatch(data, -1) {
+		name := string(match[1])
+		t.Setenv(name, "synthetic-"+strings.ToLower(name))
+	}
+}
+
+func TestCheckedInEnvironmentsParse(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join(checkedInDir, "*.yaml"))
+	if err != nil {
+		t.Fatalf("globbing %s: %v", checkedInDir, err)
+	}
+	if len(paths) == 0 {
+		t.Fatalf("no environments found in %s", checkedInDir)
+	}
+
+	for _, path := range paths {
+		name := strings.TrimSuffix(filepath.Base(path), ".yaml")
+		t.Run(name, func(t *testing.T) {
+			setSynthetic(t, path)
+
+			env, err := environment.LoadPath(name, path)
+			if err != nil {
+				t.Fatalf("loading %s: %v", path, err)
+			}
+			if env.Provider != ProviderName {
+				t.Skipf("provider %q has no decoder to check here", env.Provider)
+			}
+
+			decoded, err := Decode(env.Infrastructure)
+			if err != nil {
+				t.Fatalf("decoding %s as dsx: %v", path, err)
+			}
+			for siteName := range decoded.Sites {
+				// Site validates every identifier a cluster cannot be created
+				// without, so this is what stops a half-filled environment
+				// reaching a run on hardware.
+				site, err := decoded.Site(siteName)
+				if err != nil {
+					t.Errorf("site %q is not usable: %v", siteName, err)
+					continue
+				}
+				// A datahall addresses itself, so a site whose endpoint does
+				// not carry its own key is pointed at another one.
+				if !strings.Contains(site.Endpoint(), siteName) {
+					t.Errorf("site %q resolves to endpoint %q, which does not name it", siteName, site.Endpoint())
+				}
+				for _, machine := range site.Machines {
+					if machine.Arch() == "" {
+						t.Errorf("site %q machine %q declares no arch, so nothing can select it", siteName, machine.Name)
+					}
+				}
+				for _, instanceType := range site.InstanceTypes {
+					if len(instanceType.Provides) == 0 {
+						t.Errorf("site %q instance type %q provides nothing, so nothing can select it", siteName, instanceType.Name)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestDecodeRejectsAnEmptyDeclaration(t *testing.T) {
+	_, err := Decode(json.RawMessage(`{}`))
+	if err == nil {
+		t.Fatal("decoding an environment that declares nothing should have failed")
+	}
+	if !strings.Contains(err.Error(), "org id") {
+		t.Errorf("error should name what is missing, got %v", err)
+	}
+}
+
+func TestDecodeRejectsAnUnknownField(t *testing.T) {
+	// A misspelled optional key is the case this guards: without strictness it
+	// would drop a jump-host pin or a node user without a word.
+	_, err := Decode(json.RawMessage(`{"org":{"id":"ncx"},"sites":{"a":{"subnetID":"x"}}}`))
+	if err == nil {
+		t.Fatal("decoding an environment with an unknown field should have failed")
+	}
+	if !strings.Contains(err.Error(), "subnetID") {
+		t.Errorf("error should name the unknown field, got %v", err)
+	}
+}
+
+// completeSite is a datahall with nothing missing, for tests that vary one
+// thing about it.
+func completeSite() Site {
+	return Site{
+		ID:            "site",
+		TenantID:      "tenant",
+		VpcID:         "vpc",
+		VpcPrefixID:   "prefix",
+		SSHKeyGroupID: "keygroup",
+		Machines: []Machine{
+			{Name: "J701L43T", ID: "m1", Provides: map[string]string{infra.CapabilityArch: "amd64"}},
+		},
+		InstanceTypes: []InstanceType{
+			{Name: "tenant-cpu", ID: "t1", Provides: map[string]string{infra.CapabilityMachineType: "cpu", infra.CapabilityArch: "amd64"}},
+		},
+	}
+}
+
+func TestEndpointDerivesFromTheKey(t *testing.T) {
+	site := Site{Key: "az51-dev2-dh2"}
+	want := "https://carbide-rest-api-az51-dev2-dh2.dev.dsx.nvidia.com"
+	if got := site.Endpoint(); got != want {
+		t.Errorf("Endpoint() = %q, want %q", got, want)
+	}
+}
+
+func TestEndpointPrefersAnExplicitAPI(t *testing.T) {
+	site := Site{Key: "az51-dev2-dh2", API: "https://elsewhere.example/"}
+	if got := site.Endpoint(); got != "https://elsewhere.example" {
+		t.Errorf("Endpoint() = %q, want the declared API with no trailing slash", got)
+	}
+}
+
+func TestValidateNamesEveryMissingField(t *testing.T) {
+	err := Site{Key: "bare"}.validate()
+	if err == nil {
+		t.Fatal("a site declaring nothing should not validate")
+	}
+	for _, want := range []string{"id", "tenantID", "vpcID", "vpcPrefixID", "sshKeyGroupID", "machines", "instanceTypes"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should name %s, got %v", want, err)
+		}
+	}
+}
+
+func TestValidateRequiresBothPlacementHalves(t *testing.T) {
+	// A datahall with machines and no instance types builds a site controller
+	// that can host no tenant; the reverse cannot be built on at all.
+	for name, mutate := range map[string]func(*Site){
+		"no machines":      func(s *Site) { s.Machines = nil },
+		"no instanceTypes": func(s *Site) { s.InstanceTypes = nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			site := completeSite()
+			site.Key = "dh"
+			mutate(&site)
+			if err := site.validate(); err == nil {
+				t.Errorf("a site with %s should not validate", name)
+			}
+		})
+	}
+}
+
+func TestMatchMachineTakesTheFirstOfTheArchitecture(t *testing.T) {
+	site := Site{
+		Key: "dh",
+		Machines: []Machine{
+			{Name: "arm", ID: "1", Provides: map[string]string{infra.CapabilityArch: "arm64"}},
+			{Name: "first-amd", ID: "2", Provides: map[string]string{infra.CapabilityArch: "amd64"}},
+			{Name: "second-amd", ID: "3", Provides: map[string]string{infra.CapabilityArch: "amd64"}},
+		},
+	}
+	machine, err := site.MatchMachine("amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if machine.Name != "first-amd" {
+		t.Errorf("matched %q, want the first declared amd64 machine", machine.Name)
+	}
+}
+
+func TestMatchMachineNamesWhatItOffers(t *testing.T) {
+	site := Site{
+		Key:      "dh",
+		Machines: []Machine{{Name: "J701L43T", ID: "1", Provides: map[string]string{infra.CapabilityArch: "amd64"}}},
+	}
+	_, err := site.MatchMachine("arm64")
+	if err == nil {
+		t.Fatal("a datahall with no arm64 machine should not match one")
+	}
+	// The serial, because that is what a capacity conversation is held in.
+	if !strings.Contains(err.Error(), "J701L43T") {
+		t.Errorf("error should name the machines offered, got %v", err)
+	}
+}
+
+func TestResolveNeedsBothAMachineAndATenantShape(t *testing.T) {
+	withMachineOnly := completeSite()
+	withMachineOnly.InstanceTypes = []InstanceType{
+		{Name: "arm-only", ID: "t1", Provides: map[string]string{infra.CapabilityMachineType: "cpu", infra.CapabilityArch: "arm64"}},
+	}
+	env := &Environment{Org: Org{ID: "ncx"}, Sites: map[string]Site{"dh": withMachineOnly}}
+
+	if _, err := env.Resolve(map[string]string{infra.CapabilityArch: "amd64"}); err == nil {
+		t.Fatal("a datahall with an amd64 machine but no amd64 tenant shape should not resolve")
+	}
+}
+
+func TestResolveSkipsAnIncompleteSite(t *testing.T) {
+	// The onboarding case: a datahall declared but with its identifiers unset
+	// is skipped, so declaring a second one stays an additive change.
+	incomplete := completeSite()
+	incomplete.VpcID = ""
+	env := &Environment{Org: Org{ID: "ncx"}, Sites: map[string]Site{
+		"aaa-incomplete": incomplete,
+		"zzz-complete":   completeSite(),
+	}}
+
+	selection, err := env.Resolve(map[string]string{infra.CapabilityArch: "amd64"})
+	if err != nil {
+		t.Fatalf("a complete site should resolve even beside an incomplete one: %v", err)
+	}
+	if selection.Site.Key != "zzz-complete" {
+		t.Errorf("resolved to %q, want the complete site", selection.Site.Key)
+	}
+}
+
+func TestResolveReportsWhatEverySiteOffers(t *testing.T) {
+	env := &Environment{Org: Org{ID: "ncx"}, Sites: map[string]Site{"dh": completeSite()}}
+	_, err := env.Resolve(map[string]string{infra.CapabilityArch: "amd64", infra.CapabilityGPU: "gb200"})
+	if err == nil {
+		t.Fatal("a datahall offering no gb200 should not resolve one")
+	}
+	for _, want := range []string{"dh", "gb200", "tenant-cpu"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should name %s, got %v", want, err)
+		}
+	}
+}
+
+func TestResolveDefaultsTheArchitecture(t *testing.T) {
+	env := &Environment{Org: Org{ID: "ncx"}, Sites: map[string]Site{"dh": completeSite()}}
+	selection, err := env.Resolve(nil)
+	if err != nil {
+		t.Fatalf("a run naming no architecture should take the default: %v", err)
+	}
+	if selection.Machine.Arch() != infra.DefaultArch {
+		t.Errorf("machine arch = %q, want the default %q", selection.Machine.Arch(), infra.DefaultArch)
+	}
+}
+
+func TestWorkerTypeFallsBackToTheCPUShape(t *testing.T) {
+	selection := Selection{CPU: InstanceType{Name: "cpu"}}
+	if selection.HasGPU() {
+		t.Error("a selection with no GPU shape should not report one")
+	}
+	if selection.WorkerType().Name != "cpu" {
+		t.Errorf("WorkerType() = %q, want the CPU shape when no GPU was asked for", selection.WorkerType().Name)
+	}
+}
