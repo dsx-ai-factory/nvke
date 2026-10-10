@@ -521,12 +521,24 @@ func newForgeProvider(cfg config.Config, env *environment.Environment) (infra.Pr
 			KindVersion:       versions[versionKind],
 			ClusterctlVersion: versions[versionClusterctl],
 		},
-		DisableMTLS: siteDisableMTLS,
+		KeepOnFailure: keepFailedNode(cfg),
+		DisableMTLS:   siteDisableMTLS,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return provider, nil
+}
+
+// keepFailedNode reports whether a node that fails to provision should be left
+// in place. A failed provision is the one case the node itself can answer --
+// whether cloud-init ran, what it wrote, what the console saw -- and the
+// provider releases it by default, which destroys that.
+//
+// Both settings mean it: -e2e.keep-site keeps whatever the run made, and
+// preserveOnFailure keeps a failed run's machines, which this is one of.
+func keepFailedNode(cfg config.Config) bool {
+	return keepSite || cfg.Lifecycle.SkipDelete || cfg.Lifecycle.PreserveOnFailure
 }
 
 // newDSXProvider projects the environment into DSX's dialect and builds a
@@ -587,7 +599,8 @@ func newDSXProvider(cfg config.Config, env *environment.Environment) (infra.Prov
 			KindVersion:       versions[versionKind],
 			ClusterctlVersion: versions[versionClusterctl],
 		},
-		DisableMTLS: siteDisableMTLS,
+		KeepOnFailure: keepFailedNode(cfg),
+		DisableMTLS:   siteDisableMTLS,
 	})
 }
 

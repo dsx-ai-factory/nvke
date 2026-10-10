@@ -447,3 +447,29 @@ func TestNewRequiresJumpHost(t *testing.T) {
 		t.Errorf("err = %v, want a missing jump host reported", err)
 	}
 }
+
+func TestProvisionNodeKeepsTheMachineOnFailure(t *testing.T) {
+	// The case the whole option exists for: a node that answers sshd and
+	// refuses the key is indistinguishable from a dozen other causes, and
+	// only the node itself can say which. Releasing it ends that.
+	forge := &fakeForge{t: t, statuses: []string{"Ready"}}
+	dialer := &fakeDialer{refusals: 100, conn: &fakeConn{}}
+	provider := newTestProvider(t, forge, dialer)
+	provider.opts.KeepOnFailure = true
+	provider.opts.ReachTimeout = 10 * time.Millisecond
+
+	_, _, err := provider.ProvisionNode(context.Background(), testRequest())
+	if err == nil {
+		t.Fatal("an unreachable node should fail the run")
+	}
+	if forge.deleted != 0 {
+		t.Errorf("deleted %d times, want 0 -- the machine was supposed to be kept", forge.deleted)
+	}
+	// Useless if a reader cannot find it again, so the message carries both
+	// the name and where it answered.
+	for _, want := range []string{"KEPT", testInstance, "released by hand", "10.0.0.7"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should name %s, got %v", want, err)
+		}
+	}
+}

@@ -81,6 +81,17 @@ type Options struct {
 	Node  nvke.NodeInputs
 	Tools provision.HostTools
 
+	// KeepOnFailure leaves the machine in place when provisioning fails,
+	// rather than releasing it. The node is the only thing that can answer why
+	// a boot went wrong -- whether cloud-init ran, what it wrote, what the
+	// console saw -- and releasing it destroys that at exactly the moment it
+	// is wanted.
+	//
+	// Off by default, because the alternative to releasing is leaking: a kept
+	// machine outlives the run and someone has to delete it by hand. The error
+	// says so, and names the address to reach it at.
+	KeepOnFailure bool
+
 	// DisableMTLS runs the node agent without SPIFFE. `nvkectl bootstrap site`
 	// must be given --disable-mtls to match, and the stack deployed with
 	// spiffe.enabled=false, or every dial fails as a TLS handshake error.
@@ -249,7 +260,17 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	id := inst.GetId()
 
 	release := func(ctx context.Context) error { return p.release(ctx, id) }
+	// reached is the node's address once one is known, so a kept machine can
+	// be named with somewhere to go rather than only an id.
+	var reached string
 	fail := func(err error) (infra.Node, infra.Session, error) {
+		if p.opts.KeepOnFailure {
+			where := "no address was reached"
+			if reached != "" {
+				where = "at " + reached
+			}
+			return infra.Node{}, nil, fmt.Errorf("%w\n\tinstance %s (%s) was KEPT for diagnosis, %s -- it outlives this run and must be released by hand", err, req.Name, id, where)
+		}
 		// Detached, because a canceled run is exactly when this matters most
 		// and inheriting the cancellation would abandon the instance.
 		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), provision.ReleaseTimeout)
@@ -264,6 +285,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	if err != nil {
 		return fail(err)
 	}
+	reached = address
 	target := teleport.Target{JumpHost: p.site.JumpHost, Address: address, User: p.nodeUser(), Signer: signer}
 	conn, err := provision.WaitReachable(ctx, p.opts.Dialer, target, "dsx", p.opts.ReachTimeout, p.opts.PollInterval)
 	if err != nil {
