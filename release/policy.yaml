@@ -22,6 +22,19 @@ spec:
     # it.
     golden-path:
       selector: {ubuntu: "24.04", gpu: gb200}
+    # L40S at az61, on the Ubuntu series both recorded exercises used.
+    #
+    # GB200 is contended -- golden-path takes two of them, and a site has six
+    # CPU machines against a ceiling of three concurrent runs -- so proving a
+    # change has not broken the Forge path should not mean queuing behind
+    # qualification work or taking hardware from it.
+    #
+    # Series, because that is the only axis the L40S streams differ on. Pair it
+    # with `stage=provision` to exercise create, dial, cloud-init and release
+    # without touching the deploy path.
+    l40s:
+      selector: {gpu: l40s, ubuntu: "24.04"}
+
     # No selector, so every stream. What the weekly run covers. Adding a minor
     # is adding streams, not editing scopes.
     full: {}
