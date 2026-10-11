@@ -14,6 +14,7 @@ import (
 	"errors"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,7 @@ import (
 	"time"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/config"
-	api "github.com/dsx-ai-factory/nvke/controller/api"
+	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 )
 
 type fakeTokenSource struct {
@@ -97,34 +98,56 @@ func TestNewRequiresProxyClientCertificateAndKeyTogether(t *testing.T) {
 	}
 }
 
-func TestNewConfiguresProxyClientCertificateOnDefaultTransport(t *testing.T) {
+func TestProxyTransportConfiguresClientCertificateOnDefaultTransport(t *testing.T) {
 	certFile, keyFile := writeClientCertificate(t)
-	client, err := New(config.SiteConfig{
+	rt, err := proxyTransport(config.SiteConfig{
 		URL:                 "https://site.example.com",
 		ProxyClientCertFile: certFile,
 		ProxyClientKeyFile:  keyFile,
 	})
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("proxyTransport: %v", err)
 	}
-
-	rawClient, ok := client.raw.ClientInterface.(*api.Client)
+	transport, ok := rt.(*http.Transport)
 	if !ok {
-		t.Fatalf("ClientInterface type = %T, want *api.Client", client.raw.ClientInterface)
-	}
-	httpClient, ok := rawClient.Client.(*http.Client)
-	if !ok {
-		t.Fatalf("HTTP client type = %T, want *http.Client", rawClient.Client)
-	}
-	transport, ok := httpClient.Transport.(*http.Transport)
-	if !ok {
-		t.Fatalf("transport type = %T, want *http.Transport", httpClient.Transport)
+		t.Fatalf("transport type = %T, want *http.Transport", rt)
 	}
 	if transport.Proxy == nil || transport.DialContext == nil || !transport.ForceAttemptHTTP2 {
 		t.Error("transport does not preserve http.DefaultTransport behavior")
 	}
 	if transport.TLSClientConfig == nil || len(transport.TLSClientConfig.Certificates) != 1 {
 		t.Fatal("transport does not contain the configured client certificate")
+	}
+}
+
+func TestNewSendsTraceparentAndUserAgentWithBearerToken(t *testing.T) {
+	var got http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"clusters":[]}`))
+	}))
+	defer srv.Close()
+	client, err := newClient(config.SiteConfig{URL: srv.URL}, fakeTokenSource{token: "minted-token"})
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+
+	run := telemetry.NewRun("v9.9.9")
+	ctx := run.Start(context.Background(), "nvkectl get clusters")
+	defer run.Finish(nil)
+	if _, err := client.ListClusters(ctx, nil); err != nil {
+		t.Fatalf("ListClusters: %v", err)
+	}
+
+	if want := "Bearer minted-token"; got.Get("Authorization") != want {
+		t.Errorf("Authorization = %q, want %q", got.Get("Authorization"), want)
+	}
+	if want := "nvkectl/v9.9.9"; got.Get("User-Agent") != want {
+		t.Errorf("User-Agent = %q, want %q", got.Get("User-Agent"), want)
+	}
+	if tp := got.Get("Traceparent"); !strings.HasPrefix(tp, "00-"+run.TraceID()+"-") {
+		t.Errorf("traceparent = %q, want trace ID %s", tp, run.TraceID())
 	}
 }
 

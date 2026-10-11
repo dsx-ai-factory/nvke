@@ -33,6 +33,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/cli/internal/clients"
 	"github.com/dsx-ai-factory/nvke/cli/internal/config"
 	"github.com/dsx-ai-factory/nvke/cli/internal/envalias"
+	"github.com/dsx-ai-factory/nvke/cli/internal/telemetry"
 )
 
 const (
@@ -172,6 +173,9 @@ site spec file format.`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id := telemetry.RunFrom(cmd.Context()).TraceID(); id != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Trace ID: %s\n", id)
+			}
 			return runBootstrapSite(cmd.Context(), cmd.OutOrStdout(), opts)
 		},
 	}
