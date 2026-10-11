@@ -569,3 +569,34 @@ func TestBuildForgeNodePayloadsDoesNotInstallSpireAgent(t *testing.T) {
 		t.Error("nothing here should need a downgrade")
 	}
 }
+
+// The apt key is fetched by name, so the wait for name resolution has to come
+// first. A default IPv4 route is not enough on its own: the route appears
+// while systemd-resolved is still coming up, the curl fails to resolve, and
+// set -e takes the rest of the block with it. Asserted as an ordering rather
+// than a presence so that reordering the commands fails here too.
+func TestBuildForgeNodePayloadsWaitsForNameResolutionBeforeFetchingTheAptKey(t *testing.T) {
+	payloads, err := BuildForgeNodePayloads(completeForgeInputs())
+	if err != nil {
+		t.Fatalf("building payloads: %v", err)
+	}
+	index := func(substring string) int {
+		for i, command := range payloads.PreKubeadmCommands {
+			if strings.Contains(command, substring) {
+				return i
+			}
+		}
+		return -1
+	}
+	wait, fetch := index("getent hosts"), index("/etc/apt/keyrings/nke.asc")
+	if wait < 0 {
+		t.Fatalf("no wait for name resolution, got:\n%s", strings.Join(payloads.PreKubeadmCommands, "\n"))
+	}
+	if fetch < 0 {
+		t.Fatalf("no apt key fetch, got:\n%s", strings.Join(payloads.PreKubeadmCommands, "\n"))
+	}
+	if wait > fetch {
+		t.Errorf("the apt key is fetched before name resolution is waited for, at %d and %d:\n%s",
+			fetch, wait, strings.Join(payloads.PreKubeadmCommands, "\n"))
+	}
+}

@@ -44,6 +44,16 @@ the repository publishes 1.14.1+tpm1.9.0 against the image's
 A node without a baked agent is the bring-your-own-Ubuntu path, which
 bootstraps with --disable-mtls and is out of scope here.
 
+The apt source is fetched by name, so the node must be able to resolve one
+before the curl below. A default IPv4 route is not that: the route guard in
+RenderUserData returns as soon as one appears, and systemd-resolved can still
+be coming up -- on a node whose clock is at 1970, NTP has not run either. The
+curl then fails with "Could not resolve host", set -e kills the block, and the
+node ends up with no kubeadm, no CNI and no agent args, failing much later with
+nothing pointing back here. Observed on three consecutive az61 runs and
+reproduced by hand. Waiting for the name costs nothing when it already
+resolves.
+
 set -eu is the first command for the reason the site node has it
 (internal/infra/forge/userdata.go): cloud-init runs these as one /bin/sh
 script and reports the exit status of the last one, which is the
@@ -56,6 +66,7 @@ before it is sent: none of them reads a shell variable.
 */ -}}
 set -eu
 install -d -m 0755 /etc/apt/keyrings
+timeout 300s sh -c 'until getent hosts nke-prod-assets.s3.us-west-2.amazonaws.com >/dev/null 2>&1; do echo "waiting for name resolution"; sleep 5; done'
 curl -fsSL -o /etc/apt/keyrings/nke.asc https://nke-prod-assets.s3.us-west-2.amazonaws.com/nvke-apt-public.key
 echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://nke-prod-assets.s3.us-west-2.amazonaws.com/nvke-apt-{{ .AptSuite }} nvke-{{ .AptSuite }} main' > /etc/apt/sources.list.d/nke-apt.list
 apt-get update
