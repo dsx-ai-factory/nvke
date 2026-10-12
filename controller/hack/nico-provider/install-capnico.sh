@@ -49,7 +49,6 @@ install_released_chart() {
     "${CAPNICO_HELM_REPO}/${CAPNICO_RELEASE}" \
     --version "${CAPNICO_CHART_VERSION}" \
     --namespace "${CAPNICO_NAMESPACE}" \
-    --server-side=false \
     --reset-values \
     --set 'imagePullSecrets[0].name=nvcr-creds' \
     --wait --timeout 5m
@@ -100,7 +99,13 @@ install_source_chart() {
     echo "CAPNICo image build failed twice." >&2
     exit 1
   fi
-  "${KIND_BIN}" load docker-image "${CAPNICO_IMAGE}" --name "${KIND_CLUSTER_NAME}"
+  # `kind load docker-image` parses the node's live `containerd config dump`
+  # and only recognizes config schema versions 2 and 3. containerd 2.3.x
+  # reports schema version 4 there (the on-disk file is still version 2;
+  # containerd migrates it in memory), so kind refuses to load any image
+  # into this node image. Load it directly through ctr instead -- the same
+  # mechanism kind uses internally, without kind's version check.
+  docker save "${CAPNICO_IMAGE}" | docker exec -i "${KIND_CLUSTER_NAME}-control-plane" ctr -n k8s.io images import -
 
   rm -rf "${CAPNICO_STAGED_CHART_DIR}"
   mkdir -p "$(dirname "${CAPNICO_STAGED_CHART_DIR}")"
@@ -108,7 +113,6 @@ install_source_chart() {
 
   helm upgrade --install "${CAPNICO_RELEASE}" "${CAPNICO_STAGED_CHART_DIR}" \
     --namespace "${CAPNICO_NAMESPACE}" \
-    --server-side=false \
     --reset-values \
     --set-string "manager.image.repository=${CAPNICO_IMAGE%:*}" \
     --set-string "manager.image.tag=${CAPNICO_IMAGE##*:}" \
