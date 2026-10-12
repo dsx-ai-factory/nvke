@@ -163,23 +163,25 @@ That run's install script does none of this, because it had
 
 ## Per-site values
 
-Every item's committed values are site-independent. What varies comes in
-through `--values-for`, exactly as `controller/hack/ci/deploy-stack.sh` does it
-for the e2e lanes -- that script is the reference for these derivations.
+Every item's committed values are site-independent. `nvkectl render
+deploy-path` writes what varies into each item's `site-values.yaml` from the
+site spec; the e2e lanes derive the same values in
+`controller/hack/ci/deploy-stack.sh`. `--values-for` still applies on top of a
+rendered path, after `site-values.yaml`.
 
-| value | e2e derivation | on a NICo site |
+| value | `render` takes it from | e2e derivation |
 |---|---|---|
-| trust domain | `${KIND_CLUSTER_NAME}.nke.local` | the trust domain the site's nodes were bootstrapped with (`spire.trustDomain` in the site spec); never derived from a name |
-| management VIP | kind control-plane IP | the site controller's node IP |
-| SPIRE admin path | `/nke-service/nke-controller` | the same; it is a constant |
-| TPM attestor **server** checksum | pinned per arch in `resolve_tpm_checksum()` | the same pin for the same arch |
-| OIDC domains / IP SANs | VIP plus the kind gateway | the VIP |
+| trust domain | `spire.trustDomain`, required; never derived from a name | `${KIND_CLUSTER_NAME}.nke.local` |
+| management VIP | `cluster.controlPlaneVIP`, or the only node's IP | kind control-plane IP |
+| SPIRE admin path | a constant, `/nke-service/nke-controller` | the same |
+| TPM attestor **server** checksum | pinned per `controllerStack.arch` | pinned per arch in `resolve_tpm_checksum()` |
+| OIDC domains / IP SANs | the overlay's hostnames plus the VIP | VIP plus the kind gateway |
 | discovery URL | `https://<VIP>:30443/.well-known/openid-configuration` | the same shape |
-| Postgres / Temporal password | generated per run | site secret, on BOTH Temporal datastores |
-| controller image | built per run | a released tag |
-| profiles image | built per run | the site's fleet profile content |
-| telemetry backend | not installed | the bundled development backend, until the site passes its own with `--values-for nktp=` |
-| telemetry `k8s.cluster.name` | not installed | `ClusterName` in the BootstrapConfig passed with `--config`; required |
+| Postgres / Temporal password | `controllerStack.database.passwordFile`, on both Temporal datastores; the controller reads its connection string from a Secret | generated per run |
+| controller image | the release, or `controllerStack.images.controller` | built per run |
+| profiles image | the release, or `controllerStack.images.profiles` | built per run |
+| telemetry backend | `controllerStack.nktpValuesFile`, else the chart's bundled development backend | not installed |
+| telemetry `k8s.cluster.name` | `clusterName`, through the `nvke-base-config` template | not installed |
 
 The TPM checksum is easy to confuse: the value in `spire/values.yaml`
 (`spire-server.nodeAttestor.tpmDirect.checksum`) is the **server** plugin, and
