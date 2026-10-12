@@ -193,11 +193,17 @@ e2e_wait_for_zero_tenant_clusters() {
   done
 }
 
-# Runs node image $1's ovs-vswitchd check on the Docker kernel. ARC's runner
+# Runs image $1's ovs-vswitchd check on the Docker kernel. ARC's runner
 # cannot load modules itself, and its installed module files are not in DinD's
 # filesystem. If the daemon cannot load the module, stream the runner's matching
 # module tree into a privileged helper instead. Never invoke ovs-ctl: its fallback
 # removes the bridge module and destroys the Docker networks (#1515).
+#
+# Image $1 supplies only /bin/sh, modprobe and tar -- the module lives in the
+# host's /lib/modules and the result is a property of the host kernel, not of
+# the image. So this does NOT need the CAPD node image, and callers should not
+# wait for one to be built before asking: a host that cannot load the module
+# fails the suite whatever the image turns out to be.
 e2e_host_loads_openvswitch() (
   set -o pipefail
   local image="$1" kernel module_root="${NKE_E2E_HOST_MODULES_DIR:-/lib/modules}"

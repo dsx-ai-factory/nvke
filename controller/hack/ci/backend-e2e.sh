@@ -711,6 +711,19 @@ NKE_CONTROLLER_PROFILES_TILT_IMAGE="docker.local/cwe-profiles:tilt"
 CAPD_REBOOT_IMAGE="ko.local/capd-reboot-controller"
 DSX_IDENTITY_EXCHANGE_IMAGE=""
 
+# Before any of the builds below, not after them. This is a property of the
+# runner's kernel, so nothing built in between can change the answer, and on a
+# host that cannot load the module the suite is already lost. Asking here costs
+# one alpine pull; asking after the node image build cost ~6 minutes of a
+# cpu16 runner per job (#1515).
+log "checking this host can load the openvswitch module"
+ovs_probe_image="$(dockerhub_image alpine:3.22)"
+pull_with_retry "${ovs_probe_image}"
+if ! e2e_host_loads_openvswitch "${ovs_probe_image}"; then
+  log "this runner host cannot load the openvswitch module (#1515)" >&2
+  exit 1
+fi
+
 # Every host build below pulls its bases through the mirror; see
 # dockerhub_build_args in backend-e2e-lib.sh.
 log "building the sanitized profiles fixture image"
@@ -872,10 +885,6 @@ NKE_E2E_DOCKERHUB_MIRROR="${DOCKERHUB_MIRROR}" \
   bash hack/capd-kindest-node/build-image.sh
 CAPD_NODE_IMAGE_OWNED=true
 docker image inspect "${CAPD_NODE_IMAGE}" >"${STATE_DIR}/capd-node-image.json"
-if ! e2e_host_loads_openvswitch "${CAPD_NODE_IMAGE}"; then
-  log "this runner host cannot load the openvswitch module (#1515)" >&2
-  exit 1
-fi
 
 log "creating Kind management cluster ${KIND_CLUSTER_NAME}"
 KIND_CLUSTER_OWNED=true
