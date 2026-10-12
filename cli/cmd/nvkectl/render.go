@@ -18,9 +18,11 @@ import (
 )
 
 func newRenderCmd() *cobra.Command {
+	// Internal: deploy/nvke-deploy.sh runs it with --sitespec and --release.
 	cmd := &cobra.Command{
-		Use:   "render",
-		Short: "Write a resolved copy of an input, ready to apply",
+		Use:    "render",
+		Short:  "Write a resolved copy of an input, ready to apply",
+		Hidden: true,
 	}
 	cmd.AddCommand(newRenderDeployPathCmd())
 	return cmd

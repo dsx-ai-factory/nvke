@@ -35,18 +35,14 @@ What the node needs, all present on the reference instance type:
 
 - `helm`, `kubectl`, `git`, `python3` (the executor's item parser and template
   renderer are Python), plus `clusterctl` for the prerequisites
-- to render the site's values first: `nvkectl` (`make -C cli build` writes
-  `cli/bin/nvkectl`). `nvkectl render deploy-path --deploy-path deploy/nico
-  --sitespec sitespec.yaml --out DIR`, with `DIR` under a directory only you
-  can read such as `~/.local/state/nvke/renders/<site>` (a shared temp
-  directory is refused), writes a copy of this deploy path with the site's
-  values filled in from the spec's `controllerStack` section. `DIR` holds
-  the site's secrets, so it is created `0700` and is for one install. The
-  command ends by naming the files under `DIR` that hold a credential;
-  delete `DIR` after the install. `DIR` gets a `.gitignore` that ignores
-  everything, so a repository does not pick it up by accident. Then install
-  `DIR` with this script; it needs no `--config`. Without a release, the
-  spec sets `controllerStack.images.profiles`: this deploy path enables the
+- to install for a site: `nvkectl` (`make -C cli build` writes
+  `cli/bin/nvkectl`; `NVKECTL` names it, else PATH). `deploy/nvke-deploy.sh
+  install --deploy-path deploy/nico --sitespec sitespec.yaml` renders a copy
+  of this deploy path with the site's values filled in from the spec's
+  `controllerStack` section into a private scratch directory, installs it,
+  and removes it, so no rendered credential is left behind; it needs no
+  `--config`. Without a release, the spec
+  sets `controllerStack.images.profiles`: this deploy path enables the
   profiles content image without naming it
 - a checkout laid out so that `deploy/` and `controller/` are siblings --
   `controller/release.yaml` reaches its chart as
@@ -58,23 +54,22 @@ What the node needs, all present on the reference instance type:
   `prometheus-community.github.io` and `kubernetes-sigs.github.io`, where the
   chart's dependencies come from, and to `docker.io`, `ghcr.io`, `quay.io` and
   `registry.k8s.io`, where its images come from
-- to install from an NVKR release: `nvkectl` on the machine that renders.
-  `nvkectl render deploy-path --deploy-path deploy/nico --release
-  release.json --out DIR` resolves this deploy path against the
+- to install from an NVKR release: add `--release release.json`, the
   `nvkr.dev/release-description/v1` JSON that `nvkr release export
   --reference <repo@digest>` writes. The export describes the release; it
   verifies nothing. Run `nvkr release verify` on the same reference first.
-  Charts the release carries are pulled by digest into `DIR/charts/`; images
-  are pinned by digest; a chart the release lacks stays on its public
-  repository. The release decides the version of a chart it carries, with
-  a warning when the item pins another; the pin decides only for a chart
-  the release lacks. Each
-  item's `release.yaml` names its artifacts: `chart.artifact` (default: the
-  item name), `chart.imageArtifact`, `chart.profilesArtifact`, or a manifest
-  item's `artifact`. `--arch` selects them (default: the site spec's
-  `controllerStack.arch`). The render refuses, naming every problem, when an
-  image artifact is missing. Then install `DIR` with this script; it needs
-  no `nvkectl`.
+  Charts the release carries are pulled by digest; images are pinned by
+  digest; a chart the release lacks stays on its public repository. The
+  release decides the version of a chart it carries, with a warning when
+  the item pins another; the pin decides only for a chart the release
+  lacks. Each item's `release.yaml` names its artifacts: `chart.artifact`
+  (default: the item name), `chart.imageArtifact`, `chart.profilesArtifact`,
+  or a manifest item's `artifact`. Artifacts are selected for the site
+  spec's `controllerStack.arch`. The render refuses, naming every problem,
+  when an image artifact is missing. With `--nvkr-run-dir
+  .nvkr/runs/<attempt>`, charts and images come from the Run's OCI layouts
+  and the images are imported into the node's containerd (`CTR` names the
+  import command).
 
 ## Before this runs
 
