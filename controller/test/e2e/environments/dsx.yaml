@@ -57,11 +57,22 @@ infrastructure:
       # the site afterwards --- an unassociated group is rejected at create.
       sshKeyGroupID: "${DSX_AZ51_DEV2_DH2_SSH_KEY_GROUP_ID:-}"
 
-      # The account this datahall's image bakes. The OSS os-image bakes
-      # `ubuntu`; this one runs an internal-pipeline image. A mismatch writes
-      # authorized_keys for an account that does not exist, and the run fails
-      # as a publickey rejection twenty minutes into provisioning.
-      nodeUser: "${DSX_AZ51_DEV2_DH2_NODE_USER:-dgxc-admin}"
+      # The account the image bakes, which is the login every session uses.
+      # Empty, so it falls through to the os-image default the same way Forge
+      # does -- the lane boots the OSS os-image release for both providers, and
+      # os-image/packer/nke-node-non-fde.pkr.hcl bakes `ubuntu`.
+      #
+      # This defaulted to dgxc-admin, which is what the manual az51 procedure
+      # uses because that boots an internal-pipeline image. The lane does not:
+      # it resolves its image from the release registry. The mismatch writes
+      # authorized_keys for an account that does not exist on the booted image,
+      # and the run spends its whole ReachTimeout being refused on publickey
+      # with nothing saying why -- the dial is what failed, so there is no
+      # session to collect cloud-init diagnostics over.
+      #
+      # Set the variable only for a datahall that genuinely bakes something
+      # else, and only alongside the image that bakes it.
+      nodeUser: "${DSX_AZ51_DEV2_DH2_NODE_USER:-}"
 
       # How the lane reaches the machines it provisions: they sit behind this
       # jump host and are not Teleport-enrolled themselves. Named outright
