@@ -26,6 +26,10 @@ var (
 )
 
 func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
+	// Without this, a subcommand that declares its own PersistentPreRunE would
+	// replace the root's hook, and the command would silently go untraced.
+	cobra.EnableTraverseRunHooks = true
+
 	root := &cobra.Command{
 		Use:   "nvkectl",
 		Short: "NVKE control-plane CLI",
@@ -121,19 +125,28 @@ func resolveSiteConfig(cfg *config.Config) (config.SiteConfig, error) {
 //
 // Every command but help and completion gets one trace ID. When the command
 // fails, Execute appends it to the error. When a command other than a query
-// command succeeds, Execute prints it as a "Trace ID:" line on stdout. A query
-// command that succeeds writes nothing, and its trace ID is logged at debug
-// level.
+// command succeeds, Execute prints it as a "Trace ID:" line on stderr, so the
+// command's own output on stdout stays whatever it produced, including JSON
+// and YAML. A query command that succeeds writes nothing, and its trace ID is
+// logged at debug level.
 func Execute(ctx context.Context, ver, commit, treeState, date string) error {
-	return execute(ctx, newRootCmd(ver, commit, treeState, date), ver, os.Stdout)
+	root := newRootCmd(ver, commit, treeState, date)
+	return execute(ctx, root, ver, root.ErrOrStderr())
 }
 
-// execute runs root under a new trace run, printing the trace ID line to stdout.
-func execute(ctx context.Context, root *cobra.Command, ver string, stdout io.Writer) error {
+// execute runs root under a new trace run, printing the trace ID line to stderr.
+func execute(ctx context.Context, root *cobra.Command, ver string, stderr io.Writer) error {
 	run := telemetry.NewRun(ver)
-	cmd, err := root.ExecuteContextC(telemetry.ContextWithRun(ctx, run))
+	ctx = telemetry.ContextWithRun(ctx, run)
+	cmd, err := root.ExecuteContextC(ctx)
+	// Cobra rejects an unknown flag or a wrong number of arguments before it
+	// runs any hook, so the run has not started. The invocation still failed,
+	// and the operator still gets an ID for it.
+	if err != nil && run.TraceID() == "" && cmd != nil && isTraced(cmd) {
+		run.Start(ctx, cmd.CommandPath())
+	}
 	run.Finish(err)
-	return announceTrace(cmd, stdout, run.TraceID(), err)
+	return announceTrace(cmd, stderr, run.TraceID(), err)
 }
 
 // untracedCommands are the top-level commands that do no work of their own:

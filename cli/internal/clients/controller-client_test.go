@@ -8,6 +8,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -148,6 +149,47 @@ func TestNewSendsTraceparentAndUserAgentWithBearerToken(t *testing.T) {
 	}
 	if tp := got.Get("Traceparent"); !strings.HasPrefix(tp, "00-"+run.TraceID()+"-") {
 		t.Errorf("traceparent = %q, want trace ID %s", tp, run.TraceID())
+	}
+}
+
+func TestWrappedTransportStillPresentsTheProxyClientCertificate(t *testing.T) {
+	var peerCerts int
+	var traceparent string
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		peerCerts = len(r.TLS.PeerCertificates)
+		traceparent = r.Header.Get("Traceparent")
+	}))
+	srv.TLS = &tls.Config{ClientAuth: tls.RequireAnyClientCert}
+	srv.StartTLS()
+	defer srv.Close()
+
+	certFile, keyFile := writeClientCertificate(t)
+	base, err := proxyTransport(config.SiteConfig{ProxyClientCertFile: certFile, ProxyClientKeyFile: keyFile})
+	if err != nil {
+		t.Fatalf("proxyTransport: %v", err)
+	}
+	// The test server's own certificate is self-signed; only the client side of
+	// the handshake is under test.
+	base.(*http.Transport).TLSClientConfig.InsecureSkipVerify = true //nolint:gosec // test server
+
+	run := telemetry.NewRun("v1")
+	ctx := run.Start(context.Background(), "nvkectl get clusters")
+	defer run.Finish(nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := (&http.Client{Transport: telemetry.Transport(base)}).Do(req)
+	if err != nil {
+		t.Fatalf("request through the wrapped transport: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	if peerCerts != 1 {
+		t.Errorf("server saw %d client certificates, want 1", peerCerts)
+	}
+	if !strings.HasPrefix(traceparent, "00-"+run.TraceID()+"-") {
+		t.Errorf("traceparent = %q, want trace ID %s", traceparent, run.TraceID())
 	}
 }
 

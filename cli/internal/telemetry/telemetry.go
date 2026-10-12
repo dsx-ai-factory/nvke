@@ -12,14 +12,9 @@ package telemetry
 
 import (
 	"context"
-	"net/http"
 	"sync"
-	"sync/atomic"
 
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -27,26 +22,17 @@ import (
 const (
 	tracerName = "github.com/dsx-ai-factory/nvke/cli"
 
-	// defaultUserAgent is the User-Agent sent before NewRun has set one. It
+	// defaultUserAgent is the User-Agent of a request sent outside any Run. It
 	// matches the "dev" version a build without ldflags reports.
 	defaultUserAgent = "nvkectl/dev"
 )
-
-// userAgent is the User-Agent value Transport sends. NewRun sets it.
-var userAgent atomic.Pointer[string] //nolint:gochecknoglobals // one nvkectl invocation has one version
-
-func currentUserAgent() string {
-	if value := userAgent.Load(); value != nil {
-		return *value
-	}
-	return defaultUserAgent
-}
 
 // Run is the trace of one nvkectl invocation. The zero value is not usable;
 // build one with NewRun. The methods that read the trace ID are safe to call
 // on a nil Run, which has no trace.
 type Run struct {
 	providerOptions []sdktrace.TracerProviderOption
+	userAgent       string
 
 	mu              sync.Mutex
 	tracerProvider  *sdktrace.TracerProvider
@@ -68,9 +54,7 @@ func WithSpanProcessor(processor sdktrace.SpanProcessor) Option {
 // NewRun returns a Run for an nvkectl build with the given version. Requests
 // sent through Transport carry "User-Agent: nvkectl/<version>".
 func NewRun(version string, options ...Option) *Run {
-	userAgentValue := "nvkectl/" + version
-	userAgent.Store(&userAgentValue)
-	run := &Run{}
+	run := &Run{userAgent: "nvkectl/" + version}
 	for _, option := range options {
 		option(run)
 	}
@@ -78,21 +62,18 @@ func NewRun(version string, options ...Option) *Run {
 }
 
 // Start begins the run's root span, named name, and returns a context that
-// carries it. It installs the run's tracer provider and the W3C propagator as
-// the process-wide defaults. Calling Start again returns ctx with the existing
-// root span.
+// carries it and the run itself, so Transport can find them. Calling Start
+// again returns ctx with the existing root span.
 func (run *Run) Start(ctx context.Context, name string) context.Context {
 	run.mu.Lock()
 	defer run.mu.Unlock()
 	if run.rootSpan != nil {
-		return trace.ContextWithSpan(ctx, run.rootSpan)
+		return ContextWithRun(trace.ContextWithSpan(ctx, run.rootSpan), run)
 	}
 	run.tracerProvider = sdktrace.NewTracerProvider(run.providerOptions...)
-	otel.SetTracerProvider(run.tracerProvider)
-	otel.SetTextMapPropagator(propagation.TraceContext{})
 	ctx, run.rootSpan = run.tracerProvider.Tracer(tracerName).Start(ctx, name)
 	run.rootSpanContext = run.rootSpan.SpanContext()
-	return ctx
+	return ContextWithRun(ctx, run)
 }
 
 // TraceID returns the run's 32-hex trace ID, or "" if Start has not been
@@ -147,13 +128,10 @@ func RunFrom(ctx context.Context) *Run {
 	return run
 }
 
-// Transport wraps base so every request carries the traceparent of the span in
-// its context and the nvkectl User-Agent. A nil base means
-// http.DefaultTransport.
-func Transport(base http.RoundTripper) http.RoundTripper {
-	if base == nil {
-		base = http.DefaultTransport
-	}
-	return otelhttp.NewTransport(userAgentTransport{base: base},
-		otelhttp.WithPropagators(propagation.TraceContext{}))
+// activeTracerProvider returns the run's tracer provider, or nil before Start
+// and after Finish.
+func (run *Run) activeTracerProvider() *sdktrace.TracerProvider {
+	run.mu.Lock()
+	defer run.mu.Unlock()
+	return run.tracerProvider
 }

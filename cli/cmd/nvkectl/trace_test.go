@@ -6,7 +6,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -15,13 +14,15 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/config"
 )
 
-// These tests install a process-wide tracer provider, so none is parallel.
+// These tests run commands through execute, which installs the process's default
+// slog logger, so none is parallel.
 
 var traceIDLineRE = regexp.MustCompile(`(?m)^Trace ID: ([0-9a-f]{32})$`)
 
@@ -57,9 +58,9 @@ func newFakeController(t *testing.T) *fakeController {
 	return f
 }
 
-// runNkectl executes nvkectl with args against a config pointing at url, returning
-// stdout and the command's error as Execute reports it.
-func runNkectl(t *testing.T, url string, args ...string) (string, error) {
+// runNkectl executes nvkectl with args against a config pointing at url,
+// returning stdout, stderr and the command's error as Execute reports it.
+func runNkectl(t *testing.T, url string, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	// No kubeconfig, so the client sends no bearer token and mints none.
@@ -68,11 +69,11 @@ func runNkectl(t *testing.T, url string, args ...string) (string, error) {
 
 	root := newRootCmd("test", "test", "test", "test")
 	root.SetArgs(args)
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 	root.SetOut(&out)
-	root.SetErr(io.Discard)
-	err := execute(context.Background(), root, "v1.2.3", &out)
-	return out.String(), err
+	root.SetErr(&errOut)
+	err = execute(context.Background(), root, "v1.2.3", &errOut)
+	return out.String(), errOut.String(), err
 }
 
 func traceparents(t *testing.T, f *fakeController) []string {
@@ -91,23 +92,24 @@ func traceparents(t *testing.T, f *fakeController) []string {
 
 func TestTraceIDPrintedOnSuccessMatchesTraceparent(t *testing.T) {
 	f := newFakeController(t)
-	out, err := runNkectl(t, f.URL, "delete", "cluster", "demo")
+	stdout, stderr, err := runNkectl(t, f.URL, "delete", "cluster", "demo")
 	require.NoError(t, err)
 
-	m := traceIDLineRE.FindStringSubmatch(out)
-	require.NotNil(t, m, "stdout:\n%s", out)
+	m := traceIDLineRE.FindStringSubmatch(stderr)
+	require.NotNil(t, m, "stderr:\n%s", stderr)
 	ids := traceparents(t, f)
 	require.Len(t, ids, 2, "lookup and delete")
 	for _, id := range ids {
 		assert.Equal(t, m[1], id, "every request carries the printed trace ID")
 	}
-	assert.Len(t, traceIDLineRE.FindAllString(out, -1), 1, "printed once")
+	assert.Len(t, traceIDLineRE.FindAllString(stderr, -1), 1, "printed once")
+	assert.NotContains(t, stdout, "Trace ID", "stdout keeps only the result")
 }
 
 func TestTraceIDOnFailureWhenControllerRejects(t *testing.T) {
 	f := newFakeController(t)
 	f.status = http.StatusInternalServerError
-	_, err := runNkectl(t, f.URL, "get", "clusters")
+	_, _, err := runNkectl(t, f.URL, "get", "clusters")
 	require.Error(t, err)
 
 	ids := traceparents(t, f)
@@ -118,24 +120,75 @@ func TestTraceIDOnFailureWhenControllerRejects(t *testing.T) {
 func TestTraceIDOnFailureWhenRequestNeverReachesController(t *testing.T) {
 	f := newFakeController(t)
 	f.Close()
-	_, err := runNkectl(t, f.URL, "get", "clusters")
+	_, _, err := runNkectl(t, f.URL, "get", "clusters")
 	require.Error(t, err)
 	assert.Regexp(t, `\nTrace ID: [0-9a-f]{32}$`, err.Error())
 }
 
+// Cobra rejects these before it runs any hook, so only execute can give the
+// failed invocation an ID.
+func TestTraceIDOnFailureBeforeAnyHookRuns(t *testing.T) {
+	f := newFakeController(t)
+	tests := map[string][]string{
+		"unknown flag":        {"get", "clusters", "--bogus"},
+		"extra argument":      {"bootstrap", "site", "-f", "sitespec.yaml", "extra"},
+		"missing required":    {"create", "cluster"},
+		"extra to a mutation": {"delete", "cluster", "a", "b"},
+	}
+	for name, args := range tests {
+		t.Run(name, func(t *testing.T) {
+			stdout, _, err := runNkectl(t, f.URL, args...)
+			require.Error(t, err)
+			assert.Regexp(t, `\nTrace ID: [0-9a-f]{32}$`, err.Error())
+			assert.Empty(t, stdout)
+		})
+	}
+	assert.Empty(t, traceparents(t, f), "nothing reached the controller")
+}
+
+func TestNoTraceIDForHelpAndCompletionFailures(t *testing.T) {
+	f := newFakeController(t)
+	for _, args := range [][]string{{"completion", "--bogus"}, {"help", "--bogus"}, {"bogus"}} {
+		_, _, err := runNkectl(t, f.URL, args...)
+		require.Error(t, err, args)
+		assert.NotContains(t, err.Error(), "Trace ID", args)
+	}
+}
+
+// A child that declares its own PersistentPreRunE must not replace the root's
+// hook, or the child's commands would silently go untraced.
+func TestChildPersistentPreRunDoesNotDisableTracing(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := newRootCmd("test", "test", "test", "test")
+	childHookRan := false
+	root.AddCommand(&cobra.Command{
+		Use:               "probe",
+		PersistentPreRunE: func(*cobra.Command, []string) error { childHookRan = true; return nil },
+		RunE:              func(*cobra.Command, []string) error { return nil },
+	})
+	root.SetArgs([]string{"probe"})
+	var stderr bytes.Buffer
+	root.SetErr(&stderr)
+
+	require.NoError(t, execute(context.Background(), root, "test", &stderr))
+
+	assert.True(t, childHookRan)
+	assert.Regexp(t, traceIDLineRE, stderr.String(), "the root hook still started the trace")
+}
+
 func TestGetPrintsNoTraceIDOnSuccess(t *testing.T) {
 	f := newFakeController(t)
-	out, err := runNkectl(t, f.URL, "get", "clusters", "-o", "json")
+	stdout, stderr, err := runNkectl(t, f.URL, "get", "clusters", "-o", "json")
 	require.NoError(t, err)
-	assert.NotContains(t, out, "Trace ID", "a successful get keeps stdout to the result")
+	assert.NotContains(t, stdout+stderr, "Trace ID", "a successful get writes only its result")
 	assert.Len(t, traceparents(t, f), 1, "the request is still traced")
 }
 
 func TestQueryCommandsTraceWithoutPrinting(t *testing.T) {
 	f := newFakeController(t)
-	out, err := runNkectl(t, f.URL, "version")
+	stdout, stderr, err := runNkectl(t, f.URL, "version")
 	require.NoError(t, err)
-	assert.NotContains(t, out, "Trace ID", "a successful query command writes only its result")
+	assert.NotContains(t, stdout+stderr, "Trace ID", "a successful query command writes only its result")
 }
 
 func TestSuccessfulQueryLogsTraceIDAtDebug(t *testing.T) {
@@ -201,7 +254,7 @@ func TestBootstrapSiteReportsTraceIDOnStderr(t *testing.T) {
 	root.SetErr(&stderr)
 	root.SetArgs([]string{"bootstrap", "site", "-f", writeSiteSpec(t, "not: a site spec")})
 
-	err := execute(context.Background(), root, "test", &stdout)
+	err := execute(context.Background(), root, "test", &stderr)
 	require.Error(t, err)
 
 	m := regexp.MustCompile(`(?m)^Trace ID: ([0-9a-f]{32})$`).FindStringSubmatch(stderr.String())

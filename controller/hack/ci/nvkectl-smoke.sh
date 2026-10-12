@@ -655,7 +655,8 @@ nvkectl_smoke_write_round_trip() {
     nvkectl_smoke_write_cleanup
     return 1
   fi
-  # A successful write prints its trace ID on the last line.
+  # A successful write prints its trace ID on stderr, which this captures with
+  # stdout.
   if ! grep -Eq '^Trace ID: [0-9a-f]{32}$' <<<"${out}"; then
     log "nvkectl smoke: 'create cluster' succeeded without a Trace ID line: ${out}" >&2
     nvkectl_smoke_write_cleanup

@@ -39,6 +39,11 @@ func TestReportFailure(t *testing.T) {
 			wantCode: exitSIGTERM, wantOutput: []string{"nvkectl: canceled"},
 		},
 		{
+			name: "trace ID survives a cancellation", err: &tracedError{err: fmt.Errorf("get: %w", context.Canceled), traceID: "4bf92f3577b34da6a3ce929d0e0e4736"},
+			canceled: true, sig: syscall.SIGINT,
+			wantCode: exitSIGINT, wantOutput: []string{"nvkectl: canceled", "Trace ID: 4bf92f3577b34da6a3ce929d0e0e4736"}, denyOutput: []string{"Error:"},
+		},
+		{
 			name: "recovery advice survives a cancellation", err: fmt.Errorf("bootstrap: %w", recovery), canceled: true, sig: syscall.SIGINT,
 			wantCode: exitSIGINT, wantOutput: []string{"nvkectl: canceled", `bootstrap cluster "kind-x" retained`},
 		},

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,9 +21,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 )
-
-// These tests install a process-wide tracer provider through Run.Start, so
-// none of them is parallel.
 
 var traceparentRE = regexp.MustCompile(`^00-([0-9a-f]{32})-([0-9a-f]{16})-01$`)
 
@@ -33,6 +31,7 @@ func newTestRun(t *testing.T) (*Run, *tracetest.SpanRecorder) {
 }
 
 func TestTransportInjectsTraceparentAndUserAgent(t *testing.T) {
+	t.Parallel()
 	run, rec := newTestRun(t)
 	var got http.Header
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
@@ -63,6 +62,7 @@ func TestTransportInjectsTraceparentAndUserAgent(t *testing.T) {
 }
 
 func TestRootSpanRecordsOutcome(t *testing.T) {
+	t.Parallel()
 	run, rec := newTestRun(t)
 	run.Start(context.Background(), "nvkectl create cluster")
 	run.Finish(errors.New("boom"))
@@ -75,6 +75,7 @@ func TestRootSpanRecordsOutcome(t *testing.T) {
 }
 
 func TestRunWithoutStart(t *testing.T) {
+	t.Parallel()
 	run := NewRun("dev")
 	assert.Empty(t, run.TraceID())
 	run.Finish(nil) // must not panic
@@ -84,6 +85,7 @@ func TestRunWithoutStart(t *testing.T) {
 }
 
 func TestStartTwiceKeepsOneTrace(t *testing.T) {
+	t.Parallel()
 	run, _ := newTestRun(t)
 	first := run.Start(context.Background(), "a")
 	second := run.Start(context.Background(), "b")
@@ -93,6 +95,7 @@ func TestStartTwiceKeepsOneTrace(t *testing.T) {
 }
 
 func TestLogHandlerAddsTraceFields(t *testing.T) {
+	t.Parallel()
 	run, _ := newTestRun(t)
 	ctx := run.Start(context.Background(), "nvkectl get clusters")
 	var buf bytes.Buffer
@@ -109,4 +112,62 @@ func TestLogHandlerAddsTraceFields(t *testing.T) {
 		assert.Equal(t, run.SpanContext().SpanID().String(), rec["span_id"])
 		assert.Equal(t, "x", rec["component"], "WithAttrs keeps the wrapper")
 	}
+}
+
+func TestLogHandlerUsesTheChildSpanInContext(t *testing.T) {
+	t.Parallel()
+	run, _ := newTestRun(t)
+	ctx := run.Start(context.Background(), "nvkectl get clusters")
+	childCtx, child := trace.SpanFromContext(ctx).TracerProvider().Tracer("test").Start(ctx, "child")
+	defer child.End()
+
+	var buf bytes.Buffer
+	slog.New(run.LogHandler(slog.NewJSONHandler(&buf, nil))).InfoContext(childCtx, "inside the child")
+
+	var rec map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &rec))
+	assert.Equal(t, run.TraceID(), rec["trace_id"], "the child shares the run's trace")
+	assert.Equal(t, child.SpanContext().SpanID().String(), rec["span_id"], "the child's own span ID, not the root's")
+	assert.NotEqual(t, run.SpanContext().SpanID().String(), rec["span_id"])
+}
+
+func TestTransportOutsideARunSendsDefaultUserAgentAndNoTrace(t *testing.T) {
+	t.Parallel()
+	var got http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { got = r.Header.Clone() }))
+	defer srv.Close()
+
+	resp, err := (&http.Client{Transport: Transport(nil)}).Get(srv.URL)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+
+	assert.Equal(t, "nvkectl/dev", got.Get("User-Agent"))
+	assert.Empty(t, got.Get("Traceparent"))
+}
+
+func TestRunsKeepTheirOwnUserAgent(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	seen := map[string]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		seen[r.URL.Path] = r.Header.Get("User-Agent")
+	}))
+	defer srv.Close()
+	client := &http.Client{Transport: Transport(nil)}
+
+	for _, version := range []string{"v1", "v2"} {
+		run := NewRun(version)
+		ctx := run.Start(context.Background(), "nvkectl get clusters")
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/"+version, nil)
+		require.NoError(t, err)
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		run.Finish(nil)
+	}
+
+	assert.Equal(t, map[string]string{"/v1": "nvkectl/v1", "/v2": "nvkectl/v2"}, seen,
+		"two runs in one process do not share a User-Agent")
 }
