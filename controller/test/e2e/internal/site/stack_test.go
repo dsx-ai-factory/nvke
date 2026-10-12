@@ -411,3 +411,54 @@ func TestAdoptControllerNameAcceptsAnAgreeingSetting(t *testing.T) {
 		t.Fatalf("an agreeing setting was rejected: %v", err)
 	}
 }
+
+// TestExportDeployAssetsCleanupRestoresTheName keeps the adopted name inside
+// the site lane. The suite is one process, so a name adopted and left behind
+// points every spec after the site container at the qualified release's
+// controller rather than the one the rest of the suite deploys.
+func TestExportDeployAssetsCleanupRestoresTheName(t *testing.T) {
+	const deployed = "cloud-workflow-engine"
+	layout := CurrentLayout()
+	repo := t.TempDir()
+	git(t, repo, "init", "-q")
+	writeFile(t, filepath.Join(repo, layout.Executor), "script")
+	for _, dir := range layout.Export {
+		writeFile(t, filepath.Join(repo, dir, "keep"), "")
+	}
+	writeFile(t, filepath.Join(repo, ControllerReleasePath(layout.DeployPath)),
+		"chart:\n  name: nke-controller\nrelease:\n  name: c\n  namespace: "+deployed+"\n")
+	git(t, repo, "add", "-A")
+	git(t, repo, "commit", "-qm", "release")
+
+	// One set but empty, as a workflow passing an undefined variable leaves
+	// it, and one unset. Both have to come back as they were.
+	t.Setenv(controller.EnvService, "")
+	t.Setenv(controller.EnvNamespace, "")
+	if err := os.Unsetenv(controller.EnvNamespace); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(controller.LegacyEnvNamespace, "")
+	t.Setenv(controller.LegacyEnvService, "")
+
+	assets, cleanup, err := ExportDeployAssets(context.Background(), repo, "HEAD")
+	if err != nil {
+		t.Fatalf("exporting: %v", err)
+	}
+	if got := controller.Namespace(); got != deployed {
+		t.Fatalf("namespace = %q before cleanup, want the adopted %q", got, deployed)
+	}
+
+	cleanup()
+	if value, set := os.LookupEnv(controller.EnvNamespace); set {
+		t.Errorf("%s = %q after cleanup, want it unset as it was", controller.EnvNamespace, value)
+	}
+	if value, set := os.LookupEnv(controller.EnvService); !set || value != "" {
+		t.Errorf("%s = %q (set %t) after cleanup, want it set and empty as it was", controller.EnvService, value, set)
+	}
+	if got := controller.Namespace(); got != controller.ServiceNamespace {
+		t.Errorf("namespace = %q after cleanup, want the suite default %q", got, controller.ServiceNamespace)
+	}
+	if _, err := os.Stat(assets.Dir); !os.IsNotExist(err) {
+		t.Errorf("the export survived cleanup: %v", err)
+	}
+}

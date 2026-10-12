@@ -213,7 +213,9 @@ type DeployAssets struct {
 
 // ExportDeployAssets exports ref's deploy assets from repo in whichever
 // layout ref carries, and points the suite at the controller name they
-// install. cleanup removes the export; the caller owns when it runs.
+// install. cleanup removes the export and puts the controller name back as
+// it found it, so specs outside the site lane in the same process read their
+// own; the caller owns when it runs.
 //
 // Call it before any machine is taken, not at deploy time. Reading the
 // controller's name is part of it, and a release that disagrees with an
@@ -229,12 +231,39 @@ func ExportDeployAssets(ctx context.Context, repo, ref string) (DeployAssets, fu
 	if err != nil {
 		return DeployAssets{}, nil, err
 	}
-	cleanup := func() { _ = os.RemoveAll(dir) }
+	restoreName := saveEnv(controller.EnvNamespace, controller.EnvService)
+	cleanup := func() {
+		restoreName()
+		_ = os.RemoveAll(dir)
+	}
 	if err := AdoptControllerName(dir, layout.DeployPath); err != nil {
 		cleanup()
 		return DeployAssets{}, nil, err
 	}
 	return DeployAssets{Dir: dir, Layout: layout}, cleanup, nil
+}
+
+// saveEnv records names as they stand and returns a func that puts them back,
+// unsetting the ones that were unset.
+func saveEnv(names ...string) func() {
+	type saved struct {
+		value string
+		set   bool
+	}
+	was := make(map[string]saved, len(names))
+	for _, name := range names {
+		value, set := os.LookupEnv(name)
+		was[name] = saved{value, set}
+	}
+	return func() {
+		for name, s := range was {
+			if s.set {
+				_ = os.Setenv(name, s.value)
+			} else {
+				_ = os.Unsetenv(name)
+			}
+		}
+	}
 }
 
 // stageAssets copies the deploy path onto the node, with the layout the
