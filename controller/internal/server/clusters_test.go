@@ -2250,7 +2250,17 @@ func TestValidateCreateClusterRequestFields_RejectsTaintsOnControlPlanePool(t *t
 
 	err := svc.ValidateCreateClusterRequestFields(req)
 
-	require.EqualError(t, err, `invalid node pool "cp": nodeTaints are not allowed on a control-plane pool`)
+	require.EqualError(t, err, `invalid node pool "cp": nodeTaints: not allowed on a control-plane pool`)
+}
+
+func TestValidateCreateClusterRequestFields_RejectsReservedNodeLabel(t *testing.T) {
+	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, false)
+	req := baseNicoClusterCreateRequest()
+	(*req.NodePools)[0].NodeLabels = map[string]string{"kubernetes.io/hostname": "n1"}
+
+	err := svc.ValidateCreateClusterRequestFields(req)
+
+	require.EqualError(t, err, `invalid node pool "cp": nodeLabels: key "kubernetes.io/hostname" is reserved`)
 }
 
 func TestValidateCreateClusterRequestFields_RequiresExactlyOneProvider(t *testing.T) {

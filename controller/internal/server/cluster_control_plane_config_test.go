@@ -106,6 +106,18 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 		require.Contains(t, err.Error(), "desiredCount must be at least 1")
 	})
 
+	t.Run("flag ON rejects a reserved control-plane label", func(t *testing.T) {
+		svc := clusterService{useControlPlaneController: true}
+		req := validForgeCreateClusterRequest()
+		cp := validForgeControlPlaneConfig()
+		cp.DesiredCount = 1
+		cp.NodeLabels = map[string]string{"node-role.kubernetes.io/control-plane": ""}
+		req.ControlPlaneConfig = cp
+
+		err := svc.ValidateCreateClusterRequestFields(req)
+		require.EqualError(t, err, `controlPlaneConfig: nodeLabels: key "node-role.kubernetes.io/control-plane" is forbidden`)
+	})
+
 	t.Run("flag ON accepts a valid Forge cluster-level control plane with no node pools", func(t *testing.T) {
 		svc := clusterService{useControlPlaneController: true}
 		req := validForgeCreateClusterRequest()

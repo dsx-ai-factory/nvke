@@ -221,7 +221,19 @@ func TestValidateCreateNodePoolRequest_RejectsTaintsOnControlPlanePool(t *testin
 		}},
 	})
 
-	require.EqualError(t, err, "nodeTaints are not allowed on a control-plane pool")
+	require.EqualError(t, err, "nodeTaints: not allowed on a control-plane pool")
+}
+
+func TestValidateCreateNodePoolRequest_RejectsReservedLabel(t *testing.T) {
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
+
+	err := service.validateCreateNodePoolRequest(forgeCluster(), &api.CreateNodePoolRequest{
+		Name:           "workers",
+		NodeNamePrefix: "w",
+		NodeLabels:     map[string]string{"nke.nvidia.com/managed": "true"},
+	})
+
+	require.EqualError(t, err, `nodeLabels: key "nke.nvidia.com/managed" is reserved`)
 }
 
 func TestValidateCreateNodePoolRequest_NodeNamePrefixLength(t *testing.T) {

@@ -231,11 +231,14 @@ func validateCloudInitFiles(files []api.CloudInitFile) error {
 }
 
 func (s *nodePoolService) validateCreateNodePoolRequest(cluster db.Cluster, req *api.CreateNodePoolRequest) error {
-	if req.ControlPlane && len(req.NodeTaints) > 0 {
-		return newBadRequestErrorf("nodeTaints are not allowed on a control-plane pool")
-	}
 	if err := naming.ValidateNodeNamePrefix(cluster.Name, req.NodeNamePrefix); err != nil {
 		return err
+	}
+	if err := validateNodeLabels(req.NodeLabels); err != nil {
+		return newBadRequestErrorf("%s", err)
+	}
+	if err := validateNodeTaints(req.NodeTaints, req.ControlPlane); err != nil {
+		return newBadRequestErrorf("%s", err)
 	}
 
 	switch cluster.ProviderType {

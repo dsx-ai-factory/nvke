@@ -158,6 +158,9 @@ func validateCreateClusterLevelControlPlane(
 	if ccpc.DesiredCount < 1 {
 		return fmt.Errorf("controlPlaneConfig.desiredCount must be at least 1")
 	}
+	if err := validateNodeLabels(ccpc.NodeLabels); err != nil {
+		return fmt.Errorf("controlPlaneConfig: %w", err)
+	}
 	if ccpc.MaxSurge != nil && *ccpc.MaxSurge > 1 {
 		return errClusterMaxSurgeTooHigh
 	}
