@@ -501,7 +501,7 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 		spec := filledSiteSpec(t, false, nil)
 		tc.mutate(spec)
 		out := filepath.Join(t.TempDir(), "r")
-		_, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
+		_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: want %q, got %v", name, tc.want, err)
 		}
@@ -519,7 +519,7 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := Render(RenderOptions{AllowTempOut: true, DeployPath: broken, Site: filledSiteSpec(t, false, nil), Out: filepath.Join(t.TempDir(), "r")}); err == nil || !strings.Contains(err.Error(), "no .yaml.tmpl file") {
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: broken, Site: filledSiteSpec(t, false, nil), Out: filepath.Join(t.TempDir(), "r")}); err == nil || !strings.Contains(err.Error(), "no .yaml.tmpl file") {
 		t.Errorf("template item without templates: %v", err)
 	}
 	for _, name := range []string{"..", ".", "a..b"} {

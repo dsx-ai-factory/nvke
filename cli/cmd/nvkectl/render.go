@@ -128,7 +128,7 @@ func runRenderDeployPath(cmd *cobra.Command, opts *renderDeployPathOptions) erro
 		ro.Registry = deploypath.Registries(opts.plainHTTP)
 		inputs = append(inputs, "release "+release.Subject)
 	}
-	result, err := deploypath.Render(ro)
+	result, err := deploypath.Render(cmd.Context(), ro)
 	if err != nil {
 		return err
 	}
