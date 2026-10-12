@@ -199,14 +199,13 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	if strings.TrimSpace(req.Name) == "" {
 		return infra.Node{}, nil, errors.New("dsx: node request has no name")
 	}
-	// A machine, not an instance type. A DSX create names the host outright,
-	// and the site controller is placed that way because an instance type here
-	// is an allowlist built for tenants --- see Site.Machines.
+	// Where the node goes: an instance type, so the datahall picks a machine
+	// that is free and healthy, unless the site pins one. See Site.Place.
 	arch := req.Capabilities[infra.CapabilityArch]
 	if strings.TrimSpace(arch) == "" {
 		arch = infra.DefaultArch
 	}
-	machine, err := p.site.MatchMachine(arch)
+	place, err := p.site.Place(arch)
 	if err != nil {
 		return infra.Node{}, nil, fmt.Errorf("dsx: %w", err)
 	}
@@ -215,7 +214,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	if err != nil {
 		return infra.Node{}, nil, err
 	}
-	ipxe, userData, err := p.payloads(req, machine, authorizedKey)
+	ipxe, userData, err := p.payloads(req, place, authorizedKey)
 	if err != nil {
 		return infra.Node{}, nil, err
 	}
@@ -230,7 +229,14 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	// with the rest of its identifiers.
 	create := standard.NewInstanceCreateRequest(req.Name, p.site.TenantID, p.site.VpcID)
 	create.SetInterfaces(p.interfaces())
-	create.SetMachineId(machine.ID)
+	// One or the other, never both: machineId names a host and needs the
+	// tenant's targetedInstanceCreation capability, instanceTypeId leaves the
+	// choice to the site.
+	if place.MachineID != "" {
+		create.SetMachineId(place.MachineID)
+	} else {
+		create.SetInstanceTypeId(place.InstanceTypeID)
+	}
 	create.SetIpxeScript(ipxe)
 	create.SetUserData(userData)
 	// False, where Forge sets true. True makes the firmware re-run the custom
@@ -252,7 +258,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	inst, resp, err := p.createClient.InstanceAPI.CreateInstance(ctx, p.opts.Env.Org.ID).InstanceCreateRequest(*create).Execute()
 	closeBody(resp)
 	if err != nil {
-		return infra.Node{}, nil, fmt.Errorf("dsx: creating instance %s on machine %s: %w%s", req.Name, machine.Name, apiError(err), createMayHaveLanded)
+		return infra.Node{}, nil, fmt.Errorf("dsx: creating instance %s on %s: %w%s", req.Name, place.Name, apiError(err), createMayHaveLanded)
 	}
 	if inst.GetId() == "" {
 		return infra.Node{}, nil, fmt.Errorf("dsx: creating instance %s returned no id%s", req.Name, createMayHaveLanded)
@@ -303,14 +309,14 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 		return fail(err)
 	}
 
-	return infra.Node{Name: req.Name, IP: address, Arch: machine.Arch()}, &provision.Session{Conn: conn, Release: release}, nil
+	return infra.Node{Name: req.Name, IP: address, Arch: place.Arch}, &provision.Session{Conn: conn, Release: release}, nil
 }
 
 // payloads returns the iPXE script and the cloud-init user data, in that order.
-func (p *Provider) payloads(req infra.NodeRequest, machine Machine, authorizedKey string) (string, string, error) {
-	arch := machine.Arch()
+func (p *Provider) payloads(req infra.NodeRequest, place Placement, authorizedKey string) (string, string, error) {
+	arch := place.Arch
 	if arch == "" {
-		return "", "", fmt.Errorf("dsx: machine %s declares no arch, so neither boot parameters nor host tools can be chosen for it", machine.Name)
+		return "", "", fmt.Errorf("dsx: %s declares no arch, so neither boot parameters nor host tools can be chosen for it", place.Name)
 	}
 	bootLoader, image, err := p.opts.Images(req.NodeVersion, arch)
 	if err != nil {

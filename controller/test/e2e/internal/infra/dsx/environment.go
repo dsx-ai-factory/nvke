@@ -246,13 +246,14 @@ func (s Site) validate() error {
 			missing = append(missing, field.name)
 		}
 	}
-	// Both halves, because they place different things. A datahall with
-	// machines and no instance types builds a site controller that can host no
-	// tenant, and the reverse cannot be built on at all --- neither failure
-	// says so until a long way in.
-	if len(s.Machines) == 0 {
-		missing = append(missing, "machines")
-	}
+	// Instance types are required: they place the tenant nodes, which no
+	// other field can, and they are also where the site controller goes
+	// unless the site pins a machine.
+	//
+	// Machines are optional, and a file is expected to omit them. They pin the
+	// site controller to one host, which is what a hand bring-up wants and
+	// what a lane does not: a pinned machine that is held or unhealthy blocks
+	// every run while the datahall's others sit free.
 	if len(s.InstanceTypes) == 0 {
 		missing = append(missing, "instanceTypes")
 	}
@@ -415,6 +416,47 @@ func (d *Environment) Resolve(capabilities map[string]string) (Selection, error)
 // asked for. First wins, so the file declares machines in the order it would
 // rather spend them.
 //
+// Placement is where a node goes. A DSX create names either a specific
+// machine or an instance type, and this says which the site asked for.
+//
+// An instance type is the default and the one a lane wants: the site picks a
+// machine that is free and healthy, the same way Forge does. Pinning a machine
+// is for a person standing up a datahall by hand, where choosing the host is
+// the point -- and it is a liability in CI, because a pinned machine that is
+// held or in Error blocks every run while the rest of the datahall sits idle.
+// That cost a full day on az51-dev2-dh2 on 2026-10-12.
+type Placement struct {
+	// MachineID is set only when the site pins one. It needs the tenant's
+	// targetedInstanceCreation capability; InstanceTypeID does not.
+	MachineID string
+	// InstanceTypeID is set when the site leaves the choice to the datahall.
+	InstanceTypeID string
+	// Arch is what was matched on, and decides the node images and host tools.
+	Arch string
+	// Name is what the file called it, for errors a reader can act on.
+	Name string
+}
+
+// Place chooses where the site controller goes: a pinned machine when the site
+// declares any, otherwise an instance type providing the architecture.
+//
+// Machines win when present so a datahall can still pin deliberately, and the
+// file is expected to leave them out.
+func (s Site) Place(arch string) (Placement, error) {
+	if len(s.Machines) > 0 {
+		machine, err := s.MatchMachine(arch)
+		if err != nil {
+			return Placement{}, err
+		}
+		return Placement{MachineID: machine.ID, Arch: machine.Arch(), Name: machine.Name}, nil
+	}
+	instanceType, err := s.MatchInstanceType(map[string]string{infra.CapabilityArch: arch})
+	if err != nil {
+		return Placement{}, err
+	}
+	return Placement{InstanceTypeID: instanceType.ID, Arch: instanceType.Arch(), Name: instanceType.Name}, nil
+}
+
 // Machines are a finite, named list rather than a pool: a datahall holds a
 // handful, and one of them being in Error is the difference between a run that
 // can happen and one that cannot. There is deliberately no fallback to another

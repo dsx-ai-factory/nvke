@@ -150,28 +150,62 @@ func TestValidateNamesEveryMissingField(t *testing.T) {
 	if err == nil {
 		t.Fatal("a site declaring nothing should not validate")
 	}
-	for _, want := range []string{"id", "tenantID", "vpcID", "vpcPrefixID", "sshKeyGroupID", "machines", "instanceTypes"} {
+	for _, want := range []string{"id", "tenantID", "vpcID", "vpcPrefixID", "sshKeyGroupID", "instanceTypes"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should name %s, got %v", want, err)
 		}
 	}
 }
 
-func TestValidateRequiresBothPlacementHalves(t *testing.T) {
-	// A datahall with machines and no instance types builds a site controller
-	// that can host no tenant; the reverse cannot be built on at all.
-	for name, mutate := range map[string]func(*Site){
-		"no machines":      func(s *Site) { s.Machines = nil },
-		"no instanceTypes": func(s *Site) { s.InstanceTypes = nil },
-	} {
-		t.Run(name, func(t *testing.T) {
-			site := completeSite()
-			site.Key = "dh"
-			mutate(&site)
-			if err := site.validate(); err == nil {
-				t.Errorf("a site with %s should not validate", name)
-			}
-		})
+func TestValidateRequiresInstanceTypesAndNotMachines(t *testing.T) {
+	// Instance types place the tenant nodes, which nothing else can, and are
+	// also where the site controller goes unless a machine is pinned. Machines
+	// are the optional half: a file is expected to omit them, so that the
+	// datahall picks a host that is free and healthy.
+	t.Run("no instanceTypes", func(t *testing.T) {
+		site := completeSite()
+		site.Key = "dh"
+		site.InstanceTypes = nil
+		if err := site.validate(); err == nil {
+			t.Error("a site with no instanceTypes should not validate")
+		}
+	})
+	t.Run("no machines", func(t *testing.T) {
+		site := completeSite()
+		site.Key = "dh"
+		site.Machines = nil
+		if err := site.validate(); err != nil {
+			t.Errorf("a site with no machines should validate, got %v", err)
+		}
+	})
+}
+
+// Place is the whole point of making machines optional: with none declared the
+// create carries an instanceTypeId and the datahall chooses the host, which is
+// what Forge does and what a lane needs. A pinned machine still wins, so a
+// hand bring-up can still name one.
+func TestPlacePrefersAPinnedMachineAndFallsBackToAnInstanceType(t *testing.T) {
+	site := completeSite()
+	site.Key = "dh"
+
+	pinned, err := site.Place("amd64")
+	if err != nil {
+		t.Fatalf("placing with machines declared: %v", err)
+	}
+	if pinned.MachineID == "" || pinned.InstanceTypeID != "" {
+		t.Errorf("a site declaring machines should place on one, got %+v", pinned)
+	}
+
+	site.Machines = nil
+	pooled, err := site.Place("amd64")
+	if err != nil {
+		t.Fatalf("placing with no machines: %v", err)
+	}
+	if pooled.InstanceTypeID == "" || pooled.MachineID != "" {
+		t.Errorf("a site declaring no machines should place on an instance type, got %+v", pooled)
+	}
+	if pooled.Arch != "amd64" {
+		t.Errorf("placement arch = %q, want amd64 -- it chooses the node images", pooled.Arch)
 	}
 }
 

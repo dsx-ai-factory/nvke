@@ -81,28 +81,36 @@ infrastructure:
       jumpHost: "${DSX_AZ51_DEV2_DH2_JUMP_HOST:-}"
       teleportLogin: "${DSX_AZ51_DEV2_DH2_TELEPORT_LOGIN:-}"
 
-      # The hosts a site controller can be built on, targeted by id. This half
-      # has no Forge equivalent: Forge names an instance type and lets the API
-      # pick a machine, where a DSX create takes a machineId and names one.
+      # No machines declared, so the create carries an instanceTypeId and the
+      # datahall picks a host that is free and healthy -- the same way Forge
+      # does, and what a lane needs.
       #
-      # Named by the serial their operators use, because that is what a
-      # capacity conversation is held in. A datahall holds a handful of these
-      # and one being in Error is the difference between a run that can happen
-      # and one that cannot --- J701L6FY is deliberately absent here: its
-      # delete wedged and it sits in Error with BmcExplorationFailure.
-      machines:
-        - name: J701L43T
-          id: "${DSX_AZ51_DEV2_DH2_CP_MACHINE_ID:-}"
-          provides: {arch: amd64}
+      # Pinning one is still supported, and is what a hand bring-up wants:
+      # declare `machines:` with a name, an id and `provides: {arch: ...}` and
+      # it wins over the type below. It needs the tenant's
+      # targetedInstanceCreation capability, which an instance type does not.
+      #
+      # It was pinned, to DSX_AZ51_DEV2_DH2_CP_MACHINE_ID, because that is what
+      # the manual az51 procedure does. In a lane it is a liability: on
+      # 2026-10-12 one pinned machine sat held by a teardown that would not
+      # finish, and every run failed on `409 ... is assigned to an Instance`
+      # while six other machines in the datahall were free and idle.
 
-      # What the site controller's own CWE places TENANT nodes on. A node pool
-      # names an instance type and has no machine field, so the two halves of a
-      # run are placed by different mechanisms and both have to be declared.
+      # Where BOTH halves of a run are placed: the site controller, created by
+      # the suite with no machine pinned above, and the tenant nodes, which the
+      # site controller's own CWE places --- a node pool names an instance type
+      # and has no machine field, so it has no other option.
       #
       # An instance type here is not abstract sizing --- it is a named
       # allowlist of specific machines, bound one at a time. A datahall can
       # ship none at all, so an id here states that someone has already created
-      # the type and bound hosts to it. This one holds J701L44D.
+      # the type and bound hosts to it.
+      #
+      # It held two on 2026-10-12: J701L6EG and J701L43T. That is enough for a
+      # provision run, which takes one. A full run needs three at once --- a
+      # site controller, a tenant control plane and a tenant worker --- so more
+      # have to be bound to this type before one can pass, however many free
+      # machines the datahall shows.
       instanceTypes:
         - name: az51-dev2-dh2-nke-tenant
           id: "${DSX_AZ51_DEV2_DH2_INSTANCE_TYPE_ID:-}"
