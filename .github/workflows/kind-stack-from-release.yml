@@ -1,0 +1,153 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Brings the controller stack up on a kind node from a release description:
+# controller/hack/ci/kind-stack-from-release.sh builds the controller and the
+# profiles fixture into OCI layouts, copies the CAPNICo image, fills a
+# nvkr.dev/release/v4 file, renders deploy/nico against it with
+# --nvkr-run-dir, installs the result and checks the pods run the release's
+# digests. Advisory: not a merge-gate member.
+
+name: Kind stack from release
+
+on:
+  workflow_dispatch:
+  push:
+    branches-ignore: [main]
+    paths:
+      - .github/workflows/kind-stack-from-release.yml
+      - controller/hack/ci/kind-stack-from-release.sh
+      - controller/hack/ci/kind-stack-from-release/**
+      - deploy/**
+      - controller/deploy/charts/**
+      - cli/internal/deploypath/**
+      - cli/internal/bootstrap/nvkrrelease/**
+      - cli/cmd/nvkectl/render.go
+
+permissions: {}
+
+concurrency:
+  group: kind-stack-from-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: deploy/nico on kind from a release
+    runs-on: ubuntu-latest
+    if: github.repository_id == '1323115536'
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned tool versions
+        id: versions
+        run: |
+          {
+            echo "kind_version=$(make --no-print-directory print-KIND_VERSION)"
+            echo "kubectl_version=$(make --no-print-directory print-KUBECTL_VERSION)"
+            echo "helm_version=$(make --no-print-directory print-HELM_VERSION)"
+            echo "capi_version=$(make --no-print-directory print-CAPI_VERSION)"
+            echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+
+      - name: Build nvkectl
+        run: make -C cli build
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ steps.versions.outputs.helm_version }}
+
+      - name: Set up Kind and kubectl
+        uses: ./.github/actions/setup-kind
+        with:
+          kind_version: ${{ steps.versions.outputs.kind_version }}
+          kubectl_version: ${{ steps.versions.outputs.kubectl_version }}
+
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+        with:
+          version: ${{ steps.versions.outputs.oras_version }}
+
+      - name: Set up clusterctl
+        shell: bash
+        env:
+          CAPI_VERSION: ${{ steps.versions.outputs.capi_version }}
+        run: |
+          set -Eeuo pipefail
+          curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 --retry-connrefused \
+            -o /tmp/clusterctl \
+            "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPI_VERSION}/clusterctl-linux-$(dpkg --print-architecture)"
+          chmod +x /tmp/clusterctl
+          sudo mv /tmp/clusterctl /usr/local/bin/clusterctl
+          got="$(clusterctl version -o short)"
+          if [ "${got}" != "${CAPI_VERSION}" ]; then
+            echo "::error::clusterctl reports ${got}, expected ${CAPI_VERSION}"
+            exit 1
+          fi
+
+      # The stack puts many pods on one kind node; past the default watcher
+      # limit kube-proxy exits with "too many open files". Same values as the
+      # other kind lanes.
+      - name: Configure runner inotify capacity
+        shell: bash
+        run: |
+          set -euo pipefail
+          raise_minimum() {
+            local key="$1" minimum="$2" current
+            current="$(sysctl -n "${key}")"
+            if (( current < minimum )); then
+              sudo sysctl -w "${key}=${minimum}"
+            fi
+          }
+          raise_minimum fs.inotify.max_user_instances 1024
+          raise_minimum fs.inotify.max_user_watches 1048576
+
+      - name: Bring the stack up from the release
+        env:
+          # clusterctl reads the Cluster API releases through the GitHub API.
+          GITHUB_TOKEN: ${{ github.token }}
+          CAPI_VERSION: ${{ steps.versions.outputs.capi_version }}
+          NKE_E2E_DOCKERHUB_MIRROR: mirror.gcr.io
+          KEEP_CLUSTER: "true"
+        run: ./controller/hack/ci/kind-stack-from-release.sh
+
+      - name: Collect diagnostics
+        if: failure()
+        env:
+          KUBECONFIG: ${{ runner.temp }}/kind-stack-from-release/kubeconfig
+        run: |
+          set -uo pipefail
+          out=/tmp/kind-stack-diag
+          mkdir -p "${out}"
+          cp "${RUNNER_TEMP}/kind-stack-from-release/release.json" "${out}/" 2>/dev/null || true
+          cp "${RUNNER_TEMP}/kind-stack-from-release/rendered/images.txt" "${out}/" 2>/dev/null || true
+          kubectl get pods -A -o wide > "${out}/pods.txt" 2>&1 || true
+          kubectl describe pods -A > "${out}/describe-pods.txt" 2>&1 || true
+          kubectl get events -A --sort-by=.lastTimestamp > "${out}/events.txt" 2>&1 || true
+          for ns in nke-controller capnico-system spire-server; do
+            kubectl -n "${ns}" logs --all-containers --tail=500 --prefix -l app.kubernetes.io/name > "${out}/${ns}.log" 2>&1 || true
+          done
+          docker exec -i nvke-release-smoke-control-plane ctr -n k8s.io images ls > "${out}/containerd-images.txt" 2>&1 || true
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kind-stack-from-release-${{ github.run_id }}
+          path: /tmp/kind-stack-diag
+          retention-days: 7

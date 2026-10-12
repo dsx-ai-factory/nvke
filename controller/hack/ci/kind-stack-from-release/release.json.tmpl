@@ -1,0 +1,35 @@
+{
+ "schemaVersion": "nvkr.dev/release/v4",
+ "subject": "nvkr.local/nvke/releases@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+ "lane": "local",
+ "scope": "artifact-publication",
+ "artifacts": [
+  {
+   "name": "cwe",
+   "kind": "oci",
+   "digest": "@CWE_DIGEST@",
+   "buildDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+   "components": ["nke-controller"],
+   "reference": "nvkr.local/nvke/cwe@@CWE_DIGEST@",
+   "arch": "linux/amd64"
+  },
+  {
+   "name": "controller-profiles",
+   "kind": "oci",
+   "digest": "@PROFILES_DIGEST@",
+   "buildDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+   "components": ["controller-profiles"],
+   "reference": "nvkr.local/nvke/controller-profiles@@PROFILES_DIGEST@",
+   "arch": "linux/amd64"
+  },
+  {
+   "name": "capnico-controller",
+   "kind": "oci",
+   "digest": "@CAPNICO_DIGEST@",
+   "buildDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+   "components": ["capnico-controller"],
+   "reference": "nvkr.local/nvke/capnico-controller@@CAPNICO_DIGEST@",
+   "arch": "linux/amd64"
+  }
+ ]
+}
