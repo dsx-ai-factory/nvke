@@ -159,7 +159,7 @@ func Render(ctx context.Context, opts RenderOptions) (*Rendered, error) {
 		_ = os.RemoveAll(out)
 		return nil, err
 	}
-	r := &renderer{ctx: ctx, opts: opts, items: items, out: &Rendered{}}
+	r := &renderer{ctx: ctx, opts: opts, items: items, out: &Rendered{}, failed: map[string]bool{}}
 	// Committed chart paths first, so a chart the release carries replaces
 	// them and a chart it lacks resolves from anywhere; then the release, then
 	// the site, whose values are appended last and win.
@@ -185,10 +185,16 @@ func Render(ctx context.Context, opts RenderOptions) (*Rendered, error) {
 		_ = os.RemoveAll(opts.Out)
 		return nil, err
 	}
+	for _, line := range r.out.Notes {
+		fmt.Fprintln(opts.Log, line)
+	}
 	return r.out, nil
 }
 
 type renderer struct {
+	// failed names the items whose release.yaml did not parse; later passes
+	// skip them so the problem is reported once.
+	failed map[string]bool
 	// ctx bounds the registry requests; a cancelled command unwinds through
 	// the normal cleanup.
 	ctx      context.Context
@@ -210,10 +216,11 @@ func (r *renderer) credential(rel string) {
 	r.out.Credentials = append(r.out.Credentials, filepath.ToSlash(rel))
 }
 
+// note records a decision for the operator. Notes reach Log only when the
+// render succeeds, so a later failure does not leave a note about a tree
+// that was removed.
 func (r *renderer) note(format string, args ...any) {
-	line := fmt.Sprintf(format, args...)
-	r.out.Notes = append(r.out.Notes, line)
-	fmt.Fprintln(r.opts.Log, line)
+	r.out.Notes = append(r.out.Notes, fmt.Sprintf(format, args...))
 }
 
 // realPath resolves symlinks in path through its nearest existing ancestor,
@@ -245,6 +252,7 @@ func (r *renderer) absoluteChartPaths() {
 		rel, err := ReadRelease(filepath.Join(r.opts.DeployPath, item.Name))
 		if err != nil {
 			r.problem("%s: %v", item.Name, err)
+			r.failed[item.Name] = true
 			continue
 		}
 		if rel.Chart == nil || rel.Chart.Path == "" {
@@ -281,6 +289,9 @@ func (r *renderer) hasItem(name, kind string) bool {
 // appendValues writes a values file into the rendered item and appends it to
 // the item's values list, after the committed ones so it wins.
 func (r *renderer) appendValues(item, file string, data []byte) {
+	if r.failed[item] {
+		return
+	}
 	// The rendered copy carries what earlier passes wrote (the absolute or
 	// archive chart path, release-images.yaml), so the list is appended there.
 	dst := filepath.Join(r.opts.Out, item)
@@ -306,6 +317,9 @@ func (r *renderer) appendValues(item, file string, data []byte) {
 // appendSetFile adds <helm key>=<absolute path> entries to an item's
 // chart.setFile.
 func (r *renderer) appendSetFile(item string, entries []string) {
+	if r.failed[item] {
+		return
+	}
 	dst := filepath.Join(r.opts.Out, item)
 	rel, err := ReadRelease(dst)
 	if err != nil {
@@ -337,6 +351,9 @@ func (r *renderer) selectRequired(item, role, name string) (nvkrrelease.Artifact
 }
 
 func (r *renderer) helm(item string) {
+	if r.failed[item] {
+		return
+	}
 	// The rendered copy, which already carries an absolute committed chart path.
 	rel, err := ReadRelease(filepath.Join(r.opts.Out, item))
 	if err != nil {

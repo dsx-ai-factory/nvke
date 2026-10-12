@@ -110,7 +110,13 @@ func (r *renderer) site() {
 	if len(r.problems) > 0 {
 		return
 	}
-	trustDomain := spec.EffectiveTrustDomain(spec.ClusterName)
+	// The stack joins the trust domain the nodes were bootstrapped with; the
+	// bootstrap prints it. Deriving one here would name a second domain.
+	trustDomain := spec.Spire.TrustDomain
+	if trustDomain == "" {
+		r.problem("site spec: spire.trustDomain is required: set it to the trust domain nvkectl bootstrap site printed")
+		return
+	}
 	checksum := controllerdeploy.SpireTPMDirectChecksum(cs.Arch)
 	if checksum == "" {
 		r.problem("site spec: controllerStack.arch %q has no TPM attestor checksum", cs.Arch)
@@ -120,7 +126,10 @@ func (r *renderer) site() {
 	// controller: the database password, the OIDC discovery URL and the SPIRE
 	// server, all VIP-derived; the images only when the site spec overrides them.
 	controller := map[string]any{
-		"appDb":       map[string]any{"postgresPassword": password},
+		"appDb": map[string]any{"postgresPassword": password},
+		// The chart then writes the connection string, URL-escaped, into a
+		// Secret instead of a plain env value.
+		"secrets":     map[string]any{"createDbSecret": true},
 		"nkeOIDCAuth": map[string]any{"discoveryURL": fmt.Sprintf("https://%s:%d/.well-known/openid-configuration", vip, oidcNodePort)},
 		"spiffe":      map[string]any{"trustDomain": trustDomain, "spire": map[string]any{"serverAddress": vip}},
 	}
@@ -236,7 +245,7 @@ func (r *renderer) site() {
 // siteValues appends item's site values when the deploy path has the item.
 func (r *renderer) siteValues(item string, values map[string]any) {
 	if !r.hasItem(item, TypeHelm) {
-		r.note("%s: not a helm item of this deploy path; no site values", item)
+		r.problem("%s: the deploy path has no %s helm item; its site values have nowhere to go", item, item)
 		return
 	}
 	var b bytes.Buffer

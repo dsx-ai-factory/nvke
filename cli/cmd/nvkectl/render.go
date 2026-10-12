@@ -50,7 +50,8 @@ login, the database password file, and optionally a mirror, image overrides
 and an nktp values file. A missing database password file is created with a
 generated password. Items get a site-values.yaml; template items become
 manifests. SPIRE gets the bootstrap CA by file reference: helm reads it at
-install time. Paths under controllerStack resolve from the spec's directory;
+install time. spire.trustDomain is required: the stack joins the trust
+domain the bootstrap printed. Paths under controllerStack resolve from the spec's directory;
 spire.caCertFile and spire.caKeyFile from the working directory, as
 "nvkectl bootstrap site" reads them.
 

@@ -56,6 +56,7 @@ func filledSiteSpec(t *testing.T, edits map[string]string) string {
 	for placeholder, value := range values {
 		text = strings.ReplaceAll(text, placeholder, value)
 	}
+	text += "spire:\n  trustDomain: my-tier0-site.nke.local\n"
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}

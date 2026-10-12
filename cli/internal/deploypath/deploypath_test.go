@@ -136,10 +136,12 @@ func filledSiteSpec(t *testing.T, withCA bool, extra map[string]string) *sitespe
 	for placeholder, value := range values {
 		body = strings.ReplaceAll(body, placeholder, value)
 	}
+	// The trust domain is the bootstrap's; the render refuses a spec without it.
+	body += "spire:\n  trustDomain: my-tier0-site.nke.local\n"
 	if withCA {
 		// The bootstrap resolves the CA paths from the working directory, so
 		// they are absolute here.
-		body += "spire:\n  caCertFile: " + filepath.Join(dir, "ca.crt") + "\n  caKeyFile: " + filepath.Join(dir, "ca.key") + "\n"
+		body += "  caCertFile: " + filepath.Join(dir, "ca.crt") + "\n  caKeyFile: " + filepath.Join(dir, "ca.key") + "\n"
 	}
 	path := filepath.Join(dir, "sitespec.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
@@ -205,7 +207,7 @@ func TestRender_FromSiteSpec(t *testing.T) {
 		}
 	}
 	vip := spec.Cluster.ControlPlaneVIP
-	td := spec.ClusterName + ".nke.local"
+	td := "my-tier0-site.nke.local"
 	ctl := readValues(t, filepath.Join(out, "controller", SiteValuesFile))
 	if dig(ctl, "spiffe", "trustDomain") != td || dig(ctl, "spiffe", "spire", "serverAddress") != vip ||
 		dig(ctl, "nkeOIDCAuth", "discoveryURL") != "https://"+vip+":30443/.well-known/openid-configuration" {
@@ -213,6 +215,9 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	}
 	if _, has := ctl["image"]; has {
 		t.Error("controller image set without an override")
+	}
+	if dig(ctl, "secrets", "createDbSecret") != true {
+		t.Error("the controller does not take its connection string from a Secret")
 	}
 	if dig(ctl, "profiles", "image", "tag") != "v1" || dig(ctl, "profiles", "image", "digest") != "" {
 		t.Errorf("profiles image: %v", ctl["profiles"])
@@ -495,6 +500,7 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 		want   string
 	}{
 		"profiles image": {func(s *sitespec.SiteSpec) { s.ControllerStack.Images.Profiles = "" }, "controllerStack.images.profiles is required"},
+		"trust domain":   {func(s *sitespec.SiteSpec) { s.Spire.TrustDomain = "" }, "spire.trustDomain is required"},
 		"empty secret":   {func(s *sitespec.SiteSpec) { _ = os.WriteFile(s.ResolvePath("nico-token"), []byte(" \n"), 0o600) }, "controllerStack.nico.tokenFile is empty"},
 		"quoted orgID":   {func(s *sitespec.SiteSpec) { s.ControllerStack.Nico.OrgID = "org\"x" }, "controllerStack.nico.orgID: the value holds a character"},
 		"unpinned image": {func(s *sitespec.SiteSpec) { s.ControllerStack.Images.Controller = "mirror.example.test/cwe" }, "controllerStack.images.controller: \"mirror.example.test/cwe\" names neither a tag nor a digest"},
@@ -509,6 +515,31 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 		if _, statErr := os.Stat(out); statErr == nil {
 			t.Errorf("%s: output left behind", name)
 		}
+	}
+	// A malformed helm release.yaml is reported once, and a deploy path missing
+	// one of the items the site values go to is refused.
+	malformed := filepath.Join(t.TempDir(), "nico")
+	if err := copyTree(nico, malformed); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(malformed, "temporal", "release.yaml"), []byte("chart:\n  name: [\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: malformed, Site: filledSiteSpec(t, false, nil), Out: filepath.Join(t.TempDir(), "r")})
+	if err == nil || strings.Count(err.Error(), "temporal/release.yaml") != 1 {
+		t.Errorf("malformed release.yaml should be reported once: %v", err)
+	}
+	withoutTemporal := filepath.Join(t.TempDir(), "nico")
+	if err := copyTree(nico, withoutTemporal); err != nil {
+		t.Fatal(err)
+	}
+	itemList, _ := os.ReadFile(filepath.Join(withoutTemporal, "nvke-deploy.yaml"))
+	if err := os.WriteFile(filepath.Join(withoutTemporal, "nvke-deploy.yaml"), []byte(strings.Replace(string(itemList), "  - {name: temporal, type: helm}\n", "", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: withoutTemporal, Site: filledSiteSpec(t, false, nil), Out: filepath.Join(t.TempDir(), "r")})
+	if err == nil || !strings.Contains(err.Error(), "no temporal helm item") {
+		t.Errorf("missing consumer item: %v", err)
 	}
 	// A template item with no template is refused, and `..` is not an item name.
 	broken := filepath.Join(t.TempDir(), "nico")

@@ -78,7 +78,7 @@ is a file `bootstrap site` accepts.
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
 | `registry.apiKey` | string | no | Registry credential. Never defaulted — see below. |
-| `spire.trustDomain` | string | no | SPIFFE trust domain. Defaults to `<bootstrap-cluster>.nke.local`. Use the same value for the permanent site SPIRE server. |
+| `spire.trustDomain` | string | no for the bootstrap, yes for `render deploy-path` | SPIFFE trust domain. The bootstrap defaults to `<bootstrap-cluster>.nke.local` and prints it; the controller stack install takes the value from here and never derives one. |
 | `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to. See below. |
 | `spire.caKeyFile` | string | no | Path to that CA's private key. Required with `caCertFile`. |
 | `controllerStack` | section | for the stack install | Read by the controller stack install, not by `bootstrap site`. `generate sitespec` writes it with `REPLACE_*` placeholders; the install refuses a placeholder. See below. |
