@@ -13,10 +13,12 @@
 #     looks healthy and provisions nothing.
 #
 # Every UUID below is site-specific. Replace all of them. The profile names are
-# placeholders too: fleet profile content is maintained outside this repository
-# and supplied at deploy time. List what your site serves with the API's
-# /api/osProfiles and /api/configProfiles endpoints; nvkectl has no command for
-# them yet.
+# placeholders too. osProfile names a release the site holds; publish one from
+# machineimage.yaml, clusterrelease.yaml and nodepoolrelease.yaml beside this
+# file. List what a site accepts with the API's /api/osProfiles, which serves
+# every release that is not deprecated.
+# Config profile content is maintained outside this repository and supplied at
+# deploy time; /api/configProfiles lists what your site serves.
 #
 # The cluster's top-level `nico` or `infra` sets its provider, and the control
 # plane and every node pool must carry that same payload; any other is rejected.

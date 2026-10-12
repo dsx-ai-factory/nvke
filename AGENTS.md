@@ -79,7 +79,7 @@ checkout, and do not stub a dependency to make the build pass.
 | `cluster-api-provider-provisioned/` | Provisioned Cluster API infrastructure provider | Yes |
 | `controller/internal/` | CWE server, controllers, Temporal workflows and activities, database layer | Yes |
 | `controller/api/openapi.yaml` | OpenAPI 3.0 spec — **the source of truth for the REST API** | Yes |
-| `controller/profiles/` | OS and config profiles | Ask first — being moved out of this repo |
+| `controller/profiles/` | Config profiles and the runbooks their hooks reference | Ask first — being moved out of this repo |
 | `build/` | Build scripts (`agent.sh`) | Yes |
 | `docs/` | Repository-level documentation | Yes |
 | `os-image/` | Reference node OS image spec, Packer recipe, `nvke-os-image-check` | Yes |

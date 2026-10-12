@@ -271,8 +271,7 @@ func RunIPXEBootFlow(t *testing.T, env *TestEnv, profile RuntimeProfile) {
 
 	imageURL := imageServer.URL + "/nke-24.04-x86_64-lvm-2026-02-13-1771001403.qcow2"
 
-	// This iPXE script mirrors the real production FDE profile from
-	// profiles/osProfiles/nke-260213-24.04-amd64-fde/ipxeScript
+	// This iPXE script mirrors a fleet FDE MachineImage's spec.nico.ipxeScript
 	// with only the image-url replaced by the local test HTTP server.
 	ipxeScript := fmt.Sprintf(`#!ipxe
 # Generic qcow-imager iPXE script for x86_64 LVM-based cloud images
@@ -538,8 +537,8 @@ func TestdataDir() string {
 	return filepath.Join(filepath.Dir(thisFile), "testdata")
 }
 
-// RunIPXEProductionImageFlow is like RunIPXEBootFlow but uses the verbatim
-// production iPXE script from profiles/osProfiles with the real CloudFront
+// RunIPXEProductionImageFlow is like RunIPXEBootFlow but uses a fleet FDE
+// MachineImage's spec.nico.ipxeScript verbatim, with the real CloudFront
 // image URL. The image is multi-GB so this test is skipped unless
 // NICO_VMS_TEST_PRODUCTION_IMAGE=true is set.
 //
@@ -574,7 +573,7 @@ func RunIPXEProductionImageFlow(t *testing.T, env *TestEnv, profile RuntimeProfi
 
 	instanceName := UniqueInstanceName("ipxe-prod")
 
-	// Verbatim production FDE iPXE scripts from profiles/osProfiles.
+	// Verbatim FDE iPXE scripts from the fleet MachineImage releases.
 	// Select based on host architecture so the test runs on both x86_64 and ARM64.
 	productionAMD64Script := fmt.Sprintf(`#!ipxe
 set boot-loader %s

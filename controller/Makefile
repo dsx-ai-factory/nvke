@@ -70,14 +70,9 @@ lint: ## Lint source files. (run by the merge gate)
 
 ##@ MachineImage and releases
 
-# OS profiles are being replaced by MachineImage, ClusterRelease and
-# NodePoolRelease custom resources, generated from an OS profile tree (Argo CD
-# applies the fleet's, see nke-site-deploy/cwe-profiles/releases). The generator
-# validates each manifest against the CRDs before it writes anything.
-
-.PHONY: fixture-releases
-fixture-releases: ## Regenerate test/fixtures/releases from test/fixtures/profiles.
-	go run ./hack/osprofiles-to-crs --profiles test/fixtures/profiles --output test/fixtures/releases --license Apache-2.0 --gitops=false
+# OS images and releases are MachineImage, ClusterRelease and NodePoolRelease
+# custom resources. Argo CD applies the fleet's; the manifests under
+# test/fixtures/releases are this repository's own set, maintained by hand.
 
 RELEASE_CRD_DIR		?= $(REPO_ROOT)/management-engine/config/crd/bases
 RELEASE_CRD_NAMES	?= machineimages clusterreleases nodepoolreleases

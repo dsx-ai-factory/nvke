@@ -54,9 +54,6 @@ bin/
 coverage.txt
 cover.html
 
-# CI: list of changed files for osProfiles URL validation (MR-only).
-profiles/osProfiles/.changed-files.txt
-
 # gitlab-ci-local
 .gitlab-ci-local/
 .claude

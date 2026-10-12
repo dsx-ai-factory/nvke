@@ -268,11 +268,11 @@ profile can be validated independently:
 make test-e2e ARGS='--label-filter="os-profiles && nke-260625-24.04-x86-fde"'
 ```
 
-When adding an OS profile:
+When adding a release:
 
-1. Add its MachineImage and NodePoolRelease to the fleet releases (for
-   NVIDIA maintainers, the internal fleet repository; otherwise the directory
-   `$NKE_CONTROLLER_RELEASES_DIR` points at).
+1. Add its MachineImage, ClusterRelease and NodePoolRelease to the fleet
+   releases (for NVIDIA maintainers, the internal fleet repository; otherwise
+   the directory `$NKE_CONTROLLER_RELEASES_DIR` points at).
 2. For a tenant profile, no separate e2e list update is required; the matrix
    includes it automatically on a runner of its architecture.
 3. If nico-vms cannot support it, add it to

@@ -7,9 +7,10 @@ import (
 	"testing"
 )
 
-// Production iPXE scripts from profiles/osProfiles — verbatim copies.
+// iPXE scripts shaped like a fleet FDE MachineImage's spec.nico.ipxeScript,
+// with the real hosts replaced by example.test.
 
-// nke-260306-24.04-amd64-fde/ipxeScript
+// amd64
 const productionAMD64FDEScript = `#!ipxe
 set boot-loader https://example.test/nke-isos/qcow/efi/x86_64/2026-03-10/1773155704/qcow-imager.efi
 set image-url https://example.test/nke-isos/qcow/images/24.04/x86_64/lvm/2026-03-04/1772660145/nke-24.04-x86_64-lvm-2026-03-04-1772660145.qcow2
@@ -25,7 +26,7 @@ chain ${boot-loader} ${console-config} ${kernel-params} ${luks-key} image_url=${
 boot
 `
 
-// nke-260306-24.04-arm64-fde/ipxeScript
+// arm64
 const productionARM64FDEScript = `#!ipxe
 set boot-loader https://example.test/nke-isos/qcow/efi/aarch64/2026-03-06/1772834088/qcow-imager.efi
 set image-url https://example.test/nke-isos/qcow/images/24.04/aarch64/lvm/2026-03-04/1772595122/nke-24.04-aarch64-lvm-2026-03-04-1772595122.qcow2

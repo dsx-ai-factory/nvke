@@ -187,8 +187,9 @@ CWE consumes, and it becomes a SPIRE exec-auth kubeconfig when OIDC is on.
 
 Real hardware, a real NICo site, and a site controller that outlives your
 terminal. Steps 1 to 4 have been run end to end on leased bare metal with calico, to a
-`Ready` control-plane node; steps 5 to 7 have been run against mock NICo rather
-than a real site. Treat a surprise here as a bug in this page and say so.
+`Ready` control-plane node; steps 5, 6 and 8 have been run against mock NICo
+rather than a real site, and step 7 against neither. Treat a surprise here as a
+bug in this page and say so.
 
 ### Before you start
 
@@ -393,9 +394,9 @@ class is set`. Install a provisioner, or run them without persistence.
 
 Use the chart in
 [`controller/deploy/charts/controller`](https://github.com/dsx-ai-factory/nvke/tree/main/controller/deploy/charts/controller).
-It installs **CWE alone**, against a database and a Temporal you provide, and
-defaults to a ClusterIP service with ingress off, so nothing reaches the API
-until you change that.
+It installs **CWE and its dependent CRDs**, against a database and a Temporal
+you provide, and defaults to a ClusterIP service with ingress off, so nothing
+reaches the API until you change that.
 
 ```bash
 nvkectl config set-site --name my-site --url https://<cwe-url> \
@@ -417,7 +418,36 @@ step 5:
 nvkectl get providers      # nico must read CONFIGURED before you create anything
 ```
 
-### 7. Create a tenant cluster
+### 7. Publish a release
+
+Step 6 installed the three release CRDs with the chart, but no releases. Publish
+one with `nvkectl` before you create a cluster.
+
+Copy the three examples —
+[`machineimage.yaml`](../cli/examples/machineimage.yaml),
+[`clusterrelease.yaml`](../cli/examples/clusterrelease.yaml) and
+[`nodepoolrelease.yaml`](../cli/examples/nodepoolrelease.yaml) — and give them a
+name of your own, one name across all three:
+
+```bash
+cp cli/examples/machineimage.yaml cli/examples/clusterrelease.yaml \
+   cli/examples/nodepoolrelease.yaml .
+```
+
+Set `metadata.name` in all three, and `spec.machineImageRef.name` in the two
+releases to match. Edit the rest for your image, then publish, image first:
+
+```bash
+nvkectl create machineimage -f machineimage.yaml
+nvkectl create clusterrelease -f clusterrelease.yaml
+nvkectl create nodepoolrelease -f nodepoolrelease.yaml
+nvkectl get machineimages      # the name you just published
+```
+
+That name is what a cluster asks for as its `osProfile`. Published content is
+immutable, so changing a release means publishing a new name.
+
+### 8. Create a tenant cluster
 
 ```bash
 nvkectl create cluster -f nico-cluster.yaml
@@ -425,10 +455,11 @@ nvkectl get clusters
 ```
 
 Start from [`cli/examples/nico-cluster.yaml`](../cli/examples/nico-cluster.yaml).
-Replace every UUID, `orgID`, and both profile names — a leftover placeholder
-returns 500 rather than a validation error. The OS and config profiles it names
-must exist on your site controller; profile content is maintained outside this
-repository.
+Replace every UUID and `orgID` — a leftover placeholder returns 500 rather than
+a validation error. Every `osProfile` has to name a release already published on
+the site — the one from step 7. Every `configProfile` has to name a config
+profile the site controller already holds, and that content is maintained
+outside this repository.
 
 ### Decommissioning
 

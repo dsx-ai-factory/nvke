@@ -1,7 +1,7 @@
 #cloud-config
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-# Rendered from profiles/osProfiles/nke-260306-24.04-amd64-fde/userData.tmpl
+# Rendered from a fleet FDE NodePoolRelease's spec.machineInit.userDataTemplate
 # Flags: TeleportEnabled=false, SpiffeEnabled=false, CalicoEnabled=false, OvnEnabled=true
 # Test user added for SSH verification.
 hostname: prod-cloudinit-test

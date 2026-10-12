@@ -206,6 +206,5 @@ token:^nke-cluster-bringup$
 path:controller/profiles/*
 
 # Image URLs inside the two synthetic fixture profiles. Their MachineImage specs
-# are published fixtures, and osprofiles-to-crs refuses to change a published
-# spec under the same name.
+# are published fixtures, and published release content is immutable.
 token:^https://example\.test/nke/
