@@ -190,7 +190,7 @@ func dig(m map[string]any, path ...string) any {
 func TestRender_FromSiteSpec(t *testing.T) {
 	spec := filledSiteSpec(t, true, nil)
 	out := filepath.Join(t.TempDir(), "rendered")
-	result, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
+	result, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +330,7 @@ func TestRender_SiteSpecOptions(t *testing.T) {
 	spec.ControllerStack.Mirror = "mirror.example.test:5000"
 	spec.ControllerStack.Images.Controller = "mirror.example.test:5000/cwe@sha256:" + strings.Repeat("a", 64)
 	out := filepath.Join(t.TempDir(), "rendered")
-	if _, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out}); err != nil {
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out}); err != nil {
 		t.Fatal(err)
 	}
 	ctl := readValues(t, filepath.Join(out, "controller", SiteValuesFile))
@@ -370,7 +370,7 @@ func TestRender_DatabasePassword(t *testing.T) {
 	spec := filledSiteSpec(t, false, map[string]string{"REPLACE_DB_PASSWORD_PATH": "state/db-password"})
 	path := spec.ResolvePath("state/db-password")
 	out := filepath.Join(t.TempDir(), "rendered")
-	result, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
+	result, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +397,7 @@ func TestRender_DatabasePassword(t *testing.T) {
 	spec = filledSiteSpec(t, false, nil)
 	spec.ControllerStack.Database.PasswordFile = ""
 	out = filepath.Join(t.TempDir(), "rendered")
-	_, err = Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
+	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
 	if err == nil || !strings.Contains(err.Error(), "controllerStack.database.passwordFile is required") {
 		t.Errorf("unset password file: %v", err)
 	}
@@ -410,7 +410,7 @@ func TestRender_RefusesSharedTemp(t *testing.T) {
 	spec := filledSiteSpec(t, false, nil)
 	shared := filepath.Join("/tmp", fmt.Sprintf("nvke-render-refused-%d", os.Getpid()))
 	for _, out := range []string{shared, filepath.Join(t.TempDir(), "rendered")} {
-		_, err := Render(RenderOptions{DeployPath: nico, Site: spec, Out: out})
+		_, err := Render(context.Background(), RenderOptions{DeployPath: nico, Site: spec, Out: out})
 		if err == nil || !strings.Contains(err.Error(), "is under a shared temp directory") {
 			t.Errorf("%s: %v", out, err)
 		}
@@ -424,7 +424,7 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 	// Placeholders left, every problem at once, nothing left behind.
 	spec := filledSiteSpec(t, false, map[string]string{"REPLACE_ARCH": "REPLACE_ARCH", "REPLACE_TENANT_USER": "REPLACE_TENANT_USER"})
 	out := filepath.Join(t.TempDir(), "rendered")
-	_, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
+	_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
 	if err == nil || !strings.Contains(err.Error(), "controllerStack.arch is still a REPLACE_* placeholder") || !strings.Contains(err.Error(), "controllerStack.tenant.user is still") {
 		t.Errorf("placeholders: %v", err)
 	}
@@ -433,7 +433,7 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 	}
 	// A secret file that is missing.
 	spec = filledSiteSpec(t, false, map[string]string{"REPLACE_NICO_TOKEN_PATH": "/nonexistent/token"})
-	_, err = Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
+	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
 	if err == nil || !strings.Contains(err.Error(), "controllerStack.nico.tokenFile") {
 		t.Errorf("missing token file: %v", err)
 	}
@@ -441,7 +441,7 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(out, "keep"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Site: filledSiteSpec(t, false, nil), Out: out}); err == nil || !strings.Contains(err.Error(), "exists") {
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: filledSiteSpec(t, false, nil), Out: out}); err == nil || !strings.Contains(err.Error(), "exists") {
 		t.Errorf("existing out accepted: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(out, "keep")); err != nil {
@@ -454,7 +454,7 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	inside := filepath.Join(copied, "rendered-inside")
-	if _, err := Render(RenderOptions{AllowTempOut: true, DeployPath: copied, Site: filledSiteSpec(t, false, nil), Out: inside}); err == nil || !strings.Contains(err.Error(), "inside the deploy path") {
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: copied, Site: filledSiteSpec(t, false, nil), Out: inside}); err == nil || !strings.Contains(err.Error(), "inside the deploy path") {
 		t.Errorf("nested out accepted: %v", err)
 	}
 	if _, statErr := os.Stat(inside); statErr == nil {
@@ -472,7 +472,7 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 		}
 	}
 	caSpec.Spire.CACertFile, caSpec.Spire.CAKeyFile = filepath.Join(caDir, "ca.crt"), filepath.Join(caDir, "ca.key")
-	if _, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Site: caSpec, Out: filepath.Join(t.TempDir(), "r")}); err == nil || !strings.Contains(err.Error(), "spire.caCertFile: the path") || !strings.Contains(err.Error(), "holds whitespace") {
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: caSpec, Out: filepath.Join(t.TempDir(), "r")}); err == nil || !strings.Contains(err.Error(), "spire.caCertFile: the path") || !strings.Contains(err.Error(), "holds whitespace") {
 		t.Errorf("CA path with a space: %v", err)
 	}
 	// A secret the templates cannot carry is refused by field.
@@ -481,7 +481,7 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 		if err := os.WriteFile(spec.ResolvePath("tenant-password"), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		_, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: filepath.Join(t.TempDir(), "r")})
+		_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: filepath.Join(t.TempDir(), "r")})
 		if err == nil || !strings.Contains(err.Error(), "controllerStack.tenant.passwordFile: the value holds a character") {
 			t.Errorf("%s in a password: %v", name, err)
 		}
@@ -540,7 +540,7 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 	if err := copyTree(nico, spaced); err != nil {
 		t.Fatal(err)
 	}
-	_, err = Render(RenderOptions{AllowTempOut: true, DeployPath: spaced, Site: filledSiteSpec(t, false, nil), Out: filepath.Join(t.TempDir(), "r")})
+	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: spaced, Site: filledSiteSpec(t, false, nil), Out: filepath.Join(t.TempDir(), "r")})
 	if err == nil || !strings.Contains(err.Error(), "holds whitespace") {
 		t.Errorf("deploy path with a space: %v", err)
 	}
@@ -574,7 +574,7 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 	if err := os.WriteFile(spec.ResolvePath("nktp.yaml"), []byte("a: b\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = Render(RenderOptions{AllowTempOut: true, DeployPath: bare, Site: spec, Out: filepath.Join(t.TempDir(), "r")})
+	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: bare, Site: spec, Out: filepath.Join(t.TempDir(), "r")})
 	if err == nil || !strings.Contains(err.Error(), "no nktp helm item") {
 		t.Errorf("nktp values without the item: %v", err)
 	}
@@ -668,9 +668,11 @@ func TestRender_FromRegistry(t *testing.T) {
 	profiles := imageArtifact(repo, "controller-profiles", "")
 	capAMD := imageArtifact(repo, "capnico-controller", "linux/amd64")
 	capARM := imageArtifact(repo, "capnico-controller-arm64", "linux/arm64")
+	// A release may reference an image as repository:tag@digest.
+	capARM.Reference = repo + "/capnico-controller-arm64:v0.0.45@" + capARM.Digest
 	release := &nvkrrelease.Release{Subject: repo + "/releases@" + digest([]byte("r")), Artifacts: []nvkrrelease.Artifact{temporal, controllerChart, cwe, profiles, capAMD, capARM}}
 	out := filepath.Join(t.TempDir(), "rendered")
-	result, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open})
+	result, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -716,10 +718,11 @@ func TestRender_FromRegistry(t *testing.T) {
 		!strings.Contains(string(kust), "newName: \""+repo+"/capnico-controller-arm64\"") || !strings.Contains(string(kust), "digest: \""+capARM.Digest+"\"") {
 		t.Errorf("kustomization:\n%s", kust)
 	}
-	// images.txt lists the three images, without layouts.
+	// images.txt lists the three images as repository@digest, the tag
+	// dropped, without layouts.
 	images, _ := os.ReadFile(filepath.Join(out, "images.txt"))
 	// In deploy-path order: capnico comes before the controller.
-	if string(images) != capARM.Reference+"\t\n"+cwe.Reference+"\t\n"+profiles.Reference+"\t\n" {
+	if string(images) != repo+"/capnico-controller-arm64@"+capARM.Digest+"\t\n"+cwe.Reference+"\t\n"+profiles.Reference+"\t\n" {
 		t.Errorf("images.txt:\n%s", images)
 	}
 	if len(result.Images) != 3 {
@@ -741,7 +744,7 @@ func TestRender_Refusals(t *testing.T) {
 	profiles := imageArtifact(repo, "controller-profiles", "")
 	release := &nvkrrelease.Release{Subject: "s", Artifacts: []nvkrrelease.Artifact{capARM, profiles}}
 	out := filepath.Join(t.TempDir(), "rendered")
-	_, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/amd64", Out: out, Registry: p.open})
+	_, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/amd64", Out: out, Registry: p.open})
 	if err == nil {
 		t.Fatal("rendered without the controller image")
 	}
@@ -757,7 +760,7 @@ func TestRender_Refusals(t *testing.T) {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open}); err == nil || !strings.Contains(err.Error(), "exists") {
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open}); err == nil || !strings.Contains(err.Error(), "exists") {
 		t.Errorf("existing out accepted: %v", err)
 	}
 	// A reference that resolves to another manifest than its digest is refused.
@@ -772,7 +775,7 @@ func TestRender_Refusals(t *testing.T) {
 	}
 	cwe := imageArtifact(repo, "cwe", "")
 	rel := &nvkrrelease.Release{Subject: "s", Artifacts: []nvkrrelease.Artifact{tampered, cwe, profiles, capARM}}
-	_, err = Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: rel, Arch: "linux/arm64", Out: filepath.Join(t.TempDir(), "r"), Registry: bad.open})
+	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: rel, Arch: "linux/arm64", Out: filepath.Join(t.TempDir(), "r"), Registry: bad.open})
 	if err == nil || !strings.Contains(err.Error(), "the manifest is sha256:") {
 		t.Errorf("tampered manifest: %v", err)
 	}
@@ -822,7 +825,7 @@ func TestRender_FromRun(t *testing.T) {
 		{Name: "capnico-controller-arm64", Kind: "oci", Digest: capDigest, Reference: ref("capnico-controller-arm64", capDigest), Arch: "linux/arm64"},
 	}}
 	out := filepath.Join(t.TempDir(), "rendered")
-	result, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", RunDir: run, Out: out})
+	result, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", RunDir: run, Out: out})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -845,7 +848,7 @@ func TestRender_FromRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	out2 := filepath.Join(t.TempDir(), "rendered")
-	_, err = Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", RunDir: run, Out: out2})
+	_, err = Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Release: release, Arch: "linux/arm64", RunDir: run, Out: out2})
 	if err == nil || !strings.Contains(err.Error(), "no OCI layout") {
 		t.Errorf("missing layout: %v", err)
 	}
@@ -865,7 +868,7 @@ func TestRender_SiteAndRelease(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "rendered")
 	spec := filledSiteSpec(t, false, nil)
 	spec.ControllerStack.Images.Controller = "mirror.example.test/nvke/cwe:v1.2.3"
-	if _, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open}); err != nil {
+	if _, err := Render(context.Background(), RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Release: release, Arch: "linux/arm64", Out: out, Registry: p.open}); err != nil {
 		t.Fatal(err)
 	}
 	// A tag-only override replaces the release image completely: the site

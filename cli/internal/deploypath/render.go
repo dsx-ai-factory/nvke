@@ -88,7 +88,8 @@ type ImageSource struct {
 	Layout    string
 }
 
-// Render writes a copy of the deploy path under opts.Out, resolved for its
+// Render writes a copy of the deploy path under opts.Out; ctx cancels its
+// registry requests. It writes the copy, resolved for its
 // inputs. For the site: every item that takes site values gets a
 // site-values.yaml appended to its values, and every template item is
 // rendered against the site and becomes a manifest item. For the release: a
@@ -102,7 +103,7 @@ type ImageSource struct {
 // holds the site's secrets, so it is written 0700 and is meant for one
 // install. Every problem is reported at once and nothing is left under Out
 // on failure.
-func Render(opts RenderOptions) (*Rendered, error) {
+func Render(ctx context.Context, opts RenderOptions) (*Rendered, error) {
 	if opts.Log == nil {
 		opts.Log = io.Discard
 	}
@@ -157,7 +158,7 @@ func Render(opts RenderOptions) (*Rendered, error) {
 		_ = os.RemoveAll(out)
 		return nil, err
 	}
-	r := &renderer{opts: opts, items: items, out: &Rendered{}}
+	r := &renderer{ctx: ctx, opts: opts, items: items, out: &Rendered{}}
 	// Committed chart paths first, so a chart the release carries replaces
 	// them and a chart it lacks resolves from anywhere; then the release, then
 	// the site, whose values are appended last and win.
@@ -187,6 +188,9 @@ func Render(opts RenderOptions) (*Rendered, error) {
 }
 
 type renderer struct {
+	// ctx bounds the registry requests; a cancelled command unwinds through
+	// the normal cleanup.
+	ctx      context.Context
 	opts     RenderOptions
 	items    []Item
 	out      *Rendered
@@ -446,13 +450,17 @@ func (r *renderer) manifest(item string) {
 	r.note("%s: image %s -> %s", item, rel.Image, img.Reference)
 }
 
+// image records an image the rendered tree runs, as repository@digest: the
+// name the values and the kustomization use, and the one containerd is asked
+// for. A tag in the release's reference is dropped.
 func (r *renderer) image(a nvkrrelease.Artifact) {
+	ref := a.Repository() + "@" + a.Digest
 	for _, have := range r.out.Images {
-		if have.Reference == a.Reference {
+		if have.Reference == ref {
 			return
 		}
 	}
-	src := ImageSource{Reference: a.Reference}
+	src := ImageSource{Reference: ref}
 	if r.opts.RunDir != "" {
 		layout, err := nvkrrelease.FindLayout(r.opts.RunDir, a.Digest)
 		if err != nil {
@@ -468,7 +476,7 @@ func (r *renderer) image(a nvkrrelease.Artifact) {
 // returns its path relative to Out. The store verifies the manifest and the
 // archive against their digests as it reads them.
 func (r *renderer) chartArchive(item, chartName string, a nvkrrelease.Artifact) (string, error) {
-	ctx := context.Background()
+	ctx := r.ctx
 	store, ref, err := r.store(ctx, a)
 	if err != nil {
 		return "", err
