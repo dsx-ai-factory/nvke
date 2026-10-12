@@ -646,7 +646,7 @@ jobs:
           tar="teleport-v${version}-linux-amd64-bin.tar.gz"
           tmp="$(mktemp -d)"
 
-          curl -fsSL --connect-timeout 20 --max-time 300 \
+          curl -fsSL --connect-timeout 20 --max-time 300 --retry 8 --retry-all-errors --retry-max-time 240 \
             -o "${tmp}/${tar}" "https://cdn.teleport.dev/${tar}"
           if [ -z "${expected}" ]; then
             echo "::error::no checksum entry for ${tar}"
@@ -889,7 +889,7 @@ jobs:
             echo "::error::cli-version '${CLI_VERSION}' is neither vX.Y.Z nor vX.Y.Z-rc.N"
             exit 1
           fi
-          if ! curl -fsS -o /dev/null --retry 3 -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+          if ! curl -fsS -o /dev/null --retry 3 --retry-all-errors -H "Authorization: Bearer ${GITHUB_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
               "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/releases/tags/cli/${CLI_VERSION}"; then
             echo "::error::no published cli/${CLI_VERSION} release"

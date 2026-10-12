@@ -217,7 +217,9 @@ jobs:
             *) echo "Tilt publishes no release asset for $(uname -m)" >&2; exit 1 ;;
           esac
           tmp="$(mktemp -d)"
-          curl -fsSL -o "${tmp}/tilt.tgz" \
+          # Retry: a CDN 504 must not fail the job on the first response.
+          curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 \
+            -o "${tmp}/tilt.tgz" \
             "https://github.com/tilt-dev/tilt/releases/download/v${version}/tilt.${version}.linux.${tilt_arch}.tar.gz"
           tar -xzf "${tmp}/tilt.tgz" -C "${tmp}" tilt
           sudo install -m 0755 "${tmp}/tilt" /usr/local/bin/tilt

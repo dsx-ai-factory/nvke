@@ -251,7 +251,9 @@ jobs:
           set -euo pipefail
           zip="packer_${PACKER_VERSION}_linux_amd64.zip"
           tmp="$(mktemp -d)"
-          curl -fsSL -o "${tmp}/${zip}" \
+          # Retry: a CDN 504 must not fail the job on the first response.
+          curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 \
+            -o "${tmp}/${zip}" \
             "https://releases.hashicorp.com/packer/${PACKER_VERSION}/${zip}"
           actual="$(sha256sum "${tmp}/${zip}" | awk '{print $1}')"
           if [[ "${actual}" != "${PACKER_SHA256}" ]]; then
@@ -526,7 +528,8 @@ jobs:
           [[ "${ARCH}" == "arm64" ]] && expected="${PACKER_SHA256_ARM64}"
           zip="packer_${PACKER_VERSION}_linux_${ARCH}.zip"
           tmp="$(mktemp -d)"
-          curl -fsSL -o "${tmp}/${zip}" \
+          curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 \
+            -o "${tmp}/${zip}" \
             "https://releases.hashicorp.com/packer/${PACKER_VERSION}/${zip}"
           actual="$(sha256sum "${tmp}/${zip}" | awk '{print $1}')"
           if [[ "${actual}" != "${expected}" ]]; then
@@ -590,7 +593,8 @@ jobs:
           fi
           tarball="s5cmd_${S5CMD_VERSION}_Linux-${platform}.tar.gz"
           tmp="$(mktemp -d)"
-          curl -fsSL -o "${tmp}/${tarball}" \
+          curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 \
+            -o "${tmp}/${tarball}" \
             "https://github.com/peak/s5cmd/releases/download/v${S5CMD_VERSION}/${tarball}"
           echo "${expected}  ${tmp}/${tarball}" | sha256sum -c -
           tar -xzf "${tmp}/${tarball}" -C "${tmp}" s5cmd
