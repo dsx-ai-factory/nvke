@@ -1,0 +1,29 @@
+name: SCRATCH environment needs-outputs test
+
+on:
+  workflow_dispatch:
+    inputs:
+      gate:
+        description: Whether the gated job should require approval
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  upstream:
+    name: upstream
+    runs-on: ubuntu-latest
+    outputs:
+      gate: ${{ steps.set.outputs.gate }}
+    steps:
+      - id: set
+        run: echo "gate=${{ inputs.gate }}" >> "${GITHUB_OUTPUT}"
+
+  conditional:
+    name: conditional (needs.upstream.outputs.gate=${{ needs.upstream.outputs.gate }})
+    needs: upstream
+    runs-on: ubuntu-latest
+    environment: ${{ needs.upstream.outputs.gate == 'true' && 'forge' || '' }}
+    steps:
+      - run: echo "ran without manual approval if you see this quickly"
