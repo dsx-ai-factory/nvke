@@ -99,48 +99,37 @@ func TestExtractRefusesEscapes(t *testing.T) {
 	}
 }
 
-// TestResolveLayout covers picking the layout off the tree rather than off
-// the version string. A backport, a branch or a hand-cut tag can carry
-// either shape, so the executor's presence decides it.
+// TestResolveLayout covers reading the layout off the tree rather than off
+// the version string.
 //
 // Needs a repository, like the ExportRef tests above it.
 func TestResolveLayout(t *testing.T) {
-	for _, tc := range []struct {
-		name, executor string
-		want           DeployLayout
-	}{
-		{"a release from #1291 onwards", CurrentLayout().Executor, CurrentLayout()},
-		{"a release before it", LegacyLayout().Executor, LegacyLayout()},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			repo := t.TempDir()
-			git(t, repo, "init", "-q")
-			writeFile(t, filepath.Join(repo, tc.executor), "script")
-			git(t, repo, "add", "-A")
-			git(t, repo, "commit", "-qm", "layout")
-
-			got, err := ResolveLayout(context.Background(), repo, "HEAD")
-			if err != nil {
-				t.Fatalf("resolving: %v", err)
-			}
-			if got.Name != tc.want.Name {
-				t.Errorf("ResolveLayout = %s, want %s", got.Name, tc.want.Name)
-			}
-		})
-	}
-
-	t.Run("neither executor names both, so the next move is obvious", func(t *testing.T) {
+	commit := func(t *testing.T, executor string) string {
+		t.Helper()
 		repo := t.TempDir()
 		git(t, repo, "init", "-q")
-		writeFile(t, filepath.Join(repo, "somewhere", "else.sh"), "script")
+		writeFile(t, filepath.Join(repo, executor), "script")
 		git(t, repo, "add", "-A")
-		git(t, repo, "commit", "-qm", "moved again")
+		git(t, repo, "commit", "-qm", "layout")
+		return repo
+	}
 
-		_, err := ResolveLayout(context.Background(), repo, "HEAD")
+	t.Run("a release carrying the executor", func(t *testing.T) {
+		got, err := ResolveLayout(context.Background(), commit(t, CurrentLayout().Executor), "HEAD")
+		if err != nil {
+			t.Fatalf("resolving: %v", err)
+		}
+		if got.Name != CurrentLayout().Name {
+			t.Errorf("ResolveLayout = %s, want %s", got.Name, CurrentLayout().Name)
+		}
+	})
+
+	t.Run("an older release says it is not qualified", func(t *testing.T) {
+		_, err := ResolveLayout(context.Background(), commit(t, "somewhere/else.sh"), "HEAD")
 		if err == nil {
 			t.Fatal("expected an error")
 		}
-		for _, want := range []string{CurrentLayout().Executor, LegacyLayout().Executor} {
+		for _, want := range []string{CurrentLayout().Executor, "controller/v0.2.0-rc.1"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("the error does not name %s: %v", want, err)
 			}
@@ -148,55 +137,31 @@ func TestResolveLayout(t *testing.T) {
 	})
 }
 
-// TestLayoutsExportWhatTheirExecutorNeeds is the regression for run
+// TestLayoutExportsWhatItsExecutorNeeds is the regression for run
 // 37830345659, which died on `git archive controller/v0.1.1: fatal: pathspec
-// 'deploy' did not match any files`. The harness asked a tag from 28
-// September for a directory #1291 created on 8 October. A layout that
-// exports one tree and runs an executor from another cannot work, so each
-// one has to carry its own export list.
-func TestLayoutsExportWhatTheirExecutorNeeds(t *testing.T) {
-	for _, layout := range []DeployLayout{CurrentLayout(), LegacyLayout()} {
-		t.Run(layout.Name, func(t *testing.T) {
-			root := strings.SplitN(layout.Executor, "/", 2)[0]
-			if !slices.Contains(layout.Export, root) {
-				t.Errorf("layout %s runs %s but exports %v, which does not include %s",
-					layout.Name, layout.Executor, layout.Export, root)
-			}
-			// The deploy path is read from the assets, so whatever holds it
-			// has to be exported too.
-			if !slices.ContainsFunc(layout.Export, func(p string) bool {
-				return layout.DeployPath == p || strings.HasPrefix(layout.DeployPath, p+"/")
-			}) {
-				t.Errorf("layout %s installs %s but exports %v, none of which contains it",
-					layout.Name, layout.DeployPath, layout.Export)
-			}
-		})
+// 'deploy' did not match any files`. A layout that exports one tree and runs
+// an executor from another cannot work.
+func TestLayoutExportsWhatItsExecutorNeeds(t *testing.T) {
+	layout := CurrentLayout()
+	root := strings.SplitN(layout.Executor, "/", 2)[0]
+	if !slices.Contains(layout.Export, root) {
+		t.Errorf("layout %s runs %s but exports %v, which does not include %s",
+			layout.Name, layout.Executor, layout.Export, root)
 	}
-
-	// The specific mistake: main's list requested deploy/ from tags that
-	// have never had it.
-	if slices.Contains(LegacyLayout().Export, "deploy") {
-		t.Errorf("the build layout exports deploy/, which no tag before #1291 has: %v", LegacyLayout().Export)
+	// The deploy path is read from the assets, so whatever holds it has to
+	// be exported too.
+	if !slices.ContainsFunc(layout.Export, func(p string) bool {
+		return layout.DeployPath == p || strings.HasPrefix(layout.DeployPath, p+"/")
+	}) {
+		t.Errorf("layout %s installs %s but exports %v, none of which contains it",
+			layout.Name, layout.DeployPath, layout.Export)
 	}
 }
 
-// TestLayoutTargetArgs covers the whole command-line difference between the
-// two executors. `--sbom DIR --target NAME` became `--deploy-path DIR/NAME`;
-// passing either form to the other executor is rejected as an unknown flag.
 func TestLayoutTargetArgs(t *testing.T) {
-	for _, tc := range []struct {
-		layout DeployLayout
-		want   []string
-	}{
-		{CurrentLayout(), []string{"--deploy-path", "/assets/deploy/nico"}},
-		{LegacyLayout(), []string{"--sbom", "/assets/controller/deploy", "--target", "nke-sbom"}},
-	} {
-		t.Run(tc.layout.Name, func(t *testing.T) {
-			got := tc.layout.TargetArgs("/assets")
-			if !slices.Equal(got, tc.want) {
-				t.Errorf("TargetArgs = %v, want %v", got, tc.want)
-			}
-		})
+	want := []string{"--deploy-path", "/assets/deploy/nico"}
+	if got := CurrentLayout().TargetArgs("/assets"); !slices.Equal(got, want) {
+		t.Errorf("TargetArgs = %v, want %v", got, want)
 	}
 }
 
@@ -243,12 +208,9 @@ func TestLayoutsMatchTheReleaseTags(t *testing.T) {
 
 		layout, err := ResolveLayout(context.Background(), repo, tag)
 		if err != nil {
-			// Tags older than the SBOM deploy path carry no executor at
-			// all, and controller/v0.1.2-rc.1 carries the pre-#1453 name
-			// of the current one. Neither is qualified, which is a true
-			// answer about them rather than a gap in the table, and the
-			// error says so in terms a reader can act on.
-			t.Logf("%s matches neither layout", tag)
+			// Tags before controller/v0.2.0-rc.1 are not qualified, which
+			// is a true answer about them rather than a gap in the table.
+			t.Logf("%s predates the supported layout", tag)
 			continue
 		}
 		resolved++
@@ -284,17 +246,12 @@ func TestLayoutsMatchTheReleaseTags(t *testing.T) {
 	}
 }
 
-// TestControllerReleasePathFollowsTheDeployPath pins the one thing both
-// layouts share: the shape inside a deploy path. AdoptControllerName reads
-// this file to decide the name CWE installs under, and it moved with the
-// directory, not within it.
+// TestControllerReleasePathFollowsTheDeployPath pins the shape inside a
+// deploy path. CheckControllerName reads this file for the name the
+// controller installs under.
 func TestControllerReleasePathFollowsTheDeployPath(t *testing.T) {
-	for _, tc := range []struct{ deployPath, want string }{
-		{CurrentLayout().DeployPath, "deploy/nico/controller/release.yaml"},
-		{LegacyLayout().DeployPath, "controller/deploy/nke-sbom/controller/release.yaml"},
-	} {
-		if got := ControllerReleasePath(tc.deployPath); got != tc.want {
-			t.Errorf("ControllerReleasePath(%q) = %q, want %q", tc.deployPath, got, tc.want)
-		}
+	const want = "deploy/nico/controller/release.yaml"
+	if got := ControllerReleasePath(CurrentLayout().DeployPath); got != want {
+		t.Errorf("ControllerReleasePath(%q) = %q, want %q", CurrentLayout().DeployPath, got, want)
 	}
 }

@@ -754,8 +754,8 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 		return site.Stack{}, nil, err
 	}
 	// Here, in BeforeAll, rather than when the stack deploys: this also
-	// takes the controller's name from the release, which has to happen
-	// before a machine is taken and before any spec reads it.
+	// checks the controller's name against the release, which has to fail
+	// before a machine is taken.
 	assets, cleanupAssets, err := site.ExportDeployAssets(context.Background(), repo, ref)
 	if err != nil {
 		return site.Stack{}, nil, err

@@ -323,7 +323,7 @@ func mustChecksum(t *testing.T, arch string) string {
 }
 
 // assetsInstalling is a deploy path whose controller HelmRelease installs
-// under name, which is all AdoptControllerName reads.
+// under name, which is all CheckControllerName reads.
 func assetsInstalling(t *testing.T, deployPath, name string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -332,133 +332,34 @@ func assetsInstalling(t *testing.T, deployPath, name string) string {
 	return dir
 }
 
-// TestAdoptControllerNameTakesTheDeployPaths is the regression for run
-// 37828716287, which stopped before provisioning because the deploy path
-// exported from controller/v0.1.1 installs cloud-workflow-engine while the
-// suite default is nke-controller. The default tracks main; the lane
-// qualifies tags. Nothing configured can be right for both, so the suite
-// reads the name from the thing that installs it.
-func TestAdoptControllerNameTakesTheDeployPaths(t *testing.T) {
-	for _, layout := range []DeployLayout{CurrentLayout(), LegacyLayout()} {
-		t.Run(layout.Name, func(t *testing.T) {
-			const deployed = "cloud-workflow-engine"
-			// Unset, as CI leaves them: no repository variable supplies either.
-			t.Setenv(controller.EnvNamespace, "")
-			t.Setenv(controller.EnvService, "")
-			t.Setenv(controller.LegacyEnvNamespace, "")
-			t.Setenv(controller.LegacyEnvService, "")
-
-			assets := assetsInstalling(t, layout.DeployPath, deployed)
-			if err := AdoptControllerName(assets, layout.DeployPath); err != nil {
-				t.Fatalf("adopting: %v", err)
-			}
-			if got := controller.Namespace(); got != deployed {
-				t.Errorf("namespace = %q, want the deploy path's %q", got, deployed)
-			}
-			if got := controller.Service(); got != deployed {
-				t.Errorf("service = %q, want the deploy path's %q", got, deployed)
-			}
-			// Named alike, so the SPIFFE ID and the Deployment follow too.
-			if got := controller.ServiceAccount(); got != deployed {
-				t.Errorf("service account = %q, want %q", got, deployed)
-			}
-		})
-	}
-}
-
-// TestAdoptControllerNameRejectsAnExplicitConflict keeps what the old guard
-// was for. Adopting silently over a name someone set on purpose would hide
-// the mismatch instead of reporting it.
-func TestAdoptControllerNameRejectsAnExplicitConflict(t *testing.T) {
+// TestCheckControllerName covers the guard that runs before a machine is
+// taken: a deploy path installing the controller under a name the suite does
+// not look for fails on the runner, naming both and the variables to set.
+func TestCheckControllerName(t *testing.T) {
+	deployPath := CurrentLayout().DeployPath
 	for _, env := range []string{
 		controller.EnvNamespace, controller.LegacyEnvNamespace,
 		controller.EnvService, controller.LegacyEnvService,
 	} {
-		t.Run(env, func(t *testing.T) {
-			for _, e := range []string{
-				controller.EnvNamespace, controller.LegacyEnvNamespace,
-				controller.EnvService, controller.LegacyEnvService,
-			} {
-				t.Setenv(e, "")
+		t.Setenv(env, "")
+	}
+
+	t.Run("the suite default matches", func(t *testing.T) {
+		if err := CheckControllerName(assetsInstalling(t, deployPath, controller.ServiceNamespace), deployPath); err != nil {
+			t.Fatalf("a matching name was rejected: %v", err)
+		}
+	})
+
+	t.Run("a different name fails", func(t *testing.T) {
+		const deployed = "other-controller"
+		err := CheckControllerName(assetsInstalling(t, deployPath, deployed), deployPath)
+		if err == nil {
+			t.Fatal("a deploy path installing a different name was accepted")
+		}
+		for _, want := range []string{deployed, controller.ServiceNamespace, controller.EnvNamespace, controller.EnvService} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the error does not name %s: %v", want, err)
 			}
-			t.Setenv(env, "nke-controller")
-
-			assets := assetsInstalling(t, LegacyLayout().DeployPath, "cloud-workflow-engine")
-			err := AdoptControllerName(assets, LegacyLayout().DeployPath)
-			if err == nil {
-				t.Fatal("an explicit name disagreeing with the deploy path was accepted")
-			}
-			for _, want := range []string{env, "nke-controller", "cloud-workflow-engine"} {
-				if !strings.Contains(err.Error(), want) {
-					t.Errorf("the error does not name %s: %v", want, err)
-				}
-			}
-		})
-	}
-}
-
-// TestAdoptControllerNameAcceptsAnAgreeingSetting covers the lane that does
-// pin the name: matching is not a conflict.
-func TestAdoptControllerNameAcceptsAnAgreeingSetting(t *testing.T) {
-	const deployed = "cloud-workflow-engine"
-	t.Setenv(controller.EnvNamespace, deployed)
-	t.Setenv(controller.EnvService, deployed)
-	t.Setenv(controller.LegacyEnvNamespace, "")
-	t.Setenv(controller.LegacyEnvService, "")
-
-	assets := assetsInstalling(t, LegacyLayout().DeployPath, deployed)
-	if err := AdoptControllerName(assets, LegacyLayout().DeployPath); err != nil {
-		t.Fatalf("an agreeing setting was rejected: %v", err)
-	}
-}
-
-// TestExportDeployAssetsCleanupRestoresTheName keeps the adopted name inside
-// the site lane. The suite is one process, so a name adopted and left behind
-// points every spec after the site container at the qualified release's
-// controller rather than the one the rest of the suite deploys.
-func TestExportDeployAssetsCleanupRestoresTheName(t *testing.T) {
-	const deployed = "cloud-workflow-engine"
-	layout := CurrentLayout()
-	repo := t.TempDir()
-	git(t, repo, "init", "-q")
-	writeFile(t, filepath.Join(repo, layout.Executor), "script")
-	for _, dir := range layout.Export {
-		writeFile(t, filepath.Join(repo, dir, "keep"), "")
-	}
-	writeFile(t, filepath.Join(repo, ControllerReleasePath(layout.DeployPath)),
-		"chart:\n  name: nke-controller\nrelease:\n  name: c\n  namespace: "+deployed+"\n")
-	git(t, repo, "add", "-A")
-	git(t, repo, "commit", "-qm", "release")
-
-	// One set but empty, as a workflow passing an undefined variable leaves
-	// it, and one unset. Both have to come back as they were.
-	t.Setenv(controller.EnvService, "")
-	t.Setenv(controller.EnvNamespace, "")
-	if err := os.Unsetenv(controller.EnvNamespace); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(controller.LegacyEnvNamespace, "")
-	t.Setenv(controller.LegacyEnvService, "")
-
-	assets, cleanup, err := ExportDeployAssets(context.Background(), repo, "HEAD")
-	if err != nil {
-		t.Fatalf("exporting: %v", err)
-	}
-	if got := controller.Namespace(); got != deployed {
-		t.Fatalf("namespace = %q before cleanup, want the adopted %q", got, deployed)
-	}
-
-	cleanup()
-	if value, set := os.LookupEnv(controller.EnvNamespace); set {
-		t.Errorf("%s = %q after cleanup, want it unset as it was", controller.EnvNamespace, value)
-	}
-	if value, set := os.LookupEnv(controller.EnvService); !set || value != "" {
-		t.Errorf("%s = %q (set %t) after cleanup, want it set and empty as it was", controller.EnvService, value, set)
-	}
-	if got := controller.Namespace(); got != controller.ServiceNamespace {
-		t.Errorf("namespace = %q after cleanup, want the suite default %q", got, controller.ServiceNamespace)
-	}
-	if _, err := os.Stat(assets.Dir); !os.IsNotExist(err) {
-		t.Errorf("the export survived cleanup: %v", err)
-	}
+		}
+	})
 }

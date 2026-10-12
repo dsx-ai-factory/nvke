@@ -211,17 +211,13 @@ type DeployAssets struct {
 	Layout DeployLayout
 }
 
-// ExportDeployAssets exports ref's deploy assets from repo in whichever
-// layout ref carries, and points the suite at the controller name they
-// install. cleanup removes the export and puts the controller name back as
-// it found it, so specs outside the site lane in the same process read their
-// own; the caller owns when it runs.
+// ExportDeployAssets exports ref's deploy assets from repo and checks that
+// the controller name they install is the one the suite looks for. cleanup
+// removes the export; the caller owns when it runs.
 //
-// Call it before any machine is taken, not at deploy time. Reading the
-// controller's name is part of it, and a release that disagrees with an
-// explicitly set name should fail here on the runner rather than after a
-// node has been provisioned, and before any spec reads
-// controller.Namespace().
+// Call it before any machine is taken, not at deploy time, so a release that
+// predates the supported layout or disagrees about the name fails here on
+// the runner rather than after a node has been provisioned.
 func ExportDeployAssets(ctx context.Context, repo, ref string) (DeployAssets, func(), error) {
 	layout, err := ResolveLayout(ctx, repo, ref)
 	if err != nil {
@@ -231,39 +227,12 @@ func ExportDeployAssets(ctx context.Context, repo, ref string) (DeployAssets, fu
 	if err != nil {
 		return DeployAssets{}, nil, err
 	}
-	restoreName := saveEnv(controller.EnvNamespace, controller.EnvService)
-	cleanup := func() {
-		restoreName()
-		_ = os.RemoveAll(dir)
-	}
-	if err := AdoptControllerName(dir, layout.DeployPath); err != nil {
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	if err := CheckControllerName(dir, layout.DeployPath); err != nil {
 		cleanup()
 		return DeployAssets{}, nil, err
 	}
 	return DeployAssets{Dir: dir, Layout: layout}, cleanup, nil
-}
-
-// saveEnv records names as they stand and returns a func that puts them back,
-// unsetting the ones that were unset.
-func saveEnv(names ...string) func() {
-	type saved struct {
-		value string
-		set   bool
-	}
-	was := make(map[string]saved, len(names))
-	for _, name := range names {
-		value, set := os.LookupEnv(name)
-		was[name] = saved{value, set}
-	}
-	return func() {
-		for name, s := range was {
-			if s.set {
-				_ = os.Setenv(name, s.value)
-			} else {
-				_ = os.Unsetenv(name)
-			}
-		}
-	}
 }
 
 // stageAssets copies the deploy path onto the node, with the layout the
@@ -363,15 +332,13 @@ func (d Stack) withDefaults() Stack {
 	return d
 }
 
-// AdoptControllerName makes the deploy path's choice the suite's.
+// CheckControllerName fails when the deploy path installs the controller
+// under a name the suite is not configured to look for.
 //
-// The deploy path installs the controller, so it decides the name, and it is
-// exported from the controller version under test: a release cut before the
-// rename installs cloud-workflow-engine, one cut after installs
-// nke-controller. A configured name is a second place to say the same thing,
-// and nothing keeps the two in step -- the suite default tracks main while
-// the lane's job is qualifying tags, so leaving it alone fails every release
-// cut before the rename.
+// These are two owners of one string: the deploy path, exported from the
+// controller version under test, and NKE_CONTROLLER_NAMESPACE and
+// NKE_CONTROLLER_SERVICE, which default to nke-controller. Nothing makes the
+// two move together.
 //
 // Getting it wrong is expensive rather than obvious: the readiness probe
 // opens a port-forward onto a Service that does not exist, the forwarder
@@ -379,36 +346,18 @@ func (d Stack) withDefaults() Stack {
 // minutes reporting that the controller will not come up while it is healthy
 // in the namespace beside it. So this runs on the runner, before any machine
 // is taken.
-//
-// Must be called before any spec reads controller.Namespace(). Nothing reads
-// it at init, and the suite is serial, so newStack in BeforeAll is that
-// point. The environment carries it rather than a package variable because
-// that is how the value already reaches subprocesses.
-func AdoptControllerName(assets, deployPath string) error {
+func CheckControllerName(assets, deployPath string) error {
 	deployed, err := controllerNameFromDeployPath(assets, deployPath)
 	if err != nil {
 		return err
 	}
-	// An explicit setting still wins, and still has to agree. Someone who
-	// names one has a reason, and silently overriding it would hide the
-	// mismatch this used to catch.
-	for _, env := range []string{
-		controller.EnvNamespace, controller.LegacyEnvNamespace,
-		controller.EnvService, controller.LegacyEnvService,
-	} {
-		if set := os.Getenv(env); set != "" && set != deployed {
-			return fmt.Errorf(
-				"%s is set to %q but the deploy path installs the controller as %q: clear it to take the deploy path's name, or qualify a controller whose deploy path matches",
-				env, set, deployed,
-			)
-		}
+	if deployed == controller.Namespace() && deployed == controller.Service() {
+		return nil
 	}
-	for _, env := range []string{controller.EnvNamespace, controller.EnvService} {
-		if err := os.Setenv(env, deployed); err != nil {
-			return fmt.Errorf("adopting the deploy path's controller name %q: %w", deployed, err)
-		}
-	}
-	return nil
+	return fmt.Errorf(
+		"the deploy path installs the controller as %q but the suite looks for %s/%s: set %s and %s to %q, or qualify a controller whose deploy path matches",
+		deployed, controller.Namespace(), controller.Service(), controller.EnvNamespace, controller.EnvService, deployed,
+	)
 }
 
 // controllerNameFromDeployPath is the name a set of exported assets installs
@@ -438,11 +387,8 @@ func controllerNameFromDeployPath(assets, deployPath string) (string, error) {
 // is installed under, and so the last segment of its SPIFFE ID.
 //
 // Read from the controller package rather than written out here, because this
-// file does not get to choose it. The deploy path does, and the deploy path is
-// exported from the controller version under test: a release cut before the
-// rename installs cloud-workflow-engine, one cut after installs
-// nke-controller. AdoptControllerName reads it from there and points the whole
-// suite at it before any spec runs.
+// file does not get to choose it. The deploy path does, and
+// CheckControllerName fails the run before any spec when the two disagree.
 func controllerName() string { return controller.Service() }
 
 // spireAdminPath is CWE's SPIFFE ID below the trust domain. A name that does

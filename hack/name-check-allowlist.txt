@@ -37,12 +37,6 @@ token:nke-\d{6}|nke_\d{6}|nke-1\.\d+\.\d+-|^nke-nico-vms-24\.04-amd64-fde$|^nke-
 # before #827: history.
 token:^NVIDIA/nke|^ghcr\.io/nvidia/nke|(^|/)nke/controller([.:]|$)
 
-# The deploy path and its executor as every controller release tag before #1291
-# ships them, build/use-nke-sbom.sh and controller/deploy/nke-sbom. The site
-# lane qualifies those tags, so its layout table names the paths inside them:
-# history it reads, not a name this tree uses.
-token:nke-sbom
-
 # Names in other systems: the Teleport SSH role, the GitLab projects, the
 # Vault path.
 token:^rg-nke-|^nke/(gitlab-ci-cd|packages|node-images|kubeadm-bundler|node-agent)|^secrets/groups/nkek8s

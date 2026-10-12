@@ -136,13 +136,6 @@ func (t *tenantTest) nodesReadyWithProgress(every time.Duration) func(context.Co
 				"elapsed", time.Since(start).Round(time.Second).String(),
 				"outstanding", err.Error())
 		}
-		// Nodes become ready with time; a client and a controller that
-		// disagree about the shape of a response never will. Polling one to
-		// the timeout buys nothing and costs the whole provision budget on a
-		// held machine, and reports a timeout instead of the disagreement.
-		if nvke.SchemaMismatch(err) {
-			return StopTrying("the API client and the controller under test disagree about the response schema").Wrap(err)
-		}
 		return err
 	}
 }

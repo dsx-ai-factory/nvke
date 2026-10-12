@@ -112,7 +112,7 @@ on:
         type: string
         required: false
       controller-name:
-        description: "Name the controller is installed under, e.g. cloud-workflow-engine. Leave empty: the deploy path decides it and the suite reads it from there. Set it only to pin a name deliberately, and the run fails early if it disagrees with the deploy path."
+        description: "Name the controller is installed under. Empty uses the suite default, nke-controller, which every release the lane qualifies installs. The run fails early if it disagrees with the deploy path."
         type: string
         required: false
       cwe-name:
@@ -464,15 +464,11 @@ jobs:
       # it feeds keeps the SITE_ prefix.
       CLI_VERSION: ${{ matrix.cli }}
       # The name the controller is installed under, which the deploy path
-      # decides. Normally leave these empty: site.AdoptControllerName reads
-      # the name out of the exported deploy path before a machine is taken
-      # and the suite follows it, so a run qualifying a release cut before
-      # the rename picks up cloud-workflow-engine on its own and one cut
-      # after picks up nke-controller.
-      #
-      # Set one only to pin a name deliberately. A value that disagrees with
-      # the deploy path fails the run in a minute rather than an hour, which
-      # is the point of setting it at all.
+      # decides. Empty leaves the suite on its default, nke-controller, which
+      # every release the lane qualifies installs. Either way
+      # site.CheckControllerName reads the name out of the exported deploy
+      # path before a machine is taken and fails the run when it does not
+      # match, so a wrong value costs a minute rather than an hour.
       #
       # One input for two variables: the deploy path names the namespace and
       # the Service alike in every release, so splitting them here would be two

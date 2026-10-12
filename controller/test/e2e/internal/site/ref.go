@@ -30,7 +30,7 @@ const (
 	// deployDir holds the e2e deploy paths and the charts every path installs
 	// by relative path; hackDir the post-install script; and nktpChartDir the
 	// NKTP chart, which the nktp item installs by relative path from outside
-	// both. These three have not moved between releases.
+	// both.
 	deployDir    = "controller/deploy"
 	hackDir      = "controller/hack"
 	nktpChartDir = "nktp/deploy/charts/nktp"
@@ -41,10 +41,9 @@ const (
 // qualification, so it reads trees older than itself and cannot assume they
 // are shaped like the checkout it was built from.
 //
-// There are two so far. The executor, its helpers and the customer deploy
-// path moved to a top-level deploy/ in #1291; every tag cut before that
-// keeps them under build/ and controller/deploy/nke-sbom. A new entry is
-// owed to this list whenever they move again.
+// Only CurrentLayout() is supported. Release tags cut before it are not
+// qualified: the plan selects the latest controller tag, and nothing pins an
+// older one.
 type DeployLayout struct {
 	// Name identifies the layout in errors, as the directory it is built
 	// around.
@@ -52,20 +51,14 @@ type DeployLayout struct {
 	// Executor is the install script, relative to the exported assets.
 	Executor string
 	// DeployPath is the customer deploy path, relative to the exported
-	// assets. What is inside it has not changed: both layouts hold
-	// controller/release.yaml and spire/overlay.yaml.
+	// assets. It holds controller/release.yaml and spire/overlay.yaml.
 	DeployPath string
 	// Export is what to pull out of the ref.
 	Export []string
-	// legacyTargetFlags selects the deploy path the way the older executor
-	// does. See TargetArgs.
-	legacyTargetFlags bool
 }
 
-// CurrentLayout() is the layout from #1453 onwards, which gave the #1291
-// executor its nvke- name and changed nothing else. The one tag cut between
-// the two, controller/v0.1.2-rc.1, matches neither layout and is not
-// qualified; a later tag supersedes it.
+// CurrentLayout() is the layout from #1453 onwards, the first controller tag
+// carrying it being controller/v0.2.0-rc.1.
 //
 // A function and not a package variable, so each caller gets its own Export
 // and appending to one cannot reshape the other's.
@@ -78,60 +71,36 @@ func CurrentLayout() DeployLayout {
 	}
 }
 
-// LegacyLayout() is the layout every release tag before #1291 carries.
-func LegacyLayout() DeployLayout {
-	return DeployLayout{
-		Name:              "build",
-		Executor:          "build/use-nke-sbom.sh",
-		DeployPath:        deployDir + "/nke-sbom",
-		Export:            []string{"build", deployDir, hackDir, nktpChartDir},
-		legacyTargetFlags: true,
-	}
-}
-
 // TargetArgs names this layout's deploy path, which is under assets, to its
-// executor. It is the whole command-line difference between the two:
-// `--sbom DIR --target NAME` became `--deploy-path DIR/NAME`. Every other
-// flag they take is spelled the same.
+// executor.
 func (l DeployLayout) TargetArgs(assets string) []string {
-	full := path.Join(assets, l.DeployPath)
-	if l.legacyTargetFlags {
-		return []string{"--sbom", path.Dir(full), "--target", path.Base(full)}
-	}
-	return []string{"--deploy-path", full}
+	return []string{"--deploy-path", path.Join(assets, l.DeployPath)}
 }
 
 // ControllerReleasePath is the HelmRelease deployPath installs the
-// controller from, relative to the exported assets. Both layouts keep it in
-// the same place inside the deploy path.
+// controller from, relative to the exported assets.
 func ControllerReleasePath(deployPath string) string {
 	return path.Join(deployPath, "controller", "release.yaml")
 }
 
-// ResolveLayout reports which layout ref uses.
-//
-// It probes for each executor rather than reading the version, because the
-// move is a property of the tree and a version string only correlates with
-// it: a backport, a branch or a hand-cut tag can carry either shape.
+// ResolveLayout reports the layout ref uses, or that it predates the one the
+// lane supports. It probes for the executor rather than reading the version,
+// because a backport, a branch or a hand-cut tag need not follow the version.
 func ResolveLayout(ctx context.Context, repo, ref string) (DeployLayout, error) {
-	// That ref resolves at all, first. This runs ahead of ExportRef, which
-	// is where that check used to live, and without it a version with a
-	// typo in it reports that the executor moved and a layout is owed --
-	// sending the reader to add an entry for a ref that does not exist.
+	// That ref resolves at all, first, so a version with a typo in it does
+	// not report that the executor moved.
 	if err := exec.CommandContext(ctx, "git", "-C", repo, "cat-file", "-e", ref+"^{commit}").Run(); err != nil {
 		return DeployLayout{}, fmt.Errorf("resolve layout: %s is not a commit in %s: %w", ref, repo, err)
 	}
-	for _, layout := range []DeployLayout{CurrentLayout(), LegacyLayout()} {
-		probe := exec.CommandContext(ctx, "git", "-C", repo, "cat-file", "-e", ref+":"+layout.Executor)
-		if probe.Run() == nil {
-			return layout, nil
-		}
+	layout := CurrentLayout()
+	if exec.CommandContext(ctx, "git", "-C", repo, "cat-file", "-e", ref+":"+layout.Executor).Run() != nil {
+		return DeployLayout{}, fmt.Errorf(
+			"%s in %s has no %s: the site lane qualifies controller/v0.2.0-rc.1 and later, "+
+				"so qualify a newer controller, or update CurrentLayout if the executor moved",
+			ref, repo, layout.Executor,
+		)
 	}
-	return DeployLayout{}, fmt.Errorf(
-		"%s in %s carries neither %s nor %s, so the deploy assets cannot be placed: "+
-			"if the executor moved again, add the layout it moved to",
-		ref, repo, CurrentLayout().Executor, LegacyLayout().Executor,
-	)
+	return layout, nil
 }
 
 // ExportRef writes paths as they are at ref in the repository at repo into a
