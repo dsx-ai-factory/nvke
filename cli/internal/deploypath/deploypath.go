@@ -59,8 +59,13 @@ func Items(dir string) ([]Item, error) {
 		return nil, fmt.Errorf("%s: no items", path)
 	}
 	for _, item := range list.Items {
-		if !tokenPattern.MatchString(item.Name) || !tokenPattern.MatchString(item.Type) {
-			return nil, fmt.Errorf("%s: item %q of type %q: names and types are tokens", path, item.Name, item.Type)
+		if !tokenPattern.MatchString(item.Name) {
+			return nil, fmt.Errorf("%s: item %q: names are tokens", path, item.Name)
+		}
+		switch item.Type {
+		case TypeTemplate, TypeManifest, TypeHelm, TypeArgoCD:
+		default:
+			return nil, fmt.Errorf("%s: item %q has unknown type %q", path, item.Name, item.Type)
 		}
 	}
 	return list.Items, nil

@@ -314,9 +314,14 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(out, "keep")); err != nil {
 		t.Error("an existing --out was removed")
 	}
-	// --out inside the deploy path is refused before anything is copied.
-	inside := filepath.Join(nico, "rendered-inside")
-	if _, err := Render(RenderOptions{DeployPath: nico, Site: filledSiteSpec(t, false, nil), Out: inside}); err == nil || !strings.Contains(err.Error(), "inside the deploy path") {
+	// --out inside the deploy path is refused before anything is copied. A
+	// copy of the deploy path, so a failed guard cannot write into the checkout.
+	copied := filepath.Join(t.TempDir(), "deploy", "nico")
+	if err := copyTree(nico, copied); err != nil {
+		t.Fatal(err)
+	}
+	inside := filepath.Join(copied, "rendered-inside")
+	if _, err := Render(RenderOptions{DeployPath: copied, Site: filledSiteSpec(t, false, nil), Out: inside}); err == nil || !strings.Contains(err.Error(), "inside the deploy path") {
 		t.Errorf("nested out accepted: %v", err)
 	}
 	if _, statErr := os.Stat(inside); statErr == nil {
@@ -342,6 +347,18 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 	_, err = Render(RenderOptions{DeployPath: spaced, Site: filledSiteSpec(t, false, nil), Out: filepath.Join(t.TempDir(), "r")})
 	if err == nil || !strings.Contains(err.Error(), "holds whitespace") {
 		t.Errorf("deploy path with a space: %v", err)
+	}
+	// An item type the executor does not dispatch is refused when read.
+	typed := filepath.Join(t.TempDir(), "nico")
+	if err := copyTree(nico, typed); err != nil {
+		t.Fatal(err)
+	}
+	typedList, _ := os.ReadFile(filepath.Join(typed, "nvke-deploy.yaml"))
+	if err := os.WriteFile(filepath.Join(typed, "nvke-deploy.yaml"), []byte(strings.Replace(string(typedList), "type: helm}", "type: foo.bar}", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Items(typed); err == nil || !strings.Contains(err.Error(), "unknown type") {
+		t.Errorf("unknown item type: %v", err)
 	}
 	// nktpValuesFile without an nktp item is a problem, not a silent skip.
 	spec = filledSiteSpec(t, false, nil)

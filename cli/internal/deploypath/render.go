@@ -143,15 +143,22 @@ func (r *renderer) absoluteChartPaths() {
 			r.problem("%s: %v", item.Name, err)
 			continue
 		}
-		if rel.Chart == nil || rel.Chart.Path == "" || filepath.IsAbs(rel.Chart.Path) {
+		if rel.Chart == nil || rel.Chart.Path == "" {
 			continue
 		}
-		rel.Chart.Path = filepath.Join(r.opts.DeployPath, rel.Chart.Path)
+		path := rel.Chart.Path
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(r.opts.DeployPath, path)
+		}
 		// The deploy path reader takes one unquoted token per value.
-		if strings.ContainsFunc(rel.Chart.Path, unicode.IsSpace) {
-			r.problem("%s: the checkout path %q holds whitespace, which the deploy path reader cannot carry; render from a path without spaces", item.Name, rel.Chart.Path)
+		if strings.ContainsFunc(path, unicode.IsSpace) {
+			r.problem("%s: the chart path %q holds whitespace, which the deploy path reader cannot carry; render from a path without spaces", item.Name, path)
 			continue
 		}
+		if path == rel.Chart.Path {
+			continue
+		}
+		rel.Chart.Path = path
 		if err := writePrivate(filepath.Join(r.opts.Out, item.Name, "release.yaml"), rel.Marshal()); err != nil {
 			r.problem("%s: %v", item.Name, err)
 		}
