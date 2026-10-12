@@ -65,6 +65,7 @@ func TestReadRelease_Problems(t *testing.T) {
 		"chart:\n  name: x\n  version: \"1\"\n  path: a\nrelease:\n  name: r\n": "release.name and release.namespace",
 		"chart:\n  name: x\n  version: \"1\"\n  colour: red\n":                  "field colour not found",
 		"image: ghcr.io/x/y\n": "image must be <repository>:<tag>",
+		"image: ghcr.io/x/y@sha256:" + strings.Repeat("a", 64) + "\n": "with no digest",
 	}
 	for text, want := range cases {
 		dir := t.TempDir()
@@ -201,10 +202,23 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	if len(domains) != 4 || domains[0] != "nke.site-controller.internal" || domains[3] != vip {
 		t.Errorf("additionalDomains: %v", domains)
 	}
-	// Each values file is appended to the item's list, after the committed ones.
+	// Each values file is appended to the item's list, after the committed
+	// ones, and a committed chart path is absolute so the tree installs from
+	// anywhere.
 	rel, _ := ReadRelease(filepath.Join(out, "controller"))
 	if rel.Values[len(rel.Values)-1] != SiteValuesFile || rel.Values[0] != "values.yaml" {
 		t.Errorf("controller values list: %v", rel.Values)
+	}
+	if !filepath.IsAbs(rel.Chart.Path) {
+		t.Errorf("controller chart path is not absolute: %s", rel.Chart.Path)
+	}
+	if info, err := os.Stat(rel.Chart.Path); err != nil || !info.IsDir() {
+		t.Errorf("controller chart path does not exist: %s (%v)", rel.Chart.Path, err)
+	}
+	for _, item := range []string{"postgresql", "spire-crds"} {
+		if r, _ := ReadRelease(filepath.Join(out, item)); r.Chart.Path != "" {
+			t.Errorf("%s gained a chart path: %q", item, r.Chart.Path)
+		}
 	}
 	// Template items are rendered and become manifests.
 	secret, err := os.ReadFile(filepath.Join(out, "nvke-base-config", "20-nico-credentials.yaml"))
@@ -290,12 +304,56 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "controllerStack.nico.tokenFile") {
 		t.Errorf("missing token file: %v", err)
 	}
-	// --out must not exist.
-	if err := os.MkdirAll(out, 0o755); err != nil {
+	// --out must not exist, and an existing one is left alone.
+	if err := os.MkdirAll(filepath.Join(out, "keep"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Render(RenderOptions{DeployPath: nico, Site: filledSiteSpec(t, false, nil), Out: out}); err == nil || !strings.Contains(err.Error(), "exists") {
 		t.Errorf("existing out accepted: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "keep")); err != nil {
+		t.Error("an existing --out was removed")
+	}
+	// --out inside the deploy path is refused before anything is copied.
+	inside := filepath.Join(nico, "rendered-inside")
+	if _, err := Render(RenderOptions{DeployPath: nico, Site: filledSiteSpec(t, false, nil), Out: inside}); err == nil || !strings.Contains(err.Error(), "inside the deploy path") {
+		t.Errorf("nested out accepted: %v", err)
+	}
+	if _, statErr := os.Stat(inside); statErr == nil {
+		t.Error("nested out was created")
+	}
+	// A secret the templates cannot carry is refused by field.
+	for name, content := range map[string]string{"quote": "tok\"en", "newline": "abc\ndef", "backslash": "a\\b"} {
+		spec := filledSiteSpec(t, false, nil)
+		if err := os.WriteFile(spec.ResolvePath("tenant-password"), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Render(RenderOptions{DeployPath: nico, Site: spec, Out: filepath.Join(t.TempDir(), "r")})
+		if err == nil || !strings.Contains(err.Error(), "controllerStack.tenant.passwordFile: the value holds a character") {
+			t.Errorf("%s in a password: %v", name, err)
+		}
+	}
+	// nktpValuesFile without an nktp item is a problem, not a silent skip.
+	spec = filledSiteSpec(t, false, nil)
+	spec.ControllerStack.NktpValuesFile = "nktp.yaml"
+	bare := filepath.Join(t.TempDir(), "nico")
+	if err := copyTree(nico, bare); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := os.ReadFile(filepath.Join(bare, "nvke-deploy.yaml"))
+	withoutNktp := strings.ReplaceAll(string(list), "  - {name: nktp, type: helm}\n", "")
+	if withoutNktp == string(list) {
+		t.Fatal("nktp item not found in the deploy path")
+	}
+	if err := os.WriteFile(filepath.Join(bare, "nvke-deploy.yaml"), []byte(withoutNktp), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(spec.ResolvePath("nktp.yaml"), []byte("a: b\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Render(RenderOptions{DeployPath: bare, Site: spec, Out: filepath.Join(t.TempDir(), "r")})
+	if err == nil || !strings.Contains(err.Error(), "no nktp helm item") {
+		t.Errorf("nktp values without the item: %v", err)
 	}
 }
 
@@ -303,12 +361,23 @@ func TestImageValuesAndOIDCDomains(t *testing.T) {
 	if v := imageValues("r.example/x:v1"); v["repository"] != "r.example/x" || v["tag"] != "v1" {
 		t.Errorf("tag: %v", v)
 	}
+	if v := imageValues("r.example/x:v1@sha256:" + strings.Repeat("a", 64)); v["repository"] != "r.example/x" || v["tag"] != "" || v["digest"] == nil {
+		t.Errorf("tag beside a digest is dropped: %v", v)
+	}
 	if v := imageValues("r.example:5000/x"); v["repository"] != "r.example:5000/x" || v["tag"] != nil {
 		t.Errorf("port without tag: %v", v)
 	}
 	domains, err := oidcDomains(filepath.Join(nico, "spire", "overlay.yaml"), "10.0.0.100")
 	if err != nil || len(domains) != 4 || domains[3] != "10.0.0.100" {
 		t.Errorf("domains: %v %v", domains, err)
+	}
+	// Comments and blank lines inside the list do not truncate it.
+	overlay := filepath.Join(t.TempDir(), "overlay.yaml")
+	if err := os.WriteFile(overlay, []byte("spiffe-oidc-discovery-provider:\n  config:\n    additionalDomains:\n      - a.internal\n      # a comment\n\n      - b.internal\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if domains, err := oidcDomains(overlay, "1.2.3.4"); err != nil || len(domains) != 3 || domains[1] != "b.internal" {
+		t.Errorf("list with a comment: %v %v", domains, err)
 	}
 	if _, err := oidcDomains(filepath.Join(nico, "nvke-deploy.yaml"), "10.0.0.100"); err == nil {
 		t.Error("a file without the block was accepted")

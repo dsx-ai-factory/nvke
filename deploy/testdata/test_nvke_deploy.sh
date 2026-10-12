@@ -41,7 +41,7 @@ reject() {
 # The committed deploy path: every chart comes from the checkout or its
 # repository, in list order; template items need --config.
 out="$(bash "${EXECUTOR}" install --deploy-path "${NICO}" --config "${CONFIG}" --dry-run 2>&1)" || fail "plain dry run exited $?"
-order="$(grep -oE '^=== item [a-z-]+ \(' <<<"${out}" | sed -E 's/^=== item ([a-z-]+) \(/\1/' | tr '\n' ' ')"
+order="$(grep -oE '^=== item [a-z-]+ \(' <<<"${out}" | sed -E 's/^=== item ([a-z-]+) \(/\1/' | tr '\n' ' ' || true)"
 if [[ "${order}" == "nvke-base-config spire-tpm-pubhashes spire-server-nodeport spire-oidc-provider-nodeport capnico nktp postgresql spire-crds temporal spire controller " ]]; then
   pass "items apply in nvke-deploy.yaml order"
 else
@@ -68,7 +68,7 @@ rendered="${WORK}/rendered"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --out "${rendered}" 2>&1)" || fail "render exited $?: ${out}"
 expect "render reports the site values" '^controller: site values written$' "${out}"
 expect "render reports the templates" '^nvke-base-config: 4 templates rendered; applies as a manifest item$' "${out}"
-[[ "$(stat -f '%Lp' "${rendered}" 2>/dev/null || stat -c '%a' "${rendered}")" == "700" ]] && pass "the rendered tree is private" || fail "rendered tree mode"
+find "${rendered}" -maxdepth 0 -perm 0700 | grep -q . && pass "the rendered tree is private" || fail "rendered tree mode"
 [[ ! -e "${NICO}/site.env" && ! -e "${NICO}/controller/site-values.yaml" ]] && pass "nothing was written into the committed deploy path" || fail "committed deploy path written"
 grep -q '^  - site-values.yaml$' "${rendered}/controller/release.yaml" && pass "the controller's values list ends with site-values.yaml" || fail "controller release.yaml: $(cat "${rendered}/controller/release.yaml")"
 grep -q 'token: "secret-nico-token"' "${rendered}/nvke-base-config/20-nico-credentials.yaml" && pass "the NICo Secret is rendered from the token file" || fail "nico credentials"
@@ -83,6 +83,15 @@ expect "the rendered Secret is applied as a manifest" "^kubectl apply --server-s
 expect "the namespaces manifest is applied too" "^kubectl apply --server-side -f ${rendered}/nvke-base-config/00-namespaces.yaml" "${out}"
 reject "no python template render for a rendered path" 'render-template' "${out}"
 expect "postgresql still comes from its public repository" 'helm upgrade --install postgres oci://registry-1.docker.io/bitnamicharts/postgresql --version 18.5.15 ' "${out}"
+expect "a committed chart path is absolute in the rendered tree, so it resolves from anywhere" "helm upgrade --install nktp ${REPO}/nktp/deploy/charts/nktp " "${out}"
+expect "the controller chart too" "helm upgrade --install nke-controller ${REPO}/controller/deploy/charts/controller " "${out}"
+# A secret that cannot be written into a quoted YAML value is refused.
+mkdir -p "${WORK}/bad-site"
+cp "${WORK}/site/"* "${WORK}/bad-site/"
+printf 'tok"en\n' >"${WORK}/bad-site/nico-token"
+sed "s|${WORK}/site/|${WORK}/bad-site/|g" "${WORK}/site/sitespec.yaml" >"${WORK}/bad-site/sitespec.yaml"
+out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/bad-site/sitespec.yaml" --out "${WORK}/bad-rendered" 2>&1)" && fail "a quote in a token exited 0"
+expect "the unescapable token is refused by field" 'controllerStack.nico.tokenFile: the value holds a character the templates cannot carry' "${out}"
 
 # Render refuses a site spec with placeholders, naming them, and leaves nothing.
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${REPO}/cli/examples/sitespec.yaml" --out "${WORK}/refused" 2>&1)" && fail "render with placeholders exited 0"

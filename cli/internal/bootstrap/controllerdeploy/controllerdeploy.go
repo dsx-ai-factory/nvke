@@ -912,14 +912,8 @@ func tpmAttestorArgs(cfg Config, prefix string) []string {
 }
 
 func tpmPluginChecksum(goarch string) string {
-	switch goarch {
-	case "amd64":
-		return spireTPMDirectAMD64Checksum
-	case "arm64":
-		return spireTPMDirectARM64Checksum
-	default:
-		return ""
-	}
+	checksum, _ := SpireTPMDirectChecksum(goarch)
+	return checksum
 }
 
 // upstreamCAArgs points SPIRE at a CA the operator supplied.

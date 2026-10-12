@@ -48,22 +48,37 @@ func Render(opts RenderOptions) (*Rendered, error) {
 	if opts.Site == nil {
 		return nil, errors.New("a site spec is required")
 	}
-	if _, err := os.Stat(opts.Out); err == nil {
-		return nil, fmt.Errorf("%s exists; render writes a new directory", opts.Out)
-	}
-	items, err := Items(opts.DeployPath)
+	deployPath, err := filepath.Abs(opts.DeployPath)
 	if err != nil {
 		return nil, err
 	}
-	if err := copyTree(opts.DeployPath, opts.Out); err != nil {
-		_ = os.RemoveAll(opts.Out)
+	opts.DeployPath = deployPath
+	out, err := filepath.Abs(opts.Out)
+	if err != nil {
 		return nil, err
 	}
-	if err := os.Chmod(opts.Out, 0o700); err != nil {
-		_ = os.RemoveAll(opts.Out)
+	opts.Out = out
+	if rel, err := filepath.Rel(deployPath, out); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf("%s is inside the deploy path %s; render writes beside it, not into it", out, deployPath)
+	}
+	items, err := Items(deployPath)
+	if err != nil {
+		return nil, err
+	}
+	// Mkdir, not MkdirAll: an existing directory is refused, and the
+	// cleanup below removes only what this run created.
+	if err := os.Mkdir(out, 0o700); err != nil {
+		if os.IsExist(err) {
+			return nil, fmt.Errorf("%s exists; render writes a new directory", out)
+		}
+		return nil, err
+	}
+	if err := copyTree(deployPath, out); err != nil {
+		_ = os.RemoveAll(out)
 		return nil, err
 	}
 	r := &renderer{opts: opts, items: items, out: &Rendered{}}
+	r.absoluteChartPaths()
 	r.site()
 	if len(r.problems) > 0 {
 		_ = os.RemoveAll(opts.Out)
@@ -96,6 +111,30 @@ func (r *renderer) note(format string, args ...any) {
 	fmt.Fprintln(r.opts.Log, line)
 }
 
+// absoluteChartPaths rewrites a committed chart.path, relative to the
+// deploy path, as an absolute path in the rendered copy: the executor
+// resolves chart.path against the deploy path it installs, and the rendered
+// tree lives elsewhere.
+func (r *renderer) absoluteChartPaths() {
+	for _, item := range r.items {
+		if item.Type != TypeHelm {
+			continue
+		}
+		rel, err := ReadRelease(filepath.Join(r.opts.DeployPath, item.Name))
+		if err != nil {
+			r.problem("%s: %v", item.Name, err)
+			continue
+		}
+		if rel.Chart == nil || rel.Chart.Path == "" || filepath.IsAbs(rel.Chart.Path) {
+			continue
+		}
+		rel.Chart.Path = filepath.Join(r.opts.DeployPath, rel.Chart.Path)
+		if err := writePrivate(filepath.Join(r.opts.Out, item.Name, "release.yaml"), rel.Marshal()); err != nil {
+			r.problem("%s: %v", item.Name, err)
+		}
+	}
+}
+
 func (r *renderer) hasItem(name, kind string) bool {
 	for _, item := range r.items {
 		if item.Name == name && item.Type == kind {
@@ -108,8 +147,10 @@ func (r *renderer) hasItem(name, kind string) bool {
 // appendValues writes a values file into the rendered item and appends it to
 // the item's values list, after the committed ones so it wins.
 func (r *renderer) appendValues(item, file string, data []byte) {
+	// The rendered copy carries what earlier passes wrote, so the list is
+	// appended there.
 	dst := filepath.Join(r.opts.Out, item)
-	rel, err := ReadRelease(filepath.Join(r.opts.DeployPath, item))
+	rel, err := ReadRelease(dst)
 	if err != nil {
 		r.problem("%s: %v", item, err)
 		return

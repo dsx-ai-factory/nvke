@@ -218,7 +218,9 @@ install_helm_item() {
   if [[ -n "${override}" ]]; then
     ref=("${override}")
   elif [[ -n "${path}" ]]; then
-    ref=("${DEPLOY_PATH}/${path}")
+    # A rendered deploy path writes chart.path absolute, so it installs from
+    # anywhere; a committed one is relative to the deploy path.
+    if [[ "${path}" == /* ]]; then ref=("${path}"); else ref=("${DEPLOY_PATH}/${path}"); fi
     build_chart_dependencies "${ref[0]}"
   elif [[ "${repository}" == oci://* ]]; then
     ref=("${repository%/}/${chart_name}" --version "${version}")

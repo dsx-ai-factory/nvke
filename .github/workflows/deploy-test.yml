@@ -4,9 +4,8 @@
 # Runs the tests of the site controller install under deploy/.
 #
 # make -C deploy test builds nvkectl from cli/ and runs the executor's dry-run
-# suite in deploy/testdata/: item order, where each chart comes from, the
-# release file path, the image binding for manifest items, and the errors
-# the executor must stop on. Nothing is applied and no registry is reached, so
+# suite in deploy/testdata/: item order, where each chart comes from, a deploy
+# path rendered for a site, and the errors the executor must stop on. Nothing is applied and no registry is reached, so
 # the job runs on ubuntu-latest with no secret.
 #
 # The Go tests of the package the executor calls run in controller-test.yml

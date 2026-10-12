@@ -10,9 +10,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"text/template"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 
@@ -67,22 +67,34 @@ func (r *renderer) site() {
 		r.problem("site spec: %v", err)
 		return
 	}
+	// Secrets land inside double-quoted YAML scalars and a JSON document in
+	// the templates, which carry no escaping, so a value holding a quote, a
+	// backslash or a control character is refused rather than written altered.
 	read := func(what, path string) string {
-		data, err := os.ReadFile(spec.ResolvePath(path))
+		data, err := os.ReadFile(path)
 		if err != nil {
 			r.problem("site spec: %s: %v", what, err)
 			return ""
 		}
-		return strings.TrimSpace(string(data))
+		value := strings.TrimSpace(string(data))
+		if strings.ContainsAny(value, "\"\\") || strings.ContainsFunc(value, unicode.IsControl) {
+			r.problem("site spec: %s: the value holds a character the templates cannot carry (a quote, a backslash or a control character)", what)
+			return ""
+		}
+		return value
 	}
+	// controllerStack paths resolve from the site spec's directory; the
+	// bootstrap's spire.ca*File resolve from the working directory, as
+	// "nvkectl bootstrap site" reads them, so both commands embed one CA.
+	stackPath := spec.ResolvePath
 	var ctx TemplateContext
 	ctx.ClusterName = spec.ClusterName
 	ctx.Nico.Endpoint, ctx.Nico.OrgID, ctx.Nico.APIName = cs.Nico.Endpoint, cs.Nico.OrgID, cs.Nico.APIName
-	ctx.Nico.Token = read("controllerStack.nico.tokenFile", cs.Nico.TokenFile)
+	ctx.Nico.Token = read("controllerStack.nico.tokenFile", stackPath(cs.Nico.TokenFile))
 	ctx.Registry.Server, ctx.Registry.Username = cs.PullSecret.Server, cs.PullSecret.Username
-	ctx.Registry.Token = read("controllerStack.pullSecret.tokenFile", cs.PullSecret.TokenFile)
+	ctx.Registry.Token = read("controllerStack.pullSecret.tokenFile", stackPath(cs.PullSecret.TokenFile))
 	ctx.Tenant.User = cs.Tenant.User
-	ctx.Tenant.Password = read("controllerStack.tenant.passwordFile", cs.Tenant.PasswordFile)
+	ctx.Tenant.Password = read("controllerStack.tenant.passwordFile", stackPath(cs.Tenant.PasswordFile))
 	password := r.dbPassword(spec)
 	if len(r.problems) > 0 {
 		return
@@ -121,8 +133,8 @@ func (r *renderer) site() {
 		"nodeAttestor": map[string]any{"tpmDirect": map[string]any{"checksum": checksum}},
 	}
 	if spec.Spire.CACertFile != "" && spec.Spire.CAKeyFile != "" {
-		cert := read("spire.caCertFile", spec.Spire.CACertFile)
-		key := read("spire.caKeyFile", spec.Spire.CAKeyFile)
+		cert := readFile(r, "spire.caCertFile", spec.Spire.CACertFile)
+		key := readFile(r, "spire.caKeyFile", spec.Spire.CAKeyFile)
 		// A self-signed root is its own bundle.
 		server["upstreamAuthority"] = map[string]any{"disk": map[string]any{
 			"enabled": true,
@@ -165,9 +177,10 @@ func (r *renderer) site() {
 	r.siteValues("temporal", temporal)
 
 	// nktp: the operator's values file, passed through.
-	if cs.NktpValuesFile != "" && r.hasItem("nktp", TypeHelm) {
-		data, err := os.ReadFile(spec.ResolvePath(cs.NktpValuesFile))
-		if err != nil {
+	if cs.NktpValuesFile != "" {
+		if !r.hasItem("nktp", TypeHelm) {
+			r.problem("site spec: controllerStack.nktpValuesFile is set, but the deploy path has no nktp helm item")
+		} else if data, err := os.ReadFile(stackPath(cs.NktpValuesFile)); err != nil {
 			r.problem("site spec: controllerStack.nktpValuesFile: %v", err)
 		} else {
 			r.appendValues("nktp", SiteValuesFile, data)
@@ -189,6 +202,7 @@ func (r *renderer) site() {
 // siteValues appends item's site values when the deploy path has the item.
 func (r *renderer) siteValues(item string, values map[string]any) {
 	if !r.hasItem(item, TypeHelm) {
+		r.note("%s: not a helm item of this deploy path; no site values", item)
 		return
 	}
 	var b bytes.Buffer
@@ -281,10 +295,16 @@ func (r *renderer) template(item string, ctx *TemplateContext) {
 }
 
 // imageValues splits an image reference into the chart's image values:
-// repository and digest, or repository and tag.
+// repository and digest, or repository and tag. A tag beside a digest is
+// dropped: the chart renders repository@digest, and the overlay's tag must
+// not survive as a second pin.
 func imageValues(ref string) map[string]any {
 	if repo, digest, ok := strings.Cut(ref, "@"); ok {
-		return map[string]any{"repository": repo, "digest": digest}
+		slash := strings.LastIndex(repo, "/")
+		if colon := strings.LastIndex(repo, ":"); colon > slash {
+			repo = repo[:colon]
+		}
+		return map[string]any{"repository": repo, "digest": digest, "tag": ""}
 	}
 	slash := strings.LastIndex(ref, "/")
 	if colon := strings.LastIndex(ref, ":"); colon > slash {
@@ -292,8 +312,6 @@ func imageValues(ref string) map[string]any {
 	}
 	return map[string]any{"repository": ref}
 }
-
-var additionalDomainsPattern = regexp.MustCompile(`(?m)^[ \t]*additionalDomains:[ \t]*\n((?:[ \t]*-[ \t]*\S.*\n)+)`)
 
 // oidcDomains returns the OIDC provider's additionalDomains from the deploy
 // path's spire overlay plus the VIP. A values file replaces a list rather
@@ -303,19 +321,35 @@ func oidcDomains(overlay, vip string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	blocks := additionalDomainsPattern.FindAllStringSubmatch(string(data), -1)
-	if len(blocks) != 1 {
-		return nil, fmt.Errorf("expected one additionalDomains block in %s, found %d", overlay, len(blocks))
+	var doc struct {
+		Provider struct {
+			Config struct {
+				AdditionalDomains []string `yaml:"additionalDomains"`
+			} `yaml:"config"`
+		} `yaml:"spiffe-oidc-discovery-provider"`
 	}
-	var domains []string
-	for _, line := range strings.Split(strings.TrimSpace(blocks[0][1]), "\n") {
-		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
-		domains = append(domains, strings.Trim(line, `"'`))
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("%s: %w", overlay, err)
+	}
+	domains := doc.Provider.Config.AdditionalDomains
+	if len(domains) == 0 {
+		return nil, fmt.Errorf("%s has no spiffe-oidc-discovery-provider.config.additionalDomains", overlay)
 	}
 	if !contains(domains, vip) {
 		domains = append(domains, vip)
 	}
 	return domains, nil
+}
+
+// readFile reads a file the site spec names, trimmed. A missing file is a
+// problem naming the field.
+func readFile(r *renderer, what, path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		r.problem("site spec: %s: %v", what, err)
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 func contains(list []string, value string) bool {

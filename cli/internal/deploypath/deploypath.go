@@ -145,8 +145,12 @@ func ReadRelease(itemDir string) (*Release, error) {
 
 func (r *Release) validate() error {
 	if r.Chart == nil {
-		if r.Image != "" && !strings.Contains(r.Image[strings.LastIndex(r.Image, "/")+1:], ":") {
-			return fmt.Errorf("image must be <repository>:<tag>: %s", r.Image)
+		if r.Image != "" {
+			last := r.Image[strings.LastIndex(r.Image, "/")+1:]
+			name, tag, ok := strings.Cut(last, ":")
+			if !ok || name == "" || tag == "" || strings.Contains(r.Image, "@") {
+				return fmt.Errorf("image must be <repository>:<tag>, with no digest: %s", r.Image)
+			}
 		}
 		return nil
 	}
