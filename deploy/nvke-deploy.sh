@@ -277,10 +277,14 @@ install_helm_item() {
 # IfNotPresent resolves the name from the local store. A line without a
 # layout is an image the nodes pull from the registry the reference names.
 import_images() {
-  local list="${DEPLOY_PATH}/images.txt" ref layout repository ctr
+  local list="${DEPLOY_PATH}/images.txt" ref layout repository ctr line lines=()
   [[ -f "${list}" ]] || return 0
   read -ra ctr <<<"${CTR}"
-  while IFS=$'\t' read -r ref layout; do
+  # The list is read up front: CTR may be `docker exec -i`, which would
+  # otherwise consume the rest of a loop's stdin.
+  mapfile -t lines <"${list}"
+  for line in ${lines[@]+"${lines[@]}"}; do
+    IFS=$'\t' read -r ref layout <<<"${line}"
     [[ -n "${ref}" && -n "${layout}" ]] || continue
     [[ -d "${layout}" ]] || die "image ${ref}: its OCI layout ${layout} is missing"
     repository="${ref%%@*}"
@@ -296,9 +300,9 @@ import_images() {
     fi
     tar -c -C "${layout}" . | "${ctr[@]}" -n k8s.io images import --local --digests --base-name "${repository}" - ||
       die "cannot import ${ref} into containerd from ${layout}"
-    "${ctr[@]}" -n k8s.io images ls -q "name==${ref}" | grep -qx "${ref}" ||
+    "${ctr[@]}" -n k8s.io images ls -q "name==${ref}" </dev/null | grep -qx "${ref}" ||
       die "image ${ref} is not in containerd after the import; the workload cannot resolve it"
-  done <"${list}"
+  done
 }
 
 install() {
