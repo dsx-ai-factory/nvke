@@ -16,7 +16,7 @@ if [[ "$(uname -s)" == Darwin ]]; then
   go_version="$(awk '/^go / {print $2; exit}' "${workspace_root}/go.work")"
   exec docker run --rm \
     -v "${workspace_root}:/workspace:ro" -v "${output_dir}:/output" \
-    -e "BUNDLE_ARCH=${arch}" -e OVN_TOOLS_DIR=/tmp/ovn-tools -e GITHUB_TOKEN \
+    -e "BUNDLE_ARCH=${arch}" -e OVN_TOOLS_DIR=/tmp/ovn-tools -e OVN_KUBERNETES_TOKEN -e GITHUB_TOKEN \
     "golang:${go_version}-bookworm" \
     bash -c '
       set -euo pipefail

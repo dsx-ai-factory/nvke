@@ -8,7 +8,8 @@
 # Usage: bundle.sh --version 1.6.0 --dist DIR --lock-dir DIR --crane PATH
 #                  [--arch amd64] [--write-lock]
 #
-# Env: GITHUB_TOKEN reads the source while the fork is not public.
+# Env: OVN_KUBERNETES_TOKEN (else GITHUB_TOKEN) reads the source while the fork
+#      is not public.
 #      OVN_KUBERNETES_REF is the branch or commit --write-lock locks
 #      (default release-<version>). OVN_BUILDER_IMAGE and OVN_UBUNTU_BASE_IMAGE
 #      override the image build's Go and runtime bases. OCI_BIN picks docker.
@@ -41,8 +42,9 @@ UBUNTU_BASE_IMAGE="${OVN_UBUNTU_BASE_IMAGE:-ubuntu:26.04}"
 # line: fetch feeds CURL_CONFIG to curl as a config file. curl drops the header
 # on the redirect to codeload, so it does not travel past api.github.com.
 CURL_CONFIG=""
-if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-  CURL_CONFIG="header = \"Authorization: Bearer ${GITHUB_TOKEN}\""
+SOURCE_TOKEN="${OVN_KUBERNETES_TOKEN:-${GITHUB_TOKEN:-}}"
+if [[ -n "$SOURCE_TOKEN" ]]; then
+  CURL_CONFIG="header = \"Authorization: Bearer ${SOURCE_TOKEN}\""
 fi
 
 # --write-lock resolves the ref to a commit, the one place a moving ref is read.

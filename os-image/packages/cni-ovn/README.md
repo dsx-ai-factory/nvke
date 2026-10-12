@@ -54,7 +54,7 @@ the image is built from `dist/images/Dockerfile.ubuntu`, the variant on the
 public `ubuntu` base. The `ubuntu-nv-image` variant needs Artifactory and is not
 built here.
 
-While the fork is internal, set `GITHUB_TOKEN` to a token that can read it. It
+While the fork is internal, set `OVN_KUBERNETES_TOKEN` (or `GITHUB_TOKEN`) to a token that can read it. It
 goes to curl through a config file, never the command line, and is dropped on
 the redirect to codeload. Once the fork is public the variable is optional.
 
@@ -78,7 +78,7 @@ The image build needs docker with buildx, or podman (`OCI_BIN=podman`), and
 network access to `quay.io` (the Go builder), Docker Hub (`ubuntu`), the Ubuntu
 archive and pkgs.k8s.io. Override the bases with `OVN_BUILDER_IMAGE` and
 `OVN_UBUNTU_BASE_IMAGE`. A build for the other architecture runs under
-emulation. `GITHUB_TOKEN` is needed while the fork is internal.
+emulation. `OVN_KUBERNETES_TOKEN` or `GITHUB_TOKEN` is needed while the fork is internal.
 
 ## Bumping the stream
 
@@ -88,7 +88,7 @@ it with the tarball's checksum. Lock amd64 and arm64 from the same ref, review,
 commit:
 
 ```bash
-export GITHUB_TOKEN=...   # while the fork is internal
+export OVN_KUBERNETES_TOKEN=...   # while the fork is internal
 make lock OVN_STREAMS=1.7.0
 make lock OVN_STREAMS=1.7.0 ARCH=arm64
 git diff -- lock
