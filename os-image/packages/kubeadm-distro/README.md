@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # kubeadm-distro
 
-Builds `nke-kubeadm-distro-<x.y.z>` Debian packages, one per Kubernetes patch
+Builds `nvke-kubeadm-distro-<x.y.z>` Debian packages, one per Kubernetes patch
 release. Each carries kubelet, kubeadm, kubectl, containerd, runc, the CNI
 plugins, crictl, Helm and the control-plane images for that release. The
 Packer build stages the packages and a flat apt index in the OS image, and a
@@ -26,7 +26,7 @@ node installs the one it needs at cluster create without network access.
 - **Builds are reproducible.** `make repro-check` builds twice and compares
   every byte. `nfpm.yaml` pins mtimes and compression so this passes.
 - **Exactly one version is installed at a time.** The Kubernetes patch is part
-  of the package name; every package `Provides: nke-kubeadm-distro` and
+  of the package name; every package `Provides: nvke-kubeadm-distro` and
   `Conflicts` with its peers, with `containerd`, and with the standalone
   `kubeadm`/`kubelet`/`kubectl` packages.
 - **Linux build host, matching the target architecture.** The build runs the
@@ -55,7 +55,7 @@ node installs the one it needs at cluster create without network access.
 | `/etc/crictl.yaml` | crictl pointed at the containerd socket. Also rewritten on every install |
 | `/etc/default/kubelet` | conffile for operator `KUBELET_EXTRA_ARGS` |
 | `/lib/systemd/system/kubelet.service{,.d/10-kubeadm.conf}`, `containerd.service` | vendor units plus the kubeadm drop-in |
-| `/usr/lib/nke/k8s-matrix/<version>/<arch>/` | the control-plane image tarball and its `.sha256` sidecar |
+| `/usr/lib/nvke/k8s-matrix/<version>/<arch>/` | the control-plane image tarball and its `.sha256` sidecar |
 
 `/etc/cni/net.d/` is shipped empty. CNI config is the OS image's job.
 
@@ -113,7 +113,7 @@ build-host metadata (a timestamp, a path, ownership) that nfpm is not pinning.
 Ported from the internal `nke/kubeadm-bundler` repository, which builds the
 packages served from the S3 apt repository. The intended differences: dpkg owns
 every file (no `nke-k8s-installer`, no raw tarballs under
-`/usr/lib/nke/k8s-matrix`), `config.toml` and `containerd.service` are rendered
+`/usr/lib/nvke/k8s-matrix`), `config.toml` and `containerd.service` are rendered
 at build time, `Depends` adds `conntrack`, `socat` and `ethtool`, `Conflicts`
 adds `containerd` and `containerd.io`, and `/etc/default/kubelet` is a
 conffile. Package names, `Provides`, peer `Conflicts`, binaries, paths, the

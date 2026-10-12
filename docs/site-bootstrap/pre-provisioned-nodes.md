@@ -68,12 +68,12 @@ Run these commands on **all nodes** (both join and init nodes):
 
 How you install kubeadm depends on whether your nodes were built from an NVKE OS image.
 
-**Nodes built from the NVKE OS image** — the image stages versioned Kubernetes Debian packages in a local apt repository at `/usr/lib/nke/debs`, but does not install them. Install them via cloud-init `runcmd` before the node is handed to bootstrap:
+**Nodes built from the NVKE OS image** — the image stages versioned Kubernetes Debian packages in a local apt repository at `/usr/lib/nvke/debs`, but does not install them. Install them via cloud-init `runcmd` before the node is handed to bootstrap:
 
 ```yaml
 runcmd:
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-kubeadm-distro-<k8s-version>
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-<stream> nke-cni-ovn-charts-<stream>
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-kubeadm-distro-<k8s-version>
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-cni-ovn-images-<stream> nvke-cni-ovn-charts-<stream>
 ```
 
 Replace `<k8s-version>` with the version matching `cluster.k8sVersion` in your site spec, and `<stream>` with the CNI stream for your Kubernetes version. If you skip this step, bootstrap runs its full 30-minute timeout and fails on `NodePreflight` / `check_cloud_init_status` — the error does not mention kubeadm.

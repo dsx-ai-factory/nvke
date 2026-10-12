@@ -338,7 +338,7 @@ class CaptureAPTTest(unittest.TestCase):
         # shell output; redirect only the fixed retention directory to a fixture.
         configuration = subprocess.run([
             os.environ["NKE_TEST_APT_CONFIG"], "-c", str(SCRIPTS.parent / "cidata" / "apt-capture.conf"),
-            "shell", "NKE_CAPTURE", "DPkg::Pre-Install-Pkgs::nke-capture",
+            "shell", "NKE_CAPTURE", "DPkg::Pre-Install-Pkgs::nvke-capture",
         ], check=True, capture_output=True, text=True, timeout=30)
         decoded = subprocess.run(["bash", "-c", configuration.stdout + '\nprintf "%s" "$NKE_CAPTURE"'],
                                  check=True, capture_output=True, text=True, timeout=30).stdout
@@ -361,8 +361,8 @@ class CaptureAPTTest(unittest.TestCase):
         self.assertEqual([path.read_bytes() for path in paths], list(payloads))
 
     def test_both_packer_variants_export_before_ssh_key_cleanup(self):
-        for variant, selector in (("non-fde", "qemu.nke-non-fde"), ("fde", "qemu.nke-fde")):
-            text = (SCRIPTS.parent / f"nke-node-{variant}.pkr.hcl").read_text()
+        for variant, selector in (("non-fde", "qemu.nvke-non-fde"), ("fde", "qemu.nvke-fde")):
+            text = (SCRIPTS.parent / f"nvke-node-{variant}.pkr.hcl").read_text()
             text = " ".join(text.split())
             self.assertEqual(text.count(f'except = var.capture_apt_acquisitions ? [] : ["{selector}"]'), 4)
             self.assertIn('direction = "download"', text)
@@ -376,14 +376,14 @@ class CaptureAPTTest(unittest.TestCase):
                 self.assertLess(text.index(cleanup), provisioning)
             self.assertIn(f'/{variant}/apt-acquisitions.tar', text)
             self.assertLess(text.index("configuration=$(apt-config dump) || exit 1"), provisioning)
-            self.assertIn("*DPkg::Pre-Install-Pkgs::nke-capture*", text)
+            self.assertIn("*DPkg::Pre-Install-Pkgs::nvke-capture*", text)
             self.assertLess(text.index("sudo test ! -e /var/lib/nke/apt-acquisitions"), provisioning)
 
     def test_capture_cleanup_checks_existing_and_removed_directory_as_owner(self):
         # The fixture owner represents the privileged guest process. Forward
         # sudo locally, but require the source command to request that privilege.
         for variant in ("non-fde", "fde"):
-            text = (SCRIPTS.parent / f"nke-node-{variant}.pkr.hcl").read_text()
+            text = (SCRIPTS.parent / f"nvke-node-{variant}.pkr.hcl").read_text()
             command = json.loads(next(line.strip().removesuffix(",") for line in text.splitlines()
                                       if "test ! -e /var/lib/nke/apt-acquisitions" in line))
             self.assertEqual(command, "sudo test ! -e /var/lib/nke/apt-acquisitions")
@@ -416,11 +416,11 @@ class CaptureAPTTest(unittest.TestCase):
 
     def test_hook_cleanup_rejects_live_hook_and_apt_config_failure(self):
         for variant in ("non-fde", "fde"):
-            text = (SCRIPTS.parent / f"nke-node-{variant}.pkr.hcl").read_text()
+            text = (SCRIPTS.parent / f"nvke-node-{variant}.pkr.hcl").read_text()
             command = json.loads(next(line.strip().removesuffix(",") for line in text.splitlines()
                                       if "configuration=$(apt-config dump)" in line))
             for dump, status, accepted in (("APT::Architecture amd64;", 0, True),
-                                           ("DPkg::Pre-Install-Pkgs::nke-capture hook;", 0, False),
+                                           ("DPkg::Pre-Install-Pkgs::nvke-capture hook;", 0, False),
                                            ("", 1, False)):
                 with self.subTest(variant=variant, dump=dump, status=status):
                     result = subprocess.run([

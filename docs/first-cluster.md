@@ -199,13 +199,13 @@ node with no thumbprint cannot join.
 
 **kubeadm on each node, installed by your cloud-init.** An image built from
 [`os-image/`](https://github.com/dsx-ai-factory/nvke/tree/main/os-image) only *stages* the packages in a local apt repo at
-`/usr/lib/nke/debs`; nothing installs them for a pre-provisioned node, because
+`/usr/lib/nvke/debs`; nothing installs them for a pre-provisioned node, because
 CWE writes no cloud-init for hosts it did not create. Install them yourself:
 
 ```yaml
 runcmd:
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-kubeadm-distro-<k8s-version>
-  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-<stream> nke-cni-ovn-charts-<stream>
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-kubeadm-distro-<k8s-version>
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-cni-ovn-images-<stream> nvke-cni-ovn-charts-<stream>
 ```
 
 Skip this and the bootstrap runs its full 30 minutes before failing on

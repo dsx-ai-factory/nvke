@@ -382,8 +382,8 @@ cni:
   imageRegistry: ""
   # -- Install CNI after kubeadm init through the agent's InstallCNI RPC, which
   # reads manifests from a Debian package rather than a bundle server. Needs the
-  # CNI charts package on the node that runs kubeadm init: nke-cni-ovn-charts-<stream>
-  # for OVN, or nke-cni-calico-manifests-<stream> for Calico.
+  # CNI charts package on the node that runs kubeadm init: nvke-cni-ovn-charts-<stream>
+  # for OVN, or nvke-cni-calico-manifests-<stream> for Calico.
   installAfterInit: false
 
 tenantAccess:

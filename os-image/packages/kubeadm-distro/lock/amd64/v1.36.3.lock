@@ -1,4 +1,4 @@
-# nke-kubeadm-distro lock for v1.36.3 (amd64). Regenerate with `make lock`; review the diff before committing.
+# nvke-kubeadm-distro lock for v1.36.3 (amd64). Regenerate with `make lock`; review the diff before committing.
 kubernetes v1.36.3
 artifact cni-plugins 682b49ff8933a997a52107161f1745f8312364b4c7f605ccdf7a77499130d89d https://github.com/containernetworking/plugins/releases/download/v1.6.0/cni-plugins-linux-amd64-v1.6.0.tgz
 artifact containerd 4cb83e7100a5e73fcb626207d0b5bcfd1294e26aeddfe075dcfb38f375c5f887 https://github.com/containerd/containerd/releases/download/v2.3.0/containerd-2.3.0-linux-amd64.tar.gz

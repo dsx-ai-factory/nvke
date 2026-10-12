@@ -197,10 +197,10 @@ rm -rf "${bundle_dir}"
 CNI_PLUGIN=ovn-kubernetes BUNDLE_ARCH="${host_arch}" bash "${repo_root}/hack/ci/prepare-capd-bundles.sh" "${bundle_dir}"
 
 export SPIRE_AGENT_BUNDLE_PATH="${bundle_dir}/spire-agent.tgz"
-CAPD_CNI_CHARTS_DEB_PATH="${bundle_dir}/nke-cni-ovn-charts-1.4.0_1.4.0_${host_arch}.deb"
+CAPD_CNI_CHARTS_DEB_PATH="${bundle_dir}/nvke-cni-ovn-charts-1.4.0_1.4.0_${host_arch}.deb"
 export CAPD_CNI_CHARTS_DEB_PATH
 export INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}"
-export CAPD_CNI_IMAGES_DEB_PATH="${bundle_dir}/nke-cni-ovn-images-1.4.0_1.4.0_${host_arch}.deb"
+export CAPD_CNI_IMAGES_DEB_PATH="${bundle_dir}/nvke-cni-ovn-images-1.4.0_1.4.0_${host_arch}.deb"
 export CAPD_HELM_DEB_PATH="${bundle_dir}/nke-e2e-helm.deb"
 [[ -f "${CAPD_CNI_CHARTS_DEB_PATH}" ]] \
   || fail "prepare-capd-bundles.sh produced no OVN charts package"

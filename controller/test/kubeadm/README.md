@@ -22,7 +22,7 @@ kubeadm RPCs, which nothing else in this repo has.
 
 **Does not prove.** That NVKE's own packages work. The Kubernetes stack comes from
 `dl.k8s.io` and GitHub releases, and the CNI from upstream Calico's manifests —
-not from `nke-kubeadm-distro` or `nke-cni-*`. Those live behind a source-IP
+not from `nvke-kubeadm-distro` or `nvke-cni-*`. Those live behind a source-IP
 allowlist that CI runners cannot reach. Verifying the shipped artifacts stays
 with the GitLab `cluster-bringup` suite, which can reach them and runs the fuller
 matrix (4 VMs, HA etcd, OVN or Calico).
@@ -144,7 +144,7 @@ nico-vms' own namespace and is never used for driver settings.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NKE_BRINGUP_KUBEADM_DEB` | unset | Only for `NKE_BRINGUP_PROVISION_MODE=apt`; e.g. `nke-kubeadm-distro-1.36.3` |
+| `NKE_BRINGUP_KUBEADM_DEB` | unset | Only for `NKE_BRINGUP_PROVISION_MODE=apt`; e.g. `nvke-kubeadm-distro-1.36.3` |
 | `NKE_BRINGUP_CALICO_VERSION` | `v3.31.4` | Upstream Calico stream to install |
 | `NKE_BRINGUP_CNI_TIMEOUT` | `20m` | Budget for the Calico install and its CRD waits |
 | `NKE_BRINGUP_READY_TIMEOUT` | `30m` | Budget for all nodes to report `Ready` |

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# nfpm spec for nke-cni-ovn-charts-<stream>. build-deb.sh exports
+# nfpm spec for nvke-cni-ovn-charts-<stream>. build-deb.sh exports
 # PACKAGE_NAME, STREAM, DEB_REVISION, ARCH, SRC and IMAGES_PACKAGE.
 #
 # The chart is unpacked, not shipped as a tgz: nvke-agent runs helm on
@@ -27,9 +27,13 @@ description: |
   access.
 
 # Every stream unpacks to the same directory, so only one can be installed.
+# The previous virtual and versioned names stay provided.
 provides:
+  - nvke-cni-ovn-charts
   - nke-cni-ovn-charts
+  - nke-cni-ovn-charts-${STREAM}
 conflicts:
+  - nvke-cni-ovn-charts
   - nke-cni-ovn-charts
 
 contents:

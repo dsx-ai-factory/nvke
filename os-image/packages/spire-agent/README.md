@@ -14,9 +14,9 @@ Builds the Debian package that gives a node its SPIFFE identity:
 | `/usr/local/lib/spire-agent/dsx-imds-node-attestor-agent` | DSX IMDS node attestor plugin |
 | `/usr/local/bin/get_tpm_pubhash` | spire-tpm-plugin's EK-reading helper |
 | `/lib/systemd/system/spire-agent.service` | The agent unit |
-| `/lib/systemd/system/nke-spire-configure.service` | Renders the config before it |
-| `/usr/lib/nke/spire-configure.sh` | What that unit runs |
-| `/usr/lib/nke/spire-agent.conf.tmpl` | The template it renders |
+| `/lib/systemd/system/nvke-spire-configure.service` | Renders the config before it |
+| `/usr/lib/nvke/spire-configure.sh` | What that unit runs |
+| `/usr/lib/nvke/spire-agent.conf.tmpl` | The template it renders |
 
 `provision.sh` installs this package at bake time — it is not staged for
 `nvke-agent` to install later, the way the CNI and kubeadm-distro packages are.
@@ -26,7 +26,7 @@ at which it is optional.
 All four unit/script files are read straight out of [`../../files/`](../../files/),
 where the image's copies have always lived; the package takes ownership of them
 rather than forking a second copy. They ship together because
-`spire-agent.service` has `Requires=nke-spire-configure.service` — splitting
+`spire-agent.service` has `Requires=nvke-spire-configure.service` — splitting
 them would leave a broken unit on any node that installs this package on its
 own.
 

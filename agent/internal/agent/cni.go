@@ -472,15 +472,32 @@ func effectiveCniVariant(v pb.CniVariant) pb.CniVariant {
 	return v
 }
 
+// alternateCniDebName returns the other spelling of a CNI deb name.
+//
+// New images install nvke-cni-* and Provide nke-cni-*, so apt accepts either
+// request. dpkg only records the real name.
+func alternateCniDebName(binPkg string) string {
+	const current = "nvke-cni-"
+	const previous = "nke-cni-"
+	switch {
+	case strings.HasPrefix(binPkg, current):
+		return previous + strings.TrimPrefix(binPkg, current)
+	case strings.HasPrefix(binPkg, previous):
+		return current + strings.TrimPrefix(binPkg, previous)
+	default:
+		return ""
+	}
+}
+
 // nvkeCniAptSpec builds an apt install spec for the discrete NVKE CNI packages.
 //
-// OVN Debian names include the Helm chart stream, e.g. nke-cni-ovn-images-1.4.0 and
-// nke-cni-ovn-charts-1.4.0. Request version (after stripping a leading "v") selects that
+// OVN Debian names include the Helm chart stream, e.g. nvke-cni-ovn-images-1.4.0 and
+// nvke-cni-ovn-charts-1.4.0. Request version (after stripping a leading "v") selects that
 // stream; when empty, defaultOvnCniChartStream is used. Non-empty version also appends
 // =<version> for an apt equality pin on the Debian package version.
 //
 // Calico uses stream-suffixed names when installed from cni-packages, e.g.
-// nke-cni-calico-images-3.30.1 and nke-cni-calico-manifests-3.30.1. Request version (after stripping a leading "v")
+// nvke-cni-calico-images-3.30.1 and nvke-cni-calico-manifests-3.30.1. Request version (after stripping a leading "v")
 // selects that stream; when empty, defaultCalicoCniStream is used. Non-empty version also appends
 // =<version> for an apt equality pin on the Debian package version.
 //
@@ -505,9 +522,9 @@ func nvkeCniAptSpec(variant pb.CniVariant, role pb.CniAptRole, version string) (
 		}
 		switch role {
 		case pb.CniAptRole_CNI_APT_ROLE_IMAGES:
-			pkg = "nke-cni-ovn-images-" + stream
+			pkg = "nvke-cni-ovn-images-" + stream
 		case pb.CniAptRole_CNI_APT_ROLE_CHARTS:
-			pkg = "nke-cni-ovn-charts-" + stream
+			pkg = "nvke-cni-ovn-charts-" + stream
 		case pb.CniAptRole_CNI_APT_ROLE_UNSPECIFIED:
 			return "", errors.New("cni_apt_role must be IMAGES or CHARTS")
 		default:
@@ -524,9 +541,9 @@ func nvkeCniAptSpec(variant pb.CniVariant, role pb.CniAptRole, version string) (
 		}
 		switch role {
 		case pb.CniAptRole_CNI_APT_ROLE_IMAGES:
-			pkg = "nke-cni-calico-images-" + stream
+			pkg = "nvke-cni-calico-images-" + stream
 		case pb.CniAptRole_CNI_APT_ROLE_CHARTS:
-			pkg = "nke-cni-calico-manifests-" + stream
+			pkg = "nvke-cni-calico-manifests-" + stream
 		case pb.CniAptRole_CNI_APT_ROLE_UNSPECIFIED:
 			return "", errors.New("cni_apt_role must be IMAGES or CHARTS")
 		default:
@@ -619,7 +636,7 @@ func calicoInstallRootFromFiles(files []string) (string, error) {
 }
 
 // calicoInstallRoot returns the directory that contains manifests/tigera-operator.yaml for Calico:
-// either a Helm chart root (with Chart.yaml) or a static tree (e.g. nke-cni-calico-manifests-* under /usr/share/nke-cni/calico).
+// either a Helm chart root (with Chart.yaml) or a static tree (e.g. nvke-cni-calico-manifests-* under /usr/share/nvke-cni/calico).
 func calicoInstallRoot(ctx context.Context, binPkg string) (string, error) {
 	files, err := dpkgListFiles(ctx, binPkg)
 	if err != nil {
@@ -875,7 +892,17 @@ func (s *NodeAgentServer) installCNI(ctx context.Context, req *pb.InstallCNIRequ
 	}
 
 	if err := chartsDebPresenceCheck(ctx, binPkg); err != nil {
-		return err
+		// dpkg-query sees the real package name, not a Provides alias. A caller
+		// that still names nke-cni-* finds the nvke-cni-* package, and the
+		// reverse, so either image satisfies the check.
+		alt := alternateCniDebName(binPkg)
+		if alt == "" {
+			return err
+		}
+		if altErr := chartsDebPresenceCheck(ctx, alt); altErr != nil {
+			return err
+		}
+		binPkg = alt
 	}
 
 	slog.InfoContext(ctx, "InstallCNI charts deploy",

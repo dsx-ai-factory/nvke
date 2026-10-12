@@ -240,11 +240,11 @@ What the suite passes down is `NodePayloads` — the iPXE script and
 `preKubeadmCommands` rendered by the same `BuildForgeNodePayloads` the site
 node was built from, so tenant nodes are constructed the same way. The
 pre-kubeadm script adds the NVKE apt repository and installs `nvke-agent`, the
-pinned `nke-kubeadm-distro`, both OVN packages, `openvswitch-switch` and
+pinned `nvke-kubeadm-distro`, both OVN packages, `openvswitch-switch` and
 `spire-agent`.
 
 "Both OVN packages" is load-bearing and was learned on hardware. The agent
-checks that `nke-cni-ovn-charts` is *already installed* and terminates the
+checks that `nvke-cni-ovn-charts` is *already installed* and terminates the
 provisioning workflow when it is not, so installing it afterwards does not
 recover the run.
 

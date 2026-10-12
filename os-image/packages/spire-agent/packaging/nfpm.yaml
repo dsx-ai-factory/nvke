@@ -17,7 +17,7 @@ name: "spire-agent"
 arch: "${ARCH}"
 platform: "linux"
 version: "${DEB_VERSION}"
-# "1.14.1+tpm1.9.0-2" is a Debian version, not a semver one.
+# "1.14.1+tpm1.9.0-3" is a Debian version, not a semver one.
 version_schema: none
 section: admin
 priority: optional
@@ -30,7 +30,7 @@ description: |
   The upstream SPIRE agent release binary, spire-tpm-plugin's
   tpm_attestor_agent and get_tpm_pubhash, and the DSX IMDS node attestor,
   each pinned by sha256, together with the NVKE units that run them:
-  spire-agent.service and the nke-spire-configure.service that renders
+  spire-agent.service and the nvke-spire-configure.service that renders
   /etc/spire-agent/agent.conf from cloud-init instance identity before it.
   postinst creates the system user the agent runs as, adds it to the tss
   group so the TPM attestor can open /dev/tpmrm0, and records each plugin's
@@ -69,18 +69,18 @@ contents:
   - src: "../../../files/spire-agent.service"
     dst: "/lib/systemd/system/spire-agent.service"
     file_info: { mode: 0644 }
-  - src: "../../../files/nke-spire-configure.service"
-    dst: "/lib/systemd/system/nke-spire-configure.service"
+  - src: "../../../files/nvke-spire-configure.service"
+    dst: "/lib/systemd/system/nvke-spire-configure.service"
     file_info: { mode: 0644 }
 
-  # spire-agent.service Requires= nke-spire-configure.service, which runs this
+  # spire-agent.service Requires= nvke-spire-configure.service, which runs this
   # script against this template, so all four ship together or the unit is
   # broken on any node that installs the package on its own.
   - src: "../../../files/spire-configure.sh"
-    dst: "/usr/lib/nke/spire-configure.sh"
+    dst: "/usr/lib/nvke/spire-configure.sh"
     file_info: { mode: 0755 }
   - src: "../../../files/spire-agent.conf.tmpl"
-    dst: "/usr/lib/nke/spire-agent.conf.tmpl"
+    dst: "/usr/lib/nvke/spire-agent.conf.tmpl"
     file_info: { mode: 0644 }
 
   - dst: "/etc/spire-agent"

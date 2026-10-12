@@ -58,7 +58,7 @@ func TestOSImageBuildsTheImageURL(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := srv.URL + "/nke-packages/os-image/releases/v0.1.1-rc.1/" + tc + "/nke-node-non-fde-ubuntu-24.04.5-" + tc + ".qcow2"
+			want := srv.URL + "/nke-packages/os-image/releases/v0.1.1-rc.1/" + tc + "/nvke-node-non-fde-ubuntu-24.04.5-" + tc + ".qcow2"
 			if got[ResultURLKey] != want {
 				t.Errorf("url = %q, want %q", got[ResultURLKey], want)
 			}
@@ -176,7 +176,7 @@ func TestNewOSImageAndURL(t *testing.T) {
 // The URL is always asked for, and a missing one fails with both explanations of
 // a 403.
 func TestOSImageChecksTheURLExists(t *testing.T) {
-	const image = "/os-image/releases/v0.1.1-rc.1/amd64/nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"
+	const image = "/os-image/releases/v0.1.1-rc.1/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"
 	srv := server(t, image)
 
 	t.Run("it exists", func(t *testing.T) {
@@ -285,9 +285,9 @@ func TestOSImagePath(t *testing.T) {
 	srv := everything(t)
 
 	for _, tc := range []struct{ name, path, want string }{
-		{"with a path", "nke-packages", "/nke-packages/os-image/releases/v0.1.1-rc.1/amd64/nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"},
-		{"with slashes around it", "/nke-packages/", "/nke-packages/os-image/releases/v0.1.1-rc.1/amd64/nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"},
-		{"with none", "", "/os-image/releases/v0.1.1-rc.1/amd64/nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"},
+		{"with a path", "nke-packages", "/nke-packages/os-image/releases/v0.1.1-rc.1/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"},
+		{"with slashes around it", "/nke-packages/", "/nke-packages/os-image/releases/v0.1.1-rc.1/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"},
+		{"with none", "", "/os-image/releases/v0.1.1-rc.1/amd64/nvke-node-non-fde-ubuntu-24.04.5-amd64.qcow2"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			o := newOSImage(srv.URL, "amd64")

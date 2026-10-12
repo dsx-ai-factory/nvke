@@ -72,7 +72,7 @@ func (o OSImage) Resolve(inputs map[string]string) (map[string]string, error) {
 		under += "/" + strings.Trim(o.Path, "/")
 	}
 	got, err := url.Resolve(map[string]string{
-		InputValueKey: fmt.Sprintf("%s/os-image/releases/%s/%s/nke-node-%s-ubuntu-%s-%s.qcow2",
+		InputValueKey: fmt.Sprintf("%s/os-image/releases/%s/%s/nvke-node-%s-ubuntu-%s-%s.qcow2",
 			under, tag, o.Arch, o.Variant, release, o.Arch),
 	})
 	if err != nil {

@@ -55,12 +55,12 @@ What distinguishes it from a generic CAPI distribution:
 | `controller/nico-sim/` | `nico-sim`, the NICo-compatible VM and Docker-container simulator used by development and tests. |
 | `build/` | Build and publish scripts per component. |
 | `docs/` | Architecture, getting started, and admin guides. |
-| `os-image/` | Reference Ubuntu node OS image (spec + Packer) and `nke-os-image-check`. |
+| `os-image/` | Reference Ubuntu node OS image (spec + Packer) and `nvke-os-image-check`. |
 | `nktp/` | NVIDIA Kubernetes Telemetry Pipeline (NKTP): a Helm chart that deploys an OpenTelemetry pipeline for cluster metrics, logs and traces. Versioned and released on its own. |
 
 **Twelve Go modules**, tied together by a workspace at the repository root, each
 independently buildable. `make build` links seven binaries: `agent`, `updater`,
-`controller`, `nvkectl`, `capd-reboot-controller`, `nke-os-image-check` and
+`controller`, `nvkectl`, `capd-reboot-controller`, `nvke-os-image-check` and
 `management-engine`.
 See [docs/go-workspace.md](docs/go-workspace.md) for workspace and dependency setup.
 
@@ -73,7 +73,7 @@ What each binary is, and where it ends up running:
 | `agent` | `agent/` | gRPC server the control plane drives to run `kubeadm`, install a CNI, and configure encryption | Every managed node |
 | `updater` | `agent/` | Independent helper that replaces the node agent without depending on the agent process | Every managed node |
 | `nvkectl` | `cli/` | Validates a site spec and drives bootstrap | Your machine |
-| `nke-os-image-check` | `os-image/` | Checks a node image against the contract in `os-image/SPEC.md` | Your machine, or an image build |
+| `nvke-os-image-check` | `os-image/` | Checks a node image against the contract in `os-image/SPEC.md` | Your machine, or an image build |
 | `capd-reboot-controller` | `controller/hack/capd-reboot-controller/` | Test helper that reboots CAPD machines | Test clusters |
 
 ### Platforms

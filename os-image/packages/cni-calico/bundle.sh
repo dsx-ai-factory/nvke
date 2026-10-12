@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Stages the upstream Calico manifests and images for the
-# nke-cni-calico-<stream> debs.
+# nvke-cni-calico-<stream> debs.
 #
 # Usage: bundle.sh --version v3.30.1 --dist DIR --lock-dir DIR --crane PATH
 #                  [--arch amd64] [--write-lock]

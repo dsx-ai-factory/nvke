@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# nfpm package spec for nke-kubeadm-distro-<x.y.z>. build-deb.sh exports the
+# nfpm package spec for nvke-kubeadm-distro-<x.y.z>. build-deb.sh exports the
 # environment this file expands: PACKAGE_NAME, DEB_REVISION, ARCH, K8S_VER,
 # MATRIX_SUBDIR, PEER_CONFLICTS, SRC (the bundle.sh output tree) and SCRATCH
 # (where build-deb.sh writes README.Debian and the mtime-pinned copy of
@@ -17,7 +17,7 @@
 # ", " and dpkg's Conflicts field is itself comma-separated, so an entry that
 # is already "a, b, c" flattens into the same field either way.
 
-name: "nke-kubeadm-distro-${K8S_PATCH}"
+name: "nvke-kubeadm-distro-${K8S_PATCH}"
 arch: "${ARCH}"
 platform: "linux"
 version: "${DEB_REVISION}"
@@ -46,12 +46,16 @@ description: |
   track the bundled images on every matrix-row switch); local containerd
   overrides go in /etc/containerd/conf.d/ instead. The control-plane
   container images for this release ship under
-  /usr/lib/nke/${MATRIX_SUBDIR}/${K8S_VER}/, and postinst imports them into
+  /usr/lib/nvke/${MATRIX_SUBDIR}/${K8S_VER}/, and postinst imports them into
   containerd, so a node can come up with no registry access at all. Do not
   install alongside the upstream kubeadm, kubelet, containerd or CNI packages.
 
+# The previous virtual and versioned names stay provided, so apt install of
+# nke-kubeadm-distro-<ver> still selects this package.
 provides:
+  - nvke-kubeadm-distro
   - nke-kubeadm-distro
+  - nke-kubeadm-distro-${K8S_PATCH}
 
 depends:
   - iptables
@@ -80,6 +84,7 @@ replaces:
   - cri-tools
   - runc
   - helm
+  - nvke-kubeadm-distro
   - nke-kubeadm-distro
 
 scripts:
@@ -91,11 +96,11 @@ contents:
   # The pre-verified control-plane image tarball, the only content this
   # package ships under k8s-matrix. Everything else installs to its FHS path.
   - src: "${SRC}/${ARCH}/k8s-base-container-images_${K8S_PATCH}_linux_${ARCH}.tgz"
-    dst: "/usr/lib/nke/${MATRIX_SUBDIR}/${K8S_VER}/${ARCH}/k8s-base-container-images_${K8S_PATCH}_linux_${ARCH}.tgz"
+    dst: "/usr/lib/nvke/${MATRIX_SUBDIR}/${K8S_VER}/${ARCH}/k8s-base-container-images_${K8S_PATCH}_linux_${ARCH}.tgz"
     file_info: { mode: 0644 }
     expand: true
   - src: "${SRC}/${ARCH}/k8s-base-container-images_${K8S_PATCH}_linux_${ARCH}.tgz.sha256"
-    dst: "/usr/lib/nke/${MATRIX_SUBDIR}/${K8S_VER}/${ARCH}/k8s-base-container-images_${K8S_PATCH}_linux_${ARCH}.tgz.sha256"
+    dst: "/usr/lib/nvke/${MATRIX_SUBDIR}/${K8S_VER}/${ARCH}/k8s-base-container-images_${K8S_PATCH}_linux_${ARCH}.tgz.sha256"
     file_info: { mode: 0644 }
     expand: true
 

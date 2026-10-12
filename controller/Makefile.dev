@@ -650,7 +650,7 @@ capd-kubeconfig: ## Write CAPD workload kubeconfig for kubectl on this host (CLU
 INSTALL_CNI_AFTER_INIT ?= true
 CNI_PLUGIN ?= ovn-kubernetes
 # Keep these names in sync with hack/ci/prepare-calico-assets.sh and prepare-ovn-assets.sh.
-CAPD_CNI_MANIFESTS_DEB := $(CURDIR)/.local/cni/nke-cni-calico-manifests-3.30.1_3.30.1_all.deb
+CAPD_CNI_MANIFESTS_DEB := $(CURDIR)/.local/cni/nvke-cni-calico-manifests-3.30.1_3.30.1_all.deb
 ifeq ($(INSTALL_CNI_AFTER_INIT),true)
 CAPD_IMAGE_DEPS :=
 else
@@ -672,8 +672,8 @@ capd-image: $(CAPD_IMAGE_DEPS) ## Build the custom CAPD node image for DockerMac
 					arm64|aarch64) bundle_arch=arm64 ;; \
 					*) echo "unsupported docker server arch: $$server_arch" >&2; exit 1 ;; \
 				esac; \
-				ovn_charts="$(CURDIR)/.local/cni/nke-cni-ovn-charts-1.4.0_1.4.0_$${bundle_arch}.deb"; \
-				ovn_images="$(CURDIR)/.local/cni/nke-cni-ovn-images-1.4.0_1.4.0_$${bundle_arch}.deb"; \
+				ovn_charts="$(CURDIR)/.local/cni/nvke-cni-ovn-charts-1.4.0_1.4.0_$${bundle_arch}.deb"; \
+				ovn_images="$(CURDIR)/.local/cni/nvke-cni-ovn-images-1.4.0_1.4.0_$${bundle_arch}.deb"; \
 				ovn_helm="$(CURDIR)/.local/cni/nke-e2e-helm.deb"; \
 				[ -n "$${CAPD_CNI_CHARTS_DEB_PATH:-}" ] || CAPD_CNI_CHARTS_DEB_PATH="$$ovn_charts"; \
 				[ -n "$${CAPD_CNI_IMAGES_DEB_PATH:-}" ] || CAPD_CNI_IMAGES_DEB_PATH="$$ovn_images"; \

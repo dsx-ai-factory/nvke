@@ -70,8 +70,8 @@ timeout 300s sh -c 'until getent hosts nke-prod-assets.s3.us-west-2.amazonaws.co
 curl -fsSL -o /etc/apt/keyrings/nke.asc https://nke-prod-assets.s3.us-west-2.amazonaws.com/nvke-apt-public.key
 echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://nke-prod-assets.s3.us-west-2.amazonaws.com/nvke-apt-{{ .AptSuite }} nvke-{{ .AptSuite }} main' > /etc/apt/sources.list.d/nke-apt.list
 apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y nke-kubeadm-distro-{{ .KubernetesVersion }}
-DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-{{ .CNIVersion }} nke-cni-ovn-charts-{{ .CNIVersion }}
+DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-kubeadm-distro-{{ .KubernetesVersion }}
+DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-cni-ovn-images-{{ .CNIVersion }} nvke-cni-ovn-charts-{{ .CNIVersion }}
 DEBIAN_FRONTEND=noninteractive apt-get install -y openvswitch-switch
 printf 'AGENT_ARGS="{{ .AgentArgs }}"\n' > /etc/default/nvke-agent
 sysctl --system

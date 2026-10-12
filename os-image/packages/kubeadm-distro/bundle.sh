@@ -4,7 +4,7 @@
 #
 # Download, verify and stage the upstream Kubernetes node stack for one
 # release, so packaging/build-deb.sh can turn it into an
-# nke-kubeadm-distro-<x.y.z> .deb.
+# nvke-kubeadm-distro-<x.y.z> .deb.
 #
 # Usage:
 #   bundle.sh [--write-lock] --version vX.Y.Z --dist DIR --lock-dir DIR \
@@ -341,7 +341,7 @@ stage_tree() {
   pause="$(awk '$1 == "image" && $2 ~ /\/pause:/ { print $2 }' "$LOCK_FILE" | LC_ALL=C sort | head -n1)"
   [[ -n "$pause" ]] || die "no pause image in ${LOCK_FILE}; containerd has no sandbox image to pin"
   cat >"${stage}/etc/containerd/config.toml" <<EOF
-# Managed by nke-kubeadm-distro. Rendered at package build time from the
+# Managed by nvke-kubeadm-distro. Rendered at package build time from the
 # locked image list, so the sandbox image cannot skew from the bundled images.
 # Rewritten on every install: put local overrides in /etc/containerd/conf.d/
 # rather than editing this file.
@@ -457,7 +457,7 @@ if ((WRITE_LOCK)); then
   # the new one, never half-written.
   LOCK_TMP="$(mktemp "${LOCK_FILE}.XXXXXX")"
   {
-    echo "# nke-kubeadm-distro lock for ${VERSION} (${ARCH}). Regenerate with \`make lock\`; review the diff before committing."
+    echo "# nvke-kubeadm-distro lock for ${VERSION} (${ARCH}). Regenerate with \`make lock\`; review the diff before committing."
     echo "kubernetes ${VERSION}"
     LC_ALL=C sort "${WORK}/artifacts" "${WORK}/images"
   } >"$LOCK_TMP"

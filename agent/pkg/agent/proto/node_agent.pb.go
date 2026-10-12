@@ -2685,7 +2685,7 @@ type InstallCNIRequest struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// OVN or CALICO; when UNSPECIFIED the agent uses OVN (stream selects nke-cni-ovn-charts-<stream>, etc.).
+	// OVN or CALICO; when UNSPECIFIED the agent uses OVN (stream selects nvke-cni-ovn-charts-<stream>, etc.).
 	CniVariant CniVariant `protobuf:"varint,1,opt,name=cni_variant,json=cniVariant,proto3,enum=proto.CniVariant" json:"cni_variant,omitempty"`
 	// Selects Debian stream suffix in the charts/manifest package name used to locate bundled
 	// charts on disk (leading "v" stripped). Empty uses defaults matching cni-packages (OVN 1.4.0,

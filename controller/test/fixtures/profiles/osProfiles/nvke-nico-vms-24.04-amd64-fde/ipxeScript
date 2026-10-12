@@ -9,7 +9,7 @@
 set boot-loader http://127.0.0.1/qcow-imager.efi
 # The lane rewrites this to the qcow2 it pulled from GHCR. Unreachable here for
 # the same reason as boot-loader: this repository names no CloudFront host.
-set image-url http://127.0.0.1/nke-node.qcow2
+set image-url http://127.0.0.1/nvke-node.qcow2
 set disk-strategy {{ .DiskSelectionStrategy }}
 
 # You probably don't need to change these

@@ -52,21 +52,21 @@ make -C "${repo_root}/agent" "deb-${ARCH}" DEB_OUTPUT="${ARTIFACTS_DIR}/nvke-age
 # here cannot obtain kubeadm at all: there is no bundle server to fall back to.
 # Both architectures have a lock. bundle.sh runs the downloaded kubeadm, so the
 # Packer host has to be the target architecture.
-echo "building nke-kubeadm-distro debs (${repo_root}/os-image/packages/kubeadm-distro)"
+echo "building nvke-kubeadm-distro debs (${repo_root}/os-image/packages/kubeadm-distro)"
 kubeadm_distro_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}")
 if [[ -n "${K8S_VERSIONS:-}" ]]; then
   kubeadm_distro_args+=(K8S_VERSIONS="${K8S_VERSIONS}")
 fi
 make -C "${repo_root}/os-image/packages/kubeadm-distro" debs "${kubeadm_distro_args[@]}"
 
-echo "building nke-cni-calico debs (${repo_root}/os-image/packages/cni-calico)"
+echo "building nvke-cni-calico debs (${repo_root}/os-image/packages/cni-calico)"
 cni_calico_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}")
 if [[ -n "${CALICO_VERSIONS:-}" ]]; then
   cni_calico_args+=(CALICO_VERSIONS="${CALICO_VERSIONS}")
 fi
 make -C "${repo_root}/os-image/packages/cni-calico" debs "${cni_calico_args[@]}"
 
-echo "building nke-cni-ovn debs (${repo_root}/os-image/packages/cni-ovn)"
+echo "building nvke-cni-ovn debs (${repo_root}/os-image/packages/cni-ovn)"
 cni_ovn_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}")
 if [[ -n "${OVN_STREAMS:-}" ]]; then
   cni_ovn_args+=(OVN_STREAMS="${OVN_STREAMS}")

@@ -114,7 +114,7 @@ func TestCacheKeyForURL(t *testing.T) {
 func TestImageCacheEnsureLocalFile(t *testing.T) {
 	imageData := []byte("QFI\xfb" + "locally-built-image")
 	srcDir := t.TempDir()
-	src := filepath.Join(srcDir, "nke-node.qcow2")
+	src := filepath.Join(srcDir, "nvke-node.qcow2")
 	if err := os.WriteFile(src, imageData, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestImageCacheEnsureLocalFile(t *testing.T) {
 
 func TestImageCacheEnsureLocalFileMissing(t *testing.T) {
 	cache := NewImageCache(filepath.Join(t.TempDir(), "image-cache"), slog.Default())
-	if _, err := cache.Ensure(context.Background(), "/nonexistent/nke-node.qcow2"); err == nil {
+	if _, err := cache.Ensure(context.Background(), "/nonexistent/nvke-node.qcow2"); err == nil {
 		t.Fatal("expected an error naming the missing file")
 	}
 }
@@ -168,9 +168,9 @@ func TestImageCacheEnsureLocalFileMissing(t *testing.T) {
 // must not be read from this one.
 func TestLocalImagePathRejectsRemoteHost(t *testing.T) {
 	for _, url := range []string{
-		"file://otherbox/images/nke-node.qcow2",
-		"http://172.30.0.1:8899/nke-node.qcow2",
-		"https://example.invalid/nke-node.qcow2",
+		"file://otherbox/images/nvke-node.qcow2",
+		"http://172.30.0.1:8899/nvke-node.qcow2",
+		"https://example.invalid/nvke-node.qcow2",
 	} {
 		if got, ok := localImagePath(url); ok {
 			t.Errorf("localImagePath(%q) = %q, true; want false", url, got)

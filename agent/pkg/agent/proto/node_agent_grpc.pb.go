@@ -143,8 +143,8 @@ type NodeAgentClient interface {
 	StartKubeVipRestore(ctx context.Context, in *StartKubeVipRestoreRequest, opts ...grpc.CallOption) (*StartKubeVipRestoreResponse, error)
 	// InstallCNI deploys packaged CNI charts or manifests into the cluster (helm install /
 	// kubectl apply). It assumes the charts/manifest Debian package is already installed
-	// on this node — use InstallPackages (or apt) for nke-cni-ovn-charts-<stream>,
-	// nke-cni-calico-manifests-<stream>, and optional image packages (when not pulling
+	// on this node — use InstallPackages (or apt) for nvke-cni-ovn-charts-<stream>,
+	// nvke-cni-calico-manifests-<stream>, and optional image packages (when not pulling
 	// exclusively from a tenant registry).
 	//
 	// OVN resolves the chart tree from /etc/dgx/ovn-kubernetes when present else from the
@@ -921,8 +921,8 @@ type NodeAgentServer interface {
 	StartKubeVipRestore(context.Context, *StartKubeVipRestoreRequest) (*StartKubeVipRestoreResponse, error)
 	// InstallCNI deploys packaged CNI charts or manifests into the cluster (helm install /
 	// kubectl apply). It assumes the charts/manifest Debian package is already installed
-	// on this node — use InstallPackages (or apt) for nke-cni-ovn-charts-<stream>,
-	// nke-cni-calico-manifests-<stream>, and optional image packages (when not pulling
+	// on this node — use InstallPackages (or apt) for nvke-cni-ovn-charts-<stream>,
+	// nvke-cni-calico-manifests-<stream>, and optional image packages (when not pulling
 	// exclusively from a tenant registry).
 	//
 	// OVN resolves the chart tree from /etc/dgx/ovn-kubernetes when present else from the

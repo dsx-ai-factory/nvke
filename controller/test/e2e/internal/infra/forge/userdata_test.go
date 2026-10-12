@@ -107,7 +107,7 @@ func TestRenderUserData(t *testing.T) {
 			t.Errorf("run commands should fetch %s", want)
 		}
 	}
-	// nke-kubeadm-distro conflicts with Ubuntu's containerd package.
+	// nvke-kubeadm-distro conflicts with Ubuntu's containerd package.
 	if strings.Contains(joined, "apt-get install -y containerd") || strings.Contains(joined, "apt install containerd") {
 		t.Error("run commands must not install Ubuntu's containerd")
 	}

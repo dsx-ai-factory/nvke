@@ -9,4 +9,4 @@ set -e
 [ "$1" = "remove" ] || exit 0
 
 systemctl disable --now spire-agent.service >/dev/null 2>&1 || true
-systemctl disable --now nke-spire-configure.service >/dev/null 2>&1 || true
+systemctl disable --now nvke-spire-configure.service >/dev/null 2>&1 || true

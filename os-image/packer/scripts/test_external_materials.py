@@ -465,13 +465,13 @@ class ComposeImageInputsTest(unittest.TestCase):
 
     def test_rejects_multiple_calico_manifest_packages(self):
         with tarfile.open(self.materials / "calico", "w") as archive:
-            for name in ("nke-cni-calico-manifests-1.deb", "nke-cni-calico-manifests-2.deb"):
+            for name in ("nvke-cni-calico-manifests-1.deb", "nvke-cni-calico-manifests-2.deb"):
                 member = tarfile.TarInfo(name)
                 member.size = 1
                 archive.addfile(member, io.BytesIO(b"x"))
         result = self.run_compose(self.root / "calico.tar")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("at most one nke-cni-calico-manifests-*.deb", result.stderr)
+        self.assertIn("at most one nvke-cni-calico-manifests-*.deb", result.stderr)
 
     def test_rejects_mixed_architecture_repository_package(self):
         write_executable(self.tools / "dpkg-deb", "#!/bin/sh\ncase \"$2\" in */ovn.deb) echo arm64;; *) echo all;; esac\n")

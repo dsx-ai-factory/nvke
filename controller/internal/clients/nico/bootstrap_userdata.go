@@ -214,9 +214,9 @@ func validateDgxcTenantCredentials(cfg config.Config) error {
 func cniImagePackageName(plugin db.CniPlugin, version string) (string, error) {
 	switch plugin {
 	case db.CNICalico:
-		return "nke-cni-calico-images-" + version, nil
+		return "nvke-cni-calico-images-" + version, nil
 	case db.CNIOvnKubernetes:
-		return "nke-cni-ovn-images-" + version, nil
+		return "nvke-cni-ovn-images-" + version, nil
 	default:
 		return "", fmt.Errorf("unsupported CNI plugin: %s", plugin)
 	}
@@ -233,9 +233,9 @@ func cniImagePackageName(plugin db.CniPlugin, version string) (string, error) {
 func cniChartsPackageName(plugin db.CniPlugin, version string) (string, error) {
 	switch plugin {
 	case db.CNICalico:
-		return "nke-cni-calico-manifests-" + version, nil
+		return "nvke-cni-calico-manifests-" + version, nil
 	case db.CNIOvnKubernetes:
-		return "nke-cni-ovn-charts-" + version, nil
+		return "nvke-cni-ovn-charts-" + version, nil
 	default:
 		return "", fmt.Errorf("unsupported CNI plugin: %s", plugin)
 	}

@@ -107,8 +107,8 @@ grpcurl_cni_images_package() {
 	local version
 	version="$(grpcurl_cni_stream "$variant" "$2")"
 	case "$(echo "$variant" | tr '[:upper:]' '[:lower:]')" in
-	ovn) echo "nke-cni-ovn-images-${version}" ;;
-	calico) echo "nke-cni-calico-images-${version}" ;;
+	ovn) echo "nvke-cni-ovn-images-${version}" ;;
+	calico) echo "nvke-cni-calico-images-${version}" ;;
 	esac
 }
 
@@ -117,8 +117,8 @@ grpcurl_cni_charts_package() {
 	local version
 	version="$(grpcurl_cni_stream "$variant" "$2")"
 	case "$(echo "$variant" | tr '[:upper:]' '[:lower:]')" in
-	ovn) echo "nke-cni-ovn-charts-${version}" ;;
-	calico) echo "nke-cni-calico-manifests-${version}" ;;
+	ovn) echo "nvke-cni-ovn-charts-${version}" ;;
+	calico) echo "nvke-cni-calico-manifests-${version}" ;;
 	esac
 }
 

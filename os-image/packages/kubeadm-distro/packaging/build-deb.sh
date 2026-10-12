@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Build one nke-kubeadm-distro-<x.y.z>_<rev>_amd64.deb from a bundle tree
+# Build one nvke-kubeadm-distro-<x.y.z>_<rev>_amd64.deb from a bundle tree
 # written by bundle.sh, using nfpm and packaging/nfpm.yaml.
 #
 # Usage:
@@ -26,7 +26,10 @@ case "${ARCH}" in
   amd64|arm64) ;;
   *) echo "ARCH=${ARCH}: expected amd64 or arm64" >&2; exit 2 ;;
 esac
-PACKAGE_PREFIX=nke-kubeadm-distro
+PACKAGE_PREFIX=nvke-kubeadm-distro
+# Apt requests for the pre-rename name still select this package (Provides),
+# and a node must not be able to install that old name beside it.
+OLD_PACKAGE_PREFIX=nke-kubeadm-distro
 MATRIX_SUBDIR=k8s-matrix
 NFPM_BIN="${NFPM_BIN:-nfpm}"
 
@@ -88,18 +91,18 @@ fi
 
 # Every matrix row owns /usr/bin/kubeadm, so each package conflicts with its
 # peers. One comma-separated string; nfpm.yaml explains why.
-PEER_CONFLICTS="${PACKAGE_PREFIX}"
+PEER_CONFLICTS="${PACKAGE_PREFIX}, ${OLD_PACKAGE_PREFIX}"
 for peer in ${PEER_VERSIONS//,/ }; do
   peer="${peer#v}"
   [[ "${peer}" == "${K8S_PATCH}" ]] && continue
-  PEER_CONFLICTS="${PEER_CONFLICTS}, ${PACKAGE_PREFIX}-${peer}"
+  PEER_CONFLICTS="${PEER_CONFLICTS}, ${PACKAGE_PREFIX}-${peer}, ${OLD_PACKAGE_PREFIX}-${peer}"
 done
 
 # TMPDIR_NO_SLASH: macOS sets TMPDIR with a trailing slash, which doubles the
 # "/" before the mktemp suffix below; nfpm's globbing (used to resolve every
 # `expand: true` content src) then fails to match that path at all.
 TMPDIR_NO_SLASH="${TMPDIR:-/tmp}"
-SCRATCH="$(mktemp -d "${TMPDIR_NO_SLASH%/}/nke-kubeadm-distro-XXXXXX")"
+SCRATCH="$(mktemp -d "${TMPDIR_NO_SLASH%/}/nvke-kubeadm-distro-XXXXXX")"
 # SCRIPTS_DIR is assigned later, but initialise it here so the trap does not
 # fail under `set -u` and skip the SCRATCH cleanup with it.
 SCRIPTS_DIR=""

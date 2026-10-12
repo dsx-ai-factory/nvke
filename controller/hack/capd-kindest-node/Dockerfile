@@ -130,8 +130,8 @@ RUN set -eux; \
     for deb in /tmp/capd-node-scripts/*.deb; do \
       [ -f "${deb}" ] || continue; \
       if [ "$(basename "${deb}")" = cni-images.deb ]; then \
-        mkdir -p /usr/lib/nke/e2e; \
-        cp "${deb}" /usr/lib/nke/e2e/cni-images.deb; \
+        mkdir -p /usr/lib/nvke/e2e; \
+        cp "${deb}" /usr/lib/nvke/e2e/cni-images.deb; \
         continue; \
       fi; \
       package="$(dpkg-deb --field "${deb}" Package)"; \

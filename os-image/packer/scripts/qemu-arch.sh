@@ -57,7 +57,7 @@ nke_find_firmware_pair() {
 # Sets QEMU_BIN, QEMU_MACHINE, QEMU_CPU, ACCEL_ARGS, TPM_DEVICE,
 # EFI_CODE_DEFAULT, EFI_VARS_DEFAULT, NKE_ACCELERATED, NKE_ACCELERATOR and
 # TPM_DEVICE_SPEC. TPM_DEVICE_SPEC includes the software TPM's tpmdev id.
-nke_qemu_env() {
+nvke_qemu_env() {
   local arch="$1" host_arch host_os hvf_supported=0 kvm_supported=0
   local -a firmware
   # Every output is derived from $arch alone: the same shell calls this once

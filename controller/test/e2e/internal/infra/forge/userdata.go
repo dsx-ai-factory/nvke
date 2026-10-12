@@ -151,7 +151,7 @@ func renderUserData(in userDataInputs) (string, error) {
 		"printf 'fs.inotify.max_user_instances = 1024\n' > /etc/sysctl.d/99-nke-e2e-inotify.conf",
 		"sysctl --system",
 
-		// nke-kubeadm-distro ships a containerd and declares Conflicts: runc,
+		// nvke-kubeadm-distro ships a containerd and declares Conflicts: runc,
 		// so installing Ubuntu's containerd aborts the whole apt transaction.
 		// Start the one already there.
 		"systemctl enable --now containerd",

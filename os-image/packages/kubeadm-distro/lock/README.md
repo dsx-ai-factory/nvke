@@ -12,7 +12,7 @@ one of them. Plain text, one sorted record per line, pinning by digest
 everything the bundle for that version and architecture is built from:
 
 ```text
-# nke-kubeadm-distro lock for v1.36.3 (amd64). Regenerate with `make lock`; review the diff before committing.
+# nvke-kubeadm-distro lock for v1.36.3 (amd64). Regenerate with `make lock`; review the diff before committing.
 kubernetes v1.36.3
 artifact kubeadm <sha256hex> https://dl.k8s.io/release/v1.36.3/bin/linux/amd64/kubeadm
 image registry.k8s.io/pause:3.10.2 sha256:<hex>

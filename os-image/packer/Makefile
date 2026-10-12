@@ -44,8 +44,8 @@ export PACKER_CACHE_DIR
 # VNC/monitor access there to inspect a stuck build interactively. Packer's
 # debug log goes there too (PACKER_LOG): the only trace of a QEMU start failure.
 BUILD_LOGS  := $(CURDIR)/build-logs
-PACKER_BUILD_FDE := nke-node-fde.qemu.nke-fde
-PACKER_BUILD_NON_FDE := nke-node-non-fde.qemu.nke-non-fde
+PACKER_BUILD_FDE := nvke-node-fde.qemu.nvke-fde
+PACKER_BUILD_NON_FDE := nvke-node-non-fde.qemu.nvke-non-fde
 SOURCE_ROOT ?= $(abspath ../..)
 QCOW2_DIST_DIR ?=
 EXPECTED_SOURCE_COMMIT ?=
@@ -169,7 +169,7 @@ GUEST_MEMORY_MIB ?= 8192
 # prepare-installer-iso.sh patches the ISO's own GRUB timeout to 300s, so
 # this just needs to comfortably exceed BIOS+GRUB boot time under tcg — it
 # no longer has to land inside a narrow window. See boot_wait's comment in
-# nke-node-fde.pkr.hcl.
+# nvke-node-fde.pkr.hcl.
 BOOT_WAIT ?= $(if $(filter kvm,$(ACCELERATOR)),10s,30s)
 
 # Firmware and acceleration checks share the boot harness selection, including
@@ -177,7 +177,7 @@ BOOT_WAIT ?= $(if $(filter kvm,$(ACCELERATOR)),10s,30s)
 # wrapper receives the whole `packer build ... TEMPLATE` command and inserts the
 # firmware -var flags in front of the template, which Packer requires last.
 PACKER_BUILD = ARCH=$(ARCH) ACCELERATOR=$(ACCELERATOR) REQUIRE_ACCELERATION=$(REQUIRE_ACCELERATION) \
-	bash -ec '. ./scripts/qemu-arch.sh; nke_qemu_env "$$ARCH"; \
+	bash -ec '. ./scripts/qemu-arch.sh; nvke_qemu_env "$$ARCH"; \
 	template=$${@: -1}; set -- "$${@:1:$$\#-1}"; \
 	exec "$$@" -var "efi_firmware_code=$${OVMF_CODE:-$$EFI_CODE_DEFAULT}" \
 	-var "efi_firmware_vars=$${OVMF_VARS_TEMPLATE:-$$EFI_VARS_DEFAULT}" "$$template"' \
@@ -319,7 +319,7 @@ check-acceleration:
 	@ARCH=$(ARCH) ACCELERATOR=$(ACCELERATOR) REQUIRE_ACCELERATION=$(REQUIRE_ACCELERATION) bash -ec '\
 		. ./scripts/qemu-arch.sh; \
 		for attempt in $$(seq 1 $(KVM_SETTLE_RETRIES)); do \
-			nke_qemu_env "$$ARCH" && exit 0; \
+			nvke_qemu_env "$$ARCH" && exit 0; \
 			[[ -c /dev/kvm && $$attempt -lt $(KVM_SETTLE_RETRIES) ]] || exit 1; \
 			echo "KVM check attempt $$attempt failed with /dev/kvm mode $$(stat -c %a /dev/kvm); retrying in 10s" >&2; \
 			sudo -n chmod 666 /dev/kvm 2>/dev/null || true; \
@@ -399,8 +399,8 @@ prepare-packer-inputs: prepare-installer-iso prepare-artifacts
 	iso_sha="$${iso_sha%% *}"; \
 	inputs_sha="$$(sha256sum "$$stage/materials/image-inputs")"; \
 	inputs_sha="$${inputs_sha%% *}"; \
-	printf '%s' '{"schemaVersion":"nke.dev/os-image-materials/v1","materials":[' > "$$stage/material-manifest.json"; \
-	printf '{"binding":"image-inputs","component":"nke-image-inputs","kind":"archive","architecture":"%s","digest":"sha256:%s","path":"materials/image-inputs"},' \
+	printf '%s' '{"schemaVersion":"nvke.nvidia.com/os-image-materials/v1","materials":[' > "$$stage/material-manifest.json"; \
+	printf '{"binding":"image-inputs","component":"nvke-image-inputs","kind":"archive","architecture":"%s","digest":"sha256:%s","path":"materials/image-inputs"},' \
 		"$(ARCH)" "$$inputs_sha" >> "$$stage/material-manifest.json"; \
 	printf '{"binding":"installer-iso","component":"ubuntu-installer","kind":"disk-image","architecture":"%s","digest":"sha256:%s","path":"materials/installer-iso"}]}\n' \
 		"$(ARCH)" "$$iso_sha" >> "$$stage/material-manifest.json"; \
@@ -478,7 +478,7 @@ define collect_qcow2
 	esac; \
 	version="$${iso_name#ubuntu-}"; \
 	version="$${version%-live-server-$(ARCH).iso}"; \
-	expected="nke-node-$(1)-ubuntu-$$version-$(ARCH).qcow2"; \
+	expected="nvke-node-$(1)-ubuntu-$$version-$(ARCH).qcow2"; \
 	name="$${source##*/}"; \
 	if [ "$$name" != "$$expected" ]; then \
 		echo "expected $(1) $(ARCH) QCOW2 $$expected; found $$name" >&2; \
@@ -557,12 +557,12 @@ _os-image-fde: prepare-image-build
 		-var "serial_console=$(SERIAL_CONSOLE)" \
 		"$(PACKER_PROJECT)"
 	mkdir "$(CURDIR)/output-fde"
-	mv "$(PACKER_OUTPUT_DIRECTORY_FDE)/fde/nke-node.qcow2" \
-		"$(CURDIR)/output-fde/nke-node-fde-ubuntu-$(UBUNTU_VERSION)-$(ARCH).qcow2"
+	mv "$(PACKER_OUTPUT_DIRECTORY_FDE)/fde/nvke-node.qcow2" \
+		"$(CURDIR)/output-fde/nvke-node-fde-ubuntu-$(UBUNTU_VERSION)-$(ARCH).qcow2"
 	rm -rf -- "$(PACKER_OUTPUT_DIRECTORY_FDE)"
 
 # Non-FDE variant: LVM-backed ext4 without LUKS. See
-# nke-node-non-fde.pkr.hcl.
+# nvke-node-non-fde.pkr.hcl.
 os-image-non-fde:
 	@if [ -e "$(CURDIR)/output-non-fde" ] || [ -L "$(CURDIR)/output-non-fde" ]; then \
 		echo "output-non-fde already exists; run make clean-non-fde-output before rebuilding" >&2; \
@@ -598,8 +598,8 @@ _os-image-non-fde: prepare-image-build
 		-var "serial_console=$(SERIAL_CONSOLE)" \
 		"$(PACKER_PROJECT)"
 	mkdir "$(CURDIR)/output-non-fde"
-	mv "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)/non-fde/nke-node.qcow2" \
-		"$(CURDIR)/output-non-fde/nke-node-non-fde-ubuntu-$(UBUNTU_VERSION)-$(ARCH).qcow2"
+	mv "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)/non-fde/nvke-node.qcow2" \
+		"$(CURDIR)/output-non-fde/nvke-node-non-fde-ubuntu-$(UBUNTU_VERSION)-$(ARCH).qcow2"
 	rm -rf -- "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)"
 
 clean-packer-scratch:

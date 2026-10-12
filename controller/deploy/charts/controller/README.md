@@ -28,7 +28,7 @@ A Helm chart to deploy the NVKE controller service
 | autoscaling.targetCPUUtilizationPercentage | int | `80` |  |
 | capi.rbac.create | bool | `false` | Create RBAC for the controller to watch and patch CAPI/NICo resources. |
 | cni.imageRegistry | string | `""` | Optional OCI registry prefix for CNI component images. Empty uses chart defaults. |
-| cni.installAfterInit | bool | `false` | Install CNI after kubeadm init through the agent's InstallCNI RPC, which reads manifests from a Debian package rather than a bundle server. Needs the CNI charts package on the node that runs kubeadm init: nke-cni-ovn-charts-<stream> for OVN, or nke-cni-calico-manifests-<stream> for Calico. |
+| cni.installAfterInit | bool | `false` | Install CNI after kubeadm init through the agent's InstallCNI RPC, which reads manifests from a Debian package rather than a bundle server. Needs the CNI charts package on the node that runs kubeadm init: nvke-cni-ovn-charts-<stream> for OVN, or nvke-cni-calico-manifests-<stream> for Calico. |
 | controllers.nico.enabled | bool | `true` | Run controllers that watch NICo infrastructure resources. |
 | deploymentAnnotations | object | `{}` | Annotations on the Deployment `metadata` (evaluated with `tpl`) |
 | env | list | `[]` | Additional environment variables to inject into the controller container. |

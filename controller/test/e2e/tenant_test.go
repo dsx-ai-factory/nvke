@@ -1527,7 +1527,7 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nvke.Cluste
 		Name:              name,
 		Backend:           nvke.BackendNicoForge,
 		KubernetesVersion: kubernetesVersion,
-		// OVN, matching the nke-cni-ovn-images package the pre-kubeadm
+		// OVN, matching the nvke-cni-ovn-images package the pre-kubeadm
 		// commands install. Calico here would install one CNI and run another.
 		CNIPlugin:    cmp.Or(shape.cniPlugin, CNIPluginOVN),
 		OrgID:        forgeEnv.Org.ID,

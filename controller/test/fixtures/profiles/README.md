@@ -23,7 +23,7 @@ Two kinds of entry live here, and the difference matters:
 bundle server. The self-hosted arm64 fleet gets 403 from that CDN, so the lane
 now pulls the node image from GHCR and rewrites `image-url` to the local copy,
 and the agent runs with no bundle server, which makes it prefer apt against the
-`nke-cni-*` debs already in the node image. `nico-vms-e2e.sh` fails the run if
+`nvke-cni-*` debs already in the node image. `nico-vms-e2e.sh` fails the run if
 any file here names CloudFront again.
 
 `nvke-nico-vms-24.04-amd64-fde` is a copy of the fleet profile `nke-nico-vms-24.04-amd64-fde`.

@@ -1,6 +1,6 @@
 # AGENTS.md — `os-image/`
 
-Reference node OS image (spec + Packer recipe) and the `nke-os-image-check`
+Reference node OS image (spec + Packer recipe) and the `nvke-os-image-check`
 connectivity binary.
 
 **Module path:** `github.com/dsx-ai-factory/nvke/os-image`
@@ -19,7 +19,7 @@ publish **container** images; this module is the Ubuntu qcow2 a node boots.
 SPEC.md                   # contract
 packer/                   # QEMU golden-image build
 files/                    # units + SPIRE template + first-boot script
-cmd/nke-os-image-check/   # checker entrypoint
+cmd/nvke-os-image-check/   # checker entrypoint
 internal/check/           # dial + gRPC reflection / GetKubeadmStatus
 ```
 
@@ -37,7 +37,7 @@ qcow2, `make boot-smoke` must pass, then the disk is published to
 `ghcr.io/dsx-ai-factory/nvke/os-image` and the GitHub Release is created. A failed bake
 or smoke test does not publish.
 
-`make` stamps `nke-os-image-check` from:
+`make` stamps `nvke-os-image-check` from:
 
 ```bash
 git describe --match 'os-image/v[0-9]*' --tags
@@ -48,7 +48,7 @@ The `os-image/` prefix is stripped for the binary ldflag.
 ## Commands
 
 ```bash
-make build              # stamped bin/nke-os-image-check, and asserts the stamp took
+make build              # stamped bin/nvke-os-image-check, and asserts the stamp took
 make compile            # type-check every package, no binary
 make test
 make lint

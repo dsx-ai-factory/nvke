@@ -25,7 +25,9 @@ OUT_DIR ?=
 
 # Debian packaging revision. Bump when the package content changes but neither
 # upstream version does. Revision 2 adds the DSX IMDS node attestor plugin.
-DEB_REVISION ?= 2
+# Revision 3 moves spire-configure.sh under /usr/lib/nvke and renames the unit
+# to nvke-spire-configure.service.
+DEB_REVISION ?= 3
 
 BUNDLE_VERSION := $(SPIRE_VERSION)+tpm$(TPM_PLUGIN_VERSION)
 

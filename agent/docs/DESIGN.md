@@ -126,7 +126,7 @@ Design implication: **prefer the newer patterns (§7)** for all new work.
 
 External sources:
   - Bundle/apt artifacts: S3 (https://…s3…/nke_bundles, nke-apt-*) or OCI (nvcr.io)
-  - CNI charts/manifests + images: NVKE Debian packages (nke-cni-ovn-*, nke-cni-calico-*)
+  - CNI charts/manifests + images: NVKE Debian packages (nvke-cni-ovn-*, nvke-cni-calico-*)
 ```
 
 - **Caller:** The NVKE controller is the primary caller. `grpcurl` is used for

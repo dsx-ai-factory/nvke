@@ -9,7 +9,7 @@ set -euo pipefail
 ENV_FILE=/etc/nke/spire.env
 BUNDLE_SRC=/etc/nke/trust-bundle.pem
 BUNDLE_DST=/etc/spire-agent/trust-bundle.pem
-CONF_TMPL=/usr/lib/nke/spire-agent.conf.tmpl
+CONF_TMPL=/usr/lib/nvke/spire-agent.conf.tmpl
 CONF_DST=/etc/spire-agent/agent.conf
 DROP_IN_DIR=/etc/systemd/system/spire-agent.service.d
 ATTESTED_MARKER=/var/lib/spire-agent/.nvke-attested
@@ -20,11 +20,11 @@ fi
 TPM_PLUGIN=/usr/local/lib/spire-agent/tpm_attestor_agent
 
 if [[ ! -f "${ENV_FILE}" ]]; then
-  echo "nke-spire-configure: missing ${ENV_FILE}" >&2
+  echo "nvke-spire-configure: missing ${ENV_FILE}" >&2
   exit 1
 fi
 if [[ ! -f "${BUNDLE_SRC}" ]]; then
-  echo "nke-spire-configure: missing ${BUNDLE_SRC}" >&2
+  echo "nvke-spire-configure: missing ${BUNDLE_SRC}" >&2
   exit 1
 fi
 
@@ -33,9 +33,9 @@ set -a
 source "${ENV_FILE}"
 set +a
 
-: "${SPIRE_SERVER_ADDRESS:?nke-spire-configure: SPIRE_SERVER_ADDRESS is required}"
-: "${SPIRE_SERVER_PORT:?nke-spire-configure: SPIRE_SERVER_PORT is required}"
-: "${SPIRE_TRUST_DOMAIN:?nke-spire-configure: SPIRE_TRUST_DOMAIN is required}"
+: "${SPIRE_SERVER_ADDRESS:?nvke-spire-configure: SPIRE_SERVER_ADDRESS is required}"
+: "${SPIRE_SERVER_PORT:?nvke-spire-configure: SPIRE_SERVER_PORT is required}"
+: "${SPIRE_TRUST_DOMAIN:?nvke-spire-configure: SPIRE_TRUST_DOMAIN is required}"
 
 id -u spire >/dev/null 2>&1 || useradd -r -s /bin/false -d /var/lib/spire-agent spire
 
@@ -63,7 +63,7 @@ elif [[ -x "${TPM_PLUGIN}" ]]; then
     plugin_data {}
   }"
 else
-  echo "nke-spire-configure: no SPIRE_JOIN_TOKEN and ${TPM_PLUGIN} is missing" >&2
+  echo "nvke-spire-configure: no SPIRE_JOIN_TOKEN and ${TPM_PLUGIN} is missing" >&2
   exit 1
 fi
 

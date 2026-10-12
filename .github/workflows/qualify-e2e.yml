@@ -104,11 +104,11 @@ on:
         type: string
         required: false
       kubernetes-version:
-        description: "Overrides the Kubernetes version the plan resolves for every stream, e.g. 1.36.3. It selects the nke-kubeadm-distro package on every node and the version CWE builds the cluster with, so one value decides both."
+        description: "Overrides the Kubernetes version the plan resolves for every stream, e.g. 1.36.3. It selects the nvke-kubeadm-distro package on every node and the version CWE builds the cluster with, so one value decides both."
         type: string
         required: false
       cni-ovn-version:
-        description: "Overrides the OVN CNI version the plan resolves, e.g. 1.4.0. It selects the nke-cni-ovn-images and -charts packages."
+        description: "Overrides the OVN CNI version the plan resolves, e.g. 1.4.0. It selects the nvke-cni-ovn-images and -charts packages."
         type: string
         required: false
       controller-name:
