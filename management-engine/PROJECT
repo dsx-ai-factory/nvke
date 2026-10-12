@@ -3,7 +3,7 @@
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
 cliVersion: 4.15.0
-domain: nke.nvidia.com
+domain: nvke.nvidia.com
 layout:
 - go.kubebuilder.io/v4
 plugins:
@@ -15,14 +15,14 @@ repo: github.com/dsx-ai-factory/nvke/management-engine
 resources:
 - api:
     crdVersion: v1
-  domain: nke.nvidia.com
+  domain: nvke.nvidia.com
   group: internal
   kind: ClusterRelease
   path: github.com/dsx-ai-factory/nvke/management-engine/apis/v1
   version: v1
 - api:
     crdVersion: v1
-  domain: nke.nvidia.com
+  domain: nvke.nvidia.com
   group: internal
   kind: MachineImage
   path: github.com/dsx-ai-factory/nvke/management-engine/apis/v1
@@ -31,21 +31,21 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: nke.nvidia.com
+  domain: nvke.nvidia.com
   group: internal
-  kind: NKECluster
+  kind: NVKECluster
   path: github.com/dsx-ai-factory/nvke/management-engine/apis/v1
   version: v1
 - api:
     crdVersion: v1
-  domain: nke.nvidia.com
+  domain: nvke.nvidia.com
   group: internal
   kind: NodePoolRelease
   path: github.com/dsx-ai-factory/nvke/management-engine/apis/v1
   version: v1
 - api:
     crdVersion: v1
-  domain: nke.nvidia.com
+  domain: nvke.nvidia.com
   group: internal
   kind: ClusterReleaseChannel
   path: github.com/dsx-ai-factory/nvke/management-engine/apis/v1

@@ -27,7 +27,7 @@ var nvkeClusterOwnedConditions = []string{
 	internalv1.ControlPlaneReadyCondition,
 }
 
-func setClusterStatus(cluster *internalv1.NKECluster, observedCluster *api.Cluster) {
+func setClusterStatus(cluster *internalv1.NVKECluster, observedCluster *api.Cluster) {
 	ready := metav1.ConditionFalse
 	reason, message := "Provisioning", "Waiting for control-plane provisioning"
 	if observedCluster.Conditions.Deleting.Status == api.ConditionStatus("True") {
@@ -49,7 +49,7 @@ func setClusterStatus(cluster *internalv1.NKECluster, observedCluster *api.Clust
 	}
 }
 
-func setNVKEClusterConditions(cluster *internalv1.NKECluster) error {
+func setNVKEClusterConditions(cluster *internalv1.NVKECluster) error {
 	// Remove conditions left by earlier development builds.
 	conditions.Delete(cluster, clusterv1.PausedCondition)
 	conditions.Delete(cluster, clusterv1.DeletingCondition)
@@ -63,7 +63,7 @@ func setNVKEClusterConditions(cluster *internalv1.NKECluster) error {
 			)),
 		)},
 	); err != nil {
-		return fmt.Errorf("summarize NKECluster Available condition: %w", err)
+		return fmt.Errorf("summarize NVKECluster Available condition: %w", err)
 	}
 	if !cluster.DeletionTimestamp.IsZero() {
 		reason, message := clusterv1.DeletingReason, "Cluster deletion is in progress"
@@ -84,7 +84,7 @@ func setNVKEClusterConditions(cluster *internalv1.NKECluster) error {
 			)),
 		)},
 	); err != nil {
-		return fmt.Errorf("summarize NKECluster Ready condition: %w", err)
+		return fmt.Errorf("summarize NVKECluster Ready condition: %w", err)
 	}
 	return nil
 }
@@ -107,12 +107,12 @@ func plainSummaryMessages(messages []string) []string {
 	return plain
 }
 
-func setLifecycleConditions(cluster *internalv1.NKECluster, synced, ready metav1.ConditionStatus, reason, message string) {
+func setLifecycleConditions(cluster *internalv1.NVKECluster, synced, ready metav1.ConditionStatus, reason, message string) {
 	conditions.Set(cluster, metav1.Condition{Type: internalv1.SyncedCondition, Status: synced, Reason: reason, Message: message})
 	conditions.Set(cluster, metav1.Condition{Type: internalv1.ControlPlaneReadyCondition, Status: ready, Reason: reason, Message: message})
 }
 
-func (r *NVKEClusterReconciler) lifecycleError(cluster *internalv1.NKECluster, err error) (ctrl.Result, error) {
+func (r *NVKEClusterReconciler) lifecycleError(cluster *internalv1.NVKECluster, err error) (ctrl.Result, error) {
 	if errors.Is(err, errCreateRejected) {
 		setLifecycleConditions(cluster, metav1.ConditionFalse, metav1.ConditionFalse, "CreateRejected", "Cluster creation request was rejected")
 		return ctrl.Result{}, nil

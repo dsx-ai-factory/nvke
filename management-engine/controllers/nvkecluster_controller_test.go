@@ -19,7 +19,7 @@ import (
 
 func waitForNVKECluster(ctx ginkgo.SpecContext, tc *fixture.Case) {
 	gomega.Eventually(func(g gomega.Gomega) {
-		cluster := &internalv1.NKECluster{}
+		cluster := &internalv1.NVKECluster{}
 		g.Expect(tc.Client.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: testCluster}, cluster)).To(gomega.Succeed())
 		g.Expect(cluster.Status.ObservedGeneration).To(gomega.Equal(cluster.Generation))
 		synced := conditions.Get(cluster, internalv1.SyncedCondition)
@@ -32,10 +32,10 @@ func waitForNVKECluster(ctx ginkgo.SpecContext, tc *fixture.Case) {
 // have to add or update a case set.
 // Represents a CR at generation 1 because reconciliation does not change spec.
 var _ = fixture.DescribeCaseSet(controllerCaseSet(
-	"NKECluster create reconciliation",
+	"NVKECluster create reconciliation",
 	"nvkecluster-create-",
 	func(tc *fixture.Case, _ fixture.CaseSet) {
-		ginkgo.It("reconciles the initial NKECluster", func(ctx ginkgo.SpecContext) {
+		ginkgo.It("reconciles the initial NVKECluster", func(ctx ginkgo.SpecContext) {
 			waitForNVKECluster(ctx, tc)
 		})
 	},
@@ -45,16 +45,16 @@ var _ = fixture.DescribeCaseSet(controllerCaseSet(
 // have to add or update a case set.
 // Represents a CR at generation 2 after a spec update.
 var _ = fixture.DescribeCaseSet(controllerCaseSet(
-	"NKECluster update reconciliation",
+	"NVKECluster update reconciliation",
 	"nvkecluster-update-",
 	func(tc *fixture.Case, _ fixture.CaseSet) {
-		ginkgo.It("reconciles the initial NKECluster", func(ctx ginkgo.SpecContext) {
+		ginkgo.It("reconciles the initial NVKECluster", func(ctx ginkgo.SpecContext) {
 			waitForNVKECluster(ctx, tc)
 		})
-		ginkgo.It("applies the NKECluster update", func(ctx ginkgo.SpecContext) {
+		ginkgo.It("applies the NVKECluster update", func(ctx ginkgo.SpecContext) {
 			gomega.Expect(tc.PatchObjects(ctx, "input_update.yaml")).To(gomega.Succeed())
 		})
-		ginkgo.It("reconciles the updated NKECluster", func(ctx ginkgo.SpecContext) {
+		ginkgo.It("reconciles the updated NVKECluster", func(ctx ginkgo.SpecContext) {
 			waitForNVKECluster(ctx, tc)
 		})
 	},
@@ -63,23 +63,23 @@ var _ = fixture.DescribeCaseSet(controllerCaseSet(
 // IMPORTANT: Read docs/writing-tests.md. There is ZERO reason that you should
 // have to add or update a case set.
 var _ = fixture.DescribeCaseSet(controllerCaseSet(
-	"NKECluster delete reconciliation",
+	"NVKECluster delete reconciliation",
 	"nvkecluster-delete-",
 	func(tc *fixture.Case, _ fixture.CaseSet) {
-		ginkgo.It("reconciles the initial NKECluster", func(ctx ginkgo.SpecContext) {
+		ginkgo.It("reconciles the initial NVKECluster", func(ctx ginkgo.SpecContext) {
 			waitForNVKECluster(ctx, tc)
 		})
 		ginkgo.It("deletes the selected objects", func(ctx ginkgo.SpecContext) {
 			_, err := tc.DeleteObjects(ctx, "input_delete.yaml")
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
 		})
-		ginkgo.It("reconciles the deleted NKECluster", func(ctx ginkgo.SpecContext) {
+		ginkgo.It("reconciles the deleted NVKECluster", func(ctx ginkgo.SpecContext) {
 			if input, exists := tc.Input("input_cwe.yaml"); exists {
 				var config cweFixtureConfig
 				gomega.Expect(yaml.UnmarshalStrict([]byte(input), &config)).To(gomega.Succeed())
 				if config.DeletePending {
 					gomega.Eventually(func(g gomega.Gomega) {
-						cluster := &internalv1.NKECluster{}
+						cluster := &internalv1.NVKECluster{}
 						g.Expect(tc.Client.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: testCluster}, cluster)).To(gomega.Succeed())
 						synced := conditions.Get(cluster, internalv1.SyncedCondition)
 						g.Expect(synced).NotTo(gomega.BeNil())
@@ -90,7 +90,7 @@ var _ = fixture.DescribeCaseSet(controllerCaseSet(
 				}
 			}
 			gomega.Eventually(func() bool {
-				err := tc.Client.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: testCluster}, &internalv1.NKECluster{})
+				err := tc.Client.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: testCluster}, &internalv1.NVKECluster{})
 				return apierrors.IsNotFound(err)
 			}).WithContext(ctx).WithTimeout(timeout).WithPolling(pollInterval).Should(gomega.BeTrue())
 		})

@@ -14,8 +14,8 @@ metadata:
     #   "" and "true":        the template takes the version from the controller, through
     #                         {{ .KubernetesVersion }}, so it supports any version.
     #   "1.34.2" and "false": the template is written for that one version.
-    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
 spec:
   machineImageRef:
     name: example-ubuntu-24.04-amd64

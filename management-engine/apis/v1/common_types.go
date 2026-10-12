@@ -30,7 +30,7 @@ type ReleaseReference struct {
 	Version string `json:"version"`
 }
 
-// ClusterReference pins a NodePool to one NKECluster in the same namespace.
+// ClusterReference pins a NodePool to one NVKECluster in the same namespace.
 type ClusterReference struct {
 	Name ResourceName `json:"name"`
 	// +kubebuilder:validation:Type=string

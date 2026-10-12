@@ -112,7 +112,7 @@ cwe_down() (
   # The journal also permits cleanup after either Kind cluster has disappeared.
   if kind get clusters | grep -Fxq "$DEV_NAME-state"; then
     kind export kubeconfig --name "$DEV_NAME-state" --kubeconfig "$scratch/kubeconfig"
-    "${state[@]}" --kubeconfig "$scratch/kubeconfig" -n cwe-integration get nkeclusters \
+    "${state[@]}" --kubeconfig "$scratch/kubeconfig" -n cwe-integration get nvkeclusters \
       --ignore-not-found -o jsonpath='{range .items[*]}{.metadata.uid}{"\n"}{end}' >>"$scratch/uids" ||
       echo "State API unavailable; using recorded test UIDs for load-balancer cleanup." >&2
   fi

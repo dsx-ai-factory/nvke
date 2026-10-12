@@ -132,7 +132,7 @@ creating the service account on a real site, are in
 The machine image and release commands do not use CWE or a token. Their
 kubeconfig identity needs `get`, `list`, `create` and `delete` on
 `machineimages`, `clusterreleases` and `nodepoolreleases` in
-`internal.nke.nvidia.com`, plus `patch` for `nvkectl deprecate`.
+`internal.nvke.nvidia.com`, plus `patch` for `nvkectl deprecate`.
 
 ## Infrastructure providers
 

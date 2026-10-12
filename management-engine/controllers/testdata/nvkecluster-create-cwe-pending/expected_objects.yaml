@@ -1,11 +1,11 @@
 ---
 items:
-- apiVersion: internal.nke.nvidia.com/v1
-  kind: NKECluster
+- apiVersion: internal.nvke.nvidia.com/v1
+  kind: NVKECluster
   metadata:
     creationTimestamp: null
     finalizers:
-    - internal.nke.nvidia.com/cluster-cleanup
+    - internal.nvke.nvidia.com/cluster-cleanup
     generation: 1
     name: cluster-1
     namespace: default

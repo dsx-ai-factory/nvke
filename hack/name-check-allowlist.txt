@@ -70,13 +70,18 @@ token:nke-cloud-workflow-engine|nke-stack
 # the nkeOIDCAuth values key.
 token:nke-system|nkeSystemNamespace|NkeOIDCAuth
 
-# Label, annotation, taint and condition keys, the CRD group
-# internal.nke.nvidia.com, and the *.nke.nvidia.com trust
-# domains of existing sites.
+# Label, annotation, taint and condition keys, and the *.nke.nvidia.com trust
+# domains of existing sites. The management-engine CRD group is now
+# internal.nvke.nvidia.com and no longer needs this entry.
 token:(^|[./])nke\.nvidia\.com|\.labels\.nke$
 
-# The NKECluster and NKENodePool kinds, their plurals, fields, controllers and
-# testdata, and the CSR approval reason recorded on tenant clusters.
+# The NKECluster, NKENodePool and nkeClusterRef names of the DGXC platform API
+# (compute.private.x-dgxc.nvidia.com), which this repository emits CRs for in
+# controller/scripts/cwe-to-platform-crs.sh but does not own; the NKECluster
+# shape the name-check self-test feeds its own detector (hack/test_name_check.py);
+# and the CSR approval reason recorded on the tenant clusters of existing sites.
+# The management-engine kind and its plural are now NVKECluster and nvkeclusters
+# and no longer need this entry.
 token:NKECluster|nkecluster|NKENodePool|nkenodepool|nkeClusterRef|NKEValidatedNodeIdentity
 
 # The nke-rbac ConfigMap, the nke: ClusterRole prefix the tenant apiserver

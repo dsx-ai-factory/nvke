@@ -3,6 +3,6 @@
 
 ## Append samples of your project ##
 resources:
-- internal_v1_nkecluster.yaml
+- internal_v1_nvkecluster.yaml
 - internal_v1_clusterreleasechannel.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

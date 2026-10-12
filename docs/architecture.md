@@ -47,7 +47,7 @@ CRD types, and test and development tooling.
 | `controller/nico-sim/` | `nico-sim`, `nico-simctl` | Forge-compatible VM and Docker-container simulator used by tests and development |
 | `controller/test/e2e/` | none | The end to end suite |
 | `controller/hack/capd-reboot-controller/` | `capd-reboot-controller` | Test helper for CAPD reboot behaviour |
-| `management-engine/` | none | The management engine, including NKECluster and NodePool |
+| `management-engine/` | none | The management engine, including NVKECluster and NodePool |
 | `os-image/` | `nvke-os-image-check` | OS image checks |
 | `release/` | `qualify` | Release qualification: what to qualify, what ran, and what is qualified. Builds nothing that ships |
 

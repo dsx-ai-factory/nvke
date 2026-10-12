@@ -19,7 +19,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/management-engine/internal/cwe"
 )
 
-func (r *NVKEClusterReconciler) reconcileDelete(ctx context.Context, cluster *internalv1.NKECluster) (ctrl.Result, error) {
+func (r *NVKEClusterReconciler) reconcileDelete(ctx context.Context, cluster *internalv1.NVKECluster) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(cluster, nvkeClusterFinalizer) {
 		return ctrl.Result{}, nil
 	}

@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	nvkeClusterFinalizer = "internal.nke.nvidia.com/cluster-cleanup"
+	nvkeClusterFinalizer = "internal.nvke.nvidia.com/cluster-cleanup"
 	defaultPollInterval  = 10 * time.Second
 )
 
@@ -45,14 +45,14 @@ type NVKEClusterReconciler struct {
 	PollInterval time.Duration
 }
 
-// +kubebuilder:rbac:groups=internal.nke.nvidia.com,resources=nkeclusters,verbs=get;list;watch;patch
-// +kubebuilder:rbac:groups=internal.nke.nvidia.com,resources=nkeclusters/status,verbs=update;patch
+// +kubebuilder:rbac:groups=internal.nvke.nvidia.com,resources=nvkeclusters,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=internal.nvke.nvidia.com,resources=nvkeclusters/status,verbs=update;patch
 
 func (r *NVKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, retErr error) {
 	log := ctrl.LoggerFrom(ctx)
-	log.V(1).Info("reconciling NKECluster")
+	log.V(1).Info("reconciling NVKECluster")
 
-	var cluster internalv1.NKECluster
+	var cluster internalv1.NVKECluster
 	if err := r.Get(ctx, req.NamespacedName, &cluster); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -98,10 +98,10 @@ func (r *NVKEClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	// Status writes must not resubmit rejected requests. Deletion must still run without a spec change.
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&internalv1.NKECluster{}, builder.WithPredicates(predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
+		For(&internalv1.NVKECluster{}, builder.WithPredicates(predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
 			return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration() ||
 				!e.ObjectOld.GetDeletionTimestamp().Equal(e.ObjectNew.GetDeletionTimestamp())
 		}})).
-		Named("nkecluster").
+		Named("nvkecluster").
 		Complete(r)
 }

@@ -68,7 +68,7 @@ func controllerCaseSet(description, dirPrefix string, defineSteps func(*fixture.
 		SchemeFn:             newScheme,
 		EnvironmentFn:        newEnvironment,
 		CompareObjects: func() []client.ObjectList {
-			return []client.ObjectList{&internalv1.NKEClusterList{}}
+			return []client.ObjectList{&internalv1.NVKEClusterList{}}
 		},
 		Setup: func(ctx SpecContext, tc *fixture.Case, _ fixture.CaseSet) {
 			tc.Client = client.WithFieldOwner(tc.Client, "management-engine-envtest")

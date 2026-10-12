@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	apiVersion = "internal.nke.nvidia.com/v1"
+	apiVersion = "internal.nvke.nvidia.com/v1"
 
 	specKey = "spec"
 
@@ -39,8 +39,8 @@ const (
 	// Annotation keys match management-engine/apis/v1.MachineInitKubernetesVersionAnnotation
 	// and MachineInitKubernetesVersionInjectedAnnotation. The release spec stays
 	// the boot contract; fixed-versus-injected compatibility stays metadata.
-	kubernetesVersionAnnotation         = "internal.nke.nvidia.com/machine-init-kubernetes-version"
-	kubernetesVersionInjectedAnnotation = "internal.nke.nvidia.com/machine-init-kubernetes-version-injected"
+	kubernetesVersionAnnotation         = "internal.nvke.nvidia.com/machine-init-kubernetes-version"
+	kubernetesVersionInjectedAnnotation = "internal.nvke.nvidia.com/machine-init-kubernetes-version-injected"
 
 	syncWaveAnnotation    = "argocd.argoproj.io/sync-wave"
 	syncOptionsAnnotation = "argocd.argoproj.io/sync-options"

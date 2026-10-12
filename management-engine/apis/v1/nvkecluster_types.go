@@ -8,10 +8,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// NKEClusterSpec configures a cluster's control plane and node pools.
+// NVKEClusterSpec configures a cluster's control plane and node pools.
 // +kubebuilder:validation:XValidation:rule="has(self.authentication) == has(oldSelf.authentication) && (!has(self.authentication) || self.authentication == oldSelf.authentication)",message="authentication is only configurable at cluster creation"
 // +kubebuilder:validation:XValidation:rule="!has(self.nodePools) || self.nodePools.size() == 0 || has(self.network)",message="network is required when nodePools are configured"
-type NKEClusterSpec struct {
+type NVKEClusterSpec struct {
 	APIServerAccess APIServerAccess `json:"apiServerAccess"`
 	// Authentication configures additional JWT issuers for cluster access.
 	// It can only be set when creating the cluster.
@@ -123,8 +123,8 @@ type AcceleratedRuntimeSelection struct {
 	Version string `json:"version,omitempty"`
 }
 
-// NKEClusterStatus reports the observed state of the control plane and node pools.
-type NKEClusterStatus struct {
+// NVKEClusterStatus reports the observed state of the control plane and node pools.
+type NVKEClusterStatus struct {
 	// ObservedGeneration identifies the cluster generation reflected in this status.
 	// +optional
 	// +kubebuilder:validation:Minimum=0
@@ -165,40 +165,40 @@ type ClusterProvisioningStatus struct {
 	Generation int64 `json:"generation"`
 }
 
-// NKECluster manages a Kubernetes control plane and its node pools as one cluster.
+// NVKECluster manages a Kubernetes control plane and its node pools as one cluster.
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Namespaced,path=nkeclusters,singular=nkecluster
+// +kubebuilder:resource:scope=Namespaced,path=nvkeclusters,singular=nvkecluster
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
-type NKECluster struct {
+type NVKECluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              NKEClusterSpec `json:"spec"`
+	Spec              NVKEClusterSpec `json:"spec"`
 	// +optional
-	Status NKEClusterStatus `json:"status,omitempty,omitzero"`
+	Status NVKEClusterStatus `json:"status,omitempty,omitzero"`
 }
 
-// NKEClusterList is a list of managed Kubernetes clusters.
+// NVKEClusterList is a list of managed Kubernetes clusters.
 // +kubebuilder:object:root=true
-type NKEClusterList struct {
+type NVKEClusterList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []NKECluster `json:"items"`
+	Items           []NVKECluster `json:"items"`
 }
 
 func init() {
 	SchemeBuilder.Register(func(s *runtime.Scheme) error {
-		s.AddKnownTypes(SchemeGroupVersion, &NKECluster{}, &NKEClusterList{})
+		s.AddKnownTypes(SchemeGroupVersion, &NVKECluster{}, &NVKEClusterList{})
 		return nil
 	})
 }
 
-func (c *NKECluster) GetConditions() []metav1.Condition {
+func (c *NVKECluster) GetConditions() []metav1.Condition {
 	return c.Status.Conditions
 }
 
-func (c *NKECluster) SetConditions(conditions []metav1.Condition) {
+func (c *NVKECluster) SetConditions(conditions []metav1.Condition) {
 	c.Status.Conditions = conditions
 }

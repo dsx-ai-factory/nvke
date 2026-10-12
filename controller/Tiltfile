@@ -1251,7 +1251,7 @@ local_resource(
       kubectl apply --server-side --field-manager=tilt-release-crds \
         -f deploy/charts/controller/files/crds.yaml
       for crd in machineimages clusterreleases nodepoolreleases; do
-        kubectl wait --for=condition=Established --timeout=120s "crd/${crd}.internal.nke.nvidia.com"
+        kubectl wait --for=condition=Established --timeout=120s "crd/${crd}.internal.nvke.nvidia.com"
       done
     """],
     labels=["3-cwe"],

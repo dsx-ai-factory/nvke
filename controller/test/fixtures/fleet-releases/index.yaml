@@ -19,7 +19,7 @@
 # Refresh this when releases are added or retired upstream. A stale copy still
 # runs the matrix, but stops catching a release retired in nke-site-deploy.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-1.29.7-251119
@@ -34,13 +34,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-1.29.7-251119
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.29.7"
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.29.7"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
 spec:
   machineImageRef:
     name: nke-1.29.7-251119
@@ -51,7 +51,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-1.31.12-251029-osmo
@@ -66,13 +66,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-1.31.12-251029-osmo
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.31.12"
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.31.12"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
 spec:
   machineImageRef:
     name: nke-1.31.12-251029-osmo
@@ -83,7 +83,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-1.31.9-251124-24.04-arm64
@@ -98,13 +98,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-1.31.9-251124-24.04-arm64
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.31.9"
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.31.9"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
 spec:
   machineImageRef:
     name: nke-1.31.9-251124-24.04-arm64
@@ -115,7 +115,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-1.34.2-251201-amd64-ytl
@@ -130,13 +130,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-1.34.2-251201-amd64-ytl
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
 spec:
   machineImageRef:
     name: nke-1.34.2-251201-amd64-ytl
@@ -147,7 +147,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-1.34.2-251201-arm64-ytl
@@ -162,13 +162,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-1.34.2-251201-arm64-ytl
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
 spec:
   machineImageRef:
     name: nke-1.34.2-251201-arm64-ytl
@@ -179,7 +179,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-1.34.2-251205-amd64-ytl
@@ -194,13 +194,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-1.34.2-251205-amd64-ytl
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
 spec:
   machineImageRef:
     name: nke-1.34.2-251205-amd64-ytl
@@ -211,7 +211,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-1.34.2-260616-amd64-ytl
@@ -226,13 +226,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-1.34.2-260616-amd64-ytl
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
 spec:
   machineImageRef:
     name: nke-1.34.2-260616-amd64-ytl
@@ -243,7 +243,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-1.34.2-260616-arm64-ytl
@@ -258,13 +258,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-1.34.2-260616-arm64-ytl
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
 spec:
   machineImageRef:
     name: nke-1.34.2-260616-arm64-ytl
@@ -275,7 +275,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-260313-22.04-amd64
@@ -290,13 +290,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-260313-22.04-amd64
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
     name: nke-260313-22.04-amd64
@@ -307,7 +307,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-260318-22.04-amd64
@@ -322,13 +322,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-260318-22.04-amd64
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
     name: nke-260318-22.04-amd64
@@ -339,7 +339,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-260319-22.04-amd64-osmo
@@ -354,13 +354,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-260319-22.04-amd64-osmo
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
     name: nke-260319-22.04-amd64-osmo
@@ -371,7 +371,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-260323-24.04-amd64-fde-nvmesh-6.8.0-100-generic
@@ -386,13 +386,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-260323-24.04-amd64-fde-nvmesh-6.8.0-100-generic
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
     name: nke-260323-24.04-amd64-fde-nvmesh-6.8.0-100-generic
@@ -403,7 +403,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-260511-22.04-amd64
@@ -418,13 +418,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-260511-22.04-amd64
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
     name: nke-260511-22.04-amd64
@@ -435,7 +435,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-260602-24.04-arm64-fde
@@ -450,13 +450,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-260602-24.04-arm64-fde
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
     name: nke-260602-24.04-arm64-fde
@@ -467,7 +467,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-260602-24.04-x86-fde
@@ -482,13 +482,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-260602-24.04-x86-fde
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
     name: nke-260602-24.04-x86-fde
@@ -499,7 +499,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-260611-24.04-amd64-fde
@@ -514,13 +514,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-260611-24.04-amd64-fde
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
     name: nke-260611-24.04-amd64-fde
@@ -531,7 +531,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-260611-24.04-arm64-fde
@@ -546,13 +546,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-260611-24.04-arm64-fde
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
     name: nke-260611-24.04-arm64-fde
@@ -563,7 +563,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-260625-24.04-arm64-fde
@@ -578,13 +578,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-260625-24.04-arm64-fde
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
     name: nke-260625-24.04-arm64-fde
@@ -595,7 +595,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-260625-24.04-arm64-fde-na-0.1.29
@@ -610,13 +610,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-260625-24.04-arm64-fde-na-0.1.29
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
     name: nke-260625-24.04-arm64-fde-na-0.1.29
@@ -627,7 +627,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-260625-24.04-x86-fde
@@ -642,13 +642,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-260625-24.04-x86-fde
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
     name: nke-260625-24.04-x86-fde
@@ -659,7 +659,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nke-260625-24.04-x86-fde-na-0.1.29
@@ -674,13 +674,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nke-260625-24.04-x86-fde-na-0.1.29
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
     name: nke-260625-24.04-x86-fde-na-0.1.29
@@ -691,7 +691,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nvke-nico-vms-24.04-amd64-fde
@@ -706,13 +706,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nvke-nico-vms-24.04-amd64-fde
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
     name: nvke-nico-vms-24.04-amd64-fde
@@ -723,7 +723,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nvke-nico-vms-24.04-amd64-fde-old-agent
@@ -738,13 +738,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nvke-nico-vms-24.04-amd64-fde-old-agent
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
     name: nvke-nico-vms-24.04-amd64-fde-old-agent
@@ -755,7 +755,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nvke-nico-vms-24.04-arm64-fde
@@ -770,13 +770,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nvke-nico-vms-24.04-arm64-fde
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: ""
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: ""
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "true"
 spec:
   machineImageRef:
     name: nvke-nico-vms-24.04-arm64-fde
@@ -787,7 +787,7 @@ spec:
   lifecycle:
     deprecated: false
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: MachineImage
 metadata:
   name: nvke-local-dev-kindest-arm64
@@ -802,13 +802,13 @@ spec:
       #!ipxe
       # Placeholder. The matrix never renders this.
 ---
-apiVersion: internal.nke.nvidia.com/v1
+apiVersion: internal.nvke.nvidia.com/v1
 kind: NodePoolRelease
 metadata:
   name: nvke-local-dev-kindest-arm64
   annotations:
-    internal.nke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
-    internal.nke.nvidia.com/machine-init-kubernetes-version-injected: "false"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.2"
+    internal.nvke.nvidia.com/machine-init-kubernetes-version-injected: "false"
 spec:
   machineImageRef:
     name: nvke-local-dev-kindest-arm64

@@ -30,7 +30,7 @@ const releaseDoc = `
 metadata:
   name: ubuntu-24-04-workers-v1
   annotations:
-    internal.nke.nvidia.com/machine-init-k8s-version-injected: "true"
+    internal.nvke.nvidia.com/machine-init-k8s-version-injected: "true"
 spec:
   machineImageRef:
     name: ubuntu-24-04-amd64-v1
@@ -64,7 +64,7 @@ func TestDecode(t *testing.T) {
 			kind: KindNodePoolRelease,
 			doc:  releaseDoc,
 			check: func(t *testing.T, r Resource) {
-				assert.Equal(t, map[string]string{"internal.nke.nvidia.com/machine-init-k8s-version-injected": "true"}, r.Metadata.Annotations)
+				assert.Equal(t, map[string]string{"internal.nvke.nvidia.com/machine-init-k8s-version-injected": "true"}, r.Metadata.Annotations)
 			},
 		},
 		{
@@ -94,7 +94,7 @@ func TestDecode(t *testing.T) {
 		{
 			name:    "apiVersion is not accepted",
 			kind:    KindMachineImage,
-			doc:     "apiVersion: internal.nke.nvidia.com/v1\n" + machineImageDoc,
+			doc:     "apiVersion: internal.nvke.nvidia.com/v1\n" + machineImageDoc,
 			wantErr: `unknown field "apiVersion"`,
 		},
 		{
@@ -233,12 +233,12 @@ func TestManifest(t *testing.T) {
 
 	got := Manifest(KindNodePoolRelease, r)
 
-	assert.Equal(t, "internal.nke.nvidia.com/v1", got["apiVersion"])
+	assert.Equal(t, "internal.nvke.nvidia.com/v1", got["apiVersion"])
 	assert.Equal(t, "NodePoolRelease", got["kind"])
 	assert.Equal(t, map[string]any{
 		"name": "ubuntu-24-04-workers-v1",
 		"annotations": map[string]any{
-			"internal.nke.nvidia.com/machine-init-k8s-version-injected": "true",
+			"internal.nvke.nvidia.com/machine-init-k8s-version-injected": "true",
 		},
 	}, got["metadata"], "only what the operator wrote: nvkectl adds no GitOps annotations")
 	assert.Equal(t, r.Spec, got["spec"])

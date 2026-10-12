@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Target API example. Downstream provisioning is not wired up yet.
-apiVersion: internal.nke.nvidia.com/v1
-kind: NKECluster
+apiVersion: internal.nvke.nvidia.com/v1
+kind: NVKECluster
 metadata:
   name: prod-us-west
 spec:

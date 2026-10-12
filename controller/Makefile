@@ -87,8 +87,8 @@ RELEASES_DIR		?= $(CURDIR)/test/fixtures/releases
 releases-install: ## Install the release CRDs and apply RELEASES_DIR to the cluster in KUBECONFIG (for CWE run outside the chart).
 	@set -eu; \
 	for name in $(RELEASE_CRD_NAMES); do \
-		kubectl apply --server-side --field-manager=releases -f "$(RELEASE_CRD_DIR)/internal.nke.nvidia.com_$$name.yaml"; \
-		kubectl wait --for=condition=Established --timeout=60s "crd/$$name.internal.nke.nvidia.com"; \
+		kubectl apply --server-side --field-manager=releases -f "$(RELEASE_CRD_DIR)/internal.nvke.nvidia.com_$$name.yaml"; \
+		kubectl wait --for=condition=Established --timeout=60s "crd/$$name.internal.nvke.nvidia.com"; \
 	done; \
 	kubectl apply --server-side --field-manager=releases -f "$(RELEASES_DIR)"
 

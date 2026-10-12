@@ -340,7 +340,7 @@ NKE_CONTROLLER_RELEASES_DIR="${NKE_CONTROLLER_RELEASES_DIR:-/workspace/cloud-wor
 apply_releases() {
   local crd
   for crd in machineimages clusterreleases nodepoolreleases; do
-    local name="${crd}.internal.nke.nvidia.com" _
+    local name="${crd}.internal.nvke.nvidia.com" _
     for _ in $(seq 1 450); do
       kubectl get crd "${name}" >/dev/null 2>&1 && break
       sleep 2

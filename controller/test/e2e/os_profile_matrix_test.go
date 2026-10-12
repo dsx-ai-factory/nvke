@@ -210,8 +210,8 @@ func otherArchProfiles(index osProfileMetadataIndex) int {
 }
 
 const (
-	annotationKubernetesVersion         = "internal.nke.nvidia.com/machine-init-kubernetes-version"
-	annotationKubernetesVersionInjected = "internal.nke.nvidia.com/machine-init-kubernetes-version-injected"
+	annotationKubernetesVersion         = "internal.nvke.nvidia.com/machine-init-kubernetes-version"
+	annotationKubernetesVersionInjected = "internal.nvke.nvidia.com/machine-init-kubernetes-version-injected"
 	kindMachineImage                    = "MachineImage"
 	kindNodePoolRelease                 = "NodePoolRelease"
 )

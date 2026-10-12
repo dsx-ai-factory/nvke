@@ -19,7 +19,7 @@ import (
 
 var errCreateRejected = errors.New("cluster creation request was rejected")
 
-func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *internalv1.NKECluster) (ctrl.Result, error) {
+func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *internalv1.NVKECluster) (ctrl.Result, error) {
 	observedCluster, err := r.ensureCluster(ctx, cluster)
 	if err != nil {
 		return r.lifecycleError(cluster, err)
@@ -28,7 +28,7 @@ func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *i
 	return ctrl.Result{RequeueAfter: r.PollInterval}, nil
 }
 
-func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *internalv1.NKECluster) (*api.Cluster, error) {
+func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *internalv1.NVKECluster) (*api.Cluster, error) {
 	// Recover existing work before resolving a spec that may have changed since creation.
 	observedCluster, err := r.findCluster(ctx, cluster)
 	if !errors.Is(err, cwe.ErrNotFound) {
@@ -50,7 +50,7 @@ func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *inte
 	if err != nil {
 		return nil, err
 	}
-	var checkpoint *internalv1.NKECluster
+	var checkpoint *internalv1.NVKECluster
 	if newAttempt {
 		state = &internalv1.ClusterProvisioningStatus{Endpoint: r.CWE.Endpoint(), Generation: cluster.Generation}
 		// Checkpoint before POST: a restart can recover by name without claiming a newer spec was accepted.
@@ -87,7 +87,7 @@ func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *inte
 }
 
 // Lookup also recovers a successful create whose response or status write was lost.
-func (r *NVKEClusterReconciler) findCluster(ctx context.Context, cluster *internalv1.NKECluster) (*api.Cluster, error) {
+func (r *NVKEClusterReconciler) findCluster(ctx context.Context, cluster *internalv1.NVKECluster) (*api.Cluster, error) {
 	state := cluster.Status.Provisioning
 	if state != nil && state.Endpoint != r.CWE.Endpoint() {
 		return nil, &InvalidSpecError{Message: "Cluster provisioning service has changed; restore the original configuration"}
@@ -112,4 +112,4 @@ func (r *NVKEClusterReconciler) findCluster(ctx context.Context, cluster *intern
 	return observedCluster, nil
 }
 
-func clusterRemoteName(cluster *internalv1.NKECluster) string { return "nke-" + string(cluster.UID) }
+func clusterRemoteName(cluster *internalv1.NVKECluster) string { return "nke-" + string(cluster.UID) }

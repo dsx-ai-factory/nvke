@@ -154,7 +154,7 @@ func TestValidateDocumentsRejectsWhatTheAPIServerRejects(t *testing.T) {
 func TestValidateDocumentRejectsUnknownKind(t *testing.T) {
 	schemas, err := loadSchemas(crdDir)
 	require.NoError(t, err)
-	err = validateDocument(schemas, []byte("apiVersion: internal.nke.nvidia.com/v1\nkind: Widget\nmetadata:\n  name: x\n"))
+	err = validateDocument(schemas, []byte("apiVersion: internal.nvke.nvidia.com/v1\nkind: Widget\nmetadata:\n  name: x\n"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no CRD for kind")
 }

@@ -7,18 +7,18 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - internal.nke.nvidia.com
+  - internal.nvke.nvidia.com
   resources:
-  - nkeclusters
+  - nvkeclusters
   verbs:
   - get
   - list
   - patch
   - watch
 - apiGroups:
-  - internal.nke.nvidia.com
+  - internal.nvke.nvidia.com
   resources:
-  - nkeclusters/status
+  - nvkeclusters/status
   verbs:
   - patch
   - update

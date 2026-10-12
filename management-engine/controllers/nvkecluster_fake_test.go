@@ -62,7 +62,7 @@ func setupCWEFixture(ctx SpecContext, tc *fixture.Case, reconciler *NVKEClusterR
 	bindings, exists := tc.Input("input_bindings.yaml")
 	Expect(exists).To(BeTrue())
 	Expect(yaml.UnmarshalStrict([]byte(bindings), &reconciler.Bindings)).To(Succeed())
-	var source internalv1.NKECluster
+	var source internalv1.NVKECluster
 	Expect(tc.Client.Get(ctx, fake.source, &source)).To(Succeed())
 	request, err := ResolveCWERequest(&source, reconciler.Bindings)
 	Expect(err).NotTo(HaveOccurred())
@@ -121,7 +121,7 @@ func (f *cweFixture) serveHTTP(w http.ResponseWriter, req *http.Request) {
 		_ = json.NewEncoder(w).Encode(f.observedCluster)
 		return
 	}
-	var source internalv1.NKECluster
+	var source internalv1.NVKECluster
 	if err := f.kube.Get(req.Context(), f.source, &source); err != nil || !controllerutil.ContainsFinalizer(&source, nvkeClusterFinalizer) {
 		w.WriteHeader(http.StatusPreconditionFailed)
 		return

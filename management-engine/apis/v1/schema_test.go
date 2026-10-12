@@ -40,7 +40,7 @@ type resourceSchema struct {
 // and conversion, so tests can read the markers back off the schema.
 func loadCRD(t *testing.T, resource string) apiextensionsv1.CustomResourceDefinition {
 	t.Helper()
-	data, err := os.ReadFile("../../config/crd/bases/internal.nke.nvidia.com_" + resource + ".yaml")
+	data, err := os.ReadFile("../../config/crd/bases/internal.nvke.nvidia.com_" + resource + ".yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,9 +163,9 @@ func (s resourceSchema) runCreate(t *testing.T, resource string, cases []fieldCa
 
 // Minimal resources that pass admission: every required field and nothing else.
 var baseResources = map[string]string{
-	"nkeclusters": `{
-		"apiVersion": "internal.nke.nvidia.com/v1",
-		"kind": "NKECluster",
+	"nvkeclusters": `{
+		"apiVersion": "internal.nvke.nvidia.com/v1",
+		"kind": "NVKECluster",
 		"metadata": {"name": "demo", "namespace": "org-demo"},
 		"spec": {
 			"apiServerAccess": {"publicAccessEnabled": false},
@@ -179,7 +179,7 @@ var baseResources = map[string]string{
 		}
 	}`,
 	"machineimages": `{
-		"apiVersion": "internal.nke.nvidia.com/v1",
+		"apiVersion": "internal.nvke.nvidia.com/v1",
 		"kind": "MachineImage",
 		"metadata": {"name": "nvke-nico-vms-24.04-amd64-fde"},
 		"spec": {
@@ -191,7 +191,7 @@ var baseResources = map[string]string{
 		}
 	}`,
 	"clusterreleases": `{
-		"apiVersion": "internal.nke.nvidia.com/v1",
+		"apiVersion": "internal.nvke.nvidia.com/v1",
 		"kind": "ClusterRelease",
 		"metadata": {"name": "nvke-nico-vms-24.04-amd64-fde"},
 		"spec": {
@@ -200,7 +200,7 @@ var baseResources = map[string]string{
 		}
 	}`,
 	"nodepoolreleases": `{
-		"apiVersion": "internal.nke.nvidia.com/v1",
+		"apiVersion": "internal.nvke.nvidia.com/v1",
 		"kind": "NodePoolRelease",
 		"metadata": {"name": "nvke-nico-vms-24.04-amd64-fde"},
 		"spec": {
@@ -291,17 +291,17 @@ func deleteField(obj map[string]any, path []string) {
 }
 
 func TestGeneratedResourceSchemas(t *testing.T) {
-	for _, resource := range []string{"nkeclusters", "machineimages", "clusterreleases", "nodepoolreleases"} {
+	for _, resource := range []string{"nvkeclusters", "machineimages", "clusterreleases", "nodepoolreleases"} {
 		t.Run(resource, func(t *testing.T) {
 			loadResourceSchema(t, resource).admit(t, baseResource(t, resource), nil)
 		})
 	}
 }
 
-func TestNKEClusterSchemaAdmission(t *testing.T) {
+func TestNVKEClusterSchemaAdmission(t *testing.T) {
 	channelVersion := []string{"spec", "release", "channel", "version"}
 
-	loadResourceSchema(t, "nkeclusters").runCreate(t, "nkeclusters", []fieldCase{
+	loadResourceSchema(t, "nvkeclusters").runCreate(t, "nvkeclusters", []fieldCase{
 		{name: "channel with preferred version", path: channelVersion, value: "1.35"},
 		{name: "missing channel", path: []string{"spec", "release", "channel"}, remove: true, invalid: true},
 		{name: "empty channel name", path: []string{"spec", "release", "channel", "name"}, value: "", invalid: true},
@@ -310,9 +310,9 @@ func TestNKEClusterSchemaAdmission(t *testing.T) {
 	})
 }
 
-func TestNKEClusterAcceleratedRuntimeAdmission(t *testing.T) {
+func TestNVKEClusterAcceleratedRuntimeAdmission(t *testing.T) {
 	path := []string{"spec", "acceleratedRuntime"}
-	loadResourceSchema(t, "nkeclusters").runCreate(t, "nkeclusters", []fieldCase{
+	loadResourceSchema(t, "nvkeclusters").runCreate(t, "nvkeclusters", []fieldCase{
 		{name: "omitted runtime", path: path, remove: true},
 		{name: "runtime with version", path: path, value: map[string]any{"name": "gb200-ubuntu", "version": "1.2.3"}},
 		{name: "explicit opt out", path: path, value: map[string]any{"name": "none"}},
@@ -325,7 +325,7 @@ func TestNKEClusterAcceleratedRuntimeAdmission(t *testing.T) {
 }
 
 func TestAcceleratedRuntimeTags(t *testing.T) {
-	schema := loadResourceSchema(t, "nkeclusters")
+	schema := loadResourceSchema(t, "nvkeclusters")
 	for _, tt := range []struct {
 		tag     string
 		invalid bool
@@ -349,7 +349,7 @@ func TestAcceleratedRuntimeTags(t *testing.T) {
 		{tag: "café", invalid: true},
 	} {
 		t.Run(tt.tag, func(t *testing.T) {
-			obj := baseResource(t, "nkeclusters")
+			obj := baseResource(t, "nvkeclusters")
 			setField(obj, []string{"spec", "acceleratedRuntime"}, map[string]any{"name": "gb200-ubuntu", "version": tt.tag})
 			schema.check(t, tt.invalid, obj, nil)
 		})
@@ -358,8 +358,8 @@ func TestAcceleratedRuntimeTags(t *testing.T) {
 
 // NetworkRanges is shared by pods and services, so the dual-stack rule is
 // checked on both rather than on services alone.
-func TestNKEClusterNetworkFamilies(t *testing.T) {
-	schema := loadResourceSchema(t, "nkeclusters")
+func TestNVKEClusterNetworkFamilies(t *testing.T) {
+	schema := loadResourceSchema(t, "nvkeclusters")
 	for _, network := range []string{"pods", "services"} {
 		t.Run(network, func(t *testing.T) {
 			path := []string{"spec", "clusterNetwork", network, "cidrBlocks"}
@@ -376,7 +376,7 @@ func TestNKEClusterNetworkFamilies(t *testing.T) {
 				{name: "two IPv6 CIDRs", items: `["fd00:1::/108","fd00:2::/108"]`, invalid: true},
 			} {
 				t.Run(tt.name, func(t *testing.T) {
-					obj := baseResource(t, "nkeclusters")
+					obj := baseResource(t, "nvkeclusters")
 					setField(obj, path, decodeJSON[[]any](t, []byte(tt.items)))
 					schema.check(t, tt.invalid, obj, nil)
 				})
@@ -403,17 +403,17 @@ func setAuthenticators(obj map[string]any, jwt ...any) {
 // when issuer is empty.
 func clusterWithIssuer(t *testing.T, issuer string) map[string]any {
 	t.Helper()
-	obj := baseResource(t, "nkeclusters")
+	obj := baseResource(t, "nvkeclusters")
 	if issuer != "" {
 		setAuthenticators(obj, jwtAuthenticator(issuer))
 	}
 	return obj
 }
 
-// TestNKEClusterJWTAdmission mutates the authenticator rather than the cluster,
+// TestNVKEClusterJWTAdmission mutates the authenticator rather than the cluster,
 // so it drives fieldCase over the nested object instead of using runCreate.
-func TestNKEClusterJWTAdmission(t *testing.T) {
-	schema := loadResourceSchema(t, "nkeclusters")
+func TestNVKEClusterJWTAdmission(t *testing.T) {
+	schema := loadResourceSchema(t, "nvkeclusters")
 	issuerURL := []string{"issuer", "url"}
 	audiences := []string{"issuer", "audiences"}
 	usernamePrefix := []string{"claimMappings", "username", "prefix"}
@@ -432,15 +432,15 @@ func TestNKEClusterJWTAdmission(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			jwt := jwtAuthenticator(testIssuerURL)
 			c.apply(jwt)
-			obj := baseResource(t, "nkeclusters")
+			obj := baseResource(t, "nvkeclusters")
 			setAuthenticators(obj, jwt)
 			schema.check(t, c.invalid, obj, nil)
 		})
 	}
 }
 
-func TestNKEClusterJWTProviderLimits(t *testing.T) {
-	schema := loadResourceSchema(t, "nkeclusters")
+func TestNVKEClusterJWTProviderLimits(t *testing.T) {
+	schema := loadResourceSchema(t, "nvkeclusters")
 	for _, tt := range []struct {
 		name      string
 		count     int
@@ -462,15 +462,15 @@ func TestNKEClusterJWTProviderLimits(t *testing.T) {
 				}
 				providers[i] = jwtAuthenticator(issuer)
 			}
-			obj := baseResource(t, "nkeclusters")
+			obj := baseResource(t, "nvkeclusters")
 			setAuthenticators(obj, providers...)
 			schema.check(t, tt.invalid, obj, nil)
 		})
 	}
 }
 
-func TestNKEClusterAuthenticationCreateOnly(t *testing.T) {
-	schema := loadResourceSchema(t, "nkeclusters")
+func TestNVKEClusterAuthenticationCreateOnly(t *testing.T) {
+	schema := loadResourceSchema(t, "nvkeclusters")
 	const replacementURL = "https://replacement.example.com"
 
 	for _, tt := range []struct {
@@ -494,7 +494,7 @@ func TestNKEClusterAuthenticationCreateOnly(t *testing.T) {
 }
 
 func TestResourceCollectionUniqueness(t *testing.T) {
-	schema := loadResourceSchema(t, "nkeclusters")
+	schema := loadResourceSchema(t, "nvkeclusters")
 	serviceCIDRs := []string{"spec", "clusterNetwork", "services", "cidrBlocks"}
 
 	for _, tt := range []struct {
@@ -526,7 +526,7 @@ func TestResourceCollectionUniqueness(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			obj := baseResource(t, "nkeclusters")
+			obj := baseResource(t, "nvkeclusters")
 			setField(obj, tt.path, decodeJSON[[]any](t, []byte(tt.items)))
 			schema.check(t, tt.invalid, obj, nil)
 		})

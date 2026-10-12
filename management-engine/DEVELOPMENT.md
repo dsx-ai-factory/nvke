@@ -69,7 +69,7 @@ kubectl --context kind-nvke-state get namespaces
 
 ## CWE integration
 
-The NKECluster controller creates, observes, and deletes clusters through the
+The NVKECluster controller creates, observes, and deletes clusters through the
 Cloud Workflow Engine (CWE) API. CWE owns provisioning and teardown, including
 Temporal workflows and CAPI resources. Updates to existing clusters are not yet
 supported.
@@ -86,7 +86,7 @@ make dev-cwe-down  # stop Tilt first, then remove the environment
 
 This creates the dedicated `nke-cwe-management` and `nke-cwe-state` Kind clusters.
 The services cluster runs management-engine, CWE, Temporal, and CAPI; the state
-cluster stores NKECluster resources. Open [Tilt](http://localhost:10353/) or the
+cluster stores NVKECluster resources. Open [Tilt](http://localhost:10353/) or the
 [Temporal UI](http://localhost:18081/). The manual `cwe-integration-test` resource
 under Tilt's **tests** group runs the same test command.
 
@@ -108,7 +108,7 @@ Inspect status in the state cluster and runtime logs in Tilt:
 
 ```sh
 kubectl --kubeconfig .local/dev/nvke-cwe/kubeconfig --context kind-nvke-cwe-state \
-  -n cwe-integration get nkeclusters -o yaml
+  -n cwe-integration get nvkeclusters -o yaml
 ```
 
 Resources remain available after testing. Proof JSON and JUnit reports are saved
@@ -171,7 +171,7 @@ source control. Applying a cluster to a live CWE service requests real provision
 
 Restrict writes to bindings and cluster status to the controller and trusted
 administrators. `--namespace` filters watches, not RBAC, and bindings do
-not make CWE credentials tenant-scoped. Reserve `nke-<NKECluster UID>` names
+not make CWE credentials tenant-scoped. Reserve `nke-<NVKECluster UID>` names
 for this integration; recovery relies on coordinated API writers.
 `status.provisioning` pins the endpoint and creation generation, then the returned
 cluster ID. Keep bindings stable while creation is pending: retries rebuild the
@@ -186,7 +186,7 @@ exists, restart the manager to recover its ID. If no cluster exists, confirm tha
 no create request remains in flight before clearing the checkpoint and conditions:
 
 ```bash
-kubectl --context "$STATE_CONTEXT" -n "$NAMESPACE" patch nkecluster "$CLUSTER" \
+kubectl --context "$STATE_CONTEXT" -n "$NAMESPACE" patch nvkecluster "$CLUSTER" \
   --subresource=status --type=merge -p '{"status":{"provisioning":null,"conditions":null}}'
 ```
 
@@ -196,7 +196,7 @@ remove the finalizer to bypass unresolved provisioning.
 ## Controller logs
 
 Controllers registered with the manager share the `management-engine` Tilt
-resource. Its **NKECluster logs** link filters runtime logs by controller; clear
+resource. Its **NVKECluster logs** link filters runtime logs by controller; clear
 the filter for all logs.
 Tilt enables debug messages with resource names, namespaces, and reconcile IDs.
 Use `MANAGER_LOG_LEVEL=info make dev` for quieter output.
@@ -219,7 +219,7 @@ With the environment's `KUBECONFIG` exported:
 kubectl --context kind-nvke-state create namespace org-example --dry-run=client -o yaml | \
   kubectl --context kind-nvke-state apply -f -
 kubectl --context kind-nvke-state -n org-example apply -k config/samples
-kubectl --context kind-nvke-state -n org-example get nkeclusters
+kubectl --context kind-nvke-state -n org-example get nvkeclusters
 # Remove the samples:
 kubectl --context kind-nvke-state -n org-example delete -k config/samples
 ```

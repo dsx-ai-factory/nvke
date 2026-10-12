@@ -6,14 +6,14 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: nkeclusters.internal.nke.nvidia.com
+  name: nvkeclusters.internal.nvke.nvidia.com
 spec:
-  group: internal.nke.nvidia.com
+  group: internal.nvke.nvidia.com
   names:
-    kind: NKECluster
-    listKind: NKEClusterList
-    plural: nkeclusters
-    singular: nkecluster
+    kind: NVKECluster
+    listKind: NVKEClusterList
+    plural: nvkeclusters
+    singular: nvkecluster
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -26,7 +26,7 @@ spec:
     name: v1
     schema:
       openAPIV3Schema:
-        description: NKECluster manages a Kubernetes control plane and its node pools
+        description: NVKECluster manages a Kubernetes control plane and its node pools
           as one cluster.
         properties:
           apiVersion:
@@ -47,8 +47,8 @@ spec:
           metadata:
             type: object
           spec:
-            description: NKEClusterSpec configures a cluster's control plane and node
-              pools.
+            description: NVKEClusterSpec configures a cluster's control plane and
+              node pools.
             properties:
               acceleratedRuntime:
                 description: AcceleratedRuntime selects an accelerated runtime bundle.
@@ -543,7 +543,7 @@ spec:
             - message: network is required when nodePools are configured
               rule: '!has(self.nodePools) || self.nodePools.size() == 0 || has(self.network)'
           status:
-            description: NKEClusterStatus reports the observed state of the control
+            description: NVKEClusterStatus reports the observed state of the control
               plane and node pools.
             properties:
               conditions:
@@ -686,7 +686,7 @@ spec:
                       pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                       type: string
                     observedGeneration:
-                      description: ObservedGeneration refers to the enclosing NKECluster's
+                      description: ObservedGeneration refers to the enclosing NVKECluster's
                         generation.
                       format: int64
                       minimum: 0

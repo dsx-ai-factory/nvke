@@ -21,7 +21,7 @@ type InvalidSpecError struct{ Message string }
 func (e *InvalidSpecError) Error() string { return e.Message }
 
 // ResolveCWERequest translates supported cluster intent using bindings validated by LoadCWEBindings.
-func ResolveCWERequest(cluster *internalv1.NKECluster, bindings []CWEBinding) (api.CreateClusterRequest, error) {
+func ResolveCWERequest(cluster *internalv1.NVKECluster, bindings []CWEBinding) (api.CreateClusterRequest, error) {
 	var empty api.CreateClusterRequest
 	if err := validateCWESpec(cluster); err != nil {
 		return empty, err
@@ -66,7 +66,7 @@ func ResolveCWERequest(cluster *internalv1.NKECluster, bindings []CWEBinding) (a
 
 func invalidCWERequest(message string) error { return &InvalidSpecError{Message: message} }
 
-func validateCWESpec(cluster *internalv1.NKECluster) error {
+func validateCWESpec(cluster *internalv1.NVKECluster) error {
 	if len(cluster.Spec.NodePools) != 0 {
 		return invalidCWERequest("Worker node pools are not supported")
 	}

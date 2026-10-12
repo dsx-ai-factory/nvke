@@ -146,7 +146,7 @@ func main() {
 		CWE:      cweClient,
 		Bindings: bindings,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "NKECluster")
+		setupLog.Error(err, "unable to create controller", "controller", "NVKECluster")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

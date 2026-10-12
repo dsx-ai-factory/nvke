@@ -59,6 +59,8 @@ navigation:
         contents:
           - page: Tenant Cluster Kubernetes Upgrades
             path: operations/upgrade.md
+          - page: Migrating CRs to the NVKE CRD Group
+            path: operations/crd-group-migration.md
           - page: Observability
             path: operations/observability.md
           - page: Troubleshooting and FAQ
