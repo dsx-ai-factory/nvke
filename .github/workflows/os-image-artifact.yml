@@ -400,7 +400,7 @@ jobs:
             echo "agent_version=${agent_version}"
           } >> "${GITHUB_OUTPUT}"
           echo "Publishing ${version} as: ${aliases[*]}"
-          echo "Baking nke-agent ${agent_version} from source"
+          echo "Baking nvke-agent ${agent_version} from source"
 
       # validate-packer runs the tests. Only the build that carries the shared
       # release assets (see "Prepare release assets") needs the binary.
@@ -541,7 +541,7 @@ jobs:
           packer version
 
       # Only the qcow2 push below needs GHCR; fetch-artifacts.sh builds
-      # nke-agent from this checkout's source and pulls nothing from GHCR.
+      # nvke-agent from this checkout's source and pulls nothing from GHCR.
       - name: Log in to GHCR
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1177,7 +1177,7 @@ jobs:
           draft: true
           body: |
             os-image ${{ steps.meta.outputs.version }}: the FDE and non-FDE Packer
-            node images for amd64 and arm64, built and validated against nke-agent
+            node images for amd64 and arm64, built and validated against nvke-agent
             `${{ steps.meta.outputs.agent_version }}` (built from source at this
             commit). Each is published in two Ubuntu flavors: 26.04 under the
             plain tag, and 24.04 under a `-ubuntu24.04` tag.

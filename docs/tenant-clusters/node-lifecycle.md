@@ -83,7 +83,7 @@ kubectl delete node <node-name>
 
 **Node not joining after provisioning:**
 
-- Check `nke-agent` on the node: `systemctl status nke-agent`
+- Check `nvke-agent` on the node: `systemctl status nvke-agent`
 - Verify network connectivity from the site controller to the node on port 15005 (gRPC)
 - Check the controller's workflow logs in the Temporal UI (port-forward `temporal-web` in the site controller cluster)
 

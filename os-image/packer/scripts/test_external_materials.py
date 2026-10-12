@@ -58,7 +58,7 @@ class ComposeImageInputsTest(unittest.TestCase):
         for binding in ("calico", "kubeadm-distro", "ovn", "spire-agent"):
             name = "spire-agent_1.0_all.deb" if binding == "spire-agent" else f"{binding}.deb"
             write_package_archive(self.materials / binding, name)
-        for name in ("nke-agent-spire.conf", "wait-spiffe-socket.sh",
+        for name in ("nvke-agent-spire.conf", "wait-spiffe-socket.sh",
                      "conntrack-tune.service", "configure-conntrack.sh",
                      "10-nke-conntrack-timeouts.conf"):
             shutil.copyfile(SCRIPTS.parent.parent / "files" / name, self.source_files / name)
@@ -118,8 +118,8 @@ class ComposeImageInputsTest(unittest.TestCase):
                 "debs/kubeadm-distro.deb",
                 "debs/ovn.deb",
                 "debs/spire-agent_1.0_all.deb",
-                "nke-agent-spire.conf",
-                "nke-agent.deb",
+                "nvke-agent-spire.conf",
+                "nvke-agent.deb",
                 "wait-spiffe-socket.sh",
                 "conntrack-tune.service",
                 "configure-conntrack.sh",
@@ -133,7 +133,7 @@ class ComposeImageInputsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         with tarfile.open(output) as archive:
             for name, mode in (
-                ("nke-agent-spire.conf", 0o644),
+                ("nvke-agent-spire.conf", 0o644),
                 ("wait-spiffe-socket.sh", 0o755),
                 ("conntrack-tune.service", 0o644),
                 ("configure-conntrack.sh", 0o755),
@@ -342,7 +342,7 @@ class ComposeImageInputsTest(unittest.TestCase):
                         module.main()
                         index.assert_called_once()
                         with tarfile.open(output) as archive:
-                            self.assertEqual(archive.extractfile("nke-agent.deb").read(), changed)
+                            self.assertEqual(archive.extractfile("nvke-agent.deb").read(), changed)
                             self.assertEqual(archive.extractfile("debs/Packages").read(), b"index\n")
                 self.assertFalse(list(self.root.glob(".image-inputs.*")))
 
@@ -498,7 +498,7 @@ class ComposeImageInputsTest(unittest.TestCase):
         self.assertIn("exactly one spire-agent_*.deb across all bindings", result.stderr)
 
     def test_missing_files_and_unsafe_outputs(self):
-        for relative in ("materials/ovn", "materials/agent", "source-files/nke-agent-spire.conf",
+        for relative in ("materials/ovn", "materials/agent", "source-files/nvke-agent-spire.conf",
                          "source-files/wait-spiffe-socket.sh", "source-files/conntrack-tune.service",
                          "source-files/configure-conntrack.sh", "source-files/10-nke-conntrack-timeouts.conf"):
             with self.subTest(relative=relative):

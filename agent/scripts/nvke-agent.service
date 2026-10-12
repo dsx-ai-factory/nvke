@@ -4,8 +4,9 @@ After=multi-user.target
 StartLimitIntervalSec=0
 
 [Service]
-EnvironmentFile=/etc/default/nke-agent
-ExecStart=/usr/local/bin/nke-agent $AGENT_ARGS 
+EnvironmentFile=-/etc/default/nke-agent
+EnvironmentFile=-/etc/default/nvke-agent
+ExecStart=/usr/local/bin/nvke-agent $AGENT_ARGS
 ExecReload=/bin/kill -HUP $MAINPID
 Type=simple
 Restart=always
@@ -16,3 +17,4 @@ StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
+Alias=nke-agent.service

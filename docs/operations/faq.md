@@ -4,12 +4,12 @@
 
 ### Bootstrap stalls for 30 minutes then fails with no clear error
 
-The most common cause is incomplete node preparation. `nvkectl bootstrap site` dispatches kubeadm workflows to your nodes via `nke-agent` gRPC, and if node prep is incomplete it will reach `cluster state status=Provisioning` and sit silently until the timeout. Check:
+The most common cause is incomplete node preparation. `nvkectl bootstrap site` dispatches kubeadm workflows to your nodes via `nvke-agent` gRPC, and if node prep is incomplete it will reach `cluster state status=Provisioning` and sit silently until the timeout. Check:
 
 - containerd is installed and the SystemdCgroup setting is `true` in `/etc/containerd/config.toml`
 - Kernel modules loaded: `lsmod | grep -E 'overlay|br_netfilter'`
 - CNI plugins present at `/opt/cni/bin/`
-- `nke-agent` is running on all nodes: `systemctl status nke-agent`
+- `nvke-agent` is running on all nodes: `systemctl status nvke-agent`
 - Port 15005 is reachable from the init node to each join node
 
 See [Pre-Provisioned Nodes](../site-bootstrap/pre-provisioned-nodes.md) for the complete node prep checklist. Use [`nke-os-image-check`](https://github.com/dsx-ai-factory/nvke/tree/main/os-image#checker) to validate a node's image against the NVKE spec before bootstrap.
@@ -61,11 +61,11 @@ sudo kubeadm reset -f
 
 ### Node never becomes Ready after joining
 
-Check `nke-agent` on the join node:
+Check `nvke-agent` on the join node:
 
 ```bash
-sudo systemctl status nke-agent
-sudo journalctl -u nke-agent -n 50
+sudo systemctl status nvke-agent
+sudo journalctl -u nvke-agent -n 50
 ```
 
 Confirm the init node can reach the join node on port 15005:
@@ -74,9 +74,9 @@ Confirm the init node can reach the join node on port 15005:
 curl -v telnet://<join-node-ip>:15005
 ```
 
-For pre-provisioned nodes running without mTLS (development environments only — see note below), confirm `--disable-mtls` is set in `/etc/default/nke-agent`.
+For pre-provisioned nodes running without mTLS (development environments only — see note below), confirm `--disable-mtls` is set in `/etc/default/nvke-agent`.
 
-> **Note:** `--disable-mtls` disables transport authentication and encryption on the gRPC connection between the controller and `nke-agent`. Use it only in isolated development environments. Production deployments use SPIFFE/SPIRE-backed mTLS and do not set this flag.
+> **Note:** `--disable-mtls` disables transport authentication and encryption on the gRPC connection between the controller and `nvke-agent`. Use it only in isolated development environments. Production deployments use SPIFFE/SPIRE-backed mTLS and do not set this flag.
 
 ## Tenant Clusters
 

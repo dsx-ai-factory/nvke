@@ -76,7 +76,7 @@ spec:
         - systemctl restart procps
         - mkdir -p /run/cluster-api
         - echo success > /run/cluster-api/bootstrap-success.complete
-        - sh -c 'nohup sh -c "for i in \$(seq 1 90); do [ -S /tmp/spire-agent/public/api.sock ] && systemctl restart nke-agent.service && exit 0; sleep 1; done; exit 1" >/var/log/nke-agent-spire-wait.log 2>&1 &'
+        - sh -c 'nohup sh -c "for i in \$(seq 1 90); do [ -S /tmp/spire-agent/public/api.sock ] && systemctl restart nvke-agent.service && exit 0; sleep 1; done; exit 1" >/var/log/nvke-agent-spire-wait.log 2>&1 &'
   lifecycle:
     deprecated: false
     hidden: false

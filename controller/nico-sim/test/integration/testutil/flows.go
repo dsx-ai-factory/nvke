@@ -403,7 +403,7 @@ boot
 // RunIPXEProductionCloudInitFlow boots the production FDE image with a
 // rendered copy of the real production userData template. This verifies that
 // the cloud-init runcmd pipeline (kubeadm bundle download, OVN install,
-// nke-agent restart, etc.) works end-to-end inside our VM environment.
+// nvke-agent restart, etc.) works end-to-end inside our VM environment.
 //
 // Gated by NICO_VMS_TEST_PRODUCTION_IMAGE=true (same as the basic production
 // image test since it also requires the multi-GB image download).
@@ -523,9 +523,9 @@ boot
 	fetchLog := WaitForSSHCommand(t, ip, sshCfg, "cat /var/log/fetch-install.log 2>/dev/null || echo NO_LOG", 30*time.Second)
 	t.Logf("[%s] fetch-install.log:\n%s", profile.Name, fetchLog)
 
-	// Check nke-agent status (may fail, that's expected without full config).
-	nvkeStatus := WaitForSSHCommand(t, ip, sshCfg, "systemctl is-active nke-agent 2>/dev/null || systemctl status nke-agent --no-pager 2>&1 | head -10", 30*time.Second)
-	t.Logf("[%s] nke-agent status: %s", profile.Name, strings.TrimSpace(nvkeStatus))
+	// Check nvke-agent status (may fail, that's expected without full config).
+	nvkeStatus := WaitForSSHCommand(t, ip, sshCfg, "systemctl is-active nvke-agent 2>/dev/null || systemctl status nvke-agent --no-pager 2>&1 | head -10", 30*time.Second)
+	t.Logf("[%s] nvke-agent status: %s", profile.Name, strings.TrimSpace(nvkeStatus))
 
 	PreserveInstanceArtifacts(t, profile, created.GetId())
 	DeleteAndWait(t, env, profile, created.GetId(), ip)

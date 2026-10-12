@@ -43,11 +43,11 @@ id -u etcd >/dev/null 2>&1 || sudo useradd -r -s /bin/false -d /var/lib/etcd etc
 sudo install -d -m 0700 -o etcd -g etcd /var/lib/etcd
 
 # Keep image-specific identity ordering in a drop-in so agent upgrades retain it.
-sudo install -d -m 0755 /etc/systemd/system/nke-agent.service.d
-sudo install -m 0644 "${SRC}/nke-agent-spire.conf" /etc/systemd/system/nke-agent.service.d/10-spire.conf
+sudo install -d -m 0755 /etc/systemd/system/nvke-agent.service.d
+sudo install -m 0644 "${SRC}/nvke-agent-spire.conf" /etc/systemd/system/nvke-agent.service.d/10-spire.conf
 # The package enables the agent and creates the default environment file, but
 # the golden image has no instance identity yet: start only on first boot.
-sudo env NKE_AGENT_SKIP_START=1 dpkg -i "${SRC}/nke-agent.deb"
+sudo env NKE_AGENT_SKIP_START=1 dpkg -i "${SRC}/nvke-agent.deb"
 
 # Stage the CNI debs as a local flat apt repo, so cluster create's `apt-get
 # install nke-cni-...` resolves offline with apt's dependency handling intact.
@@ -65,7 +65,7 @@ if [[ -n "${calico_manifest_deb}" ]]; then
 fi
 
 # Install the spire-agent package. Unlike the CNI and kubeadm-distro debs --
-# which nke-agent installs by name at cluster create, choosing a variant and a
+# which nvke-agent installs by name at cluster create, choosing a variant and a
 # version then -- SPIRE is how a node gets an identity at all, so it is baked
 # in rather than staged for later. Its postinst creates the spire user, adds it
 # to tss and enables both units, so nothing here repeats that.

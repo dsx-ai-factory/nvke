@@ -87,10 +87,10 @@ configured on the Cluster API provider rather than the controller.
 [first-cluster.md](first-cluster.md#api-only) covers this path in
 full, and goes on to tenant clusters.
 
-## agent (nke-agent)
+## agent (nvke-agent)
 
 The source lives in `agent/`. The binary installed on a node is called
-`nke-agent`.
+`nvke-agent`.
 
 ```bash
 cd agent
@@ -99,7 +99,7 @@ make build             # cross-compiles for linux; a host go build on macOS
 go test ./...          # or: make test
 ```
 
-`nke-agent` and `spire-agent` must be present on each managed node before
+`nvke-agent` and `spire-agent` must be present on each managed node before
 the NVKE controller can communicate with it. The binaries are typically
 pre-built into the OS image or added via cloud-init — the controller does
 not install them. See `agent/AGENTS.md` for the full build, proto and test

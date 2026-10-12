@@ -19,7 +19,7 @@ func completeUserData() userDataInputs {
 		Hostname:      "e2e-site-1",
 		AuthorizedKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample",
 		Arch:          "amd64",
-		NodeCommands:  []string{`printf 'AGENT_ARGS="--secure-server-port 15005"\n' > /etc/default/nke-agent`, "touch /run/cloud-init.done"},
+		NodeCommands:  []string{`printf 'AGENT_ARGS="--secure-server-port 15005"\n' > /etc/default/nvke-agent`, "touch /run/cloud-init.done"},
 		Tools:         completeTools(),
 	}
 }

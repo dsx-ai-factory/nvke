@@ -527,9 +527,9 @@ func TestBuildForgeNodePayloadsGuardsAgainstAFailedStep(t *testing.T) {
 	}
 }
 
-// The image builds nke-agent from this checkout's agent/ source at bake time,
+// The image builds nvke-agent from this checkout's agent/ source at bake time,
 // so the installed agent is the build under qualification. Installing the apt
-// repository's unpinned nke-agent over it would swap that for whichever build
+// repository's unpinned nvke-agent over it would swap that for whichever build
 // the suite currently holds, and the run would still report the baked version.
 //
 // Asserted rather than left to dpkg. A bake version sorts above a release tag
@@ -545,8 +545,8 @@ func TestBuildForgeNodePayloadsDoesNotInstallNvkeAgent(t *testing.T) {
 			continue
 		}
 		for _, field := range strings.Fields(command) {
-			if field == "nke-agent" {
-				t.Errorf("the node's own nke-agent should be left alone, got:\n%s", command)
+			if field == "nvke-agent" {
+				t.Errorf("the node's own nvke-agent should be left alone, got:\n%s", command)
 			}
 		}
 	}

@@ -57,7 +57,7 @@ cluster:
   # cluster may leave it empty and use that node's IP as its fixed endpoint.
   controlPlaneVIP: "10.0.0.100"
 
-  # Optional: gRPC port nke-agent listens on. Defaults to "15005".
+  # Optional: gRPC port nvke-agent listens on. Defaults to "15005".
   # nodeAgentPort: "15005"
 
   # Optional kubelet reservations applied before kubeadm init/join.

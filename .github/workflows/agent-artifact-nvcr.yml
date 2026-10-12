@@ -3,7 +3,7 @@
 
 name: Agent Artifact NVCR
 
-# Publishes the nke-agent binaries to nvcr.io as OCI artifacts. This mirrors
+# Publishes the nvke-agent binaries to nvcr.io as OCI artifacts. This mirrors
 # agent-artifact.yml but targets NVCR for NGC cluster consumers that hold NGC
 # pull credentials but not GHCR credentials.
 #
@@ -127,7 +127,7 @@ jobs:
         run: |
           set -euo pipefail
           for arch in amd64 arm64; do
-            bin="bin/linux_${arch}/nke-agent"
+            bin="bin/linux_${arch}/nvke-agent"
             file "${bin}"
             case "${arch}" in
               amd64) file "${bin}" | grep -q 'ELF 64-bit LSB .*x86-64' ;;
@@ -171,8 +171,8 @@ jobs:
                 --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
                 --annotation "org.opencontainers.image.version=${VERSION}" \
                 --annotation "org.opencontainers.image.licenses=Apache-2.0" \
-                --annotation "org.opencontainers.image.title=nke-agent" \
-                nke-agent:application/octet-stream )
+                --annotation "org.opencontainers.image.title=nvke-agent" \
+                nvke-agent:application/octet-stream )
           done
 
       - name: Create multi-arch index
@@ -208,4 +208,4 @@ jobs:
         uses: ./.github/actions/record-digest
         with:
           references: ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}
-          component: nke-agent-nvcr
+          component: nvke-agent-nvcr

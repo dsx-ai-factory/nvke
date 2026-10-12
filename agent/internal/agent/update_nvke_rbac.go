@@ -24,9 +24,9 @@ import (
 )
 
 const (
-	nvkeRBACFieldManager = "nke-agent-rbac"
+	nvkeRBACFieldManager = "nvke-agent-rbac"
 	rbacAPIVersion       = "rbac.authorization.k8s.io/v1"
-	nvkeRBACNamePrefix   = "nke:"
+	nvkeRBACNamePrefix   = "nvke:"
 	rbacAPIGroup         = "rbac.authorization.k8s.io"
 	// rbacVersionV1 is the version segment of rbacAPIVersion, used on its own
 	// in the GroupVersionResource entries in rbacKindSpecs.
@@ -190,7 +190,12 @@ func validateNVKERBACObject(obj *unstructured.Unstructured) error {
 }
 
 func isAllowedNVKERBACName(name string) bool {
-	return len(name) > len(nvkeRBACNamePrefix) && strings.HasPrefix(name, nvkeRBACNamePrefix)
+	for _, prefix := range []string{nvkeRBACNamePrefix, "nke:"} {
+		if len(name) > len(prefix) && strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func validateNVKERBACRoleRef(obj *unstructured.Unstructured) error {

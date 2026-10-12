@@ -49,10 +49,15 @@ func TestInstallPackagesRejectsNodeAgentReplacement(t *testing.T) {
 		name string
 		pkg  string
 	}{
-		{name: "named package", pkg: "nke-agent=v0.1.2"},
-		{name: "architecture-qualified package", pkg: "nke-agent:arm64=0.1.2"},
-		{name: "suite-qualified package", pkg: "nke-agent/stable"},
-		{name: "local deb", pkg: "/tmp/nke-agent_0.1.2_arm64.deb"},
+		{name: "unversioned asset", pkg: "/tmp/nvke-agent.deb"},
+		{name: "unversioned legacy asset", pkg: "/tmp/nke-agent.deb"},
+		{name: "legacy package", pkg: "nke-agent=0.1.2"},
+		{name: "legacy architecture qualified package", pkg: "nke-agent:arm64=0.1.2"},
+		{name: "legacy local deb", pkg: "/tmp/nke-agent_0.1.2_arm64.deb"},
+		{name: "named package", pkg: "nvke-agent=v0.1.2"},
+		{name: "architecture-qualified package", pkg: "nvke-agent:arm64=0.1.2"},
+		{name: "suite-qualified package", pkg: "nvke-agent/stable"},
+		{name: "local deb", pkg: "/tmp/nvke-agent_0.1.2_arm64.deb"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

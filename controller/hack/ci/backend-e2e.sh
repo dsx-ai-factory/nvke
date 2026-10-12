@@ -477,11 +477,11 @@ collect_diagnostics() {
         [[ -n "${node_name}" ]] || continue
         docker logs "${node_name}" >"${STATE_DIR}/nodes/${node_name}-console.log" 2>&1
         docker exec "${node_name}" systemctl status \
-          nke-agent spire-agent swtpm-local containerd kubelet \
+          nvke-agent spire-agent swtpm-local containerd kubelet \
           ovsdb-server ovs-vswitchd nke-container-network nke-container-cni-images --no-pager \
           >"${STATE_DIR}/nodes/${node_name}-systemd.txt" 2>&1
         docker exec "${node_name}" journalctl --no-pager \
-          -u nke-agent -u spire-agent -u swtpm-local -u containerd -u kubelet \
+          -u nvke-agent -u spire-agent -u swtpm-local -u containerd -u kubelet \
           -u ovsdb-server -u ovs-vswitchd -u nke-container-network -u nke-container-cni-images \
           >"${STATE_DIR}/nodes/${node_name}-journal.log" 2>&1
         docker exec "${node_name}" crictl ps -a \

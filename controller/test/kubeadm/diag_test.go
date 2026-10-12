@@ -23,7 +23,7 @@ import (
 // The agent writes script_contents to a file and exec()s it directly, so the
 // shebang is required — without it the exec fails with ENOEXEC.
 
-// joinFailureDiag captures why a join failed on the joining node: the nke-agent
+// joinFailureDiag captures why a join failed on the joining node: the nvke-agent
 // journal (which carries the actual kubeadm output), the node's own networking,
 // and reachability to the control plane's API and etcd ports. That last part is
 // what distinguishes a kubeadm-side error from a bridge connectivity problem,
@@ -33,8 +33,8 @@ func joinFailureDiag(ctx context.Context, t *testing.T, nodeName, nodeIP, initIP
 	script := "#!/bin/bash\n" +
 		"set +e\n" +
 		"INIT=" + initIP + "\n" +
-		`echo "=== nke-agent journal (last 200 lines; carries the kubeadm output) ==="
-journalctl -u nke-agent --no-pager -n 200 2>&1 | tail -n 200
+		`echo "=== nvke-agent journal (last 200 lines; carries the kubeadm output) ==="
+journalctl -u nvke-agent --no-pager -n 200 2>&1 | tail -n 200
 echo "=== node networking ==="
 ip -o addr show; echo "-- routes --"; ip route; echo "-- resolv --"; cat /etc/resolv.conf 2>&1
 echo "=== inter-VM reachability to the control plane $INIT ==="
@@ -83,8 +83,8 @@ for p in 2379 2380 6443 10250; do
   timeout 5 bash -c "echo > /dev/tcp/$OTHER/$p" 2>/dev/null && echo "tcp $OTHER:$p OPEN" || echo "tcp $OTHER:$p UNREACHABLE"
 done
 ping -c2 -W2 "$OTHER" 2>&1 | tail -2
-echo "=== nke-agent journal (last 200) ==="
-journalctl -u nke-agent --no-pager -n 200 2>&1 | tail -n 200
+echo "=== nvke-agent journal (last 200) ==="
+journalctl -u nvke-agent --no-pager -n 200 2>&1 | tail -n 200
 echo "=== etcd member list / health (single member expected) ==="
 CID=$(crictl ps --name etcd -q 2>/dev/null | head -1)
 echo "etcd container: ${CID:-<none>}"

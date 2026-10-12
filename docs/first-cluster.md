@@ -193,7 +193,7 @@ than a real site. Treat a surprise here as a bug in this page and say so.
 ### Before you start
 
 **Nodes.** An odd number — one, three, five; an even count is rejected. Each
-already imaged and running `nke-agent` and `spire-agent`. You need every node's
+already imaged and running `nvke-agent` and `spire-agent`. You need every node's
 IP and its **TPM EK thumbprint**: the site cluster attests nodes by TPM, and a
 node with no thumbprint cannot join.
 
@@ -339,7 +339,7 @@ registries. Cluster API and cert-manager come from `github.com` through
 `clusterctl init`.
 
 It creates a throwaway kind cluster, installs Postgres, Temporal, SPIRE, CAPI and
-CWE into it, builds the site cluster on your hosts through `nke-agent`, and
+CWE into it, builds the site cluster on your hosts through `nvke-agent`, and
 writes `my-site.kubeconfig`. Allow 30 minutes.
 
 Allow longer than that and raise `--timeout` (default `30m`) if the site is large —
@@ -445,10 +445,10 @@ The node agent, the SPIRE agent, kubeadm, kubelet and containerd all stay
 installed, so reclaiming a host for something else is manual:
 
 ```bash
-apt-get purge nke-agent spire-agent
+apt-get purge nvke-agent spire-agent
 ```
 
-A purge still leaves `/var/lib/nke/state.json` and the two agent logs on disk.
+A purge still leaves `/var/lib/nvke/state.json` and the two agent logs on disk.
 
 **No command tears down a site cluster.** `nvkectl delete` covers tenant clusters
 and node pools only. Reversing `nvkectl bootstrap site` is manual.

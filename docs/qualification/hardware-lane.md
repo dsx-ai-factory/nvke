@@ -239,7 +239,7 @@ path was broken.
 What the suite passes down is `NodePayloads` — the iPXE script and
 `preKubeadmCommands` rendered by the same `BuildForgeNodePayloads` the site
 node was built from, so tenant nodes are constructed the same way. The
-pre-kubeadm script adds the NVKE apt repository and installs `nke-agent`, the
+pre-kubeadm script adds the NVKE apt repository and installs `nvke-agent`, the
 pinned `nke-kubeadm-distro`, both OVN packages, `openvswitch-switch` and
 `spire-agent`.
 

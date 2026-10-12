@@ -4,7 +4,7 @@ What to do when `nvkectl bootstrap site` fails. This page covers where the
 evidence is, how to read the error, the failures operators meet most often
 with their fixes, and when it is safe to run the command again.
 
-For failures on the nodes themselves, such as `nke-agent` not starting, see
+For failures on the nodes themselves, such as `nvke-agent` not starting, see
 [Pre-Provisioned Nodes](../../docs/site-bootstrap/pre-provisioned-nodes.md#troubleshooting).
 
 ## Where the evidence is
@@ -86,11 +86,11 @@ KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nvkectl-bootstrap
 ### The nodes
 
 Once the site cluster has been created, the work happens on your hosts through
-`nke-agent`. On each control plane node:
+`nvke-agent`. On each control plane node:
 
 ```bash
-sudo journalctl -u nke-agent --since "1 hour ago"
-sudo cat /var/log/nke-agent-audit.log      # one line per request the agent received
+sudo journalctl -u nvke-agent --since "1 hour ago"
+sudo cat /var/log/nvke-agent-audit.log      # one line per request the agent received
 ls /etc/kubernetes/manifests               # present means kubeadm ran here
 sudo journalctl -u kubelet --since "1 hour ago"
 ```
@@ -184,7 +184,7 @@ ls /etc/kubernetes/manifests    # kube-apiserver.yaml here means a control plane
 ```
 
 Reset a node only once you have confirmed it was left by your failed bootstrap:
-it is in your site spec, and `/var/log/nke-agent-audit.log` on it shows requests
+it is in your site spec, and `/var/log/nvke-agent-audit.log` on it shows requests
 from your earlier attempt. On a control plane node `kubeadm reset` also removes
 its local etcd member, which would disrupt a different cluster running there.
 
@@ -273,7 +273,7 @@ nothing else on the host holds port 30080, or change it with
 ### Site cluster
 
 From here on, the controller is driving `kubeadm` on your nodes through
-`nke-agent`. The bootstrap cluster is retained on failure, and the controller's
+`nvke-agent`. The bootstrap cluster is retained on failure, and the controller's
 logs in it are the primary record.
 
 **`creating cluster "<name>": 400 Bad Request: <message>`**
@@ -289,11 +289,11 @@ The first control plane node never finished `kubeadm init`. In order:
 
 1. In the controller logs, search for the cluster name and read the last activity
    it ran for the first node.
-2. On that node, check `nke-agent` is running and its journal shows the controller
+2. On that node, check `nvke-agent` is running and its journal shows the controller
    connecting. No connection at all means the controller cannot reach the node's
    agent port: check the `nodeAgentPort` in the site spec and any firewall.
 3. A refused connection happens before any TLS handshake, so it is not an
-   attestation failure. Check that `nke-agent` is listening on the agent port
+   attestation failure. Check that `nvke-agent` is listening on the agent port
    and that nothing blocks the route to it. With SPIFFE enabled, a connection
    that is reset or fails during the TLS handshake means attestation failed.
    Check that the node's TPM endorsement key thumbprint in the site spec

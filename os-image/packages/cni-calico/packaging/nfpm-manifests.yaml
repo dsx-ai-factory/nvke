@@ -25,7 +25,7 @@ description: |
   The upstream operator-crds.yaml, tigera-operator.yaml and
   custom-resources.yaml for Calico
   ${STREAM}, pinned by sha256 and installed under
-  /usr/share/nke-cni/calico/${STREAM}. nke-agent applies them with kubectl
+  /usr/share/nke-cni/calico/${STREAM}. nvke-agent applies them with kubectl
   when it installs the CNI. The container images they need ship separately in
   ${IMAGES_PACKAGE}; install both for a node with no registry access.
 

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Run on the Packer host. Builds the nke-agent Debian package from this checkout's
+# Run on the Packer host. Builds the nvke-agent Debian package from this checkout's
 # source (agent/) and builds the node .deb packages (os-image/packages/,
 # staged into the image by provision.sh as a local apt repo) into
 # ARTIFACTS_DIR.
@@ -37,15 +37,15 @@ fi
 mkdir -p "${ARTIFACTS_DIR}"
 
 if ! command -v go >/dev/null 2>&1; then
-  echo "go is required to build nke-agent from source (agent/)" >&2
+  echo "go is required to build nvke-agent from source (agent/)" >&2
   echo "https://go.dev/dl/" >&2
   exit 1
 fi
 
 # Use the package target so dpkg owns the agent, updater, and their units.
 # An exact output path avoids selecting a stale version from agent/bin.
-echo "building nke-agent deb from source (${repo_root}/agent, ${ARCH})"
-make -C "${repo_root}/agent" "deb-${ARCH}" DEB_OUTPUT="${ARTIFACTS_DIR}/nke-agent.deb"
+echo "building nvke-agent deb from source (${repo_root}/agent, ${ARCH})"
+make -C "${repo_root}/agent" "deb-${ARCH}" DEB_OUTPUT="${ARTIFACTS_DIR}/nvke-agent.deb"
 
 # The debs a node installs at cluster create, plus a flat apt index that
 # provision.sh stages as a local repo. Without the kubeadm one a node built
@@ -90,7 +90,7 @@ fi
 make -C "${repo_root}/os-image/packages/spire-agent" debs "${spire_args[@]}"
 
 files_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../files" && pwd)"
-install -m 0644 "${files_dir}/nke-agent-spire.conf" "${ARTIFACTS_DIR}/nke-agent-spire.conf"
+install -m 0644 "${files_dir}/nvke-agent-spire.conf" "${ARTIFACTS_DIR}/nvke-agent-spire.conf"
 install -m 0644 "${files_dir}/00-dhcp-all.yaml" "${ARTIFACTS_DIR}/00-dhcp-all.yaml"
 install -m 0644 "${files_dir}/99-disable-network-config.cfg" "${ARTIFACTS_DIR}/99-disable-network-config.cfg"
 install -m 0755 "${files_dir}/wait-spiffe-socket.sh" "${ARTIFACTS_DIR}/wait-spiffe-socket.sh"

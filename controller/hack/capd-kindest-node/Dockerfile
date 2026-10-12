@@ -12,7 +12,7 @@
 #   2. leave a DER-encoded EK certificate on disk at `/var/lib/swtpm/ek.cert`
 #      so the nico-vms container backend can surface Forge-compatible
 #      `tpmEkCertificate` data
-#   3. start that vTPM plumbing before `spire-agent` and `nke-agent`, so the controller
+#   3. start that vTPM plumbing before `spire-agent` and `nvke-agent`, so the controller
 #      preflight sees a SPIFFE-enabled node whose TPM identity is already ready
 
 ARG KINDEST_NODE_TAG=v1.34.8
@@ -66,7 +66,7 @@ RUN set -eux; \
 COPY scripts/cloud-init-status-shim /usr/local/bin/cloud-init
 RUN chmod 0755 /usr/local/bin/cloud-init
 
-# nke-agent CNI install runs scripts that expect `python` on PATH. The controller's
+# nvke-agent CNI install runs scripts that expect `python` on PATH. The controller's
 # kubeadm config runbooks also require PyYAML. The local TPM workflow
 # additionally needs:
 #   - `swtpm` to emulate the TPM itself
@@ -151,18 +151,18 @@ RUN SYSTEMD_OFFLINE=1 systemctl enable nke-container-cni-images.service
 # with SYSTEMD_OFFLINE=1 (see below). The build helper resolves the selected
 # bundle into the Docker context before this build starts.
 COPY agent.tgz /tmp/agent-src/
-COPY scripts/nke-agent-container-ovs.conf /tmp/nke-agent-container-ovs.conf
+COPY scripts/nvke-agent-container-ovs.conf /tmp/nvke-agent-container-ovs.conf
 RUN set -eux; \
     NODE_AGENT_DIR="agent_${NODE_AGENT_VERSION}_${NODE_AGENT_DIR_ARCH}"; \
     cd /tmp/agent-src; \
     if ls ./*.tgz >/dev/null 2>&1; then tar xf ./*.tgz; fi; \
     cd "${NODE_AGENT_DIR}"; \
     ./agent-installer.sh || true; \
-    test -f /etc/systemd/system/nke-agent.service; \
-    mkdir -p /etc/systemd/system/nke-agent.service.d; \
-    cp /tmp/nke-agent-container-ovs.conf \
-      /etc/systemd/system/nke-agent.service.d/container-ovs.conf; \
-    cd /tmp && rm -rf /tmp/agent-src /tmp/nke-agent-container-ovs.conf
+    test -f /etc/systemd/system/nvke-agent.service; \
+    mkdir -p /etc/systemd/system/nvke-agent.service.d; \
+    cp /tmp/nvke-agent-container-ovs.conf \
+      /etc/systemd/system/nvke-agent.service.d/container-ovs.conf; \
+    cd /tmp && rm -rf /tmp/agent-src /tmp/nvke-agent-container-ovs.conf
 
 # Install the SPIRE agent bundle, including the TPM attestor plugin.
 COPY spire-agent.tgz /tmp/spire-agent-src/
@@ -238,10 +238,10 @@ RUN set -eux; \
 RUN echo 'KUBELET_EXTRA_ARGS=--runtime-cgroups=/system.slice/containerd.service --fail-swap-on=false' \
       > /etc/default/kubelet
 
-# Configure nke-agent.
+# Configure nvke-agent.
 RUN set -eux; \
     NKE_AGENT_SPIFFE_ARG=""; \
-    if /usr/local/bin/nke-agent --help 2>&1 | grep -q -- "-enable-spiffe"; then \
+    if /usr/local/bin/nvke-agent --help 2>&1 | grep -q -- "-enable-spiffe"; then \
       NKE_AGENT_SPIFFE_ARG=" --enable-spiffe"; \
     fi; \
     NKE_AGENT_BUNDLE_ARGS=""; \
@@ -254,7 +254,7 @@ RUN set -eux; \
     printf '%s\n' \
       "AGENT_ARGS=\"--disable-mlx5-rescan${NKE_AGENT_SPIFFE_ARG} --secure-server-port ${NODE_AGENT_PORT}${NKE_AGENT_BUNDLE_ARGS}\"" \
       'NKE_LOCAL_DEV=true' \
-      > /etc/default/nke-agent
+      > /etc/default/nvke-agent
 
 # Pull order for docker.io and registry.k8s.io: CI mirror if one was given, then
 # the local pull-through cache (`make registry-mirror`), then upstream. containerd
@@ -285,7 +285,7 @@ RUN set -eu; \
 RUN set -eux; \
     SYSTEMD_OFFLINE=1 systemctl daemon-reload; \
     SYSTEMD_OFFLINE=1 systemctl disable nke-attestation.service 2>/dev/null || true; \
-    SYSTEMD_OFFLINE=1 systemctl enable nke-agent.service spire-agent.service; \
+    SYSTEMD_OFFLINE=1 systemctl enable nvke-agent.service spire-agent.service; \
     if [ "${CAPD_SPIRE_ATTESTATION_METHOD}" = tpm ]; then \
       SYSTEMD_OFFLINE=1 systemctl enable swtpm-local.service; \
     else \

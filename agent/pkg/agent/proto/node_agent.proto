@@ -108,7 +108,7 @@ service NodeAgent {
   // UpdateNKERBAC applies the NVKE RBAC resources carried in the request
   // manifest to the local cluster. This RPC is intended only for managing
   // NVKE-owned RBAC objects: only a fixed set of RBAC kinds is accepted, and
-  // every resource name must start within the agent-owned "nke:" prefix.
+  // every resource name must use the agent-owned "nvke:" or legacy "nke:" prefix.
   // The request is rejected if any document falls outside that boundary.
   //
   // The request must be served by a control-plane node.
@@ -127,6 +127,10 @@ service NodeAgent {
   //   Internal           — the agent could not reach the local cluster to
   //                        perform the apply.
   rpc UpdateNKERBAC(UpdateNKERBACRequest) returns (UpdateNKERBACResponse) {}
+
+  // UpdateNVKERBAC applies RBAC resources. UpdateNKERBAC remains an alias for
+  // controllers from before the rename; both methods use the same wire messages.
+  rpc UpdateNVKERBAC(UpdateNKERBACRequest) returns (UpdateNKERBACResponse) {}
 
   rpc ExecuteScript(ExecuteScriptRequest) returns (ExecuteScriptResponse) {}
 
@@ -195,13 +199,13 @@ service NodeAgent {
   // Debian package management
 
   // StartNodeAgentUpgrade persists an idempotent node-agent replacement
-  // request and starts the independent nke-agent-updater systemd service. The
+  // request and starts the independent nvke-agent-updater systemd service. The
   // caller must poll GetNodeAgentUpgradeStatus because a successful package
   // replacement restarts this gRPC server.
   rpc StartNodeAgentUpgrade(StartNodeAgentUpgradeRequest) returns (StartNodeAgentUpgradeResponse) {}
 
   // GetNodeAgentUpgradeStatus returns durable updater state that survives an
-  // nke-agent restart.
+  // nvke-agent restart.
   rpc GetNodeAgentUpgradeStatus(GetNodeAgentUpgradeStatusRequest) returns (GetNodeAgentUpgradeStatusResponse) {}
 
   // StartNodeAgentRollback restores the exact artifact retained by a prior
@@ -643,7 +647,7 @@ message ResourceApplyResult {
 message ExecuteScriptRequest {
   string script_name = 1;
   string script_contents = 2;
-  // path to script, default is /usr/local/nke/user-scripts
+  // path to script, default is /usr/local/nvke/user-scripts
   string script_path = 3;
   repeated string args = 4;
   bool async = 5;
@@ -670,7 +674,7 @@ message InitializeKubernetesAPIEncryptionResponse {
 }
 
 message RewriteKubernetesAPIObjectsRequest {
-  // When true, bypasses the "nke.io/k8s-api-encryption-configured=true" label
+  // When true, bypasses the "nvke.nvidia.com/k8s-api-encryption-configured=true" label
   // check that gates the initial-setup flow. Required for key rotation on an
   // already-encrypted cluster where that label is absent.
   bool skip_label_check = 1;

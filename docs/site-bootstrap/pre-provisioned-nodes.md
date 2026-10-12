@@ -1,6 +1,6 @@
 # Using Pre-Provisioned Nodes
 
-> **Which path is this?** This guide covers bootstrap on nodes you bring yourself — no SPIRE workload API, no TPM, `--disable-mtls` on `nke-agent`. If your nodes are built from the NVKE OS image (SPIRE agent pre-installed, mTLS on by default), see [`os-image/SPEC.md`](../../os-image/SPEC.md) for the image contract and [`docs/first-cluster.md`](../first-cluster.md#real-site), the Real Site path, for the full flow.
+> **Which path is this?** This guide covers bootstrap on nodes you bring yourself — no SPIRE workload API, no TPM, `--disable-mtls` on `nvke-agent`. If your nodes are built from the NVKE OS image (SPIRE agent pre-installed, mTLS on by default), see [`os-image/SPEC.md`](../../os-image/SPEC.md) for the image contract and [`docs/first-cluster.md`](../first-cluster.md#real-site), the Real Site path, for the full flow.
 
 If you already have nodes provisioned and running, you can manually prepare them for tier-0 bootstrap.
 
@@ -162,16 +162,16 @@ curl -fsSL "https://github.com/containernetworking/plugins/releases/download/${C
 
 ### Install Node-Agent
 
-`nke-agent` will install from the NVKE apt repository. The commands below are for Ubuntu 24.04 (Noble); on 26.04 (Resolute) use the `nvke-apt-resolute` prefix and `nvke-resolute` suite.
+`nvke-agent` will install from the NVKE apt repository. The commands below are for Ubuntu 24.04 (Noble); on 26.04 (Resolute) use the `nvke-apt-resolute` prefix and `nvke-resolute` suite.
 
 > **Not published yet — the commands below do not work.**
 > `packages.nvidia.com/nvke` serves neither the key nor the suite: the `curl`
-> returns HTTP 404 (`NoSuchKey`), so `apt-get install nke-agent` fails after it.
+> returns HTTP 404 (`NoSuchKey`), so `apt-get install nvke-agent` fails after it.
 > Until the repository exists there is no package install. To prepare a node in
 > the meantime, build the agent from this repository: `make -C agent package`
-> cross-compiles it to `agent/bin/linux_<arch>/nke-agent` and bundles it with
+> cross-compiles it to `agent/bin/linux_<arch>/nvke-agent` and bundles it with
 > `agent/scripts/agent-installer.sh`, which lays down the binary, the systemd
-> unit and `/etc/default/nke-agent`.
+> unit and `/etc/default/nvke-agent`.
 > [`controller/hack/capd-kindest-node/`](https://github.com/dsx-ai-factory/nvke/tree/main/controller/hack/capd-kindest-node)
 > installs the agent that way for the bootstrap e2e's nodes and is the closest
 > worked example.
@@ -187,18 +187,18 @@ echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://packages.nvidia.com/nvke
   sudo tee /etc/apt/sources.list.d/nke-apt.list
 
 sudo apt-get update
-sudo apt-get install -y nke-agent
+sudo apt-get install -y nvke-agent
 
 # Nodes prepared this way run no spire-agent, so the agent speaks plaintext gRPC.
 # nvkectl bootstrap site must then be run with --disable-mtls too (Step 2).
-echo 'AGENT_ARGS="--disable-mtls"' | sudo tee /etc/default/nke-agent
-sudo systemctl restart nke-agent
+echo 'AGENT_ARGS="--disable-mtls"' | sudo tee /etc/default/nvke-agent
+sudo systemctl restart nvke-agent
 
 # Verify agent is running
-sudo systemctl status nke-agent
+sudo systemctl status nvke-agent
 ```
 
-> **Warning:** Use `nke-agent` **0.1.12 or later**. Older agents do not implement kubeadm preflight checks, so configuration problems only surface mid-bootstrap.
+> **Warning:** Use `nvke-agent` **0.1.12 or later**. Older agents do not implement kubeadm preflight checks, so configuration problems only surface mid-bootstrap.
 
 > **Plaintext mode.** `--disable-mtls` on the agent turns SPIFFE off, so
 > `nvkectl bootstrap site` has to be run with `--disable-mtls` as well — CWE
@@ -263,7 +263,7 @@ local build from `make -C cli images` needs no login.
 `nvkectl` creates a temporary Kind cluster on the init node, deploys Postgres,
 Temporal and the Cluster API providers onto it — and SPIRE, unless `--disable-mtls`
 is set — then CWE, waits for CWE to be healthy, and dispatches the kubeadm init and
-join work to your nodes through Cluster API and `nke-agent` gRPC. No SSH required.
+join work to your nodes through Cluster API and `nvke-agent` gRPC. No SSH required.
 
 The ephemeral Kind cluster is torn down when bootstrap succeeds. It is **kept** if you
 pass `--keep-bootstrap-cluster`, or if the run fails after the site cluster was
@@ -315,8 +315,8 @@ All nodes should show `Ready` status. On the init node,
 ## Important Notes
 
 - **Join nodes don't need `nvkectl`** — only the init node runs it
-- **`nke-agent` must be running on all nodes** — verify `systemctl status nke-agent` before starting bootstrap
-- **Network connectivity** — CWE must reach each node on **15005** (nke-agent gRPC) and **6443** (API server); nodes with a TPM EK thumbprint must reach the init node on **30081** (SPIRE) for attestation
+- **`nvke-agent` must be running on all nodes** — verify `systemctl status nvke-agent` before starting bootstrap
+- **Network connectivity** — CWE must reach each node on **15005** (nvke-agent gRPC) and **6443** (API server); nodes with a TPM EK thumbprint must reach the init node on **30081** (SPIRE) for attestation
 - **Hostnames and IPs** — use actual hostnames and IPs that nodes use to communicate with each other
 - **User permissions** — commands must run with `sudo` or as root
 
@@ -330,9 +330,9 @@ The entries below are node-side.
 **Node-agent not starting:**
 
 ```bash
-sudo systemctl status nke-agent
-sudo cat /var/log/nke-agent.log
-sudo systemctl restart nke-agent
+sudo systemctl status nvke-agent
+sudo cat /var/log/nvke-agent.log
+sudo systemctl restart nvke-agent
 ```
 
 **Bootstrap refuses to start: "bootstrap cluster … from an earlier run is still running":**
@@ -398,4 +398,4 @@ Check that the init node can reach the join node on port 15005:
 curl -v telnet://<join-node-ip>:15005
 ```
 
-Check `nke-agent` on the join node and confirm `--disable-mtls` is set in `/etc/default/nke-agent` — and that `nvkectl bootstrap site` was run with `--disable-mtls` too. One side in plaintext and the other in mTLS never connects.
+Check `nvke-agent` on the join node and confirm `--disable-mtls` is set in `/etc/default/nvke-agent` — and that `nvkectl bootstrap site` was run with `--disable-mtls` too. One side in plaintext and the other in mTLS never connects.

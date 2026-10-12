@@ -204,7 +204,7 @@ By default nico-sim's VM backend **owns its networking**: `scripts/setup-linux.s
 - The base image must boot with **DHCP** (the libvirt network runs the DHCP server); network mode forces DHCP regardless of iPXE presence.
 - `NICO_VMS_BGP_ENABLED=false` is **optional** — BGP is auto-skipped in this mode — but setting it makes intent explicit.
 
-**Readiness (no `phone_home`).** Because there is no nico-vms metadata server on the VM's network, cloud-init's `phone_home` can't report back. Drive readiness by **SSH-probing port 22** (fires early in boot) and then polling whatever agent the VM runs. The NVKE cluster-bringup driver does exactly this: SSH-probe, then a `WaitForAgent` gRPC poll on the nke-agent port.
+**Readiness (no `phone_home`).** Because there is no nico-vms metadata server on the VM's network, cloud-init's `phone_home` can't report back. Drive readiness by **SSH-probing port 22** (fires early in boot) and then polling whatever agent the VM runs. The NVKE cluster-bringup driver does exactly this: SSH-probe, then a `WaitForAgent` gRPC poll on the nvke-agent port.
 
 **Host prep — `scripts/setup-libvirt-network.sh`.** The network-mode counterpart to `setup-linux.sh`. It (1) ensures the target libvirt network is active, and (2) exempts intra-subnet (VM↔VM) traffic from MASQUERADE by inserting a `RETURN` at the top of the nat `POSTROUTING` chain. Some hosts SNAT inter-VM traffic to the node's own IP — e.g. **AWS EKS via the VPC CNI `AWS-SNAT-CHAIN`**, which masquerades anything not bound for the VPC CIDR. That rewritten source IP breaks IP-bound peer TLS: etcd control-plane joins fail with `"<node-ip>" does not match any of DNSNames [...]`. The `RETURN` preserves the real VM source IPs for VM↔VM traffic while leaving VM→internet NAT intact. The subnet is derived from the network's own XML (not hardcoded), the rule is idempotent, and `--cleanup` removes it (call that from a CI `after_script` so it always runs).
 
@@ -304,11 +304,11 @@ The diagnostics endpoints execute commands on a running VM over SSH (using the d
 
 | ID | Description | Streamable |
 |---|---|---|
-| `agent-logs` | Node Agent (`nke-agent`) journal logs | Yes |
+| `agent-logs` | Node Agent (`nvke-agent`) journal logs | Yes |
 | `kubelet-logs` | Kubelet journal logs | Yes |
 | `containerd-logs` | Containerd journal logs | Yes |
 | `cloud-init-logs` | Cloud-init journal logs | No |
-| `agent-state` | `/var/lib/nke/state.json` | No |
+| `agent-state` | `/var/lib/nvke/state.json` | No |
 | `kubelet-config` | `/var/lib/kubelet/config.yaml` | No |
 
 ```bash
@@ -572,24 +572,24 @@ var/files/
   images/
     custom-image.qcow2
   agent/
-    nke-agent
+    nvke-agent
 ```
 
 Example URLs:
 
 ```text
 http://localhost:18080/files/images/custom-image.qcow2
-http://localhost:18080/files/agent/nke-agent
+http://localhost:18080/files/agent/nvke-agent
 ```
 
 The nico-vms dev OS profile uses `carbide-pxe.forge` inside the VM, so the
 same agent URL becomes:
 
 ```text
-http://carbide-pxe.forge:18080/files/agent/nke-agent
+http://carbide-pxe.forge:18080/files/agent/nvke-agent
 ```
 
-To try a local `nke-agent` build without rebuilding the full node image, build
+To try a local `nvke-agent` build without rebuilding the full node image, build
 the agent and copy it into the file root. From the repository root:
 
 ```bash
@@ -597,16 +597,16 @@ cd agent
 make build-amd64
 
 mkdir -p ../controller/nico-sim/var/files/agent
-cp bin/linux_amd64/nke-agent ../controller/nico-sim/var/files/agent/nke-agent
+cp bin/linux_amd64/nvke-agent ../controller/nico-sim/var/files/agent/nvke-agent
 ```
 
 The cloud-init pickup command used by `nvke-nico-vms-24.04-amd64-fde` is:
 
 ```bash
-sh -c 'u=http://carbide-pxe.forge:18080/files/agent/nke-agent; if curl -fsSL "$u" -o /tmp/nke-agent; then install -m 0755 /tmp/nke-agent /usr/local/bin/nke-agent && echo "downloaded local nke-agent" && /usr/local/bin/nke-agent -version; else echo "local nke-agent not available at $u; using image agent"; fi'
+sh -c 'u=http://carbide-pxe.forge:18080/files/agent/nvke-agent; if curl -fsSL "$u" -o /tmp/nvke-agent; then install -m 0755 /tmp/nvke-agent /usr/local/bin/nvke-agent && echo "downloaded local nvke-agent" && /usr/local/bin/nvke-agent -version; else echo "local nvke-agent not available at $u; using image agent"; fi'
 ```
 
-Remove or omit `files/agent/nke-agent` to fall back to the
+Remove or omit `files/agent/nvke-agent` to fall back to the
 image-provided agent.
 
 

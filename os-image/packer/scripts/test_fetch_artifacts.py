@@ -45,10 +45,10 @@ fi
                     capture_output=True, text=True, check=False,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual((artifacts / "nke-agent.deb").read_text(), arch)
-                self.assertTrue((artifacts / "nke-agent-spire.conf").is_file())
-                self.assertFalse((artifacts / "nke-agent").exists())
-                self.assertFalse((artifacts / "nke-agent.service").exists())
+                self.assertEqual((artifacts / "nvke-agent.deb").read_text(), arch)
+                self.assertTrue((artifacts / "nvke-agent-spire.conf").is_file())
+                self.assertFalse((artifacts / "nvke-agent").exists())
+                self.assertFalse((artifacts / "nvke-agent.service").exists())
 
     def test_rejects_source_root_that_does_not_own_the_script(self):
         script = Path(__file__).with_name("fetch-artifacts.sh")

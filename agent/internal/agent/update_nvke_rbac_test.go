@@ -114,12 +114,12 @@ metadata:
 		{
 			name:     "ClusterRole with disallowed name",
 			manifest: clusterRoleManifest("other-name"),
-			wantErr:  `names must start with "nke:"`,
+			wantErr:  `names must start with "nvke:"`,
 		},
 		{
 			name:     "ClusterRole with bare prefix only",
 			manifest: clusterRoleManifest(nvkeRBACNamePrefix),
-			wantErr:  `names must start with "nke:"`,
+			wantErr:  `names must start with "nvke:"`,
 		},
 		{
 			name:     "ClusterRole must not set namespace",
@@ -712,4 +712,23 @@ subjects:
   name: cwe
   namespace: %q
 `, rbacAPIVersion, rbacKindRoleBinding, name, namespace, roleRefAPIGroup, roleRefKind, roleRefName, namespace)
+}
+
+func TestUpdateNVKERBACCompatibility(t *testing.T) {
+	for _, rpc := range []string{"UpdateNVKERBAC", "UpdateNKERBAC"} {
+		for _, name := range []string{"nvke:cwe", "nke:cwe"} {
+			t.Run(rpc+"/"+name, func(t *testing.T) {
+				server := newUpdateRBACServerWithClient(newDynamicClient())
+				call := server.UpdateNVKERBAC
+				if rpc == "UpdateNKERBAC" {
+					call = server.UpdateNKERBAC
+				}
+				response, err := call(context.Background(), &pb.UpdateNKERBACRequest{Manifest: []byte(clusterRoleManifest(name))})
+				require.NoError(t, err)
+				require.Len(t, response.Results, 1)
+				assert.Equal(t, name, response.Results[0].Name)
+				assert.Equal(t, pb.ResourceApplyResult_OUTCOME_CREATED, response.Results[0].Outcome)
+			})
+		}
+	}
 }

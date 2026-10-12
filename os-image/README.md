@@ -1,6 +1,6 @@
 # Reference node OS image
 
-Ubuntu image that ships `nke-agent` and `spire-agent` so a site
+Ubuntu image that ships `nvke-agent` and `spire-agent` so a site
 controller can reach the node over SPIFFE mTLS, built on Ubuntu's
 NVIDIA-tuned kernel flavor (`linux-nvidia`/`linux-nvidia-64k`), not the
 generic default. The contract is [SPEC.md](SPEC.md).
@@ -77,12 +77,12 @@ The point release lands in the output filename, so the two flavors never
 collide on disk (`nke-node-non-fde-ubuntu-24.04.5-amd64.qcow2`). Pass the same
 `UBUNTU_RELEASE` to `collect-qcow2-*`, which re-derives that expected name.
 A package builder newer than the target release cannot build the image: the
-`nke-agent` .deb declares a bare `Depends: libc6`, so an agent compiled against a
+`nvke-agent` .deb declares a bare `Depends: libc6`, so an agent compiled against a
 newer glibc installs cleanly and then fails to exec. The builder enforces this —
 `auto` selects the Nix VM when the host's Ubuntu is newer than the target, and
 an explicit `NKE_PACKAGE_BUILDER=host` is rejected before packaging. An older
 host is fine, since older glibc runs on newer Ubuntu. `boot-smoke` also runs
-`nke-agent -version` inside the guest as a backstop.
+`nvke-agent -version` inside the guest as a backstop.
 
 `SERIAL_CONSOLE` selects the UART the **installed** system sends kernel output
 to. Empty (the default) keeps the architecture default — `ttyS0` on amd64,
@@ -149,7 +149,7 @@ host builds, Nix for VM builds; `make -C os-image/packer check-deps ARCH=arm64`
 runs that check on its own. The agent package uses nfpm, pinned in
 `make/tool-versions.mk`.
 
-`nke-agent` is built as a Debian package from this checkout's `agent/` source
+`nvke-agent` is built as a Debian package from this checkout's `agent/` source
 using `make -C agent deb-<arch>` and installed with dpkg during provisioning.
 Host package builds require Linux matching the target architecture with cgo
 enabled, as required by the agent package's libc linkage check. Nix mode supplies
@@ -345,7 +345,7 @@ exactly one `spire-agent_*.deb`; Calico inputs may contain at most one
 `--architecture` or `all`, checked with `dpkg-deb`.
 
 `--source-files-dir` supplies the checkout's image-owned provisioning files:
-`nke-agent-spire.conf`, `wait-spiffe-socket.sh`, `conntrack-tune.service`,
+`nvke-agent-spire.conf`, `wait-spiffe-socket.sh`, `conntrack-tune.service`,
 `configure-conntrack.sh`, and `10-nke-conntrack-timeouts.conf`. All five are
 required, copied unchanged, and staged with the same modes as the Make build.
 
@@ -524,7 +524,7 @@ serial console output (boot + autoinstall), uploaded regardless of outcome
 since there's no VNC/monitor access on the runner to inspect a stuck build
 interactively.
 
-The baked `nke-agent` is built from the tagged commit's `agent/` source, so
+The baked `nvke-agent` is built from the tagged commit's `agent/` source, so
 the agent version is fixed by the ref the workflow runs on.
 
 ## First boot (cloud-init)
@@ -552,10 +552,10 @@ write_files:
 
 `nke-spire-configure.service` reads the files after cloud-init writes them, renders
 `/etc/spire-agent/agent.conf`, and only then does `spire-agent` start.
-`nke-agent` starts after the workload API socket exists.
+`nvke-agent` starts after the workload API socket exists.
 
 The site SPIRE server must also register a workload entry for root
-`nke-agent` (unix attestor, uid 0) and a `/nke-service/...` identity for
+`nvke-agent` (unix attestor, uid 0) and a `/nke-service/...` identity for
 whatever will dial the node (controller or `nke-os-image-check`).
 
 ## Conntrack limits
@@ -610,7 +610,7 @@ Override with `--spiffe-socket`. This is the same shape as the controller
 dialer; it is not a SPIRE server. For a local SPIRE, see
 `controller/scripts/dev-env-spire.sh`.
 
-If the node runs `nke-agent --grpc-auth-mode=tls-jwt`, pass `--tls-jwt`:
+If the node runs `nvke-agent --grpc-auth-mode=tls-jwt`, pass `--tls-jwt`:
 
 ```bash
 nke-os-image-check --endpoint 192.0.2.10:15005 --tls-jwt

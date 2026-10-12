@@ -44,7 +44,7 @@ spec:
 
 `tpmEkPubHash` is optional. When present, the provider annotates the owning
 CAPI Machine with that host's TPM SPIRE-agent identity. CWE uses the annotation
-to create the mTLS workload identity for `nke-agent`.
+to create the mTLS workload identity for `nvke-agent`.
 
 The binding lives in `ProvisionedMachine.spec.providerID`, in the form
 `provisioned://<cluster-name>/<canonical-ip-address>`. The cluster component

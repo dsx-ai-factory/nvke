@@ -191,11 +191,16 @@ func (s *NodeAgentServer) installCalico(version *semver.Version, operatorManifes
 	return nil
 }
 
+const (
+	ovnValuesFilename       = "values-nvke.yaml"
+	legacyOVNValuesFilename = "values-nke.yaml"
+)
+
 // helmValuesFileArgs appends -f flags for standard value files present under chartDir.
 // Later files win, so the chart's defaults go first and NVKE's override last.
 func helmValuesFileArgs(chartDir string) []string {
 	var args []string
-	for _, name := range []string{"values.yaml", "values-images.yaml", "values-production.yaml", "values-single-node-zone.yaml", "values-nke.yaml"} {
+	for _, name := range []string{"values.yaml", "values-images.yaml", "values-production.yaml", "values-single-node-zone.yaml", legacyOVNValuesFilename, ovnValuesFilename} {
 		p := filepath.Join(chartDir, name)
 		if st, err := os.Stat(p); err == nil && !st.IsDir() {
 			args = append(args, "-f", p)
@@ -211,7 +216,12 @@ const ovnRegistryHelmValue = "global.registry"
 // ovnStagedImageRepository reads global.image.repository from the values-nke.yaml bundle.sh wrote,
 // the one place the packaged image's name lives.
 func ovnStagedImageRepository(chartDir string) (string, error) {
-	raw, err := os.ReadFile(filepath.Join(chartDir, "values-nke.yaml"))
+	valuesFile := ovnValuesFilename
+	raw, err := os.ReadFile(filepath.Join(chartDir, valuesFile))
+	if errors.Is(err, os.ErrNotExist) {
+		valuesFile = legacyOVNValuesFilename
+		raw, err = os.ReadFile(filepath.Join(chartDir, valuesFile))
+	}
 	if err != nil {
 		return "", err
 	}
@@ -221,10 +231,10 @@ func ovnStagedImageRepository(chartDir string) (string, error) {
 		}
 	}
 	if err := yaml.Unmarshal(raw, &v); err != nil {
-		return "", fmt.Errorf("parsing values-nke.yaml: %w", err)
+		return "", fmt.Errorf("parsing %s: %w", valuesFile, err)
 	}
 	if !strings.Contains(v.Global.Image.Repository, "/") {
-		return "", fmt.Errorf("values-nke.yaml global.image.repository %q has no registry host", v.Global.Image.Repository)
+		return "", fmt.Errorf("%s global.image.repository %q has no registry host", valuesFile, v.Global.Image.Repository)
 	}
 	return v.Global.Image.Repository, nil
 }
@@ -564,8 +574,12 @@ func dpkgListFiles(ctx context.Context, binPkg string) ([]string, error) {
 }
 
 func ovnHelmChartStaged() bool {
-	_, err := os.Stat(filepath.Join(ovnKubernetesHelmChartDir, "values-nke.yaml"))
-	return err == nil
+	for _, name := range []string{ovnValuesFilename, legacyOVNValuesFilename} {
+		if _, err := os.Stat(filepath.Join(ovnKubernetesHelmChartDir, name)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func helmChartDirFromPackage(ctx context.Context, binPkg string) (string, error) {

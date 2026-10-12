@@ -67,7 +67,7 @@ GIT_HOOKS_DIR := $(shell git rev-parse --git-path hooks 2>/dev/null || echo .git
 
 BIN_DIR ?= $(CURDIR)/bin
 NFPM_BIN ?= $(BIN_DIR)/nfpm-v$(NFPM_VERSION)/nfpm
-AGENT_PACKAGING_DIR := $(abspath ../os-image/packages/nke-agent/packaging)
+AGENT_PACKAGING_DIR := $(abspath ../os-image/packages/nvke-agent/packaging)
 # Optional exact output path for consumers such as the Packer image build.
 DEB_OUTPUT ?=
 
@@ -280,12 +280,12 @@ GOHOSTARCH := $(shell go env GOHOSTARCH)
 agent_cgo = $(if $(and $(filter linux,$(GOHOSTOS)),$(filter $(1),$(GOHOSTARCH))),,CGO_ENABLED=0)
 
 build-amd64:
-	$(call agent_cgo,amd64) GOOS=linux GOARCH=amd64 go build ${LDFLAGS} -o bin/linux_amd64/nke-agent ./cmd/agent/main.go
-	$(call agent_cgo,amd64) GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-X main.version=$(VERSION) $(RELEASE_LDFLAGS)" -o bin/linux_amd64/nke-agent-updater ./cmd/updater/main.go
+	$(call agent_cgo,amd64) GOOS=linux GOARCH=amd64 go build ${LDFLAGS} -o bin/linux_amd64/nvke-agent ./cmd/agent/main.go
+	$(call agent_cgo,amd64) GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-X main.version=$(VERSION) $(RELEASE_LDFLAGS)" -o bin/linux_amd64/nvke-agent-updater ./cmd/updater/main.go
 
 build-arm64:
-	$(call agent_cgo,arm64) GOOS=linux GOARCH=arm64 go build ${LDFLAGS} -o bin/linux_arm64/nke-agent ./cmd/agent/main.go
-	$(call agent_cgo,arm64) GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-X main.version=$(VERSION) $(RELEASE_LDFLAGS)" -o bin/linux_arm64/nke-agent-updater ./cmd/updater/main.go
+	$(call agent_cgo,arm64) GOOS=linux GOARCH=arm64 go build ${LDFLAGS} -o bin/linux_arm64/nvke-agent ./cmd/agent/main.go
+	$(call agent_cgo,arm64) GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-X main.version=$(VERSION) $(RELEASE_LDFLAGS)" -o bin/linux_arm64/nvke-agent-updater ./cmd/updater/main.go
 
 build-all: build-amd64 build-arm64
 build: build-all ## Default build = all arches
@@ -322,7 +322,7 @@ $(NFPM_BIN):
 define build_deb
 	cd "$(AGENT_PACKAGING_DIR)" && ARCH="$(1)" DEB_VERSION="$(DEB_VERSION)" \
 		AGENT_DIR="$(CURDIR)" "$(abspath $(NFPM_BIN))" package -f nfpm.yaml -p deb \
-		-t "$(abspath $(or $(DEB_OUTPUT),bin/nke-agent_$(DEB_VERSION)_$(1).deb))"
+		-t "$(abspath $(or $(DEB_OUTPUT),bin/nvke-agent_$(DEB_VERSION)_$(1).deb))"
 endef
 
 ##@ Debian Packaging
@@ -347,10 +347,10 @@ endef
 # release.
 define assert_dynamic
 	@if [ -z "$(AGENT_SKIP_LINKAGE_CHECK)" ] && command -v file >/dev/null 2>&1; then \
-		linkage=$$(file bin/linux_$(1)/nke-agent); \
+		linkage=$$(file bin/linux_$(1)/nvke-agent); \
 		case "$$linkage" in \
 			*"dynamically linked"*) ;; \
-			*) echo "ERROR: bin/linux_$(1)/nke-agent is not dynamically linked, so"; \
+			*) echo "ERROR: bin/linux_$(1)/nvke-agent is not dynamically linked, so"; \
 			   echo "  'Depends: libc6' in the nfpm spec is wrong for it."; \
 			   echo "  Go disables cgo when cross-compiling, so build the $(1) package"; \
 			   echo "  on a $(1) host, as deb.yml does. Override with"; \

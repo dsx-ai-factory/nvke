@@ -28,7 +28,7 @@ CRD types, and test and development tooling.
                           │                   │ Forge API
                           ▼                   ▼
               ┌──────────────────────┐  ┌─────────────┐
-              │  nke-agent (agent/)  │  │    Forge    │
+              │  nvke-agent (agent/)  │  │    Forge    │
               │  gRPC server on each │  │ (bare-metal │
               │  node, systemd unit  │  │  lifecycle) │
               └──────────────────────┘  └─────────────┘
@@ -83,7 +83,7 @@ they first read the handlers.
 4. The workflow creates Cluster API resources. The configured infrastructure
    provider provisions or adopts the nodes, then the controller bootstraps Kubernetes with
    kubeadm.
-5. The controller dials `nke-agent` on each node over gRPC to drive the node side of
+5. The controller dials `nvke-agent` on each node over gRPC to drive the node side of
    the bootstrap (`internal/agent/client.go`).
 6. The cluster reaches `Ready` and the kubeconfig becomes available.
 
@@ -102,7 +102,7 @@ runs a REST API backed by Postgres, a Temporal worker, and a set of Kubernetes
 reconcilers. Reading only the workflows, or only the reconcilers, gives an
 incomplete picture of what reacts to a change.
 
-## nke-agent
+## nvke-agent
 
 The agent runs as a systemd service on each managed node. It is a **gRPC
 server**: it listens, and the controller dials it

@@ -11,7 +11,7 @@
 
 NVKE records each node's observed agent version, but it has no cluster-scoped
 desired agent configuration or controller that converges nodes to it. APT also
-cannot safely replace the agent from inside `nke-agent.service`: the Debian
+cannot safely replace the agent from inside `nvke-agent.service`: the Debian
 `prerm` stops that service, so systemd can terminate the package transaction.
 
 ## Solution summary
@@ -97,10 +97,10 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     participant Operation as NVKE controller per-node operation
-    participant RPC as nke-agent upgrade RPC
+    participant RPC as nvke-agent upgrade RPC
     participant Systemd as systemd
     participant Updater as Independent updater service
-    participant Agent as nke-agent.service
+    participant Agent as nvke-agent.service
 
     Operation->>RPC: Start target version + NVKE-controller-configured method
     RPC->>RPC: Persist idempotent request and status
@@ -340,9 +340,9 @@ StartNodeAgentRollback(operation_id, upgrade_operation_id)
 `method` is `APT` or `BUNDLE` and is supplied only from NVKE controller
 configuration; it is not cluster API input. The RPCs accept no package name,
 URL, path, install arguments, or command. The Debian package remains named
-`nke-agent`. `InstallPackages` normalizes each package argument by removing an
+`nvke-agent`. `InstallPackages` normalizes each package argument by removing an
 `=version` or `:architecture` qualifier and also recognizes
-`nke-agent_*.deb` paths; it rejects every match.
+`nvke-agent_*.deb` paths; it rejects every match.
 `InstallBundle` rejects the existing `agent` bundle component. Capability
 preflight must not fall back to either generic RPC.
 
@@ -353,13 +353,13 @@ the action, method, previous and target versions, phase, outcome, artifact
 identity, timestamps, and sanitized error.
 
 The RPC atomically writes the request and initial status under
-`/var/lib/nke/agent-upgrades/<operation-id>/`, then runs:
+`/var/lib/nvke/agent-upgrades/<operation-id>/`, then runs:
 
 ```text
-systemctl start --no-block nke-agent-updater@<operation-id>.service
+systemctl start --no-block nvke-agent-updater@<operation-id>.service
 ```
 
-PID 1 starts `nke-agent-updater` in a separate service cgroup. The updater owns
+PID 1 starts `nvke-agent-updater` in a separate service cgroup. The updater owns
 staging, installation, restart, local verification, and local restore. A
 singleton lock prevents overlapping jobs, and atomic status writes make retries
 and updater restarts resumable without depending on the gRPC server process.
@@ -369,7 +369,7 @@ and updater restarts resumable without depending on the gRPC server process.
 Before stopping the agent, resolve and verify the exact target and rollback
 `.deb` files. Install the target noninteractively with `--allow-downgrades`, then
 verify `dpkg-query`, the installed binary version, and
-`nke-agent.service`. The configured repository suite and APT select the node's
+`nvke-agent.service`. The configured repository suite and APT select the node's
 OS release and native architecture; the RPC supplies only the exact version. On
 failure, restore and verify the exact previous package.
 
@@ -377,7 +377,7 @@ failure, restore and verify the exact previous package.
 
 Before stopping the agent, verify the exact bundle and snapshot the current
 binary and agent-owned service configuration. Use a fixed agent-owned entrypoint
-without caller arguments and preserve `/etc/default/nke-agent`. On failure,
+without caller arguments and preserve `/etc/default/nvke-agent`. On failure,
 restore the snapshot, reload systemd, restart the service, and verify the exact
 previous version.
 

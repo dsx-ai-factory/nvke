@@ -561,7 +561,7 @@ if [[ "${FDE}" == true ]]; then
   ensure_bridge_input_rule -p tcp --dport 10179
   sudo sysctl -w net.ipv4.fib_multipath_hash_policy=1 >/dev/null
   # 4. The nico-vms API and file server on 18080: the fleet userData downloads
-  #    nke-agent from http://carbide-pxe.forge:18080/files/agent/nke-agent.
+  #    nvke-agent from http://carbide-pxe.forge:18080/files/agent/nvke-agent.
   ensure_bridge_input_rule -p tcp --dport 18080
   # 5. SPIRE and OIDC, which Tilt port-forwards onto the kind gateway address;
   #    the tenant nodes dial them from the bridge.

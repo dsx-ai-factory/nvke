@@ -14,7 +14,7 @@ Four steps, three owners:
 
 | step | who | produces |
 |---|---|---|
-| 1. create and image the instance | **not NVKE** -- the NICo API, iPXE and cloud-init | a booted host running `nke-agent` |
+| 1. create and image the instance | **not NVKE** -- the NICo API, iPXE and cloud-init | a booted host running `nvke-agent` |
 | 2. `nvkectl bootstrap site` | nvkectl, on the instance | a **vanilla** Kubernetes cluster |
 | 3. this deploy path | `deploy/nvke-deploy.sh`, on the node | the management plane |
 | 4. `nvkectl create cluster` | the site controller itself | tenant clusters |

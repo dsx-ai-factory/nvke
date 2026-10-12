@@ -1,7 +1,7 @@
 # kubeadm cluster bring-up on nico-vms
 
 An advisory end-to-end test that boots two Ubuntu 24.04 VMs through
-[nico-vms](../../nico-sim/README.md), then drives `nke-agent`'s gRPC kubeadm
+[nico-vms](../../nico-sim/README.md), then drives `nvke-agent`'s gRPC kubeadm
 RPCs to run `kubeadm init` on the first VM and join the second to it.
 
 It is a port of the kubeadm builder repository's `cluster-bringup` driver into
@@ -15,9 +15,9 @@ compiles or runs unless you ask for it by name.
 ## What this proves, and what it does not
 
 **Proves.** nico-vms creates two VMs on the host; cloud-init installs an upstream
-Kubernetes stack; **nke-agent** — built from the working tree, not a published
+Kubernetes stack; **nvke-agent** — built from the working tree, not a published
 package — drives `kubeadm init` and one worker join over gRPC; upstream Calico
-installs; every node reports `Ready`. That is functional coverage of nke-agent's
+installs; every node reports `Ready`. That is functional coverage of nvke-agent's
 kubeadm RPCs, which nothing else in this repo has.
 
 **Does not prove.** That NVKE's own packages work. The Kubernetes stack comes from
@@ -27,7 +27,7 @@ allowlist that CI runners cannot reach. Verifying the shipped artifacts stays
 with the GitLab `cluster-bringup` suite, which can reach them and runs the fuller
 matrix (4 VMs, HA etcd, OVN or Calico).
 
-The distinction matters: a green run here means *the cluster nke-agent builds is
+The distinction matters: a green run here means *the cluster nvke-agent builds is
 usable*, not *NVKE's packaging is good*.
 
 **Not the production CNI path either.** The agent's `InstallCNI` RPC requires an
@@ -39,7 +39,7 @@ manifests directly rather than impersonating one.
 | Path | Purpose |
 |---|---|
 | `internal/nicovms/` | Launches the `nico-vms` binary as a subprocess and wraps its instance HTTP API (`CreateNode`/`CreateNodes`/`DeleteNode` with ready-state polling). The only place that talks to nico-vms; no nico-vms internal package is imported. |
-| `internal/cluster/` | gRPC client for `nke-agent`: `ExecuteInit`, `ExecuteJoin`, `GetJoinStrings`, `WaitForPhase`, `WaitForAgent`, `FetchKubeconfig`, and `RunScript` for on-failure diagnostics. |
+| `internal/cluster/` | gRPC client for `nvke-agent`: `ExecuteInit`, `ExecuteJoin`, `GetJoinStrings`, `WaitForPhase`, `WaitForAgent`, `FetchKubeconfig`, and `RunScript` for on-failure diagnostics. |
 | `internal/cloudinit/` | Renders `testdata/user-data.yml.tmpl` by substituting the `__KEY__` placeholders. Every placeholder must resolve or `Render` fails. |
 | `testdata/user-data.yml.tmpl` | Per-VM cloud-init. The install block is a `__K8S_PROVISION__` placeholder filled by `internal/cloudinit`; it also drops the `--disable-mtls` systemd override. |
 | `scripts/setup-ci-host.sh` | Prepares a CI runner for native bridge mode: QEMU/libvirt packages, the bridge, dnsmasq, `ip_forward`, NAT and FORWARD rules. A trimmed lift of nico-vms' `setup-linux.sh` networking half. |
@@ -111,7 +111,7 @@ run this suite — nico-vms' libvirt backend is Linux-only.
 
 4. **Nothing from NVIDIA.** In the default `community` mode the VMs fetch
    Kubernetes from `dl.k8s.io`, containerd/runc/CNI-plugins/crictl from GitHub
-   releases, and Calico from `raw.githubusercontent.com`. `nke-agent` is built
+   releases, and Calico from `raw.githubusercontent.com`. `nvke-agent` is built
    locally and served to the guests over the bridge. No NVIDIA network needed.
 
 ```bash
@@ -263,7 +263,7 @@ sudo iptables -t nat -I POSTROUTING 1 \
 ```
 
 **`dial tcp <ip>:50051: connect: connection refused`.** The VM booted but
-`nke-agent` is not serving yet — cloud-init is still running its `apt-get
+`nvke-agent` is not serving yet — cloud-init is still running its `apt-get
 install`. The driver polls for this (`WaitForAgent`), so a persistent refusal
 means cloud-init failed. Read the VM's console log, then its
 `/var/log/cloud-init-output.log`.

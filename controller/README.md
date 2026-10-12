@@ -95,7 +95,7 @@ template value `.Files`. Each entry contains its path, owner, permissions,
 encoding, and content in the representation declared by that encoding.
 Compatible profiles append those entries to their existing cloud-init
 `write_files` list and quote the metadata and content. CAPI serializes the same
-file model directly. In every mode, both paths replace `/etc/default/nke-agent`
+file model directly. In every mode, both paths replace `/etc/default/nvke-agent`
 with a plain-text configuration containing the node-agent port. External mTLS
 also writes the CA to `/etc/nke/controller-ca.crt` with `encoding: b64` and adds
 `--controller-client-ca-bundle=/etc/nke/controller-ca.crt` to the agent

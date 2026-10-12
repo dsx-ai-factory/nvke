@@ -5,15 +5,15 @@
 set -e
 
 echo "Installing NVKE Agent..."
-systemctl daemon-reload
 
-systemctl enable nke-agent
-if [ ! -f /etc/default/nke-agent ]; then
-  echo 'AGENT_ARGS=""' >/etc/default/nke-agent
-fi
+/usr/local/lib/nvke-agent/migrate-agent-paths.sh
+
+systemctl daemon-reload
+# An old enablement link points at the removed unit until the alias is recreated.
+systemctl enable --force nvke-agent
 # Image builds enable the service but defer startup until instance identity exists.
-if [ "${NKE_AGENT_SKIP_START:-0}" != 1 ]; then
-  systemctl restart nke-agent
+if [ "${NVKE_AGENT_SKIP_START:-${NKE_AGENT_SKIP_START:-0}}" != 1 ]; then
+  systemctl restart nvke-agent
 fi
 
 echo "NVKE Services installed."

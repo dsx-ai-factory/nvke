@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package agentupgrade contains the durable contract shared by nke-agent and
+// Package agentupgrade contains the durable contract shared by nvke-agent and
 // the out-of-process node-agent updater.
 package agentupgrade
 
@@ -11,9 +11,9 @@ import "time"
 type Method string
 
 const (
-	// MethodAPT installs an exact nke-agent Debian package version.
+	// MethodAPT installs an exact nvke-agent Debian package version.
 	MethodAPT Method = "apt"
-	// MethodBundle installs an exact agent bundle resolved by nke-agent.
+	// MethodBundle installs an exact agent bundle resolved by nvke-agent.
 	MethodBundle Method = "bundle"
 )
 
@@ -43,13 +43,14 @@ const (
 	PhaseFailedNotRestored Phase = "FailedNotRestored"
 )
 
-// Operation is persisted below /var/lib/nke/agent-upgrades and is intentionally
-// independent of the nke-agent state file so it survives service replacement.
+// Operation is persisted below /var/lib/nvke/agent-upgrades and is intentionally
+// independent of the nvke-agent state file so it survives service replacement.
 type Operation struct {
 	ID                     string    `json:"id"`
 	Action                 Action    `json:"action"`
 	TargetVersion          string    `json:"targetVersion"`
 	PreviousVersion        string    `json:"previousVersion"`
+	PreviousPackageName    string    `json:"previousPackageName,omitempty"`
 	PreviousPackageVersion string    `json:"previousPackageVersion,omitempty"`
 	Method                 Method    `json:"method"`
 	ArtifactURL            string    `json:"artifactUrl,omitempty"`

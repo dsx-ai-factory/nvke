@@ -13,10 +13,13 @@ import (
 	"github.com/spiffe/go-spiffe/v2/svid/jwtsvid"
 )
 
-// ControllerAudience is the audience the agent requests for its JWT-SVID and
-// which the controller requires to be the token's only audience. The
-// controller pins the same string as auth.NodeAgentAudience.
-const ControllerAudience = "nke-controller"
+// ControllerAudience is the renamed JWT-SVID audience. A compatible controller
+// accepts it as the token's only audience; old controllers require the legacy value.
+const ControllerAudience = "nvke-controller"
+
+// LegacyControllerAudience keeps new agents compatible with old controllers
+// until the controller selects the renamed audience in the node's env file.
+const LegacyControllerAudience = "nke-controller"
 
 // DefaultRefreshBefore is how far ahead of expiry a cached token is replaced,
 // leaving room for a handshake that starts just before the boundary.
@@ -66,17 +69,20 @@ type CachingTokenSource struct {
 
 // NewCachingTokenSource returns a token source over the workload API and the
 // DSX Identity exchange.
-func NewCachingTokenSource(fetchSVID FetchSVIDFunc, exchanger Exchanger) (*CachingTokenSource, error) {
+func NewCachingTokenSource(fetchSVID FetchSVIDFunc, exchanger Exchanger, audience string) (*CachingTokenSource, error) {
 	if fetchSVID == nil {
 		return nil, errors.New("node-agent token source requires a jwt-svid source")
 	}
 	if exchanger == nil {
 		return nil, errors.New("node-agent token source requires a token exchanger")
 	}
+	if audience != ControllerAudience && audience != LegacyControllerAudience {
+		return nil, fmt.Errorf("unsupported controller audience %q", audience)
+	}
 	return &CachingTokenSource{
 		fetchSVID:     fetchSVID,
 		exchanger:     exchanger,
-		audience:      ControllerAudience,
+		audience:      audience,
 		refreshBefore: DefaultRefreshBefore,
 		now:           time.Now,
 	}, nil

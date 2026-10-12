@@ -1,6 +1,6 @@
 # nke-cni-ovn
 
-Builds the two Debian packages `nke-agent` installs when it sets up OVN:
+Builds the two Debian packages `nvke-agent` installs when it sets up OVN:
 
 | Package | Contents | Installed to |
 |---|---|---|
@@ -8,12 +8,12 @@ Builds the two Debian packages `nke-agent` installs when it sets up OVN:
 | `nke-cni-ovn-images-<stream>` | `ovn-kube-ubuntu`, as one docker-archive | `/usr/lib/nke/cni-ovn/<stream>/`, imported into containerd by `postinst` |
 
 `provision.sh` stages both into the image under `/usr/lib/nke/debs` as a local
-apt repo. Nothing is installed at bake time: `nke-agent` installs them by name
+apt repo. Nothing is installed at bake time: `nvke-agent` installs them by name
 at cluster create. The build machinery is shared with `cni-calico` in
 [`../cni-common/`](../cni-common/README.md); this directory holds only what is
 OVN's: `bundle.sh`, the charts spec and the lock.
 
-## The contract with nke-agent
+## The contract with nvke-agent
 
 `agent/internal/agent/cni.go` asks apt for `nke-cni-ovn-charts-<stream>` and
 `nke-cni-ovn-images-<stream>`, where `<stream>` is the request's version or

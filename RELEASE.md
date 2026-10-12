@@ -217,7 +217,7 @@ what a build of this commit ought to select.
 | Artifact | Document | Subject granularity | Where |
 |---|---|---|---|
 | `nvkectl-<os>-<arch>` | `nvkectl-<os>-<arch>.spdx.json` | Go modules, from the binary's embedded build info | GitHub Release asset |
-| `nke-agent_<version>_<arch>.deb` | `nke-agent_<version>_<arch>.spdx.json` | Go modules, from the binary inside the package | GitHub Release asset |
+| `nvke-agent_<version>_<arch>.deb` | `nvke-agent_<version>_<arch>.spdx.json` | Go modules, from the binary inside the package | GitHub Release asset |
 | `nke-node-{fde,non-fde}-ubuntu-<rel>-<arch>.qcow2` | `nke-node-…-<arch>.spdx.json` | dpkg packages, from the image's own package database | GitHub Release asset |
 | `nke-controller` image | `controller-sbom-linux-<arch>.spdx.json` | image contents, scanned from the pushed image | workflow artifact on the **Image NVCR** run |
 | `cluster-api-provider-provisioned` image | `cluster-api-provider-provisioned-sbom-linux-<arch>.spdx.json` | image contents, scanned from the pushed image | workflow artifact on the **Image Provisioned NVCR** run |

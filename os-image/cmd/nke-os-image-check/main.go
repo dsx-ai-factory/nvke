@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// nke-os-image-check probes an nke-agent endpoint over SPIFFE mTLS.
+// nke-os-image-check probes an nvke-agent endpoint over SPIFFE mTLS.
 package main
 
 import (
@@ -29,7 +29,7 @@ func run(args []string) int {
 	fs := flag.NewFlagSet("nke-os-image-check", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	versionFlag := fs.Bool("version", false, "Print the version and exit")
-	endpoint := fs.String("endpoint", "", "nke-agent host or host:port (default port 15005)")
+	endpoint := fs.String("endpoint", "", "nvke-agent host or host:port (default port 15005)")
 	socket := fs.String("spiffe-socket", check.DefaultSPIFFESocket, "SPIFFE workload API address")
 	trustDomain := fs.String("expect-trust-domain", "", "If set, require the local SVID to be in this trust domain")
 	tlsJWT := fs.Bool("tls-jwt", false, "Expect an NKEAuth record, matching an agent run with --grpc-auth-mode=tls-jwt")
@@ -75,6 +75,6 @@ func run(args []string) int {
 	if result.AuthRecord {
 		attrs = append(attrs, "auth_record", true, "unverified_auth_subject", result.AuthSubject)
 	}
-	slog.Info("nke-agent reachable", attrs...)
+	slog.Info("nvke-agent reachable", attrs...)
 	return 0
 }

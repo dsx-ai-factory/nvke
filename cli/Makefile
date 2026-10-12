@@ -162,9 +162,9 @@ test-e2e-bootstrap: build
 	./e2e/bootstrap/run.sh
 
 # Fake-node fixture for the bootstrap e2e suite: nerdctl containers running
-# nke-agent, standing in for pre-provisioned hardware. cli/e2e/bootstrap/substrate
+# nvke-agent, standing in for pre-provisioned hardware. cli/e2e/bootstrap/substrate
 # is a thin derivation of controller/hack/capd-kindest-node's node image
-# (nke-agent, SPIRE/TPM plumbing, kubeadm/reboot shims and registry mirrors
+# (nvke-agent, SPIRE/TPM plumbing, kubeadm/reboot shims and registry mirrors
 # stay a single source of truth there) plus a small Go package that brings the
 # containers up, waits for the agent, and tears them down — see
 # e2e/bootstrap/substrate/substrate.go. `nodes-up`/`nodes-down` are also
@@ -175,7 +175,7 @@ CAPD_CNI_CHARTS_DEB_PATH ?=
 CAPD_CNI_IMAGES_DEB_PATH ?=
 CAPD_HELM_DEB_PATH ?=
 
-# Builds nke-agent from this checkout's own agent/ module rather than
+# Builds nvke-agent from this checkout's own agent/ module rather than
 # downloading a published bundle. The image gets no bundle server. The E2E
 # supplies local OVN chart, image, and Helm packages for the controller's post-init CNI
 # path. A no-op once the image exists locally.

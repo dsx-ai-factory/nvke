@@ -24,11 +24,11 @@ for the same reason — OVN runs Open vSwitch on the host, and the agent checks
 for ovs-vsctl before helm. Both were observed on real Forge hardware before
 they were read out of the agent source.
 
-nke-agent is deliberately absent, for the reason spire-agent is. The image
+nvke-agent is deliberately absent, for the reason spire-agent is. The image
 builds it as a .deb from this checkout's agent/ source at bake time and
 installs it with dpkg, so its version is the checkout's `git describe` and it
 is the build under qualification (os-image/AGENTS.md). The apt repository
-publishes its own nke-agent, and installing that unpinned would swap the
+publishes its own nvke-agent, and installing that unpinned would swap the
 component being qualified for whichever one the suite currently holds, without
 the run saying so. Today dpkg keeps the baked build because a bake version
 sorts above a release tag, so the install was a no-op that would have stopped
@@ -73,9 +73,9 @@ apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y nke-kubeadm-distro-{{ .KubernetesVersion }}
 DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-{{ .CNIVersion }} nke-cni-ovn-charts-{{ .CNIVersion }}
 DEBIAN_FRONTEND=noninteractive apt-get install -y openvswitch-switch
-printf 'AGENT_ARGS="{{ .AgentArgs }}"\n' > /etc/default/nke-agent
+printf 'AGENT_ARGS="{{ .AgentArgs }}"\n' > /etc/default/nvke-agent
 sysctl --system
 systemctl daemon-reload
-systemctl restart nke-agent.service
+systemctl restart nvke-agent.service
 systemctl restart procps
 touch /run/cloud-init.done

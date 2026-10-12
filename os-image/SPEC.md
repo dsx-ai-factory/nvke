@@ -4,7 +4,7 @@
 
 This is the contract an OS image must satisfy for NVKE to manage a node.
 It is **not** a cluster-ready Kubernetes image: kubeadm and GPU drivers are
-installed later through `nke-agent`. The image includes the Calico manifests
+installed later through `nvke-agent`. The image includes the Calico manifests
 package used during bootstrap.
 
 The in-tree Packer recipe (`packer/`) is one implementation of this contract,
@@ -18,9 +18,9 @@ TODO:  Need to refine the requirements around spire-agent below
 |---|---|
 | OS | Ubuntu 26.04 LTS by default, or 24.04 LTS with `UBUNTU_RELEASE=24.04.5`; both are published. `linux/amd64` and `linux/arm64` both build both variants (`make os-image-fde ARCH=arm64`), each on a runner of its own architecture under KVM. See [README.md](README.md#build-the-os-image). |
 | Kernel | Ubuntu's NVIDIA-tuned kernel flavor (`linux-nvidia` on amd64, `linux-nvidia-64k` on arm64), not the generic default — set via autoinstall's `kernel.package` (`cidata/autoinstall-lvm.pkrtpl`), so curtin installs it directly at image-build time instead of the generic kernel ever landing on disk. Matches `node-images`' `nvidia-kernel` role. |
-| `nke-agent` | Built as a Debian package from this repository's `agent/` source at bake time. dpkg owns `/usr/local/bin/nke-agent`, `/usr/local/bin/nke-agent-updater`, and their systemd units. `nke-agent.service` is **enabled**, with startup deferred until first boot. Listens on TCP **15005**. mTLS is on (no `--disable-mtls` in `/etc/default/nke-agent`). An image-owned systemd drop-in waits for the SPIRE workload API before exec and survives package upgrades. |
-| SPIRE agent | `spire-agent` at `/usr/local/bin/spire-agent`, unit `spire-agent.service` **enabled**. Workload API socket at `unix:///tmp/spire-agent/public/api.sock` (the `nke-agent` default). Installed from the `spire-agent` .deb built at bake time by [`packages/spire-agent/`](packages/spire-agent/), which also owns the two units, the first-boot renderer and its template; `dpkg -S` on any of those paths names that package. |
-| Unix workload attestor | SPIRE `WorkloadAttestor "unix"` so root `nke-agent` can fetch an X.509 SVID. |
+| `nvke-agent` | Built as a Debian package from this repository's `agent/` source at bake time. dpkg owns `/usr/local/bin/nvke-agent`, `/usr/local/bin/nvke-agent-updater`, and their systemd units. `nvke-agent.service` is **enabled**, with startup deferred until first boot. Listens on TCP **15005**. mTLS is on (no `--disable-mtls` in `/etc/default/nvke-agent`). An image-owned systemd drop-in waits for the SPIRE workload API before exec and survives package upgrades. |
+| SPIRE agent | `spire-agent` at `/usr/local/bin/spire-agent`, unit `spire-agent.service` **enabled**. Workload API socket at `unix:///tmp/spire-agent/public/api.sock` (the `nvke-agent` default). Installed from the `spire-agent` .deb built at bake time by [`packages/spire-agent/`](packages/spire-agent/), which also owns the two units, the first-boot renderer and its template; `dpkg -S` on any of those paths names that package. |
+| Unix workload attestor | SPIRE `WorkloadAttestor "unix"` so root `nvke-agent` can fetch an X.509 SVID. |
 | Node attestor | Whichever the instance can use, chosen on first boot: join-token (`NodeAttestor "join_token"`) when cloud-init supplied `SPIRE_JOIN_TOKEN`, TPM (`NodeAttestor "tpm"`, via `/usr/local/lib/spire-agent/tpm_attestor_agent`) otherwise. A site cluster attests its nodes by TPM and mints no join token, so an image that could only do join-token could not join one. This is separate from the FDE variant's use of TPM to seal the disk-encryption key. |
 | DSX IMDS node attestor | `/usr/local/lib/spire-agent/dsx-imds-node-attestor-agent` for the image architecture, installed by the same `spire-agent` package. CAPI user-data selects it by writing `NodeAttestor "dsx_imds"` with `plugin_checksum = "${DSX_IMDS_PLUGIN_CHECKSUM}"`. The first-boot renderer does not select this attestor. |
 | TPM identity tool | `/usr/local/bin/get_tpm_pubhash` for the image architecture. |
@@ -28,7 +28,7 @@ TODO:  Need to refine the requirements around spire-agent below
 | etcd data directory | `/var/lib/etcd` exists at mode `0700`, owned by a system `etcd` user and group created at bake time. kubeadm reuses the directory rather than creating its own `root:root` one, which is what CIS 1.1.12 checks. etcd itself still runs as root from `registry.k8s.io/etcd` as a static pod, so this changes what the node reports, not what etcd can do. |
 | `multipathd` | **Masked** — both `multipathd.service` and its socket. Ubuntu Server's installer leaves multipathd enabled, and with no blacklist it claims Longhorn's iSCSI-exported volumes (they present as `IET,VIRTUAL-DISK`) through device-mapper: `mkfs` then fails with `is apparently in use by the system; will not make a filesystem here` and newly provisioned volumes never format. No NVKE node boots from a multipath-backed disk, so nothing depends on it. Matches `node-images`' `packages` role, which disables the same unit. |
 | Background apt | **Masked** — `apt-daily.timer`, `apt-daily-upgrade.timer`, their services and `unattended-upgrades.service`. Ubuntu runs them a few minutes after first boot; the package job restarts journald, networkd and udevd, and a `systemctl daemon-reload` from kubeadm's kubelet-start phase in that window fails, so the kubelet never starts and the node's init or join is lost. Nodes take updates through a new image, never in place. |
-| Unit ordering | `nke-spire-configure.service` before `spire-agent.service` before `nke-agent.service`. `nke-agent` waits for the workload API socket before exec. |
+| Unit ordering | `nke-spire-configure.service` before `spire-agent.service` before `nvke-agent.service`. `nvke-agent` waits for the workload API socket before exec. |
 | First-boot renderer | `/usr/lib/nke/spire-configure.sh`, driven by `nke-spire-configure.service`. Renders `/etc/spire-agent/agent.conf` from instance identity. Does nothing unless `/etc/nke/spire.env` exists. |
 | Plugin checksum | `/etc/spire-agent/spire-agent.env` holds `TPM_PLUGIN_CHECKSUM` and `DSX_IMDS_PLUGIN_CHECKSUM`, written by the .deb's postinst from the plugins it installed. `spire-agent.service` runs with `-expandEnv`, so an `agent.conf` that cloud-init wrote with the literal `${TPM_PLUGIN_CHECKSUM}` or `${DSX_IMDS_PLUGIN_CHECKSUM}` resolves against this image's own plugins. The two config paths are exclusive: a profile supplies `agent.conf` and no `/etc/nke/spire.env`, or it supplies `/etc/nke/spire.env` and the renderer writes `agent.conf`. |
 | Conntrack limits | `conntrack-tune.service` **enabled** (`WantedBy=sysinit.target`), ordered after `systemd-modules-load.service` and before `systemd-sysctl.service`. At every boot `/usr/lib/nke/configure-conntrack.sh` writes `/run/sysctl.d/10-nke-conntrack.conf`, raising `net.netfilter.nf_conntrack_max` and `nf_conntrack_buckets` to `min(max(RAM_MiB × 64, 1024), 600000)` wherever that is above the kernel's value, and `systemd-sysctl` applies it. `/etc/sysctl.d/10-nke-conntrack-timeouts.conf` sets `nf_conntrack_tcp_timeout_time_wait` to 60s. `/etc/modules-load.d/nf_conntrack.conf` loads `nf_conntrack` at boot. See [Conntrack limits](#conntrack-limits). |
@@ -129,8 +129,8 @@ drop it.
 
 A worked `#cloud-config` is in [README.md](README.md).
 
-After a successful `nke-agent` start, the image touches
-`/var/lib/spire-agent/.nke-attested` and subsequent boots omit `-joinToken`
+After a successful `nvke-agent` start, the image touches
+`/var/lib/spire-agent/.nvke-attested` and subsequent boots omit `-joinToken`
 (the token is single-use).
 
 ## Must have (FDE variant)
@@ -162,14 +162,14 @@ parity is intentional.
 
 ## Identity rules (runtime)
 
-These are enforced by `nke-agent`, not by the image:
+These are enforced by `nvke-agent`, not by the image:
 
 - Client and agent SVIDs share a trust domain.
 - The **client** SPIFFE path must start with `/nke-service/` or the agent
   rejects the handshake.
 - The **agent** SVID is whatever this node's SPIRE registration issues. The
   site SPIRE server must have a workload entry for unix uid 0 (root
-  `nke-agent`) parented to the node's agent SPIFFE ID.
+  `nvke-agent`) parented to the node's agent SPIFFE ID.
 
 Join-token attestation and those workload entries are the operator's SPIRE
 server, not this image.
@@ -178,10 +178,10 @@ server, not this image.
 
 | What | Value |
 |---|---|
-| `nke-agent` gRPC | TCP `15005` |
+| `nvke-agent` gRPC | TCP `15005` |
 | SPIFFE workload API | `unix:///tmp/spire-agent/public/api.sock` |
-| Agent state | `/var/lib/nke/state.json` |
-| Agent env | `/etc/default/nke-agent` (`AGENT_ARGS`) |
+| Agent state | `/var/lib/nvke/state.json` |
+| Agent env | `/etc/default/nvke-agent` (`AGENT_ARGS`) |
 | SPIRE config | `/etc/spire-agent/agent.conf` (rendered, not a baked secret) |
 | SPIRE data | `/var/lib/spire-agent` |
 | Conntrack tuning | `/usr/lib/nke/configure-conntrack.sh` writes `/run/sysctl.d/10-nke-conntrack.conf` (logs to `journalctl -u conntrack-tune`); TIME_WAIT in `/etc/sysctl.d/10-nke-conntrack-timeouts.conf` |

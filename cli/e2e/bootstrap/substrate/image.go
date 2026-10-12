@@ -86,7 +86,7 @@ func EnsureNodeImage(ctx context.Context, cfg Config, log Logf) (string, error) 
 		return "", fmt.Errorf(
 			"base image %q not found locally.\n"+
 				"  Build it first with `make -C cli ensure-capd-image`, or set\n"+
-				"  NVKECTL_E2E_BASE_IMAGE to an image that has nke-agent installed\n"+
+				"  NVKECTL_E2E_BASE_IMAGE to an image that has nvke-agent installed\n"+
 				"  as a systemd unit",
 			cfg.BaseImage,
 		)

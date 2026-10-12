@@ -894,3 +894,25 @@ func TestCalicoCRDApplyOrder(t *testing.T) {
 		})
 	}
 }
+
+func TestOVNValuesRenameCompatibility(t *testing.T) {
+	chartDir := t.TempDir()
+	for name, repository := range map[string]string{
+		legacyOVNValuesFilename: "example.test/legacy/ovn",
+		ovnValuesFilename:       "example.test/nvke/ovn",
+	} {
+		body := "global:\n  image:\n    repository: " + repository + "\n"
+		require.NoError(t, os.WriteFile(filepath.Join(chartDir, name), []byte(body), 0o644))
+	}
+	repository, err := ovnStagedImageRepository(chartDir)
+	require.NoError(t, err)
+	assert.Equal(t, "example.test/nvke/ovn", repository)
+	assert.Equal(t, []string{
+		"-f", filepath.Join(chartDir, legacyOVNValuesFilename),
+		"-f", filepath.Join(chartDir, ovnValuesFilename),
+	}, helmValuesFileArgs(chartDir))
+	require.NoError(t, os.Remove(filepath.Join(chartDir, ovnValuesFilename)))
+	repository, err = ovnStagedImageRepository(chartDir)
+	require.NoError(t, err)
+	assert.Equal(t, "example.test/legacy/ovn", repository)
+}

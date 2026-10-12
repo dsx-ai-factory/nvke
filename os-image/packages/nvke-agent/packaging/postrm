@@ -6,10 +6,10 @@ set -e
 
 case "$1" in
     purge)
-        echo "Purging configuration and logs for nke-agent..."
-        rm -f /etc/default/nke-agent
-        rm -rf /var/log/nke-agent # Replace with your actual log directory if applicable
-        
+        echo "Purging configuration and logs for nvke-agent..."
+        rm -f /etc/default/nvke-agent
+        rm -rf /var/log/nvke-agent # Replace with your actual log directory if applicable
+
         # Cleanup systemd symlinks
         systemctl daemon-reload
         ;;

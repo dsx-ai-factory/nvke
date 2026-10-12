@@ -127,7 +127,7 @@ func TestInstallCNIError(t *testing.T) {
 			name:       "an agent without the RPC names the version needed",
 			err:        status.Error(codes.Unimplemented, "unknown method InstallCNI"),
 			wantType:   "AgentTooOld",
-			wantSubstr: "nke-agent 0.2.0 or later",
+			wantSubstr: "nvke-agent 0.2.0 or later",
 		},
 		{
 			name:     "a missing charts package is permanent",

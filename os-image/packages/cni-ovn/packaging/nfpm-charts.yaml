@@ -4,7 +4,7 @@
 # nfpm spec for nke-cni-ovn-charts-<stream>. build-deb.sh exports
 # PACKAGE_NAME, STREAM, DEB_REVISION, ARCH, SRC and IMAGES_PACKAGE.
 #
-# The chart is unpacked, not shipped as a tgz: nke-agent runs helm on
+# The chart is unpacked, not shipped as a tgz: nvke-agent runs helm on
 # /etc/dgx/ovn-kubernetes when values-nke.yaml is there (ovnHelmChartStaged in
 # agent/internal/agent/cni.go), else on the directory of the first Chart.yaml
 # that dpkg-query -L lists for this package.
@@ -21,7 +21,7 @@ mtime: "2026-01-01T00:00:00Z"
 description: |
   ovn-kubernetes ${STREAM} Helm chart for NVKE nodes
   The public github.com/ovn-kubernetes/ovn-kubernetes chart, unpacked to
-  /etc/dgx/ovn-kubernetes, where nke-agent runs helm on it with
+  /etc/dgx/ovn-kubernetes, where nvke-agent runs helm on it with
   values-nke.yaml when it installs the CNI. The container image ships
   separately in ${IMAGES_PACKAGE}; install both for a node with no registry
   access.

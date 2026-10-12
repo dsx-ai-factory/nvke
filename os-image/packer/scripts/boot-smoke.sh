@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Smoke test: boot a qcow2 the non-FDE build produced and confirm it comes up
-# clean (cloud-init completes, SSH answers, nke-agent and spire-agent units
+# clean (cloud-init completes, SSH answers, nvke-agent and spire-agent units
 # are installed and enabled, conntrack-tune.service sized the conntrack
-# limits; see check-conntrack.sh). Does not exercise SPIRE/nke-agent against a
+# limits; see check-conntrack.sh). Does not exercise SPIRE/nvke-agent against a
 # real server -- just proves the image boots on its own.
 #
 # QCOW defaults to the single *.qcow2 under output-non-fde/ (its filename
@@ -141,7 +141,7 @@ systemctl is-active lvm-growth-firstboot.service
 root_bytes=$(df -B1 --output=size / | tail -n 1 | tr -d ' ')
 minimum_root_bytes=$((target_disk_bytes * 80 / 100))
 test "${root_bytes}" -ge "${minimum_root_bytes}"
-systemctl is-enabled nke-agent.service
+systemctl is-enabled nvke-agent.service
 systemctl is-enabled spire-agent.service
 systemctl is-enabled nke-spire-configure.service
 # multipathd must stay masked, both units: it races Longhorn for newly
@@ -162,18 +162,18 @@ fi
 for unit in apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service; do
   test "$(systemctl is-enabled "${unit}")" = masked
 done
-test -x /usr/local/bin/nke-agent
-test -x /usr/local/bin/nke-agent-updater
+test -x /usr/local/bin/nvke-agent
+test -x /usr/local/bin/nvke-agent-updater
 # The mode bits say nothing about whether the binary runs: -version exits 0
 # only if it matches the image's architecture and resolves its libraries.
-/usr/local/bin/nke-agent -version
-/usr/local/bin/nke-agent-updater -version
-dpkg-query -W -f='${Status}\n' nke-agent | grep -Fxq 'install ok installed'
-for path in /usr/local/bin/nke-agent /usr/local/bin/nke-agent-updater \
-  /etc/systemd/system/nke-agent.service /etc/systemd/system/nke-agent-updater@.service; do
-  test "$(dpkg-query -S "${path}" | cut -d: -f1)" = nke-agent
+/usr/local/bin/nvke-agent -version
+/usr/local/bin/nvke-agent-updater -version
+dpkg-query -W -f='${Status}\n' nvke-agent | grep -Fxq 'install ok installed'
+for path in /usr/local/bin/nvke-agent /usr/local/bin/nvke-agent-updater \
+  /etc/systemd/system/nvke-agent.service /etc/systemd/system/nvke-agent-updater@.service; do
+  test "$(dpkg-query -S "${path}" | cut -d: -f1)" = nvke-agent
 done
-systemctl cat nke-agent.service | grep -Fx 'ExecStartPre=/usr/lib/nke/wait-spiffe-socket.sh'
+systemctl cat nvke-agent.service | grep -Fx 'ExecStartPre=/usr/lib/nke/wait-spiffe-socket.sh'
 test -x /usr/local/bin/spire-agent
 test -x /usr/local/lib/spire-agent/tpm_attestor_agent
 test -x /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent

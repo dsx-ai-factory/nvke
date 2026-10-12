@@ -202,12 +202,12 @@ guest_diagnostics() {
         set +e
         echo "=== cloud-init ==="; cloud-init status --long 2>&1
         echo "=== cloud-init-output.log (last 200) ==="; tail -n 200 /var/log/cloud-init-output.log 2>&1
-        echo "=== units ==="; systemctl --no-pager --no-legend list-units "nke-agent*" "spire-agent*" kubelet containerd 2>&1
-        echo "=== /etc/default/nke-agent ==="; cat /etc/default/nke-agent 2>&1
-        echo "=== nke-agent binary ==="; ls -l /usr/local/bin/nke-agent 2>&1; /usr/local/bin/nke-agent -version 2>&1
+        echo "=== units ==="; systemctl --no-pager --no-legend list-units "nvke-agent*" "spire-agent*" kubelet containerd 2>&1
+        echo "=== /etc/default/nvke-agent ==="; cat /etc/default/nvke-agent 2>&1
+        echo "=== nvke-agent binary ==="; ls -l /usr/local/bin/nvke-agent 2>&1; /usr/local/bin/nvke-agent -version 2>&1
         echo "=== listening ==="; ss -ltnp 2>&1
         echo "=== network ==="; ip -brief address 2>&1; ip route show 2>&1; cat /etc/resolv.conf 2>&1
-        echo "=== journal: nke-agent spire-agent kubelet containerd (last 400) ==="; journalctl --no-pager -n 400 -u nke-agent -u spire-agent -u kubelet -u containerd 2>&1
+        echo "=== journal: nvke-agent spire-agent kubelet containerd (last 400) ==="; journalctl --no-pager -n 400 -u nvke-agent -u spire-agent -u kubelet -u containerd 2>&1
         echo "=== kubeadm ==="; ls -la /etc/kubernetes 2>&1; cat /etc/kubernetes/kubelet.conf >/dev/null 2>&1 && echo kubelet.conf present
         echo "=== disk ==="; df -h / 2>&1; lsblk -o NAME,TYPE,FSTYPE,SIZE,MOUNTPOINTS 2>&1
         echo "=== dmesg (last 60) ==="; dmesg 2>&1 | tail -n 60
@@ -382,8 +382,8 @@ case "$(uname -m)" in
 esac
 
 # ── The agent the tenant nodes run ──────────────────────────────────────────
-# The OS profile's userData apt-installs nke-agent from the bundle server, then
-# replaces it with http://carbide-pxe.forge:18080/files/node-agent/nke-agent
+# The OS profile's userData apt-installs nvke-agent from the bundle server, then
+# replaces it with http://carbide-pxe.forge:18080/files/node-agent/nvke-agent
 # when that URL answers -- and silently keeps the packaged one otherwise. Build
 # it from this checkout and stage it at the path the template names. The file
 # root is set explicitly: the default sits beside the database in .dev/, which
@@ -393,13 +393,13 @@ export NICO_SIM_FILES_DIR="${NICO_SIM_DIR}/var/files"
 # matching release. Keep this name in step with nicoVMSOSProfile in
 # test/e2e/tenant_test.go.
 NODEPOOL_RELEASE="nvke-nico-vms-24.04-${host_arch}-fde"
-AGENT_URL_PATH="$(grep -oE 'files/[a-z-]+/nke-agent' "${NKE_CONTROLLER_RELEASES_DIR}/${NODEPOOL_RELEASE}-nodepoolrelease.yaml" | head -1)"
-[[ -n "${AGENT_URL_PATH}" ]] || fail "${NODEPOOL_RELEASE} no longer downloads nke-agent from /files/"
-log "building nke-agent from ${WORKSPACE_ROOT}/agent"
+AGENT_URL_PATH="$(grep -oE 'files/[a-z-]+/nvke-agent' "${NKE_CONTROLLER_RELEASES_DIR}/${NODEPOOL_RELEASE}-nodepoolrelease.yaml" | head -1)"
+[[ -n "${AGENT_URL_PATH}" ]] || fail "${NODEPOOL_RELEASE} no longer downloads nvke-agent from /files/"
+log "building nvke-agent from ${WORKSPACE_ROOT}/agent"
 make -C "${WORKSPACE_ROOT}/agent" "build-${host_arch}" >"${STATE_DIR}/agent-build.log" 2>&1 ||
-  { tail -n 50 "${STATE_DIR}/agent-build.log" >&2; fail "building nke-agent failed"; }
-install -D -m 0755 "${WORKSPACE_ROOT}/agent/bin/linux_${host_arch}/nke-agent" "${NICO_SIM_FILES_DIR}/${AGENT_URL_PATH#files/}"
-log "staged nke-agent for the tenant nodes: $(git -C "${WORKSPACE_ROOT}" describe --match 'agent/v*' --tags --always 2>/dev/null || echo unknown)"
+  { tail -n 50 "${STATE_DIR}/agent-build.log" >&2; fail "building nvke-agent failed"; }
+install -D -m 0755 "${WORKSPACE_ROOT}/agent/bin/linux_${host_arch}/nvke-agent" "${NICO_SIM_FILES_DIR}/${AGENT_URL_PATH#files/}"
+log "staged nvke-agent for the tenant nodes: $(git -C "${WORKSPACE_ROOT}" describe --match 'agent/v*' --tags --always 2>/dev/null || echo unknown)"
 
 # ── The node image the tenant VMs boot ──────────────────────────────────────
 # Set NKE_E2E_OS_IMAGE_TAG to pin one image. Unset, the newest published one
@@ -661,7 +661,7 @@ done
 kubectl -n capnico-system rollout status deployment/controller-manager --timeout=5m
 curl -fsS --max-time 5 http://localhost:18080/healthz >/dev/null || fail "nico-vms does not answer on localhost:18080"
 curl -fsS --max-time 5 "http://localhost:18080/${AGENT_URL_PATH}" >/dev/null ||
-  fail "nico-vms does not serve the branch-built nke-agent at /${AGENT_URL_PATH}"
+  fail "nico-vms does not serve the branch-built nvke-agent at /${AGENT_URL_PATH}"
 log "management plane is up: the controller, CAPNICo and nico-vms all answer"
 
 # ── The suite ───────────────────────────────────────────────────────────────

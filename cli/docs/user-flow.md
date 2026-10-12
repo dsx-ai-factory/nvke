@@ -9,7 +9,7 @@ below is on `main`; the steps the CLI does not cover are marked.
 | Command | What it does | Status |
 |---|---|---|
 | `nvkectl generate sitespec <name> --nodes hosts.csv` | Writes a site spec for `bootstrap site` from a node CSV. `--set path=value` fills in what the CSV does not carry. | Available |
-| `nvkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running the NVKE controller, has the controller create the site cluster on the spec's hosts through `nke-agent`, writes `<name>.kubeconfig` and `<name>-etcd-encryption-key.json`, tears the Kind cluster down on success. `--dry-run` validates the spec only. | Available |
+| `nvkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running the NVKE controller, has the controller create the site cluster on the spec's hosts through `nvke-agent`, writes `<name>.kubeconfig` and `<name>-etcd-encryption-key.json`, tears the Kind cluster down on success. `--dry-run` validates the spec only. | Available |
 | Fill in the `controllerStack:` section of the site spec | The controller stack install reads it: node architecture, the NICo API, the registry pull secret, the tenant login, and paths to the files that hold the tokens and passwords. `generate sitespec` writes the section with `REPLACE_*` placeholders; the install refuses a placeholder. Not read by `bootstrap site`. | Available |
 | `nvkectl validate sitespec -f sitespec.yaml` | Checks the whole site spec and reports by section: the bootstrap fields, then `controllerStack:` with the placeholders still to fill in. `--bootstrap-only` before the section is filled in. | Available |
 | `nvkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
@@ -72,7 +72,7 @@ REGISTRY_API_KEY=... nvkectl bootstrap site -f sitespec.yaml
 
 The command needs nerdctl and containerd on the host — plus `kind`, `helm`,
 `kubectl` and `clusterctl` on `PATH` — and network reach to the hosts'
-`nke-agent` ports. The [README](../README.md#bootstrap-cluster-and-cwe) lists
+`nvke-agent` ports. The [README](../README.md#bootstrap-cluster-and-cwe) lists
 every `NVKECTL_*` variable the command reads. On success it
 writes `my-tier0-site.kubeconfig` and `my-tier0-site-etcd-encryption-key.json`
 in the working directory (`--kubeconfig-out` and `--encryption-key-out` change

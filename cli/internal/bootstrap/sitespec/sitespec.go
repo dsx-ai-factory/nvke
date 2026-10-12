@@ -37,7 +37,7 @@ import (
 )
 
 const (
-	// DefaultNodeAgentPort is the gRPC port nke-agent listens on when the
+	// DefaultNodeAgentPort is the gRPC port nvke-agent listens on when the
 	// site spec does not set cluster.nodeAgentPort.
 	DefaultNodeAgentPort = "15005"
 
@@ -158,7 +158,7 @@ type Cluster struct {
 	PodCidr string `yaml:"podCidr"`
 	// ServiceCidr is the service network CIDR.
 	ServiceCidr string `yaml:"serviceCidr"`
-	// NodeAgentPort is the gRPC port nke-agent listens on. Defaults to
+	// NodeAgentPort is the gRPC port nvke-agent listens on. Defaults to
 	// DefaultNodeAgentPort when unset.
 	NodeAgentPort string `yaml:"nodeAgentPort"`
 	// EtcdEncryption enables encryption at rest for the Kubernetes API's etcd

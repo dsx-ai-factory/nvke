@@ -66,12 +66,12 @@ const (
 	joinFailedStatus      = "join failed"
 	WorkerRole            = "worker"
 	ControlPlaneRole      = "controlplane"
-	UserScriptsDir        = "/usr/local/nke/user-scripts"
-	UploadDir             = "/tmp/nke_uploads"
-	NVKEDir               = "/var/lib/nke"
+	UserScriptsDir        = "/usr/local/nvke/user-scripts"
+	UploadDir             = "/tmp/nvke_uploads"
+	NVKEDir               = "/var/lib/nvke"
 	StateFile             = NVKEDir + "/state.json"
-	NVKEAuditLog          = "/var/log/nke-agent-audit.log"
-	NVKEExecuteScriptsLog = "/var/log/nke-execute-scripts.log"
+	NVKEAuditLog          = "/var/log/nvke-agent-audit.log"
+	NVKEExecuteScriptsLog = "/var/log/nvke-execute-scripts.log"
 	// TODO: May need to adjust the following settings, but for now let's start here and expand as needed
 	ScriptStatusLimit       = 3
 	maxScriptLogOutputBytes = 4096
@@ -196,7 +196,7 @@ type NodeAgentServer struct {
 	// Zero means "use the production constant"
 	// (apiServerReadyPollInterval package-level default).
 	apiServerReadyPollInterval time.Duration
-	// ScriptExecutionLogger logs ExecuteScript/StreamExecuteScript call info and results to e.g. /var/log/nke-execute-scripts.log.
+	// ScriptExecutionLogger logs ExecuteScript/StreamExecuteScript call info and results to e.g. /var/log/nvke-execute-scripts.log.
 	// If nil, script execution is not logged to a dedicated file.
 	ScriptExecutionLogger *slog.Logger
 	// AgentUpgradeStore is separate from NodeStatus because package replacement
@@ -1516,6 +1516,11 @@ func (s *NodeAgentServer) GetKubeconfig(
 	return response, nil
 }
 
+// UpdateNVKERBAC applies the same resources as the legacy UpdateNKERBAC RPC.
+func (s *NodeAgentServer) UpdateNVKERBAC(ctx context.Context, req *pb.UpdateNKERBACRequest) (*pb.UpdateNKERBACResponse, error) {
+	return s.UpdateNKERBAC(ctx, req)
+}
+
 func (s *NodeAgentServer) UpdateNKERBAC(
 	ctx context.Context,
 	req *pb.UpdateNKERBACRequest,
@@ -2090,7 +2095,7 @@ func (s *NodeAgentServer) InstallBundle(
 ) (*pb.InstallBundleResponse, error) {
 	defer logRPCSpan(ctx, "InstallBundle")()
 	if strings.EqualFold(strings.TrimSpace(req.GetName()), "agent") {
-		return nil, status.Error(codes.FailedPrecondition, "use StartNodeAgentUpgrade to replace nke-agent")
+		return nil, status.Error(codes.FailedPrecondition, "use StartNodeAgentUpgrade to replace nvke-agent")
 	}
 	if s.BundleIndexFile == "" {
 		return nil, status.Error(codes.FailedPrecondition, bundleIndexUnconfiguredMessage(s.BundleServerURL))
@@ -2236,7 +2241,7 @@ func (s *NodeAgentServer) InstallCollection(ctx context.Context, req *pb.Install
 		}
 		for _, bundleReq := range profile.Bundles {
 			if strings.EqualFold(strings.TrimSpace(bundleReq.Name), "agent") {
-				return nil, status.Error(codes.FailedPrecondition, "use StartNodeAgentUpgrade to replace nke-agent")
+				return nil, status.Error(codes.FailedPrecondition, "use StartNodeAgentUpgrade to replace nvke-agent")
 			}
 		}
 
@@ -2297,7 +2302,7 @@ func (s *NodeAgentServer) InstallCollection(ctx context.Context, req *pb.Install
 		}
 		for _, pkg := range packages {
 			if isNodeAgentPackageArgument(pkg) {
-				return nil, status.Error(codes.FailedPrecondition, "use StartNodeAgentUpgrade to replace nke-agent")
+				return nil, status.Error(codes.FailedPrecondition, "use StartNodeAgentUpgrade to replace nvke-agent")
 			}
 		}
 
@@ -2350,38 +2355,38 @@ func parseDebCollectionText(txt string) []string {
 func (s *NodeAgentServer) GetSupportBundle(ctx context.Context, req *pb.GetSupportBundleRequest) (*pb.GetSupportBundleResponse, error) {
 	defer logRPCSpan(ctx, "GetSupportBundle")()
 	root := s.RootPath
-	tmpDir, err := os.MkdirTemp("", "nke-support-bundle-")
+	tmpDir, err := os.MkdirTemp("", "nvke-support-bundle-")
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to create support bundle temp dir", "err", err)
 		return nil, status.Errorf(codes.Internal, "failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Copy /var/lib/nke/state.json
+	// Copy /var/lib/nvke/state.json
 	srcState := filepath.Join(root, StateFile)
 	if err := copyFileIntoBundle(srcState, filepath.Join(tmpDir, "state.json")); err != nil {
 		slog.DebugContext(ctx, "state file not included in support bundle", "path", srcState, "err", err)
 	}
 
-	// nke-agent logs via journalctl
-	out, err := s.Runner.Run("journalctl", []string{"-u", "nke-agent", "--no-pager"}, nil)
+	// nvke-agent logs via journalctl
+	out, err := s.Runner.Run("journalctl", []string{"-u", "nvke-agent", "--no-pager"}, nil)
 	if err != nil {
-		slog.DebugContext(ctx, "journalctl nke-agent failed", "err", err)
+		slog.DebugContext(ctx, "journalctl nvke-agent failed", "err", err)
 	} else {
-		if wErr := os.WriteFile(filepath.Join(tmpDir, "nke-agent.journal.log"), out, 0o644); wErr != nil {
-			slog.ErrorContext(ctx, "failed to write nke-agent journal to bundle", "err", wErr)
+		if wErr := os.WriteFile(filepath.Join(tmpDir, "nvke-agent.journal.log"), out, 0o644); wErr != nil {
+			slog.ErrorContext(ctx, "failed to write nvke-agent journal to bundle", "err", wErr)
 		}
 	}
 
-	// /var/lib/nke-agent-audit.log
+	// /var/lib/nvke-agent-audit.log
 	srcAudit := filepath.Join(root, NVKEAuditLog)
 	if err := copyFileIntoBundle(srcAudit, filepath.Join(tmpDir, "nke-audit.log")); err != nil {
 		slog.DebugContext(ctx, "audit log not included in support bundle", "path", srcAudit, "err", err)
 	}
 
-	// /var/log/nke-execute-scripts.log
+	// /var/log/nvke-execute-scripts.log
 	srcExecuteScripts := filepath.Join(root, NVKEExecuteScriptsLog)
-	if err := copyFileIntoBundle(srcExecuteScripts, filepath.Join(tmpDir, "nke-execute-scripts.log")); err != nil {
+	if err := copyFileIntoBundle(srcExecuteScripts, filepath.Join(tmpDir, "nvke-execute-scripts.log")); err != nil {
 		slog.DebugContext(ctx, "execute scripts log not included in support bundle", "path", srcExecuteScripts, "err", err)
 	}
 
@@ -2484,7 +2489,7 @@ func createTarball(dir string) ([]byte, error) {
 		if err != nil {
 			return err
 		}
-		name := filepath.Join("nke-support-bundle", baseDir, rel)
+		name := filepath.Join("nvke-support-bundle", baseDir, rel)
 		if d.IsDir() {
 			return tw.WriteHeader(&tar.Header{Name: name + "/", Mode: 0o755, Typeflag: tar.TypeDir})
 		}

@@ -6,7 +6,7 @@
 # and the "nvkectl bootstrap e2e" CI workflow.
 #
 # Stages:
-#   1. Fake node containers come up and nke-agent answers on each.
+#   1. Fake node containers come up and nvke-agent answers on each.
 #   2. `bootstrap site`, run in the background. The moment its ephemeral Kind
 #      cluster is ready this suite bridges the two container networks and
 #      proves packets cross both ways. The command then deploys Postgres,
@@ -62,7 +62,7 @@ NODE_COUNT="${NVKECTL_E2E_NODES:-3}"
 NODE_PREFIX="${NVKECTL_E2E_NAME_PREFIX:-node}"
 NODE_NETWORK="${NVKECTL_E2E_NETWORK:-nvkectl-e2e-nodes}"
 NODE1="nvkectl-e2e-${NODE_PREFIX}1"
-# The port nke-agent listens on, as the site spec's nodeAgentPort defaults it.
+# The port nvke-agent listens on, as the site spec's nodeAgentPort defaults it.
 NODE_AGENT_PORT=15005
 # SiteSpec generation records the exact journal boundary and expected result
 # for every node here. The later check reads the same file after bootstrap.
@@ -293,13 +293,13 @@ collect_diagnostics() {
     fi
   } > "${DIAGNOSTICS_DIR}/host-network.txt" 2>&1 || true
 
-  log "collecting kubelet, containerd, nke-agent and spire-agent diagnostics from ${NODE_COUNT} fake node(s)"
+  log "collecting kubelet, containerd, nvke-agent and spire-agent diagnostics from ${NODE_COUNT} fake node(s)"
   for ((i = 1; i <= NODE_COUNT; i++)); do
     node="nvkectl-e2e-${NODE_PREFIX}${i}"
     output="${DIAGNOSTICS_DIR}/host-diagnostics-${NODE_PREFIX}${i}.txt"
     {
-      printf '### journalctl: kubelet, containerd, nke-agent, spire-agent\n'
-      nerdctl exec "${node}" journalctl -u kubelet -u containerd -u nke-agent -u spire-agent \
+      printf '### journalctl: kubelet, containerd, nvke-agent, spire-agent\n'
+      nerdctl exec "${node}" journalctl -u kubelet -u containerd -u nvke-agent -u spire-agent \
         --boot --no-pager --output=short-iso-precise --lines=10000 || true
 
       printf '\n### systemctl status\n'
@@ -563,7 +563,7 @@ cross_bridge_reachable() {
 
 # probe_cross_bridge_connectivity checks both directions the moment the cluster
 # is attached; unchecked, a break here surfaces fifteen minutes later as "did
-# not report provisioned". nke-agent does not bind its port until the node has
+# not report provisioned". nvke-agent does not bind its port until the node has
 # an SVID and SPIRE is not deployed yet, so kind -> node is expected to be
 # refused rather than accepted. node -> kind uses the control plane's kubelet
 # port, listening as soon as the cluster is Ready.
@@ -592,7 +592,7 @@ probe_cross_bridge_connectivity() {
 # attach_bootstrap_to_node_network bridges the two networks. Both are nerdctl
 # bridges, and nerdctl's default CNI config sets the firewall plugin's
 # ingressPolicy to "same-bridge", which DROPs any forward from one CNI bridge
-# out another. So controller -> nke-agent and node -> SPIRE VIP are dropped by
+# out another. So controller -> nvke-agent and node -> SPIRE VIP are dropped by
 # default, the controller's NodePreflight times out, and no node attests. Permit exactly
 # this pair of bridges, both directions, at position 1 so it precedes the
 # isolation chain; nothing else on the host becomes reachable.

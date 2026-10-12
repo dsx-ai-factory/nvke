@@ -518,7 +518,7 @@ collect-qcow2-non-fde:
 	$(call collect_qcow2,non-fde)
 
 # Full-disk-encryption variant: boots the Ubuntu Server installer to lay down
-# an LVM-on-LUKS layout via autoinstall, then provisions nke-agent/spire-agent,
+# an LVM-on-LUKS layout via autoinstall, then provisions nvke-agent/spire-agent,
 # plus TPM2 binding scaffolding deferred to first boot. See
 # ../docs/full-disk-encryption.md.
 os-image-fde:

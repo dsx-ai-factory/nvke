@@ -115,13 +115,13 @@ BODY=$(cat <<EOF
         "curl -fsSL -o /etc/apt/keyrings/nke.asc https://nke-prod-assets.s3.us-west-2.amazonaws.com/nvke-apt-public.key",
         "echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://nke-prod-assets.s3.us-west-2.amazonaws.com/nvke-apt-noble nvke-noble main' > /etc/apt/sources.list.d/nke-apt.list",
         "apt-get update",
-        "DEBIAN_FRONTEND=noninteractive apt-get install -y nke-agent nke-kubeadm-distro-${KUBERNETES_VERSION}",
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-agent nke-kubeadm-distro-${KUBERNETES_VERSION}",
         "DEBIAN_FRONTEND=noninteractive apt-get install -y ${CNI_IMAGES_PACKAGE}",
         "DEBIAN_FRONTEND=noninteractive apt-get install -y spire-agent=1.14.1+tpm1.9.0",
-        "printf 'AGENT_ARGS=\"--secure-server-port 15005\"\\n' > /etc/default/nke-agent",
+        "printf 'AGENT_ARGS=\"--secure-server-port 15005\"\\n' > /etc/default/nvke-agent",
         "sysctl --system",
         "systemctl daemon-reload",
-        "systemctl restart nke-agent.service",
+        "systemctl restart nvke-agent.service",
         "systemctl restart procps",
         "touch /run/cloud-init.done"
       ]
@@ -167,13 +167,13 @@ BODY=$(cat <<EOF
         "curl -fsSL -o /etc/apt/keyrings/nke.asc https://nke-prod-assets.s3.us-west-2.amazonaws.com/nvke-apt-public.key",
         "echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://nke-prod-assets.s3.us-west-2.amazonaws.com/nvke-apt-noble nvke-noble main' > /etc/apt/sources.list.d/nke-apt.list",
         "apt-get update",
-        "DEBIAN_FRONTEND=noninteractive apt-get install -y nke-agent nke-kubeadm-distro-${KUBERNETES_VERSION}",
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y nvke-agent nke-kubeadm-distro-${KUBERNETES_VERSION}",
         "DEBIAN_FRONTEND=noninteractive apt-get install -y ${CNI_IMAGES_PACKAGE}",
         "DEBIAN_FRONTEND=noninteractive apt-get install -y spire-agent=1.14.1+tpm1.9.0",
-        "printf 'AGENT_ARGS=\"--secure-server-port 15005\"\\n' > /etc/default/nke-agent",
+        "printf 'AGENT_ARGS=\"--secure-server-port 15005\"\\n' > /etc/default/nvke-agent",
         "sysctl --system",
         "systemctl daemon-reload",
-        "systemctl restart nke-agent.service",
+        "systemctl restart nvke-agent.service",
         "systemctl restart procps",
         "touch /run/cloud-init.done"
       ]

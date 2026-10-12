@@ -12,7 +12,11 @@ BUNDLE_DST=/etc/spire-agent/trust-bundle.pem
 CONF_TMPL=/usr/lib/nke/spire-agent.conf.tmpl
 CONF_DST=/etc/spire-agent/agent.conf
 DROP_IN_DIR=/etc/systemd/system/spire-agent.service.d
-ATTESTED_MARKER=/var/lib/spire-agent/.nke-attested
+ATTESTED_MARKER=/var/lib/spire-agent/.nvke-attested
+# Preserve successful attestation when installing this script on an old image.
+if [ ! -e "$ATTESTED_MARKER" ] && [ -e /var/lib/spire-agent/.nke-attested ]; then
+  mv /var/lib/spire-agent/.nke-attested "$ATTESTED_MARKER"
+fi
 TPM_PLUGIN=/usr/local/lib/spire-agent/tpm_attestor_agent
 
 if [[ ! -f "${ENV_FILE}" ]]; then

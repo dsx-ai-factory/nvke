@@ -29,7 +29,7 @@ install -d -m 0750 -o spire -g spire /var/lib/spire-agent
 chmod 0644 /etc/spire-agent/spire-agent.env
 
 # The TPM node attestor opens /dev/tpmrm0, which udev owns tss:tss. Without
-# this spire-agent crash-loops on "permission denied" and nke-agent never
+# this spire-agent crash-loops on "permission denied" and nvke-agent never
 # starts, because it waits on a workload socket that never opens. The group
 # only exists where the TPM tools are installed.
 if getent group tss >/dev/null 2>&1; then

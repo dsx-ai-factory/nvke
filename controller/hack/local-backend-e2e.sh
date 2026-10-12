@@ -265,8 +265,8 @@ kubectl wait --for=condition=Established crd \
 
 if [[ "${INSTALL_CNI_AFTER_INIT:-false}" == "true" ]]; then
   node_image="${CAPD_NODE_IMAGE:-cwe-capd-kindest-node:local}"
-  agent_args="$(docker run --rm --entrypoint cat "${node_image}" /etc/default/nke-agent)" \
-    || fail "could not read /etc/default/nke-agent from ${node_image}"
+  agent_args="$(docker run --rm --entrypoint cat "${node_image}" /etc/default/nvke-agent)" \
+    || fail "could not read /etc/default/nvke-agent from ${node_image}"
   if grep -qE -- '--bundle-server-url|--index-file-url' <<<"${agent_args}"; then
     fail "${node_image} bakes in a bundle source, so this run would not prove the post-init CNI path: ${agent_args}"
   fi

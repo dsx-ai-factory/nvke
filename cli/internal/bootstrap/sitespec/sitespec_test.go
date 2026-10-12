@@ -109,7 +109,7 @@ func TestSetDefaultsNeverInjectsAPIKey(t *testing.T) {
 func TestDefaultNodeAgentPortMatchesTheAgent(t *testing.T) {
 	const agentDefaultListenPort = "15005"
 	if DefaultNodeAgentPort != agentDefaultListenPort {
-		t.Errorf("DefaultNodeAgentPort = %q, want %q, the port nke-agent listens on "+
+		t.Errorf("DefaultNodeAgentPort = %q, want %q, the port nvke-agent listens on "+
 			"without --secure-server-port", DefaultNodeAgentPort, agentDefaultListenPort)
 	}
 }

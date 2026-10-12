@@ -6,5 +6,6 @@ set -e
 
 # Stop services before removal or upgrade
 if [ -d /run/systemd/system ]; then
-  systemctl stop nke-agent.service || true
+  systemctl stop nvke-agent.service || true
+  systemctl disable nvke-agent.service || true
 fi

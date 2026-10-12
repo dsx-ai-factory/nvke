@@ -6,7 +6,7 @@ This guide walks you through deploying a self-managing site controller cluster �
 
 The process has three steps:
 
-1. [Prepare nodes](pre-provisioned-nodes.md#step-1-prepare-all-nodes) — install `nke-agent` and Kubernetes components
+1. [Prepare nodes](pre-provisioned-nodes.md#step-1-prepare-all-nodes) — install `nvke-agent` and Kubernetes components
 2. [Write a site spec file](configuration.md) — declare your nodes, versions, and registry
 3. [Run `nvkectl bootstrap site`](pre-provisioned-nodes.md#step-2-run-bootstrap-on-init-node) — bootstrap the cluster
 
@@ -14,7 +14,7 @@ The process has three steps:
 
 ## What Happens During Bootstrap
 
-`nvkectl bootstrap site` does more than call kubeadm. It first stands up an ephemeral Kind cluster on the init node, deploys a self-contained NVKE site controller (Postgres, Temporal, SPIRE, the Cluster API providers, and CWE) onto it — `--disable-mtls`, the development-only plaintext mode, skips SPIRE — and then uses that controller to drive the init and join workflows against your actual nodes over `nke-agent`'s gRPC API — no SSH required.
+`nvkectl bootstrap site` does more than call kubeadm. It first stands up an ephemeral Kind cluster on the init node, deploys a self-contained NVKE site controller (Postgres, Temporal, SPIRE, the Cluster API providers, and CWE) onto it — `--disable-mtls`, the development-only plaintext mode, skips SPIRE — and then uses that controller to drive the init and join workflows against your actual nodes over `nvke-agent`'s gRPC API — no SSH required.
 
 The ephemeral Kind cluster is torn down when bootstrap succeeds. It is retained if you pass `--keep-bootstrap-cluster`, or if the run fails after the site cluster was created — see [Pre-Provisioned Nodes](pre-provisioned-nodes.md) for the recovery steps.
 
@@ -24,8 +24,8 @@ sequenceDiagram
     participant Ctl as nvkectl (init node)
     participant Kind as Ephemeral Kind cluster
     participant CWE as Cloud Workflow Engine
-    participant Init as nke-agent (init node)
-    participant Join as nke-agent (join nodes)
+    participant Init as nvke-agent (init node)
+    participant Join as nvke-agent (join nodes)
     participant K8s as Site Controller Cluster
 
     Op->>Ctl: nvkectl bootstrap site -f sitespec.yaml

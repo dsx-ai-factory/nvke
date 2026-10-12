@@ -43,7 +43,7 @@ git describe --match 'agent/v*' --tags --always --dirty
 ```
 
 The `agent/` prefix is stripped for the binary ldflag and `.deb` version
-(`nke-agent_0.1.30_amd64.deb`). Override with `VERSION=v0.1.30` when needed.
+(`nvke-agent_0.1.30_amd64.deb`). Override with `VERSION=v0.1.30` when needed.
 
 Go module consumers pin the same tag shape:
 
@@ -140,7 +140,7 @@ The pre-commit hook automatically:
 
 ```text
 cmd/
-└── agent/          # Main nke-agent binary
+└── agent/          # Main nvke-agent binary
 
 internal/
 ├── agent/          # Core agent server implementation
@@ -210,7 +210,7 @@ docs/               # Design and security context docs
 
 ## State Management
 
-The agent persists state to `/var/lib/nke/state.json`. Key state includes:
+The agent persists state to `/var/lib/nvke/state.json`. Key state includes:
 - Node role and phase (controlplane/worker, join/init/reset)
 - Kubeadm status and join strings
 - Bundle installation status

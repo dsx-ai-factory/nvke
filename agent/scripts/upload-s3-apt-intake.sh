@@ -10,18 +10,18 @@
 #   <intake>/<project>/releases/<tag>/<distro>/<arch>/<filename>.sha256
 #   <intake>/<project>/index.json           (merged + written last)
 #
-# nke-agent .debs are distro-agnostic (identical content for resolute + noble),
+# nvke-agent .debs are distro-agnostic (identical content for resolute + noble),
 # so each .deb is uploaded under every distro in APT_INTAKE_DISTROS. Package,
 # Version, and Architecture are read from the .deb control metadata rather than
 # parsed from the filename.
 #
 # Required env:
 #   APT_INTAKE_S3_URI   e.g. s3://example-bucket/nvke-packages
-#   APT_INTAKE_PROJECT  e.g. nke-agent
+#   APT_INTAKE_PROJECT  e.g. nvke-agent
 #   APT_INTAKE_RELEASE  e.g. v0.1.26 (agent/v* tag with the component prefix stripped)
 # Optional env:
 #   APT_INTAKE_DISTROS  space-separated; default "resolute noble"
-#   ASSETS_DIR          default "bin" (nke-agent package job writes bin/*.deb)
+#   ASSETS_DIR          default "bin" (nvke-agent package job writes bin/*.deb)
 #
 # index.json is accumulating: each run merges the current release artifacts into
 # the existing index rather than replacing it. The merge key is
@@ -31,7 +31,7 @@
 set -euo pipefail
 
 : "${APT_INTAKE_S3_URI:?APT_INTAKE_S3_URI must be set (e.g. s3://example-bucket/nvke-packages)}"
-: "${APT_INTAKE_PROJECT:?APT_INTAKE_PROJECT must be set (e.g. nke-agent)}"
+: "${APT_INTAKE_PROJECT:?APT_INTAKE_PROJECT must be set (e.g. nvke-agent)}"
 : "${APT_INTAKE_RELEASE:?APT_INTAKE_RELEASE must be set (e.g. v0.1.26)}"
 : "${PUBLISH_INDEX_JSON:?PUBLISH_INDEX_JSON must be set to true or false}"
 

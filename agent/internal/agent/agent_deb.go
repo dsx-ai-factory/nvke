@@ -25,7 +25,7 @@ func (s *NodeAgentServer) InstallPackages(ctx context.Context, req *pb.InstallPa
 	}
 	for _, pkg := range req.GetPackages() {
 		if isNodeAgentPackageArgument(pkg) {
-			return nil, status.Error(codes.FailedPrecondition, "use StartNodeAgentUpgrade to replace nke-agent")
+			return nil, status.Error(codes.FailedPrecondition, "use StartNodeAgentUpgrade to replace nvke-agent")
 		}
 	}
 
@@ -62,11 +62,13 @@ func isNodeAgentPackageArgument(value string) bool {
 	packageName, _, _ := strings.Cut(value, "=")
 	packageName, _, _ = strings.Cut(packageName, ":")
 	packageName, _, _ = strings.Cut(packageName, "/")
-	if packageName == "nke-agent" {
-		return true
-	}
 	base := filepath.Base(value)
-	return strings.HasPrefix(base, "nke-agent_") && strings.HasSuffix(base, ".deb")
+	for _, name := range []string{"nvke-agent", "nke-agent"} {
+		if packageName == name || (strings.HasSuffix(base, ".deb") && (base == name+".deb" || strings.HasPrefix(base, name+"_"))) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *NodeAgentServer) processInstallPackages(ctx context.Context, req *pb.InstallPackagesRequest, pkgStatus *Bundle) error {

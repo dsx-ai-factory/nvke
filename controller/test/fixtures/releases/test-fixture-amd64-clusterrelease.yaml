@@ -35,7 +35,7 @@ spec:
       write_files: []
       {{ end }}
       runcmd:
-        - DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=600 nke-agent=0.1.26 nke-kubeadm-distro-{{ trimPrefix .KubernetesVersion "v" }} spire-agent
+        - DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=600 nvke-agent=0.1.26 nke-kubeadm-distro-{{ trimPrefix .KubernetesVersion "v" }} spire-agent
         - DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=600 {{ .CNIImagePackage }} {{ .CNIChartsPackage }}
         - touch /run/cloud-init.done
   lifecycle:

@@ -4,7 +4,7 @@
 // Package substrate stands up containers that stand in for pre-provisioned
 // bare-metal hosts, for the nvkectl bootstrap-site E2E suite.
 //
-// Each container runs systemd with nke-agent listening on the node-agent
+// Each container runs systemd with nvke-agent listening on the node-agent
 // port, exactly as a pre-provisioned host would. The suite owns the
 // containers end to end: it derives the node image, starts them, waits for
 // the agent, and destroys them afterwards.
@@ -64,7 +64,7 @@ type Config struct {
 	// Image overrides the derived node image tag. Empty means derive one.
 	Image string
 
-	// AgentPort is the nke-agent gRPC port.
+	// AgentPort is the nvke-agent gRPC port.
 	AgentPort string
 
 	// SpireServerAddress and SpireServerPort are baked into the node image's
@@ -130,7 +130,7 @@ type Node struct {
 	IP string
 	// Container is the container name.
 	Container string
-	// AgentPort is the nke-agent gRPC port.
+	// AgentPort is the nvke-agent gRPC port.
 	AgentPort string
 
 	// EKPubhash is the SHA-256 of this host's TPM endorsement key. It is what
@@ -150,7 +150,7 @@ type Substrate struct {
 
 // Start derives the node image, creates the network if needed, starts the
 // containers and waits for their prerequisite services. The caller must Stop
-// it. nke-agent becomes ready only after SPIRE issues its mTLS identity.
+// it. nvke-agent becomes ready only after SPIRE issues its mTLS identity.
 func Start(ctx context.Context, cfg Config, log Logf) (*Substrate, error) {
 	if log == nil {
 		log = func(string, ...any) {}
@@ -359,7 +359,7 @@ func hostDNSAddress() string {
 // waitReady polls each node until the services needed for bootstrap are up.
 //
 // "Container running" is not readiness: systemd still has to start, containerd
-// has to settle, and the software TPM and SPIRE agent must be active. nke-agent
+// has to settle, and the software TPM and SPIRE agent must be active. nvke-agent
 // is deliberately not checked here. Its mTLS listener cannot start before the
 // bootstrap SPIRE server exists and issues its identity.
 //
@@ -436,8 +436,8 @@ func (s *Substrate) DumpDiagnostics(ctx context.Context) {
 			s.log("substrate: --- %s logs %s (tail) ---\n%s", ContainerCLI, node.Container, out)
 		}
 		if out, err := exec.CommandContext(ctx, ContainerCLI, "exec", node.Container,
-			"journalctl", "-u", "nke-agent", "--no-pager", "-n", "50").CombinedOutput(); err == nil {
-			s.log("substrate: --- journalctl -u nke-agent %s ---\n%s", node.Container, out)
+			"journalctl", "-u", "nvke-agent", "--no-pager", "-n", "50").CombinedOutput(); err == nil {
+			s.log("substrate: --- journalctl -u nvke-agent %s ---\n%s", node.Container, out)
 		}
 	}
 }

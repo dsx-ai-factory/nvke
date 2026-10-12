@@ -6,7 +6,7 @@ Description=Import packaged OVN images into the KIND node runtime
 ConditionPathExists=/usr/lib/nke/e2e/cni-images.deb
 Requires=containerd.service
 After=containerd.service
-Before=nke-agent.service spire-agent.service
+Before=nvke-agent.service spire-agent.service
 
 [Service]
 Type=oneshot

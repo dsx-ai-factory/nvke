@@ -19,7 +19,7 @@ Builds the Debian package that gives a node its SPIFFE identity:
 | `/usr/lib/nke/spire-agent.conf.tmpl` | The template it renders |
 
 `provision.sh` installs this package at bake time — it is not staged for
-`nke-agent` to install later, the way the CNI and kubeadm-distro packages are.
+`nvke-agent` to install later, the way the CNI and kubeadm-distro packages are.
 SPIRE is how a node gets an identity at all, so there is no point in the image
 at which it is optional.
 

@@ -60,7 +60,7 @@ repository's `bin/`, and `make version-check` runs it with `--version`.
 ## Constraints
 
 - Do not bake SPIRE server address, trust domain, trust bundle, or join token.
-- Do not default `nke-agent` to `--disable-mtls`.
+- Do not default `nvke-agent` to `--disable-mtls`.
 - Pin SPIRE and the TPM attestor plugin (version + sha256): `SPIRE_VERSION` /
   `TPM_PLUGIN_VERSION` in `make/tool-versions.mk`, which owns them for the
   whole repository, and digests in `packages/spire-agent/lock/`. Do not float
@@ -84,11 +84,11 @@ repository's `bin/`, and `make version-check` runs it with `--version`.
   `flake.nix` and `nix/` define the NixOS package-builder fallback; see `nix/README.md` for the integration status and Ubuntu-linkage checks.
 - Run `make test-qemu` for QEMU selection and build-entrypoint changes; the
   module's `make test` also runs these tests.
-- `nke-agent` is built as a Debian package from this checkout's `agent/` source
+- `nvke-agent` is built as a Debian package from this checkout's `agent/` source
   at bake time (`make -C agent deb-<arch>` in `fetch-artifacts.sh`) and installed
   by dpkg with `NKE_AGENT_SKIP_START=1`. No prebuilt artifact is pulled. Its
   version is the checkout's `git describe --match 'agent/v*'`. Keep the image's
-  SPIRE ordering in `files/nke-agent-spire.conf`, separate from package-owned units.
+  SPIRE ordering in `files/nvke-agent-spire.conf`, separate from package-owned units.
 - Checker is a SPIFFE **client**. Do not embed a SPIRE server in the binary.
 - New files need the Apache-2.0 SPDX header (`make license`). Cloud-init
   user-data cannot: `#cloud-config` must be line 1, so examples live in

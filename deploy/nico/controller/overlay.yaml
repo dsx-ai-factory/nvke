@@ -212,7 +212,7 @@ appDb:
   # "password authentication failed", which that run hit.
   sslMode: disable
 
-# The port nke-agent listens on, and it has to agree with three other places:
+# The port nvke-agent listens on, and it has to agree with three other places:
 # the sitespec used at bootstrap (nvkectl's default, cli/internal/bootstrap/sitespec),
 # os-image/SPEC.md's contract, and the agent drop-in the node's cloud-init
 # writes. A real site sets it explicitly rather than relying on a default, and

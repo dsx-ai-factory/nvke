@@ -10,7 +10,7 @@
 
 ## 1. Overview
 
-The **NVKE agent** (`nke-agent`) is a Go gRPC server that runs as a systemd
+The **NVKE agent** (`nvke-agent`) is a Go gRPC server that runs as a systemd
 service on every node of an NVKE (NVIDIA Kubernetes Engine) cluster. It is the
 **on-node execution surface** for cluster orchestration: the NVKE controller
 (the consolidated orchestrator under `controller/` in this monorepo) drives
@@ -112,7 +112,7 @@ Design implication: **prefer the newer patterns (§7)** for all new work.
    ┌───────────────────┐      ┌───────────────────┐      ┌───────────────────┐
    │   node (CP)       │      │   node (CP)       │      │   node (worker)   │
    │  ┌─────────────┐  │      │  ┌─────────────┐  │      │  ┌─────────────┐  │
-   │  │  nke-agent  │  │      │  │  nke-agent  │  │      │  │  nke-agent  │  │
+   │  │  nvke-agent  │  │      │  │  nvke-agent  │  │      │  │  nvke-agent  │  │
    │  └──────┬──────┘  │      │  └──────┬──────┘  │      │  └──────┬──────┘  │
    │  kubeadm/apt/     │      │  kubeadm/apt/     │      │  kubeadm/apt/     │
    │  crictl/cryptsetup│      │  crictl/cryptsetup│      │  ...              │
@@ -149,10 +149,10 @@ Entry point: `cmd/agent/main.go`.
    URL, CNI image registry, mTLS toggle, SPIFFE socket, audit/script log paths,
    mlx5 rescan toggle).
 2. **Logger setup** — three JSON `slog` loggers: default (stdout), **audit**
-   (`/var/log/nke-agent-audit.log`), **script execution**
-   (`/var/log/nke-execute-scripts.log`).
+   (`/var/log/nvke-agent-audit.log`), **script execution**
+   (`/var/log/nvke-execute-scripts.log`).
 3. **`RunNodeStartup`** → `NewNodeAgentServer`:
-   - Ensure `/var/lib/nke` and `state.json` exist (never truncate existing state).
+   - Ensure `/var/lib/nvke` and `state.json` exist (never truncate existing state).
    - Optionally parse the bundle source URI (HTTP/S3/`file://`/`oci://`). When
      unset or invalid, log a warning and continue — apt is preferred.
    - Resolve the bundle index file (Ubuntu 22 vs 24) when a bundle source is set,
@@ -302,7 +302,7 @@ order first (writes stay plaintext-readable by every CP apiserver), then
 `PromoteKubernetesAPIEncryptionProviders` flips to **secretbox-then-identity** on
 each node, then a single `RewriteKubernetesAPIObjects` re-persists objects encrypted,
 then `RemovePlainTextSecondaryEncryptionEntry` drops the fallback. Progress is gated
-by node labels (`nke.io/k8s-api-encryption-*`). New clusters skip this and enable
+by node labels (`nvke.nvidia.com/k8s-api-encryption-*`). New clusters skip this and enable
 encryption directly at `kubeadm init`.
 
 ### 7.6 Fail-fast RPC + async worker
@@ -314,7 +314,7 @@ that updates status on completion. Callers poll `GetKubeadmStatus`.
 ### 7.7 Allowlist + boundary enforcement
 
 Mutations that touch cluster/global state are constrained: `UpdateNKERBAC` accepts
-only a fixed `(kind, name)` allowlist under the `nke:` name prefix and validates the
+only a fixed `(kind, name)` allowlist under the `nvke:` or legacy `nke:` name prefix and validates the
 whole manifest before applying anything (all-or-nothing). Staged files are size- and
 path-constrained (absolute, canonical, ≤1 MiB).
 
@@ -421,9 +421,9 @@ the VIP back on `lo`. Manifest moves are the control mechanism (kubelet reacts t
 - Direction of travel: apt/OCI over legacy bundles/profiles.
 
 ### 9.6 Support & scripts
-- `GetSupportBundle` gathers `state.json`, `nke-agent` journal, audit log, script
+- `GetSupportBundle` gathers `state.json`, `nvke-agent` journal, audit log, script
   log, dpkg inventory, and caller-requested absolute files into a tgz.
-- `ExecuteScript`/`StreamExecuteScript` run scripts (from `/usr/local/nke/user-scripts`
+- `ExecuteScript`/`StreamExecuteScript` run scripts (from `/usr/local/nvke/user-scripts`
   or an uploaded path); every call is logged to the script-execution log.
 
 ---
@@ -454,8 +454,8 @@ the VIP back on `lo`. Manifest moves are the control mechanism (kubelet reacts t
   by a pre-commit hook.
 - **Install:** shipped in NVKE OS images (Skysmith) or via release-bundle install
   scripts (`agent-installer`, `kubeadm-installer.sh`); runs as a systemd unit
-  (`nke-agent`). Flags supplied via `/etc/default/nke-agent` (`AGENT_ARGS`).
-- **Ports/paths:** listens on `:15005`; state at `/var/lib/nke/state.json`; logs
+  (`nvke-agent`). Flags supplied via `/etc/default/nvke-agent` (`AGENT_ARGS`).
+- **Ports/paths:** listens on `:15005`; state at `/var/lib/nvke/state.json`; logs
   under `/var/log/`.
 
 ---

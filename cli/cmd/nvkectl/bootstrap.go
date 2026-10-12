@@ -388,7 +388,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	}
 
 	// Step 4: create the cluster. The controller owns everything from here — it drives
-	// kubeadm on each host through nke-agent and reconciles the Cluster API
+	// kubeadm on each host through nvke-agent and reconciles the Cluster API
 	// objects that the provisioned infrastructure provider binds to the
 	// site spec's hosts.
 	siteClusterCreated, err = createSiteCluster(ctx, cluster, inv, opts, cweCfg.CWEPort, logger)

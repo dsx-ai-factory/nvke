@@ -25,9 +25,9 @@ import (
 // settings into it would make it impossible to tell which process owns a
 // given variable.
 const (
-	// How the VMs get kubeadm, the kubelet and nke-agent.
+	// How the VMs get kubeadm, the kubelet and nvke-agent.
 	//
-	// "community" fetches upstream releases and an nke-agent .deb built from
+	// "community" fetches upstream releases and an nvke-agent .deb built from
 	// this checkout, so a run needs no NVIDIA network. It is the default
 	// because the NVKE apt repository is behind a source-IP allow list that
 	// GitHub runners are outside of, which left this suite skipped rather than
@@ -225,7 +225,7 @@ func requireKubeadmConfig(t *testing.T, c config) {
 	switch c.provisionMode {
 	case provisionCommunity:
 		if c.agentDeb == "" {
-			missing = append(missing, "NKE_BRINGUP_AGENT_DEB (path to an nke-agent .deb; build it with `make -C agent deb-amd64`)")
+			missing = append(missing, "NKE_BRINGUP_AGENT_DEB (path to an nvke-agent .deb; build it with `make -C agent deb-amd64`)")
 		}
 	case provisionApt:
 		if c.kubeadmDeb == "" {
@@ -273,5 +273,5 @@ func resolveWorkDir(t *testing.T, c config) string {
 }
 
 // agentAddr is the plaintext gRPC endpoint the cloud-init drop-in configures
-// nke-agent to serve on.
+// nvke-agent to serve on.
 func agentAddr(ip string, port int) string { return fmt.Sprintf("%s:%d", ip, port) }

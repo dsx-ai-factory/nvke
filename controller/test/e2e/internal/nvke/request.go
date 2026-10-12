@@ -170,7 +170,7 @@ func containerCAPIReadyCommands() []string {
 	bundleServerURL := strings.TrimRight(strings.TrimSpace(os.Getenv("NKE_E2E_BUNDLE_SERVER_URL")), "/")
 	if bundleServerURL != "" {
 		commands = append(commands, fmt.Sprintf(
-			`sh -ec 'agent_env=/etc/default/nke-agent; sed_url=$(printf "%%s" "$1" | sed "s/[\\\\&|]/\\\\&/g"); sed -E -i.bak "/^AGENT_ARGS=/ { s/ --(bundle-server-url|index-file-url)(=[^ \" ]+| [^ \" ]+)//g; s/^AGENT_ARGS=\"--disable-mlx5-rescan ?/AGENT_ARGS=\"/; s/ --disable-mlx5-rescan//g; s|\"$| --disable-mlx5-rescan --bundle-server-url ${sed_url}/ --index-file-url ${sed_url}/index.json\"|; }" "$agent_env"; rm -f "$agent_env.bak"; systemctl restart nke-agent.service' -- %s`,
+			`sh -ec 'agent_env=/etc/default/nvke-agent; sed_url=$(printf "%%s" "$1" | sed "s/[\\\\&|]/\\\\&/g"); sed -E -i.bak "/^AGENT_ARGS=/ { s/ --(bundle-server-url|index-file-url)(=[^ \" ]+| [^ \" ]+)//g; s/^AGENT_ARGS=\"--disable-mlx5-rescan ?/AGENT_ARGS=\"/; s/ --disable-mlx5-rescan//g; s|\"$| --disable-mlx5-rescan --bundle-server-url ${sed_url}/ --index-file-url ${sed_url}/index.json\"|; }" "$agent_env"; rm -f "$agent_env.bak"; systemctl restart nvke-agent.service' -- %s`,
 			shellQuote(bundleServerURL),
 		))
 	}
@@ -243,7 +243,7 @@ func buildNicoForgeRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 			return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires a %s iPXE script: without one the instance boots nothing", role.name)
 		}
 		if len(role.payloads.PreKubeadmCommands) == 0 {
-			return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires %s pre-kubeadm commands: without them the node has no nke-agent", role.name)
+			return api.CreateClusterRequest{}, fmt.Errorf("nico-forge requires %s pre-kubeadm commands: without them the node has no nvke-agent", role.name)
 		}
 	}
 

@@ -228,7 +228,7 @@ type Config struct {
 	// pulled, because the bootstrap cluster has no pull secret.
 	ProvisionedProviderImage string
 
-	// NodeAgentPort is the port the controller dials nke-agent on. Empty leaves the controller's own
+	// NodeAgentPort is the port the controller dials nvke-agent on. Empty leaves the controller's own
 	// default (15005) alone. It comes from the site spec, because it describes
 	// how the site's hosts were configured long before this cluster existed.
 	NodeAgentPort string

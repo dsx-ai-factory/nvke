@@ -244,14 +244,14 @@ def main() -> None:
         if total_bytes > MAX_TOTAL_PACKAGE_BYTES:
             raise SystemExit("image inputs exceed their total package byte budget")
         total_bytes = install_file(
-            agent, stage / "nke-agent.deb", 0o644,
+            agent, stage / "nvke-agent.deb", 0o644,
             max_bytes=min(MAX_PACKAGE_BYTES, MAX_TOTAL_PACKAGE_BYTES),
         )
         if total_bytes == 0:
             raise SystemExit("agent package is empty")
-        require_architecture(stage / "nke-agent.deb", args.architecture)
+        require_architecture(stage / "nvke-agent.deb", args.architecture)
         for name, mode in (
-            ("nke-agent-spire.conf", 0o644),
+            ("nvke-agent-spire.conf", 0o644),
             ("wait-spiffe-socket.sh", 0o755),
             ("conntrack-tune.service", 0o644),
             ("configure-conntrack.sh", 0o755),

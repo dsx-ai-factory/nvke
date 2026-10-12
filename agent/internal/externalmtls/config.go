@@ -25,7 +25,7 @@ const serverCertificateLifetime = 10 * 365 * 24 * time.Hour
 // serverCertificateSubject names the self-signed certificate. Nothing matches
 // on it: the controller skips verification and the agent is authenticated by
 // its NKEAuth record instead.
-const serverCertificateSubject = "nke-agent"
+const serverCertificateSubject = "nvke-agent"
 
 // ControllerURI is the URI SAN the controller's client certificate must carry.
 // Chaining to the bundle is not enough on its own: the bundle is an externally
@@ -36,7 +36,10 @@ const serverCertificateSubject = "nke-agent"
 //
 // It is exported so the flag help can state the requirement an operator has to
 // meet when the controller's certificate is issued.
-const ControllerURI = "urn:nvidia:nke:controller"
+const ControllerURI = "urn:nvidia:nvke:controller"
+
+// LegacyControllerURI is accepted during the controller rename transition.
+const LegacyControllerURI = "urn:nvidia:nke:controller"
 
 // ServerConfig returns the TLS configuration for an agent whose controller
 // authenticates with an externally issued client certificate. Every connection
@@ -71,7 +74,7 @@ func verifyControllerIdentity(state tls.ConnectionState) error {
 		return errors.New("unauthorized: the controller presented no certificate")
 	}
 	for _, uri := range state.PeerCertificates[0].URIs {
-		if uri.String() == ControllerURI {
+		if uri.String() == ControllerURI || uri.String() == LegacyControllerURI {
 			return nil
 		}
 	}

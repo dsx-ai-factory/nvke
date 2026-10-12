@@ -112,15 +112,17 @@ token:^nke$
 
 # ---- Tier 2: the node (PR5) and the OS image and packages (PR6) ----
 
-# The agent package, unit, binary, env file, updater, paths and NVCR repository.
-token:nke-agent
+# One-release compatibility inputs: the old package guard, rollback artifact
+# names, binary/env/state aliases and the controller defaults gated in #1496.
+# Old fleet profiles still contain these names until reprovisioned.
+token:(^|/)nke-agent([._:@-]|$)
 
 # Node filesystem paths and files the agent, the image and cloud-init write,
 # the support bundle, and the attestation unit.
-token:(^|/)(var/lib|etc|opt|usr/lib|usr/local|usr/share|run|tmp|var/log)/nke|^/nke/|\.nke-attested$|nke-execute-scripts|/nke\.(asc|gpg)$|nke(-local)?\.list$|preferences\.d/nke-|/\d\d-nke-|nke-conntrack|values-nke\.yaml|nke-container-(network|cni)|nke-cert-renewal|nke-support-bundle|nke-audit|nke-attestation
+token:(^|/)(var/lib|etc|opt|usr/lib|usr/local|usr/share|run|tmp|var/log)/nke|^/nke/|\.nke-attested$|/nke\.(asc|gpg)$|nke(-local)?\.list$|preferences\.d/nke-|/\d\d-nke-|nke-conntrack|values-nke\.yaml|nke-container-(network|cni)|nke-audit|nke-attestation
 
-# The agent-written node labels under Nike's domain.
-token:nke\.io/
+# Old encryption labels are read once and migrated; never write this domain.
+token:^nke\.io/($|k8s-api-encryption-(configured|rewrite-complete))
 
 # Package, image, Packer, nix builder and nico-sim backend names, the CNI deb
 # name prefix, and the legacy installer path the kubeadm-distro test asserts
@@ -159,12 +161,12 @@ token:^_nke_|^nke_repo_root$
 path:controller/hack/keycloak/*
 token:^nke-operators$|realms/nke(/|$)
 
-# The version line the updater parses, `NKE Agent Version: <v>`, and the
-# updater's own; both change with the per-node gating after launch.
-path:agent/cmd/agent/main.go
-path:agent/cmd/updater/main.go
+# The updater accepts the legacy version line for old rollback binaries.
+# Both command entrypoints now print NVKE; only this parser and its tests retain NKE.
 path:agent/pkg/agentupgrade/updater.go
 path:agent/pkg/agentupgrade/updater_test.go
+# The package qualification builds a legacy agent fixture with its old version line.
+path:os-image/packages/nvke-agent/test/install.sh
 
 # The OIDC upstream CA's subject (CN "NKE OIDC Upstream CA", OU "NKE") is in
 # every certificate it issued; a new subject is a new CA (PR4, new sites).

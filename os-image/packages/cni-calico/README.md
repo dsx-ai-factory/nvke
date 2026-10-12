@@ -1,6 +1,6 @@
 # nke-cni-calico
 
-Builds the two Debian packages `nke-agent` installs when it sets up Calico:
+Builds the two Debian packages `nvke-agent` installs when it sets up Calico:
 
 | Package | Contents | Installed to |
 |---|---|---|
@@ -8,7 +8,7 @@ Builds the two Debian packages `nke-agent` installs when it sets up Calico:
 | `nke-cni-calico-images-<stream>` | Every image the operator resolves, as one docker-archive | `/usr/lib/nke/cni-calico/<stream>/`, imported into containerd by `postinst` |
 
 `provision.sh` stages both into the image under `/usr/lib/nke/debs` as a local
-apt repo. Nothing is installed at bake time: `nke-agent` installs them by name
+apt repo. Nothing is installed at bake time: `nvke-agent` installs them by name
 at cluster create. The build machinery is shared with `cni-ovn` in
 [`../cni-common/`](../cni-common/README.md); this directory holds only what is
 Calico's: `bundle.sh`, the manifests spec and the lock.
@@ -20,7 +20,7 @@ the rest of Calico itself, so a node with no registry access needs the whole set
 present in containerd before the operator starts. The images package is what
 makes that true; without it a cluster comes up and Calico never does.
 
-## The contract with nke-agent
+## The contract with nvke-agent
 
 `agent/internal/agent/cni.go` asks apt for `nke-cni-calico-manifests-<stream>`
 and `nke-cni-calico-images-<stream>`, where `<stream>` is the request's Calico
