@@ -42,7 +42,7 @@ env:
 
 jobs:
   bump:
-    if: github.repository == 'dsx-ai-factory/nke'
+    if: github.repository_id == '1323115536'
     name: Re-resolve ARG-pinned base image digests
     runs-on: ubuntu-latest
     timeout-minutes: 15
