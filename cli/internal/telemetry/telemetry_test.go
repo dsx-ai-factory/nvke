@@ -184,3 +184,44 @@ func TestSetNameRenamesTheRootSpan(t *testing.T) {
 	require.Len(t, spans, 1)
 	assert.Equal(t, "nvkectl get clusters", spans[0].Name())
 }
+
+func TestSanitizeVersion(t *testing.T) {
+	t.Parallel()
+	tests := map[string]string{
+		"v1.2.3":                  "v1.2.3",
+		"v1.2.3-5-gabc1234-dirty": "v1.2.3-5-gabc1234-dirty",
+		"v1.2.3+dirty":            "v1.2.3+dirty",
+		"v1.2.3\n":                "v1.2.3",
+		"v1\r\n2":                 "v12",
+		"1.0 beta":                "1.0beta",
+		"feat/x":                  "featx",
+		"(devel)":                 "devel",
+		"\x00\t":                  "dev",
+		"":                        "dev",
+	}
+	for input, want := range tests {
+		assert.Equal(t, want, sanitizeVersion(input), "%q", input)
+	}
+}
+
+// Go refuses to send a request whose header holds a control character, so a
+// version stamped with one must not reach the User-Agent.
+func TestMalformedVersionStillSendsRequests(t *testing.T) {
+	t.Parallel()
+	var userAgent string
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		userAgent = r.Header.Get("User-Agent")
+	}))
+	defer srv.Close()
+
+	run := NewRun("v1\r\n2")
+	ctx := run.Start(context.Background(), "nvkectl get clusters")
+	defer run.Finish(nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	resp, err := (&http.Client{Transport: Transport(nil)}).Do(req)
+	require.NoError(t, err, "the request must not be rejected over its User-Agent")
+	require.NoError(t, resp.Body.Close())
+
+	assert.Equal(t, "nvkectl/v12", userAgent)
+}

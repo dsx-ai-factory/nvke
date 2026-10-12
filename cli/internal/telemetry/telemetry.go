@@ -12,6 +12,7 @@ package telemetry
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"go.opentelemetry.io/otel/codes"
@@ -40,6 +41,27 @@ type Run struct {
 	rootSpanContext trace.SpanContext
 }
 
+// sanitizeVersion returns version reduced to the characters of an RFC 9110
+// token, which is what a User-Agent product version must be. A build can stamp
+// any string into the version, and Go refuses to send a request whose header
+// holds a control character, so an unsanitized one would fail every request. It
+// returns "dev" if nothing is left.
+func sanitizeVersion(version string) string {
+	token := strings.Map(func(char rune) rune {
+		switch {
+		case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z', char >= '0' && char <= '9':
+			return char
+		case strings.ContainsRune("!#$%&'*+-.^_`|~", char):
+			return char
+		}
+		return -1
+	}, version)
+	if token == "" {
+		return "dev"
+	}
+	return token
+}
+
 // Option configures NewRun.
 type Option func(*Run)
 
@@ -54,7 +76,7 @@ func WithSpanProcessor(processor sdktrace.SpanProcessor) Option {
 // NewRun returns a Run for an nvkectl build with the given version. Requests
 // sent through Transport carry "User-Agent: nvkectl/<version>".
 func NewRun(version string, options ...Option) *Run {
-	run := &Run{userAgent: "nvkectl/" + version}
+	run := &Run{userAgent: "nvkectl/" + sanitizeVersion(version)}
 	for _, option := range options {
 		option(run)
 	}
