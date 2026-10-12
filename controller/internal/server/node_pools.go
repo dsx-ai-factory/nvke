@@ -243,6 +243,11 @@ func (s *nodePoolService) validateCreateNodePoolRequest(cluster db.Cluster, req 
 			return err
 		}
 		return validateCreateNicoNodePoolRequest(cluster, req)
+	case db.ProviderTypeLaunchLayer:
+		if err := s.providers.require(config.InfraProviderLaunchLayer); err != nil {
+			return err
+		}
+		return validateCreateLaunchLayerNodePoolRequest(cluster, req)
 	default:
 		return fmt.Errorf("unsupported cluster provider")
 	}
@@ -304,6 +309,44 @@ func validateCreateNicoNodePoolRequest(cluster db.Cluster, req *api.CreateNodePo
 		return err
 	}
 	return validator.ValidateNodePoolPayload(nodePool)
+}
+
+func validateCreateLaunchLayerNodePoolRequest(cluster db.Cluster, req *api.CreateNodePoolRequest) error {
+	if req.Nico != nil {
+		return fmt.Errorf("nico is not supported, please provide launchLayer")
+	}
+	if req.Infra != nil {
+		return fmt.Errorf("infra is not supported, please provide launchLayer")
+	}
+	if req.LaunchLayer == nil {
+		return fmt.Errorf("launchLayer is required when creating a node pool on a launchLayer cluster")
+	}
+
+	var nodePool db.NodePool
+	nodePool.SetLaunchLayer(dbLaunchLayerNodePoolProviderFromAPI(*req.LaunchLayer))
+	validator, err := clients.GetNodePoolPayloadValidator(cluster)
+	if err != nil {
+		return err
+	}
+	return validator.ValidateNodePoolPayload(nodePool)
+}
+
+func dbLaunchLayerNodePoolProviderFromAPI(provider api.LaunchLayerNodePoolProvider) db.LaunchLayerNodePoolProvider {
+	out := db.LaunchLayerNodePoolProvider{
+		InstanceType:  provider.InstanceType,
+		HostOSProfile: provider.HostOSProfile,
+		VMProfile:     provider.VMProfile,
+	}
+	if provider.FulfillmentStrategy != nil {
+		out.FulfillmentStrategy = string(*provider.FulfillmentStrategy)
+	}
+	if provider.SecurityGroupRefs != nil {
+		out.SecurityGroupRefs = db.LaunchLayerSecurityGroupRefs{
+			PrimaryNetworkInterface: provider.SecurityGroupRefs.PrimaryNetworkInterface,
+			GPUNetworkInterface:     provider.SecurityGroupRefs.GpuNetworkInterface,
+		}
+	}
+	return out
 }
 
 func (s *nodePoolService) GetNodePool(ctx context.Context, req api.GetNodePoolRequestObject) (api.GetNodePoolResponseObject, error) {
@@ -541,6 +584,34 @@ func applyUpdateNodePoolRequest(cluster db.Cluster, dbNodePool *db.NodePool, req
 			capiProvider.PreKubeadmCommands = append([]string(nil), req.Infra.PreKubeadmCommands...)
 		}
 		dbNodePool.SetCapi(capiProvider)
+
+	case db.ProviderTypeLaunchLayer:
+		if req.LaunchLayer == nil {
+			return nil
+		}
+		provider, err := dbNodePool.LaunchLayerProvider()
+		if err != nil {
+			return err
+		}
+		if req.LaunchLayer.InstanceType != "" {
+			provider.InstanceType = req.LaunchLayer.InstanceType
+		}
+		if req.LaunchLayer.HostOSProfile != "" {
+			provider.HostOSProfile = req.LaunchLayer.HostOSProfile
+		}
+		if req.LaunchLayer.VMProfile != "" {
+			provider.VMProfile = req.LaunchLayer.VMProfile
+		}
+		if req.LaunchLayer.FulfillmentStrategy != nil {
+			provider.FulfillmentStrategy = string(*req.LaunchLayer.FulfillmentStrategy)
+		}
+		if req.LaunchLayer.SecurityGroupRefs != nil {
+			provider.SecurityGroupRefs = db.LaunchLayerSecurityGroupRefs{
+				PrimaryNetworkInterface: req.LaunchLayer.SecurityGroupRefs.PrimaryNetworkInterface,
+				GPUNetworkInterface:     req.LaunchLayer.SecurityGroupRefs.GpuNetworkInterface,
+			}
+		}
+		dbNodePool.SetLaunchLayer(provider)
 	}
 
 	return nil
@@ -551,11 +622,25 @@ func validateUpdatedNodePool(cluster db.Cluster, dbNodePool *db.NodePool) error 
 		return newBadRequestErrorf("maxSurge should be max 1 for control plane nodepools")
 	}
 
-	if clusterIsCAPIBacked(cluster) {
+	switch cluster.ProviderType {
+	case db.ProviderTypeCAPI:
 		return validateUpdatedCAPINodePool(cluster, dbNodePool)
+	case db.ProviderTypeLaunchLayer:
+		return validateUpdatedLaunchLayerNodePool(cluster, dbNodePool)
+	default:
+		return validateUpdatedForgeNodePool(cluster, dbNodePool)
 	}
+}
 
-	return validateUpdatedForgeNodePool(cluster, dbNodePool)
+func validateUpdatedLaunchLayerNodePool(cluster db.Cluster, dbNodePool *db.NodePool) error {
+	validator, err := clients.GetNodePoolPayloadValidator(cluster)
+	if err != nil {
+		return err
+	}
+	if err := validator.ValidateNodePoolPayload(*dbNodePool); err != nil {
+		return newBadRequestErrorf("%s", err.Error())
+	}
+	return nil
 }
 
 func validateUpdatedCAPINodePool(cluster db.Cluster, dbNodePool *db.NodePool) error {
@@ -611,9 +696,26 @@ func (s *nodePoolService) validateUpdateNodePoolRequest(cluster db.Cluster, req 
 			}
 		}
 		return validateUpdateNicoNodePoolRequest(cluster, req)
+	case db.ProviderTypeLaunchLayer:
+		if req != nil && (req.LaunchLayer != nil || req.Nico != nil || req.Infra != nil) {
+			if err := s.providers.require(config.InfraProviderLaunchLayer); err != nil {
+				return err
+			}
+		}
+		return validateUpdateLaunchLayerNodePoolRequest(req)
 	default:
 		return fmt.Errorf("unsupported cluster provider")
 	}
+}
+
+func validateUpdateLaunchLayerNodePoolRequest(req *api.UpdateNodePoolRequest) error {
+	if req.Nico != nil {
+		return fmt.Errorf("nico is not supported, please use launchLayer")
+	}
+	if req.Infra != nil {
+		return fmt.Errorf("infra is not supported, please use launchLayer")
+	}
+	return nil
 }
 
 func validateUpdateCAPINodePoolRequest(cluster db.Cluster, req *api.UpdateNodePoolRequest) error {
@@ -749,8 +851,9 @@ func apiNodePoolFromDB(dbNodePool *db.NodePool) api.NodePool {
 		CurrentNodeSetID:            dbNodePool.CurrentNodeSetID,
 		TeleportEnabled:             &dbNodePool.TeleportEnabled,
 
-		Nico:  apiNicoNodePoolProviderFromDB(dbNodePool.Nico),
-		Infra: apiInfraNodePoolProviderFromDB(dbNodePool.Capi),
+		Nico:        apiNicoNodePoolProviderFromDB(dbNodePool.Nico),
+		Infra:       apiInfraNodePoolProviderFromDB(dbNodePool.Capi),
+		LaunchLayer: apiLaunchLayerNodePoolProviderFromDB(dbNodePool.LaunchLayer),
 
 		Conditions: api.NodePoolConditions{
 			Provisioning: apiConditionFromDB(dbNodePool.Conditions.Provisioning),
@@ -793,6 +896,28 @@ func apiInfraNodePoolProviderFromDB(capiNodePoolProvider *db.CAPINodePoolProvide
 	}
 	if apiFiles := apiCloudInitFilesFromDB(capiNodePoolProvider.BootstrapFiles); apiFiles != nil {
 		out.BootstrapFiles = *apiFiles
+	}
+	return out
+}
+
+func apiLaunchLayerNodePoolProviderFromDB(provider *db.LaunchLayerNodePoolProvider) *api.LaunchLayerNodePoolProvider {
+	if provider == nil {
+		return nil
+	}
+	out := &api.LaunchLayerNodePoolProvider{
+		InstanceType:  provider.InstanceType,
+		HostOSProfile: provider.HostOSProfile,
+		VMProfile:     provider.VMProfile,
+	}
+	if provider.FulfillmentStrategy != "" {
+		strategy := api.LaunchLayerNodePoolProviderFulfillmentStrategy(provider.FulfillmentStrategy)
+		out.FulfillmentStrategy = &strategy
+	}
+	if len(provider.SecurityGroupRefs.PrimaryNetworkInterface) > 0 || len(provider.SecurityGroupRefs.GPUNetworkInterface) > 0 {
+		out.SecurityGroupRefs = &api.LaunchLayerSecurityGroupRefs{
+			PrimaryNetworkInterface: provider.SecurityGroupRefs.PrimaryNetworkInterface,
+			GpuNetworkInterface:     provider.SecurityGroupRefs.GPUNetworkInterface,
+		}
 	}
 	return out
 }
@@ -909,6 +1034,8 @@ func dbNodePoolFromAPI(
 			BootstrapFiles:       dbCloudInitFilesFromAPI(req.Infra.BootstrapFiles),
 			PreKubeadmCommands:   append([]string(nil), req.Infra.PreKubeadmCommands...),
 		})
+	case req.LaunchLayer != nil:
+		nodePool.SetLaunchLayer(dbLaunchLayerNodePoolProviderFromAPI(*req.LaunchLayer))
 	}
 
 	return nodePool, nil
