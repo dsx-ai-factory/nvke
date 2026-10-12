@@ -79,11 +79,9 @@ jobs:
         include:
           - destination: nvke
             org_var: NVKE_NGC_ORG
-            # Looked up by name: the new secret first, the existing one until
-            # NGC_REGISTRY_TOKEN_NVKE is created. An unset secret reads as empty,
-            # so || falls through to the fallback.
+            # Looked up by name.
             token_secret_var_name: "NGC_REGISTRY_TOKEN_NVKE"
-            token_secret_fallback_var_name: "NGC_REGISTRY_TOKEN_NKE"
+            token_secret_fallback_var_name: "NGC_REGISTRY_TOKEN_NVKE"
             pull_secret: svc-nke-ngc-imagepull
           - destination: dsx
             org_var: DSX_NGC_ORG_TEAM

@@ -110,7 +110,7 @@ jobs:
         with:
           registry: nvcr.io
           username: "$oauthtoken"
-          password: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE || secrets.NGC_REGISTRY_TOKEN_NKE }}
+          password: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE }}
 
       - name: Resolve destination and tags
         id: meta
@@ -191,7 +191,7 @@ jobs:
         with:
           registry: nvcr.io
           username: "$oauthtoken"
-          password: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE || secrets.NGC_REGISTRY_TOKEN_NKE }}
+          password: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE }}
 
       - name: Detect runner BuildKit config
         id: buildkit
@@ -330,7 +330,7 @@ jobs:
         with:
           registry: nvcr.io
           username: "$oauthtoken"
-          password: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE || secrets.NGC_REGISTRY_TOKEN_NKE }}
+          password: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE }}
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -489,7 +489,7 @@ jobs:
         with:
           registry: nvcr.io
           username: "$oauthtoken"
-          password: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE || secrets.NGC_REGISTRY_TOKEN_NKE }}
+          password: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE }}
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -519,7 +519,7 @@ jobs:
         env:
           NVKE_NGC_ORG: ${{ vars.NVKE_NGC_ORG }}
           DSX_NGC_ORG_TEAM: ${{ vars.DSX_NGC_ORG_TEAM }}
-          NKE_NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE || secrets.NGC_REGISTRY_TOKEN_NKE }}
+          NKE_NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE }}
           DSX_NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_DSX }}
           INDEX_DIGEST: ${{ needs.manifest.outputs.index_digest }}
         run: |
@@ -655,7 +655,7 @@ jobs:
         with:
           registry: nvcr.io
           username: "$oauthtoken"
-          password: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE || secrets.NGC_REGISTRY_TOKEN_NKE }}
+          password: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE }}
 
       - name: Download this leg's digest
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

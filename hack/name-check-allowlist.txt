@@ -145,10 +145,6 @@ token:(?i)nkectl|^\.nke$
 # bring-up harness, the OS image build.
 token:(^|[./:@-])NKE_[A-Z0-9_]+([:./].*)?$|^LOCAL_NKE_
 
-# The NGC token secret until NGC_REGISTRY_TOKEN_NVKE exists; the cleanup pull
-# request removes this entry with the fallbacks.
-token:(^|[./:@-])NGC_REGISTRY_TOKEN_NKE$
-
 # The product mailbox in the deb Maintainer fields.
 token:^nke-dev@
 

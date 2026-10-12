@@ -15,7 +15,6 @@ name: CLI Artifact NVCR
 #
 #   NVKE_NGC_ORG             variable  NGC org that owns the artifact
 #   NGC_REGISTRY_TOKEN_NVKE  secret    NGC API key with write access on that org
-#                                      (NGC_REGISTRY_TOKEN_NKE until it exists)
 #   DSX_NGC_ORG_TEAM        variable  DSX NGC org/team path
 #   NGC_REGISTRY_TOKEN_DSX  secret    NGC API key with write access on DSX
 #
@@ -89,7 +88,7 @@ jobs:
             # The new secret first, the existing one until it is created; an
             # unset secret reads as empty, so || falls through.
             token_secret_var_name: "NGC_REGISTRY_TOKEN_NVKE"
-            token_secret_fallback_var_name: "NGC_REGISTRY_TOKEN_NKE"
+            token_secret_fallback_var_name: "NGC_REGISTRY_TOKEN_NVKE"
           - destination: dsx
             org_var: DSX_NGC_ORG_TEAM
             token_secret_var_name: "NGC_REGISTRY_TOKEN_DSX"

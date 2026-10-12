@@ -393,7 +393,7 @@ jobs:
       actions: read  # upload-sarif reads the workflow run
       security-events: write
     secrets:
-      NGC_REGISTRY_TOKEN_NVKE: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE || secrets.NGC_REGISTRY_TOKEN_NKE }}
+      NGC_REGISTRY_TOKEN_NVKE: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE }}
       NGC_REGISTRY_TOKEN_DSX: ${{ secrets.NGC_REGISTRY_TOKEN_DSX }}
     with:
       dist_artifact: ${{ needs.release.outputs.dist_artifact }}
