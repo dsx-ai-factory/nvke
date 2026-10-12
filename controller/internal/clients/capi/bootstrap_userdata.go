@@ -15,6 +15,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodecontract"
 )
 
 //go:embed capi_spire_agent.conf.tmpl
@@ -147,7 +148,7 @@ func (*Client) renderBootstrapUserData(
 	}
 
 	runCommands := append([]string(nil), capiNodeSetProvider.PreKubeadmCommands...)
-	runCommands = append(runCommands, "systemctl restart nke-agent.service")
+	runCommands = append(runCommands, "systemctl restart "+nodecontract.ForAgentVersion(node.AgentVersion).UnitName)
 
 	userData := cloudInitConfig{
 		WriteFiles: files,

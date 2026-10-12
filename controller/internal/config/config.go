@@ -27,8 +27,14 @@ const (
 	NodeAgentExternalTLSCertPath = "/etc/nke/node-agent-client-tls/tls.crt"
 	NodeAgentExternalTLSKeyPath  = "/etc/nke/node-agent-client-tls/tls.key"
 	NodeAgentExternalTLSCAPath   = "/etc/nke/node-agent-client-tls/ca.crt"
-	NodeAgentConfigPath          = "/etc/default/nke-agent"
-	NodeAgentControllerCAPath    = "/etc/nke/controller-ca.crt"
+	// NodeAgentExternalTLSNVKECertPath and ...KeyPath are an optional second client
+	// identity whose URI SAN is the new-form controller URN. When present, nodes whose
+	// agent speaks the new form are dialed with it; otherwise the first identity is
+	// used for every node.
+	NodeAgentExternalTLSNVKECertPath = "/etc/nke/node-agent-client-tls/nvke-tls.crt"
+	NodeAgentExternalTLSNVKEKeyPath  = "/etc/nke/node-agent-client-tls/nvke-tls.key"
+	NodeAgentConfigPath              = "/etc/default/nke-agent"
+	NodeAgentControllerCAPath        = "/etc/nke/controller-ca.crt"
 )
 
 // SpireAttestationMethod selects the SPIRE node attestation method pinned at node creation.

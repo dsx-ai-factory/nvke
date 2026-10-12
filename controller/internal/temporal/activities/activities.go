@@ -15,6 +15,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodecontract"
 	"github.com/dsx-ai-factory/nvke/controller/internal/spiffe"
 )
 
@@ -53,6 +54,7 @@ func NewActivities(
 }
 
 func (a *Activities) nodeAgentBootstrapFiles(node db.Node) ([]db.CloudInitFile, error) {
+	contracts := nodecontract.ForAgentVersion(node.AgentVersion)
 	var files []db.CloudInitFile
 	args := []string{"--secure-server-port", a.cfg.NodeAgent.Port}
 	if node.NodeAgentExternalMTLSEnabled {
@@ -61,19 +63,19 @@ func (a *Activities) nodeAgentBootstrapFiles(node db.Node) ([]db.CloudInitFile, 
 		}
 
 		files = append(files, db.CloudInitFile{
-			Path:        config.NodeAgentControllerCAPath,
+			Path:        contracts.ControllerCABundlePath,
 			Owner:       "root:root",
 			Permissions: "0644",
 			Encoding:    "b64",
 			Content:     base64.StdEncoding.EncodeToString([]byte(a.controllerClientCABundle)),
 		})
-		args = append(args, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
+		args = append(args, "--controller-client-ca-bundle="+contracts.ControllerCABundlePath)
 	}
 	if node.NodeAgentTLSJWTEnabled {
 		args = append(args, "--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url="+a.cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)
 	}
 	files = append(files, db.CloudInitFile{
-		Path:        config.NodeAgentConfigPath,
+		Path:        contracts.EnvFilePath,
 		Owner:       "root:root",
 		Permissions: "0644",
 		Content:     fmt.Sprintf("AGENT_ARGS=%q\n", strings.Join(args, " ")),

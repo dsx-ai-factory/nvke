@@ -16,6 +16,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodecontract"
 	"github.com/dsx-ai-factory/nvke/controller/internal/teleport"
 	"github.com/dsx-ai-factory/nvke/controller/internal/utils"
 )
@@ -118,11 +119,12 @@ func renderUserData(
 		return "", fmt.Errorf("unsupported CNI plugin: %s", cluster.CniPlugin)
 	}
 	cniVersion := db.EffectiveCNIVersion(cluster.CniPlugin, strings.TrimSpace(cluster.CniVersion))
-	cniImagePackage, err := cniImagePackageName(cluster.CniPlugin, cniVersion)
+	cniPrefix := nodecontract.ForAgentVersion(node.AgentVersion).CNIPackagePrefix
+	cniImagePackage, err := cniImagePackageName(cniPrefix, cluster.CniPlugin, cniVersion)
 	if err != nil {
 		return "", err
 	}
-	cniChartsPackage, err := cniChartsPackageName(cluster.CniPlugin, cniVersion)
+	cniChartsPackage, err := cniChartsPackageName(cniPrefix, cluster.CniPlugin, cniVersion)
 	if err != nil {
 		return "", err
 	}
@@ -211,12 +213,12 @@ func validateDgxcTenantCredentials(cfg config.Config) error {
 	return nil
 }
 
-func cniImagePackageName(plugin db.CniPlugin, version string) (string, error) {
+func cniImagePackageName(prefix string, plugin db.CniPlugin, version string) (string, error) {
 	switch plugin {
 	case db.CNICalico:
-		return "nvke-cni-calico-images-" + version, nil
+		return prefix + "calico-images-" + version, nil
 	case db.CNIOvnKubernetes:
-		return "nvke-cni-ovn-images-" + version, nil
+		return prefix + "ovn-images-" + version, nil
 	default:
 		return "", fmt.Errorf("unsupported CNI plugin: %s", plugin)
 	}
@@ -230,12 +232,12 @@ func cniImagePackageName(plugin db.CniPlugin, version string) (string, error) {
 //
 // These names must match the CHARTS role of nvkeCniAptSpec in agent/internal/agent/cni.go, which is
 // what the agent looks up. Note Calico's package is named "manifests" and OVN's is named "charts".
-func cniChartsPackageName(plugin db.CniPlugin, version string) (string, error) {
+func cniChartsPackageName(prefix string, plugin db.CniPlugin, version string) (string, error) {
 	switch plugin {
 	case db.CNICalico:
-		return "nvke-cni-calico-manifests-" + version, nil
+		return prefix + "calico-manifests-" + version, nil
 	case db.CNIOvnKubernetes:
-		return "nvke-cni-ovn-charts-" + version, nil
+		return prefix + "ovn-charts-" + version, nil
 	default:
 		return "", fmt.Errorf("unsupported CNI plugin: %s", plugin)
 	}

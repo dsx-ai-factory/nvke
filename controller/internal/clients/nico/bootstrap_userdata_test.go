@@ -20,6 +20,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodecontract"
 )
 
 const testControllerClientCA = "-----BEGIN CERTIFICATE-----\npublic-ca\n-----END CERTIFICATE-----\n"
@@ -169,6 +170,39 @@ func TestUnit_RenderUserData(t *testing.T) {
 			config:            baseConfig,
 			template:          "images={{ .CNIImagePackage }}\ncharts={{ .CNIChartsPackage }}\n",
 			node:              db.Node{Name: "test-node"},
+			kubernetesVersion: "1.33.0",
+			cluster:           db.Cluster{CniPlugin: db.CNIOvnKubernetes, CniVersion: "1.4.1"},
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assert.Equal(t, "images=nvke-cni-ovn-images-1.4.1\ncharts=nvke-cni-ovn-charts-1.4.1\n", userData)
+			},
+		},
+		"empty agent version renders the old CNI package family": {
+			config:            baseConfig,
+			template:          "images={{ .CNIImagePackage }}\ncharts={{ .CNIChartsPackage }}\n",
+			node:              db.Node{Name: "test-node", AgentVersion: ""},
+			kubernetesVersion: "1.33.0",
+			cluster:           db.Cluster{CniPlugin: db.CNIOvnKubernetes, CniVersion: "1.4.1"},
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assert.Equal(t, "images=nke-cni-ovn-images-1.4.1\ncharts=nke-cni-ovn-charts-1.4.1\n", userData)
+			},
+		},
+		"agent version below the cutover renders the old CNI package family": {
+			config:            baseConfig,
+			template:          "images={{ .CNIImagePackage }}\ncharts={{ .CNIChartsPackage }}\n",
+			node:              db.Node{Name: "test-node", AgentVersion: "v0.21.0"},
+			kubernetesVersion: "1.33.0",
+			cluster:           db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assert.Equal(t, "images=nke-cni-calico-images-3.31.5\ncharts=nke-cni-calico-manifests-3.31.5\n", userData)
+			},
+		},
+		"agent version at the cutover renders the new CNI package family": {
+			config:            baseConfig,
+			template:          "images={{ .CNIImagePackage }}\ncharts={{ .CNIChartsPackage }}\n",
+			node:              db.Node{Name: "test-node", AgentVersion: nodecontract.NewFormMinAgentVersion},
 			kubernetesVersion: "1.33.0",
 			cluster:           db.Cluster{CniPlugin: db.CNIOvnKubernetes, CniVersion: "1.4.1"},
 			verify: func(t *testing.T, userData string) {
