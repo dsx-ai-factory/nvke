@@ -32,3 +32,6 @@ controllerStack:
     passwordFile: tenant-password
   database:
     passwordFile: db-password
+  # The nktp values the kind lanes use: one replica per collector, small
+  # requests, and metrics-server trusting the kind kubelet's certificate.
+  nktpValuesFile: @NKTP_VALUES@

@@ -94,7 +94,8 @@ vip="$(docker inspect -f '{{with index .NetworkSettings.Networks "kind"}}{{.IPAd
 # 3. The site spec and its credential files. The credentials are placeholders:
 # nothing in this lane reaches NICo or a private registry.
 for f in nico-token registry-token tenant-password; do printf 'smoke-%s\n' "${f}" >"${WORK}/site/${f}"; done
-sed -e "s|@CLUSTER@|${CLUSTER}|g" -e "s|@VIP@|${vip}|g" "${HERE}/sitespec.yaml.tmpl" >"${WORK}/site/sitespec.yaml"
+sed -e "s|@CLUSTER@|${CLUSTER}|g" -e "s|@VIP@|${vip}|g" -e "s|@NKTP_VALUES@|${REPO}/nktp/hack/e2e-values.yaml|g" \
+  "${HERE}/sitespec.yaml.tmpl" >"${WORK}/site/sitespec.yaml"
 "${NVKECTL}" validate sitespec -f "${WORK}/site/sitespec.yaml"
 
 # 4. Render. WORK is under the runner's temp directory, which the render
