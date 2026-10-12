@@ -6,8 +6,8 @@
 // docs/site-bootstrap/deploy-repository.md. It parses the item list and an
 // item's release.yaml, and writes release.yaml back in the same grammar the
 // shell-side reader (deploy/lib/nvke-deploy-items.py) accepts: one `key: value`
-// per line under chart: and release:, `- file` under values:, and one flow
-// mapping per line under requires:.
+// per line under chart: and release:, `- key=path` under chart.setFile:,
+// `- file` under values:, and one flow mapping per line under requires:.
 package deploypath
 
 import (
@@ -99,6 +99,10 @@ type Chart struct {
 	Artifact         string `yaml:"artifact,omitempty"`
 	ImageArtifact    string `yaml:"imageArtifact,omitempty"`
 	ProfilesArtifact string `yaml:"profilesArtifact,omitempty"`
+	// SetFile lists <helm key>=<absolute path> entries the executor passes
+	// as --set-file, so a file the operator holds is read at install time
+	// and never copied into the deploy path.
+	SetFile []string `yaml:"setFile,omitempty"`
 }
 
 // HelmRelease is the release: section.
@@ -168,6 +172,12 @@ func (r *Release) validate() error {
 	if r.Release == nil || r.Release.Name == "" || r.Release.Namespace == "" {
 		return errors.New("release.name and release.namespace are required")
 	}
+	for _, entry := range r.Chart.SetFile {
+		key, path, ok := strings.Cut(entry, "=")
+		if !ok || key == "" || !filepath.IsAbs(path) {
+			return fmt.Errorf("chart.setFile entry must be <helm key>=<absolute path>: %s", entry)
+		}
+	}
 	return nil
 }
 
@@ -187,6 +197,12 @@ func (r *Release) Marshal() []byte {
 		} {
 			if kv[1] != "" {
 				fmt.Fprintf(&b, "  %s: %s\n", kv[0], kv[1])
+			}
+		}
+		if len(r.Chart.SetFile) > 0 {
+			b.WriteString("  setFile:\n")
+			for _, entry := range r.Chart.SetFile {
+				fmt.Fprintf(&b, "    - %s\n", entry)
 			}
 		}
 	}

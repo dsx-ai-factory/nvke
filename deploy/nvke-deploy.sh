@@ -205,11 +205,11 @@ install_helm_item() {
   # Captured before it is read, not read from a process substitution: the exit
   # status of a process substitution is never checked, so a parser failure
   # would leave every field empty and surface as a bad helm invocation.
-  local fields chart_name version repository path release namespace values requires
+  local fields chart_name version repository path release namespace values requires setfile
   if ! fields="$(python3 "${ITEMS_PY}" release "${dir}/release.yaml")"; then
     die "item ${item}: cannot parse ${dir}/release.yaml"
   fi
-  IFS=$'\x1f' read -r _ chart_name version repository path release namespace values requires <<<"${fields}"
+  IFS=$'\x1f' read -r _ chart_name version repository path release namespace values requires setfile <<<"${fields}"
 
   # An override wins, because the caller had to build or fetch the chart.
   # Then a path inside the deploy path, then a repository the chart is
@@ -248,6 +248,13 @@ not publish needs."
     [[ -f "${file}" ]] || die "--values-for ${item}: no such file: ${file}"
     values_args+=(--values "${file}")
   done < <(values_for "${item}")
+  # chart.setFile entries are files the operator holds; helm reads them here,
+  # so the deploy path carries a path, not the content.
+  local entry
+  for entry in ${setfile//,/ }; do
+    [[ -f "${entry#*=}" ]] || die "item ${item}: setFile ${entry%%=*}: no such file: ${entry#*=}"
+    values_args+=(--set-file "${entry}")
+  done
 
   log "item ${item} -> release ${release} (${chart_name} ${version}) in ${namespace}"
   helm_install "${release}" "${ref[@]}" \

@@ -199,6 +199,25 @@ func (r *renderer) appendValues(item, file string, data []byte) {
 	}
 }
 
+// appendSetFile adds <helm key>=<absolute path> entries to an item's
+// chart.setFile.
+func (r *renderer) appendSetFile(item string, entries []string) {
+	dst := filepath.Join(r.opts.Out, item)
+	rel, err := ReadRelease(dst)
+	if err != nil {
+		r.problem("%s: %v", item, err)
+		return
+	}
+	if rel.Chart == nil {
+		r.problem("%s: release.yaml has no chart section", item)
+		return
+	}
+	rel.Chart.SetFile = append(rel.Chart.SetFile, entries...)
+	if err := writePrivate(filepath.Join(dst, "release.yaml"), rel.Marshal()); err != nil {
+		r.problem("%s: %v", item, err)
+	}
+}
+
 func (r *renderer) finish() error {
 	if r.itemsChanged {
 		header := "Rendered by nvkectl render deploy-path from " + r.opts.DeployPath + ". Template items are rendered and apply as manifests."

@@ -130,14 +130,15 @@ func (r *renderer) site() {
 		"adminIDs":     []string{"spiffe://" + trustDomain + controllerAdminPath},
 		"nodeAttestor": map[string]any{"tpmDirect": map[string]any{"checksum": checksum}},
 	}
+	// The CA files stay with the operator: helm reads them at install time
+	// through chart.setFile. A self-signed root is its own bundle.
+	var caFiles []string
 	if spec.Spire.CACertFile != "" && spec.Spire.CAKeyFile != "" {
-		cert := readFile(r, "spire.caCertFile", spec.Spire.CACertFile)
-		key := readFile(r, "spire.caKeyFile", spec.Spire.CAKeyFile)
-		// A self-signed root is its own bundle.
-		server["upstreamAuthority"] = map[string]any{"disk": map[string]any{
-			"enabled": true,
-			"secret":  map[string]any{"data": map[string]any{"certificate": cert, "key": key, "bundle": cert}},
-		}}
+		cert := secretPath(r, "spire.caCertFile", spec.Spire.CACertFile)
+		key := secretPath(r, "spire.caKeyFile", spec.Spire.CAKeyFile)
+		server["upstreamAuthority"] = map[string]any{"disk": map[string]any{"enabled": true}}
+		const prefix = "spire-server.upstreamAuthority.disk.secret.data."
+		caFiles = []string{prefix + "certificate=" + cert, prefix + "key=" + key, prefix + "bundle=" + cert}
 	}
 	domains, err := oidcDomains(filepath.Join(r.opts.DeployPath, "spire", "overlay.yaml"), vip)
 	if err != nil {
@@ -153,6 +154,10 @@ func (r *renderer) site() {
 		},
 	}
 	r.siteValues("spire", spire)
+	if len(caFiles) > 0 && len(r.problems) == 0 {
+		r.appendSetFile("spire", caFiles)
+		r.note("spire: the CA is read from %s and %s at install time", spec.Spire.CACertFile, spec.Spire.CAKeyFile)
+	}
 
 	// postgresql and temporal share the one database password. The Bitnami
 	// chart reads auth.postgresPassword for the superuser and auth.password
@@ -347,15 +352,24 @@ func oidcDomains(overlay, vip string) ([]string, error) {
 	return domains, nil
 }
 
-// readFile reads a file the site spec names, trimmed. A missing file is a
-// problem naming the field.
-func readFile(r *renderer, what, path string) string {
-	data, err := os.ReadFile(path)
+// secretPath returns the absolute path of a file the site spec names for
+// the install to read. A missing file, or a path the deploy path reader
+// cannot carry, is a problem naming the field.
+func secretPath(r *renderer, what, path string) string {
+	abs, err := filepath.Abs(path)
 	if err != nil {
 		r.problem("site spec: %s: %v", what, err)
 		return ""
 	}
-	return strings.TrimSpace(string(data))
+	if _, err := os.Stat(abs); err != nil {
+		r.problem("site spec: %s: %v", what, err)
+		return ""
+	}
+	if strings.ContainsFunc(abs, unicode.IsSpace) {
+		r.problem("site spec: %s: the path %q holds whitespace, which the deploy path reader cannot carry; move the file to a path without spaces", what, abs)
+		return ""
+	}
+	return abs
 }
 
 func contains(list []string, value string) bool {

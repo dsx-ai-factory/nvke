@@ -43,8 +43,9 @@ missing database password file is created with a generated password. Each
 item that takes site values gets a site-values.yaml appended to its values;
 the controller gets the database password, the OIDC discovery URL and the
 SPIRE server address, SPIRE gets the site identity, the controller's admin
-ID, the TPM attestor checksum and the bootstrap CA, PostgreSQL and Temporal
-get the database password. Template items are rendered against the site and
+ID, the TPM attestor checksum and the bootstrap CA by file reference (helm
+reads it at install time), PostgreSQL and Temporal get the database
+password. Template items are rendered against the site and
 become manifest items. The tokens and passwords are read from the files the
 site spec names and written into the result, so --out is created 0700 and is
 meant for one install. Paths under controllerStack resolve from the site

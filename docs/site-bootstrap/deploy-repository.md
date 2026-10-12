@@ -79,7 +79,7 @@ items:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `name` | Yes | Subdirectory name. For `argocd` items, also becomes the ArgoCD Application name. |
-| `type` | Yes | `template`, `manifest`, or `argocd` |
+| `type` | Yes | `template`, `manifest`, `helm`, or `argocd` |
 | `path` | No | Subdirectory path relative to deploy root. Defaults to `name`. |
 
 Names must be unique across all repos — duplicates are skipped with a warning.
@@ -99,6 +99,28 @@ Files within a template item are applied in lexicographic order. Use numeric pre
 ### `manifest` — Plain Kubernetes Manifests
 
 Manifest items contain `.yaml` and `.yml` files applied directly via `kubectl apply --server-side`. Files are applied in lexicographic order.
+
+### `helm` — Helm charts
+
+A helm item installs one chart as one Helm release. Its `release.yaml` names the chart, the release and the values:
+
+```yaml
+chart:
+  name: spire
+  version: "0.30.1"         # pinned; passed to helm for a repository chart
+  repository: https://spiffe.github.io/helm-charts-hardened/   # or path: ../../nktp/deploy/charts/nktp
+  setFile:                  # <helm key>=<absolute path>, passed as --set-file; the file is read at install time
+    - spire-server.upstreamAuthority.disk.secret.data.key=/etc/nvke/ca.key
+release:
+  name: spire
+  namespace: spire-server
+values:
+  - values.yaml             # applied in order; later files win
+requires:
+  - {kind: certificate, name: oidc-provider-upstream-ca, namespace: spire-server, condition: Ready}
+```
+
+`repository` and `path` name where the chart comes from; one of them. `setFile` keeps a secret the operator holds out of the deploy path.
 
 ### `argocd` — ArgoCD Applications
 

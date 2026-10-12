@@ -65,6 +65,9 @@ sed -e 's|REPLACE_ARCH|arm64|; s|REPLACE_NICO_ENDPOINT|https://nico.example.com|
     -e "s|REPLACE_REGISTRY_TOKEN_PATH|${WORK}/site/registry-token|; s|REPLACE_TENANT_USER|nvke|; s|REPLACE_TENANT_PASSWORD_PATH|${WORK}/site/tenant-password|" \
     -e "s|REPLACE_DB_PASSWORD_PATH|${WORK}/site/db-password|" \
     "${REPO}/cli/examples/sitespec.yaml" >"${WORK}/site/sitespec.yaml"
+printf -- '-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n' >"${WORK}/site/ca.crt"
+printf -- '-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n' >"${WORK}/site/ca.key"
+printf 'spire:\n  caCertFile: %s\n  caKeyFile: %s\n' "${WORK}/site/ca.crt" "${WORK}/site/ca.key" >>"${WORK}/site/sitespec.yaml"
 rendered="${WORK}/rendered"
 out="$("${NVKECTL}" render deploy-path --deploy-path "${NICO}" --sitespec "${WORK}/site/sitespec.yaml" --out "${rendered}" 2>&1)" || fail "render exited $?: ${out}"
 expect "render reports the site values" '^controller: site values written$' "${out}"
@@ -82,6 +85,8 @@ grep -q '^SITE_NAME=nvke-site$' "${rendered}/site.env" && pass "site.env names t
 out="$(bash "${EXECUTOR}" install --deploy-path "${rendered}" --dry-run 2>&1)" || fail "rendered dry run exited $?"
 expect "the controller takes its site values" "helm upgrade --install nke-controller .*--values ${rendered}/controller/values.yaml --values ${rendered}/controller/overlay.yaml --values ${rendered}/controller/site-values.yaml" "${out}"
 expect "spire takes its site values" "helm upgrade --install spire .*--values ${rendered}/spire/site-values.yaml" "${out}"
+expect "spire reads the CA from the operator's files" "helm upgrade --install spire .*--set-file spire-server.upstreamAuthority.disk.secret.data.certificate=${WORK}/site/ca.crt --set-file spire-server.upstreamAuthority.disk.secret.data.key=${WORK}/site/ca.key --set-file spire-server.upstreamAuthority.disk.secret.data.bundle=${WORK}/site/ca.crt" "${out}"
+! grep -q 'BEGIN' "${rendered}/spire/site-values.yaml" && pass "the CA is not copied into the spire values" || fail "spire site values hold PEM"
 expect "the rendered Secret is applied as a manifest" "^kubectl apply --server-side -f ${rendered}/nvke-base-config/20-nico-credentials.yaml" "${out}"
 expect "the namespaces manifest is applied too" "^kubectl apply --server-side -f ${rendered}/nvke-base-config/00-namespaces.yaml" "${out}"
 reject "no python template render for a rendered path" 'render-template' "${out}"

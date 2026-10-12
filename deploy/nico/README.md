@@ -41,7 +41,8 @@ What the node needs, all present on the reference instance type:
   the site the spec's `controllerStack` section describes: the controller,
   SPIRE, PostgreSQL and Temporal items get a `site-values.yaml` (database
   password, OIDC discovery URL, SPIRE server address and identity, the
-  controller's admin ID, the TPM attestor checksum, the bootstrap CA), the
+  controller's admin ID, the TPM attestor checksum, the bootstrap CA as a
+  file reference read at install time), the
   template items are rendered and become manifests, and `site.env` names the
   site. Tokens and passwords are read from the files the spec names and
   written into `DIR`, so it is created `0700` and is for one install. Then

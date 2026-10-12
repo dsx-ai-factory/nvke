@@ -41,7 +41,9 @@ func TestItemsAndReleases(t *testing.T) {
 	if len(spire.Requires) != 1 || spire.Requires[0].Kind != "certificate" {
 		t.Errorf("spire requires: %+v", spire.Requires)
 	}
-	// Marshal writes what the shell-side reader accepts, and round-trips.
+	// Marshal writes what the shell-side reader accepts, and round-trips,
+	// chart.setFile included.
+	spire.Chart.SetFile = []string{"spire-server.upstreamAuthority.disk.secret.data.key=/etc/nvke/ca.key"}
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "release.yaml"), spire.Marshal(), 0o600); err != nil {
 		t.Fatal(err)
@@ -50,10 +52,12 @@ func TestItemsAndReleases(t *testing.T) {
 	if err != nil {
 		t.Fatalf("round trip: %v\n%s", err, spire.Marshal())
 	}
-	if again.Chart.Version != spire.Chart.Version || len(again.Values) != len(spire.Values) || again.Requires[0] != spire.Requires[0] {
+	if again.Chart.Version != spire.Chart.Version || len(again.Values) != len(spire.Values) || again.Requires[0] != spire.Requires[0] ||
+		len(again.Chart.SetFile) != 1 || again.Chart.SetFile[0] != spire.Chart.SetFile[0] {
 		t.Errorf("round trip changed the release:\n%s", spire.Marshal())
 	}
-	if !strings.Contains(string(spire.Marshal()), "  version: \"0.30.1\"\n") || !strings.Contains(string(spire.Marshal()), "  - {kind: certificate, name: oidc-provider-upstream-ca, namespace: spire-server, condition: Ready}\n") {
+	if !strings.Contains(string(spire.Marshal()), "  setFile:\n    - spire-server.upstreamAuthority.disk.secret.data.key=/etc/nvke/ca.key\n") ||
+		!strings.Contains(string(spire.Marshal()), "  version: \"0.30.1\"\n") || !strings.Contains(string(spire.Marshal()), "  - {kind: certificate, name: oidc-provider-upstream-ca, namespace: spire-server, condition: Ready}\n") {
 		t.Errorf("marshal grammar:\n%s", spire.Marshal())
 	}
 }
@@ -65,7 +69,8 @@ func TestReadRelease_Problems(t *testing.T) {
 		"chart:\n  name: x\n  version: \"1\"\n  path: a\nrelease:\n  name: r\n": "release.name and release.namespace",
 		"chart:\n  name: x\n  version: \"1\"\n  colour: red\n":                  "field colour not found",
 		"image: ghcr.io/x/y\n": "image must be <repository>:<tag>",
-		"image: ghcr.io/x/y@sha256:" + strings.Repeat("a", 64) + "\n": "with no digest",
+		"image: ghcr.io/x/y@sha256:" + strings.Repeat("a", 64) + "\n":                                                       "with no digest",
+		"chart:\n  name: x\n  version: \"1\"\n  setFile:\n    - a.b=relative/ca.crt\nrelease:\n  name: r\n  namespace: n\n": "setFile entry must be <helm key>=<absolute path>",
 	}
 	for text, want := range cases {
 		dir := t.TempDir()
@@ -194,8 +199,18 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	if dig(sp, "spire-server", "nodeAttestor", "tpmDirect", "checksum") != "b69d0153c8241383f24da138bc85429a620d9f962a2f10abb314aa0e39046d16" {
 		t.Errorf("arm64 TPM checksum: %v", dig(sp, "spire-server", "nodeAttestor", "tpmDirect", "checksum"))
 	}
-	if dig(sp, "spire-server", "upstreamAuthority", "disk", "secret", "data", "certificate") != "CERT" || dig(sp, "spire-server", "upstreamAuthority", "disk", "secret", "data", "bundle") != "CERT" {
+	// The CA is referenced, not copied: enabled in the values, the files in
+	// chart.setFile.
+	if dig(sp, "spire-server", "upstreamAuthority", "disk", "enabled") != true || dig(sp, "spire-server", "upstreamAuthority", "disk", "secret") != nil {
 		t.Errorf("upstream authority: %v", dig(sp, "spire-server", "upstreamAuthority"))
+	}
+	spireRel, _ := ReadRelease(filepath.Join(out, "spire"))
+	caPrefix := "spire-server.upstreamAuthority.disk.secret.data."
+	if want := []string{caPrefix + "certificate=" + spec.Spire.CACertFile, caPrefix + "key=" + spec.Spire.CAKeyFile, caPrefix + "bundle=" + spec.Spire.CACertFile}; strings.Join(spireRel.Chart.SetFile, " ") != strings.Join(want, " ") {
+		t.Errorf("spire setFile: %v", spireRel.Chart.SetFile)
+	}
+	if raw, _ := os.ReadFile(filepath.Join(out, "spire", SiteValuesFile)); strings.Contains(string(raw), "CERT") || strings.Contains(string(raw), "KEY") {
+		t.Errorf("spire site values carry the CA:\n%s", raw)
 	}
 	domains, _ := dig(sp, "spiffe-oidc-discovery-provider", "config", "additionalDomains").([]any)
 	if len(domains) != 4 || domains[0] != "nke.site-controller.internal" || domains[3] != vip {
@@ -363,6 +378,21 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 	}
 	if _, statErr := os.Stat(inside); statErr == nil {
 		t.Error("nested out was created")
+	}
+	// A CA path with whitespace is refused: the deploy path reader cannot carry it.
+	caSpec := filledSiteSpec(t, true, nil)
+	caDir := filepath.Join(t.TempDir(), "ca dir")
+	if err := os.MkdirAll(caDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"ca.crt", "ca.key"} {
+		if err := os.WriteFile(filepath.Join(caDir, f), []byte("x\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	caSpec.Spire.CACertFile, caSpec.Spire.CAKeyFile = filepath.Join(caDir, "ca.crt"), filepath.Join(caDir, "ca.key")
+	if _, err := Render(RenderOptions{DeployPath: nico, Site: caSpec, Out: filepath.Join(t.TempDir(), "r")}); err == nil || !strings.Contains(err.Error(), "spire.caCertFile: the path") || !strings.Contains(err.Error(), "holds whitespace") {
+		t.Errorf("CA path with a space: %v", err)
 	}
 	// A secret the templates cannot carry is refused by field.
 	for name, content := range map[string]string{"quote": "tok\"en", "newline": "abc\ndef", "backslash": "a\\b"} {
