@@ -233,7 +233,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' ||
        github.event_name == 'push' ||
        (github.event.pull_request.head.repo.full_name == github.repository &&
-        contains(fromJSON('["qualify-e2e","qualify-e2e-dry-run","qualify-e2e-smoke"]'), github.event.label.name)))
+        contains(fromJSON('["qualify-e2e","qualify-e2e-dry-run","qualify-e2e-smoke","qualify-e2e-dsx"]'), github.event.label.name)))
     timeout-minutes: 15
     permissions:
       contents: read
@@ -263,7 +263,14 @@ jobs:
         ${{ inputs.resolution
             || (github.event_name == 'push' && 'commitDescribe')
             || 'gitTag' }}
-      SCOPE: ${{ inputs.scope || vars.QUALIFY_E2E_SCOPE || 'golden-path' }}
+      # A label run carries no inputs, so a scope other than the repository
+      # default was unreachable from a branch: dispatch is refused for one by
+      # the Teleport ref guard, and a label takes what the variables say.
+      # qualify-e2e-dsx is that missing input for the DSX stream, and exists
+      # because a workflow_dispatch from a branch cannot reach Teleport at all:
+      # the join token allows only refs/heads/main and refs/pull/*/merge. Until
+      # this lands on main a label is the only way to run the DSX stream.
+      SCOPE: ${{ inputs.scope || (github.event.label.name == 'qualify-e2e-dsx' && 'dsx') || vars.QUALIFY_E2E_SCOPE || 'golden-path' }}
       # The registry.yaml base names this, so the plan fails here when it is
       # unset rather than naming an artifact under no org. The same variable
       # the lanes build SITE_IMAGES from.
@@ -586,7 +593,13 @@ jobs:
       # full, so a run that names no stage qualifies the whole thing. A label run
       # and a tag push carry no dispatch input, and a beta that stopped at a
       # booted node would have qualified none of what it was cut for.
-      SITE_STAGE: ${{ inputs.stage || vars.QUALIFY_E2E_STAGE || 'full' }}
+      #
+      # provision for the DSX label: it takes the node, reaches it, and
+      # releases it, which is what redstone-dev1-dh2 can place --- one machine
+      # is bound to its instance type, and a full run places three at once.
+      # A DSX run at full is refused by the suite before a machine is taken
+      # anyway, its tenant half speaking Forge only. See SCOPE in the plan job.
+      SITE_STAGE: ${{ inputs.stage || (github.event.label.name == 'qualify-e2e-dsx' && 'provision') || vars.QUALIFY_E2E_STAGE || 'full' }}
       # A dry run joins no Teleport and runs no suite. Decided by the plan job.
       DRY_RUN: ${{ needs.plan.outputs.dry-run }}
       # Where the nvkectl artifact for this stream's architecture is. The plan
