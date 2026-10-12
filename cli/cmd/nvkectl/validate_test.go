@@ -42,6 +42,8 @@ func filledSiteSpec(t *testing.T, edits map[string]string) string {
 		"REPLACE_REGISTRY_SERVER": "ghcr.io", "REPLACE_REGISTRY_USERNAME": "robot", "REPLACE_REGISTRY_TOKEN_PATH": filepath.Join(dir, "registry-token"),
 		"REPLACE_TENANT_USER": "nke", "REPLACE_TENANT_PASSWORD_PATH": filepath.Join(dir, "tenant-password"),
 		"REPLACE_DB_PASSWORD_PATH": filepath.Join(dir, "db-password"),
+		// deploy/nico enables profiles.image without a pin.
+		"  # images:\n  #   controller: \"\"\n  #   profiles: \"\"": "  images:\n    profiles: ghcr.io/example/controller-profiles:v1",
 	}
 	for k, v := range edits {
 		values[k] = v

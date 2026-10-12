@@ -9,7 +9,7 @@
 # is applied and no registry is reached, so the job runs on ubuntu-latest with
 # no secret.
 #
-# The Go tests of the package the executor calls run in controller-test.yml
+# The Go tests of the package nvkectl render uses run in controller-test.yml
 # with the rest of cli/.
 #
 # The push filter scopes the post-merge canary on main. Pull requests reach

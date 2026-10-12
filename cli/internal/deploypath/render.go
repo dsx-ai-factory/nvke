@@ -78,6 +78,10 @@ func Render(opts RenderOptions) (*Rendered, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A symlinked checkout is walked and joined through its target.
+	if resolved, err := filepath.EvalSymlinks(deployPath); err == nil {
+		deployPath = resolved
+	}
 	opts.DeployPath = deployPath
 	out, err := filepath.Abs(opts.Out)
 	if err != nil {
@@ -98,7 +102,7 @@ func Render(opts RenderOptions) (*Rendered, error) {
 	// cleanup below removes only what this run created.
 	if err := os.Mkdir(out, 0o700); err != nil {
 		if os.IsExist(err) {
-			return nil, fmt.Errorf("%s exists; render writes a new directory", out)
+			return nil, fmt.Errorf("%s exists; render writes a new directory, so pass another --out or remove it", out)
 		}
 		return nil, err
 	}
@@ -300,7 +304,12 @@ func copyFile(src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
 	}
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	// Private, but a helper script stays executable for its owner.
+	mode := os.FileMode(0o600)
+	if info, err := in.Stat(); err == nil {
+		mode |= info.Mode().Perm() & 0o100
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 	if err != nil {
 		return err
 	}

@@ -51,7 +51,9 @@ What the node needs, all present on the reference instance type:
   command ends by naming the files under `DIR` that hold a credential;
   delete `DIR` after the install. `DIR` gets a `.gitignore` that ignores
   everything, so a repository does not pick it up by accident. Then
-  install `DIR` with this script; it needs no `--config`
+  install `DIR` with this script; it needs no `--config`. This deploy path
+  enables the profiles content image without naming it, so the spec sets
+  `controllerStack.images.profiles`
 - a checkout laid out so that `deploy/` and `controller/` are siblings --
   `controller/release.yaml` reaches its chart as
   `../../controller/deploy/charts/controller`

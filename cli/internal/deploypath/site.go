@@ -39,8 +39,10 @@ const controllerAdminPath = "/nke-service/nke-controller"
 var temporalImages = map[string]string{"server": "temporalio/server", "admintools": "temporalio/admin-tools", "web": "temporalio/ui"}
 
 // TemplateContext is what a template item's .yaml.tmpl files render against:
-// the BootstrapConfig field names docs/site-bootstrap/deploy-repository.md
-// documents, filled from the site spec's controllerStack section.
+// the subset of the BootstrapConfig fields in
+// docs/site-bootstrap/deploy-repository.md that the site spec's
+// controllerStack section supplies. A template naming another field is
+// refused.
 type TemplateContext struct {
 	ClusterName string
 	Nico        struct{ Endpoint, OrgID, Token, APIName string }
@@ -65,21 +67,29 @@ func (r *renderer) site() {
 		r.problem("site spec: %v", err)
 		return
 	}
-	// Secrets land inside double-quoted YAML scalars and a JSON document in
-	// the templates, which carry no escaping, so a value holding a quote, a
-	// backslash or a control character is refused rather than written altered.
+	// Every template value lands inside a double-quoted YAML scalar or a JSON
+	// document, which carry no escaping, so a value holding a quote, a
+	// backslash or a control character is refused rather than written
+	// altered. An empty value is refused too: it would render an empty
+	// credential.
+	check := func(what, value string) string {
+		if value == "" {
+			r.problem("site spec: %s is empty", what)
+			return ""
+		}
+		if strings.ContainsAny(value, "\"\\") || strings.ContainsFunc(value, unicode.IsControl) {
+			r.problem("site spec: %s: the value holds a character the templates cannot carry (a quote, a backslash or a control character)", what)
+			return ""
+		}
+		return value
+	}
 	read := func(what, path string) string {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			r.problem("site spec: %s: %v", what, err)
 			return ""
 		}
-		value := strings.TrimSpace(string(data))
-		if strings.ContainsAny(value, "\"\\") || strings.ContainsFunc(value, unicode.IsControl) {
-			r.problem("site spec: %s: the value holds a character the templates cannot carry (a quote, a backslash or a control character)", what)
-			return ""
-		}
-		return value
+		return check(what, strings.TrimSpace(string(data)))
 	}
 	// controllerStack paths resolve from the site spec's directory; the
 	// bootstrap's spire.ca*File resolve from the working directory, as
@@ -87,11 +97,14 @@ func (r *renderer) site() {
 	stackPath := spec.ResolvePath
 	var ctx TemplateContext
 	ctx.ClusterName = spec.ClusterName
-	ctx.Nico.Endpoint, ctx.Nico.OrgID, ctx.Nico.APIName = cs.Nico.Endpoint, cs.Nico.OrgID, cs.Nico.APIName
+	ctx.Nico.Endpoint = check("controllerStack.nico.endpoint", cs.Nico.Endpoint)
+	ctx.Nico.OrgID = check("controllerStack.nico.orgID", cs.Nico.OrgID)
+	ctx.Nico.APIName = check("controllerStack.nico.apiName", cs.Nico.APIName)
 	ctx.Nico.Token = read("controllerStack.nico.tokenFile", stackPath(cs.Nico.TokenFile))
-	ctx.Registry.Server, ctx.Registry.Username = cs.PullSecret.Server, cs.PullSecret.Username
+	ctx.Registry.Server = check("controllerStack.pullSecret.server", cs.PullSecret.Server)
+	ctx.Registry.Username = check("controllerStack.pullSecret.username", cs.PullSecret.Username)
 	ctx.Registry.Token = read("controllerStack.pullSecret.tokenFile", stackPath(cs.PullSecret.TokenFile))
-	ctx.Tenant.User = cs.Tenant.User
+	ctx.Tenant.User = check("controllerStack.tenant.user", cs.Tenant.User)
 	ctx.Tenant.Password = read("controllerStack.tenant.passwordFile", stackPath(cs.Tenant.PasswordFile))
 	password := r.dbPassword(spec)
 	if len(r.problems) > 0 {
@@ -112,10 +125,12 @@ func (r *renderer) site() {
 		"spiffe":      map[string]any{"trustDomain": trustDomain, "spire": map[string]any{"serverAddress": vip}},
 	}
 	if cs.Images.Controller != "" {
-		controller["image"] = imageValues(cs.Images.Controller)
+		controller["image"] = r.imageValues("controllerStack.images.controller", cs.Images.Controller)
 	}
 	if cs.Images.Profiles != "" {
-		controller["profiles"] = map[string]any{"image": imageValues(cs.Images.Profiles)}
+		controller["profiles"] = map[string]any{"image": r.imageValues("controllerStack.images.profiles", cs.Images.Profiles)}
+	} else if r.profilesImageRequired() {
+		r.problem("site spec: controllerStack.images.profiles is required: the deploy path enables profiles.image and nothing else names the image")
 	}
 	r.siteValues("controller", controller)
 	r.credential(filepath.Join("controller", SiteValuesFile))
@@ -176,8 +191,14 @@ func (r *renderer) site() {
 	}}}}
 	if cs.Mirror != "" {
 		for key, repo := range temporalImages {
-			temporal[key] = map[string]any{"image": map[string]any{"repository": cs.Mirror + "/" + repo}}
+			image := map[string]any{"repository": cs.Mirror + "/" + repo}
+			if existing, ok := temporal[key].(map[string]any); ok {
+				existing["image"] = image
+			} else {
+				temporal[key] = map[string]any{"image": image}
+			}
 		}
+		r.note("mirror: spire, postgresql and temporal pull from %s; nktp and capnico keep their upstream registries", cs.Mirror)
 	}
 	r.siteValues("temporal", temporal)
 	r.credential(filepath.Join("temporal", SiteValuesFile))
@@ -235,7 +256,11 @@ func (r *renderer) dbPassword(spec *sitespec.SiteSpec) string {
 	path := spec.ResolvePath(file)
 	data, err := os.ReadFile(path)
 	if err == nil {
-		return strings.TrimSpace(string(data))
+		if value := strings.TrimSpace(string(data)); value != "" {
+			return value
+		}
+		r.problem("site spec: controllerStack.database.passwordFile: %s is empty", path)
+		return ""
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
 		r.problem("site spec: controllerStack.database.passwordFile: %v", err)
@@ -276,8 +301,8 @@ func (r *renderer) template(item string, ctx *TemplateContext) {
 			r.problem("%s: %v", item, err)
 			return
 		}
-		// missingkey=error: a field the context does not have is a refused
-		// render, not an empty Secret.
+		// A template that names a field the context does not have fails to
+		// execute, so a typo is a refused render.
 		tmpl, err := template.New(name).Option("missingkey=error").Parse(string(text))
 		if err != nil {
 			r.problem("%s/%s: %v", item, name, err)
@@ -302,6 +327,10 @@ func (r *renderer) template(item string, ctx *TemplateContext) {
 		}
 		count++
 	}
+	if count == 0 {
+		r.problem("%s: a template item with no .yaml.tmpl file", item)
+		return
+	}
 	for i := range r.items {
 		if r.items[i].Name == item {
 			r.items[i].Type = TypeManifest
@@ -312,10 +341,19 @@ func (r *renderer) template(item string, ctx *TemplateContext) {
 }
 
 // imageValues splits an image reference into the chart's image values:
-// repository and digest, or repository and tag. A tag beside a digest is
-// dropped and tag is cleared so the overlay's tag does not survive as a
-// second pin; the controller chart fills in its appVersion as a placeholder
-// tag and the digest pins the pull.
+// repository, tag and digest, the unused pin cleared so nothing from the
+// overlay survives beside the operator's. A tag beside a digest is dropped;
+// the controller chart fills in its appVersion as a placeholder tag and the
+// digest pins the pull. A reference with neither tag nor digest is refused.
+func (r *renderer) imageValues(what, ref string) map[string]any {
+	values := imageValues(ref)
+	if values == nil {
+		r.problem("site spec: %s: %q names neither a tag nor a digest", what, ref)
+		return map[string]any{}
+	}
+	return values
+}
+
 func imageValues(ref string) map[string]any {
 	if repo, digest, ok := strings.Cut(ref, "@"); ok {
 		slash := strings.LastIndex(repo, "/")
@@ -326,9 +364,63 @@ func imageValues(ref string) map[string]any {
 	}
 	slash := strings.LastIndex(ref, "/")
 	if colon := strings.LastIndex(ref, ":"); colon > slash {
-		return map[string]any{"repository": ref[:colon], "tag": ref[colon+1:]}
+		return map[string]any{"repository": ref[:colon], "tag": ref[colon+1:], "digest": ""}
 	}
-	return map[string]any{"repository": ref}
+	return nil
+}
+
+// profilesImageRequired reports whether the deploy path's controller values
+// enable profiles.image without naming a tag or digest, so the site spec
+// must supply the image. The files are read as nodes: helm accepts a
+// repeated key, so the check does too.
+func (r *renderer) profilesImageRequired() bool {
+	rel, err := ReadRelease(filepath.Join(r.opts.DeployPath, "controller"))
+	if err != nil || rel.Chart == nil {
+		return false
+	}
+	var enabled, pinned bool
+	for _, file := range rel.Values {
+		data, err := os.ReadFile(filepath.Join(r.opts.DeployPath, "controller", file))
+		if err != nil {
+			continue
+		}
+		var doc yaml.Node
+		if yaml.Unmarshal(data, &doc) != nil || len(doc.Content) == 0 {
+			continue
+		}
+		image := yamlChild(doc.Content[0], "profiles", "image")
+		if image == nil {
+			continue
+		}
+		if n := yamlChild(image, "enabled"); n != nil {
+			enabled = n.Value == "true"
+		}
+		if n := yamlChild(image, "tag"); n != nil && n.Value != "" {
+			pinned = true
+		}
+		if n := yamlChild(image, "digest"); n != nil && n.Value != "" {
+			pinned = true
+		}
+	}
+	return enabled && !pinned
+}
+
+// yamlChild walks mapping nodes by key; the last of a repeated key wins, as
+// it does for helm.
+func yamlChild(node *yaml.Node, keys ...string) *yaml.Node {
+	for _, key := range keys {
+		if node == nil || node.Kind != yaml.MappingNode {
+			return nil
+		}
+		var found *yaml.Node
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			if node.Content[i].Value == key {
+				found = node.Content[i+1]
+			}
+		}
+		node = found
+	}
+	return node
 }
 
 // oidcDomains returns the OIDC provider's additionalDomains from the deploy

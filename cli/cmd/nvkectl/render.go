@@ -59,7 +59,7 @@ up by accident. Paths under controllerStack resolve from the site
 spec's directory; spire.caCertFile and spire.caKeyFile resolve from the
 working directory, as "nvkectl bootstrap site" reads them. A chart the
 committed deploy path builds from the checkout keeps that chart, by absolute
-path, so --out can live anywhere.
+path: --out installs from anywhere on this machine, against this checkout.
 
 "nvkectl validate sitespec" checks the site spec first; render refuses the
 same problems, every one at once, and leaves nothing under --out on failure.

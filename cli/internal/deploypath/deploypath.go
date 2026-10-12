@@ -30,7 +30,9 @@ const (
 	TypeArgoCD   = "argocd"
 )
 
-var tokenPattern = regexp.MustCompile(`^[\w.-]+$`)
+// tokenPattern is an item name: letters, digits, `-`, `_` and inner dots.
+// `.` and `..` are not names, and the shell reader accepts the same set.
+var tokenPattern = regexp.MustCompile(`^[\w-]+(\.[\w-]+)*$`)
 
 // Item is one entry of nvke-deploy.yaml.
 type Item struct {

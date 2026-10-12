@@ -68,6 +68,8 @@ sed -e 's|REPLACE_ARCH|arm64|; s|REPLACE_NICO_ENDPOINT|https://nico.example.com|
     -e "s|REPLACE_REGISTRY_TOKEN_PATH|${WORK}/site/registry-token|; s|REPLACE_TENANT_USER|nvke|; s|REPLACE_TENANT_PASSWORD_PATH|${WORK}/site/tenant-password|" \
     -e "s|REPLACE_DB_PASSWORD_PATH|${WORK}/site/db-password|" \
     "${REPO}/cli/examples/sitespec.yaml" >"${WORK}/site/sitespec.yaml"
+# deploy/nico enables profiles.image without a pin, so the spec names the image.
+sed -i.bak 's|^  # images:$|  images:|; s|^  #   profiles: ""$|    profiles: ghcr.io/example/controller-profiles:v1|' "${WORK}/site/sitespec.yaml" && rm -f "${WORK}/site/sitespec.yaml.bak"
 printf -- '-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n' >"${WORK}/site/ca.crt"
 printf -- '-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n' >"${WORK}/site/ca.key"
 printf 'spire:\n  caCertFile: %s\n  caKeyFile: %s\n' "${WORK}/site/ca.crt" "${WORK}/site/ca.key" >>"${WORK}/site/sitespec.yaml"

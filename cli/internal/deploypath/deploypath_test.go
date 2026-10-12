@@ -126,6 +126,8 @@ func filledSiteSpec(t *testing.T, withCA bool, extra map[string]string) *sitespe
 	if err != nil {
 		t.Fatalf("load: %v\n%s", err, body)
 	}
+	// deploy/nico enables profiles.image without a pin, so the spec names it.
+	spec.ControllerStack.Images.Profiles = "ghcr.io/example/controller-profiles:v1"
 	return spec
 }
 
@@ -140,6 +142,15 @@ func readValues(t *testing.T, path string) map[string]any {
 		t.Fatalf("%s: %v", path, err)
 	}
 	return out
+}
+
+func mustGlob(t *testing.T, pattern string) []string {
+	t.Helper()
+	matches, err := filepath.Glob(pattern)
+	if err != nil || len(matches) == 0 {
+		t.Fatalf("glob %s: %v %v", pattern, matches, err)
+	}
+	return matches
 }
 
 func dig(m map[string]any, path ...string) any {
@@ -180,6 +191,9 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	if _, has := ctl["image"]; has {
 		t.Error("controller image set without an override")
 	}
+	if dig(ctl, "profiles", "image", "tag") != "v1" || dig(ctl, "profiles", "image", "digest") != "" {
+		t.Errorf("profiles image: %v", ctl["profiles"])
+	}
 	password, _ := dig(ctl, "appDb", "postgresPassword").(string)
 	if password != "db-secret" {
 		t.Errorf("database password not read from the site spec's file: %q", password)
@@ -189,6 +203,12 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	if dig(pg, "auth", "postgresPassword") != password || dig(pg, "auth", "password") != password ||
 		dig(tp, "server", "config", "persistence", "default", "sql", "password") != password {
 		t.Errorf("the database password differs between items")
+	}
+	if _, has := pg["global"]; has {
+		t.Error("postgresql mirror keys without a mirror")
+	}
+	if dig(tp, "server", "image") != nil || tp["web"] != nil {
+		t.Error("temporal mirror keys without a mirror")
 	}
 	sp := readValues(t, filepath.Join(out, "spire", SiteValuesFile))
 	if dig(sp, "global", "spire", "trustDomain") != td || dig(sp, "global", "spire", "clusterName") != spec.ClusterName {
@@ -307,8 +327,14 @@ func TestRender_SiteSpecOptions(t *testing.T) {
 		t.Errorf("postgresql mirror: %v", pg)
 	}
 	tp := readValues(t, filepath.Join(out, "temporal", SiteValuesFile))
-	if dig(tp, "server", "image", "repository") != "mirror.example.test:5000/temporalio/server" {
+	if dig(tp, "server", "image", "repository") != "mirror.example.test:5000/temporalio/server" ||
+		dig(tp, "admintools", "image", "repository") != "mirror.example.test:5000/temporalio/admin-tools" ||
+		dig(tp, "web", "image", "repository") != "mirror.example.test:5000/temporalio/ui" {
 		t.Errorf("temporal mirror: %v", tp)
+	}
+	if dig(tp, "server", "config", "persistence", "default", "sql", "password") != "db-secret" ||
+		dig(tp, "server", "config", "persistence", "visibility", "sql", "password") != "db-secret" {
+		t.Errorf("the mirror dropped temporal's passwords: %v", tp["server"])
 	}
 	nktp, _ := os.ReadFile(filepath.Join(out, "nktp", SiteValuesFile))
 	if string(nktp) != "gateway:\n  enabled: true\n" {
@@ -438,6 +464,54 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 			t.Errorf("%s in a password: %v", name, err)
 		}
 	}
+	// Refusals by field: no profiles image while the deploy path enables it, an
+	// empty secret file, a non-secret value the templates cannot carry, an
+	// image override with no pin.
+	for name, tc := range map[string]struct {
+		mutate func(*sitespec.SiteSpec)
+		want   string
+	}{
+		"profiles image": {func(s *sitespec.SiteSpec) { s.ControllerStack.Images.Profiles = "" }, "controllerStack.images.profiles is required"},
+		"empty secret":   {func(s *sitespec.SiteSpec) { _ = os.WriteFile(s.ResolvePath("nico-token"), []byte(" \n"), 0o600) }, "controllerStack.nico.tokenFile is empty"},
+		"quoted orgID":   {func(s *sitespec.SiteSpec) { s.ControllerStack.Nico.OrgID = "org\"x" }, "controllerStack.nico.orgID: the value holds a character"},
+		"unpinned image": {func(s *sitespec.SiteSpec) { s.ControllerStack.Images.Controller = "mirror.example.test/cwe" }, "controllerStack.images.controller: \"mirror.example.test/cwe\" names neither a tag nor a digest"},
+	} {
+		spec := filledSiteSpec(t, false, nil)
+		tc.mutate(spec)
+		out := filepath.Join(t.TempDir(), "r")
+		_, err := Render(RenderOptions{AllowTempOut: true, DeployPath: nico, Site: spec, Out: out})
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: want %q, got %v", name, tc.want, err)
+		}
+		if _, statErr := os.Stat(out); statErr == nil {
+			t.Errorf("%s: output left behind", name)
+		}
+	}
+	// A template item with no template is refused, and `..` is not an item name.
+	broken := filepath.Join(t.TempDir(), "nico")
+	if err := copyTree(nico, broken); err != nil {
+		t.Fatal(err)
+	}
+	for _, tmpl := range mustGlob(t, filepath.Join(broken, "nvke-base-config", "*.tmpl")) {
+		if err := os.Rename(tmpl, strings.TrimSuffix(tmpl, ".tmpl")+".off"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := Render(RenderOptions{AllowTempOut: true, DeployPath: broken, Site: filledSiteSpec(t, false, nil), Out: filepath.Join(t.TempDir(), "r")}); err == nil || !strings.Contains(err.Error(), "no .yaml.tmpl file") {
+		t.Errorf("template item without templates: %v", err)
+	}
+	for _, name := range []string{"..", ".", "a..b"} {
+		dotted := filepath.Join(t.TempDir(), "nico")
+		if err := copyTree(nico, dotted); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dotted, "nvke-deploy.yaml"), []byte("items:\n  - {name: "+name+", type: manifest}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Items(dotted); err == nil || !strings.Contains(err.Error(), "names are tokens") {
+			t.Errorf("item name %q: %v", name, err)
+		}
+	}
 	// A checkout under a path with whitespace cannot be carried by the reader.
 	// The committed chart paths climb two levels, so the space sits above that.
 	spaced := filepath.Join(t.TempDir(), "sp ace", "repo", "deploy", "nico")
@@ -485,13 +559,13 @@ func TestRender_SiteSpecRefusals(t *testing.T) {
 }
 
 func TestImageValuesAndOIDCDomains(t *testing.T) {
-	if v := imageValues("r.example/x:v1"); v["repository"] != "r.example/x" || v["tag"] != "v1" {
+	if v := imageValues("r.example/x:v1"); v["repository"] != "r.example/x" || v["tag"] != "v1" || v["digest"] != "" {
 		t.Errorf("tag: %v", v)
 	}
 	if v := imageValues("r.example/x:v1@sha256:" + strings.Repeat("a", 64)); v["repository"] != "r.example/x" || v["tag"] != "" || v["digest"] == nil {
 		t.Errorf("tag beside a digest is dropped: %v", v)
 	}
-	if v := imageValues("r.example:5000/x"); v["repository"] != "r.example:5000/x" || v["tag"] != nil {
+	if v := imageValues("r.example:5000/x"); v != nil {
 		t.Errorf("port without tag: %v", v)
 	}
 	domains, err := oidcDomains(filepath.Join(nico, "spire", "overlay.yaml"), "10.0.0.100")
