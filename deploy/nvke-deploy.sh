@@ -202,9 +202,14 @@ install_helm_item() {
   local dir="$1" item="$2"
   [[ -f "${dir}/release.yaml" ]] || die "helm item ${dir} has no release.yaml"
 
-  local form chart_name version repository path release namespace values requires
-  IFS=$'\x1f' read -r form chart_name version repository path release namespace values requires \
-    < <(python3 "${ITEMS_PY}" release "${dir}/release.yaml")
+  # Captured before it is read, not read from a process substitution: the exit
+  # status of a process substitution is never checked, so a parser failure
+  # would leave every field empty and surface as a bad helm invocation.
+  local fields chart_name version repository path release namespace values requires
+  if ! fields="$(python3 "${ITEMS_PY}" release "${dir}/release.yaml")"; then
+    die "item ${item}: cannot parse ${dir}/release.yaml"
+  fi
+  IFS=$'\x1f' read -r _ chart_name version repository path release namespace values requires <<<"${fields}"
 
   # An override wins, because the caller had to build or fetch the chart. Then a
   # path inside the deploy path, then a repository the chart is published to.
@@ -255,7 +260,12 @@ install() {
   [[ -f "${DEPLOY_PATH}/nvke-deploy.yaml" ]] \
     || die "no nvke-deploy.yaml in ${DEPLOY_PATH}"
 
-  local name type
+  # Same shape as the release read in install_helm_item: a failed parser must
+  # stop the install, not leave it with no items to apply.
+  local items name type
+  if ! items="$(python3 "${ITEMS_PY}" items "${DEPLOY_PATH}/nvke-deploy.yaml")"; then
+    die "cannot parse ${DEPLOY_PATH}/nvke-deploy.yaml"
+  fi
   while IFS=$'\t' read -r name type; do
     [[ -n "${name}" ]] || continue
     local dir="${DEPLOY_PATH}/${name}"
@@ -268,7 +278,7 @@ install() {
       template) render_template_item "${dir}" "${name}" ;;
       *) die "item ${name} has unknown type ${type}" ;;
     esac
-  done < <(python3 "${ITEMS_PY}" items "${DEPLOY_PATH}/nvke-deploy.yaml")
+  done <<<"${items}"
 }
 
 [[ $# -gt 0 ]] || usage

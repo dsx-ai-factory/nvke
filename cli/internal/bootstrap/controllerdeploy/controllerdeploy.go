@@ -151,6 +151,19 @@ const (
 	profilesPath = "/profiles"
 )
 
+// SpireTPMDirectChecksum returns the sha256 of the TPM attestor server plugin
+// SPIRE runs for arch, amd64 or arm64. A wrong value crash-loops spire-server
+// with "checksums did not match", so every installer takes it from here.
+func SpireTPMDirectChecksum(arch string) (string, bool) {
+	switch arch {
+	case "amd64":
+		return spireTPMDirectAMD64Checksum, true
+	case "arm64":
+		return spireTPMDirectARM64Checksum, true
+	}
+	return "", false
+}
+
 // waitReadyPollInterval is the delay between /readyz polls. A var, not a
 // const, so unit tests can shrink it instead of paying real wall-clock time
 // for a retry loop.

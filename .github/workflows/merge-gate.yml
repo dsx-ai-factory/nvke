@@ -205,6 +205,13 @@ jobs:
     permissions:
       contents: read
 
+  # The deploy executor's dry-run suite against deploy/nico, committed and
+  # rendered for a site; see the header of deploy-test.yml.
+  deploy-test:
+    uses: ./.github/workflows/deploy-test.yml
+    permissions:
+      contents: read
+
   lint:
     uses: ./.github/workflows/lint.yml
     permissions:
@@ -265,6 +272,7 @@ jobs:
       - fern
       - internal-config-check
       - name-check
+      - deploy-test
       - lint
       - gofail
       - notices
