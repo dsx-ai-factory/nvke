@@ -200,7 +200,7 @@ repository.
 - Restrict and monitor port `15005`; do not expose it through a public load
   balancer.
 - Protect `/etc/default/nvke-agent`, the SPIRE socket, `/var/lib/nvke`,
-  `/etc/kubernetes`, apt keyrings, and `/var/log/nke-*` with root-only write
+  `/etc/kubernetes`, apt keyrings, and `/var/log/nvke-*` with root-only write
   access.
 - Use production-controlled HTTPS or OCI bundle sources and dedicated apt
   signing keys. Do not use arbitrary caller-controlled repositories.
