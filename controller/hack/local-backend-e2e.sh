@@ -417,7 +417,7 @@ jq -n \
 
 log "starting the E2E client on the Kind Docker network"
 if ! docker image inspect "${runner_image}" >/dev/null 2>&1; then
-  docker pull "${runner_image}" >/dev/null
+  pull_with_retry "${runner_image}" >/dev/null || fail "could not pull the E2E runner image ${runner_image}"
 fi
 docker create \
   --name "${runner_name}" \

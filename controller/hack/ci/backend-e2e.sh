@@ -143,15 +143,8 @@ require_command() {
 
 # Every other long-running call here is bounded by the tool's own flag: kubectl
 # --timeout, kind --wait, curl --connect-timeout, ginkgo --timeout. Docker has
-# no equivalent, so the three calls that reach a registry use coreutils
-# `timeout` instead. It is absent from a stock macOS, where this script is also
-# run by hand, so fall back to running unbounded rather than failing outright.
-: "${DOCKER_PULL_TIMEOUT:=10m}"
-if command -v timeout >/dev/null 2>&1; then
-  bounded() { timeout "$@"; }
-else
-  bounded() { shift; "$@"; }
-fi
+# no equivalent, so the calls that reach a registry go through `bounded` from
+# backend-e2e-lib.sh, with DOCKER_PULL_TIMEOUT.
 
 redact_diagnostics() {
   local file_list="${TMP_DIR}/diagnostic-files"
@@ -218,20 +211,6 @@ curl_with_retry() {
     log "curl failed after retries: ${description}" >&2
     return 1
   fi
-}
-
-# The Docker Hub mirror sometimes 404s a blob it has not cached yet; a second pull gets it.
-pull_with_retry() {
-  local image=$1 attempt
-  for attempt in 1 2 3; do
-    bounded "${DOCKER_PULL_TIMEOUT}" docker pull "${image}" && return 0
-    if ((attempt == 3)); then
-      log "docker pull failed after ${attempt} attempts: ${image}" >&2
-      return 1
-    fi
-    log "docker pull attempt ${attempt} failed, retrying: ${image}"
-    sleep 15
-  done
 }
 
 # The same 404 fails a build while it loads a base image; a second build gets it.
