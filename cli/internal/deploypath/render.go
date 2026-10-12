@@ -33,6 +33,9 @@ type RenderOptions struct {
 type Rendered struct {
 	// Notes are the decisions worth telling the operator.
 	Notes []string
+	// Credentials lists the files under Out that carry a site credential,
+	// relative to Out, in the order they were written.
+	Credentials []string
 }
 
 // Render writes a copy of the deploy path under opts.Out, resolved for the
@@ -104,6 +107,11 @@ type renderer struct {
 
 func (r *renderer) problem(format string, args ...any) {
 	r.problems = append(r.problems, fmt.Sprintf(format, args...))
+}
+
+// credential records a file under Out that carries a site credential.
+func (r *renderer) credential(rel string) {
+	r.out.Credentials = append(r.out.Credentials, filepath.ToSlash(rel))
 }
 
 func (r *renderer) note(format string, args ...any) {
@@ -219,6 +227,10 @@ func (r *renderer) appendSetFile(item string, entries []string) {
 }
 
 func (r *renderer) finish() error {
+	// The tree holds credentials; a repository must not pick it up by accident.
+	if err := writePrivate(filepath.Join(r.opts.Out, ".gitignore"), []byte("*\n")); err != nil {
+		return err
+	}
 	if r.itemsChanged {
 		header := "Rendered by nvkectl render deploy-path from " + r.opts.DeployPath + ". Template items are rendered and apply as manifests."
 		if err := writePrivate(filepath.Join(r.opts.Out, "nvke-deploy.yaml"), MarshalItems(r.items, header)); err != nil {

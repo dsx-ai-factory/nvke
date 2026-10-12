@@ -118,6 +118,7 @@ func (r *renderer) site() {
 		controller["profiles"] = map[string]any{"image": imageValues(cs.Images.Profiles)}
 	}
 	r.siteValues("controller", controller)
+	r.credential(filepath.Join("controller", SiteValuesFile))
 
 	// spire: site identity, the controller's admin ID, the TPM attestor
 	// checksum for the architecture, the bootstrap CA when the spec names
@@ -168,6 +169,7 @@ func (r *renderer) site() {
 		postgresql["global"] = map[string]any{"imageRegistry": cs.Mirror, "security": map[string]any{"allowInsecureImages": true}}
 	}
 	r.siteValues("postgresql", postgresql)
+	r.credential(filepath.Join("postgresql", SiteValuesFile))
 	temporal := map[string]any{"server": map[string]any{"config": map[string]any{"persistence": map[string]any{
 		"default":    map[string]any{"sql": map[string]any{"password": password}},
 		"visibility": map[string]any{"sql": map[string]any{"password": password}},
@@ -178,6 +180,7 @@ func (r *renderer) site() {
 		}
 	}
 	r.siteValues("temporal", temporal)
+	r.credential(filepath.Join("temporal", SiteValuesFile))
 
 	// nktp: the operator's values file, passed through.
 	if cs.NktpValuesFile != "" {
@@ -262,7 +265,7 @@ func (r *renderer) template(item string, ctx *TemplateContext) {
 		r.problem("%s: %v", item, err)
 		return
 	}
-	rendered := 0
+	count := 0
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".yaml.tmpl") {
@@ -285,15 +288,19 @@ func (r *renderer) template(item string, ctx *TemplateContext) {
 			r.problem("%s/%s: %v", item, name, err)
 			return
 		}
-		if err := writePrivate(filepath.Join(dst, strings.TrimSuffix(name, ".tmpl")), out.Bytes()); err != nil {
+		rendered := strings.TrimSuffix(name, ".tmpl")
+		if err := writePrivate(filepath.Join(dst, rendered), out.Bytes()); err != nil {
 			r.problem("%s: %v", item, err)
 			return
+		}
+		if bytes.Contains(out.Bytes(), []byte("kind: Secret")) {
+			r.credential(filepath.Join(item, rendered))
 		}
 		if err := os.Remove(filepath.Join(dst, name)); err != nil {
 			r.problem("%s: %v", item, err)
 			return
 		}
-		rendered++
+		count++
 	}
 	for i := range r.items {
 		if r.items[i].Name == item {
@@ -301,7 +308,7 @@ func (r *renderer) template(item string, ctx *TemplateContext) {
 			r.itemsChanged = true
 		}
 	}
-	r.note("%s: %d templates rendered; applies as a manifest item", item, rendered)
+	r.note("%s: %d templates rendered; applies as a manifest item", item, count)
 }
 
 // imageValues splits an image reference into the chart's image values:

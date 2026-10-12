@@ -256,6 +256,24 @@ func TestRender_FromSiteSpec(t *testing.T) {
 	if len(result.Notes) == 0 {
 		t.Error("no notes")
 	}
+	// The credential list names the values files that hold a secret and the
+	// rendered Secret manifests; spire's values hold none. The tree ignores
+	// itself for git.
+	want := []string{"controller/site-values.yaml", "postgresql/site-values.yaml", "temporal/site-values.yaml"}
+	for _, f := range []string{"20-nico-credentials.yaml", "30-ghcr-imagepull.yaml", "35-dgxc-tenant-credentials.yaml"} {
+		want = append(want, "nvke-base-config/"+f)
+	}
+	if strings.Join(result.Credentials, " ") != strings.Join(want, " ") {
+		t.Errorf("credentials:\n got %v\nwant %v", result.Credentials, want)
+	}
+	for _, f := range result.Credentials {
+		if _, err := os.Stat(filepath.Join(out, f)); err != nil {
+			t.Errorf("credential file missing: %s", f)
+		}
+	}
+	if ignore, err := os.ReadFile(filepath.Join(out, ".gitignore")); err != nil || string(ignore) != "*\n" {
+		t.Errorf(".gitignore: %q %v", ignore, err)
+	}
 }
 
 func TestRender_SiteSpecOptions(t *testing.T) {

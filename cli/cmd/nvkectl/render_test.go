@@ -18,7 +18,7 @@ func TestRenderDeployPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v\n%s", err, stderr)
 	}
-	if !strings.HasPrefix(stdout, "rendered "+nico+" for my-tier0-site into "+out) {
+	if !strings.HasPrefix(stdout, "rendered "+nico+" for my-tier0-site into "+out) || !strings.Contains(stdout, out+" holds this site's credentials: controller/site-values.yaml, ") || !strings.HasSuffix(strings.TrimSpace(stdout), "Delete it after the install.") {
 		t.Errorf("stdout: %q", stdout)
 	}
 	if !strings.Contains(stderr, "controller: site values written") || !strings.Contains(stderr, "nvke-base-config: 4 templates rendered") {

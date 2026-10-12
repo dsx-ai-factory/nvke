@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -48,7 +49,9 @@ reads it at install time), PostgreSQL and Temporal get the database
 password. Template items are rendered against the site and
 become manifest items. The tokens and passwords are read from the files the
 site spec names and written into the result, so --out is created 0700 and is
-meant for one install. Paths under controllerStack resolve from the site
+meant for one install. The command ends by naming the files under --out that
+hold a credential; delete --out after the install. --out gets a .gitignore
+that ignores everything, so a repository does not pick it up by accident. Paths under controllerStack resolve from the site
 spec's directory; spire.caCertFile and spire.caKeyFile resolve from the
 working directory, as "nvkectl bootstrap site" reads them. A chart the
 committed deploy path builds from the checkout keeps that chart, by absolute
@@ -78,9 +81,11 @@ func runRenderDeployPath(cmd *cobra.Command, opts *renderDeployPathOptions) erro
 	if err != nil {
 		return err
 	}
-	if _, err := deploypath.Render(deploypath.RenderOptions{DeployPath: opts.deployPath, Site: spec, Out: opts.out, Log: cmd.ErrOrStderr()}); err != nil {
+	result, err := deploypath.Render(deploypath.RenderOptions{DeployPath: opts.deployPath, Site: spec, Out: opts.out, Log: cmd.ErrOrStderr()})
+	if err != nil {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "rendered %s for %s into %s\n", opts.deployPath, spec.ClusterName, opts.out)
+	fmt.Fprintf(cmd.OutOrStdout(), "%s holds this site's credentials: %s. Delete it after the install.\n", opts.out, strings.Join(result.Credentials, ", "))
 	return nil
 }

@@ -45,7 +45,10 @@ What the node needs, all present on the reference instance type:
   file reference read at install time), the
   template items are rendered and become manifests, and `site.env` names the
   site. Tokens and passwords are read from the files the spec names and
-  written into `DIR`, so it is created `0700` and is for one install. Then
+  written into `DIR`, so it is created `0700` and is for one install. The
+  command ends by naming the files under `DIR` that hold a credential;
+  delete `DIR` after the install. `DIR` gets a `.gitignore` that ignores
+  everything, so a repository does not pick it up by accident. Then
   install `DIR` with this script; it needs no `--config`
 - a checkout laid out so that `deploy/` and `controller/` are siblings --
   `controller/release.yaml` reaches its chart as
