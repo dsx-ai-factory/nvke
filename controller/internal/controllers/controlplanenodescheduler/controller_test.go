@@ -146,6 +146,14 @@ func (m mockWorkflowRun) GetRunID() string {
 	return m.runID
 }
 
+func (m mockWorkflowRun) GetFirstExecutionRunID() string {
+	return m.runID
+}
+
 func (m mockWorkflowRun) Get(_ context.Context, _ interface{}) error {
+	return nil
+}
+
+func (m mockWorkflowRun) GetWithOptions(_ context.Context, _ interface{}, _ client.WorkflowRunGetOptions) error {
 	return nil
 }

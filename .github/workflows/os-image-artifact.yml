@@ -940,7 +940,7 @@ jobs:
         shell: bash
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE || secrets.NGC_REGISTRY_TOKEN_NKE }}
+          NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE }}
         run: |
           set -euo pipefail
           echo "${GHCR_TOKEN}" | oras login ghcr.io \

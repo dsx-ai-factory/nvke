@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 name: Bug Report
-description: Report a reproducible problem with NVKE
-title: "[BUG]: "
+description: Report a bug or unexpected behavior in NVKE
+title: "[Bug]: "
 labels: ["bug"]
 
 body:
@@ -12,17 +12,36 @@ body:
     attributes:
       label: Prerequisites
       options:
-        - label: I searched existing issues and found no duplicate
-          required: true
-        - label: I included reproduction steps or, for an intermittent failure, its observed frequency and conditions
+        - label: I searched existing issues and found no duplicates
           required: true
         - label: This is not a security vulnerability. I will report vulnerabilities to NVIDIA PSIRT as described in the [security policy](https://github.com/dsx-ai-factory/nvke/blob/main/SECURITY.md), not through a public issue or GitHub Security Advisory
           required: true
 
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: What happened and what did you expect?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact to you
+      description: Choose the option closest to your situation. Maintainers assess priority during triage.
+      options:
+        - Cannot proceed
+        - Major functionality unavailable
+        - Workaround needed
+        - Minor inconvenience
+    validations:
+      required: true
+
   - type: dropdown
     id: component
     attributes:
-      label: Affected component
+      label: Component
       options:
         - Controller
         - Node agent or updater
@@ -34,15 +53,19 @@ body:
         - NKTP telemetry pipeline
         - Build, packaging, or release automation
         - Documentation
-        - Other or unknown
+        - Other / Unknown
     validations:
       required: true
 
-  - type: textarea
-    id: description
+  - type: dropdown
+    id: regression
     attributes:
-      label: Problem description
-      description: Describe what happened and the impact.
+      label: Regression?
+      description: Did this work in a previous version?
+      options:
+        - "Yes, this worked before (please specify version below)"
+        - "No, this is a new use case"
+        - "Unknown / first time using this feature"
     validations:
       required: true
 
@@ -61,14 +84,16 @@ body:
   - type: textarea
     id: expected
     attributes:
-      label: Expected behavior
+      label: Expected Behavior
+      description: What did you expect to happen?
     validations:
       required: true
 
   - type: textarea
     id: actual
     attributes:
-      label: Actual behavior
+      label: Actual Behavior
+      description: What actually happened?
     validations:
       required: true
 
@@ -79,7 +104,7 @@ body:
       description: Include only the fields that apply. Redact kubeconfigs, kubeadm join commands and bootstrap tokens, SPIFFE certificates and keys, BMC/Redfish/NICo credentials, database connection strings, and sensitive internal hostnames or IPs. Rotate credentials if exposed.
       placeholder: |
         - NVKE version, tag, or commit:
-        - Component version:
+        - Component version (for example `nvkectl version`):
         - Kubernetes version:
         - Deployment environment (bare metal, CAPD, or other):
         - OS and architecture:
@@ -87,17 +112,31 @@ body:
       required: true
 
   - type: textarea
+    id: command
+    attributes:
+      label: Command used
+      description: Paste the exact command(s) or API request that triggered the issue. Redact credentials, tokens, and private hostnames, including tokens in URLs.
+      placeholder: |
+        ```bash
+        nvkectl create cluster ...
+        ```
+    validations:
+      required: false
+
+  - type: textarea
     id: logs
     attributes:
-      label: Relevant logs
+      label: Logs / Error Output
       description: Paste the smallest useful excerpt. Redact kubeconfigs, kubeadm join commands and bootstrap tokens, SPIFFE certificates and keys, BMC/Redfish/NICo credentials, database connection strings, and sensitive internal hostnames or IPs. Rotate credentials if exposed.
       render: shell
 
   - type: textarea
     id: additional
     attributes:
-      label: Additional context
-      description: Add links, screenshots, or other context that may help reproduce the issue.
+      label: Additional Context
+      description: Anything else that might help (recent upgrade, related issues, or workarounds?).
+    validations:
+      required: false
 
   - type: checkboxes
     id: terms

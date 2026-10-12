@@ -491,7 +491,7 @@ jobs:
       # `$oauthtoken` is NGC's literal username, not a shell variable.
       - name: Log in to NVCR
         env:
-          NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE || secrets.NGC_REGISTRY_TOKEN_NKE }}
+          NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NVKE }}
         run: |
           set -euo pipefail
           # shellcheck disable=SC2016

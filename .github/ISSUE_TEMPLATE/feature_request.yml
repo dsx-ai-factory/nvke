@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 name: Feature Request
-description: Propose an NVKE feature
-title: "[FEATURE]: "
+description: Suggest a new feature or an improvement to NVKE
+title: "[Feature]: "
 labels: ["feature"]
 
 body:
@@ -16,17 +16,25 @@ body:
           required: true
 
   - type: textarea
-    id: problem
+    id: summary
     attributes:
-      label: Problem or use case
-      description: Describe the operator or developer problem, who it affects, and why current behavior is insufficient.
+      label: Feature Summary
+      description: Brief description of the feature
     validations:
       required: true
 
   - type: textarea
-    id: proposal
+    id: problem
     attributes:
-      label: Proposed behavior
+      label: Problem/Use Case
+      description: What problem does this solve? Describe the operator or developer problem, who it affects, and why current behavior is insufficient.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
       description: Describe the outcome and user-visible behavior you want. Implementation details are optional.
     validations:
       required: true
@@ -34,15 +42,27 @@ body:
   - type: textarea
     id: success
     attributes:
-      label: Success criteria
-      description: Explain how maintainers and users can tell the request is complete.
+      label: Success Criteria
+      description: What does “done” look like? How should we measure success?
+      placeholder: |
+        - Must support ...
+        - Must not break ...
+        - CLI/API output should ...
     validations:
       required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What other options/workarounds have you tried or considered?
+    validations:
+      required: false
 
   - type: dropdown
     id: component
     attributes:
-      label: Affected component
+      label: Component
       options:
         - Controller
         - Node agent or updater
@@ -54,21 +74,37 @@ body:
         - NKTP telemetry pipeline
         - Build, packaging, or release automation
         - Documentation
-        - Cross-component or other
+        - Cross-component / Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: requester_impact
+    attributes:
+      label: Impact to you
+      description: Choose the option closest to your situation. Maintainers assess priority during triage.
+      options:
+        - Blocking adoption or a major use case
+        - Important (would improve my workflow)
+        - Nice to have
     validations:
       required: true
 
   - type: textarea
-    id: alternatives
-    attributes:
-      label: Alternatives considered
-      description: Describe workarounds or alternative designs you have considered.
-
-  - type: textarea
     id: compatibility
     attributes:
-      label: Compatibility and operational considerations
-      description: Note migrations, API compatibility, upgrades, security boundaries, or operational impact. Report suspected vulnerabilities to NVIDIA PSIRT through the [security policy](https://github.com/dsx-ai-factory/nvke/blob/main/SECURITY.md), not in a public feature request.
+      label: Compatibility / Breaking Changes
+      description: Any expected breaking changes, migrations, API compatibility, or versioning concerns?
+    validations:
+      required: false
+
+  - type: textarea
+    id: ops
+    attributes:
+      label: Operational Considerations
+      description: Observability, upgrades, security boundaries, multi-tenancy, blast radius. Report suspected vulnerabilities to NVIDIA PSIRT through the [security policy](https://github.com/dsx-ai-factory/nvke/blob/main/SECURITY.md), not in a public feature request.
+    validations:
+      required: false
 
   - type: dropdown
     id: contribute
@@ -76,8 +112,8 @@ body:
       label: Are you willing to contribute?
       description: See [CONTRIBUTING.md](https://github.com/dsx-ai-factory/nvke/blob/main/CONTRIBUTING.md) for contribution guidance.
       options:
-        - Yes, I can open a pull request
-        - Maybe, with maintainer guidance
+        - Yes, I can open a PR
+        - Maybe, with guidance
         - "No"
     validations:
       required: true

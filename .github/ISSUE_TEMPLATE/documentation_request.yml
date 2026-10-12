@@ -2,23 +2,27 @@
 # SPDX-License-Identifier: Apache-2.0
 
 name: Documentation Request
-description: Request new docs or corrections to existing docs
-title: "[DOC]: "
+description: Report a documentation issue or request new documentation
+title: "[Docs]: "
 labels: ["documentation"]
 
 body:
-  - type: markdown
+  - type: checkboxes
+    id: prerequisites
     attributes:
-      value: |
-        Thanks for taking the time to improve our documentation.
+      label: Prerequisites
+      options:
+        - label: I searched existing issues and found no duplicates
+          required: true
 
   - type: dropdown
-    id: request_type
+    id: type
     attributes:
-      label: What kind of documentation change is this?
+      label: Request type
       options:
-        - New documentation
-        - Correction / update
+        - Correction or update to existing docs
+        - New documentation needed
+        - Documentation is unclear or incomplete
     validations:
       required: true
 
@@ -38,28 +42,30 @@ body:
   - type: input
     id: location
     attributes:
-      label: Relevant docs link (if updating existing docs)
-      placeholder: "https://github.com/dsx-ai-factory/nvke/blob/main/docs/README.md"
+      label: Documentation link (if correcting existing docs)
+      placeholder: "https://github.com/dsx-ai-factory/nvke/blob/main/docs/..."
 
   - type: textarea
-    id: problem
+    id: description
     attributes:
-      label: Describe the missing or incorrect documentation
+      label: Description
+      description: Describe the documentation problem or what documentation is missing.
+      placeholder: |
+        For corrections: what is wrong and what should it say?
+        For new docs: what topic needs to be documented and why?
     validations:
       required: true
 
   - type: textarea
-    id: proposal
+    id: proposed_change
     attributes:
-      label: Proposed correction or addition (optional)
+      label: Proposed change (optional)
+      description: If you have a specific suggestion for the documentation change, describe it here.
 
   - type: checkboxes
     id: terms
     attributes:
       label: Code of Conduct
-      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/dsx-ai-factory/nvke/blob/main/CODE_OF_CONDUCT.md).
       options:
-        - label: I agree to follow NVKE's Code of Conduct
-          required: true
-        - label: I have searched open documentation issues and found no duplicates
+        - label: I agree to follow the project's [Code of Conduct](https://github.com/dsx-ai-factory/nvke/blob/main/CODE_OF_CONDUCT.md)
           required: true

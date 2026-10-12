@@ -159,8 +159,7 @@ Apply one change-category label:
 
 | Label | When to use |
 |-------|------------|
-| `feature` | New capability added |
-| `enhancement` | Improvement to existing functionality |
+| `feature` | New capability, or an improvement to existing functionality |
 | `bug` | Regression or defect fix |
 | `documentation` | Docs-only change |
 
