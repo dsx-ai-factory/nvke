@@ -193,12 +193,34 @@ e2e_wait_for_zero_tenant_clusters() {
   done
 }
 
-# Runs node image $1's ovs-vswitchd check on this host. If it fails, every OVN
-# tenant stays unready until the suite times out (#1515).
-e2e_host_loads_openvswitch() {
-  docker run --rm --privileged -v /lib/modules:/lib/modules:ro --entrypoint /bin/sh "$1" \
-    -c 'test -e /sys/module/openvswitch || exec modprobe openvswitch'
-}
+# Runs node image $1's ovs-vswitchd check on the Docker kernel. ARC's runner
+# cannot load modules itself, and its installed module files are not in DinD's
+# filesystem. If the daemon cannot load the module, stream the runner's matching
+# module tree into a privileged helper instead. Never invoke ovs-ctl: its fallback
+# removes the bridge module and destroys the Docker networks (#1515).
+e2e_host_loads_openvswitch() (
+  set -o pipefail
+  local image="$1" kernel
+  if docker run --rm --privileged -v /lib/modules:/lib/modules:ro --entrypoint /bin/sh "${image}" \
+    -c 'test -e /sys/module/openvswitch || exec modprobe openvswitch'; then
+    return 0
+  fi
+
+  kernel="$(uname -r)" || return 1
+  if [[ "$(uname -s)" != Linux || ! -d "/lib/modules/${kernel}" ]]; then
+    echo "openvswitch is unavailable to Docker and no matching local module tree exists" >&2
+    return 1
+  fi
+  echo "loading openvswitch through privileged Docker with the runner's ${kernel} module files" >&2
+  tar -C /lib/modules -cf - "${kernel}" |
+    docker run --rm --privileged -i --entrypoint /bin/sh "${image}" -c '
+      set -eu
+      mkdir -p /lib/modules
+      tar -C /lib/modules -xf -
+      modprobe openvswitch
+      test -e /sys/module/openvswitch
+    '
+)
 
 # Per-node evidence: console, unit status, and the journals of the units a
 # CAPD node depends on. Without this a node whose agent never binds its port is

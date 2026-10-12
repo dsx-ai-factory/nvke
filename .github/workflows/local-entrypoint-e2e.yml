@@ -140,17 +140,16 @@ jobs:
       # Kind nodes share this runner's kernel, and OVN's ovs-vswitchd loads
       # openvswitch from it. The module ships in linux-modules-extra, which
       # the ARC arm64 image does not install. Install the package for the
-      # running kernel and load the module before the suite's host preflight
-      # (#1515).
-      - name: Load the Open vSwitch module
+      # running kernel here. The suite's privileged Docker preflight loads it:
+      # sudo in the ARC runner does not grant CAP_SYS_MODULE, and DinD has its
+      # own /lib/modules filesystem (#1515).
+      - name: Install the Open vSwitch module files
         run: |
           uname -a
           sudo apt-get update -qq
           sudo apt-get install -y -qq --allow-change-held-packages \
             "linux-modules-extra-$(uname -r)"
-          sudo modprobe openvswitch
           modinfo openvswitch
-          test -e /sys/module/openvswitch
 
       # containerd's CRI plugin creates an inotify watcher for the CNI conf dir.
       # Without headroom it fails to load, and kubeadm then reports the CRI v1
