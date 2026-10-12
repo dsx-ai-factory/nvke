@@ -1,0 +1,155 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Nightly beta tag
+
+# Tags a commit on main as the next vX.Y.Z-beta.N every night. The tag push is
+# what starts the beta builds (agent, agent debs, controller image and chart,
+# provisioned provider, os-image, nvkectl) that publish to NVCR and S3, and for
+# os-image GHCR; this workflow only creates the tag.
+#
+# The version comes from hack/next-tag.sh, which only prints it. This workflow
+# chooses the commit, creates the tag and pushes it.
+#
+# The push must NOT use GITHUB_TOKEN. Events caused by GITHUB_TOKEN never start
+# other workflows, so the beta builds would silently not run. BETA_TAG_TOKEN is
+# a token (fine-grained PAT or GitHub App installation token) with contents:
+# write on this repository.
+on:
+  schedule:
+    # Nightly 02:00 UTC. Scheduled runs always use the default branch.
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Print the tag that would be created, without creating it.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  # The selection step reads main's own workflow runs to find a commit the
+  # publishers already agreed on.
+  actions: read
+
+# One tag allocation at a time; a queued run waits rather than racing for the
+# same version.
+concurrency:
+  group: nightly-beta-tag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag main
+    if: github.repository_id == '1323115536'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          # The script reads every tag and the history back to the latest GA tag.
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.BETA_TAG_TOKEN }}
+          # Credentials stay configured: the next step pushes with them.
+          persist-credentials: true
+
+      # Tagging the tip of main unconditionally is wrong twice over. A tip whose
+      # own publishers failed yields a beta nothing can qualify, and the rebuild
+      # spends an hour rediscovering what main already reported. And on a night
+      # when nothing landed, the tip already carries last night's beta, so a
+      # second tag republishes byte-identical artifacts under a new version and
+      # hands qualification a second name for a build it already passed.
+      - name: Select the commit to tag
+        id: select
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # The five that run on every push to main. `OS Image Artifact` is
+          # deliberately absent: it is path-filtered, so most commits never
+          # report it and requiring it would reject every one of them.
+          required=(
+            "Image NVCR"
+            "Image Provisioned NVCR"
+            "Chart Publish NVCR"
+            "Agent Artifact"
+            "Agent Artifact NVCR"
+          )
+
+          selected=""
+          while read -r sha; do
+            # branch=main, because a tag push is a push too. These five also run
+            # on the component tags, and a tag is cut after the merge, so the
+            # newest run at a tagged commit is the tag's -- which would let a
+            # green controller/v* run stand in for a failed main one.
+            runs="$(gh api "repos/${REPOSITORY}/actions/runs?head_sha=${sha}&branch=main&event=push&per_page=100")"
+            ok=1
+            for name in "${required[@]}"; do
+              # Newest run by start time, so a re-run supersedes the attempt it
+              # replaced rather than both counting.
+              conclusion="$(printf '%s' "${runs}" | jq -r --arg n "${name}" \
+                '[.workflow_runs[] | select(.name == $n)]
+                 | sort_by(.run_started_at) | last | .conclusion // "missing"')"
+              if [ "${conclusion}" != "success" ]; then
+                echo "${sha:0:9}: ${name} is ${conclusion}"
+                ok=0
+                break
+              fi
+            done
+            if [ "${ok}" = 1 ]; then
+              selected="${sha}"
+              break
+            fi
+          done < <(git rev-list --max-count=30 main)
+
+          if [ -z "${selected}" ]; then
+            echo "No commit in the last 30 on main has a full set of green publishers." \
+              | tee -a "${GITHUB_STEP_SUMMARY}"
+            echo "selected=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          # Anchored, because git's glob would also accept a hand-made tag like
+          # v1.2.3-beta.x, which next-tag.sh never allocates and the publishers
+          # never match -- skipping on one would silently cost a night.
+          existing="$(git tag --points-at "${selected}" \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$' | head -n1 || true)"
+          if [ -n "${existing}" ]; then
+            echo "${existing} already names ${selected:0:9}; nothing new to tag." \
+              | tee -a "${GITHUB_STEP_SUMMARY}"
+            echo "selected=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          echo "Selected ${selected:0:9}, $(git rev-list --count "${selected}..main") commit(s) behind main." \
+            | tee -a "${GITHUB_STEP_SUMMARY}"
+          echo "selected=true" >> "${GITHUB_OUTPUT}"
+          echo "sha=${selected}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create and push the beta tag
+        if: steps.select.outputs.selected == 'true'
+        shell: bash
+        env:
+          DRY_RUN: ${{ inputs.dry_run || false }}
+          SELECTED_SHA: ${{ steps.select.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          # next-tag.sh takes any committish: passing the selected commit rather
+          # than main keeps the feat/fix scan to the history being tagged.
+          tag="$(hack/next-tag.sh "${SELECTED_SHA}" beta)"
+
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "Would tag ${SELECTED_SHA} as ${tag}." | tee -a "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          git tag "${tag}" "${SELECTED_SHA}"
+          git push origin "refs/tags/${tag}"
+          echo "Pushed ${tag} at ${SELECTED_SHA}." | tee -a "${GITHUB_STEP_SUMMARY}"

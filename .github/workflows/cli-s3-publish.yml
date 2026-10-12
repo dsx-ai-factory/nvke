@@ -26,6 +26,11 @@ name: CLI S3 Publish
 # artifacts.md section 19 for the exact IAM diff. Until that widening lands,
 # this workflow will fail at the upload step with an access-denied error, not
 # silently do nothing.
+#
+# A bare vX.Y.Z-beta.N tag publishes to nvkectl/releases/<describe>/ from the
+# `s3-publish-non-prod` environment, which must define the same S3_PUBLISH_*
+# variables. <describe> is the cli/v* describe version that release.yml stamps
+# into nvkectl.
 
 # Called by release.yml after its build, so a cli/v* tag produces one set of
 # binaries rather than four independent ones, and this runs behind the licence
@@ -53,10 +58,11 @@ jobs:
   publish:
     if: >-
       github.repository_id == '1323115536' &&
-      startsWith(github.ref, 'refs/tags/cli/v')
+      (startsWith(github.ref, 'refs/tags/cli/v') ||
+       (startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.')))
     name: Publish to S3
     runs-on: ubuntu-latest
-    environment: s3-publish
+    environment: ${{ startsWith(github.ref, 'refs/tags/cli/v') && 's3-publish' || 's3-publish-non-prod' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -67,6 +73,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # A beta release is named by `git describe`, which needs the tags.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Go
@@ -86,23 +94,34 @@ jobs:
           ROLE_ARN: ${{ vars.S3_PUBLISH_AWS_ROLE_ARN }}
           REGION: ${{ vars.S3_PUBLISH_AWS_REGION }}
           CF_DOMAIN: ${{ vars.S3_PUBLISH_CLOUDFRONT_DOMAIN }}
+          ENV_NAME: ${{ startsWith(github.ref, 'refs/tags/cli/v') && 's3-publish' || 's3-publish-non-prod' }}
         run: |
           set -euo pipefail
           if [[ -z "${S3_URI}" ]]; then
-            echo "::error::S3_PUBLISH_S3_URI is not set in the s3-publish environment"
+            echo "::error::S3_PUBLISH_S3_URI is not set in the ${ENV_NAME} environment"
             exit 1
           fi
           if [[ -z "${ROLE_ARN}" ]]; then
-            echo "::error::S3_PUBLISH_AWS_ROLE_ARN is not set in the s3-publish environment"
+            echo "::error::S3_PUBLISH_AWS_ROLE_ARN is not set in the ${ENV_NAME} environment"
             exit 1
           fi
           if [[ -z "${CF_DOMAIN}" ]]; then
-            echo "::error::S3_PUBLISH_CLOUDFRONT_DOMAIN is not set in the s3-publish environment"
+            echo "::error::S3_PUBLISH_CLOUDFRONT_DOMAIN is not set in the ${ENV_NAME} environment"
             exit 1
           fi
 
-          # Job-level if already requires refs/tags/cli/v*; no branch/sha path.
-          release="${GITHUB_REF_NAME#cli/}"
+          # The job-level if admits only cli/v* and bare vX.Y.Z-beta.N tags. A
+          # beta publishes from the non-prod environment under the cli/v* describe
+          # version, the same one release.yml stamps into nvkectl.
+          if [[ "${GITHUB_REF_NAME}" == cli/v* ]]; then
+            release="${GITHUB_REF_NAME#cli/}"
+          elif [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            release="$(git describe --match 'cli/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+            release="${release#cli/}"
+          else
+            echo "::error::${GITHUB_REF_NAME} is neither cli/vX.Y.Z nor vX.Y.Z-beta.N"
+            exit 1
+          fi
 
           {
             echo "s3_uri=${S3_URI}"

@@ -31,6 +31,12 @@
 # publish job then uploads both packages once so the shared index.json merge
 # cannot race with itself. The GitHub Release job and the GHCR job run in
 # parallel with S3 publish and do not touch apt intake.
+#
+# A bare vX.Y.Z-beta.N tag only triggers the run. It builds the commit it names
+# and versions the packages like any other build of that commit, by the agent/v*
+# describe. They are published to releases/<describe>/ in the apt intake bucket
+# (index.json is not updated) and as <describe> tags on NVCR. A beta has no
+# GitHub Release and no GHCR copy.
 
 name: Agent Deb Publish
 
@@ -39,6 +45,7 @@ on:
     tags:
       - "agent/v[0-9]+.[0-9]+.[0-9]+"
       - "agent/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
   workflow_dispatch:
     inputs:
       ref:
@@ -49,7 +56,8 @@ on:
 permissions: {}
 
 env:
-  SOURCE_REF: ${{ inputs.ref || github.ref_name }}
+  # A beta tag only triggers the run; the source is the commit it names.
+  SOURCE_REF: ${{ inputs.ref || (startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.') && github.sha) || github.ref_name }}
 
 concurrency:
   # A literal name, NOT ${{ github.workflow }}. Inside a called workflow that
@@ -69,9 +77,11 @@ jobs:
     # publish job (or a later re-enable) could upload into apt intake.
     if: >-
       github.repository_id == '1323115536' &&
-      (startsWith(inputs.ref || github.ref_name, 'agent/v') || inputs.ref != '')
+      (startsWith(inputs.ref || github.ref_name, 'agent/v') || inputs.ref != '' ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.')))
     outputs:
       sha: ${{ steps.package.outputs.sha }}
+      version: ${{ steps.version.outputs.version }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -105,6 +115,22 @@ jobs:
           # clone would stamp the wrong version into a release package.
           fetch-depth: 0
           persist-credentials: false
+
+      # The one place the version is resolved, for the consumers below. A release
+      # tag names it. Anything else is described, the way `make deb` stamps the
+      # package: a beta run arrives here with only its commit (see SOURCE_REF).
+      - name: Resolve the version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${SOURCE_REF}" == agent/v* ]]; then
+            version="${SOURCE_REF#agent/}"
+          else
+            version="$(git describe --match 'agent/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+            version="${version#agent/}"
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -203,7 +229,8 @@ jobs:
     needs: [build]
     if: >-
       github.repository_id == '1323115536' &&
-      startsWith(inputs.ref || github.ref_name, 'agent/v')
+      (startsWith(inputs.ref || github.ref_name, 'agent/v') ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.')))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: apt-intake
@@ -231,6 +258,7 @@ jobs:
           APT_INTAKE_PROJECT: ${{ vars.APT_INTAKE_PROJECT }}
           APT_INTAKE_AWS_ROLE_ARN: ${{ vars.APT_INTAKE_AWS_ROLE_ARN }}
           APT_INTAKE_AWS_REGION: ${{ vars.APT_INTAKE_AWS_REGION }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
           if [[ -z "${APT_INTAKE_S3_URI}" ]]; then
@@ -245,7 +273,7 @@ jobs:
           project="${APT_INTAKE_PROJECT:-nvke-agent}"
           region="${APT_INTAKE_AWS_REGION:-us-west-2}"
 
-          release="${SOURCE_REF#agent/}"
+          release="${VERSION}"
 
           {
             echo "s3_uri=${APT_INTAKE_S3_URI}"
@@ -272,7 +300,9 @@ jobs:
           APT_INTAKE_S3_URI: ${{ steps.meta.outputs.s3_uri }}
           APT_INTAKE_PROJECT: ${{ steps.meta.outputs.project }}
           APT_INTAKE_RELEASE: ${{ steps.meta.outputs.release }}
-          PUBLISH_INDEX_JSON: "true"
+          # A beta is uploaded under releases/<describe>/ but never enters the index
+          # that apt-publisher serves.
+          PUBLISH_INDEX_JSON: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.')) && 'false' || 'true' }}
           ASSETS_DIR: bin
         run: ./scripts/upload-s3-apt-intake.sh
 
@@ -441,7 +471,8 @@ jobs:
     needs: [build]
     if: >-
       github.repository_id == '1323115536' &&
-      startsWith(inputs.ref || github.ref_name, 'agent/v')
+      (startsWith(inputs.ref || github.ref_name, 'agent/v') ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta.')))
     runs-on: ubuntu-latest
     env:
       SOURCE_SHA: ${{ needs.build.outputs.sha }}
@@ -500,7 +531,7 @@ jobs:
 
       - name: Push per-architecture packages
         env:
-          VERSION: ${{ env.SOURCE_REF }}
+          VERSION: ${{ needs.build.outputs.version }}
           REPO: ${{ steps.meta.outputs.repo }}
         run: |
           set -euo pipefail
@@ -536,7 +567,7 @@ jobs:
 
       - name: Show published index
         env:
-          VERSION: ${{ env.SOURCE_REF }}
+          VERSION: ${{ needs.build.outputs.version }}
           REPO: ${{ steps.meta.outputs.repo }}
         run: |
           set -euo pipefail

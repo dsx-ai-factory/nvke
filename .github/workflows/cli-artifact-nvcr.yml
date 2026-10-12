@@ -38,6 +38,10 @@ name: CLI Artifact NVCR
 #
 # workflow_dispatch still works and still builds: dist_artifact is empty there,
 # so the build step below runs instead of the download.
+#
+# A bare vX.Y.Z-beta.N tag only triggers the run. The artifact is versioned and
+# tagged like any other build of that commit (the cli/v* describe version and
+# sha-<commit>); the beta tag name is not added as an alias.
 on:
   workflow_call:
     inputs:
@@ -141,7 +145,8 @@ jobs:
           aliases=("sha-${GITHUB_SHA}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             aliases+=("edge")
-          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+          elif [[ "${GITHUB_REF}" == refs/tags/* && ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            # A bare beta tag only triggers the run; it must not become an alias.
             aliases+=("${GITHUB_REF_NAME#cli/}")
           fi
 
