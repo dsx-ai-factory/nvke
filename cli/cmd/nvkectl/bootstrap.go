@@ -212,7 +212,7 @@ site spec file format.`,
 
 // bootstrapSettings is every NVKECTL_* variable `bootstrap site` reads, across
 // this command and the packages it drives, for the one-release warning about
-// settings given under their previous NKECTL_* name.
+// settings given under their previous NVKECTL_* name.
 func bootstrapSettings() []string {
 	names := []string{"NVKECTL_BOOTSTRAP_DIAGNOSTICS_DIR", "NVKECTL_BOOTSTRAP_CLUSTER_TIMEOUT"}
 	names = append(names, controllerdeploy.Settings...)
@@ -248,6 +248,7 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err := dumpSiteSpec(out, inv); err != nil {
 		return err
 	}
+	noteControllerStackSection(out, inv, bootstrapengine.DefaultConfig().ClusterName)
 
 	if opts.dryRun {
 		fmt.Fprintln(out, "\nDry run: site spec is valid. No workflow dispatched.")
@@ -1046,4 +1047,24 @@ func dumpSiteSpec(out io.Writer, inv *sitespec.SiteSpec) error {
 	fmt.Fprintln(out, "Loaded site spec:")
 	fmt.Fprint(out, string(y))
 	return nil
+}
+
+// noteControllerStackSection tells the operator what the site spec still needs before
+// the controller stack install: the whole controllerStack: section, or the
+// placeholders left in it. The bootstrap does not read the section, so this
+// is the moment to say so.
+func noteControllerStackSection(out io.Writer, inv *sitespec.SiteSpec, bootstrapClusterName string) {
+	if inv.Spire.TrustDomain == "" {
+		fmt.Fprintf(out, "\nThe SPIFFE trust domain of this bootstrap is %s, derived from the bootstrap cluster name. "+
+			"Set spire.trustDomain to it in the site spec so the controller stack install uses the same one.\n",
+			inv.EffectiveTrustDomain(bootstrapClusterName))
+	}
+	switch left := inv.ControllerStackPlaceholders(); {
+	case inv.ControllerStack == nil:
+		fmt.Fprintf(out, "\nBefore installing the controller stack, add the controllerStack: section to the site spec. "+
+			"nvkectl generate sitespec writes one to fill in.\n")
+	case len(left) > 0:
+		fmt.Fprintf(out, "\nBefore installing the controller stack, fill in the controllerStack: section of the site spec. "+
+			"Still placeholders: %s.\n", strings.Join(left, ", "))
+	}
 }

@@ -92,3 +92,49 @@ registry:
   # secret at runtime via --registry-api-key or the REGISTRY_API_KEY env var so
   # the file can be committed safely. It is never defaulted.
   # apiKey: ""
+
+# Input for the controller stack install, read after the bootstrap. "nvkectl
+# bootstrap site" does not read it. FILL IN EVERY REPLACE_* VALUE BEFORE
+# INSTALLING THE STACK; the install refuses a value that is still a
+# placeholder. Tokens and passwords are paths to files that hold them, one
+# secret per file, relative paths resolved from this file, so this file holds
+# no credential. The site name, trust domain, control-plane VIP and SPIRE CA
+# come from the fields above and are not repeated here.
+controllerStack:
+  # Node CPU architecture: amd64 or arm64.
+  arch: REPLACE_ARCH
+  # The NICo API CAPNICo calls.
+  nico:
+    endpoint: REPLACE_NICO_ENDPOINT
+    orgID: REPLACE_NICO_ORG_ID
+    # For example forge.
+    apiName: REPLACE_NICO_API_NAME
+    # File holding the NICo API token.
+    tokenFile: REPLACE_NICO_TOKEN_PATH
+  # The registry credential for the CAPNICo image pull secret.
+  pullSecret:
+    # For example ghcr.io.
+    server: REPLACE_REGISTRY_SERVER
+    username: REPLACE_REGISTRY_USERNAME
+    # File holding the registry token. A fine-grained token with read:packages is enough.
+    tokenFile: REPLACE_REGISTRY_TOKEN_PATH
+  # Login rendered into every tenant node's cloud-init.
+  tenant:
+    user: REPLACE_TENANT_USER
+    # File holding the password for that user.
+    passwordFile: REPLACE_TENANT_PASSWORD_PATH
+  # Optional. Both default to the release file's items; set one only to
+  # override it, as repository:tag or repository@sha256:<digest>.
+  # images:
+  #   controller: ""
+  #   profiles: ""
+  # Optional. File holding the Postgres password the controller and Temporal
+  # share. Omitted, the install generates one and reuses it on reruns.
+  # database:
+  #   passwordFile: ""
+  # Optional. Registry the external images are pulled from instead of their
+  # upstream registries, as host[:port][/prefix], no scheme.
+  # mirror: ""
+  # Optional. Values file for the nktp release, applied last. Without it
+  # telemetry exports to the chart's bundled development backend.
+  # nktpValuesFile: ""

@@ -25,6 +25,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -100,6 +101,15 @@ type SiteSpec struct {
 	Registry Registry `yaml:"registry"`
 	// Spire holds the identity-plane settings for the bootstrap.
 	Spire Spire `yaml:"spire"`
+	// ControllerStack is the input the controller stack install reads. The
+	// bootstrap does not read it; ValidateControllerStack checks it at install
+	// time.
+	ControllerStack *ControllerStack `yaml:"controllerStack,omitempty"`
+
+	// dir is the directory the file was loaded from, which relative paths in
+	// the controllerStack section are resolved against. Empty for a spec that
+	// was built rather than loaded.
+	dir string `yaml:"-"`
 }
 
 // Spire describes the identity plane `nvkectl bootstrap site` stands up.
@@ -258,7 +268,7 @@ func envBindings() map[string]string {
 }
 
 // Settings is every NVKECTL_* variable this package reads; each is also read
-// under its previous NKECTL_* name for one release (see envalias).
+// under its previous NVKECTL_* name for one release (see envalias).
 var Settings = []string{
 	"NVKECTL_SPIFFE_TRUST_DOMAIN",
 	"NVKECTL_CLUSTER_NODES",
@@ -316,6 +326,9 @@ func Load(path string) (*SiteSpec, error) {
 	var inv SiteSpec
 	if err := v.Unmarshal(&inv, useYAMLTags, rejectUnknownFields); err != nil {
 		return nil, fmt.Errorf("site spec file %s: %w", path, err)
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		inv.dir = filepath.Dir(abs)
 	}
 
 	inv.SetDefaults()

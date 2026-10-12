@@ -81,12 +81,50 @@ is a file `bootstrap site` accepts.
 | `spire.trustDomain` | string | no | SPIFFE trust domain. Defaults to `<bootstrap-cluster>.nke.local`. Use the same value for the permanent site SPIRE server. |
 | `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to. See below. |
 | `spire.caKeyFile` | string | no | Path to that CA's private key. Required with `caCertFile`. |
+| `controllerStack` | section | for the stack install | Read by the controller stack install, not by `bootstrap site`. `generate sitespec` writes it with `REPLACE_*` placeholders; the install refuses a placeholder. See below. |
+| `controllerStack.arch` | string | yes, in `controllerStack` | Node CPU architecture: `amd64` or `arm64`. |
+| `controllerStack.nico.endpoint` | string | yes, in `controllerStack` | NICo API base URL CAPNICo calls, `http` or `https`. |
+| `controllerStack.nico.orgID` | string | yes, in `controllerStack` | NICo organisation ID. |
+| `controllerStack.nico.apiName` | string | yes, in `controllerStack` | NICo API name, for example `forge`. |
+| `controllerStack.nico.tokenFile` | string | yes, in `controllerStack` | Path to a file holding the NICo API token. |
+| `controllerStack.pullSecret.server` | string | yes, in `controllerStack` | Registry host for the CAPNICo image pull secret, for example `ghcr.io`. |
+| `controllerStack.pullSecret.username` | string | yes, in `controllerStack` | Registry username. |
+| `controllerStack.pullSecret.tokenFile` | string | yes, in `controllerStack` | Path to a file holding the registry token. |
+| `controllerStack.tenant.user` | string | yes, in `controllerStack` | Login user rendered into every tenant node's cloud-init. |
+| `controllerStack.tenant.passwordFile` | string | yes, in `controllerStack` | Path to a file holding that user's password. |
+| `controllerStack.images.controller` | string | no | Overrides the controller image; defaults to the release file's `controller` item. |
+| `controllerStack.images.profiles` | string | no | Overrides the profiles content image; defaults to the release file's `profiles` item. |
+| `controllerStack.database.passwordFile` | string | no | Path to a file holding the Postgres password. Omitted, one is generated and reused. |
+| `controllerStack.mirror` | string | no | Registry the external images are pulled from instead of upstream, `host[:port][/prefix]`, no scheme. |
+| `controllerStack.nktpValuesFile` | string | no | Values file for the nktp release, applied last. |
 
 The version (image/chart tag) is baked into the `nvkectl` build, so it is not
 part of the site spec.
 
 Unknown fields are rejected. A typo in a field name fails the load rather than
 being silently ignored.
+
+## The controllerStack section
+
+The controller stack install reads `controllerStack:` after the bootstrap; `bootstrap
+site` does not. `generate sitespec` writes the section with every value a
+`REPLACE_*` placeholder, and `bootstrap site` ends by listing the placeholders
+still in the file. Fill them in before installing the stack: the install
+refuses a value that is still a placeholder.
+
+`nvkectl validate sitespec -f sitespec.yaml` checks both halves of the file
+and lists what is still a placeholder; `--bootstrap-only` checks only what
+`bootstrap site` reads.
+
+The section is filled in by hand. `generate sitespec --set` reaches only the
+bootstrap fields listed under "Environment variable overrides", not
+`controllerStack.*`.
+
+Tokens and passwords are paths to files that hold them, one secret per file,
+relative paths resolved from the site spec, so the site spec holds no
+credential and can be committed. The site name, the trust domain, the
+control-plane VIP and the SPIRE CA are the fields above; the install reads
+them from there and they are not repeated in `controllerStack:`.
 
 ## Validation rules
 
