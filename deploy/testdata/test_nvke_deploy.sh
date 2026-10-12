@@ -184,12 +184,13 @@ grep -q '^  - capnico.yaml$' "${rendered}/capnico/kustomization.yaml" && pass "t
 reject "release.yaml is not a kustomization resource" 'release.yaml' "$(cat "${rendered}/capnico/kustomization.yaml")"
 for image in cwe capnico-controller-arm64 controller-profiles; do
   expect "${image} is imported from its layout" "^tar -c -C ${packages}/${image} \\. ?$" "${out}"
-  expect "${image} is named for the kubelet" "^ctr -n k8s.io images import --digests --base-name nvkr.local/nvke/${image} - ?$" "${out}"
+  expect "${image} is named for the kubelet" "^ctr -n k8s.io images import --local --digests --base-name nvkr.local/nvke/${image} - ?$" "${out}"
+  expect "${image} is checked after the import" "^ctr -n k8s.io images ls -q name==nvkr.local/nvke/${image}@sha256:[0-9a-f]{64} ?$" "${out}"
 done
 expect "images are imported before the first item" '^(tar|ctr) .*' "$(sed -n '1,/^=== item nvke-base-config/p' <<<"${out}")"
 # CTR may be a command line, as it is for a kind node.
 out="$(CTR="docker exec -i kind-control-plane ctr" bash "${EXECUTOR}" install --deploy-path "${rendered}" --config "${CONFIG}" --dry-run 2>&1)" || fail "kind CTR dry run exited $?"
-expect "images are imported into the kind node" '^docker exec -i kind-control-plane ctr -n k8s.io images import --digests --base-name nvkr.local/nvke/cwe - ?$' "${out}"
+expect "images are imported into the kind node" '^docker exec -i kind-control-plane ctr -n k8s.io images import --local --digests --base-name nvkr.local/nvke/cwe - ?$' "${out}"
 # A layout that went missing after the render stops the install.
 mv "${packages}/cwe" "${packages}/cwe.gone"
 out="$(bash "${EXECUTOR}" install --deploy-path "${rendered}" --config "${CONFIG}" --dry-run 2>&1)" && fail "missing layout exited 0"

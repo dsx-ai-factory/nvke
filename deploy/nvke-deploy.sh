@@ -285,13 +285,19 @@ import_images() {
     [[ -d "${layout}" ]] || die "image ${ref}: its OCI layout ${layout} is missing"
     repository="${ref%%@*}"
     log "image ${ref}: imported from ${layout}"
+    # --local: containerd's own import, which names every manifest of the
+    # layout <repository>@<digest>. The transfer import keeps an annotated
+    # name and skips that alias, and the workload asks for the alias.
     if [[ -n "${DRY_RUN}" ]]; then
       run tar -c -C "${layout}" .
-      run "${ctr[@]}" -n k8s.io images import --digests --base-name "${repository}" -
+      run "${ctr[@]}" -n k8s.io images import --local --digests --base-name "${repository}" -
+      run "${ctr[@]}" -n k8s.io images ls -q "name==${ref}"
       continue
     fi
-    tar -c -C "${layout}" . | "${ctr[@]}" -n k8s.io images import --digests --base-name "${repository}" - ||
+    tar -c -C "${layout}" . | "${ctr[@]}" -n k8s.io images import --local --digests --base-name "${repository}" - ||
       die "cannot import ${ref} into containerd from ${layout}"
+    "${ctr[@]}" -n k8s.io images ls -q "name==${ref}" | grep -qx "${ref}" ||
+      die "image ${ref} is not in containerd after the import; the workload cannot resolve it"
   done <"${list}"
 }
 
