@@ -44,17 +44,29 @@ type Node struct {
 	// accepted but not yet started. It is set only on the control-plane-controller
 	// delete path, where the API records intent and the control-plane controller
 	// starts the teardown one node at a time; nil everywhere else.
-	DeleteRequest      json.RawMessage     `bun:"delete_request,type:jsonb,nullzero"`
-	CreatedAt          time.Time           `bun:"type:timestamptz,notnull,default:current_timestamp"`
-	UpdatedAt          time.Time           `bun:"type:timestamptz,notnull,default:current_timestamp"`
-	Nico               *NicoNodeProvider   `bun:"nico,type:jsonb"`
-	NodeAgentLifecycle *NodeAgentLifecycle `bun:"node_agent_lifecycle,type:jsonb"`
+	DeleteRequest      json.RawMessage          `bun:"delete_request,type:jsonb,nullzero"`
+	CreatedAt          time.Time                `bun:"type:timestamptz,notnull,default:current_timestamp"`
+	UpdatedAt          time.Time                `bun:"type:timestamptz,notnull,default:current_timestamp"`
+	Nico               *NicoNodeProvider        `bun:"nico,type:jsonb"`
+	NodeAgentLifecycle *NodeAgentLifecycle      `bun:"node_agent_lifecycle,type:jsonb"`
+	LaunchLayer        *LaunchLayerNodeProvider `bun:"launch_layer,type:jsonb"`
 }
 
 type NicoNodeProvider struct {
 	ForgeInstanceID string    `json:"forge_instance_id,omitempty"`
 	ForgeMachineID  string    `json:"forge_machine_id,omitempty"`
 	InstanceTypeID  uuid.UUID `json:"instance_type_id,omitempty"`
+}
+
+// LaunchLayerNodeProvider records per-node LaunchLayer identifiers. All three
+// are empty until CAPLL's own reconciler reports them on
+// LaunchLayerMachine.status — a placeholder node has none of them yet, the
+// same way a Nico node has no ForgeInstanceID/ForgeMachineID until Forge has
+// created it.
+type LaunchLayerNodeProvider struct {
+	InstanceID string `json:"instance_id,omitempty"`
+	MachineID  string `json:"machine_id,omitempty"`
+	RackID     string `json:"rack_id,omitempty"`
 }
 
 // ValidateSecurityProfile rejects node records whose immutable connection and
@@ -235,6 +247,17 @@ func (n *Node) NicoForgeMachineID() string {
 		return ""
 	}
 	return n.Nico.ForgeMachineID
+}
+
+func (n *Node) LaunchLayerProvider() (LaunchLayerNodeProvider, error) {
+	if n.LaunchLayer == nil {
+		return LaunchLayerNodeProvider{}, fmt.Errorf("%w: node %s launch_layer", ErrMissingProviderPayload, n.ID)
+	}
+	return *n.LaunchLayer, nil
+}
+
+func (n *Node) SetLaunchLayer(provider LaunchLayerNodeProvider) {
+	n.LaunchLayer = &provider
 }
 
 type NodeFilters struct {

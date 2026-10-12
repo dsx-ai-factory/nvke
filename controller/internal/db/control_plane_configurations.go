@@ -29,17 +29,18 @@ type NodeAgentConfig struct {
 // inside ControlPlaneConfiguration.Config JSONB rather than mapped to columns
 // on the clusters table.
 type ControlPlaneConfigSpec struct {
-	SystemReservedMemory        string                    `json:"system_reserved_memory,omitempty" bun:"-"`
-	KubeReservedMemory          string                    `json:"kube_reserved_memory,omitempty" bun:"-"`
-	NodeLabels                  map[string]string         `json:"node_labels,omitempty" bun:"-"`
-	TeleportEnabled             bool                      `json:"teleport_enabled,omitempty" bun:"-"`
-	ProvisioningMonitorDisabled bool                      `json:"provisioning_monitor_disabled,omitempty" bun:"-"`
-	KubernetesVersion           string                    `json:"kubernetes_version,omitempty" bun:"-"`
-	Nico                        *NicoControlPlaneProvider `json:"nico,omitempty" bun:"-"`
-	Capi                        *CAPIControlPlaneProvider `json:"capi,omitempty" bun:"-"`
-	NodeAgentConfig             NodeAgentConfig           `json:"node_agent_config,omitempty" bun:"-"`
-	MachineAnnotations          map[string]string         `json:"machine_annotations,omitempty" bun:"-"`
-	MachineLabels               map[string]string         `json:"machine_labels,omitempty" bun:"-"`
+	SystemReservedMemory        string                           `json:"system_reserved_memory,omitempty" bun:"-"`
+	KubeReservedMemory          string                           `json:"kube_reserved_memory,omitempty" bun:"-"`
+	NodeLabels                  map[string]string                `json:"node_labels,omitempty" bun:"-"`
+	TeleportEnabled             bool                             `json:"teleport_enabled,omitempty" bun:"-"`
+	ProvisioningMonitorDisabled bool                             `json:"provisioning_monitor_disabled,omitempty" bun:"-"`
+	KubernetesVersion           string                           `json:"kubernetes_version,omitempty" bun:"-"`
+	Nico                        *NicoControlPlaneProvider        `json:"nico,omitempty" bun:"-"`
+	Capi                        *CAPIControlPlaneProvider        `json:"capi,omitempty" bun:"-"`
+	NodeAgentConfig             NodeAgentConfig                  `json:"node_agent_config,omitempty" bun:"-"`
+	MachineAnnotations          map[string]string                `json:"machine_annotations,omitempty" bun:"-"`
+	MachineLabels               map[string]string                `json:"machine_labels,omitempty" bun:"-"`
+	LaunchLayer                 *LaunchLayerControlPlaneProvider `json:"launch_layer,omitempty" bun:"-"`
 }
 
 type NicoControlPlaneProvider struct {
@@ -59,14 +60,33 @@ type CAPIControlPlaneProvider struct {
 	PreKubeadmCommands              []string               `json:"pre_kubeadm_commands,omitempty"`
 }
 
+// LaunchLayerControlPlaneProvider is the LaunchLayer-specific control-plane
+// payload. Same field set as LaunchLayerNodePoolProvider — control-plane
+// nodes are still LaunchLayer machines.
+type LaunchLayerControlPlaneProvider struct {
+	InstanceType        string                       `json:"instance_type,omitempty"`
+	HostOSProfile       string                       `json:"host_os_profile,omitempty"`
+	VMProfile           string                       `json:"vm_profile,omitempty"`
+	FulfillmentStrategy string                       `json:"fulfillment_strategy,omitempty"`
+	SecurityGroupRefs   LaunchLayerSecurityGroupRefs `json:"security_group_refs,omitempty"`
+}
+
 func (c *ControlPlaneConfigSpec) SetNico(provider NicoControlPlaneProvider) {
 	c.Nico = cloneNicoControlPlaneProvider(&provider)
 	c.Capi = nil
+	c.LaunchLayer = nil
 }
 
 func (c *ControlPlaneConfigSpec) SetCapi(provider CAPIControlPlaneProvider) {
 	c.Capi = cloneCAPIControlPlaneProvider(&provider)
 	c.Nico = nil
+	c.LaunchLayer = nil
+}
+
+func (c *ControlPlaneConfigSpec) SetLaunchLayer(provider LaunchLayerControlPlaneProvider) {
+	c.LaunchLayer = cloneLaunchLayerControlPlaneProvider(&provider)
+	c.Nico = nil
+	c.Capi = nil
 }
 
 func (c ControlPlaneConfigSpec) NicoProvider() (NicoControlPlaneProvider, error) {
@@ -81,6 +101,13 @@ func (c ControlPlaneConfigSpec) CAPIProvider() (CAPIControlPlaneProvider, error)
 		return CAPIControlPlaneProvider{}, fmt.Errorf("%w: control plane config capi", ErrMissingProviderPayload)
 	}
 	return *cloneCAPIControlPlaneProvider(c.Capi), nil
+}
+
+func (c ControlPlaneConfigSpec) LaunchLayerProvider() (LaunchLayerControlPlaneProvider, error) {
+	if c.LaunchLayer == nil {
+		return LaunchLayerControlPlaneProvider{}, fmt.Errorf("%w: control plane config launch_layer", ErrMissingProviderPayload)
+	}
+	return *cloneLaunchLayerControlPlaneProvider(c.LaunchLayer), nil
 }
 
 // ControlPlaneConfig is the cluster control plane configuration shape used by
@@ -164,6 +191,22 @@ func cloneCAPIControlPlaneProvider(provider *CAPIControlPlaneProvider) *CAPICont
 		SpireAttestationMethod:          provider.SpireAttestationMethod,
 		BootstrapFiles:                  append([]CloudInitFile(nil), provider.BootstrapFiles...),
 		PreKubeadmCommands:              append([]string(nil), provider.PreKubeadmCommands...),
+	}
+}
+
+func cloneLaunchLayerControlPlaneProvider(provider *LaunchLayerControlPlaneProvider) *LaunchLayerControlPlaneProvider {
+	if provider == nil {
+		return nil
+	}
+	return &LaunchLayerControlPlaneProvider{
+		InstanceType:        provider.InstanceType,
+		HostOSProfile:       provider.HostOSProfile,
+		VMProfile:           provider.VMProfile,
+		FulfillmentStrategy: provider.FulfillmentStrategy,
+		SecurityGroupRefs: LaunchLayerSecurityGroupRefs{
+			PrimaryNetworkInterface: append([]string(nil), provider.SecurityGroupRefs.PrimaryNetworkInterface...),
+			GPUNetworkInterface:     append([]string(nil), provider.SecurityGroupRefs.GPUNetworkInterface...),
+		},
 	}
 }
 
