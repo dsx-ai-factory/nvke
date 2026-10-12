@@ -66,7 +66,7 @@ func Items(dir string) ([]Item, error) {
 	return list.Items, nil
 }
 
-// MarshalItems writes nke-deploy.yaml's item list in the grammar the
+// MarshalItems writes nvke-deploy.yaml's item list in the grammar the
 // shell-side reader accepts, with a header naming the render.
 func MarshalItems(items []Item, header string) []byte {
 	var b strings.Builder
