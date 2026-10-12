@@ -26,10 +26,6 @@ var (
 )
 
 func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
-	// Without this, a subcommand that declares its own PersistentPreRunE would
-	// replace the root's hook, and the command would silently go untraced.
-	cobra.EnableTraverseRunHooks = true
-
 	root := &cobra.Command{
 		Use:   "nvkectl",
 		Short: "NVKE control-plane CLI",
@@ -40,8 +36,8 @@ func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
 		SilenceUsage:  true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			run := telemetry.RunFrom(cmd.Context())
-			if run != nil && isTraced(cmd) {
-				cmd.SetContext(run.Start(cmd.Context(), cmd.CommandPath()))
+			if !isTraced(cmd) {
+				run = nil
 			}
 			return setupLogging(verbose, jsonLogs, run)
 		},
@@ -135,15 +131,16 @@ func Execute(ctx context.Context, ver, commit, treeState, date string) error {
 }
 
 // execute runs root under a new trace run, printing the trace ID line to stderr.
+//
+// The run starts before cobra parses anything, so the trace ID exists even if
+// cobra rejects the flags or arguments, and no command hook can disable it. The
+// span is named for the command once cobra has resolved which one ran.
 func execute(ctx context.Context, root *cobra.Command, ver string, stderr io.Writer) error {
 	run := telemetry.NewRun(ver)
-	ctx = telemetry.ContextWithRun(ctx, run)
+	ctx = run.Start(ctx, root.Name())
 	cmd, err := root.ExecuteContextC(ctx)
-	// Cobra rejects an unknown flag or a wrong number of arguments before it
-	// runs any hook, so the run has not started. The invocation still failed,
-	// and the operator still gets an ID for it.
-	if err != nil && run.TraceID() == "" && cmd != nil && isTraced(cmd) {
-		run.Start(ctx, cmd.CommandPath())
+	if cmd != nil {
+		run.SetName(cmd.CommandPath())
 	}
 	run.Finish(err)
 	return announceTrace(cmd, stderr, run.TraceID(), err)
@@ -185,9 +182,10 @@ func isTraced(cmd *cobra.Command) bool {
 }
 
 // announceTrace reports the run's trace ID for the command that ran. It returns
-// err, with the trace ID appended if the command failed.
+// err, with the trace ID appended if the command failed. A command that is not
+// traced reports nothing.
 func announceTrace(cmd *cobra.Command, w io.Writer, traceID string, err error) error {
-	if traceID == "" {
+	if traceID == "" || cmd == nil || !isTraced(cmd) {
 		return err
 	}
 	if err != nil {

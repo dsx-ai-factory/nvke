@@ -76,6 +76,16 @@ func (run *Run) Start(ctx context.Context, name string) context.Context {
 	return ContextWithRun(ctx, run)
 }
 
+// SetName renames the root span, for a name that is only known after Start. It
+// is a no-op before Start and after Finish.
+func (run *Run) SetName(name string) {
+	run.mu.Lock()
+	defer run.mu.Unlock()
+	if run.rootSpan != nil {
+		run.rootSpan.SetName(name)
+	}
+}
+
 // TraceID returns the run's 32-hex trace ID, or "" if Start has not been
 // called. It stays valid after Finish.
 func (run *Run) TraceID() string {

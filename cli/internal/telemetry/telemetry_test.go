@@ -171,3 +171,16 @@ func TestRunsKeepTheirOwnUserAgent(t *testing.T) {
 	assert.Equal(t, map[string]string{"/v1": "nvkectl/v1", "/v2": "nvkectl/v2"}, seen,
 		"two runs in one process do not share a User-Agent")
 }
+
+func TestSetNameRenamesTheRootSpan(t *testing.T) {
+	t.Parallel()
+	run, rec := newTestRun(t)
+	run.Start(context.Background(), "nvkectl")
+	run.SetName("nvkectl get clusters")
+	run.Finish(nil)
+	run.SetName("ignored after Finish")
+
+	spans := rec.Ended()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "nvkectl get clusters", spans[0].Name())
+}
