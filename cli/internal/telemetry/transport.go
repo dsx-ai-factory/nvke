@@ -23,8 +23,8 @@ func Transport(base http.RoundTripper) http.RoundTripper {
 	return &runTransport{base: base}
 }
 
-// runTransport builds one tracing transport per Run, because the tracer
-// provider and the User-Agent belong to the Run rather than to the process.
+// runTransport sends each request through a tracing transport built for the
+// request's Run.
 type runTransport struct {
 	base http.RoundTripper
 	runs sync.Map // *Run -> http.RoundTripper
@@ -37,6 +37,8 @@ func (transport *runTransport) RoundTrip(req *http.Request) (*http.Response, err
 	}
 	traced, ok := transport.runs.Load(run)
 	if !ok {
+		// The tracer provider and the User-Agent belong to the Run, so the
+		// transport is built per Run.
 		traced, _ = transport.runs.LoadOrStore(run, otelhttp.NewTransport(
 			userAgentTransport{base: transport.base, userAgent: run.userAgent},
 			otelhttp.WithTracerProvider(run.activeTracerProvider()),

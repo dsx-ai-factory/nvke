@@ -119,24 +119,21 @@ func resolveSiteConfig(cfg *config.Config) (config.SiteConfig, error) {
 // or nil. ctx becomes the root context every command sees through
 // cmd.Context(), so cancelling it cancels the command in flight.
 //
-// Every command but help and completion gets one trace ID. When the command
-// fails, Execute appends it to the error. When a command other than a query
-// command succeeds, Execute prints it as a "Trace ID:" line on stderr, so the
-// command's own output on stdout stays whatever it produced, including JSON
-// and YAML. A query command that succeeds writes nothing, and its trace ID is
-// logged at debug level.
+// Every command but help and completion gets one trace ID. A failing command's
+// error ends with it. A succeeding command other than a query command prints it
+// as a "Trace ID:" line on stderr, never on stdout. A succeeding query command
+// writes nothing and logs the ID at debug level.
 func Execute(ctx context.Context, ver, commit, treeState, date string) error {
 	root := newRootCmd(ver, commit, treeState, date)
 	return execute(ctx, root, ver, root.ErrOrStderr())
 }
 
-// execute runs root under a new trace run, printing the trace ID line to stderr.
-//
-// The run starts before cobra parses anything, so the trace ID exists even if
-// cobra rejects the flags or arguments, and no command hook can disable it. The
-// span is named for the command once cobra has resolved which one ran.
+// execute runs root under a new trace run and reports the trace ID as Execute
+// describes, writing the line for a successful command to stderr.
 func execute(ctx context.Context, root *cobra.Command, ver string, stderr io.Writer) error {
 	run := telemetry.NewRun(ver)
+	// Started before cobra parses anything, so even a rejected flag has an ID.
+	// The name is only known once cobra has resolved the command.
 	ctx = run.Start(ctx, root.Name())
 	cmd, err := root.ExecuteContextC(ctx)
 	if cmd != nil {

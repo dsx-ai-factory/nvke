@@ -527,8 +527,7 @@ func TestSignalCancelsAnInFlightCommand(t *testing.T) {
 			if stdout.String() != "" {
 				t.Errorf("stdout = %q, want nothing: a cancelled command produces no result", stdout.String())
 			}
-			// The request may already have been accepted, so the operator needs the
-			// ID the controller saw to find out what became of it.
+			// The report must name the ID the controller received.
 			wantID := traceIDOf(t, traceparent.Load().(string))
 			if want := "nvkectl: canceled\nTrace ID: " + wantID + "\n"; stderr.String() != want {
 				t.Errorf("stderr = %q, want %q", stderr.String(), want)
@@ -688,10 +687,9 @@ spec:
       chain ${loader}
 `
 
-// TestTraceIDStaysOffStructuredOutput runs the built binary, because the
-// operator commands' own tests call the command directly and never reach the
-// root wrapper that reports the trace ID. A trace line after a JSON document, or
-// a key in a YAML one, breaks every caller that parses stdout.
+// TestTraceIDStaysOffStructuredOutput runs the built binary, so the root
+// wrapper that reports the trace ID is exercised. A trace line after a JSON
+// document breaks any caller that parses stdout.
 func TestTraceIDStaysOffStructuredOutput(t *testing.T) {
 	t.Parallel()
 	image := filepath.Join(t.TempDir(), "image.yaml")
@@ -736,9 +734,9 @@ func TestTraceIDStaysOffStructuredOutput(t *testing.T) {
 	}
 }
 
-// TestDebugLogsCarryTheRequestsTraceID covers what the in-process tests cannot:
-// the real logger, built from -v and --json-logs, adds the same trace ID the
-// controller received.
+// TestDebugLogsCarryTheRequestsTraceID runs the built binary with -v and
+// --json-logs and checks each record carries the trace ID the controller
+// received.
 func TestDebugLogsCarryTheRequestsTraceID(t *testing.T) {
 	t.Parallel()
 	var traceparent atomic.Value

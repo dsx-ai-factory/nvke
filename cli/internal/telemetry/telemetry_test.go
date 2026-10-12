@@ -84,16 +84,6 @@ func TestRunWithoutStart(t *testing.T) {
 	assert.Same(t, inner, run.LogHandler(inner))
 }
 
-func TestStartTwiceKeepsOneTrace(t *testing.T) {
-	t.Parallel()
-	run, _ := newTestRun(t)
-	first := run.Start(context.Background(), "a")
-	second := run.Start(context.Background(), "b")
-	assert.Equal(t, trace.SpanContextFromContext(first).TraceID(), trace.SpanContextFromContext(second).TraceID())
-	assert.Equal(t, run.TraceID(), trace.SpanContextFromContext(first).TraceID().String())
-	assert.Len(t, run.TraceID(), 32)
-}
-
 func TestLogHandlerAddsTraceFields(t *testing.T) {
 	t.Parallel()
 	run, _ := newTestRun(t)

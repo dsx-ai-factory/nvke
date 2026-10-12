@@ -6,8 +6,7 @@
 // every request to the site controller, and adds the trace ID to nvkectl's log
 // records.
 //
-// Spans are not exported: nothing is sent anywhere, and the spans exist so the
-// trace ID is real and the controller can continue it.
+// Spans are not exported.
 package telemetry
 
 import (
@@ -42,11 +41,9 @@ type Run struct {
 }
 
 // sanitizeVersion returns version reduced to the characters of an RFC 9110
-// token, which is what a User-Agent product version must be. A build can stamp
-// any string into the version, and Go refuses to send a request whose header
-// holds a control character, so an unsanitized one would fail every request. It
-// returns "dev" if nothing is left.
+// token, or "dev" if none are left.
 func sanitizeVersion(version string) string {
+	// A control character in the header makes Go refuse every request.
 	token := strings.Map(func(char rune) rune {
 		switch {
 		case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z', char >= '0' && char <= '9':
@@ -65,8 +62,7 @@ func sanitizeVersion(version string) string {
 // Option configures NewRun.
 type Option func(*Run)
 
-// WithSpanProcessor registers processor with the run's tracer provider. nvkectl
-// exports no spans by default; tests use this to observe them.
+// WithSpanProcessor registers processor with the run's tracer provider.
 func WithSpanProcessor(processor sdktrace.SpanProcessor) Option {
 	return func(run *Run) {
 		run.providerOptions = append(run.providerOptions, sdktrace.WithSpanProcessor(processor))
@@ -148,8 +144,7 @@ func (run *Run) Finish(err error) {
 
 type runKey struct{}
 
-// ContextWithRun returns ctx carrying run, so that code with only a context can
-// start the run's root span.
+// ContextWithRun returns ctx carrying run.
 func ContextWithRun(ctx context.Context, run *Run) context.Context {
 	return context.WithValue(ctx, runKey{}, run)
 }

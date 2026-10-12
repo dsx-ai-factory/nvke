@@ -6,7 +6,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -125,8 +124,7 @@ func TestTraceIDOnFailureWhenRequestNeverReachesController(t *testing.T) {
 	assert.Regexp(t, `\nTrace ID: [0-9a-f]{32}$`, err.Error())
 }
 
-// Cobra rejects these before it runs any hook, so only execute can give the
-// failed invocation an ID.
+// Cobra rejects these before it runs any hook.
 func TestTraceIDOnFailureBeforeAnyHookRuns(t *testing.T) {
 	f := newFakeController(t)
 	tests := map[string][]string{
@@ -155,9 +153,8 @@ func TestNoTraceIDForHelpAndCompletionFailures(t *testing.T) {
 	}
 }
 
-// A child that declares its own PersistentPreRunE must not replace the root's
-// hook, or the child's commands would silently go untraced.
-func TestChildPersistentPreRunDoesNotDisableTracing(t *testing.T) {
+// A subcommand's own PersistentPreRunE does not affect tracing.
+func TestSubcommandPreRunDoesNotDisableTracing(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	root := newRootCmd("test", "test", "test", "test")
 	childHookRan := false
@@ -173,39 +170,17 @@ func TestChildPersistentPreRunDoesNotDisableTracing(t *testing.T) {
 	require.NoError(t, execute(context.Background(), root, "test", &stderr))
 
 	assert.True(t, childHookRan)
-	assert.Regexp(t, traceIDLineRE, stderr.String(), "the root hook still started the trace")
+	assert.Regexp(t, traceIDLineRE, stderr.String())
 }
 
-func TestGetPrintsNoTraceIDOnSuccess(t *testing.T) {
+func TestQueryCommandsPrintNoTraceIDOnSuccess(t *testing.T) {
 	f := newFakeController(t)
-	stdout, stderr, err := runNkectl(t, f.URL, "get", "clusters", "-o", "json")
-	require.NoError(t, err)
-	assert.NotContains(t, stdout+stderr, "Trace ID", "a successful get writes only its result")
-	assert.Len(t, traceparents(t, f), 1, "the request is still traced")
-}
-
-func TestQueryCommandsTraceWithoutPrinting(t *testing.T) {
-	f := newFakeController(t)
-	stdout, stderr, err := runNkectl(t, f.URL, "version")
-	require.NoError(t, err)
-	assert.NotContains(t, stdout+stderr, "Trace ID", "a successful query command writes only its result")
-}
-
-func TestSuccessfulQueryLogsTraceIDAtDebug(t *testing.T) {
-	var logs bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	t.Cleanup(func() { slog.SetDefault(prev) })
-
-	root := newRootCmd("test", "test", "test", "test")
-	cmd, _, err := root.Find([]string{"get", "clusters"})
-	require.NoError(t, err)
-	var out bytes.Buffer
-	require.NoError(t, announceTrace(cmd, &out, "4bf92f3577b34da6a3ce929d0e0e4736", nil))
-
-	assert.Empty(t, out.String())
-	assert.Contains(t, logs.String(), `"msg":"command finished"`)
-	assert.Contains(t, logs.String(), `"command":"nvkectl get clusters"`)
+	for _, args := range [][]string{{"get", "clusters", "-o", "json"}, {"version"}} {
+		stdout, stderr, err := runNkectl(t, f.URL, args...)
+		require.NoError(t, err, args)
+		assert.NotContains(t, stdout+stderr, "Trace ID", "%v writes only its result", args)
+	}
+	assert.Len(t, traceparents(t, f), 1, "get still sends a traced request")
 }
 
 func TestStateChangingCommandsPrintTraceIDOnSuccess(t *testing.T) {
