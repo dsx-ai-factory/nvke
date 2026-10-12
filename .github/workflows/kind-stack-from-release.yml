@@ -135,7 +135,6 @@ jobs:
           out=/tmp/kind-stack-diag
           mkdir -p "${out}"
           cp "${RUNNER_TEMP}/kind-stack-from-release/release.json" "${out}/" 2>/dev/null || true
-          cp "${RUNNER_TEMP}/kind-stack-from-release/rendered/images.txt" "${out}/" 2>/dev/null || true
           kubectl get pods -A -o wide > "${out}/pods.txt" 2>&1 || true
           kubectl describe pods -A > "${out}/describe-pods.txt" 2>&1 || true
           kubectl get events -A --sort-by=.lastTimestamp > "${out}/events.txt" 2>&1 || true

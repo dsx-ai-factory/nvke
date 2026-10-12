@@ -98,15 +98,7 @@ sed -e "s|@CLUSTER@|${CLUSTER}|g" -e "s|@VIP@|${vip}|g" -e "s|@NKTP_VALUES@|${RE
   "${HERE}/sitespec.yaml.tmpl" >"${WORK}/site/sitespec.yaml"
 "${NVKECTL}" validate sitespec -f "${WORK}/site/sitespec.yaml"
 
-# 4. Render. WORK is under the runner's temp directory, which the render
-# refuses without this allowance.
-log "rendering deploy/nico for ${CLUSTER} against the release"
-NVKECTL_RENDER_ALLOW_TEMP_OUT=1 "${NVKECTL}" render deploy-path \
-  --deploy-path "${REPO}/deploy/nico" --sitespec "${WORK}/site/sitespec.yaml" \
-  --release "${WORK}/release.json" --nvkr-run-dir "${RUN}" --out "${WORK}/rendered"
-grep -q "^nvkr.local/nvke/cwe@${cwe_digest}	" "${WORK}/rendered/images.txt" || die "images.txt does not name the cwe layout"
-
-# 5. What deploy/nico expects before it runs: an untainted node, a default
+# 4. What deploy/nico expects before it runs: an untainted node, a default
 # StorageClass (kind ships one), cert-manager and Cluster API.
 kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true
 kubectl get storageclass -o jsonpath='{.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}' | grep -q . \
@@ -116,13 +108,15 @@ clusterctl init --core "cluster-api:${CAPI_VERSION}" --bootstrap "kubeadm:${CAPI
 kubectl rollout status deployment/capi-controller-manager -n capi-system --timeout=5m
 kubectl rollout status deployment/cert-manager-webhook -n cert-manager --timeout=5m
 
-# 6. Install the rendered deploy path. CTR imports the layouts into the kind
-# node's containerd.
-log "installing the rendered deploy path"
-CTR="docker exec -i ${node} ctr" bash "${REPO}/deploy/nvke-deploy.sh" install \
-  --deploy-path "${WORK}/rendered" --kubeconfig "${KUBECONFIG}" --timeout 15m
+# 5. Render and install in one go: the executor renders deploy/nico for the
+# site and against the release into a private scratch directory, installs
+# it, and removes it. CTR imports the layouts into the kind node's containerd.
+log "rendering and installing deploy/nico"
+NVKECTL="${NVKECTL}" CTR="docker exec -i ${node} ctr" bash "${REPO}/deploy/nvke-deploy.sh" install \
+  --deploy-path "${REPO}/deploy/nico" --sitespec "${WORK}/site/sitespec.yaml" \
+  --release "${WORK}/release.json" --nvkr-run-dir "${RUN}" --kubeconfig "${KUBECONFIG}" --timeout 15m
 
-# 7. Assert: the images are in containerd under the release's names, every
+# 6. Assert: the images are in containerd under the release's names, every
 # pod is Ready, and the controller and CAPNICo run the release digests.
 log "checking the result"
 for ref in "nvkr.local/nvke/cwe@${cwe_digest}" "nvkr.local/nvke/controller-profiles@${profiles_digest}" "nvkr.local/nvke/capnico-controller@${capnico_digest}"; do
