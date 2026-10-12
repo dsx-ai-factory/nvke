@@ -173,6 +173,24 @@ func TestNewOSImageAndURL(t *testing.T) {
 	}
 }
 
+// A release published before the rename keeps its original filename. When the
+// new name is not there, Resolve returns that one.
+func TestOSImageLegacyFilename(t *testing.T) {
+	legacy := newOSImage("", "amd64").imageObjectURL("", "v0.1.1-rc.1", "24.04.5", "nke")
+	srv := server(t, legacy)
+
+	got, err := newOSImage(srv.URL, "amd64").Resolve(imageInputs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[ResultURLKey] != srv.URL+legacy {
+		t.Errorf("url = %q, want the filename published before the rename", got[ResultURLKey])
+	}
+	if got[ResultVersionKey] != "v0.1.1-rc.1" {
+		t.Errorf("version = %q, want the release tag", got[ResultVersionKey])
+	}
+}
+
 // The URL is always asked for, and a missing one fails with both explanations of
 // a 403.
 func TestOSImageChecksTheURLExists(t *testing.T) {
@@ -192,7 +210,7 @@ func TestOSImageChecksTheURLExists(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected an error, got none")
 		}
-		for _, want := range []string{"could not confirm", "ubuntu-26.04.1-amd64.qcow2", "HTTP 403", "a network that is not allowed both answer 403"} {
+		for _, want := range []string{"could not confirm", "nvke-node-non-fde-ubuntu-26.04.1-amd64.qcow2", "HTTP 403", "a network that is not allowed both answer 403"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("error does not mention %q:\n%s", want, err)
 			}

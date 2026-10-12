@@ -131,9 +131,10 @@ token:^nke\.io/($|k8s-api-encryption-(configured|rewrite-complete))
 # and nke-cni-* so apt requests for those names still resolve. nke-calico-* is
 # the legacy pkg-builder layout. nke-spire-* is the SPIRE client, not the
 # nvke-spire-configure unit. nke-node-agent and nke-nodepool belong to the
-# other rename issues. The qcow2, qemu source, checker, apt capture hook and
+# other rename issues; the pattern stops there so a leftover nke-node-*.qcow2
+# is not exempt. The qcow2, qemu source, checker, apt capture hook and
 # material schema now say nvke.
-token:nke-kubeadm-distro|nke-cni-|nke-calico-|nke-spire|nke-node|nke-packer-|nke-\d\d\.\d\d-|nke-rootfs|nke-builder|nke-builds|nke-package-builder|nke-ubuntu|nke-multiarch|nke\.ssh|nke-efi|nke-boot-smoke|nke-run-|nke_find_firmware|nke_arch_from|nke-image|nke-iso|\.cache/nke|\.nke-kubeadm-file|^/nke-$|^nke-k8s-installer$
+token:nke-kubeadm-distro|nke-cni-|nke-calico-|nke-spire|nke-node-agent|nke-nodepool|nke-packer-|nke-\d\d\.\d\d-|nke-rootfs|nke-builder|nke-builds|nke-package-builder|nke-ubuntu|nke-multiarch|nke\.ssh|nke-efi|nke-boot-smoke|nke-run-|nke_find_firmware|nke_arch_from|nke-image|nke-iso|\.cache/nke|\.nke-kubeadm-file|^/nke-$|^nke-k8s-installer$
 
 # S3 buckets, the CloudFront bundle path, the ISO prefix and the IAM role keep
 # their names (D16); `nke-packages` is the local package cache on nodes and in
