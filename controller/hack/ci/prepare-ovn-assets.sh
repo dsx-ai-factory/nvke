@@ -6,7 +6,7 @@ set -euo pipefail
 
 output_dir="${1:?usage: prepare-ovn-assets.sh OUTPUT_DIR}"
 workspace_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-version=1.4.0
+version=1.6.0
 arch="${BUNDLE_ARCH:-amd64}"
 # The reference package builder needs Linux. Local macOS runs already have
 # Docker/Colima; use a Linux builder there while CI builds directly on its host.
@@ -16,7 +16,7 @@ if [[ "$(uname -s)" == Darwin ]]; then
   go_version="$(awk '/^go / {print $2; exit}' "${workspace_root}/go.work")"
   exec docker run --rm \
     -v "${workspace_root}:/workspace:ro" -v "${output_dir}:/output" \
-    -e "BUNDLE_ARCH=${arch}" -e OVN_TOOLS_DIR=/tmp/ovn-tools \
+    -e "BUNDLE_ARCH=${arch}" -e OVN_TOOLS_DIR=/tmp/ovn-tools -e GITHUB_TOKEN \
     "golang:${go_version}-bookworm" \
     bash -c '
       set -euo pipefail

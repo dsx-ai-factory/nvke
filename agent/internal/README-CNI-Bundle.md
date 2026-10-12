@@ -34,7 +34,7 @@ Orchestration is responsible for installing Debian packages (typically via **`In
 | OVN           | `nke-cni-ovn-charts-<stream>`   | `nke-cni-ovn-images-<stream>` |
 | CALICO        | `nke-cni-calico-manifests-<stream>` | `nke-cni-calico-images-<stream>` |
 
-`cni_variant` **UNSPECIFIED** is treated as **OVN**. **`version`**:strip leading **`v`**; selects **`<stream>`** in the deb naming; empty **`version`** selects defaults matching **cni-packages** (currently OVN **`1.4.0`**, Calico **`3.30.1`**). Pinning still appears as **`=…`** appended to logical package names produced for logging and **`resolvedAptPackage`**.
+`cni_variant` **UNSPECIFIED** is treated as **OVN**. **`version`**:strip leading **`v`**; selects **`<stream>`** in the deb naming; empty **`version`** selects defaults matching **cni-packages** (currently OVN **`1.6.0`**, Calico **`3.30.1`**). Pinning still appears as **`=…`** appended to logical package names produced for logging and **`resolvedAptPackage`**.
 
 After the **charts/manifest** deb exists for the chosen **`version`**, **`InstallCNI`** (control-plane role only):
 

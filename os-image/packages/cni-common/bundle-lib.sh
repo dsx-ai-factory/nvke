@@ -43,6 +43,8 @@ parse_bundle_args() {
   STAGE="${DIST}/${VERSION}"
   WORK="${STAGE}/.work"
   ARTIFACT_LINES=()
+  SOURCE_LINES=()
+  IMAGE_LINES=()
   rm -rf "$STAGE"
   mkdir -p "$WORK"
 }
@@ -256,6 +258,13 @@ stage_images() {
   leftover="$(grep -l 'i-was-a-digest' "${WORK}/unpacked"/* 2>/dev/null || true)"
   [[ -z "$leftover" ]] || die "crane's digest placeholder survived in ${leftover}"
 
+  repack_archive
+}
+
+# repack_archive turns ${WORK}/unpacked into ${STAGE}/images.tgz, with the
+# sha256 sidecar. Members are sorted and owner, mode and mtime pinned, so two
+# builds of the same inputs are byte-identical.
+repack_archive() {
   (cd "${WORK}/unpacked" && find . -type f | LC_ALL=C sort >"${WORK}/members")
   tar --format=gnu --numeric-owner --owner=0 --group=0 \
     --mtime='2026-01-01 00:00:00Z' --mode='u+rw,go+r-w,a-s' \
@@ -264,6 +273,41 @@ stage_images() {
   printf '%s  %s-images_%s_linux_%s.tgz\n' \
     "$(sha_of "${STAGE}/images.tgz")" "${CNI#cni-}" "${VERSION#v}" "${ARCH}" \
     >"${STAGE}/images.tgz.sha256"
+}
+
+# build_image <context-dir> <dockerfile> <ref> [build args...] builds one image
+# from source for ${ARCH} and unpacks its docker-archive into ${WORK}/unpacked,
+# ready for repack_archive. For packages whose image has no registry to pull
+# from. Timestamps are pinned to a fixed epoch so two builds of the same inputs
+# produce the same layers. Needs docker with buildx, or podman (OCI_BIN picks
+# the binary). A foreign ARCH builds under emulation.
+build_image() {
+  local ctx="$1" dockerfile="$2" ref="$3"; shift 3
+  local oci="${OCI_BIN:-docker}" epoch=1767225600
+  command -v "$oci" >/dev/null 2>&1 || die "${oci} is required to build the ${CNI} image from source"
+  rm -f "${WORK}/images.tar"
+  case "$(basename "$oci")" in
+    podman)
+      # --timestamp pins every timestamp; podman refuses it beside SOURCE_DATE_EPOCH.
+      env -u SOURCE_DATE_EPOCH "$oci" build --platform "linux/${ARCH}" --timestamp "$epoch" \
+        "$@" -t "$ref" -f "$dockerfile" "$ctx" ||
+        die "building ${ref} failed"
+      "$oci" save --format docker-archive -o "${WORK}/images.tar" "$ref" || die "saving ${ref} failed"
+      "$oci" rmi "$ref" >/dev/null 2>&1 || true
+      ;;
+    *)
+      SOURCE_DATE_EPOCH="$epoch" "$oci" buildx build \
+        --platform "linux/${ARCH}" --build-arg "SOURCE_DATE_EPOCH=${epoch}" "$@" \
+        --output "type=docker,dest=${WORK}/images.tar,rewrite-timestamp=true" \
+        -t "$ref" -f "$dockerfile" "$ctx" ||
+        die "building ${ref} failed"
+      ;;
+  esac
+  tar_paths_safe "${WORK}/images.tar"
+  mkdir -p "${WORK}/unpacked"
+  tar -xf "${WORK}/images.tar" --no-same-owner -C "${WORK}/unpacked"
+  grep -q -- "$ref" "${WORK}/unpacked/manifest.json" ||
+    die "the built archive does not name ${ref}; it would import under the wrong name"
 }
 
 # finish_bundle removes the work tree, then writes the lock for --write-lock or
@@ -275,7 +319,7 @@ finish_bundle() {
     {
       echo "# nke-${CNI} lock for ${VERSION} (${ARCH}). Regenerate with \`make lock\`; review the diff before committing."
       echo "${CNI#cni-} ${VERSION}"
-      printf '%s\n' "${ARTIFACT_LINES[@]}" "${IMAGE_LINES[@]}"
+      printf '%s\n' "${SOURCE_LINES[@]}" "${ARTIFACT_LINES[@]}" "${IMAGE_LINES[@]}"
     } >"${LOCK}.new"
     mv "${LOCK}.new" "$LOCK"
     echo "${CNI}: wrote ${LOCK}"
